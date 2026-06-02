@@ -104,6 +104,10 @@ const VALID_FIELDS = new Set([
 // SYNC: Tests in validate-lychee-config.test.js validateFieldValues describe block reference this constant
 const VALID_VERBOSE_VALUES = ["error", "warn", "info", "debug", "trace"];
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Split a TOML dotted path into segments while respecting quoted segments.
  *
@@ -212,6 +216,161 @@ function stripInlineTomlComment(line) {
   }
 
   return line;
+}
+
+function bracketDeltaOutsideQuotes(value) {
+  let quoteChar = null;
+  let delta = 0;
+
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i];
+
+    if (quoteChar !== null) {
+      if (char === "\\" && i + 1 < value.length) {
+        i += 1;
+        continue;
+      }
+
+      if (char === quoteChar) {
+        quoteChar = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quoteChar = char;
+      continue;
+    }
+
+    if (char === "[") {
+      delta += 1;
+    } else if (char === "]") {
+      delta -= 1;
+    }
+  }
+
+  return delta;
+}
+
+function extractTopLevelTomlValue(content, key) {
+  const assignmentPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*(.*)$`);
+  const collected = [];
+  let bracketDepth = 0;
+
+  for (const line of normalizeToLf(content).split("\n")) {
+    const stripped = stripInlineTomlComment(line);
+    if (collected.length === 0) {
+      const match = stripped.match(assignmentPattern);
+      if (!match) {
+        continue;
+      }
+
+      const value = match[1].trim();
+      collected.push(value);
+      bracketDepth += bracketDeltaOutsideQuotes(value);
+      if (bracketDepth <= 0) {
+        return collected.join("\n");
+      }
+      continue;
+    }
+
+    const continuation = stripped.trim();
+    collected.push(continuation);
+    bracketDepth += bracketDeltaOutsideQuotes(continuation);
+    if (bracketDepth <= 0) {
+      return collected.join("\n");
+    }
+  }
+
+  return collected.length > 0 ? collected.join("\n") : null;
+}
+
+function splitTomlArrayItems(value) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+    throw new Error(`expected TOML array value, received: ${value}`);
+  }
+
+  const body = trimmed.slice(1, -1);
+  const items = [];
+  let current = "";
+  let quoteChar = null;
+
+  for (let i = 0; i < body.length; i += 1) {
+    const char = body[i];
+    if (quoteChar !== null) {
+      current += char;
+      if (char === "\\" && i + 1 < body.length) {
+        current += body[i + 1];
+        i += 1;
+        continue;
+      }
+
+      if (char === quoteChar) {
+        quoteChar = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quoteChar = char;
+      current += char;
+      continue;
+    }
+
+    if (char === ",") {
+      const item = current.trim();
+      if (item.length > 0) {
+        items.push(item);
+      }
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const finalItem = current.trim();
+  if (finalItem.length > 0) {
+    items.push(finalItem);
+  }
+
+  return items;
+}
+
+function normalizeTomlScalar(value) {
+  return hasMatchingBoundaryQuotes(value) ? stripMatchingBoundaryQuotes(value) : value.trim();
+}
+
+function acceptsHttpStatus(item, status) {
+  const value = normalizeTomlScalar(item);
+  const exact = value.match(/^\d+$/);
+  if (exact) {
+    return Number.parseInt(value, 10) === status;
+  }
+
+  const range = value.match(/^(\d+)\s*\.\.=?\s*(\d+)$/);
+  if (range) {
+    const start = Number.parseInt(range[1], 10);
+    const end = Number.parseInt(range[2], 10);
+    return start <= status && status <= end;
+  }
+
+  return false;
+}
+
+function parseRequiredArray(content, key, errors) {
+  const value = extractTopLevelTomlValue(content, key);
+  if (value === null) {
+    return [];
+  }
+
+  try {
+    return splitTomlArrayItems(value);
+  } catch (error) {
+    errors.push(`Invalid value for '${key}': ${error.message}`);
+    return [];
+  }
 }
 
 /**
@@ -353,6 +512,28 @@ function validateFieldValues(keyValues) {
   return { errors, warnings };
 }
 
+function validateStrictLinkPolicy(content) {
+  const errors = [];
+  const warnings = [];
+  const acceptItems = parseRequiredArray(content, "accept", errors);
+
+  if (acceptItems.some(item => acceptsHttpStatus(item, 403))) {
+    errors.push("Invalid value for 'accept': HTTP 403 must not be globally accepted.");
+  }
+
+  const excludeItems = parseRequiredArray(content, "exclude", errors);
+  for (const item of excludeItems) {
+    const value = normalizeTomlScalar(item);
+    if (/webaim/i.test(value)) {
+      errors.push(
+        `Invalid value for 'exclude': broad WebAIM exclusions are not allowed (${item}). Replace flaky links with stable equivalents.`
+      );
+    }
+  }
+
+  return { errors, warnings };
+}
+
 /**
  * Validate top-level keys against the known valid fields.
  *
@@ -413,6 +594,10 @@ function main() {
   errors.push(...valueResult.errors);
   warnings.push(...valueResult.warnings);
 
+  const strictLinkPolicyResult = validateStrictLinkPolicy(content);
+  errors.push(...strictLinkPolicyResult.errors);
+  warnings.push(...strictLinkPolicyResult.warnings);
+
   for (const warning of warnings) {
     console.log(`  Warning: ${warning}`);
   }
@@ -452,6 +637,7 @@ function main() {
  * @exports {Function} parseTopLevelKeyValues - Parses top-level key-value pairs from TOML content
  * @exports {Function} validateFields - Validates field names against the known valid set
  * @exports {Function} validateFieldValues - Validates field values against known constraints
+ * @exports {Function} validateStrictLinkPolicy - Validates repository-specific strict link policy
  * @exports {Set<string>} VALID_FIELDS - Set of valid lychee v0.23.0 configuration field names
  * @exports {string[]} VALID_VERBOSE_VALUES - Array of valid verbose log level values
  */
@@ -461,6 +647,7 @@ if (typeof module !== "undefined" && module.exports) {
     parseTopLevelKeyValues,
     validateFields,
     validateFieldValues,
+    validateStrictLinkPolicy,
     VALID_FIELDS,
     VALID_VERBOSE_VALUES
   };

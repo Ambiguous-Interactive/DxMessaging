@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Analyzer payload builds are now reproducible under the pinned
+  `SourceGenerators/global.json` SDK. The shipped analyzer and source-generator
+  DLLs no longer embed source revision or PDB metadata, CI double-builds them
+  into temporary payload directories before comparing against
+  `Editor/Analyzers`, and Unity runner maintenance now verifies or repairs the
+  full active editor matrix outside ordinary test jobs.
 - IL2CPP builds now root untyped dispatch bridges for concrete
   source-visible message types without changing the public API. The source
   generator emits IL2CPP-only AOT bridge registration for attributed messages

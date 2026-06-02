@@ -671,7 +671,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
@@ -692,7 +692,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $Editor = ./scripts/unity/ENSURE-EDITOR.ps1 -UnityVersion '2022.3.45f1' -CIManagedOnly -ProvisioningProfile EditorOnly
+          $Editor = ./scripts/unity/ENSURE-EDITOR.ps1 -UnityVersion '2022.3.45f1' -CIManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "unity_editor_path=$Editor" | Out-File -FilePath $env:github_env -Append
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
@@ -731,7 +731,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
@@ -754,7 +754,7 @@ jobs:
     steps:
       - name: Warm Unity editor
         shell: pwsh
-        run: ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly
+        run: ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting
 `);
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
@@ -773,7 +773,7 @@ jobs:
         run: |
           # TODO: pass -ProvisioningProfile EditorOnly once scoped provisioning lands.
           Write-Host '-ProvisioningProfile EditorOnly is still pending'
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
@@ -822,7 +822,7 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/unity/ensure-editor.ps1 -UnityVersion '2021.3.45f1' -CiManagedOnly
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
@@ -873,7 +873,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
@@ -897,7 +897,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
@@ -1050,7 +1050,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
@@ -1074,7 +1074,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Run Unity Test Runner
         shell: pwsh
@@ -1100,7 +1100,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
 `);
 
@@ -1123,7 +1123,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Run Unity Test Runner
         shell: pwsh
@@ -1146,7 +1146,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Generate ephemeral Unity project
         shell: pwsh
@@ -1167,7 +1167,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Generate ephemeral Unity project
         shell: pwsh
@@ -1188,7 +1188,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Run Unity Test Runner
         shell: pwsh
@@ -1211,7 +1211,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Run Unity Test Runner
         shell: pwsh
@@ -1234,7 +1234,7 @@ jobs:
       - name: Provision Unity Editor
         shell: pwsh
         run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -ProvisioningProfile EditorOnly
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Generate then run Unity Test Runner
         shell: pwsh

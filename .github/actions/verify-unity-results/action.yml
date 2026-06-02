@@ -123,6 +123,26 @@ runs:
                   '(missing)'
                 }
                 Write-Host "::notice::Provisioning summary classification=$classification profile=$provisioningProfile"
+                if ($env:GITHUB_STEP_SUMMARY) {
+                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Provisioning summary: ``" + $summary.FullName + "``")
+                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Provisioning classification: ``" + $classification + "`` (profile ``" + $provisioningProfile + "``)")
+                }
+                if ($classification -ne 'success' -and $classification -ne '(missing)') {
+                  $missingModules = @()
+                  if ($summaryJson.requiredModulePresence) {
+                    foreach ($property in @($summaryJson.requiredModulePresence.PSObject.Properties)) {
+                      if ($property.Value -eq $false) {
+                        $missingModules += [string]$property.Name
+                      }
+                    }
+                  }
+                  $missingText = if ($missingModules.Count -gt 0) {
+                    " missingModules=$($missingModules -join ',')"
+                  } else {
+                    ""
+                  }
+                  Write-Host "::error::Provisioning failed before Unity results verification: classification=$classification profile=$provisioningProfile summary=$($summary.FullName)$missingText"
+                }
               } catch {
                 Write-Host "::notice::Provisioning summary metadata could not be parsed: $($_.Exception.Message)"
               }

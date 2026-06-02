@@ -812,8 +812,8 @@ describe("scripts/unity direct CI runner contract", () => {
       /\[ValidateSet\(\s*'editmode'\s*,\s*'playmode'\s*,\s*'standalone'\s*\)\]/
     );
     expect(runCi).toContain("function Invoke-UnityNativeStartupProbe");
-    expect(runCi).toContain("after pre-lock editor provisioning");
-    expect(runCi).toContain("host OS/runtime prerequisite damage");
+    expect(runCi).toContain("after the pre-lock healthy-existing editor check");
+    expect(runCi).toContain("scripts/unity/maintain-windows-runner.ps1");
     expect(runCi).toContain("$provisioningProfile = if ($TestMode -eq 'standalone')");
     expect(runCi).toContain("'StandaloneWindowsIl2Cpp'");
     expect(runCi).toContain("'EditorOnly'");

@@ -393,13 +393,13 @@ describe("workflow / composite cross-file consistency", () => {
     expect(fs.existsSync(DIAGNOSTICS_COMPOSITE_PATH)).toBe(true);
   });
 
-  test("workflow + composite both name scripts/unity/bootstrap-windows-runner.ps1 as the single source", () => {
-    // The single source of orchestration logic is the script. Both YAML
-    // surfaces invoke that exact path -- no parallel copies, no inline
-    // re-implementations.
+  test("workflow wraps runner maintenance and the composite still owns host bootstrap", () => {
+    // Manual operator dispatch runs the full maintenance entrypoint (host
+    // bootstrap plus Unity editor/module provisioning). The reusable prereq
+    // composite stays scoped to host bootstrap for detect-only Unity jobs.
     const workflow = readUtf8(WORKFLOW_PATH);
     const composite = readUtf8(ASSERT_COMPOSITE_PATH);
-    expect(workflow).toContain("scripts\\unity\\bootstrap-windows-runner.ps1");
+    expect(workflow).toContain("scripts\\unity\\maintain-windows-runner.ps1");
     expect(composite).toContain("scripts/unity/bootstrap-windows-runner.ps1");
   });
 });

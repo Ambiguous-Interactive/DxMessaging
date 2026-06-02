@@ -209,10 +209,10 @@ jobs:
           echo "::endgroup::"
 
   bootstrap:
-    # F9: surface the mode (Audit vs Bootstrap) in the job display name so
+    # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
-    name: ${{ inputs.detect-only && 'Audit' || 'Bootstrap' }} ${{ inputs.runner-label }}
+    name: ${{ inputs.detect-only && 'Audit' || 'Maintain' }} ${{ inputs.runner-label }}
     needs:
       - runner-preflight
     # Cannot dynamically pin to a specific runner without machine-name labels
@@ -226,7 +226,7 @@ jobs:
     # F13: inherit workflow-level permissions (contents: read, actions: read).
     # No job-level override -- the previous explicit block silently dropped
     # `actions: read` and shadowed the workflow-level intent.
-    timeout-minutes: 30
+    timeout-minutes: 360
     steps:
       - name: Checkout
         # Shallow checkout: bootstrap only needs scripts/unity/* and a
@@ -274,7 +274,7 @@ jobs:
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
           }
 
-      - name: Run bootstrap (single-step transcript)
+      - name: Run runner maintenance (single-step transcript)
         # F5/F7: a single PowerShell 5.1 step opens the transcript, invokes
         # the bootstrap script, and Stop-Transcripts in a finally{} -- the
         # previous design split Start-Transcript and the bootstrap into
@@ -306,7 +306,7 @@ jobs:
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE '.artifacts\runner-bootstrap'
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
           $timestamp = (Get-Date -Format 'yyyyMMdd-HHmmss')
-          $logPath = Join-Path $artifactDir ("bootstrap-{0}-{1}-{2}.log" -f $timestamp, $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
+          $logPath = Join-Path $artifactDir ("maintenance-{0}-{1}-{2}.log" -f $timestamp, $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
           Write-Host "Transcript: $logPath"
 
           # F4: normalize detect-only to a single bool. Accepts true/True/1/yes/y.
@@ -328,33 +328,44 @@ jobs:
           # a workflow (not a composite), so $GITHUB_WORKSPACE is reliably
           # the repo root post-checkout (actions/checkout@v6 above guarantees
           # the script is present at this path).
-          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts\unity\bootstrap-windows-runner.ps1'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts\unity\maintain-windows-runner.ps1'
           if (-not (Test-Path -LiteralPath $script)) {
-              Write-Host "::error::Bootstrap script not found at $script"
+              Write-Host "::error::Runner maintenance script not found at $script"
               exit 1
           }
 
           $code = 0
           try {
               Start-Transcript -Path $logPath -Force | Out-Null
-              if ($detectOnly) {
-                  & $script -DetectOnly
-              } else {
-                  & $script
+              . $script
+              $unityVersions = @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1')
+              $provisioningProfile = 'StandaloneWindowsIl2Cpp'
+              $installRoot = if ($env:UNITY_EDITOR_INSTALL_ROOT) { $env:UNITY_EDITOR_INSTALL_ROOT } else { 'C:\Unity\Editors' }
+              $maintenanceArgs = @{
+                  UnityVersions = $unityVersions
+                  ProvisioningProfile = $provisioningProfile
+                  InstallRoot = $installRoot
+                  Force = $true
+                  DiagnosticsRoot = $artifactDir
               }
-              $code = $LASTEXITCODE
+              if ($detectOnly) {
+                  $maintenanceArgs.DetectOnly = $true
+              }
+              $code = Invoke-WindowsRunnerMaintenance @maintenanceArgs
           } finally {
               try { Stop-Transcript | Out-Null } catch { Write-Host "::notice::Stop-Transcript: $($_.Exception.Message) (non-fatal)" }
           }
 
-          Write-Host "Bootstrap exit code: $code"
+          Write-Host "Runner maintenance exit code: $code"
           if ($env:GITHUB_STEP_SUMMARY) {
               $label = switch ($code) {
                   0 { 'ok' }
                   2 { 'detect-only-missing' }
+                  3 { 'mutex-busy' }
+                  4 { 'runner-busy' }
                   default { "fail($code)" }
               }
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Bootstrap result: ``" + $label + "`` (exit $code)")
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Runner maintenance result: ``" + $label + "`` (exit $code)")
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Transcript: ``" + $logPath + "``")
           }
           if ($code -ne 0) { exit $code }

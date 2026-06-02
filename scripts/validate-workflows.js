@@ -3024,6 +3024,12 @@ function stepHasExplicitUnityProvisioningProfile(step) {
   return extractUnityProvisioningProfileArguments(step).length > 0;
 }
 
+function stepRequiresHealthyExistingUnityEditor(step) {
+  return extractCiManagedEnsureEditorCommands(step).some((command) =>
+    /-RequireHealthyExisting\b/i.test(command.text)
+  );
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -3289,6 +3295,17 @@ function findUnityNativeProvisioningViolations(relativePath, lines) {
             step.startIndex + 1,
             "ensure-editor.ps1 -ProvisioningProfile",
             `Job '${job.id}' runs ensure-editor.ps1 -CiManagedOnly without an explicit provisioning profile. Pass -ProvisioningProfile EditorOnly, StandaloneWindowsIl2Cpp, Android, or Full so CI provisioning cannot accidentally install unrelated Unity modules.`,
+            "error"
+          )
+        );
+      }
+      if (!stepRequiresHealthyExistingUnityEditor(step)) {
+        violations.push(
+          new Violation(
+            relativePath,
+            step.startIndex + 1,
+            "ensure-editor.ps1 -RequireHealthyExisting",
+            `Job '${job.id}' runs ensure-editor.ps1 -CiManagedOnly without -RequireHealthyExisting. Unity test jobs must fail fast instead of installing or repairing editors/modules; run scripts/unity/maintain-windows-runner.ps1 or the runner-bootstrap workflow for repairs.`,
             "error"
           )
         );

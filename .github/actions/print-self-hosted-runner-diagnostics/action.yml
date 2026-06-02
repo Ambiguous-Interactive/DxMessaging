@@ -125,8 +125,9 @@ runs:
         }
         Write-Output "::endgroup::"
     # Assert Unity host prerequisites (VC++ redist, long-paths, Defender
-    # exclusions, pwsh, UCRT). Auto-installs missing prereqs by default.
-    # No `with:` block: composite default (auto-install=true) applies.
+    # exclusions, pwsh, UCRT). Unity test jobs are detect-only: host/editor
+    # repair belongs to scripts/unity/maintain-windows-runner.ps1 or the
+    # operator-dispatched runner-bootstrap workflow.
     # F8: the assert-unity-host-prereqs composite's own non-Windows skip
     # ("if DirectorySeparatorChar -ne '\' -> ::notice:: + exit 0") is
     # DEFENSE-IN-DEPTH only -- this parent composite is itself Windows-
@@ -142,3 +143,5 @@ runs:
     # Unity installs (the missing DLL is on the OS, not in Unity).
     - name: Assert Unity host prerequisites
       uses: ./.github/actions/assert-unity-host-prereqs
+      with:
+        auto-install: "false"

@@ -4427,14 +4427,14 @@ $editor = Find-UnityEditor -Version $UnityVersion -Root $InstallRoot -IncludeHos
 if ($RequireHealthyExisting) {
     if (-not $editor) {
         Write-InstalledEditorDiagnostics -Version $UnityVersion -Root $InstallRoot -Reason "RequireHealthyExisting was set and no existing Unity editor was found."
-        throw "Unity $UnityVersion is not installed under '$InstallRoot' and RequireHealthyExisting is set. CI test jobs do not install or repair Unity in-job; run runner maintenance/bootstrap to provision the editor and required modules first."
+        throw "Unity $UnityVersion is not installed under '$InstallRoot' and RequireHealthyExisting is set. CI test jobs do not install or repair Unity in-job; run scripts/unity/maintain-windows-runner.ps1 or dispatch .github/workflows/runner-bootstrap.yml to provision the editor and required modules first."
     }
 
     $script:ProvisioningEditorPath = $editor
     $missingModules = @(Get-MissingUnityCiModuleGroups -EditorPath $editor -Profile $ProvisioningProfile)
     if ($missingModules.Count -gt 0) {
         Write-InstalledEditorDiagnostics -Version $UnityVersion -Root $InstallRoot -Reason "RequireHealthyExisting was set and required module groups are missing: $($missingModules -join ', ')."
-        throw "Unity $UnityVersion is missing required CI module groups for provisioning profile '$ProvisioningProfile': $($missingModules -join ', '). CI test jobs fail fast instead of installing modules in-job; run runner maintenance/bootstrap to repair this editor."
+        throw "Unity $UnityVersion is missing required CI module groups for provisioning profile '$ProvisioningProfile': $($missingModules -join ', '). CI test jobs fail fast instead of installing modules in-job; run scripts/unity/maintain-windows-runner.ps1 or dispatch .github/workflows/runner-bootstrap.yml to repair this editor."
     }
 
     if ($env:DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE -eq '1') {
@@ -4447,7 +4447,7 @@ if ($RequireHealthyExisting) {
             if (Test-IsNativeDllNotFound -ExitCode $startupResult.ExitCode) {
                 Write-UnityHostPrereqAnnotation -Version $UnityVersion -ExitCode $startupResult.ExitCode -Description $startupResult.Description -EditorPath $editor -ProbeLog $probeLog
             }
-            throw "Unity $UnityVersion native startup probe failed with exit code $($startupResult.ExitCode) ($($startupResult.Description)) and RequireHealthyExisting is set. CI test jobs do not repair Unity in-job. Probe log: $probeLog"
+            throw "Unity $UnityVersion native startup probe failed with exit code $($startupResult.ExitCode) ($($startupResult.Description)) and RequireHealthyExisting is set. CI test jobs do not repair Unity in-job. Run scripts/unity/maintain-windows-runner.ps1 or dispatch .github/workflows/runner-bootstrap.yml. Probe log: $probeLog"
         }
     }
     $script:ProvisioningEditorPath = $editor

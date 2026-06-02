@@ -31,6 +31,7 @@ const {
   findSelfHostedRunnerPreflightViolations,
   isSelfHostedWindowsLabelSet,
   isAllowedSelfHostedWindowsShell,
+  findUnityNativeProvisioningViolations,
   findForbidPlainShellBashOnSelfHostedWindowsViolations,
   resolveWorkflowLineLengthPolicy,
   resolveWorkflowLineLengthMax,
@@ -118,6 +119,55 @@ describe("isForbiddenRenormalizePattern", () => {
       const line = "# Use --renormalize to ensure line endings";
       expect(isForbiddenRenormalizePattern(line)).toBe(false);
     });
+  });
+});
+
+describe("findUnityNativeProvisioningViolations", () => {
+  function unityProvisioningFixture({ requireHealthyExisting }) {
+    const healthyFlag = requireHealthyExisting ? "            -RequireHealthyExisting `" : null;
+    return [
+      "jobs:",
+      "  unity:",
+      "    runs-on: [self-hosted, Windows, RAM-64GB]",
+      "    steps:",
+      "      - name: Provision Unity Editor",
+      "        shell: pwsh",
+      "        run: |",
+      "          $editor = ./scripts/unity/ensure-editor.ps1 `",
+      "            -UnityVersion '6000.3.16f1' `",
+      "            -CiManagedOnly `",
+      ...(healthyFlag ? [healthyFlag] : []),
+      "            -ProvisioningProfile StandaloneWindowsIl2Cpp",
+      "          \"UNITY_EDITOR_PATH=$editor\" | Out-File -FilePath $env:GITHUB_ENV -Append",
+      "      - name: Acquire organization Unity lock",
+      "        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1",
+      "      - name: Run Unity Test Runner",
+      "        shell: pwsh",
+      "        run: |",
+      "          ./scripts/unity/run-ci-tests.ps1 `",
+      "            -UnityVersion '6000.3.16f1' `",
+      "            -TestMode standalone"
+    ];
+  }
+
+  test("accepts CI-managed Unity provisioning with RequireHealthyExisting", () => {
+    const violations = findUnityNativeProvisioningViolations(
+      "unity-tests.yml",
+      unityProvisioningFixture({ requireHealthyExisting: true })
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  test("flags CI-managed Unity provisioning that can repair in a test job", () => {
+    const violations = findUnityNativeProvisioningViolations(
+      "unity-tests.yml",
+      unityProvisioningFixture({ requireHealthyExisting: false })
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].pattern).toBe("ensure-editor.ps1 -RequireHealthyExisting");
+    expect(violations[0].message).toContain("maintain-windows-runner.ps1");
   });
 });
 

@@ -16,6 +16,7 @@ const {
   parseTopLevelKeyValues,
   validateFields,
   validateFieldValues,
+  validateStrictLinkPolicy,
   VALID_FIELDS,
   VALID_VERBOSE_VALUES
 } = require("../validate-lychee-config.js");
@@ -407,6 +408,56 @@ describe("validateFieldValues", () => {
   });
 });
 
+describe("validateStrictLinkPolicy", () => {
+  test("accepts this repository's strict status and exclusion policy", () => {
+    const content = [
+      'accept = ["200..=299", 429, 502]',
+      "exclude = [",
+      '  "^https?://localhost",',
+      '  "^https://support\\\\.unity\\\\.com/"',
+      "]"
+    ].join("\n");
+
+    expect(validateStrictLinkPolicy(content)).toEqual({ errors: [], warnings: [] });
+  });
+
+  test.each(["403", '"403"', '"400..=499"', '"403..=403"'])(
+    "rejects accept entry %s because it includes HTTP 403",
+    (entry) => {
+      const content = [`accept = ["200..=299", ${entry}, 502]`, "exclude = []"].join("\n");
+
+      const { errors } = validateStrictLinkPolicy(content);
+      expect(errors).toContain("Invalid value for 'accept': HTTP 403 must not be globally accepted.");
+    }
+  );
+
+  test("rejects multiline accept arrays that include HTTP 403", () => {
+    const content = [
+      "accept = [",
+      '  "200..=299",',
+      "  403,",
+      "  502",
+      "]",
+      "exclude = []"
+    ].join("\n");
+
+    const { errors } = validateStrictLinkPolicy(content);
+    expect(errors).toContain("Invalid value for 'accept': HTTP 403 must not be globally accepted.");
+  });
+
+  test("rejects broad WebAIM exclusions", () => {
+    const content = [
+      'accept = ["200..=299", 429, 502]',
+      "exclude = [",
+      '  "^https://webaim\\\\.org/",',
+      "]"
+    ].join("\n");
+
+    const { errors } = validateStrictLinkPolicy(content);
+    expect(errors.join("\n")).toContain("broad WebAIM exclusions are not allowed");
+  });
+});
+
 // SYNC: VALID_VERBOSE_VALUES is the source of truth defined in validate-lychee-config.js VALID_VERBOSE_VALUES constant
 describe("VALID_VERBOSE_VALUES", () => {
   test("should be a non-empty array", () => {
@@ -649,5 +700,19 @@ describe("actual .lychee.toml config file validation", () => {
     const { warnings } = validateFieldValues(configKeyValues);
 
     expect(warnings).toEqual([], "actual .lychee.toml should have no field value warnings");
+  });
+
+  test("config should not globally accept HTTP 403", () => {
+    const { errors } = validateStrictLinkPolicy(configContent);
+
+    expect(errors).not.toContain(
+      "Invalid value for 'accept': HTTP 403 must not be globally accepted."
+    );
+  });
+
+  test("config should not broadly exclude WebAIM links", () => {
+    const { errors } = validateStrictLinkPolicy(configContent);
+
+    expect(errors.join("\n")).not.toContain("broad WebAIM exclusions are not allowed");
   });
 });
