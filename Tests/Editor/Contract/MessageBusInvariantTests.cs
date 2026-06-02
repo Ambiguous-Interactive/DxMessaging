@@ -91,6 +91,26 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
+        public void AotBridgeRegistrationHooksKeepGeneratedReflectionContract()
+        {
+            AssertAotBridgeHook(
+                "RegisterAotUntargetedBridge",
+                typeof(AotHookUntargetedMessage),
+                (Action<IMessageBus, IUntargetedMessage>)((_, _) => { })
+            );
+            AssertAotBridgeHook(
+                "RegisterAotTargetedBridge",
+                typeof(AotHookTargetedMessage),
+                (Action<IMessageBus, InstanceId, ITargetedMessage>)((_, _, _) => { })
+            );
+            AssertAotBridgeHook(
+                "RegisterAotSourcedBridge",
+                typeof(AotHookBroadcastMessage),
+                (Action<IMessageBus, InstanceId, IBroadcastMessage>)((_, _, _) => { })
+            );
+        }
+
+        [Test]
         public void SweepableRegistryFieldNamesAreUnique()
         {
             string[] duplicateNames = MessageBus
@@ -432,12 +452,42 @@ namespace DxMessaging.Tests.Editor.Contract
                 && IsClosedMessageCache(fieldType.GetElementType());
         }
 
+        private static void AssertAotBridgeHook(
+            string methodName,
+            Type messageType,
+            Delegate bridge
+        )
+        {
+            MethodInfo method = typeof(MessageBus).GetMethod(
+                methodName,
+                BindingFlags.Static | BindingFlags.NonPublic
+            );
+
+            Assert.IsNotNull(method, $"{methodName} must remain available for generated code.");
+            Assert.AreEqual(typeof(void), method.ReturnType, methodName);
+
+            ParameterInfo[] parameters = method.GetParameters();
+            Assert.AreEqual(2, parameters.Length, methodName);
+            Assert.AreEqual(typeof(Type), parameters[0].ParameterType, methodName);
+            Assert.AreEqual(typeof(Delegate), parameters[1].ParameterType, methodName);
+            Assert.DoesNotThrow(
+                () => method.Invoke(null, new object[] { messageType, bridge }),
+                $"{methodName} must accept the generated delegate shape."
+            );
+        }
+
         private static bool IsClosedMessageCache(Type type)
         {
             return type != null
                 && type.IsGenericType
                 && type.GetGenericTypeDefinition() == typeof(MessageCache<>);
         }
+
+        private readonly struct AotHookUntargetedMessage : IUntargetedMessage { }
+
+        private readonly struct AotHookTargetedMessage : ITargetedMessage { }
+
+        private readonly struct AotHookBroadcastMessage : IBroadcastMessage { }
 
         private readonly struct InterceptorProbeMessage : IUntargetedMessage { }
 

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- IL2CPP builds now root untyped dispatch bridges for concrete
+  source-visible message types without changing the public API. The source
+  generator emits IL2CPP-only AOT bridge registration for attributed messages
+  and manual `IUntargetedMessage` / `ITargetedMessage` /
+  `IBroadcastMessage` implementations, while open generic definitions are
+  skipped until a closed generic type is used through the typed registration
+  path. Untyped dispatch also keeps separate per-kind delegate caches, so a
+  message type that participates in more than one dispatch kind can no longer
+  reuse the wrong cached delegate shape.
 - Unity projects no longer keep stale DxMessaging analyzer `-a:` entries in `csc.rsp`; the setup script removes package-cache analyzer registrations so Unity loads the shipped analyzer and source generator once through the `RoslynAnalyzer`-labeled plugin copy.
 - Provider-backed emit helpers now route sourced, targeted, and untargeted messages through the resolved `IMessageBus`, so custom bus and DI-provider callers no longer fall back to the global bus for interface-shaped message dispatch.
 - Standalone and IL2CPP player builds now compile. The dispatch hot path performs reinterpret casts that previously used `System.Runtime.CompilerServices.Unsafe`; the Unity Editor supplies that type, but player builds under the .NET Standard 2.0 profile do not, so editmode and playmode passed while standalone IL2CPP failed to build with `CS0103: The name 'Unsafe' does not exist in the current context`. Those calls now route through Unity's built-in `UnsafeUtility` (in `UnityEngine.CoreModule`), which resolves identically in the Editor and every player scripting backend. The change preserves the existing zero-allocation dispatch behavior and adds no package dependency or shipped assembly.

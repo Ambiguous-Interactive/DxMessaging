@@ -7,6 +7,7 @@ namespace DxMessaging.Core.MessageBus
     using System.Linq.Expressions;
     using System.Reflection;
     using System.Runtime.CompilerServices;
+    using System.Threading;
     using DataStructure;
     using Diagnostics;
     using DxMessaging.Core;
@@ -612,8 +613,6 @@ namespace DxMessaging.Core.MessageBus
 
         private static readonly Type MessageBusType = typeof(MessageBus);
 
-        // For use with re-broadcasting to generic methods
-        private static readonly object[] ReflectionMethodArgumentsCache = new object[2];
         private static readonly List<Expression> ArgumentExpressionsCache = new();
 
         private const BindingFlags ReflectionHelperBindingFlags =
@@ -627,6 +626,40 @@ namespace DxMessaging.Core.MessageBus
             where T : ITargetedMessage;
         private delegate void FastSourcedBroadcast<T>(ref InstanceId target, ref T message)
             where T : IBroadcastMessage;
+
+        private static bool RequiresAotUntypedDispatch
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+#if ENABLE_IL2CPP
+                return true;
+#else
+                return false;
+#endif
+            }
+        }
+
+        private static readonly object AotBridgeRegistryLock = new();
+        private static Dictionary<
+            Type,
+            Action<IMessageBus, IUntargetedMessage>
+        > _aotUntargetedBroadcastsByType = new();
+        private static Dictionary<
+            Type,
+            Action<IMessageBus, InstanceId, ITargetedMessage>
+        > _aotTargetedBroadcastsByType = new();
+        private static Dictionary<
+            Type,
+            Action<IMessageBus, InstanceId, IBroadcastMessage>
+        > _aotSourcedBroadcastsByType = new();
+
+        private static class AotBridgeState<T>
+        {
+            public static bool UntargetedRegistered;
+            public static bool TargetedRegistered;
+            public static bool SourcedRegistered;
+        }
 
         public RegistrationLog Log => _log;
 
@@ -972,7 +1005,18 @@ namespace DxMessaging.Core.MessageBus
         private readonly Dictionary<object, Dictionary<int, int>> _uniqueInterceptorsAndPriorities =
             new();
 
-        private readonly Dictionary<Type, object> _broadcastMethodsByType = new();
+        private readonly Dictionary<
+            Type,
+            Action<IUntargetedMessage>
+        > _untargetedBroadcastMethodsByType = new();
+        private readonly Dictionary<
+            Type,
+            Action<InstanceId, ITargetedMessage>
+        > _targetedBroadcastMethodsByType = new();
+        private readonly Dictionary<
+            Type,
+            Action<InstanceId, IBroadcastMessage>
+        > _sourcedBroadcastMethodsByType = new();
         private readonly Stack<List<object>> _innerInterceptorsStack = new();
 
         private readonly Dictionary<
@@ -1997,7 +2041,9 @@ namespace DxMessaging.Core.MessageBus
             _targetedInterceptsByType.Clear();
             _broadcastInterceptsByType.Clear();
             _uniqueInterceptorsAndPriorities.Clear();
-            _broadcastMethodsByType.Clear();
+            _untargetedBroadcastMethodsByType.Clear();
+            _targetedBroadcastMethodsByType.Clear();
+            _sourcedBroadcastMethodsByType.Clear();
             _innerInterceptorsStack.Clear();
             _methodCache.Clear();
             _dirtyTypes.Clear();
@@ -2109,6 +2155,7 @@ namespace DxMessaging.Core.MessageBus
         public Action RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
             where T : IUntargetedMessage
         {
+            EnsureAotUntargetedBridge<T>();
             return InternalRegisterUntargeted<T>(
                 messageHandler,
                 _scalarSinks[BusSinkIndex.UntargetedHandleDefault],
@@ -2125,6 +2172,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : ITargetedMessage
         {
+            EnsureAotTargetedBridge<T>();
             return InternalRegisterWithContext<T>(
                 target,
                 messageHandler,
@@ -2142,6 +2190,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IBroadcastMessage
         {
+            EnsureAotSourcedBridge<T>();
             return InternalRegisterWithContext<T>(
                 source,
                 messageHandler,
@@ -2158,6 +2207,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IBroadcastMessage
         {
+            EnsureAotSourcedBridge<T>();
             return InternalRegisterUntargeted<T>(
                 messageHandler,
                 _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext],
@@ -2173,6 +2223,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : ITargetedMessage
         {
+            EnsureAotTargetedBridge<T>();
             return InternalRegisterUntargeted<T>(
                 messageHandler,
                 _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext],
@@ -2306,6 +2357,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IUntargetedMessage
         {
+            EnsureAotUntargetedBridge<T>();
             _ = AdvanceTick();
             InterceptorCache<object> prioritizedInterceptors =
                 _untargetedInterceptsByType.GetOrAdd<T>();
@@ -2452,6 +2504,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : ITargetedMessage
         {
+            EnsureAotTargetedBridge<T>();
             _ = AdvanceTick();
             InterceptorCache<object> prioritizedInterceptors =
                 _targetedInterceptsByType.GetOrAdd<T>();
@@ -2598,6 +2651,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IBroadcastMessage
         {
+            EnsureAotSourcedBridge<T>();
             _ = AdvanceTick();
             InterceptorCache<object> prioritizedInterceptors =
                 _broadcastInterceptsByType.GetOrAdd<T>();
@@ -2755,6 +2809,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IUntargetedMessage
         {
+            EnsureAotUntargetedBridge<T>();
             return InternalRegisterUntargeted<T>(
                 messageHandler,
                 _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault],
@@ -2771,6 +2826,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : ITargetedMessage
         {
+            EnsureAotTargetedBridge<T>();
             return InternalRegisterWithContext<T>(
                 target,
                 messageHandler,
@@ -2787,6 +2843,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : ITargetedMessage
         {
+            EnsureAotTargetedBridge<T>();
             return InternalRegisterUntargeted<T>(
                 messageHandler,
                 _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext],
@@ -2803,6 +2860,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IBroadcastMessage
         {
+            EnsureAotSourcedBridge<T>();
             return InternalRegisterWithContext<T>(
                 source,
                 messageHandler,
@@ -2819,6 +2877,7 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IBroadcastMessage
         {
+            EnsureAotSourcedBridge<T>();
             return InternalRegisterUntargeted<T>(
                 messageHandler,
                 _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext],
@@ -2833,29 +2892,32 @@ namespace DxMessaging.Core.MessageBus
         public void UntypedUntargetedBroadcast(IUntargetedMessage typedMessage)
         {
             Type messageType = typedMessage.MessageType;
-            if (!_broadcastMethodsByType.TryGetValue(messageType, out object untargetedMethod))
+            if (RequiresAotUntypedDispatch)
             {
-                // ReSharper disable once PossibleNullReferenceException
-                MethodInfo broadcastMethod = MessageBusType
-                    .GetMethod(nameof(UntargetedBroadcast))
-                    .MakeGenericMethod(messageType);
-                // ReSharper disable once PossibleNullReferenceException
-                MethodInfo helperMethod = MessageBusType
-                    .GetMethod(
-                        nameof(UntargetedBroadcastReflectionHelper),
-                        ReflectionHelperBindingFlags
-                    )
-                    .MakeGenericMethod(messageType);
+                if (
+                    Volatile
+                        .Read(ref _aotUntargetedBroadcastsByType)
+                        .TryGetValue(messageType, out var bridge)
+                )
+                {
+                    bridge(this, typedMessage);
+                    return;
+                }
 
-                ReflectionMethodArgumentsCache[0] = this;
-                ReflectionMethodArgumentsCache[1] = broadcastMethod;
-                untargetedMethod = helperMethod.Invoke(null, ReflectionMethodArgumentsCache);
-                _broadcastMethodsByType[messageType] = untargetedMethod;
+                ThrowMissingAotBridge(messageType, "untargeted");
+                return;
             }
 
-            Action<IUntargetedMessage> broadcast = DxUnsafe.As<Action<IUntargetedMessage>>(
-                untargetedMethod
-            );
+            if (
+                !_untargetedBroadcastMethodsByType.TryGetValue(
+                    messageType,
+                    out Action<IUntargetedMessage> broadcast
+                )
+            )
+            {
+                broadcast = CreateUntargetedBroadcastDelegate(messageType);
+                _untargetedBroadcastMethodsByType[messageType] = broadcast;
+            }
             broadcast.Invoke(typedMessage);
         }
 
@@ -2863,6 +2925,7 @@ namespace DxMessaging.Core.MessageBus
         public void UntargetedBroadcast<TMessage>(ref TMessage typedMessage)
             where TMessage : IUntargetedMessage
         {
+            EnsureAotUntargetedBridge<TMessage>();
             TrySweepIdle();
             using DispatchLease dispatchLease = EnterDispatch();
             unchecked
@@ -2998,29 +3061,32 @@ namespace DxMessaging.Core.MessageBus
         public void UntypedTargetedBroadcast(InstanceId target, ITargetedMessage typedMessage)
         {
             Type messageType = typedMessage.MessageType;
-            if (!_broadcastMethodsByType.TryGetValue(messageType, out object targetedMethod))
+            if (RequiresAotUntypedDispatch)
             {
-                // ReSharper disable once PossibleNullReferenceException
-                MethodInfo broadcastMethod = MessageBusType
-                    .GetMethod(nameof(TargetedBroadcast))
-                    .MakeGenericMethod(messageType);
-                // ReSharper disable once PossibleNullReferenceException
-                MethodInfo helperMethod = MessageBusType
-                    .GetMethod(
-                        nameof(TargetedBroadcastReflectionHelper),
-                        ReflectionHelperBindingFlags
-                    )
-                    .MakeGenericMethod(messageType);
+                if (
+                    Volatile
+                        .Read(ref _aotTargetedBroadcastsByType)
+                        .TryGetValue(messageType, out var bridge)
+                )
+                {
+                    bridge(this, target, typedMessage);
+                    return;
+                }
 
-                ReflectionMethodArgumentsCache[0] = this;
-                ReflectionMethodArgumentsCache[1] = broadcastMethod;
-                targetedMethod = helperMethod.Invoke(null, ReflectionMethodArgumentsCache);
-                _broadcastMethodsByType[messageType] = targetedMethod;
+                ThrowMissingAotBridge(messageType, "targeted");
+                return;
             }
 
-            Action<InstanceId, ITargetedMessage> broadcast = DxUnsafe.As<
-                Action<InstanceId, ITargetedMessage>
-            >(targetedMethod);
+            if (
+                !_targetedBroadcastMethodsByType.TryGetValue(
+                    messageType,
+                    out Action<InstanceId, ITargetedMessage> broadcast
+                )
+            )
+            {
+                broadcast = CreateTargetedBroadcastDelegate(messageType);
+                _targetedBroadcastMethodsByType[messageType] = broadcast;
+            }
             broadcast.Invoke(target, typedMessage);
         }
 
@@ -3028,6 +3094,7 @@ namespace DxMessaging.Core.MessageBus
         public void TargetedBroadcast<TMessage>(ref InstanceId target, ref TMessage typedMessage)
             where TMessage : ITargetedMessage
         {
+            EnsureAotTargetedBridge<TMessage>();
             TrySweepIdle();
             using DispatchLease dispatchLease = EnterDispatch();
             unchecked
@@ -4018,32 +4085,32 @@ namespace DxMessaging.Core.MessageBus
         public void UntypedSourcedBroadcast(InstanceId source, IBroadcastMessage typedMessage)
         {
             Type messageType = typedMessage.MessageType;
-            if (
-                !_broadcastMethodsByType.TryGetValue(messageType, out object sourcedBroadcastMethod)
-            )
+            if (RequiresAotUntypedDispatch)
             {
-                // ReSharper disable once PossibleNullReferenceException
-                MethodInfo broadcastMethod = MessageBusType
-                    .GetMethod(nameof(SourcedBroadcast))
-                    .MakeGenericMethod(messageType);
-                // ReSharper disable once PossibleNullReferenceException
-                MethodInfo helperMethod = MessageBusType
-                    .GetMethod(
-                        nameof(SourcedBroadcastReflectionHelper),
-                        ReflectionHelperBindingFlags
-                    )
-                    .MakeGenericMethod(messageType);
+                if (
+                    Volatile
+                        .Read(ref _aotSourcedBroadcastsByType)
+                        .TryGetValue(messageType, out var bridge)
+                )
+                {
+                    bridge(this, source, typedMessage);
+                    return;
+                }
 
-                ReflectionMethodArgumentsCache[0] = this;
-                ReflectionMethodArgumentsCache[1] = broadcastMethod;
-                sourcedBroadcastMethod = helperMethod.Invoke(null, ReflectionMethodArgumentsCache);
-
-                _broadcastMethodsByType[messageType] = sourcedBroadcastMethod;
+                ThrowMissingAotBridge(messageType, "sourced broadcast");
+                return;
             }
 
-            Action<InstanceId, IBroadcastMessage> broadcast = DxUnsafe.As<
-                Action<InstanceId, IBroadcastMessage>
-            >(sourcedBroadcastMethod);
+            if (
+                !_sourcedBroadcastMethodsByType.TryGetValue(
+                    messageType,
+                    out Action<InstanceId, IBroadcastMessage> broadcast
+                )
+            )
+            {
+                broadcast = CreateSourcedBroadcastDelegate(messageType);
+                _sourcedBroadcastMethodsByType[messageType] = broadcast;
+            }
             broadcast.Invoke(source, typedMessage);
         }
 
@@ -4051,6 +4118,7 @@ namespace DxMessaging.Core.MessageBus
         public void SourcedBroadcast<TMessage>(ref InstanceId source, ref TMessage typedMessage)
             where TMessage : IBroadcastMessage
         {
+            EnsureAotSourcedBridge<TMessage>();
             TrySweepIdle();
             using DispatchLease dispatchLease = EnterDispatch();
             unchecked
@@ -7400,6 +7468,300 @@ namespace DxMessaging.Core.MessageBus
             return cache.cache;
         }
 
+        [Conditional("ENABLE_IL2CPP")]
+        private static void EnsureAotUntargetedBridge<T>()
+            where T : IUntargetedMessage
+        {
+            if (AotBridgeState<T>.UntargetedRegistered)
+            {
+                return;
+            }
+
+            RegisterAotUntargetedBridge(
+                typeof(T),
+                (Action<IMessageBus, IUntargetedMessage>)AotUntargetedBroadcast<T>
+            );
+            AotBridgeState<T>.UntargetedRegistered = true;
+        }
+
+        [Conditional("ENABLE_IL2CPP")]
+        private static void EnsureAotTargetedBridge<T>()
+            where T : ITargetedMessage
+        {
+            if (AotBridgeState<T>.TargetedRegistered)
+            {
+                return;
+            }
+
+            RegisterAotTargetedBridge(
+                typeof(T),
+                (Action<IMessageBus, InstanceId, ITargetedMessage>)AotTargetedBroadcast<T>
+            );
+            AotBridgeState<T>.TargetedRegistered = true;
+        }
+
+        [Conditional("ENABLE_IL2CPP")]
+        private static void EnsureAotSourcedBridge<T>()
+            where T : IBroadcastMessage
+        {
+            if (AotBridgeState<T>.SourcedRegistered)
+            {
+                return;
+            }
+
+            RegisterAotSourcedBridge(
+                typeof(T),
+                (Action<IMessageBus, InstanceId, IBroadcastMessage>)AotSourcedBroadcast<T>
+            );
+            AotBridgeState<T>.SourcedRegistered = true;
+        }
+
+#if UNITY_2021_3_OR_NEWER
+        [UnityEngine.Scripting.Preserve]
+#endif
+        private static void RegisterAotUntargetedBridge(Type messageType, Delegate bridge)
+        {
+            if (messageType == null)
+            {
+                throw new ArgumentNullException(nameof(messageType));
+            }
+
+            if (bridge is not Action<IMessageBus, IUntargetedMessage> typedBridge)
+            {
+                throw new ArgumentException(
+                    "AOT untargeted bridge must be Action<IMessageBus, IUntargetedMessage>.",
+                    nameof(bridge)
+                );
+            }
+
+            lock (AotBridgeRegistryLock)
+            {
+                if (
+                    _aotUntargetedBroadcastsByType.TryGetValue(
+                        messageType,
+                        out Action<IMessageBus, IUntargetedMessage> existing
+                    )
+                    && existing == typedBridge
+                )
+                {
+                    return;
+                }
+
+                var updated = new Dictionary<Type, Action<IMessageBus, IUntargetedMessage>>(
+                    _aotUntargetedBroadcastsByType
+                )
+                {
+                    [messageType] = typedBridge,
+                };
+                Volatile.Write(ref _aotUntargetedBroadcastsByType, updated);
+            }
+        }
+
+#if UNITY_2021_3_OR_NEWER
+        [UnityEngine.Scripting.Preserve]
+#endif
+        private static void RegisterAotTargetedBridge(Type messageType, Delegate bridge)
+        {
+            if (messageType == null)
+            {
+                throw new ArgumentNullException(nameof(messageType));
+            }
+
+            if (bridge is not Action<IMessageBus, InstanceId, ITargetedMessage> typedBridge)
+            {
+                throw new ArgumentException(
+                    "AOT targeted bridge must be Action<IMessageBus, InstanceId, ITargetedMessage>.",
+                    nameof(bridge)
+                );
+            }
+
+            lock (AotBridgeRegistryLock)
+            {
+                if (
+                    _aotTargetedBroadcastsByType.TryGetValue(
+                        messageType,
+                        out Action<IMessageBus, InstanceId, ITargetedMessage> existing
+                    )
+                    && existing == typedBridge
+                )
+                {
+                    return;
+                }
+
+                var updated = new Dictionary<
+                    Type,
+                    Action<IMessageBus, InstanceId, ITargetedMessage>
+                >(_aotTargetedBroadcastsByType)
+                {
+                    [messageType] = typedBridge,
+                };
+                Volatile.Write(ref _aotTargetedBroadcastsByType, updated);
+            }
+        }
+
+#if UNITY_2021_3_OR_NEWER
+        [UnityEngine.Scripting.Preserve]
+#endif
+        private static void RegisterAotSourcedBridge(Type messageType, Delegate bridge)
+        {
+            if (messageType == null)
+            {
+                throw new ArgumentNullException(nameof(messageType));
+            }
+
+            if (bridge is not Action<IMessageBus, InstanceId, IBroadcastMessage> typedBridge)
+            {
+                throw new ArgumentException(
+                    "AOT sourced bridge must be Action<IMessageBus, InstanceId, IBroadcastMessage>.",
+                    nameof(bridge)
+                );
+            }
+
+            lock (AotBridgeRegistryLock)
+            {
+                if (
+                    _aotSourcedBroadcastsByType.TryGetValue(
+                        messageType,
+                        out Action<IMessageBus, InstanceId, IBroadcastMessage> existing
+                    )
+                    && existing == typedBridge
+                )
+                {
+                    return;
+                }
+
+                var updated = new Dictionary<
+                    Type,
+                    Action<IMessageBus, InstanceId, IBroadcastMessage>
+                >(_aotSourcedBroadcastsByType)
+                {
+                    [messageType] = typedBridge,
+                };
+                Volatile.Write(ref _aotSourcedBroadcastsByType, updated);
+            }
+        }
+
+        private static void AotUntargetedBroadcast<T>(
+            IMessageBus messageBus,
+            IUntargetedMessage message
+        )
+            where T : IUntargetedMessage
+        {
+            if (typeof(T).IsValueType)
+            {
+                object box = message;
+                ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
+                messageBus.UntargetedBroadcast(ref typedRef);
+                return;
+            }
+
+            T typedMessage = (T)message;
+            messageBus.UntargetedBroadcast(ref typedMessage);
+        }
+
+        private static void AotTargetedBroadcast<T>(
+            IMessageBus messageBus,
+            InstanceId target,
+            ITargetedMessage message
+        )
+            where T : ITargetedMessage
+        {
+            if (typeof(T).IsValueType)
+            {
+                object box = message;
+                ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
+                messageBus.TargetedBroadcast(ref target, ref typedRef);
+                return;
+            }
+
+            T typedMessage = (T)message;
+            messageBus.TargetedBroadcast(ref target, ref typedMessage);
+        }
+
+        private static void AotSourcedBroadcast<T>(
+            IMessageBus messageBus,
+            InstanceId source,
+            IBroadcastMessage message
+        )
+            where T : IBroadcastMessage
+        {
+            if (typeof(T).IsValueType)
+            {
+                object box = message;
+                ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
+                messageBus.SourcedBroadcast(ref source, ref typedRef);
+                return;
+            }
+
+            T typedMessage = (T)message;
+            messageBus.SourcedBroadcast(ref source, ref typedMessage);
+        }
+
+        private static void ThrowMissingAotBridge(Type messageType, string dispatchKind)
+        {
+            throw new InvalidOperationException(
+                "DxMessaging cannot perform untyped "
+                    + dispatchKind
+                    + " dispatch for message type '"
+                    + messageType.FullName
+                    + "' under an AOT scripting backend because no rooted dispatch bridge was registered. "
+                    + "Use a source-visible concrete message type, annotate it with the DxMessaging message attribute, "
+                    + "or touch the generic registration or typed dispatch path for that concrete type before untyped dispatch."
+            );
+        }
+
+        private Action<IUntargetedMessage> CreateUntargetedBroadcastDelegate(Type messageType)
+        {
+            // ReSharper disable once PossibleNullReferenceException
+            MethodInfo broadcastMethod = MessageBusType
+                .GetMethod(nameof(UntargetedBroadcast))
+                .MakeGenericMethod(messageType);
+            // ReSharper disable once PossibleNullReferenceException
+            MethodInfo helperMethod = MessageBusType
+                .GetMethod(
+                    nameof(UntargetedBroadcastReflectionHelper),
+                    ReflectionHelperBindingFlags
+                )
+                .MakeGenericMethod(messageType);
+
+            return (Action<IUntargetedMessage>)
+                helperMethod.Invoke(null, new object[] { this, broadcastMethod });
+        }
+
+        private Action<InstanceId, ITargetedMessage> CreateTargetedBroadcastDelegate(
+            Type messageType
+        )
+        {
+            // ReSharper disable once PossibleNullReferenceException
+            MethodInfo broadcastMethod = MessageBusType
+                .GetMethod(nameof(TargetedBroadcast))
+                .MakeGenericMethod(messageType);
+            // ReSharper disable once PossibleNullReferenceException
+            MethodInfo helperMethod = MessageBusType
+                .GetMethod(nameof(TargetedBroadcastReflectionHelper), ReflectionHelperBindingFlags)
+                .MakeGenericMethod(messageType);
+
+            return (Action<InstanceId, ITargetedMessage>)
+                helperMethod.Invoke(null, new object[] { this, broadcastMethod });
+        }
+
+        private Action<InstanceId, IBroadcastMessage> CreateSourcedBroadcastDelegate(
+            Type messageType
+        )
+        {
+            // ReSharper disable once PossibleNullReferenceException
+            MethodInfo broadcastMethod = MessageBusType
+                .GetMethod(nameof(SourcedBroadcast))
+                .MakeGenericMethod(messageType);
+            // ReSharper disable once PossibleNullReferenceException
+            MethodInfo helperMethod = MessageBusType
+                .GetMethod(nameof(SourcedBroadcastReflectionHelper), ReflectionHelperBindingFlags)
+                .MakeGenericMethod(messageType);
+
+            return (Action<InstanceId, IBroadcastMessage>)
+                helperMethod.Invoke(null, new object[] { this, broadcastMethod });
+        }
+
         // https://blogs.msmvps.com/jonskeet/2008/08/09/making-reflection-fly-and-exploring-delegates/
         private static Action<IUntargetedMessage> UntargetedBroadcastReflectionHelper<T>(
             IMessageBus messageBus,
@@ -7424,12 +7786,11 @@ namespace DxMessaging.Core.MessageBus
                     object box = message;
                     ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
                     untargetedBroadcast(ref typedRef);
+                    return;
                 }
-                else
-                {
-                    T typedMessage = (T)message;
-                    untargetedBroadcast(ref typedMessage);
-                }
+
+                T typedMessage = (T)message;
+                untargetedBroadcast(ref typedMessage);
             }
         }
 
@@ -7456,12 +7817,11 @@ namespace DxMessaging.Core.MessageBus
                     object box = message;
                     ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
                     targetedBroadcast(ref target, ref typedRef);
+                    return;
                 }
-                else
-                {
-                    T typedMessage = (T)message;
-                    targetedBroadcast(ref target, ref typedMessage);
-                }
+
+                T typedMessage = (T)message;
+                targetedBroadcast(ref target, ref typedMessage);
             }
         }
 
@@ -7488,12 +7848,11 @@ namespace DxMessaging.Core.MessageBus
                     object box = message;
                     ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
                     sourcedBroadcast(ref target, ref typedRef);
+                    return;
                 }
-                else
-                {
-                    T typedMessage = (T)message;
-                    sourcedBroadcast(ref target, ref typedMessage);
-                }
+
+                T typedMessage = (T)message;
+                sourcedBroadcast(ref target, ref typedMessage);
             }
         }
 

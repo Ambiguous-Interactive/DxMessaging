@@ -67,8 +67,47 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             INamedTypeSymbol TypeSymbol,
             TypeDeclarationSyntax DeclarationSyntax,
             string TargetInterfaceFullName,
+            bool RegistersUntargetedAotBridge,
+            bool RegistersTargetedAotBridge,
+            bool RegistersBroadcastAotBridge,
             bool HasConflictingMessageAttributes
         );
+
+        private record struct AotRegistrarInfo(
+            INamedTypeSymbol TypeSymbol,
+            bool RegistersUntargetedAotBridge,
+            bool RegistersTargetedAotBridge,
+            bool RegistersBroadcastAotBridge,
+            bool HasMessageAttribute
+        );
+
+        private record struct AotRegistrarSourceInfo(
+            AotRegistrarInfo Info,
+            string TypeName,
+            string Suffix
+        );
+
+        private readonly struct SemanticTargetInfo
+        {
+            public SemanticTargetInfo(
+                MessageToGenerateInfo? messageToGenerate,
+                AotRegistrarInfo? aotRegistrar
+            )
+            {
+                MessageToGenerate = messageToGenerate;
+                AotRegistrar = aotRegistrar;
+            }
+
+            public MessageToGenerateInfo? MessageToGenerate { get; }
+            public AotRegistrarInfo? AotRegistrar { get; }
+        }
+
+        private enum AotBridgeKind
+        {
+            Untargeted,
+            Targeted,
+            Broadcast,
+        }
 
         /// <summary>
         /// Configures syntax collection for deterministic message identifier generation.
@@ -86,35 +125,79 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 return;
             }
 
-            ImmutableArray<MessageToGenerateInfo> typesToGenerate = receiver
-                .Candidates.Select(typeDeclarationSyntax =>
-                    GetSemanticTargetForGeneration(
-                        typeDeclarationSyntax,
-                        context.Compilation,
-                        context.CancellationToken
-                    )
-                )
-                .Where(static target => target.HasValue)
-                .Select(static target => target!.Value)
-                .ToImmutableArray();
+            List<MessageToGenerateInfo> typesToGenerate = new();
+            List<AotRegistrarInfo> aotTypes = new();
+            foreach (TypeDeclarationSyntax typeDeclarationSyntax in receiver.Candidates)
+            {
+                SemanticTargetInfo? targetInfo = GetSemanticTarget(
+                    typeDeclarationSyntax,
+                    context.Compilation,
+                    context.CancellationToken
+                );
+                if (!targetInfo.HasValue)
+                {
+                    continue;
+                }
 
-            Execute(typesToGenerate, context);
+                if (targetInfo.Value.MessageToGenerate.HasValue)
+                {
+                    typesToGenerate.Add(targetInfo.Value.MessageToGenerate.Value);
+                }
+                if (targetInfo.Value.AotRegistrar.HasValue)
+                {
+                    aotTypes.Add(targetInfo.Value.AotRegistrar.Value);
+                }
+            }
+
+            Execute(typesToGenerate.ToImmutableArray(), aotTypes.ToImmutableArray(), context);
         }
 
-        private static bool IsSyntaxTargetForGeneration(SyntaxNode node) =>
-            node is TypeDeclarationSyntax { AttributeLists.Count: > 0 } typeDecl
-            && (
-                typeDecl.IsKind(SyntaxKind.ClassDeclaration)
-                || typeDecl.IsKind(SyntaxKind.StructDeclaration)
-                || typeDecl.IsKind(SyntaxKind.RecordDeclaration)
+        private static bool IsSyntaxTargetForGeneration(SyntaxNode node)
+        {
+            if (node is not TypeDeclarationSyntax typeDecl || !IsSupportedTypeDeclaration(typeDecl))
+            {
+                return false;
+            }
+
+            return typeDecl.AttributeLists.Count > 0 || HasRelevantMessageBaseType(typeDecl);
+        }
+
+        private static bool IsSupportedTypeDeclaration(TypeDeclarationSyntax typeDeclarationSyntax)
+        {
+            return typeDeclarationSyntax.IsKind(SyntaxKind.ClassDeclaration)
+                || typeDeclarationSyntax.IsKind(SyntaxKind.StructDeclaration)
+                || typeDeclarationSyntax.IsKind(SyntaxKind.RecordDeclaration)
                 || string.Equals(
-                    typeDecl.Kind().ToString(),
+                    typeDeclarationSyntax.Kind().ToString(),
                     "RecordStructDeclaration",
                     StringComparison.Ordinal
-                )
-            );
+                );
+        }
 
-        private static MessageToGenerateInfo? GetSemanticTargetForGeneration(
+        private static bool HasRelevantMessageBaseType(TypeDeclarationSyntax typeDeclarationSyntax)
+        {
+            if (typeDeclarationSyntax.BaseList is null)
+            {
+                return false;
+            }
+
+            foreach (BaseTypeSyntax baseType in typeDeclarationSyntax.BaseList.Types)
+            {
+                string baseTypeName = baseType.Type.ToString();
+                if (
+                    baseTypeName.IndexOf("IUntargetedMessage", StringComparison.Ordinal) >= 0
+                    || baseTypeName.IndexOf("ITargetedMessage", StringComparison.Ordinal) >= 0
+                    || baseTypeName.IndexOf("IBroadcastMessage", StringComparison.Ordinal) >= 0
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static SemanticTargetInfo? GetSemanticTarget(
             TypeDeclarationSyntax typeDeclarationSyntax,
             Compilation compilation,
             CancellationToken cancellationToken
@@ -142,6 +225,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             string foundTargetInterface = null;
             bool multipleAttributes = false;
+            bool hasUntargetedAttribute = false;
+            bool hasTargetedAttribute = false;
+            bool hasBroadcastAttribute = false;
 
             // Check attributes to find the specific message type (Broadcast, Targeted, etc.)
             foreach (AttributeData attributeData in typeSymbol.GetAttributes())
@@ -154,12 +240,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 {
                     case BroadcastAttrFullName:
                         targetInterfaceForThisAttribute = BroadcastInterfaceFullName;
+                        hasBroadcastAttribute = true;
                         break;
                     case TargetedAttrFullName:
                         targetInterfaceForThisAttribute = TargetedInterfaceFullName;
+                        hasTargetedAttribute = true;
                         break;
                     case UntargetedAttrFullName:
                         targetInterfaceForThisAttribute = UntargetedInterfaceFullName;
+                        hasUntargetedAttribute = true;
                         break;
                 }
 
@@ -184,27 +273,92 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             if (foundTargetInterface == null && !multipleAttributes)
             {
-                return null;
+                bool registersUntargeted = ImplementsInterface(
+                    typeSymbol,
+                    UntargetedInterfaceFullName
+                );
+                bool registersTargeted = ImplementsInterface(typeSymbol, TargetedInterfaceFullName);
+                bool registersBroadcast = ImplementsInterface(
+                    typeSymbol,
+                    BroadcastInterfaceFullName
+                );
+
+                if (!registersUntargeted && !registersTargeted && !registersBroadcast)
+                {
+                    return null;
+                }
+
+                AotRegistrarInfo? manualRegistrar = ContainsTypeParameters(typeSymbol)
+                    ? null
+                    : new AotRegistrarInfo(
+                        typeSymbol,
+                        registersUntargeted,
+                        registersTargeted,
+                        registersBroadcast,
+                        HasMessageAttribute: false
+                    );
+                return new SemanticTargetInfo(null, manualRegistrar);
             }
 
-            return new MessageToGenerateInfo(
+            bool implementsUntargeted = ImplementsInterface(
+                typeSymbol,
+                UntargetedInterfaceFullName
+            );
+            bool implementsTargeted = ImplementsInterface(typeSymbol, TargetedInterfaceFullName);
+            bool implementsBroadcast = ImplementsInterface(typeSymbol, BroadcastInterfaceFullName);
+
+            MessageToGenerateInfo messageToGenerate = new MessageToGenerateInfo(
                 typeSymbol,
                 typeDeclarationSyntax,
                 foundTargetInterface,
+                hasUntargetedAttribute || implementsUntargeted,
+                hasTargetedAttribute || implementsTargeted,
+                hasBroadcastAttribute || implementsBroadcast,
                 multipleAttributes
             );
+
+            AotRegistrarInfo? attributedRegistrar =
+                multipleAttributes || ContainsTypeParameters(typeSymbol)
+                    ? null
+                    : new AotRegistrarInfo(
+                        typeSymbol,
+                        hasUntargetedAttribute || implementsUntargeted,
+                        hasTargetedAttribute || implementsTargeted,
+                        hasBroadcastAttribute || implementsBroadcast,
+                        HasMessageAttribute: true
+                    );
+
+            return new SemanticTargetInfo(messageToGenerate, attributedRegistrar);
+        }
+
+        private static bool ImplementsInterface(
+            INamedTypeSymbol typeSymbol,
+            string interfaceFullName
+        )
+        {
+            foreach (INamedTypeSymbol interfaceSymbol in typeSymbol.AllInterfaces)
+            {
+                if (
+                    string.Equals(
+                        interfaceSymbol.ToDisplayString(),
+                        interfaceFullName,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void Execute(
             ImmutableArray<MessageToGenerateInfo> typesToGenerate,
+            ImmutableArray<AotRegistrarInfo> aotTypes,
             GeneratorExecutionContext context
         )
         {
-            if (typesToGenerate.IsDefaultOrEmpty)
-            {
-                return;
-            }
-
             // --- Step 1: Filter out types with multiple attributes applied ---
             Dictionary<ISymbol, MessageToGenerateInfo> uniqueTypes = new Dictionary<
                 ISymbol,
@@ -273,11 +427,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
             }
 
-            if (uniqueTypes.Count == 0)
-            {
-                return;
-            }
-
             List<MessageToGenerateInfo> validSingleAttrTypes = new List<MessageToGenerateInfo>();
             foreach (KeyValuePair<ISymbol, MessageToGenerateInfo> entry in uniqueTypes)
             {
@@ -289,12 +438,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 validSingleAttrTypes.Add(entry.Value);
             }
 
-            if (validSingleAttrTypes.Count == 0)
-            {
-                return;
-            }
-
             // --- Step 2: Generate sources for each valid message type ---
+            HashSet<ISymbol> generatedAttributedTypes = new HashSet<ISymbol>(
+                SymbolEqualityComparer.Default
+            );
             foreach (MessageToGenerateInfo messageInfo in validSingleAttrTypes)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
@@ -354,10 +501,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
 
                 // Generate the partial IMessage implementation source
-                string implSource = GenerateImplementationSource(
-                    targetInterfaceFullName,
-                    messageInfo.TypeSymbol
-                );
+                string implSource = GenerateImplementationSource(messageInfo);
                 string implHintName =
                     $"{messageInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.IMessage.g.cs"
                         .Replace("global::", "")
@@ -366,7 +510,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         .Replace(",", "_"); // Clean hint name
 
                 context.AddSource(implHintName, SourceText.From(implSource, Encoding.UTF8));
+                generatedAttributedTypes.Add(messageInfo.TypeSymbol);
             }
+
+            GenerateTopLevelAotRegistrar(aotTypes, generatedAttributedTypes, context);
         }
 
         private sealed class TypeSyntaxReceiver : ISyntaxReceiver
@@ -384,11 +531,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         // Generates the partial class/struct implementing IMessage
-        private static string GenerateImplementationSource(
-            string targetInterfaceFullName, // e.g., IBroadcastMessage
-            INamedTypeSymbol typeSymbol
-        )
+        private static string GenerateImplementationSource(MessageToGenerateInfo messageInfo)
         {
+            string targetInterfaceFullName = messageInfo.TargetInterfaceFullName;
+            INamedTypeSymbol typeSymbol = messageInfo.TypeSymbol;
             string namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
                 ? string.Empty
                 : typeSymbol.ContainingNamespace.ToDisplayString();
@@ -480,6 +626,13 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             };
 
             string interfaceDeclaration = $", global::{targetInterfaceFullName}";
+            string aotBridgeSource = ContainsTypeParameters(typeSymbol)
+                ? string.Empty
+                : GenerateTypeScopedAotBridgeSource(
+                    messageInfo,
+                    fullyQualifiedName,
+                    innerIndent + Indent
+                );
 
             // Close containers string
             for (int i = 0; i < containers.Count; i++)
@@ -502,10 +655,486 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 {{innerIndent}}{
                 {{innerIndent}}    /// <inheritdoc/>
                 {{innerIndent}}    public global::System.Type MessageType => typeof({{fullyQualifiedName}});
+                {{aotBridgeSource}}
                 {{innerIndent}}}
                 {{containersClose}}
                 {{namespaceBlockClose}}
                 """;
+        }
+
+        private static string GenerateTypeScopedAotBridgeSource(
+            MessageToGenerateInfo messageInfo,
+            string fullyQualifiedName,
+            string indent
+        )
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine();
+            builder.Append(indent).AppendLine("#if ENABLE_IL2CPP && UNITY_2021_3_OR_NEWER");
+            builder.Append(indent).AppendLine("[global::UnityEngine.Scripting.Preserve]");
+            builder
+                .Append(indent)
+                .AppendLine(
+                    "[global::UnityEngine.RuntimeInitializeOnLoadMethod(global::UnityEngine.RuntimeInitializeLoadType.AfterAssembliesLoaded)]"
+                );
+            builder
+                .Append(indent)
+                .AppendLine("private static void __DxMessagingRegisterAotBridges()");
+            builder.Append(indent).AppendLine("{");
+            if (messageInfo.RegistersUntargetedAotBridge)
+            {
+                AppendAotRegisterCall(
+                    builder,
+                    indent + "    ",
+                    "RegisterAotUntargetedBridge",
+                    AotBridgeKind.Untargeted,
+                    fullyQualifiedName,
+                    "__DxMessagingAotUntargetedBridge"
+                );
+            }
+            if (messageInfo.RegistersTargetedAotBridge)
+            {
+                AppendAotRegisterCall(
+                    builder,
+                    indent + "    ",
+                    "RegisterAotTargetedBridge",
+                    AotBridgeKind.Targeted,
+                    fullyQualifiedName,
+                    "__DxMessagingAotTargetedBridge"
+                );
+            }
+            if (messageInfo.RegistersBroadcastAotBridge)
+            {
+                AppendAotRegisterCall(
+                    builder,
+                    indent + "    ",
+                    "RegisterAotSourcedBridge",
+                    AotBridgeKind.Broadcast,
+                    fullyQualifiedName,
+                    "__DxMessagingAotSourcedBridge"
+                );
+            }
+            builder.Append(indent).AppendLine("}");
+
+            AppendAotReflectionHelper(builder, indent);
+            if (messageInfo.RegistersUntargetedAotBridge)
+            {
+                AppendUntargetedBridgeMethod(
+                    builder,
+                    indent,
+                    "__DxMessagingAotUntargetedBridge",
+                    fullyQualifiedName
+                );
+            }
+            if (messageInfo.RegistersTargetedAotBridge)
+            {
+                AppendTargetedBridgeMethod(
+                    builder,
+                    indent,
+                    "__DxMessagingAotTargetedBridge",
+                    fullyQualifiedName
+                );
+            }
+            if (messageInfo.RegistersBroadcastAotBridge)
+            {
+                AppendBroadcastBridgeMethod(
+                    builder,
+                    indent,
+                    "__DxMessagingAotSourcedBridge",
+                    fullyQualifiedName
+                );
+            }
+
+            builder.Append(indent).Append("#endif");
+            return builder.ToString();
+        }
+
+        private static void GenerateTopLevelAotRegistrar(
+            ImmutableArray<AotRegistrarInfo> aotTypes,
+            HashSet<ISymbol> generatedAttributedTypes,
+            GeneratorExecutionContext context
+        )
+        {
+            if (aotTypes.IsDefaultOrEmpty)
+            {
+                return;
+            }
+
+            List<AotRegistrarInfo> registrarTypes = aotTypes
+                .Where(info =>
+                    !info.HasMessageAttribute
+                    && !generatedAttributedTypes.Contains(info.TypeSymbol)
+                    && IsAccessibleFromTopLevelRegistrar(info.TypeSymbol)
+                )
+                .GroupBy(info => info.TypeSymbol, SymbolEqualityComparer.Default)
+                .Select(group =>
+                {
+                    AotRegistrarInfo merged = default;
+                    bool hasValue = false;
+                    foreach (AotRegistrarInfo info in group)
+                    {
+                        if (!hasValue)
+                        {
+                            merged = info;
+                            hasValue = true;
+                            continue;
+                        }
+
+                        merged = new AotRegistrarInfo(
+                            info.TypeSymbol,
+                            merged.RegistersUntargetedAotBridge
+                                || info.RegistersUntargetedAotBridge,
+                            merged.RegistersTargetedAotBridge || info.RegistersTargetedAotBridge,
+                            merged.RegistersBroadcastAotBridge || info.RegistersBroadcastAotBridge,
+                            merged.HasMessageAttribute || info.HasMessageAttribute
+                        );
+                    }
+
+                    return merged;
+                })
+                .OrderBy(
+                    info =>
+                        info.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    StringComparer.Ordinal
+                )
+                .ToList();
+
+            if (registrarTypes.Count == 0)
+            {
+                return;
+            }
+
+            string source = GenerateTopLevelAotRegistrarSource(registrarTypes);
+            context.AddSource(
+                "DxMessaging.Il2CppMessageRegistrar.g.cs",
+                SourceText.From(source, Encoding.UTF8)
+            );
+        }
+
+        private static string GenerateTopLevelAotRegistrarSource(List<AotRegistrarInfo> types)
+        {
+            const string Indent = "        ";
+            List<AotRegistrarSourceInfo> sourceTypes = types
+                .Select(
+                    (info, index) =>
+                    {
+                        string typeName = info.TypeSymbol.ToDisplayString(
+                            SymbolDisplayFormat.FullyQualifiedFormat
+                        );
+                        return new AotRegistrarSourceInfo(
+                            info,
+                            typeName,
+                            index + "_" + SanitizeIdentifier(typeName)
+                        );
+                    }
+                )
+                .ToList();
+
+            var builder = new StringBuilder();
+            builder.AppendLine("// <auto-generated by DxMessageIdGenerator/>");
+            builder.AppendLine("#pragma warning disable");
+            builder.AppendLine("#nullable enable annotations");
+            builder.AppendLine("#if ENABLE_IL2CPP && UNITY_2021_3_OR_NEWER");
+            builder.AppendLine("namespace DxMessaging.Generated");
+            builder.AppendLine("{");
+            builder.AppendLine("    [global::UnityEngine.Scripting.Preserve]");
+            builder.AppendLine("    internal static class DxMessagingIl2CppMessageRegistrar");
+            builder.AppendLine("    {");
+            builder.AppendLine(
+                "        [global::UnityEngine.RuntimeInitializeOnLoadMethod(global::UnityEngine.RuntimeInitializeLoadType.AfterAssembliesLoaded)]"
+            );
+            builder.AppendLine("        private static void Register()");
+            builder.AppendLine("        {");
+            foreach (AotRegistrarSourceInfo sourceInfo in sourceTypes)
+            {
+                AotRegistrarInfo info = sourceInfo.Info;
+                string typeName = sourceInfo.TypeName;
+                string suffix = sourceInfo.Suffix;
+                if (info.RegistersUntargetedAotBridge)
+                {
+                    AppendAotRegisterCall(
+                        builder,
+                        Indent + "    ",
+                        "RegisterAotUntargetedBridge",
+                        AotBridgeKind.Untargeted,
+                        typeName,
+                        "__DxMessagingAotUntargetedBridge_" + suffix
+                    );
+                }
+                if (info.RegistersTargetedAotBridge)
+                {
+                    AppendAotRegisterCall(
+                        builder,
+                        Indent + "    ",
+                        "RegisterAotTargetedBridge",
+                        AotBridgeKind.Targeted,
+                        typeName,
+                        "__DxMessagingAotTargetedBridge_" + suffix
+                    );
+                }
+                if (info.RegistersBroadcastAotBridge)
+                {
+                    AppendAotRegisterCall(
+                        builder,
+                        Indent + "    ",
+                        "RegisterAotSourcedBridge",
+                        AotBridgeKind.Broadcast,
+                        typeName,
+                        "__DxMessagingAotSourcedBridge_" + suffix
+                    );
+                }
+            }
+            builder.AppendLine("        }");
+
+            AppendAotReflectionHelper(builder, Indent);
+            foreach (AotRegistrarSourceInfo sourceInfo in sourceTypes)
+            {
+                AotRegistrarInfo info = sourceInfo.Info;
+                string typeName = sourceInfo.TypeName;
+                string suffix = sourceInfo.Suffix;
+                if (info.RegistersUntargetedAotBridge)
+                {
+                    AppendUntargetedBridgeMethod(
+                        builder,
+                        Indent,
+                        "__DxMessagingAotUntargetedBridge_" + suffix,
+                        typeName
+                    );
+                }
+                if (info.RegistersTargetedAotBridge)
+                {
+                    AppendTargetedBridgeMethod(
+                        builder,
+                        Indent,
+                        "__DxMessagingAotTargetedBridge_" + suffix,
+                        typeName
+                    );
+                }
+                if (info.RegistersBroadcastAotBridge)
+                {
+                    AppendBroadcastBridgeMethod(
+                        builder,
+                        Indent,
+                        "__DxMessagingAotSourcedBridge_" + suffix,
+                        typeName
+                    );
+                }
+            }
+
+            builder.AppendLine("    }");
+            builder.AppendLine("}");
+            builder.AppendLine("#endif");
+            return builder.ToString();
+        }
+
+        private static void AppendAotRegisterCall(
+            StringBuilder builder,
+            string indent,
+            string runtimeMethodName,
+            AotBridgeKind bridgeKind,
+            string fullyQualifiedName,
+            string bridgeMethodName
+        )
+        {
+            string delegateType = GetAotDelegateType(bridgeKind);
+            builder
+                .Append(indent)
+                .Append("__DxMessagingRegisterAotBridge(\"")
+                .Append(runtimeMethodName)
+                .Append("\", typeof(")
+                .Append(fullyQualifiedName)
+                .Append("), (")
+                .Append(delegateType)
+                .Append(")")
+                .Append(bridgeMethodName)
+                .AppendLine(");");
+        }
+
+        private static string GetAotDelegateType(AotBridgeKind bridgeKind)
+        {
+            return bridgeKind switch
+            {
+                AotBridgeKind.Untargeted =>
+                    "global::System.Action<global::DxMessaging.Core.MessageBus.IMessageBus, global::DxMessaging.Core.Messages.IUntargetedMessage>",
+                AotBridgeKind.Targeted =>
+                    "global::System.Action<global::DxMessaging.Core.MessageBus.IMessageBus, global::DxMessaging.Core.InstanceId, global::DxMessaging.Core.Messages.ITargetedMessage>",
+                AotBridgeKind.Broadcast =>
+                    "global::System.Action<global::DxMessaging.Core.MessageBus.IMessageBus, global::DxMessaging.Core.InstanceId, global::DxMessaging.Core.Messages.IBroadcastMessage>",
+                _ => throw new ArgumentOutOfRangeException(nameof(bridgeKind)),
+            };
+        }
+
+        private static void AppendAotReflectionHelper(StringBuilder builder, string indent)
+        {
+            builder.AppendLine();
+            builder
+                .Append(indent)
+                .AppendLine(
+                    "private static void __DxMessagingRegisterAotBridge(string methodName, global::System.Type messageType, global::System.Delegate bridge)"
+                );
+            builder.Append(indent).AppendLine("{");
+            builder
+                .Append(indent)
+                .AppendLine(
+                    "    global::System.Reflection.MethodInfo method = typeof(global::DxMessaging.Core.MessageBus.MessageBus).GetMethod(methodName, global::System.Reflection.BindingFlags.Static | global::System.Reflection.BindingFlags.NonPublic);"
+                );
+            builder.Append(indent).AppendLine("    if (method == null)");
+            builder.Append(indent).AppendLine("    {");
+            builder
+                .Append(indent)
+                .AppendLine(
+                    "        throw new global::System.MissingMethodException(\"DxMessaging AOT bridge registration hook was not found: \" + methodName);"
+                );
+            builder.Append(indent).AppendLine("    }");
+            builder
+                .Append(indent)
+                .AppendLine("    method.Invoke(null, new object[] { messageType, bridge });");
+            builder.Append(indent).AppendLine("}");
+        }
+
+        private static void AppendUntargetedBridgeMethod(
+            StringBuilder builder,
+            string indent,
+            string methodName,
+            string fullyQualifiedName
+        )
+        {
+            builder.AppendLine();
+            builder
+                .Append(indent)
+                .AppendLine(
+                    "private static void "
+                        + methodName
+                        + "(global::DxMessaging.Core.MessageBus.IMessageBus messageBus, global::DxMessaging.Core.Messages.IUntargetedMessage message)"
+                );
+            builder.Append(indent).AppendLine("{");
+            builder
+                .Append(indent)
+                .Append("    ")
+                .Append(fullyQualifiedName)
+                .AppendLine(" typedMessage = (" + fullyQualifiedName + ")message;");
+            builder
+                .Append(indent)
+                .AppendLine("    messageBus.UntargetedBroadcast(ref typedMessage);");
+            builder.Append(indent).AppendLine("}");
+        }
+
+        private static void AppendTargetedBridgeMethod(
+            StringBuilder builder,
+            string indent,
+            string methodName,
+            string fullyQualifiedName
+        )
+        {
+            builder.AppendLine();
+            builder
+                .Append(indent)
+                .AppendLine(
+                    "private static void "
+                        + methodName
+                        + "(global::DxMessaging.Core.MessageBus.IMessageBus messageBus, global::DxMessaging.Core.InstanceId target, global::DxMessaging.Core.Messages.ITargetedMessage message)"
+                );
+            builder.Append(indent).AppendLine("{");
+            builder
+                .Append(indent)
+                .Append("    ")
+                .Append(fullyQualifiedName)
+                .AppendLine(" typedMessage = (" + fullyQualifiedName + ")message;");
+            builder
+                .Append(indent)
+                .AppendLine("    messageBus.TargetedBroadcast(ref target, ref typedMessage);");
+            builder.Append(indent).AppendLine("}");
+        }
+
+        private static void AppendBroadcastBridgeMethod(
+            StringBuilder builder,
+            string indent,
+            string methodName,
+            string fullyQualifiedName
+        )
+        {
+            builder.AppendLine();
+            builder
+                .Append(indent)
+                .AppendLine(
+                    "private static void "
+                        + methodName
+                        + "(global::DxMessaging.Core.MessageBus.IMessageBus messageBus, global::DxMessaging.Core.InstanceId source, global::DxMessaging.Core.Messages.IBroadcastMessage message)"
+                );
+            builder.Append(indent).AppendLine("{");
+            builder
+                .Append(indent)
+                .Append("    ")
+                .Append(fullyQualifiedName)
+                .AppendLine(" typedMessage = (" + fullyQualifiedName + ")message;");
+            builder
+                .Append(indent)
+                .AppendLine("    messageBus.SourcedBroadcast(ref source, ref typedMessage);");
+            builder.Append(indent).AppendLine("}");
+        }
+
+        private static bool IsAccessibleFromTopLevelRegistrar(INamedTypeSymbol typeSymbol)
+        {
+            if (ContainsTypeParameters(typeSymbol))
+            {
+                return false;
+            }
+
+            for (
+                INamedTypeSymbol current = typeSymbol;
+                current != null;
+                current = current.ContainingType
+            )
+            {
+                if (!IsAccessibleFromSameAssemblyTopLevel(current.DeclaredAccessibility))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsAccessibleFromSameAssemblyTopLevel(Accessibility accessibility)
+        {
+            return accessibility == Accessibility.Public
+                || accessibility == Accessibility.Internal
+                || accessibility == Accessibility.ProtectedOrInternal;
+        }
+
+        private static bool ContainsTypeParameters(INamedTypeSymbol typeSymbol)
+        {
+            for (
+                INamedTypeSymbol current = typeSymbol;
+                current != null;
+                current = current.ContainingType
+            )
+            {
+                if (current.TypeParameters.Length > 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string SanitizeIdentifier(string value)
+        {
+            var builder = new StringBuilder(value.Length);
+            foreach (char c in value)
+            {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+                {
+                    builder.Append(c);
+                }
+                else
+                {
+                    builder.Append('_');
+                }
+            }
+
+            return builder.ToString();
         }
 
         private static bool IsRecordDeclaration(INamedTypeSymbol symbol)
