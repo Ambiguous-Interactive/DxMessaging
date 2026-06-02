@@ -15,6 +15,7 @@ const yaml = require("js-yaml");
 const { spawnSync } = require("child_process");
 
 const { sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
+const { getPropertyValue, hasElement, getElements } = require("../lib/msbuild-xml");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const CI_RUNNER = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
@@ -331,16 +332,40 @@ describe("generated Unity test harness contract", () => {
       (_label, relPath) => {
         const source = fs.readFileSync(path.join(REPO_ROOT, relPath), "utf8");
 
-        expect(source).toContain(
-          "<MicrosoftCodeAnalysisVersion>3.8.0</MicrosoftCodeAnalysisVersion>"
+        // Pinned to Roslyn 3.8 (not any 4.x). getPropertyValue/hasElement parse
+        // structurally, so this stays correct regardless of XML line-wrapping or
+        // attribute order. The equality check below also rules out any 4.x value.
+        expect(getPropertyValue(source, "MicrosoftCodeAnalysisVersion")).toBe("3.8.0");
+        expect(
+          hasElement(source, {
+            name: "PackageReference",
+            attributes: { Include: "Microsoft.CodeAnalysis.CSharp", Version: "3.8.0" }
+          })
+        ).toBe(true);
+
+        // Structural negative guard preserving the original `not.toMatch(/4\./)`
+        // intent: NO Microsoft.CodeAnalysis.CSharp PackageReference may carry a
+        // 4.x Version, and no <MicrosoftCodeAnalysisVersion> may be 4.x, even if a
+        // stray second occurrence were added later. Enumerated via getElements so
+        // it is invariant to wrapping/attribute order (the old regex was not).
+        const csharpRefs = getElements(source, "PackageReference").filter(
+          (element) => element.attributes.Include === "Microsoft.CodeAnalysis.CSharp"
         );
-        expect(source).toContain(
-          '<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0">'
-        );
-        expect(source).not.toMatch(/<MicrosoftCodeAnalysisVersion>4\./);
-        expect(source).not.toMatch(
-          /<PackageReference Include="Microsoft\.CodeAnalysis\.CSharp" Version="4\./
-        );
+        expect(csharpRefs.length).toBeGreaterThan(0);
+        for (const ref of csharpRefs) {
+          expect(ref.attributes.Version).toBe("3.8.0");
+        }
+        // EVERY declared <MicrosoftCodeAnalysisVersion> (not just the first) must
+        // be the 3.8 pin and never 4.x, mirroring the original GLOBAL negative
+        // regex `not.toMatch(/<MicrosoftCodeAnalysisVersion>4\./)`: a stray second
+        // 4.x element added later anywhere in the file is still caught. Read by
+        // inner value via getElements so it is wrapping/CRLF-invariant.
+        const versionElements = getElements(source, "MicrosoftCodeAnalysisVersion");
+        expect(versionElements.length).toBeGreaterThan(0);
+        for (const element of versionElements) {
+          expect(element.value).toBe("3.8.0");
+          expect(element.value).not.toMatch(/^4\./);
+        }
       }
     );
   });

@@ -35,6 +35,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { getPropertyValue, resolveProperty, getElements } = require("../lib/msbuild-xml");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const PROPS_PATH = path.join(REPO_ROOT, "SourceGenerators", "Directory.Build.props");
@@ -45,68 +46,56 @@ function readProps() {
 }
 
 /**
- * Extract the inner text of a property element, e.g. <OutputPath>X</OutputPath>
- * -> "X". Returns null when the element is absent. Tolerant of attributes on
- * the opening tag (e.g. Condition="...").
- *
- * @param {string} content
- * @param {string} name
- * @returns {string|null}
+ * Element types that can carry a `Condition` attribute gating the build-output
+ * redirect. Scanned structurally so the Tests-only guard is invariant to
+ * line-wrapping / attribute order / CRLF.
  */
-function getPropertyValue(content, name) {
-  const re = new RegExp(`<${name}(?:\\s[^>]*)?>([^<]*)</${name}>`);
-  const match = content.match(re);
-  return match ? match[1].trim() : null;
-}
+const CONDITION_BEARING_ELEMENTS = [
+  "PropertyGroup",
+  "ItemGroup",
+  "Target",
+  "When",
+  "Otherwise",
+  "BaseIntermediateOutputPath",
+  "IntermediateOutputPath",
+  "OutputPath",
+  "ArtifactsRoot",
+  "AnalyzerPayloadOutputDir"
+];
 
 /**
- * Resolve an MSBuild property value by transitively expanding $(Name)
- * references against the other properties declared in the props file.
- * Mirrors MSBuild's evaluation closely enough to assert the final on-disk
- * path. $(SolutionDir) and $(Configuration) are seeded with stand-in values so
- * the resolved string is concrete; unresolved references would leave a literal
- * "$(...)" behind and fail the .artifacts assertion, which is the point.
- *
- * @param {string} content
- * @param {string} name
- * @param {Record<string,string>} [seed]
- * @returns {string|null}
- */
-function resolveProperty(content, name, seed) {
-  const seeds = Object.assign(
-    { SolutionDir: "REPO/", Configuration: "Release", MSBuildProjectName: "ProjName" },
-    seed || {}
-  );
-  const seen = new Set();
-  function expand(propName) {
-    if (seeds[propName] !== undefined) return seeds[propName];
-    if (seen.has(propName)) return "";
-    seen.add(propName);
-    const raw = getPropertyValue(content, propName);
-    if (raw === null) return null;
-    return raw.replace(/\$\(([^)]+)\)/g, (_, inner) => {
-      const expanded = expand(inner);
-      return expanded === null ? "$(" + inner + ")" : expanded;
-    });
-  }
-  return expand(name);
-}
-
-/**
- * Find the opening tags of every <PropertyGroup ...> and capture the value of
- * its Condition attribute (or null when unconditional).
+ * The Condition attribute (or null when unconditional) of every <PropertyGroup>,
+ * read STRUCTURALLY via the shared helper's getElements so it is invariant to
+ * line-wrapping / attribute order / CRLF (no hand-rolled `/<PropertyGroup\b...>/`
+ * open-tag regex, which is exactly the fragile shape this change forbids).
  *
  * @param {string} content
  * @returns {Array<string|null>}
  */
 function propertyGroupConditions(content) {
+  return getElements(content, "PropertyGroup").map((element) =>
+    Object.prototype.hasOwnProperty.call(element.attributes, "Condition")
+      ? element.attributes.Condition
+      : null
+  );
+}
+
+/**
+ * Every Condition attribute value across all condition-bearing element types,
+ * read STRUCTURALLY via getElements (no `Condition[^>]*...` single-line-tag
+ * regex, which is exactly the fragile shape this change exists to forbid).
+ *
+ * @param {string} content
+ * @returns {string[]}
+ */
+function allConditions(content) {
   const conditions = [];
-  const re = /<PropertyGroup\b([^>]*)>/g;
-  let match;
-  while ((match = re.exec(content)) !== null) {
-    const attrs = match[1];
-    const conditionMatch = attrs.match(/Condition\s*=\s*"([^"]*)"/);
-    conditions.push(conditionMatch ? conditionMatch[1] : null);
+  for (const elementName of CONDITION_BEARING_ELEMENTS) {
+    for (const element of getElements(content, elementName)) {
+      if (typeof element.attributes.Condition === "string") {
+        conditions.push(element.attributes.Condition);
+      }
+    }
   }
   return conditions;
 }
@@ -128,9 +117,13 @@ describe("SourceGenerators build-output redirection", () => {
     );
     expect(testsOnly).toEqual([]);
 
-    // And, defensively, the obj/bin redirect properties themselves must not sit
-    // behind any Tests-only condition string anywhere in the file.
-    expect(/Condition[^>]*SourceGenerators\.Tests/.test(content)).toBe(false);
+    // And, defensively, NO condition-bearing element anywhere in the file may
+    // carry a Condition that mentions the Tests project. Read structurally over
+    // every Condition attribute value (not a `Condition[^>]*...` regex).
+    const testsGated = allConditions(content).filter((condition) =>
+      condition.includes("SourceGenerators.Tests")
+    );
+    expect(testsGated).toEqual([]);
   });
 
   test("obj/bin/restore output all redirect under .artifacts keyed on the project name", () => {

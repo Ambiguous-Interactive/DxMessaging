@@ -23,6 +23,7 @@ const {
   isDocQualityRelevant,
   isChangelogCoverageRelevant,
   isSpellcheckRelevant,
+  isXmlBuildContractRelevant,
   formatCspellIssues,
   cspellIssueLocation,
   hasCspellInfrastructureError,
@@ -116,6 +117,18 @@ describe("path classification", () => {
     expect(isSpellcheckRelevant(rel)).toBe(expected);
   });
 
+  test.each([
+    ["SourceGenerators/Directory.Build.props", true],
+    ["SourceGenerators/WallstopStudios.DxMessaging.Analyzer/Analyzer.csproj", true],
+    ["SourceGenerators/Some.targets", true],
+    ["SourceGenerators/Foo.cs", false],
+    ["Directory.Build.props", false],
+    ["Editor/Analyzers/x.dll", false],
+    ["package.json", false]
+  ])("isXmlBuildContractRelevant(%s) === %s", (rel, expected) => {
+    expect(isXmlBuildContractRelevant(rel)).toBe(expected);
+  });
+
   test("spellcheck extension set stays in parity with native pre-push and package scripts", () => {
     const config = fs.readFileSync(PRE_COMMIT_CONFIG_PATH, "utf8");
     const configLines = config.split(/\r\n|\r|\n/);
@@ -139,7 +152,13 @@ describe("dispatch table", () => {
     const table = buildDispatchTable();
     const ids = table.map((e) => e.id);
     expect(ids).toEqual(
-      expect.arrayContaining(["npm-packaging", "doc-quality", "changelog-coverage", "spelling"])
+      expect.arrayContaining([
+        "npm-packaging",
+        "doc-quality",
+        "changelog-coverage",
+        "spelling",
+        "xml-build-contract"
+      ])
     );
 
     for (const entry of table) {
@@ -195,6 +214,24 @@ describe("dispatch table", () => {
     expect(spelling.validators).toHaveLength(1);
     expect(spelling.validators[0].label).toBe("cspell");
     expect(spelling.validators[0].run).toBe(runSpellcheckValidator);
+  });
+
+  test("xml-build-contract fires on SourceGenerators build files and runs the contract validator", () => {
+    const table = buildDispatchTable();
+    const entry = table.find((e) => e.id === "xml-build-contract");
+    expect(entry.matches("SourceGenerators/Directory.Build.props")).toBe(true);
+    expect(
+      entry.matches(
+        "SourceGenerators/WallstopStudios.DxMessaging.Analyzer/WallstopStudios.DxMessaging.Analyzer.csproj"
+      )
+    ).toBe(true);
+    expect(entry.matches("SourceGenerators/Foo.cs")).toBe(false);
+    expect(entry.matches("package.json")).toBe(false);
+    expect(entry.validators).toHaveLength(1);
+    expect(entry.validators[0].label).toBe("analyzer-build-contract");
+    expect(entry.validators[0].args("/abs/SourceGenerators/Directory.Build.props")).toEqual([
+      "scripts/validate-analyzer-build-contract.js"
+    ]);
   });
 });
 

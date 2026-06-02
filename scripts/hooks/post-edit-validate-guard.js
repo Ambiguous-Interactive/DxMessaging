@@ -57,6 +57,11 @@ const PACKAGING_SKILL = ".llm/skills/packaging/npm-package-configuration.md";
 const DOCS_SKILL = ".llm/skills/documentation/documentation-style-guide.md";
 const SPELLING_SKILL = ".llm/skills/scripting/change-aware-preflight.md";
 const CHANGELOG_SKILL = ".llm/skills/scripting/change-aware-preflight.md";
+// Unlike the other *_SKILL constants (which point at a focused .llm/skills page),
+// the formatting-invariant XML-contract rule deliberately lives in the top-level
+// AI-agent guidelines (.llm/context.md) alongside the other repo-wide rules, so
+// the remediation links there. The target is a real, tracked file.
+const XML_BUILD_CONTRACT_SKILL = ".llm/context.md";
 const CSPELL_EXTENSIONS = Object.freeze([
   "cs",
   "js",
@@ -162,6 +167,20 @@ function isChangelogCoverageRelevant(rel) {
  */
 function isSpellcheckRelevant(rel) {
   return CSPELL_EXTENSION_PATTERN.test(rel);
+}
+
+/**
+ * True when an edited file is a SourceGenerators MSBuild build file
+ * (.props/.csproj/.targets). Editing one of these can break the analyzer build
+ * contract (reproducible-build properties, the .artifacts redirect, the Roslyn
+ * 3.8 pin, the PostBuildCopyAnalyzers target). Focused on SourceGenerators/
+ * because that is where the contract lives.
+ *
+ * @param {string} rel Repo-relative POSIX path.
+ * @returns {boolean} True when XML-build-contract validation is relevant.
+ */
+function isXmlBuildContractRelevant(rel) {
+  return /^SourceGenerators\/.*\.(props|csproj|targets)$/i.test(rel);
 }
 
 /**
@@ -364,6 +383,26 @@ function buildDispatchTable() {
         `Fix the typo or add legitimate project vocabulary to .cspell.json in ` +
         `the same change. See ${SPELLING_SKILL}.`,
       validators: [{ label: "cspell", run: runSpellcheckValidator }]
+    },
+    {
+      id: "xml-build-contract",
+      matches: isXmlBuildContractRelevant,
+      remediation:
+        `Editing a SourceGenerators .props/.csproj/.targets can break the analyzer ` +
+        `build contract (reproducible-build properties, the .artifacts obj/bin ` +
+        `redirect, the Roslyn 3.8 pin, or the PostBuildCopyAnalyzers target). Run ` +
+        `'node scripts/validate-analyzer-build-contract.js' and restore the ` +
+        `required elements/values. Assertions are formatting-invariant (parsed ` +
+        `via scripts/lib/msbuild-xml.js), so line-wrapping and attribute order are ` +
+        `fine. See ${XML_BUILD_CONTRACT_SKILL}.`,
+      validators: [
+        {
+          label: "analyzer-build-contract",
+          // Whole-contract validator: it resolves the SourceGenerators build
+          // files itself and does not take a single-file arg.
+          args: () => ["scripts/validate-analyzer-build-contract.js"]
+        }
+      ]
     }
   ];
 }
@@ -630,6 +669,7 @@ module.exports = {
   isDocQualityRelevant,
   isChangelogCoverageRelevant,
   isSpellcheckRelevant,
+  isXmlBuildContractRelevant,
   formatCspellIssues,
   hasCspellInfrastructureError,
   runCspellApiValidator,
