@@ -66,7 +66,11 @@
        assemblies carry the analyzer configuration directly, and SetupCscRsp
        copies the analyzer DLLs into Assets/Plugins/Editor/ so the analyzer
        applies project-wide. -->
-  <Target Name="PostBuildCopyAnalyzers" AfterTargets="Build" Condition="'$(CopyAnalyzerPayload)' == 'true'">
+  <Target
+    Name="PostBuildCopyAnalyzers"
+    AfterTargets="Build"
+    Condition="'$(CopyAnalyzerPayload)' == 'true'"
+  >
     <PropertyGroup>
       <!-- Repo/package root: two levels up from this project directory -->
       <PackageRootDir>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../'))</PackageRootDir>
@@ -75,7 +79,10 @@
     <ItemGroup>
       <AnalyzerOutput Include="$(AnalyzerDll)" />
     </ItemGroup>
-    <MakeDir Directories="$(AnalyzerPayloadOutputDir)" Condition="!Exists('$(AnalyzerPayloadOutputDir)')" />
+    <MakeDir
+      Directories="$(AnalyzerPayloadOutputDir)"
+      Condition="!Exists('$(AnalyzerPayloadOutputDir)')"
+    />
     <Copy
       SourceFiles="@(AnalyzerOutput)"
       DestinationFolder="$(AnalyzerPayloadOutputDir)"
