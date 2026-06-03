@@ -7,7 +7,7 @@ created: "2026-05-05"
 updated: "2026-05-05"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: ".devcontainer/cache-contract.sh"
     - path: ".devcontainer/devcontainer.json"
@@ -15,7 +15,7 @@ source:
     - path: ".devcontainer/post-start.sh"
     - path: ".devcontainer/validate-caching.sh"
     - path: ".devcontainer/Dockerfile"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "devcontainer"
@@ -90,11 +90,11 @@ status: "stable"
 
 Docker named volumes have a subtle ownership rule: when a volume is attached to a target directory for the first time, Docker copies the target's owner UID/GID onto the empty volume. Subsequent attaches keep that initial UID/GID regardless of the running container's user. If the first container that mounts the volume runs as root (which most build steps do), every later attach as `vscode` (uid 1000) sees an unwritable directory.
 
-The fix is two-pronged:
+The fix has three parts:
 
 1. The Dockerfile pre-creates each target with `vscode:vscode` ownership before any volume can attach.
 1. `post-start.sh` re-runs `chown` on every container start, so an ownership drift (rare but possible after host upgrades) self-heals on the next attach.
-1. `scripts/unity/run-tests.sh` and `scripts/unity/run-tests.ps1` install an `EXIT` trap inside each root-run `unityci/editor` container to return `.artifacts/unity`, `.unity-test-project/Builds`, and `.unity-test-project/Library` ownership to the invoking UID/GID even when Unity exits non-zero.
+1. `scripts/unity/run-tests.sh` installs an `EXIT` trap inside each root-run `unityci/editor` container to return `/workspace/.artifacts` and `/workspace/.unity-test-project/Library` ownership to the invoking UID/GID even when Unity exits non-zero. Each `chown` is suffixed `|| true` so it never overwrites the editor's exit code.
 
 `cache-contract.sh` is the table the devcontainer prongs read from. If a target is missing from the contract or misaligned by index, the validator fails loud rather than the developer hitting "permission denied" three minutes into a build.
 
@@ -102,7 +102,7 @@ Unity `Library/` is intentionally not in this devcontainer contract. The headles
 
 ## The Contract
 
-Four entries, sources and targets aligned by array index:
+Five entries, sources and targets aligned by array index:
 
 | Index | Source (volume name)     | Target (in-container path)             | Purpose                                  |
 | ----- | ------------------------ | -------------------------------------- | ---------------------------------------- |
@@ -110,6 +110,7 @@ Four entries, sources and targets aligned by array index:
 | 1     | `dxm-dotnet-tools`       | `/home/vscode/.dotnet/tools`           | Global dotnet tools (csharpier, etc.)    |
 | 2     | `dxm-powershell-modules` | `/home/vscode/.local/share/powershell` | PowerShell module cache                  |
 | 3     | `dxm-python-cache`       | `/home/vscode/.cache/pip`              | pip wheel/download cache                 |
+| 4     | `dxm-node-modules`       | `${CACHE_WORKSPACE_ROOT}/node_modules` | Linux devcontainer `node_modules` tree   |
 
 Source (verbatim) lives in `.devcontainer/cache-contract.sh`:
 
@@ -119,6 +120,7 @@ readonly CACHE_MOUNT_SOURCES=(
     "dxm-dotnet-tools"
     "dxm-powershell-modules"
     "dxm-python-cache"
+    "dxm-node-modules"
 )
 
 readonly CACHE_MOUNT_TARGETS=(
@@ -126,18 +128,43 @@ readonly CACHE_MOUNT_TARGETS=(
     "/home/vscode/.dotnet/tools"
     "/home/vscode/.local/share/powershell"
     "/home/vscode/.cache/pip"
+    "${CACHE_WORKSPACE_ROOT}/node_modules"
 )
 ```
 
 The arrays are `readonly`. The file uses a re-source guard so the validator and lifecycle scripts can both `source` it inside the same shell without aborting under `set -e`.
 
+## Workspace Root Derivation
+
+The `dxm-node-modules` target is built from `${CACHE_WORKSPACE_ROOT}/node_modules`, so the script must resolve the workspace root correctly. It resolves in this precedence:
+
+1. `WORKSPACE_FOLDER` when set. `devcontainer.json` sets it through `remoteEnv` to `${containerWorkspaceFolder}`.
+1. Otherwise, the parent of the script's own directory. `cache-contract.sh` lives in `<workspaceRoot>/.devcontainer/`, so the parent of its directory is the workspace root and equals `${containerWorkspaceFolder}` by construction.
+
+The derivation matters because `postCreateCommand` runs BEFORE `remoteEnv` is applied, so `WORKSPACE_FOLDER` is unset there. Deriving from the script location keeps the target correct in that window and survives a repo path or name change. Do NOT reintroduce a hardcoded absolute fallback: a stale literal silently diverges from the real mount target.
+
+```bash
+CACHE_WORKSPACE_ROOT="${WORKSPACE_FOLDER:-}"
+if [[ -z "${CACHE_WORKSPACE_ROOT}" ]]; then
+    CACHE_WORKSPACE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:?cache-contract.sh must be sourced by path so the workspace root can be derived}")/.." && pwd)"
+fi
+readonly CACHE_WORKSPACE_ROOT
+```
+
+The `${BASH_SOURCE[0]:?...}` form fails loud rather than deriving a wrong root from the caller's working directory if the file is ever sourced without a resolvable path. Every real consumer sources it by absolute path, so this never trips in practice.
+
+`cache_contract_describe_workspace_root` emits a one-line diagnostic stating which branch resolved the root (`from WORKSPACE_FOLDER env` versus `derived from script location; WORKSPACE_FOLDER unset`). Sourcing the file stays silent; `validate-caching.sh` calls the helper explicitly so the resolution is visible in validator output.
+
+The anti-drift tests in `scripts/__tests__/devcontainer-cache-contract.test.js` assert: no hardcoded absolute workspace literal remains; the derived fallback (with `WORKSPACE_FOLDER` unset) resolves to the repo root; an explicit `WORKSPACE_FOLDER` wins; the `node_modules` contract target lines up with the `${containerWorkspaceFolder}/node_modules` mount in `devcontainer.json`; and the diagnostic helper reports both branches.
+
 ## How the Validator Works
 
-`bash .devcontainer/validate-caching.sh` runs four blocks of checks:
+`bash .devcontainer/validate-caching.sh` runs five blocks of checks:
 
 1. **Contract shape**: arrays exist, are non-empty, and have equal length.
 1. **Static wiring**: Dockerfile has the BuildKit `# syntax=` directive and apt cache mounts; `post-create.sh` and `post-start.sh` both `source cache-contract.sh`.
 1. **devcontainer.json mounts**: every contract entry appears in `mounts`; `remoteUser` is `vscode`.
+1. **Workflow configuration**: `devcontainer-test.yml` and `devcontainer-prebuild.yml` push and pull the prebuilt image.
 1. **Runtime mount state** (only inside a container): each target is a real mount point owned by `vscode:vscode`, and a write probe succeeds.
 
 Outside a container the runtime block is skipped with a single warning. Inside the devcontainer, every assertion is a hard failure. The Phase 3 `devcontainer-test.yml` workflow runs `validate-caching.sh` and the Phase 4 contract test (`devcontainer-cache-contract.test.js`) statically verifies the mount list.
@@ -170,6 +197,7 @@ Remove in the inverse order: devcontainer.json first (so a fresh build does not 
 
 - [Headless Test Runner](./headless-test-runner.md)
 - [UPM Test Harness](./upm-test-harness.md)
+- [Unity Version Single Source of Truth](../github-actions/unity-version-single-source.md)
 - [CI/CD Devcontainer Workflows](../github-actions/cicd-devcontainer-workflows.md)
 
 ## References

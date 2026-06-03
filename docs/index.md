@@ -7,7 +7,7 @@ description: High-performance type-safe messaging library for Unity
 
 **DxMessaging** is a high-performance, type-safe messaging library for Unity that provides a clean, decoupled communication pattern between game components.
 
-**[Get Started](getting-started/index.md)** | [View on GitHub](https://github.com/wallstop/DxMessaging)
+**[Get Started](getting-started/index.md)** | [View on GitHub](https://github.com/Ambiguous-Interactive/DxMessaging)
 
 ## Why DxMessaging?
 
@@ -36,7 +36,7 @@ openupm add com.wallstop-studios.dxmessaging
 #### Or via Git URL
 
 ```text
-https://github.com/wallstop/DxMessaging.git
+https://github.com/Ambiguous-Interactive/DxMessaging.git
 ```
 
 See the [Install Guide](getting-started/install.md) for all options including NPM scoped registries and local tarballs.

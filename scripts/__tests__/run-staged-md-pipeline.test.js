@@ -157,6 +157,111 @@ describe("run-staged-md-pipeline", () => {
       }
     });
 
+    test("pipeline surfaces out-of-tree link validator violations for docs/ markdown that escapes docs/", async () => {
+      // Mirror the failure mode that originally took down
+      // `Validate Documentation Build / Build documentation (strict mode)`:
+      // a docs/runbooks/<file>.md that links UP into .github/workflows/...
+      // via a relative path. The pipeline must surface this via the
+      // outOfTreeLinks key.
+      const repoRoot = path.resolve(__dirname, "../..");
+      const docsRunbooks = path.join(repoRoot, "docs", "runbooks");
+      // Use mkdtempSync DIRECTLY inside docs/runbooks/ so the validator's
+      // isDocsMarkdown gate recognizes the file as docs/-rooted. The temp
+      // dir is removed in the finally block.
+      const dir = fs.mkdtempSync(path.join(docsRunbooks, "out-of-tree-pipeline-"));
+      const target = path.join(dir, "fixture.md");
+      // Inline backticks and fenced blocks must NOT be flagged (covered by
+      // the unit tests). The bare inline link IS flagged.
+      const fixture = [
+        "# Out-of-tree fixture",
+        "",
+        "See [bad](../../../.github/workflows/foo.yml) for context.",
+        "",
+        "```text",
+        "[ignored](../../../.github/workflows/should-not-be-flagged.yml)",
+        "```",
+        ""
+      ].join("\n");
+      fs.writeFileSync(target, fixture, "utf8");
+      const writeSpy = jest.spyOn(process.stderr, "write").mockImplementation(() => true);
+      const stdoutSpy = jest.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const result = await runStagedMdPipeline([target], {
+          skipMarkdownlint: true,
+          skipPrettier: true
+        });
+        expect(result.applicable).toEqual([target]);
+        expect(result.violations.outOfTreeLinks.violations).toHaveLength(1);
+        expect(result.violations.outOfTreeLinks.violations[0].url).toMatch(
+          /\.github\/workflows\/foo\.yml/
+        );
+      } finally {
+        writeSpy.mockRestore();
+        stdoutSpy.mockRestore();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("pipeline auto-normalizes right-arrow menu paths before ASCII validation", async () => {
+      const rightArrow = String.fromCodePoint(0x2192);
+      const fixture = [
+        "# Title",
+        "",
+        `Menu path: Tools ${rightArrow} Wallstop Studios ${rightArrow}`,
+        `DxMessaging ${rightArrow} Settings.`,
+        ""
+      ].join("\n");
+      const { dir, target } = makeTempFile("ascii-normalized.md", fixture);
+      try {
+        const writeSpy = jest.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const stdoutSpy = jest.spyOn(process.stdout, "write").mockImplementation(() => true);
+        try {
+          const result = await runStagedMdPipeline([target], {
+            skipMarkdownlint: true,
+            skipPrettier: true
+          });
+          expect(result.modified).toContain(target);
+          expect(result.violations.ascii.violations).toEqual([]);
+
+          const written = fs.readFileSync(target, "utf8");
+          expect(written).not.toContain(rightArrow);
+          expect(written).toContain("Tools -> Wallstop Studios ->");
+          expect(written).toContain("DxMessaging -> Settings.");
+          for (const ch of written) {
+            expect(ch.codePointAt(0)).toBeLessThan(0x80);
+          }
+        } finally {
+          writeSpy.mockRestore();
+          stdoutSpy.mockRestore();
+        }
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("pipeline surfaces ASCII validator violations for non-normalizable emoji", async () => {
+      const rocket = String.fromCodePoint(0x1f680);
+      const fixture = `# Title\n\nBad emoji ${rocket} in prose.\n`;
+      const { dir, target } = makeTempFile("ascii-violation.md", fixture);
+      try {
+        const writeSpy = jest.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const stdoutSpy = jest.spyOn(process.stdout, "write").mockImplementation(() => true);
+        try {
+          const result = await runStagedMdPipeline([target], {
+            skipMarkdownlint: true,
+            skipPrettier: true
+          });
+          expect(result.violations.ascii.violations).toHaveLength(1);
+          expect(result.violations.ascii.violations[0].codepoint).toBe(0x1f680);
+        } finally {
+          writeSpy.mockRestore();
+          stdoutSpy.mockRestore();
+        }
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
     test("subprocess invocation surfaces violations and exits 1 (covers prettier in-process path)", () => {
       // The full main() path in-process would exercise the prettier
       // ESM dynamic-import surface, which Jest cannot do without
@@ -248,6 +353,16 @@ describe("run-staged-md-pipeline", () => {
     test("toImportFileUrl normalizes Windows absolute paths to file URLs", () => {
       const windowsPath = String.raw`D:\repo\markdownlint-cli2.mjs`;
       expect(toImportFileUrl(windowsPath)).toBe("file:///D:/repo/markdownlint-cli2.mjs");
+    });
+
+    test("toImportFileUrl normalizes Windows UNC absolute paths to file URLs", () => {
+      const uncPath = String.raw`\\fileserver\engineering\markdownlint-cli2.mjs`;
+      expect(toImportFileUrl(uncPath)).toBe("file://fileserver/engineering/markdownlint-cli2.mjs");
+    });
+
+    test("toImportFileUrl preserves forward-slash UNC absolute paths", () => {
+      const uncPath = "//fileserver/engineering/markdownlint-cli2.mjs";
+      expect(toImportFileUrl(uncPath)).toBe("file://fileserver/engineering/markdownlint-cli2.mjs");
     });
 
     test("markdownlint argv uses POSIX repo-relative paths", () => {

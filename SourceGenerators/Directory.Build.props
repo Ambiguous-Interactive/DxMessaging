@@ -1,9 +1,58 @@
 <Project>
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'WallstopStudios.DxMessaging.SourceGenerators.Tests'">
+  <!--
+    Redirect ALL build output for every project under SourceGenerators/ into the
+    repo's Unity-ignored, git-ignored .artifacts/ tree.
+
+    WHY: this repo IS a Unity UPM package and the repo root is the package root,
+    so Unity imports everything under it that is not in a Unity-ignored location.
+    Unity ignores files/folders whose names start with '.' (e.g. .artifacts) or
+    end with '~'. If a SourceGenerators project builds its obj/ or bin/ in-tree,
+    Unity imports those build outputs. The analyzer/source-generator DLLs there
+    have the SAME assembly names as the correctly-configured shipped analyzers in
+    Editor/Analyzers/, but their Unity-auto-generated .meta lack the
+    RoslynAnalyzer label / validateReferences:0 / all-platforms-disabled config.
+    Unity then fails to resolve their Microsoft.CodeAnalysis reference and the
+    duplicate shadows the real analyzers, so the source generator never runs and
+    every [Dx*Message] type fails to implement its generated interface
+    (CS0315/CS0452) project-wide.
+
+    Building these projects is REQUIRED by the dev workflow (the main projects'
+    PostBuildCopyAnalyzers target copies the freshly-built DLL into
+    Editor/Analyzers/), so the build MUST go somewhere Unity ignores.
+
+    HOW: redirect per-project obj/ and bin/ to
+    $(SolutionDir).artifacts/$(MSBuildProjectName)/{obj,bin}/$(Configuration)/.
+    BaseIntermediateOutputPath is set here because Directory.Build.props is
+    imported BEFORE the .NET SDK's default-path logic (Sdk.props) that derives
+    obj/ paths and before NuGet restore writes project.assets.json; setting it
+    here ensures even 'dotnet restore' writes obj/project.assets.json under
+    .artifacts/ instead of an in-tree obj/. IntermediateOutputPath (the
+    Configuration-scoped obj subfolder) and OutputPath (bin) are set for the
+    build itself. $(TargetPath) therefore resolves under .artifacts/, and the
+    PostBuildCopyAnalyzers targets still copy the built DLL into
+    Editor/Analyzers/ correctly.
+  -->
+  <PropertyGroup>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\</SolutionDir>
-    <ArtifactsRoot>$(SolutionDir).artifacts/SourceGenerators.Tests/</ArtifactsRoot>
-    <IntermediateOutputPath>$(ArtifactsRoot)obj/$(Configuration)/</IntermediateOutputPath>
+    <ArtifactsRoot Condition="'$(ArtifactsRoot)' == ''"
+      >$(SolutionDir).artifacts/$(MSBuildProjectName)/</ArtifactsRoot
+    >
+    <!-- Set BaseIntermediateOutputPath early so NuGet restore's obj/ (and
+         project.assets.json) is written under .artifacts/, never in-tree. The
+         trailing slash is required by the SDK's path-joining logic. -->
+    <BaseIntermediateOutputPath>$(ArtifactsRoot)obj/</BaseIntermediateOutputPath>
+    <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)/</IntermediateOutputPath>
     <OutputPath>$(ArtifactsRoot)bin/$(Configuration)/</OutputPath>
     <VSTestResultsDirectory>$(ArtifactsRoot)TestResults/</VSTestResultsDirectory>
+    <LangVersion>10.0</LangVersion>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <CopyAnalyzerPayload Condition="'$(CopyAnalyzerPayload)' == ''">true</CopyAnalyzerPayload>
+    <AnalyzerPayloadOutputDir Condition="'$(AnalyzerPayloadOutputDir)' == ''"
+      >$([System.IO.Path]::Combine('$(SolutionDir)', 'Editor', 'Analyzers'))</AnalyzerPayloadOutputDir
+    >
   </PropertyGroup>
 </Project>

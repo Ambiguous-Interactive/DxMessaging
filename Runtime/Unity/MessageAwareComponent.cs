@@ -159,7 +159,7 @@ namespace DxMessaging.Unity
                 Debug.LogError(
                     $"[DxMessaging] {GetType().Name} appears to be missing a base.Awake() call; "
                         + "no registration token exists, so this component will not receive messages. "
-                        + "See https://github.com/wallstop/DxMessaging/blob/master/docs/reference/analyzers.md#dxmsg006-missing-base-call",
+                        + "See https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/reference/analyzers.md#dxmsg006-missing-base-call",
                     this
                 );
             }

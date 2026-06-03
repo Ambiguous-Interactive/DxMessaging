@@ -207,19 +207,9 @@ describe("validate-untracked-policy", () => {
     });
 
     test("keeps groups with three or fewer items as singletons", () => {
-      const result = groupByFirstSegment([
-        "build/a",
-        "build/b",
-        "build/c",
-        "scratch.txt"
-      ]);
+      const result = groupByFirstSegment(["build/a", "build/b", "build/c", "scratch.txt"]);
       expect(result.groups).toEqual([]);
-      expect(result.singletons.sort()).toEqual([
-        "build/a",
-        "build/b",
-        "build/c",
-        "scratch.txt"
-      ]);
+      expect(result.singletons.sort()).toEqual(["build/a", "build/b", "build/c", "scratch.txt"]);
     });
 
     test("root-level files are always singletons", () => {

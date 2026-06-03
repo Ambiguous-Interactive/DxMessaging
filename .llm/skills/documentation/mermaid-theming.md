@@ -7,13 +7,13 @@ created: "2026-01-29"
 updated: "2026-01-29"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "docs/javascripts/mermaid-config.js"
     - path: "docs/"
     - path: "README.md"
     - path: "Samples~/"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
   note: "Guidance applies to ALL markdown files in the repository"
 
 tags:

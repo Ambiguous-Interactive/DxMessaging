@@ -176,15 +176,20 @@ function Get-AssemblyList {
     param(
         [bool]$IncludePerfFlag,
         [bool]$IncludeIntegrationsFlag,
-        [bool]$IncludeComparisonsFlag
+        [bool]$IncludeComparisonsFlag,
+        [string]$Target,
+        [bool]$RuntimeOnlyFlag
     )
 
     # Single source of truth: defaultIncludeAssemblies in
-    # scripts/unity/lib/asmdef-discovery.js. Pass both opt-in flags through.
+    # scripts/unity/lib/asmdef-discovery.js. Pass the opt-in flags through.
+    # target keeps EditMode, PlayMode, and standalone assembly compatibility
+    # aligned with CI.
     $perfBool = if ($IncludePerfFlag) { 'true' } else { 'false' }
     $integBool = if ($IncludeIntegrationsFlag) { 'true' } else { 'false' }
     $comparisonsBool = if ($IncludeComparisonsFlag) { 'true' } else { 'false' }
-    $opts = "{ includePerf: $perfBool, includeIntegrations: $integBool, includeComparisons: $comparisonsBool }"
+    $runtimeOnlyBool = if ($RuntimeOnlyFlag) { 'true' } else { 'false' }
+    $opts = "{ includePerf: $perfBool, includeIntegrations: $integBool, includeComparisons: $comparisonsBool, target: '$Target', runtimeOnly: $runtimeOnlyBool }"
     $nodeScript = "const m=require('./scripts/unity/lib/asmdef-discovery.js');console.log(m.defaultIncludeAssemblies(process.cwd(), $opts).join(';'));"
 
     Push-Location $RepoRoot
@@ -203,27 +208,89 @@ function Get-AssemblyList {
 $Assemblies = Get-AssemblyList `
     -IncludePerfFlag:$IncludePerf.IsPresent `
     -IncludeIntegrationsFlag:$IncludeIntegrations.IsPresent `
-    -IncludeComparisonsFlag:$IncludeComparisons.IsPresent
+    -IncludeComparisonsFlag:$IncludeComparisons.IsPresent `
+    -Target $Platform `
+    -RuntimeOnlyFlag:($Platform -eq 'standalone')
 if ([string]::IsNullOrWhiteSpace($Assemblies)) {
     Write-Error 'Assembly include list is empty (asmdef discovery failed).'
     exit 1
 }
 
 # ---------------------------------------------------------------------------
-# CI mode short-circuit
+# Summary tail (B2: delegate parsing to scripts/unity/lib/parse-test-results.py
+# so this script and run-tests.sh share one parser
+# implementation. The helper emits "OK total=.. passed=.. failed=.. skipped=.."
+# on success and "PARSE_ERROR:<reason>" on failure with exit code 2.)
+#
+# Defined here (before any runner dispatch) so BOTH the local and docker paths
+# can route their results validation through the same function. The contract is
+# uniform: a runner must NEVER report success without a results.xml proving
+# tests actually ran (total > 0). Under CI we additionally emit GitHub Actions
+# annotations so failures surface in the Actions UI (annotations only -- they
+# do NOT change control flow or skip work).
 # ---------------------------------------------------------------------------
-if ($env:CI -eq 'true') {
-    Write-Host 'CI mode detected -- skipping local docker invocation.' -ForegroundColor Cyan
-    Write-Host 'game-ci/unity-test-runner@v4 parameters:'
-    Write-Host "  projectPath:      .unity-test-project"
-    Write-Host "  unityVersion:     $UnityVersion"
-    Write-Host "  testMode:         $Platform"
-    $cp = "-nographics -assemblyNames `"$Assemblies`""
-    if (-not [string]::IsNullOrWhiteSpace($Filter)) {
-        $cp = "$cp -testFilter `"$Filter`""
+function Write-ResultsSummary {
+    param([string]$ResultsXml)
+
+    if (-not (Test-Path $ResultsXml)) {
+        Write-Host "No results.xml at $ResultsXml" -ForegroundColor Yellow
+        if ($env:CI -eq 'true') {
+            Write-Host "::error::run-tests: no results.xml produced for $Platform/$UnityVersion -- tests did not run"
+        }
+        return 2
     }
-    Write-Host "  customParameters: $cp"
-    return
+
+    $parser = Join-Path $RepoRoot 'scripts/unity/lib/parse-test-results.py'
+    $summary = & python3 $parser $ResultsXml
+    if ($LASTEXITCODE -ne 0 -or -not ($summary -match '^OK ')) {
+        Write-Host "Could not parse results summary: $summary" -ForegroundColor Yellow
+        if ($env:CI -eq 'true') {
+            Write-Host "::error::run-tests: could not parse results.xml for $Platform/$UnityVersion -- $summary"
+        }
+        return 2
+    }
+
+    $kvLine = $summary -replace '^OK ', ''
+    $kvs = @{}
+    foreach ($pair in ($kvLine -split '\s+')) {
+        if ($pair -match '^(\w+)=(.*)$') {
+            $kvs[$Matches[1]] = $Matches[2]
+        }
+    }
+    $total   = if ($kvs.ContainsKey('total'))   { $kvs['total']   } else { '0' }
+    $passed  = if ($kvs.ContainsKey('passed'))  { $kvs['passed']  } else { '0' }
+    $failed  = if ($kvs.ContainsKey('failed'))  { $kvs['failed']  } else { '0' }
+    $skipped = if ($kvs.ContainsKey('skipped')) { $kvs['skipped'] } else { '0' }
+
+    if ($total -eq '0') {
+        Write-Host 'ERROR: 0 tests ran. Check filter / assembly list.' -ForegroundColor Red
+        Write-Host "  failed=$failed passed=$passed skipped=$skipped" -ForegroundColor Red
+        if ($env:CI -eq 'true') {
+            Write-Host "::error::run-tests: 0 tests ran (total=0) for $Platform/$UnityVersion -- check assembly list / filter"
+        }
+        return 2
+    }
+
+    if ($failed -eq '0') {
+        Write-Host "PASS $passed passed (total=$total skipped=$skipped)" -ForegroundColor Green
+        if ($env:CI -eq 'true') {
+            Write-Host "::notice::run-tests: $passed passed (total=$total skipped=$skipped) for $Platform/$UnityVersion"
+        }
+        return 0
+    }
+
+    Write-Host "FAIL $failed failed of $total (passed=$passed skipped=$skipped)" -ForegroundColor Red
+    if ($env:CI -eq 'true') {
+        Write-Host "::error::run-tests: $failed failed of $total for $Platform/$UnityVersion (passed=$passed skipped=$skipped)"
+    }
+    return 1
+}
+
+function Test-ActivationFailureLog {
+    param([string]$LogPath)
+    if (-not (Test-Path $LogPath)) { return $false }
+    $needle = '2FA|two-factor|verification code|License client failed|LICENSE SYSTEM .* (Failed|invalid)|com\.unity\.editor\.headless|No valid Unity Editor license found'
+    return (Select-String -Path $LogPath -Pattern $needle -Quiet -ErrorAction SilentlyContinue) -eq $true
 }
 
 function Find-UnityEditorPath {
@@ -265,6 +332,16 @@ function Find-UnityEditorPath {
 }
 
 function Invoke-LocalUnityTests {
+    # Local activation: when UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD are all
+    # set we activate the paid seat with -serial -username -password and RETURN it
+    # in a finally so a local run never leaks it. Otherwise we assume the machine
+    # is already licensed (Hub sign-in / a local .ulf) and just launch the editor.
+    $useSerial = (
+        (-not [string]::IsNullOrWhiteSpace($env:UNITY_SERIAL)) -and
+        (-not [string]::IsNullOrWhiteSpace($env:UNITY_EMAIL)) -and
+        (-not [string]::IsNullOrWhiteSpace($env:UNITY_PASSWORD))
+    )
+
     $unityPath = Find-UnityEditorPath $UnityVersion
     if ([string]::IsNullOrWhiteSpace($unityPath)) {
         Write-Host @"
@@ -288,6 +365,15 @@ Set UNITY_EDITOR_PATH to your Unity.exe path, for example:
     if (-not [string]::IsNullOrWhiteSpace($Filter)) {
         $unityArgs += @('-testFilter', $Filter)
     }
+    # Serial activation passes the creds in the SAME run (no separate activation
+    # pass on the local path); the seat is returned in the finally below.
+    if ($useSerial) {
+        $unityArgs += @(
+            '-serial', $env:UNITY_SERIAL,
+            '-username', $env:UNITY_EMAIL,
+            '-password', $env:UNITY_PASSWORD
+        )
+    }
     $unityArgs += @('-logFile', '-')
 
     Write-Host "Launching local Unity: $unityPath" -ForegroundColor Cyan
@@ -295,20 +381,66 @@ Set UNITY_EDITOR_PATH to your Unity.exe path, for example:
     Write-Host "  results=$Results log=$ArtifactsDir/log.txt"
     Write-Host "  perf=$($IncludePerf.IsPresent) comparisons=$($IncludeComparisons.IsPresent) integrations=$($IncludeIntegrations.IsPresent) filter=$Filter"
 
-    & $unityPath @unityArgs 2>&1 | Tee-Object -FilePath (Join-Path $ArtifactsDir 'log.txt')
-    $UnityExit = $LASTEXITCODE
-    if ($UnityExit -ne 0) {
-        if (-not (Test-Path $Results)) {
-            Write-Host "No results.xml at $Results" -ForegroundColor Yellow
+    # $exitToUse is computed inside the try and consumed AFTER the finally so the
+    # license return ALWAYS runs before we leave the process. We cannot `exit`
+    # inside the try -- PowerShell's `exit` terminates the runspace and SKIPS the
+    # finally, which would leak the seat.
+    $exitToUse = 0
+    try {
+        # SECURITY: the serial/email/password ride in $unityArgs (when $useSerial),
+        # so this site must NEVER echo $unityArgs and the Unity log on stdout is the
+        # only sink (no creds are written to a separate file by us).
+        & $unityPath @unityArgs 2>&1 | Tee-Object -FilePath (Join-Path $ArtifactsDir 'log.txt')
+        $UnityExit = $LASTEXITCODE
+        if ($UnityExit -ne 0) {
+            if (-not (Test-Path $Results)) {
+                Write-Host "No results.xml at $Results" -ForegroundColor Yellow
+            }
+            Write-Host "Unity exited with code $UnityExit." -ForegroundColor Red
+            $exitToUse = $UnityExit
+        } else {
+            # Unity exited 0; route through the shared validator so the local path
+            # fails loudly on a missing results.xml or zero tests (total=0),
+            # exactly like the docker path. Write-ResultsSummary returns 2 for
+            # those cases.
+            $exitToUse = Write-ResultsSummary -ResultsXml $Results
         }
-        Write-Host "Unity exited with code $UnityExit." -ForegroundColor Red
-        exit $UnityExit
+    } finally {
+        # Return the seat on EVERY exit path (clean exit, test failure, throw, or
+        # Ctrl-C that still unwinds this finally) so a local serial run never leaks
+        # it. Best-effort and never throws; skipped when no serial creds were used
+        # (a Hub/.ulf machine has nothing to return).
+        if ($useSerial) {
+            try {
+                # SECURITY: email/password ride in the argument array (never echoed).
+                # `-logFile -` puts the Unity log on stdout; Tee-Object DOES persist
+                # it, but to the system temp dir ($returnLog below), NOT $ArtifactsDir,
+                # so it stays out of any UPLOADED ARTIFACT and the account fragments
+                # Unity may echo never land in the artifacts tree. Same Tee-Object
+                # wait + $LASTEXITCODE idiom as the run above (a bare `&` would not
+                # wait for the GUI-subsystem editor).
+                $returnArgs = @(
+                    '-quit',
+                    '-batchmode',
+                    '-nographics',
+                    '-returnlicense',
+                    '-username', $env:UNITY_EMAIL,
+                    '-password', $env:UNITY_PASSWORD,
+                    '-logFile', '-'
+                )
+                $returnLog = Join-Path ([System.IO.Path]::GetTempPath()) 'unity-return-license.log'
+                & $unityPath @returnArgs 2>&1 | Tee-Object -FilePath $returnLog
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "Unity license return exited with code $LASTEXITCODE (continuing)." -ForegroundColor Yellow
+                } else {
+                    Write-Host 'Returned the Unity license (serial).' -ForegroundColor Cyan
+                }
+            } catch {
+                Write-Host "Unity license return failed: $($_.Exception.Message) (continuing)." -ForegroundColor Yellow
+            }
+        }
     }
-
-    if (-not (Test-Path $Results)) {
-        Write-Host "Unity exited 0 but no results.xml was produced at $Results." -ForegroundColor Red
-        exit 1
-    }
+    exit $exitToUse
 }
 
 $ResolvedRunner = $Runner
@@ -319,6 +451,11 @@ if ($ResolvedRunner -eq 'auto') {
         $ResolvedRunner = 'docker'
     }
 }
+
+# Plan banner: one line describing exactly what is about to run, emitted before
+# any runner dispatch so the chosen path is visible in local + CI logs.
+Write-Host "[run-tests] runner=$ResolvedRunner platform=$Platform unity=$UnityVersion ci=$($env:CI)" -ForegroundColor Cyan
+
 if ($ResolvedRunner -eq 'local') {
     if ($Platform -eq 'standalone') {
         Write-Host 'ERROR: -Runner local does not support standalone; use -Runner docker.' -ForegroundColor Red
@@ -404,7 +541,19 @@ function Get-UnityLicenseFileCandidates {
     return $candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
 }
 
-if ([string]::IsNullOrEmpty($env:UNITY_LICENSE) -and [string]::IsNullOrEmpty($env:UNITY_LICENSE_B64)) {
+# Serial-first: prefer paid serial activation when all three creds are set.
+# Otherwise fall back to a ULF (env or a local .ulf file). A present serial is
+# preferred, so we only auto-load a local .ulf when no serial AND no explicit ULF
+# is configured (a stray local .ulf must not shadow the serial path).
+$LicenseMode = ''
+$UseSerial = (
+    (-not [string]::IsNullOrWhiteSpace($env:UNITY_SERIAL)) -and
+    (-not [string]::IsNullOrWhiteSpace($env:UNITY_EMAIL)) -and
+    (-not [string]::IsNullOrWhiteSpace($env:UNITY_PASSWORD))
+)
+
+if (-not $UseSerial -and
+    [string]::IsNullOrEmpty($env:UNITY_LICENSE) -and [string]::IsNullOrEmpty($env:UNITY_LICENSE_B64)) {
     foreach ($licensePath in Get-UnityLicenseFileCandidates) {
         if (Test-Path -LiteralPath $licensePath -PathType Leaf) {
             $env:UNITY_LICENSE = Get-Content -LiteralPath $licensePath -Raw
@@ -414,22 +563,22 @@ if ([string]::IsNullOrEmpty($env:UNITY_LICENSE) -and [string]::IsNullOrEmpty($en
     }
 }
 
-$LicenseMode = ''
-if (-not [string]::IsNullOrEmpty($env:UNITY_LICENSE)) {
+if ($UseSerial) {
+    $LicenseMode = 'serial'
+} elseif (-not [string]::IsNullOrEmpty($env:UNITY_LICENSE)) {
     $LicenseMode = 'ulf'
 } elseif (-not [string]::IsNullOrEmpty($env:UNITY_LICENSE_B64)) {
     $LicenseMode = 'ulf-b64'
-} elseif ((-not [string]::IsNullOrEmpty($env:UNITY_SERIAL)) -and `
-          (-not [string]::IsNullOrEmpty($env:UNITY_EMAIL)) -and `
-          (-not [string]::IsNullOrEmpty($env:UNITY_PASSWORD))) {
-    $LicenseMode = 'serial'
 } else {
+    # Serial-first ordering: serial is the preferred/primary path, the .ulf vars
+    # are the fallback. Keep this list in the SAME order as the .SYNOPSIS/help and
+    # the bash mirror so the recommended path is always shown first.
     Write-Host @"
 ERROR: No Unity license configured.
 Set EITHER:
+  UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD   (preferred paid serial activation)
   UNITY_LICENSE       (raw .ulf contents; GameCI-compatible)
   UNITY_LICENSE_B64   (base64 .ulf contents; local shell convenience)
-  UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD   (paid serial activation)
 
 UNITY_EMAIL + UNITY_PASSWORD alone is not a supported headless container license path.
 Run 'bash scripts/unity/activate-license.sh --check' for diagnostics.
@@ -537,16 +686,11 @@ if ($IsWindows) {
 }
 
 # ---------------------------------------------------------------------------
-# Build inner Unity commands (editmode/playmode share one; standalone needs
-# two passes — build, then launch).
+# Build inner Unity command. editmode, playmode, AND standalone all run through
+# a single editor invocation: `Unity -runTests -testPlatform <platform>`.
+# standalone maps to StandaloneLinux64, which builds AND runs the IL2CPP player
+# natively in one pass (IL2CPP backend from ProjectSettings).
 # ---------------------------------------------------------------------------
-
-# Container-side path (relative to .unity-test-project/) for the IL2CPP
-# binary. Kept in sync with TestRunnerBuilder.cs DefaultBuildPathRelative
-# and run-tests.sh.
-$StandaloneBuildRel       = 'Builds/IL2CPPTests/Tests.x86_64'
-$StandaloneBuildHost      = Join-Path $RepoRoot ".unity-test-project/$StandaloneBuildRel"
-$StandaloneBuildContainer = "/workspace/.unity-test-project/$StandaloneBuildRel"
 
 function ConvertTo-BashSingleQuotedString {
     param([string]$Value)
@@ -559,10 +703,25 @@ function ConvertTo-BashScriptText {
 }
 
 function Get-EditorCommandInner {
+    # Single inner command shared by editmode/playmode AND standalone. standalone
+    # maps -testPlatform to StandaloneLinux64 so a single editor invocation builds
+    # AND runs the IL2CPP player (IL2CPP backend from ProjectSettings; no
+    # executeMethod, no separate build pass).
     $sb = [System.Text.StringBuilder]::new()
     $projectPathQ = ConvertTo-BashSingleQuotedString '/workspace/.unity-test-project'
     $resultsQ = ConvertTo-BashSingleQuotedString $ResultsContainer
     $assembliesQ = ConvertTo-BashSingleQuotedString $Assemblies
+    $testPlatform = if ($Platform -eq 'standalone') { 'StandaloneLinux64' } else { $Platform }
+    # `set -o pipefail` (part of `set -euo pipefail` below) is LOAD-BEARING for the
+    # editor test pipeline `Unity ... | tee log.txt`: without it the pipeline's exit
+    # status would be `tee`'s (always 0), masking a failing Unity behind a passing
+    # tee. With pipefail a non-zero Unity propagates as the inner script's exit code.
+    #
+    # EVERY command in the EXIT trap body below is suffixed `|| true` ON PURPOSE: the
+    # trap fires AFTER the editor pipeline has already set the script's exit code, so
+    # a license-return failure (or a chown failure) must NEVER overwrite the editor's
+    # non-zero exit code with its own. `|| true` forces each cleanup command to a 0
+    # status so the trap cannot clobber the real test result. Mirrors run-tests.sh.
     [void]$sb.AppendLine('set -euo pipefail')
     [void]$sb.AppendLine('cleanup_ownership() {')
     [void]$sb.AppendLine('    chown -R "${USER_UID}:${USER_GID}" /workspace/.artifacts || true')
@@ -576,6 +735,18 @@ function Get-EditorCommandInner {
     [void]$sb.AppendLine('        fi')
     [void]$sb.AppendLine('    fi')
     [void]$sb.AppendLine('    chown -R "${USER_UID}:${USER_GID}" /workspace/.unity-test-project/Library || true')
+    if ($LicenseMode -eq 'serial') {
+        # Serial activation consumes a seat, so we MUST return it on EVERY exit
+        # path -- clean exit, test failure, or Ctrl-C -- or a local run leaks the
+        # seat. The return runs INSIDE the same EXIT trap as the chown cleanup so
+        # it fires even when the editor (and the `tee` pipeline) failed. It is
+        # best-effort (|| true): a failed return must never mask the real test
+        # exit code. The return log goes to /tmp (NOT under /workspace/.artifacts,
+        # which is bind-mounted to the repo and would persist the creds Unity may
+        # echo). UNITY_EMAIL/UNITY_PASSWORD are forwarded into the container via
+        # -e; we never echo them. Mirrors run-tests.sh.
+        [void]$sb.AppendLine('    /opt/unity/Editor/Unity -quit -batchmode -nographics -returnlicense -username "${UNITY_EMAIL}" -password "${UNITY_PASSWORD}" -logFile - > /tmp/unity-return-license.log 2>&1 || true')
+    }
     [void]$sb.AppendLine('}')
     [void]$sb.AppendLine('trap cleanup_ownership EXIT')
     [void]$sb.AppendLine('mkdir -p /root/.cache/unity3d')
@@ -591,7 +762,7 @@ function Get-EditorCommandInner {
     [void]$sb.AppendLine('/opt/unity/Editor/Unity \')
     [void]$sb.AppendLine('  -batchmode -nographics \')
     [void]$sb.AppendLine("  -projectPath $projectPathQ \")
-    [void]$sb.AppendLine("  -runTests -testPlatform $Platform \")
+    [void]$sb.AppendLine("  -runTests -testPlatform $testPlatform \")
     [void]$sb.AppendLine("  -testResults $resultsQ \")
     [void]$sb.AppendLine("  -assemblyNames $assembliesQ \")
     if (-not [string]::IsNullOrWhiteSpace($Filter)) {
@@ -600,90 +771,6 @@ function Get-EditorCommandInner {
     }
     if ($LicenseMode -eq 'serial') {
         [void]$sb.AppendLine('  -username "${UNITY_EMAIL}" -password "${UNITY_PASSWORD}" -serial "${UNITY_SERIAL}" \')
-    }
-    [void]$sb.AppendLine('  -logFile - 2>&1 | tee /workspace/.artifacts/unity/log.txt')
-    return ConvertTo-BashScriptText $sb.ToString()
-}
-
-function Get-StandaloneBuildCommandInner {
-    # B1: export DXM_IL2CPP_BUILD_PATH so TestRunnerBuilder.BuildIL2CPPTestPlayer
-    # writes to the same path we read from below. Local + CI use the same
-    # env-var contract; the value differs but the mechanism is identical.
-    $sb = [System.Text.StringBuilder]::new()
-    $projectPathQ = ConvertTo-BashSingleQuotedString '/workspace/.unity-test-project'
-    $buildPathQ = ConvertTo-BashSingleQuotedString $StandaloneBuildContainer
-    [void]$sb.AppendLine('set -euo pipefail')
-    [void]$sb.AppendLine('cleanup_ownership() {')
-    [void]$sb.AppendLine('    chown -R "${USER_UID}:${USER_GID}" /workspace/.artifacts || true')
-    [void]$sb.AppendLine('    if [[ -n "${DX_PERF_BASELINE:-}" ]]; then')
-    [void]$sb.AppendLine('        baseline_path="${DX_PERF_BASELINE}"')
-    [void]$sb.AppendLine('        [[ "${baseline_path}" = /* ]] || baseline_path="/workspace/${baseline_path}"')
-    [void]$sb.AppendLine('        if [[ "${baseline_path}" == /workspace/* ]]; then')
-    [void]$sb.AppendLine('            chown "${USER_UID}:${USER_GID}" "${baseline_path}" 2>/dev/null || true')
-    [void]$sb.AppendLine('            baseline_dir="$(dirname "${baseline_path}")"')
-    [void]$sb.AppendLine('            [[ "${baseline_dir}" == "/workspace" ]] || chown -R "${USER_UID}:${USER_GID}" "${baseline_dir}" 2>/dev/null || true')
-    [void]$sb.AppendLine('        fi')
-    [void]$sb.AppendLine('    fi')
-    [void]$sb.AppendLine('    chown -R "${USER_UID}:${USER_GID}" /workspace/.unity-test-project/Builds || true')
-    [void]$sb.AppendLine('    chown -R "${USER_UID}:${USER_GID}" /workspace/.unity-test-project/Library || true')
-    [void]$sb.AppendLine('}')
-    [void]$sb.AppendLine('trap cleanup_ownership EXIT')
-    [void]$sb.AppendLine('mkdir -p /root/.cache/unity3d')
-    if ($LicenseMode -eq 'ulf' -or $LicenseMode -eq 'ulf-b64') {
-        [void]$sb.AppendLine('mkdir -p /root/.local/share/unity3d/Unity')
-        if ($LicenseMode -eq 'ulf-b64') {
-            [void]$sb.AppendLine('printf "%s" "${UNITY_LICENSE_B64}" | base64 -d > /root/.local/share/unity3d/Unity/Unity_lic.ulf')
-        } else {
-            [void]$sb.AppendLine('printf "%s" "${UNITY_LICENSE}" > /root/.local/share/unity3d/Unity/Unity_lic.ulf')
-        }
-        [void]$sb.AppendLine('chmod 644 /root/.local/share/unity3d/Unity/Unity_lic.ulf')
-    }
-    [void]$sb.AppendLine('mkdir -p /workspace/.unity-test-project/Builds/IL2CPPTests')
-    [void]$sb.AppendLine("export DXM_IL2CPP_BUILD_PATH=$buildPathQ")
-    [void]$sb.AppendLine('/opt/unity/Editor/Unity \')
-    [void]$sb.AppendLine('  -batchmode -nographics \')
-    [void]$sb.AppendLine("  -projectPath $projectPathQ \")
-    [void]$sb.AppendLine('  -buildTarget StandaloneLinux64 \')
-    [void]$sb.AppendLine('  -executeMethod WallstopStudios.DxMessaging.TestHarness.Editor.TestRunnerBuilder.BuildIL2CPPTestPlayer \')
-    if ($LicenseMode -eq 'serial') {
-        [void]$sb.AppendLine('  -username "${UNITY_EMAIL}" -password "${UNITY_PASSWORD}" -serial "${UNITY_SERIAL}" \')
-    }
-    [void]$sb.AppendLine('  -logFile - 2>&1 | tee /workspace/.artifacts/unity/build-log.txt')
-    return ConvertTo-BashScriptText $sb.ToString()
-}
-
-function Get-StandaloneRunCommandInner {
-    $sb = [System.Text.StringBuilder]::new()
-    $buildPathQ = ConvertTo-BashSingleQuotedString $StandaloneBuildContainer
-    $resultsQ = ConvertTo-BashSingleQuotedString $ResultsContainer
-    $assembliesQ = ConvertTo-BashSingleQuotedString $Assemblies
-    [void]$sb.AppendLine('set -euo pipefail')
-    [void]$sb.AppendLine('cleanup_ownership() {')
-    [void]$sb.AppendLine('    chown -R "${USER_UID}:${USER_GID}" /workspace/.artifacts || true')
-    [void]$sb.AppendLine('    if [[ -n "${DX_PERF_BASELINE:-}" ]]; then')
-    [void]$sb.AppendLine('        baseline_path="${DX_PERF_BASELINE}"')
-    [void]$sb.AppendLine('        [[ "${baseline_path}" = /* ]] || baseline_path="/workspace/${baseline_path}"')
-    [void]$sb.AppendLine('        if [[ "${baseline_path}" == /workspace/* ]]; then')
-    [void]$sb.AppendLine('            chown "${USER_UID}:${USER_GID}" "${baseline_path}" 2>/dev/null || true')
-    [void]$sb.AppendLine('            baseline_dir="$(dirname "${baseline_path}")"')
-    [void]$sb.AppendLine('            [[ "${baseline_dir}" == "/workspace" ]] || chown -R "${USER_UID}:${USER_GID}" "${baseline_dir}" 2>/dev/null || true')
-    [void]$sb.AppendLine('        fi')
-    [void]$sb.AppendLine('    fi')
-    [void]$sb.AppendLine('    chown -R "${USER_UID}:${USER_GID}" /workspace/.unity-test-project/Library || true')
-    [void]$sb.AppendLine('}')
-    [void]$sb.AppendLine('trap cleanup_ownership EXIT')
-    [void]$sb.AppendLine("if [[ ! -x $buildPathQ ]]; then")
-    [void]$sb.AppendLine("    echo `"[run-tests] ERROR: built test player not found at $StandaloneBuildContainer`" >&2")
-    [void]$sb.AppendLine('    exit 1')
-    [void]$sb.AppendLine('fi')
-    [void]$sb.AppendLine("$buildPathQ \")
-    [void]$sb.AppendLine('  -batchmode -nographics \')
-    [void]$sb.AppendLine('  -runTests \')
-    [void]$sb.AppendLine("  -testResults $resultsQ \")
-    [void]$sb.AppendLine("  -assemblyNames $assembliesQ \")
-    if (-not [string]::IsNullOrWhiteSpace($Filter)) {
-        $filterQ = ConvertTo-BashSingleQuotedString $Filter
-        [void]$sb.AppendLine("  -testFilter $filterQ \")
     }
     [void]$sb.AppendLine('  -logFile - 2>&1 | tee /workspace/.artifacts/unity/log.txt')
     return ConvertTo-BashScriptText $sb.ToString()
@@ -716,85 +803,21 @@ $dockerBaseArgs = @(
 )
 
 if ($Platform -eq 'standalone') {
-    Write-Host 'Step 1/2: building IL2CPP test player...' -ForegroundColor Cyan
-    $buildInner = Get-StandaloneBuildCommandInner
-    & $DockerCommand @dockerBaseArgs $ImageRef bash -c $buildInner
-    $BuildExit = $LASTEXITCODE
-    if ($BuildExit -ne 0) {
-        Write-Host "IL2CPP build failed (exit $BuildExit)." -ForegroundColor Red
-        exit $BuildExit
-    }
-    if (-not (Test-Path $StandaloneBuildHost)) {
-        Write-Host "IL2CPP build reported success but binary missing at $StandaloneBuildHost." -ForegroundColor Red
-        exit 1
-    }
-
-    Write-Host 'Step 2/2: running IL2CPP test player...' -ForegroundColor Cyan
-    $runInner = Get-StandaloneRunCommandInner
-    & $DockerCommand @dockerBaseArgs $ImageRef bash -c $runInner
-    $ExitCode = $LASTEXITCODE
-} else {
-    $UnityCmdInner = Get-EditorCommandInner
-    & $DockerCommand @dockerBaseArgs $ImageRef bash -c $UnityCmdInner
-    $ExitCode = $LASTEXITCODE
+    Write-Host 'Running IL2CPP standalone player (native single pass)...' -ForegroundColor Cyan
 }
+# editmode, playmode, and standalone all use the same single editor invocation.
+# standalone maps -testPlatform to StandaloneLinux64, which builds AND runs the
+# IL2CPP player in one pass (no separate build-log.txt, no executeMethod).
+$UnityCmdInner = Get-EditorCommandInner
+& $DockerCommand @dockerBaseArgs $ImageRef bash -c $UnityCmdInner
+$ExitCode = $LASTEXITCODE
 
 # ---------------------------------------------------------------------------
-# Summary tail (B2: delegate parsing to scripts/unity/lib/parse-test-results.py
-# so this script, the IL2CPP workflow, and run-tests.sh all share one parser
-# implementation. The helper emits "OK total=.. passed=.. failed=.. skipped=.."
-# on success and "PARSE_ERROR:<reason>" on failure with exit code 2.)
+# Summary tail: route the docker results through the shared Write-ResultsSummary
+# defined near the top of the file (same validator the local path uses). A
+# non-zero return (missing results.xml, parse error, or total=0) fails the run.
 # ---------------------------------------------------------------------------
-function Write-ResultsSummary {
-    param([string]$ResultsXml)
-
-    if (-not (Test-Path $ResultsXml)) {
-        Write-Host "No results.xml at $ResultsXml" -ForegroundColor Yellow
-        return 2
-    }
-
-    $parser = Join-Path $RepoRoot 'scripts/unity/lib/parse-test-results.py'
-    $summary = & python3 $parser $ResultsXml
-    if ($LASTEXITCODE -ne 0 -or -not ($summary -match '^OK ')) {
-        Write-Host "Could not parse results summary: $summary" -ForegroundColor Yellow
-        return 2
-    }
-
-    $kvLine = $summary -replace '^OK ', ''
-    $kvs = @{}
-    foreach ($pair in ($kvLine -split '\s+')) {
-        if ($pair -match '^(\w+)=(.*)$') {
-            $kvs[$Matches[1]] = $Matches[2]
-        }
-    }
-    $total   = if ($kvs.ContainsKey('total'))   { $kvs['total']   } else { '0' }
-    $passed  = if ($kvs.ContainsKey('passed'))  { $kvs['passed']  } else { '0' }
-    $failed  = if ($kvs.ContainsKey('failed'))  { $kvs['failed']  } else { '0' }
-    $skipped = if ($kvs.ContainsKey('skipped')) { $kvs['skipped'] } else { '0' }
-
-    if ($total -eq '0') {
-        Write-Host 'ERROR: 0 tests ran. Check filter / assembly list.' -ForegroundColor Red
-        Write-Host "  failed=$failed passed=$passed skipped=$skipped" -ForegroundColor Red
-        return 2
-    }
-
-    if ($failed -eq '0') {
-        Write-Host "PASS $passed passed (total=$total skipped=$skipped)" -ForegroundColor Green
-        return 0
-    }
-
-    Write-Host "FAIL $failed failed of $total (passed=$passed skipped=$skipped)" -ForegroundColor Red
-    return 1
-}
-
 $SummaryExit = Write-ResultsSummary -ResultsXml $Results
-
-function Test-ActivationFailureLog {
-    param([string]$LogPath)
-    if (-not (Test-Path $LogPath)) { return $false }
-    $needle = '2FA|two-factor|verification code|License client failed|LICENSE SYSTEM .* (Failed|invalid)|com\.unity\.editor\.headless|No valid Unity Editor license found'
-    return (Select-String -Path $LogPath -Pattern $needle -Quiet -ErrorAction SilentlyContinue) -eq $true
-}
 
 if ($ExitCode -ne 0) {
     Write-Host "Unity exited with code $ExitCode." -ForegroundColor Red

@@ -78,19 +78,19 @@ Skill files include repository metadata in the YAML frontmatter. These URLs must
 
 ```yaml
 source:
-  repository: "wallstop/DxMessaging" # Format: "owner/repo"
-  url: "https://github.com/wallstop/DxMessaging" # Full HTTPS URL
+  repository: "Ambiguous-Interactive/DxMessaging" # Format: "owner/repo"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging" # Full HTTPS URL
 ```
 
 #### Common Mistakes
 
-| Mistake               | Incorrect Value                             | Correct Value                             |
-| --------------------- | ------------------------------------------- | ----------------------------------------- |
-| Wrong organization    | `wallstop-studios/DxMessaging`              | `wallstop/DxMessaging`                    |
-| Wrong repository name | `wallstop/com.wallstop-studios.dxmessaging` | `wallstop/DxMessaging`                    |
-| Missing `https://`    | `github.com/wallstop/DxMessaging`           | `https://github.com/wallstop/DxMessaging` |
-| Trailing slash        | `https://github.com/wallstop/DxMessaging/`  | `https://github.com/wallstop/DxMessaging` |
-| SSH URL format        | `git@github.com:wallstop/DxMessaging.git`   | `https://github.com/wallstop/DxMessaging` |
+| Mistake               | Incorrect Value                                         | Correct Value                                          |
+| --------------------- | ------------------------------------------------------- | ------------------------------------------------------ |
+| Wrong organization    | `wallstop-studios/DxMessaging`                          | `Ambiguous-Interactive/DxMessaging`                    |
+| Wrong repository name | `wallstop/com.wallstop-studios.dxmessaging`             | `Ambiguous-Interactive/DxMessaging`                    |
+| Missing `https://`    | `github.com/Ambiguous-Interactive/DxMessaging`          | `https://github.com/Ambiguous-Interactive/DxMessaging` |
+| Trailing slash        | `https://github.com/Ambiguous-Interactive/DxMessaging/` | `https://github.com/Ambiguous-Interactive/DxMessaging` |
+| SSH URL format        | `git@github.com:Ambiguous-Interactive/DxMessaging.git`  | `https://github.com/Ambiguous-Interactive/DxMessaging` |
 
 #### Verification Steps
 

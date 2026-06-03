@@ -61,26 +61,14 @@ describe("validate-no-plan-vocabulary", () => {
 
   describe("maskCodeFences (m2)", () => {
     test("blanks lines inside triple-backtick fence", () => {
-      const input = [
-        "before",
-        "```",
-        "[See PLAN.md] inside fence",
-        "```",
-        "after"
-      ].join("\n");
+      const input = ["before", "```", "[See PLAN.md] inside fence", "```", "after"].join("\n");
       const masked = maskCodeFences(input);
       // The fenced lines must be empty strings; outer lines must remain.
       expect(masked.split("\n")).toEqual(["before", "", "", "", "after"]);
     });
 
     test("blanks lines inside triple-tilde fence", () => {
-      const input = [
-        "before",
-        "~~~",
-        "T2.4",
-        "~~~",
-        "after"
-      ].join("\n");
+      const input = ["before", "~~~", "T2.4", "~~~", "after"].join("\n");
       const masked = maskCodeFences(input);
       expect(masked.split("\n")).toEqual(["before", "", "", "", "after"]);
     });
@@ -121,7 +109,8 @@ describe("validate-no-plan-vocabulary", () => {
     });
 
     test("flags tier-tag occurrences (T<n>.<n> and P<n>.<n>)", () => {
-      const content = "Captured " + "T2" + "." + "4 baseline; rolled " + "P3" + "." + "1 changes.\n";
+      const content =
+        "Captured " + "T2" + "." + "4 baseline; rolled " + "P3" + "." + "1 changes.\n";
       const violations = scanContent("docs/example.md", content).filter(
         (v) => v.pattern === "tier-tag"
       );
@@ -183,7 +172,9 @@ describe("validate-no-plan-vocabulary", () => {
     });
 
     test("violations are sorted by (line, column)", () => {
-      const content = ["First " + "T2" + "." + "4 here.", "Second " + "P0" + "." + "1 here."].join("\n");
+      const content = ["First " + "T2" + "." + "4 here.", "Second " + "P0" + "." + "1 here."].join(
+        "\n"
+      );
       const violations = scanContent("docs/example.md", content);
       expect(violations.map((v) => v.line)).toEqual([1, 2]);
     });
@@ -241,11 +232,7 @@ describe("validate-no-plan-vocabulary", () => {
     });
 
     test("tilde fences also suppress violations (m2)", () => {
-      const content = [
-        "~~~",
-        "## Phase " + "P0 - inside fence",
-        "~~~"
-      ].join("\n");
+      const content = ["~~~", "## Phase " + "P0 - inside fence", "~~~"].join("\n");
       const violations = scanContent("docs/example.md", content);
       expect(violations).toEqual([]);
     });
@@ -285,7 +272,9 @@ describe("validate-no-plan-vocabulary", () => {
     test("excludes Tests trees", () => {
       expect(isInScope("Tests/Runtime/Foo.cs")).toBe(false);
       expect(isInScope("Runtime/Core/Tests/Foo.cs")).toBe(false);
-      expect(isInScope("SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/Foo.cs")).toBe(false);
+      expect(
+        isInScope("SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/Foo.cs")
+      ).toBe(false);
     });
 
     test("excludes scripts/, .llm/, .github/ and other meta paths", () => {
@@ -364,8 +353,7 @@ describe("validate-no-plan-vocabulary", () => {
         stdout: ["docs/dirty.md"].join("\n"),
         stderr: ""
       });
-      const fakeRead = () =>
-        "See " + "PLAN" + ".md and roll " + "T2" + "." + "4 next.\n";
+      const fakeRead = () => "See " + "PLAN" + ".md and roll " + "T2" + "." + "4 next.\n";
 
       const result = run({ cwd: process.cwd(), spawn: fakeSpawn, readFile: fakeRead });
       expect(result.valid).toBe(false);

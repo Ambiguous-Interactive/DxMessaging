@@ -6,6 +6,7 @@
  * Shared, deterministic discovery + classification of Unity test asmdef files.
  *
  * Used by:
+ *   - .github/actions/compute-unity-assemblies (primary CI consumer)
  *   - scripts/unity/run-tests.sh (default include / exclude assembly list)
  *   - scripts/unity/run-tests.ps1 (PowerShell parity)
  *   - scripts/__tests__/unity-perf-isolation.test.js (Phase 4 contract)
@@ -55,6 +56,39 @@ const COMPARISON_NAME_REGEX = /(?:Comparisons)/;
  * @type {RegExp}
  */
 const INTEGRATION_NAME_REGEX = /(?:VContainer|Zenject|Reflex)/;
+
+/**
+ * Assembly-name prefix that marks an asmdef as owned by DxMessaging. The Unity
+ * Test Runner is invoked with an explicit `-assemblyNames` list, so a foreign
+ * test asmdef that happens to live under `Tests/` (for example one pulled in by
+ * an external comparison package, or a stray sample) must never be added to the
+ * list -- it would not compile against the harness manifest and would fail the
+ * run for a reason unrelated to DxMessaging. Every real DxMessaging test
+ * assembly is named `WallstopStudios.DxMessaging.Tests*`, so this owner prefix
+ * is a safe, future-proof gate that is a no-op for the current asmdef set.
+ *
+ * @type {string}
+ */
+const DXMESSAGING_ASSEMBLY_PREFIX = "WallstopStudios.DxMessaging.";
+const STANDALONE_PLATFORM_NAMES = new Set([
+  "Standalone",
+  "WindowsStandalone32",
+  "WindowsStandalone64",
+  "LinuxStandalone64",
+  "OSXStandalone"
+]);
+
+/**
+ * True when `name` is a DxMessaging-owned assembly (see
+ * {@link DXMESSAGING_ASSEMBLY_PREFIX}). Non-string / empty input is treated as
+ * NOT owned so a malformed asmdef can never slip through the include gate.
+ *
+ * @param {string} name - Asmdef assembly name (no extension)
+ * @returns {boolean} True iff the name carries the DxMessaging owner prefix
+ */
+function isDxMessagingOwnedAssembly(name) {
+  return typeof name === "string" && name.startsWith(DXMESSAGING_ASSEMBLY_PREFIX);
+}
 
 /**
  * Recursively enumerate every file path under `dir` whose basename matches
@@ -149,7 +183,80 @@ function classifyAsmdef(name) {
  * @property {boolean} isPerf - True when classification is "perf"
  * @property {boolean} isComparison - True when classification is "comparison"
  * @property {boolean} isInteg - True when classification is "integration"
+ * @property {boolean} isEditorOnly - True iff includePlatforms is exactly ["Editor"]
+ * @property {boolean} isForeign - True when the assembly is NOT DxMessaging-owned
+ *                     (name lacks the `WallstopStudios.DxMessaging.` prefix). Such
+ *                     assemblies are never added to the Unity `-assemblyNames` list.
  */
+
+/**
+ * Read an asmdef's `includePlatforms` array and decide whether the assembly is
+ * editor-only. An assembly is editor-only iff `includePlatforms` is exactly
+ * `["Editor"]`. Editor-only test assemblies (EditMode suites + Editor
+ * benchmarks/integrations) cannot run inside a built player, so the standalone
+ * runtime-only flow must exclude them.
+ *
+ * @param {string} asmdefPath - Absolute path to an .asmdef file
+ * @returns {boolean} True when includePlatforms === ["Editor"]
+ */
+function readAsmdefPlatforms(asmdefPath) {
+  const raw = fs.readFileSync(asmdefPath, "utf8");
+  const parsed = JSON.parse(raw);
+  return {
+    includePlatforms: Array.isArray(parsed.includePlatforms) ? parsed.includePlatforms : [],
+    excludePlatforms: Array.isArray(parsed.excludePlatforms) ? parsed.excludePlatforms : []
+  };
+}
+
+function readAsmdefIsEditorOnly(asmdefPath) {
+  const platforms = readAsmdefPlatforms(asmdefPath).includePlatforms;
+  return platforms.length === 1 && platforms[0] === "Editor";
+}
+
+/**
+ * @param {string[]} includePlatforms
+ * @param {string[]} excludePlatforms
+ * @param {"editmode" | "playmode" | "standalone"} target
+ * @returns {boolean}
+ */
+function isAsmdefCompatibleWithTarget(includePlatforms, excludePlatforms, target) {
+  const includes = new Set(includePlatforms);
+  const excludes = new Set(excludePlatforms);
+
+  if (target === "standalone") {
+    if (excludes.has("Standalone") || excludes.has("WindowsStandalone64")) {
+      return false;
+    }
+    if (includes.size === 0) {
+      return true;
+    }
+    for (const platform of includes) {
+      if (STANDALONE_PLATFORM_NAMES.has(platform)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (target === "editmode") {
+    if (excludes.has("Editor")) {
+      return false;
+    }
+    return includes.size === 0 || includes.has("Editor");
+  }
+
+  if (target === "playmode") {
+    if (excludes.has("Editor")) {
+      return false;
+    }
+    return includes.size === 0;
+  }
+
+  if (excludes.has("Editor")) {
+    return false;
+  }
+  return includes.size === 0 || includes.has("Editor");
+}
 
 /**
  * Enumerate every asmdef under `<repoRoot>/Tests/`. Sorted by `name` for
@@ -170,12 +277,18 @@ function enumerateTestAsmdefs(repoRoot) {
   const entries = asmdefPaths.map((asmdefPath) => {
     const name = readAsmdefName(asmdefPath);
     const classification = classifyAsmdef(name);
+    const platforms = readAsmdefPlatforms(asmdefPath);
     return {
       name,
       path: asmdefPath,
       isPerf: classification === "perf",
       isComparison: classification === "comparison",
-      isInteg: classification === "integration"
+      isInteg: classification === "integration",
+      includePlatforms: platforms.includePlatforms,
+      excludePlatforms: platforms.excludePlatforms,
+      isEditorOnly:
+        platforms.includePlatforms.length === 1 && platforms.includePlatforms[0] === "Editor",
+      isForeign: !isDxMessagingOwnedAssembly(name)
     };
   });
 
@@ -188,6 +301,12 @@ function enumerateTestAsmdefs(repoRoot) {
  * @property {boolean} [includePerf=false]         Include "perf" asmdefs.
  * @property {boolean} [includeComparisons=false]  Include comparison benchmark asmdefs.
  * @property {boolean} [includeIntegrations=false] Include "integration" asmdefs.
+ * @property {"editmode" | "playmode" | "standalone"} [target=editmode]
+ *                     Select assemblies compatible with the Unity test target.
+ *                     PlayMode and standalone omit editor-only asmdefs.
+ * @property {boolean} [runtimeOnly=false]         Back-compat alias for
+ *                     target: "standalone". Applied before the perf/comparison/
+ *                     integration gating so it composes.
  */
 
 /**
@@ -209,9 +328,27 @@ function defaultIncludeAssemblies(repoRoot, options) {
   const includePerf = opts.includePerf === true;
   const includeComparisons = opts.includeComparisons === true;
   const includeIntegrations = opts.includeIntegrations === true;
+  const target = opts.target || (opts.runtimeOnly === true ? "standalone" : "editmode");
 
   return enumerateTestAsmdefs(repoRoot)
     .filter((entry) => {
+      // Foreign (non-DxMessaging-owned) asmdefs are never added to the Unity
+      // -assemblyNames list: they would not compile against the harness
+      // manifest and would fail the run for a reason unrelated to DxMessaging.
+      // Gated first, ahead of every other decision. A no-op for the current
+      // asmdef set (all entries are DxMessaging-owned).
+      if (entry.isForeign) {
+        return false;
+      }
+      if (
+        !isAsmdefCompatibleWithTarget(
+          entry.includePlatforms,
+          entry.excludePlatforms,
+          target
+        )
+      ) {
+        return false;
+      }
       if (entry.isPerf) {
         return includePerf;
       }
@@ -241,9 +378,24 @@ function defaultExcludeAssemblies(repoRoot, options) {
   const includePerf = opts.includePerf === true;
   const includeComparisons = opts.includeComparisons === true;
   const includeIntegrations = opts.includeIntegrations === true;
+  const target = opts.target || (opts.runtimeOnly === true ? "standalone" : "editmode");
 
   return enumerateTestAsmdefs(repoRoot)
     .filter((entry) => {
+      // Mirror of defaultIncludeAssemblies. Foreign (non-DxMessaging-owned)
+      // asmdefs are never included, so they are always "excluded" here too.
+      if (entry.isForeign) {
+        return true;
+      }
+      if (
+        !isAsmdefCompatibleWithTarget(
+          entry.includePlatforms,
+          entry.excludePlatforms,
+          target
+        )
+      ) {
+        return true;
+      }
       if (entry.isPerf) {
         return !includePerf;
       }
@@ -264,6 +416,7 @@ module.exports = {
   INTEGRATION_NAME_REGEX,
   classifyAsmdef,
   enumerateTestAsmdefs,
+  isAsmdefCompatibleWithTarget,
   defaultIncludeAssemblies,
   defaultExcludeAssemblies
 };
@@ -299,5 +452,15 @@ if (require.main === module) {
   );
   for (const name of exclude) {
     process.stdout.write(`  - ${name}\n`);
+  }
+
+  // Diagnostic: runtime-only include list (used by the standalone player flow,
+  // where EditMode/editor-only asmdefs cannot run).
+  const runtimeInclude = defaultIncludeAssemblies(repoRoot, { target: "standalone" });
+  process.stdout.write(
+    `\nruntime-only include (${runtimeInclude.length}, drops editor-only asmdefs):\n`
+  );
+  for (const name of runtimeInclude) {
+    process.stdout.write(`  * ${name}\n`);
   }
 }

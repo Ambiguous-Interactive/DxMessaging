@@ -355,11 +355,11 @@ public abstract class MessageAwareComponent : MessagingComponent
 
 For deeper exploration, browse the source code:
 
-| Component             | Source                                                                                                                      |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Message Bus Interface | [IMessageBus.cs](https://github.com/wallstop/DxMessaging/blob/master/Runtime/Core/MessageBus/IMessageBus.cs)                |
-| Message Bus           | [MessageBus.cs](https://github.com/wallstop/DxMessaging/blob/master/Runtime/Core/MessageBus/MessageBus.cs)                  |
-| Message Handler       | [MessageHandler.cs](https://github.com/wallstop/DxMessaging/blob/master/Runtime/Core/MessageHandler.cs)                     |
-| Registration Token    | [MessageRegistrationToken.cs](https://github.com/wallstop/DxMessaging/blob/master/Runtime/Core/MessageRegistrationToken.cs) |
-| Emit Helpers          | [MessageExtensions.cs](https://github.com/wallstop/DxMessaging/blob/master/Runtime/Core/Extensions/MessageExtensions.cs)    |
-| Attributes            | [Attributes/](https://github.com/wallstop/DxMessaging/tree/master/Runtime/Core/Attributes)                                  |
+| Component             | Source                                                                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Message Bus Interface | [IMessageBus.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Core/MessageBus/IMessageBus.cs)                |
+| Message Bus           | [MessageBus.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Core/MessageBus/MessageBus.cs)                  |
+| Message Handler       | [MessageHandler.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Core/MessageHandler.cs)                     |
+| Registration Token    | [MessageRegistrationToken.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Core/MessageRegistrationToken.cs) |
+| Emit Helpers          | [MessageExtensions.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Core/Extensions/MessageExtensions.cs)    |
+| Attributes            | [Attributes/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Runtime/Core/Attributes)                                  |

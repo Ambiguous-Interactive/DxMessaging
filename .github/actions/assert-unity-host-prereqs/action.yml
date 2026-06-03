@@ -1,0 +1,164 @@
+name: Assert Unity host prerequisites
+description: >-
+  Ensure the self-hosted Windows runner has every host-OS prerequisite Unity
+  Editor needs to launch successfully (Microsoft Visual C++ 2015-2022 x64
+  Redistributable, Windows long-path support, Windows Defender exclusions,
+  PowerShell 7, UCRT). Root cause: Unity.exe failed at startup with
+  -1073741515 / 0xC0000135 (STATUS_DLL_NOT_FOUND) on DAD-MACHINE because the
+  VC++ redist was missing. GitHub-hosted windows-2022 ships the redist
+  preinstalled; self-hosted runners do not. This action runs the bootstrap
+  script (auto-install by default) so every Unity job is preceded by a
+  resilient prereq check. Non-Windows callers (Linux/macOS) are no-ops --
+  the action emits a friendly ::notice:: skip and exits 0.
+
+  MODE RESOLUTION PRECEDENCE (highest wins):
+    1. Non-Windows host                            -> ::notice:: skip, exit 0
+    2. DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1         -> force DetectOnly
+    3. inputs.auto-install is NOT truthy           -> DetectOnly
+    4. inputs.auto-install IS truthy (default)     -> auto-install
+  Truthy normalization (F4): true/True/1/yes/y all accepted; anything else
+  (including blank) is treated as false. Operators relying on the env-var
+  override see the same precedence rule on the workflow path (see
+  .github/workflows/runner-bootstrap.yml).
+
+inputs:
+  auto-install:
+    description: >-
+      If truthy (default 'true'; accepts true/True/1/yes/y), bootstrap
+      auto-installs any missing prereq. Otherwise the script runs with
+      -DetectOnly and fails fast (exit 2) on any missing prereq. The env var
+      DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1 forces DetectOnly regardless of
+      this input (operator escape hatch).
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    # F14: PowerShell 5.1 preflight FIRST. The rest of the composite uses
+    # `shell: pwsh`; without this step a runner missing pwsh would fail
+    # with the cryptic "pwsh: command not found" before the bootstrap
+    # script gets a chance to install pwsh. Use Windows PowerShell 5.1
+    # (always built into Windows runners) so it executes regardless of
+    # whether pwsh exists. If pwsh is missing, point the operator at the
+    # runner-bootstrap.yml workflow_dispatch (which intentionally avoids
+    # `shell: pwsh` and CAN install pwsh; see that workflow's header for
+    # the chicken-and-egg rationale).
+    - name: Verify PowerShell 7 (pwsh) is available
+      shell: powershell
+      run: |
+        # Skip the preflight on non-Windows hosts (e.g. Linux callers that
+        # consume this composite by accident): pwsh is the default shell
+        # there, Windows PowerShell 5.1 does not exist, and the platform
+        # gate inside the main step is what actually emits the skip notice.
+        if ([System.IO.Path]::DirectorySeparatorChar -ne '\') {
+            Write-Output "::notice::PS 5.1 preflight: skipping (not Windows: $env:RUNNER_OS)"
+            exit 0
+        }
+        if ($null -eq (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+            Write-Output ("::error title=pwsh missing on self-hosted runner::PowerShell 7 (pwsh) is not installed on runner '$env:RUNNER_NAME'. Dispatch " +
+            ".github/workflows/runner-bootstrap.yml from the Actions UI to install it (the workflow uses Windows PowerShell 5.1 so it works even on a host " +
+            "missing pwsh). See docs/runbooks/unity-runners-after-transfer.md for the PowerShell 7 prerequisite.")
+            exit 1
+        }
+        Write-Output "pwsh found at: $((Get-Command pwsh).Source)"
+    - name: Probe + (optionally) install Unity host prerequisites
+      shell: pwsh
+      env:
+        DXM_PREREQ_AUTO_INSTALL: ${{ inputs.auto-install }}
+      run: |
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $false
+
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
+        # Platform gate: emit a friendly skip on non-Windows. We use
+        # DirectorySeparatorChar (not $IsWindows) so the gate behaves
+        # identically to the bootstrap script's own gate -- if a future host
+        # has $IsWindows=$false but DirectorySeparatorChar='\' (or vice
+        # versa) the two would disagree.
+        if ([System.IO.Path]::DirectorySeparatorChar -ne '\') {
+            $skipOs = $env:RUNNER_OS
+            if ([string]::IsNullOrWhiteSpace($skipOs)) { $skipOs = 'non-Windows' }
+            Write-Host "::notice::assert-unity-host-prereqs: skipping (not Windows: $skipOs)"
+            exit 0
+        }
+
+        # Operator escape hatch: DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1 forces
+        # -DetectOnly regardless of the input. Use it when an operator wants
+        # to inspect prereq state from a Unity job without mutating the
+        # runner host. The input 'auto-install' is the workflow-author-facing
+        # control; the env var is the operator-facing override.
+        # F4: normalize the input via natural truthy parsing so 'True',
+        # ' true ', '1', 'yes', 'y' all map to auto-install; anything else
+        # falls back to DetectOnly. The string-equality compare against the
+        # literal 'true' would case-sensitively miss those equivalents.
+        $rawInput = '' + $env:DXM_PREREQ_AUTO_INSTALL
+        $normalizedInput = $rawInput.Trim().ToLowerInvariant()
+        $autoInstall = ($normalizedInput -eq 'true' -or $normalizedInput -eq '1' -or $normalizedInput -eq 'yes' -or $normalizedInput -eq 'y')
+        $detectOnly = $false
+        if ($env:DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP -eq '1') {
+            Write-Host "::notice::assert-unity-host-prereqs: DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1 -> forcing DetectOnly"
+            $detectOnly = $true
+        } elseif (-not $autoInstall) {
+            Write-Host "::notice::assert-unity-host-prereqs: auto-install='$rawInput' (normalized='$normalizedInput') -> DetectOnly"
+            $detectOnly = $true
+        }
+
+        # F6: resolve via $GITHUB_WORKSPACE directly. Workflows always do
+        # `actions/checkout` before invoking this composite (it's a required
+        # precondition because the composite needs the bootstrap script),
+        # and $GITHUB_WORKSPACE is reliably the repo root post-checkout. The
+        # previous design used $GITHUB_ACTION_PATH plus a 3-level
+        # `../../../` ascent, which is brittle (the relative depth assumes
+        # the composite lives at a SPECIFIC path that may not survive a
+        # future reorg). $GITHUB_WORKSPACE is the documented, stable anchor.
+        # C5 (final-review nit): pre-check the env var so a missing/empty
+        # GITHUB_WORKSPACE surfaces as a clear `::error::` annotation rather
+        # than the `Join-Path` parameter-binding throw "Cannot bind argument
+        # to parameter 'Path' because it is null".
+        if ([string]::IsNullOrWhiteSpace($env:GITHUB_WORKSPACE)) {
+            Write-Host "::error::assert-unity-host-prereqs: GITHUB_WORKSPACE is unset; this composite must run inside a GitHub Actions job AFTER actions/checkout."
+            exit 1
+        }
+        $scriptPath = Join-Path $env:GITHUB_WORKSPACE 'scripts/unity/bootstrap-windows-runner.ps1'
+        if (-not (Test-Path -LiteralPath $scriptPath)) {
+            Write-Host "::error::assert-unity-host-prereqs: bootstrap script not found at $scriptPath. Ensure `actions/checkout` ran in this job before this step."
+            exit 1
+        }
+
+        Write-Host "::notice::assert-unity-host-prereqs: invoking $scriptPath (DetectOnly=$detectOnly)"
+        if ($detectOnly) {
+            & $scriptPath -DetectOnly
+        } else {
+            & $scriptPath
+        }
+        $code = $LASTEXITCODE
+        $sw.Stop()
+        $elapsed = [int]$sw.Elapsed.TotalSeconds
+
+        # Producer for DXM_RUNNER_PREREQ_INSTALLED. The downstream consumer
+        # in scripts/unity/ensure-editor.ps1 (Write-UnityHostPrereqAnnotation)
+        # branches on this env var: when '1' the 0xC0000135 annotation says
+        # "preflight already confirmed all prereqs OK -- this is a DIFFERENT
+        # missing DLL (not VC++ runtime); inspect imports list above"; when
+        # unset it falls back to the default "missing VC++ Redistributable
+        # is the most likely cause". Without this producer, the consumer
+        # branch is dead code and the annotation is misleading whenever the
+        # preflight just installed/confirmed VC++ but Unity still fails
+        # 0xC0000135 for a different reason. Set on ANY exit-0 from the
+        # bootstrap (install path OR DetectOnly: both mean "host is OK").
+        # Skip when GITHUB_ENV is missing (local invocation outside Actions).
+        if ($code -eq 0 -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_ENV)) {
+            Add-Content -Path $env:GITHUB_ENV -Value "DXM_RUNNER_PREREQ_INSTALLED=1" -Encoding utf8
+            Write-Host "::notice::assert-unity-host-prereqs: exported DXM_RUNNER_PREREQ_INSTALLED=1 for downstream steps"
+        }
+
+        $resultLabel = switch ($code) {
+            0 { 'ok' }
+            2 { 'detect-only-missing' }
+            default { "fail($code)" }
+        }
+        Write-Host "::notice::assert-unity-host-prereqs $resultLabel in ${elapsed}s"
+        exit $code

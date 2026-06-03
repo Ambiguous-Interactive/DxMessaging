@@ -7,12 +7,12 @@ created: "2026-05-01"
 updated: "2026-05-01"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Tests/Runtime/Core/SingleThreadContractTests.cs"
     - path: "Runtime/Core/MessageBus/MessageBus.cs"
     - path: "Runtime/Core/MessageHandler.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "testing"

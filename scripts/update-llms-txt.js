@@ -22,6 +22,7 @@
 const fs = require("fs");
 const path = require("path");
 const { normalizeToLf } = require("./lib/quote-parser");
+const { isPathOutsideDirectory } = require("./lib/path-classifier");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const LLMS_TXT_PATH = path.join(ROOT_DIR, "llms.txt");
@@ -33,7 +34,11 @@ const NON_SKILL_DIRECTORIES = new Set(["templates"]);
 function isCountedSkillPath(fullPath) {
   const relativePath = path.relative(LLM_SKILLS_DIR, fullPath).split(path.sep).join("/");
 
-  if (!relativePath || relativePath.startsWith("../")) {
+  // Cross-drive-safe containment (scripts/lib/path-classifier.js): a bare
+  // `relativePath.startsWith("../")` misses the absolute target that
+  // path.relative returns across Windows drives. `!relativePath` also rules out
+  // fullPath === LLM_SKILLS_DIR (the dir itself is never a counted skill file).
+  if (!relativePath || isPathOutsideDirectory(fullPath, LLM_SKILLS_DIR)) {
     return false;
   }
 
@@ -90,9 +95,7 @@ function countSkillFiles() {
  */
 function hasValidLastUpdatedLine(content) {
   const lines = normalizeToLf(content).split("\n");
-  const lastUpdatedLines = lines.filter((line) =>
-    line.startsWith("**Last Updated:**")
-  );
+  const lastUpdatedLines = lines.filter((line) => line.startsWith("**Last Updated:**"));
 
   if (lastUpdatedLines.length !== 1) {
     return false;
@@ -137,7 +140,7 @@ function getPackageInfo() {
     version: pkg.version,
     description: pkg.description,
     name: pkg.name,
-    displayName: pkg.displayName,
+    displayName: pkg.displayName
   };
 }
 
@@ -151,9 +154,7 @@ function generateLlmsTxt() {
   const currentDate = new Date().toISOString().split("T")[0];
 
   // Format skill categories for display
-  const skillCategoriesText = skillCategories
-    .map((cat) => `  - **${cat}/**`)
-    .join("\n");
+  const skillCategoriesText = skillCategories.map((cat) => `  - **${cat}/**`).join("\n");
 
   return `# DxMessaging
 
@@ -165,8 +166,8 @@ DxMessaging is a high-performance messaging library for Unity (v2021.3+) that re
 
 **Version:** ${pkg.version}
 **License:** MIT
-**Repository:** https://github.com/wallstop/DxMessaging
-**Documentation:** https://wallstop.github.io/DxMessaging/
+**Repository:** https://github.com/Ambiguous-Interactive/DxMessaging
+**Documentation:** https://ambiguous-interactive.github.io/DxMessaging/
 
 ## Quick Facts
 
@@ -276,62 +277,62 @@ public class HealthDisplay : MessageAwareComponent
 
 ### Getting Started
 
-- [Overview](https://wallstop.github.io/DxMessaging/getting-started/overview/)
-- [Installation](https://wallstop.github.io/DxMessaging/getting-started/install/)
-- [Quick Start](https://wallstop.github.io/DxMessaging/getting-started/quick-start/)
-- [Visual Guide](https://wallstop.github.io/DxMessaging/getting-started/visual-guide/)
+- [Overview](https://ambiguous-interactive.github.io/DxMessaging/getting-started/overview/)
+- [Installation](https://ambiguous-interactive.github.io/DxMessaging/getting-started/install/)
+- [Quick Start](https://ambiguous-interactive.github.io/DxMessaging/getting-started/quick-start/)
+- [Visual Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/visual-guide/)
 
 ### Concepts
 
-- [Mental Model](https://wallstop.github.io/DxMessaging/concepts/mental-model/) - Core philosophy and design principles
-- [Message Types](https://wallstop.github.io/DxMessaging/concepts/message-types/) - Untargeted, Targeted, Broadcast
-- [Listening Patterns](https://wallstop.github.io/DxMessaging/concepts/listening-patterns/)
-- [Targeting & Context](https://wallstop.github.io/DxMessaging/concepts/targeting-and-context/)
-- [Interceptors & Ordering](https://wallstop.github.io/DxMessaging/concepts/interceptors-and-ordering/)
+- [Mental Model](https://ambiguous-interactive.github.io/DxMessaging/concepts/mental-model/) - Core philosophy and design principles
+- [Message Types](https://ambiguous-interactive.github.io/DxMessaging/concepts/message-types/) - Untargeted, Targeted, Broadcast
+- [Listening Patterns](https://ambiguous-interactive.github.io/DxMessaging/concepts/listening-patterns/)
+- [Targeting & Context](https://ambiguous-interactive.github.io/DxMessaging/concepts/targeting-and-context/)
+- [Interceptors & Ordering](https://ambiguous-interactive.github.io/DxMessaging/concepts/interceptors-and-ordering/)
 
 ### Guides
 
-- [Patterns](https://wallstop.github.io/DxMessaging/guides/patterns/) - Best practices and common patterns
-- [Unity Integration](https://wallstop.github.io/DxMessaging/guides/unity-integration/)
-- [Testing](https://wallstop.github.io/DxMessaging/guides/testing/) - Testing strategies for message-based systems
-- [Diagnostics](https://wallstop.github.io/DxMessaging/guides/diagnostics/) - Inspector tools and debugging
-- [Memory Reclamation](https://wallstop.github.io/DxMessaging/guides/memory-reclamation/) - Idle eviction, Trim API, occupancy counters
-- [Migration Guide](https://wallstop.github.io/DxMessaging/guides/migration-guide/)
+- [Patterns](https://ambiguous-interactive.github.io/DxMessaging/guides/patterns/) - Best practices and common patterns
+- [Unity Integration](https://ambiguous-interactive.github.io/DxMessaging/guides/unity-integration/)
+- [Testing](https://ambiguous-interactive.github.io/DxMessaging/guides/testing/) - Testing strategies for message-based systems
+- [Diagnostics](https://ambiguous-interactive.github.io/DxMessaging/guides/diagnostics/) - Inspector tools and debugging
+- [Memory Reclamation](https://ambiguous-interactive.github.io/DxMessaging/guides/memory-reclamation/) - Idle eviction, Trim API, occupancy counters
+- [Migration Guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/)
 
 ### Architecture
 
-- [Design & Architecture](https://wallstop.github.io/DxMessaging/architecture/design-and-architecture/)
-- [Performance](https://wallstop.github.io/DxMessaging/architecture/performance/) - Benchmarks (10-17M ops/sec)
-- [Comparisons](https://wallstop.github.io/DxMessaging/architecture/comparisons/) - vs Events, UnityEvents, other buses
+- [Design & Architecture](https://ambiguous-interactive.github.io/DxMessaging/architecture/design-and-architecture/)
+- [Performance](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/) - Benchmarks (10-17M ops/sec)
+- [Comparisons](https://ambiguous-interactive.github.io/DxMessaging/architecture/comparisons/) - vs Events, UnityEvents, other buses
 
 ### Advanced Topics
 
-- [Emit Shorthands](https://wallstop.github.io/DxMessaging/advanced/emit-shorthands/)
-- [Message Bus Providers](https://wallstop.github.io/DxMessaging/advanced/message-bus-providers/)
-- [Registration Builders](https://wallstop.github.io/DxMessaging/advanced/registration-builders/)
-- [Runtime Configuration](https://wallstop.github.io/DxMessaging/advanced/runtime-configuration/)
+- [Emit Shorthands](https://ambiguous-interactive.github.io/DxMessaging/advanced/emit-shorthands/)
+- [Message Bus Providers](https://ambiguous-interactive.github.io/DxMessaging/advanced/message-bus-providers/)
+- [Registration Builders](https://ambiguous-interactive.github.io/DxMessaging/advanced/registration-builders/)
+- [Runtime Configuration](https://ambiguous-interactive.github.io/DxMessaging/advanced/runtime-configuration/)
 
 ### Integrations
 
-- [Zenject](https://wallstop.github.io/DxMessaging/integrations/zenject/) - Extenject/Zenject DI integration
-- [VContainer](https://wallstop.github.io/DxMessaging/integrations/vcontainer/) - VContainer DI integration
-- [Reflex](https://wallstop.github.io/DxMessaging/integrations/reflex/) - Reflex DI integration
+- [Zenject](https://ambiguous-interactive.github.io/DxMessaging/integrations/zenject/) - Extenject/Zenject DI integration
+- [VContainer](https://ambiguous-interactive.github.io/DxMessaging/integrations/vcontainer/) - VContainer DI integration
+- [Reflex](https://ambiguous-interactive.github.io/DxMessaging/integrations/reflex/) - Reflex DI integration
 
 ### Reference
 
-- [Quick Reference](https://wallstop.github.io/DxMessaging/reference/quick-reference/)
-- [Runtime Settings](https://wallstop.github.io/DxMessaging/reference/runtime-settings/) - DxMessagingRuntimeSettings asset and diagnostic API
-- [FAQ](https://wallstop.github.io/DxMessaging/reference/faq/)
-- [Glossary](https://wallstop.github.io/DxMessaging/reference/glossary/)
-- [Troubleshooting](https://wallstop.github.io/DxMessaging/reference/troubleshooting/)
+- [Quick Reference](https://ambiguous-interactive.github.io/DxMessaging/reference/quick-reference/)
+- [Runtime Settings](https://ambiguous-interactive.github.io/DxMessaging/reference/runtime-settings/) - DxMessagingRuntimeSettings asset and diagnostic API
+- [FAQ](https://ambiguous-interactive.github.io/DxMessaging/reference/faq/)
+- [Glossary](https://ambiguous-interactive.github.io/DxMessaging/reference/glossary/)
+- [Troubleshooting](https://ambiguous-interactive.github.io/DxMessaging/reference/troubleshooting/)
 
 ## Key Files
 
-- [README.md](https://github.com/wallstop/DxMessaging/blob/master/README.md) - 30-second pitch, mental models, quick start
-- [CHANGELOG.md](https://github.com/wallstop/DxMessaging/blob/master/CHANGELOG.md) - Version history
-- [CONTRIBUTING.md](https://github.com/wallstop/DxMessaging/blob/master/CONTRIBUTING.md) - Contribution guidelines
-- [package.json](https://github.com/wallstop/DxMessaging/blob/master/package.json) - Package manifest
-- [.llm/context.md](https://github.com/wallstop/DxMessaging/blob/master/.llm/context.md) - Repository guidelines for AI agents
+- [README.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/README.md) - 30-second pitch, mental models, quick start
+- [CHANGELOG.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/CHANGELOG.md) - Version history
+- [CONTRIBUTING.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/CONTRIBUTING.md) - Contribution guidelines
+- [package.json](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/package.json) - Package manifest
+- [.llm/context.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/context.md) - Repository guidelines for AI agents
 
 ## Development
 
@@ -373,8 +374,8 @@ npx cspell "**/*"
 
 This repository includes comprehensive AI agent guidance in the \`.llm/\` directory:
 
-- **[.llm/context.md](https://github.com/wallstop/DxMessaging/blob/master/.llm/context.md)** - Repository guidelines, coding standards, testing policies
-- **[.llm/skills/](https://github.com/wallstop/DxMessaging/tree/master/.llm/skills)** - ${skillCount}+ specialized skill documents covering:
+- **[.llm/context.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/context.md)** - Repository guidelines, coding standards, testing policies
+- **[.llm/skills/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills)** - ${skillCount}+ specialized skill documents covering:
 ${skillCategoriesText}
 
 ## Common Pitfalls & Solutions
@@ -392,7 +393,7 @@ ${skillCategoriesText}
 ### Wrong Message Type
 
 **Problem:** Used Broadcast when Targeted was needed
-**Solution:** See [Mental Model](https://wallstop.github.io/DxMessaging/concepts/mental-model/) for type selection guidance
+**Solution:** See [Mental Model](https://ambiguous-interactive.github.io/DxMessaging/concepts/mental-model/) for type selection guidance
 
 ### Performance Issues
 
@@ -407,7 +408,7 @@ ${skillCategoriesText}
 - **Registration:** O(1) add/remove with backing dictionary
 - **Priority Ordering:** Stable sort on registration
 
-See [Performance Documentation](https://wallstop.github.io/DxMessaging/architecture/performance/) for detailed benchmarks.
+See [Performance Documentation](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/) for detailed benchmarks.
 
 ## Examples
 
@@ -443,14 +444,14 @@ Demonstrates debugging tools:
 
 ## Support & Community
 
-- **Issues:** https://github.com/wallstop/DxMessaging/issues
-- **Discussions:** https://github.com/wallstop/DxMessaging/discussions
+- **Issues:** https://github.com/Ambiguous-Interactive/DxMessaging/issues
+- **Discussions:** https://github.com/Ambiguous-Interactive/DxMessaging/discussions
 - **Email:** wallstop@wallstopstudios.com
 - **OpenUPM:** https://openupm.com/packages/com.wallstop-studios.dxmessaging/
 
 ## License
 
-MIT License - see [LICENSE.md](https://github.com/wallstop/DxMessaging/blob/master/LICENSE.md)
+MIT License - see [LICENSE.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/LICENSE.md)
 
 Copyright (c) 2017-2026 Wallstop Studios
 
@@ -473,9 +474,7 @@ function normalizeForComparison(str) {
 
   // Normalize the Last Updated line by replacing the date with a fixed placeholder,
   // while keeping the marker text so that structural differences are still detected.
-  return normalized
-    .replace(/^\*\*Last Updated:\*\*.*$/m, "**Last Updated:** <DATE>")
-    .trim();
+  return normalized.replace(/^\*\*Last Updated:\*\*.*$/m, "**Last Updated:** <DATE>").trim();
 }
 
 /**
@@ -499,7 +498,9 @@ function main() {
 
       // Validate that both contents contain a correctly formatted "**Last Updated:**" line
       if (!hasValidLastUpdatedLine(currentContent) || !hasValidLastUpdatedLine(newContent)) {
-        console.error("ERROR: llms.txt is missing or has an invalid '**Last Updated:**' line (expected ISO date)");
+        console.error(
+          "ERROR: llms.txt is missing or has an invalid '**Last Updated:**' line (expected ISO date)"
+        );
         process.exit(1);
       }
 
@@ -536,5 +537,5 @@ module.exports = {
   getSkillCategories,
   hasValidLastUpdatedLine,
   normalizeForComparison,
-  normalizeToLf,
+  normalizeToLf
 };

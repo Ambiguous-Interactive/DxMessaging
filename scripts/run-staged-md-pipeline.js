@@ -3,15 +3,16 @@
  * run-staged-md-pipeline.js
  *
  * Single Node process that runs the full markdown pre-commit pipeline against
- * the staged markdown files passed via argv. Round-4 collapses these five
- * pre-commit hooks into one in-process pipeline:
+ * the staged markdown files passed via argv. Round-4 collapses the markdown
+ * pre-commit path into one in-process pipeline:
  *
- *   1. fix-md036-headings (in-process via processMarkdownContent)
- *   2. fix-md029-md051    (in-process)
- *   3. prettier --write   (in-process via the prettier programmatic API)
- *   4. markdownlint-cli2 --fix (in-process via dynamic import of the
+ *   1. normalize-docs-ascii (in-process)
+ *   2. fix-md036-headings (in-process via processMarkdownContent)
+ *   3. fix-md029-md051    (in-process)
+ *   4. prettier --write   (in-process via the prettier programmatic API)
+ *   5. markdownlint-cli2 --fix (in-process via dynamic import of the
  *      markdownlint-cli2 ESM module)
- *   5. The three doc validators (validate-docs-ascii,
+ *   6. The three doc validators (validate-docs-ascii,
  *      validate-doc-code-patterns, validate-docs-prose) -- each already
  *      exposes a programmatic scanContent API.
  *
@@ -39,14 +40,24 @@ const path = require("path");
 const childProcess = require("child_process");
 const { pathToFileURL } = require("url");
 const { spawnPlatformCommandSync } = require("./lib/shell-command");
+const { isOutsideRelative } = require("./lib/path-classifier");
+const {
+  TOOL_LOAD_ERROR_PATTERNS,
+  isRecoverableToolLoadError,
+  resolveBundledNpxCliPath,
+  runBundledNpxCommand,
+  loadLocalPrettier
+} = require("./lib/managed-prettier");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 
 const fixMd036 = require("./fix-md036-headings");
 const fixMd029Md051 = require("./fix-md029-md051");
+const asciiNormalizer = require("./normalize-docs-ascii");
 const ascii = require("./validate-docs-ascii");
 const codePatterns = require("./validate-doc-code-patterns");
 const prose = require("./validate-docs-prose");
+const outOfTreeLinks = require("./validate-docs-out-of-tree-links");
 const sharedFormatters = require("./lib/staged-doc-formatters");
 
 // Mirror the per-hook YAML filter that this pipeline replaces:
@@ -67,13 +78,8 @@ const MARKDOWNLINT_CLI2_MODULE = path.join(
   "markdownlint-cli2",
   "markdownlint-cli2.mjs"
 );
-const TOOL_LOAD_ERROR_PATTERNS = [
-  /Cannot find package/i,
-  /Cannot find module/i,
-  /ERR_MODULE_NOT_FOUND/i,
-  /MODULE_NOT_FOUND/i
-];
 const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
+const WINDOWS_UNC_ABSOLUTE_PATH_RE = /^(?:\\\\|\/\/)[^\\/]+[\\/][^\\/]+/;
 
 function readPackageJson() {
   return JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8"));
@@ -89,11 +95,6 @@ function getPackageSpec(packageName) {
   return `${packageName}@${version.replace(/^[~^]/, "")}`;
 }
 
-function isRecoverableToolLoadError(error) {
-  const message = `${error?.code || ""}\n${error?.message || ""}\n${error?.stack || ""}`;
-  return TOOL_LOAD_ERROR_PATTERNS.some((pattern) => pattern.test(message));
-}
-
 function runToolCommand(command, args, options = {}) {
   const runner =
     command === "npm" || command === "npx" ? spawnPlatformCommandSync : childProcess.spawnSync;
@@ -104,28 +105,17 @@ function runToolCommand(command, args, options = {}) {
   });
 }
 
-function resolveBundledNpxCliPath({
-  execPath = process.execPath,
-  existsSyncFn = fs.existsSync
-} = {}) {
-  const candidate = path.join(path.dirname(execPath), "node_modules", "npm", "bin", "npx-cli.js");
-  return existsSyncFn(candidate) ? candidate : null;
-}
-
 function runNpxCommand(args, options = {}) {
   const {
     execPath = process.execPath,
     resolveBundledNpxCliPathFn = resolveBundledNpxCliPath,
     runToolCommandFn = runToolCommand
   } = options;
-  const npxCliPath = resolveBundledNpxCliPathFn({ execPath });
-  if (npxCliPath) {
-    return runToolCommandFn(execPath, [npxCliPath, ...args]);
-  }
-
-  throw new Error(
-    "Unable to locate npm's npx-cli.js next to the active Node executable. Run `npm install` in a shell with a complete Node/npm installation, or ensure npm is installed with this Node runtime."
-  );
+  return runBundledNpxCommand(args, {
+    execPath,
+    resolveBundledNpxCliPathFn,
+    runCommandFn: runToolCommandFn
+  });
 }
 
 function toImportFileUrl(modulePath) {
@@ -140,6 +130,16 @@ function toImportFileUrl(modulePath) {
     return pathToFileURL(`/${normalized}`).href;
   }
 
+  if (WINDOWS_UNC_ABSOLUTE_PATH_RE.test(modulePath)) {
+    const windowsUrl = pathToFileURL(modulePath, { windows: true }).href;
+    if (/^file:\/\/[^/]/.test(windowsUrl)) {
+      return windowsUrl;
+    }
+
+    const normalized = modulePath.replace(/\\/g, "/").replace(/^\/+/, "//");
+    return new URL(`file:${normalized}`).href;
+  }
+
   return pathToFileURL(modulePath).href;
 }
 
@@ -148,7 +148,10 @@ function toRepoRelative(absOrRelPath) {
     ? absOrRelPath
     : path.resolve(process.cwd(), absOrRelPath);
   const rel = path.relative(ROOT_DIR, abs);
-  if (rel.startsWith("..")) {
+  // Cross-drive-safe: `isOutsideRelative` also catches the absolute target that
+  // `path.relative` returns on Windows when `abs` is on a different drive than
+  // ROOT_DIR (a bare `startsWith("..")` would miss it).
+  if (isOutsideRelative(rel)) {
     return absOrRelPath.split(path.sep).join("/");
   }
   return rel.split(path.sep).join("/");
@@ -187,9 +190,13 @@ function writeIfChanged(filePath, originalContent, nextContent, modifiedSet) {
 
 function applyInProcessFixers(absPath, content, modifiedSet) {
   let next = content;
+  const normalized = asciiNormalizer.processMarkdown(next);
+  if (normalized.changed) {
+    next = writeIfChanged(absPath, next, normalized.content, modifiedSet);
+  }
   const md036 = fixMd036.processMarkdownContent(next);
   if (md036.changed) {
-    next = writeIfChanged(absPath, content, md036.content, modifiedSet);
+    next = writeIfChanged(absPath, next, md036.content, modifiedSet);
   }
   const md029Md051 = fixMd029Md051.processMarkdownContent(next);
   if (md029Md051.changed) {
@@ -200,28 +207,11 @@ function applyInProcessFixers(absPath, content, modifiedSet) {
 }
 
 async function loadPrettier() {
-  // Prefer the local devDependency (matches the inlined hook entry's fast
-  // path). The CJS entry point exposes the same async surface used by
-  // `prettier --write` internally.
-  if (fs.existsSync(PRETTIER_LOCAL_MODULE)) {
-    try {
-      // eslint-disable-next-line global-require
-      return require(PRETTIER_LOCAL_MODULE);
-    } catch (error) {
-      if (isRecoverableToolLoadError(error)) {
-        return null;
-      }
-      throw error;
-    }
-  }
-  if (fs.existsSync(PRETTIER_LOCAL_BIN)) {
-    // The bin file is not directly require()-able; if the entry module
-    // is missing but the bin is present, the install is corrupt.
-    throw new Error(
-      "Prettier devDependency layout is unexpected: bin present but index.cjs missing. Run `npm install` to repair."
-    );
-  }
-  return null;
+  return loadLocalPrettier({
+    localPrettierModulePath: PRETTIER_LOCAL_MODULE,
+    localPrettierBinPath: PRETTIER_LOCAL_BIN,
+    isRecoverableToolLoadErrorFn: isRecoverableToolLoadError
+  });
 }
 
 function runNpxPrettier(absPath, modifiedSet) {
@@ -394,7 +384,7 @@ async function runMarkdownlintInProcess(absPaths, modifiedSet, options = {}) {
 }
 
 function runValidators(absPath, content) {
-  const violations = { ascii: [], codePatterns: [], prose: [] };
+  const violations = { ascii: [], codePatterns: [], prose: [], outOfTreeLinks: [] };
   const warnings = { ascii: [] };
 
   const asciiResult = ascii.scanContent(absPath, content, false);
@@ -405,6 +395,12 @@ function runValidators(absPath, content) {
 
   const proseResult = prose.scanContent(absPath, content);
   violations.prose.push(...proseResult.violations);
+
+  // Out-of-tree link guard only applies to Markdown files under docs/;
+  // mkdocs only renders that subtree, so the policy is scoped there.
+  if (outOfTreeLinks.isDocsMarkdown(absPath)) {
+    violations.outOfTreeLinks.push(...outOfTreeLinks.scanContent(absPath, content));
+  }
 
   return { violations, warnings };
 }
@@ -448,7 +444,8 @@ async function runStagedMdPipeline(filePaths, options = {}) {
   const aggregated = {
     ascii: { violations: [], warnings: [] },
     codePatterns: { violations: [] },
-    prose: { violations: [] }
+    prose: { violations: [] },
+    outOfTreeLinks: { violations: [] }
   };
   let markdownlintErrors = 0;
   // Tracks files the per-file loop actually processed (i.e. files that
@@ -463,10 +460,10 @@ async function runStagedMdPipeline(filePaths, options = {}) {
     if (original === null) continue;
     present.push(absPath);
 
-    // Stage 1+2: in-process structural fixers.
+    // Stage 1-3: in-process ASCII and structural fixers.
     let working = applyInProcessFixers(absPath, original, modifiedSet);
 
-    // Stage 3: prettier in-process.
+    // Stage 4: prettier in-process.
     if (!skipPrettier) {
       try {
         working = await runPrettierInProcess(absPath, working, modifiedSet);
@@ -478,17 +475,6 @@ async function runStagedMdPipeline(filePaths, options = {}) {
         throw error;
       }
     }
-
-    // Stage 5 (validators) reads the post-fix content. Markdownlint runs
-    // outside this loop so it can batch all files into a single call.
-    // Re-read from disk to pick up any changes prettier wrote, then
-    // hand the content to the validators.
-    const postFix = readFileSafe(absPath) ?? working;
-    const v = runValidators(absPath, postFix);
-    aggregated.ascii.violations.push(...v.violations.ascii);
-    aggregated.ascii.warnings.push(...v.warnings.ascii);
-    aggregated.codePatterns.violations.push(...v.violations.codePatterns);
-    aggregated.prose.violations.push(...v.violations.prose);
   }
 
   // Stage 4: markdownlint --fix across all present files at once.
@@ -497,6 +483,20 @@ async function runStagedMdPipeline(filePaths, options = {}) {
   if (!skipMarkdownlint && present.length > 0) {
     const lintResult = await runMarkdownlintInProcess(present, modifiedSet);
     markdownlintErrors = lintResult.errors || 0;
+  }
+
+  // Stage 5: validators read the final post-fixer, post-prettier,
+  // post-markdownlint content. This keeps hook results aligned with the
+  // actual file snapshot pre-commit will ask the user to re-stage.
+  for (const absPath of present) {
+    const finalContent = readFileSafe(absPath);
+    if (finalContent === null) continue;
+    const v = runValidators(absPath, finalContent);
+    aggregated.ascii.violations.push(...v.violations.ascii);
+    aggregated.ascii.warnings.push(...v.warnings.ascii);
+    aggregated.codePatterns.violations.push(...v.violations.codePatterns);
+    aggregated.prose.violations.push(...v.violations.prose);
+    aggregated.outOfTreeLinks.violations.push(...v.violations.outOfTreeLinks);
   }
 
   return {
@@ -536,6 +536,15 @@ function reportPipelineResult(result) {
       emit(formatProseViolation(v), true);
     }
     totalViolations += result.violations.prose.violations.length;
+  }
+
+  if (result.violations.outOfTreeLinks && result.violations.outOfTreeLinks.violations.length > 0) {
+    emit("-- validate-docs-out-of-tree-links --", true);
+    for (const v of result.violations.outOfTreeLinks.violations) {
+      const rel = toRepoRelative(v.file);
+      emit(`${rel}:${v.line}: out-of-tree link "${v.url}" -- ${v.reason}`, true);
+    }
+    totalViolations += result.violations.outOfTreeLinks.violations.length;
   }
 
   if (result.markdownlintErrors > 0) {
@@ -582,6 +591,8 @@ module.exports = {
   PRETTIER_LOCAL_BIN,
   PRETTIER_LOCAL_MODULE,
   MARKDOWNLINT_CLI2_MODULE,
+  WINDOWS_ABSOLUTE_PATH_RE,
+  WINDOWS_UNC_ABSOLUTE_PATH_RE,
   TOOL_LOAD_ERROR_PATTERNS,
   readPackageJson,
   getPackageSpec,

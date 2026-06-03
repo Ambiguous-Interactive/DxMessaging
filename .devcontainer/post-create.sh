@@ -351,7 +351,7 @@ main() {
     run_optional "Restoring .NET local tools" dotnet tool restore
     run_optional "Installing workspace npm dependencies" npm install
     run_optional "Configuring git safe.directory" git config --global --add safe.directory "$workspace_dir"
-    run_optional "Installing pre-commit hooks" pre-commit install --install-hooks
+    run_optional "Installing pre-commit hook environments" node scripts/ensure-pre-commit.js install-hooks
 
     # Step 5: validate environment (warn-only, never blocking).
     validate_dotnet || { log_error ".NET validation failed"; exit_code=1; }

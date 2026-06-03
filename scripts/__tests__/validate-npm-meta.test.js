@@ -11,7 +11,36 @@
 "use strict";
 
 const childProcess = require("child_process");
-const { toShellCommand } = require("../lib/shell-command");
+const { buildSpawnInvocation } = require("../lib/shell-command");
+
+// Canonical npm pack invocation that production (getPackageFiles) hands to
+// spawnPlatformCommandSync. Derive expectations from buildSpawnInvocation so
+// the assertion tracks production on every platform.
+const NPM_PACK_ARGS = ["pack", "--json", "--dry-run", "--ignore-scripts"];
+// The two analyzer assemblies the package MUST ship. SetupCscRsp copies them
+// into Assets/Plugins and activates them with Unity's RoslynAnalyzer label.
+// Editor/Analyzers/ also ships the Roslyn runtime deps alongside them; the validator only enforces that these two
+// REQUIRED files are present and does not forbid the dep DLLs from shipping.
+const REQUIRED_ANALYZER_FILES = [
+  "Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll",
+  "Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
+  "Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll",
+  "Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll.meta"
+];
+
+function withPlatform(platform, fn) {
+  const original = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: platform, configurable: true });
+  try {
+    return fn();
+  } finally {
+    if (original) {
+      Object.defineProperty(process, "platform", original);
+    } else {
+      delete process.platform;
+    }
+  }
+}
 
 const {
   getPackageFiles,
@@ -22,6 +51,7 @@ const {
   validateFilesHaveMetaFiles,
   validateNoBuildArtifactsInTarball,
   validatePublishedFilesArePairedWithMetas,
+  validateRequiredAnalyzerFilesInTarball,
   validateNpmMeta
 } = require("../validate-npm-meta.js");
 
@@ -114,10 +144,17 @@ describe("validate-npm-meta", () => {
 
       const files = getPackageFiles();
 
+      // Expectation tracks production on this host: buildSpawnInvocation uses
+      // the same code path spawnPlatformCommandSync does. Only command/args are
+      // host-divergent; the options shape is asserted separately below via
+      // expect.objectContaining (cwd is resolved by production to a real path,
+      // so it is matched with expect.any(String) rather than an exact value).
+      const inv = buildSpawnInvocation("npm", NPM_PACK_ARGS);
+
       expect(files).toEqual(["Runtime/File.cs", "Runtime/File.cs.meta"]);
       expect(spawnSyncSpy).toHaveBeenCalledWith(
-        toShellCommand("npm"),
-        ["pack", "--json", "--dry-run", "--ignore-scripts"],
+        inv.command,
+        inv.args,
         expect.objectContaining({
           cwd: expect.any(String),
           encoding: "utf8",
@@ -126,9 +163,50 @@ describe("validate-npm-meta", () => {
       );
     });
 
-    test("uses npm.cmd command name on win32", () => {
-      expect(toShellCommand("npm", "win32")).toBe("npm.cmd");
-      expect(toShellCommand("npx", "win32")).toBe("npx.cmd");
+    test("uses the cmd.exe wrapper for npm pack on win32 (forced platform)", () => {
+      // Exercise the Windows branch even on a Linux/macOS host so the divergence
+      // that broke the pre-push hook on Windows is caught everywhere.
+      withPlatform("win32", () => {
+        const spawnSyncSpy = jest.spyOn(childProcess, "spawnSync").mockReturnValue({
+          status: 0,
+          stdout: JSON.stringify([{ files: [{ path: "Runtime/File.cs" }] }]),
+          stderr: ""
+        });
+
+        getPackageFiles();
+
+        const inv = buildSpawnInvocation("npm", NPM_PACK_ARGS, {}, "win32");
+        expect(inv.command).toBe(buildSpawnInvocation("npm", [], {}, "win32").command);
+        expect(inv.args).toEqual(["/d", "/s", "/c", "npm.cmd", ...NPM_PACK_ARGS]);
+        expect(spawnSyncSpy).toHaveBeenCalledWith(
+          inv.command,
+          inv.args,
+          expect.objectContaining({
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+            shell: false,
+            windowsHide: true
+          })
+        );
+      });
+    });
+
+    test("uses plain npm passthrough on linux (forced platform)", () => {
+      withPlatform("linux", () => {
+        const spawnSyncSpy = jest.spyOn(childProcess, "spawnSync").mockReturnValue({
+          status: 0,
+          stdout: JSON.stringify([{ files: [{ path: "Runtime/File.cs" }] }]),
+          stderr: ""
+        });
+
+        getPackageFiles();
+
+        expect(spawnSyncSpy).toHaveBeenCalledWith(
+          "npm",
+          NPM_PACK_ARGS,
+          expect.objectContaining({ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+        );
+      });
     });
 
     test("throws when npm pack exits with non-zero status", () => {
@@ -416,6 +494,7 @@ describe("validate-npm-meta", () => {
 
     test("should reject development-only repository roots", () => {
       const files = [
+        ".ambiguous-organization-build-lock/README.md",
         ".config/tool.json",
         ".unity-test-project/Packages/manifest.json",
         ".unity-test-project.meta",
@@ -449,6 +528,7 @@ describe("validate-npm-meta", () => {
 
       expect(result.valid).toBe(false);
       expect(result.errors.map((error) => error.file)).toEqual([
+        ".ambiguous-organization-build-lock/README.md",
         ".config/tool.json",
         ".unity-test-project/Packages/manifest.json",
         ".unity-test-project.meta",
@@ -592,7 +672,7 @@ describe("validate-npm-meta", () => {
     test("validateNpmMeta should pass against the real npm pack --dry-run output on the current branch", () => {
       // Integration check: shells out to the real npm pack flow via the script's own
       // getPackageFiles() and asserts the current branch is clean. This is the live
-      // guardrail that issue #204 (https://github.com/wallstop/DxMessaging/issues/204)
+      // guardrail that issue #204 (https://github.com/Ambiguous-Interactive/DxMessaging/issues/204)
       // cannot regress without the test failing.
       jest.spyOn(console, "log").mockImplementation(() => {});
 
@@ -615,9 +695,12 @@ describe("validate-npm-meta", () => {
               { path: "Runtime/Core.meta" },
               { path: "Runtime/Core/MessageHandler.cs" },
               { path: "Runtime/Core/MessageHandler.cs.meta" },
+              { path: "Editor.meta" },
+              { path: "Editor/Analyzers.meta" },
               { path: ".unity-test-project.meta" },
               { path: ".unity-test-project/Packages/manifest.json" },
-              { path: ".unity-test-project/Packages/manifest.json.meta" }
+              { path: ".unity-test-project/Packages/manifest.json.meta" },
+              ...REQUIRED_ANALYZER_FILES.map((file) => ({ path: file }))
             ]
           }
         ]),
@@ -650,10 +733,35 @@ describe("validate-npm-meta", () => {
     });
   });
 
+  describe("required analyzer package files", () => {
+    test("accepts the required analyzer DLLs and meta files from the tarball list", () => {
+      const result = validateRequiredAnalyzerFilesInTarball(REQUIRED_ANALYZER_FILES);
+
+      expect(result).toEqual({ valid: true, errors: [] });
+    });
+
+    test("flags missing analyzer DLLs from the actual tarball file list", () => {
+      const files = REQUIRED_ANALYZER_FILES.filter(
+        (file) => file !== "Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll"
+      );
+
+      const result = validateRequiredAnalyzerFilesInTarball(files);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors).toEqual([
+        {
+          type: "missing-required-analyzer-file",
+          file: "Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll",
+          message: expect.stringContaining("Tarball is missing required analyzer file")
+        }
+      ]);
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Issue #204 regression coverage
   //
-  // GitHub issue #204 (https://github.com/wallstop/DxMessaging/issues/204)
+  // GitHub issue #204 (https://github.com/Ambiguous-Interactive/DxMessaging/issues/204)
   // reported `GuidDB::CreateMetaFileMappings` warnings on every Unity asset-database
   // refresh after installing the npm package. Pre-2.1.8 tarballs shipped
   // SourceGenerator `bin/Debug/netstandard2.0/...` build outputs and `obj/...` files

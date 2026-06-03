@@ -12,6 +12,8 @@ on:
       - ".yamllint.yaml"
       - ".github/workflows/**/*.yml"
       - ".github/workflows/**/*.yaml"
+      - ".github/actions/**/*.yml"
+      - ".github/actions/**/*.yaml"
       - ".github/workflows/pre-commit-tooling-check.yml"
   push:
     branches:
@@ -27,6 +29,8 @@ on:
       - ".yamllint.yaml"
       - ".github/workflows/**/*.yml"
       - ".github/workflows/**/*.yaml"
+      - ".github/actions/**/*.yml"
+      - ".github/actions/**/*.yaml"
       - ".github/workflows/pre-commit-tooling-check.yml"
   workflow_dispatch:
 
@@ -41,7 +45,17 @@ jobs:
   pre-commit-tooling:
     name: Validate pre-commit tooling (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # This job runs Node-heavy work several times over (npm install, three
+    # pre-push Jest hooks, the full `preflight:pre-push` parity sweep, then the
+    # managed-Jest fallback verification with an isolated `npm install jest`).
+    # The hosted windows-latest runner is ~2x slower at that work than
+    # ubuntu/macos (process spawn + npm I/O), so a single tight job timeout
+    # silently cancels ONLY the Windows leg mid-step ("The operation was
+    # canceled") while ubuntu/macos finish in ~5.5 min. Size the job timeout for
+    # the slowest OS with comfortable headroom (Windows observed ~11-12 min); the
+    # heavy steps below carry their own per-step timeouts so a genuine wedge is
+    # reported as a clear "step timed out" instead of an opaque job cancel.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -115,41 +129,68 @@ jobs:
           cache-dependency-path: package.json
 
       - name: Diagnose Node runtime
-        shell: bash
         run: |
-          set -euo pipefail
-          echo "Node: $(node --version)"
-          echo "npm: $(npm --version)"
-          echo "npm cache: $(npm config get cache)"
+          node --version
+          npm --version
+          npm config get cache
 
-      - name: Install pre-commit
-        run: python -m pip install pre-commit
+      - name: Ensure pinned pre-commit
+        run: node scripts/ensure-pre-commit.js
 
       - name: Install dependencies
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [ -f package-lock.json ]; then
-            echo "Install mode: npm ci (lockfile present)"
+          if (Test-Path package-lock.json) {
+            Write-Host "Install mode: npm ci (lockfile present)"
             npm ci
-          else
-            echo "Install mode: npm install --no-audit --no-fund (lockfile absent)"
+          } else {
+            Write-Host "Install mode: npm install --no-audit --no-fund (lockfile absent)"
             npm i --no-audit --no-fund
-          fi
+          }
+
+      - name: Validate local Node tooling health
+        run: npm run validate:node-tooling
 
       - name: Validate pre-commit Node tooling policy
-        run: pre-commit run validate-pre-commit-tooling --all-files
+        run: node scripts/ensure-pre-commit.js run validate-pre-commit-tooling --all-files
+
+      - name: Validate devcontainer JSONC usage policy
+        run: node scripts/ensure-pre-commit.js run validate-devcontainer-jsonc-usage --all-files
 
       - name: Validate YAML formatting and lint policy
-        run: pre-commit run yamllint --all-files
+        run: node scripts/ensure-pre-commit.js run yamllint --all-files
 
       - name: Validate changelog policy hook
-        run: pre-commit run validate-changelog-policy --all-files
+        run: node scripts/ensure-pre-commit.js run validate-changelog-policy --all-files
 
       - name: Run parser script tests hook
-        run: pre-commit run --hook-stage pre-push script-parser-tests --all-files
+        run: node scripts/ensure-pre-commit.js run --hook-stage pre-push script-parser-tests --all-files
+
+      - name: Run script tests hook
+        run: node scripts/ensure-pre-commit.js run --hook-stage pre-push script-tests --all-files
+
+      - name: Run Unity contract tests hook
+        run: node scripts/ensure-pre-commit.js run --hook-stage pre-push unity-contract-tests --all-files
+
+      - name: Run pre-push preflight (parity check)
+        # Redundant by design: if `preflight:pre-push` diverges from the
+        # explicit pre-push hook invocations above (e.g., someone adds a
+        # new pre-push hook to .pre-commit-config.yaml but forgets to
+        # widen the npm script), this step fails fast and points the
+        # author at the discrepancy. The coverage Jest test catches the
+        # static case; this step catches drift the test cannot model
+        # (per-platform shell quirks, npm script chaining, env handling).
+        # timeout-minutes: this is the heaviest step (full parity sweep + full
+        # Jest suite). It runs ~5 min on the windows-latest runner; the per-step
+        # timeout allows that with margin but turns a genuine wedge into a clear
+        # "step timed out" signal instead of the opaque job-level cancel.
+        timeout-minutes: 12
+        run: npm run preflight:pre-push
 
       - name: Diagnose managed Jest fallback environment
+        # Quick diagnostic-only step (node --version + 5-line script). Add a
+        # per-step timeout so a wedged probe is obvious in CI logs.
+        timeout-minutes: 2
         shell: bash
         run: |
           set -euo pipefail
@@ -157,12 +198,12 @@ jobs:
           echo "npm: $(npm --version)"
           node <<'NODE'
           const fs = require("fs");
-          const runnerPath = "node_modules/jest-circus/build/runner.js";
-          console.log("runner exists before deletion:", fs.existsSync(runnerPath));
           try {
-            console.log("resolved runner path:", require.resolve("jest-circus/runner"));
+            const runnerPath = require.resolve("jest-circus/runner");
+            console.log("resolved runner path before deletion:", runnerPath);
+            console.log("runner exists before deletion:", fs.existsSync(runnerPath));
           } catch (error) {
-            console.log(`resolved runner path: unavailable (${error.message})`);
+            console.log(`resolved runner path before deletion: unavailable (${error.message})`);
           }
           NODE
 
@@ -170,20 +211,43 @@ jobs:
         run: node scripts/verify-managed-jest-fallback.js --force-delete-managed-runner
 
       - name: Confirm managed Jest runner was removed
+        # Quick assertion (filesystem stat + 8-line script). Add timeout.
+        timeout-minutes: 2
         shell: bash
         run: |
           set -euo pipefail
           node <<'NODE'
           const fs = require("fs");
-          const runnerPath = "node_modules/jest-circus/build/runner.js";
-          const exists = fs.existsSync(runnerPath);
-          console.log("runner exists after deletion:", exists);
-          if (exists) {
+          try {
+            const runnerPath = require.resolve("jest-circus/runner");
+            const exists = fs.existsSync(runnerPath);
+            console.log("resolved runner path after deletion:", runnerPath);
+            console.log("runner exists after deletion:", exists);
+            if (exists) {
               process.exit(1);
+            }
+          } catch (error) {
+            console.log(`resolved runner path after deletion: unavailable (${error.message})`);
           }
           NODE
 
       - name: Diagnose isolated Jest fallback resolution inputs
+        # DXMSG_HOOK_NO_AUTOREPAIR=1: this diagnostic step runs immediately
+        # after the previous step deleted node_modules/jest-circus/build/runner.js
+        # to force the isolated-fallback path. The production integrity gate
+        # in scripts/run-managed-jest.js would observe the missing runner and
+        # auto-run `npm ci` to repair the local install, which would re-create
+        # the runner and silently restore the local tier (defeating the test's
+        # purpose). NO_AUTOREPAIR lets the integrity probe still run (so the
+        # diagnostic banner appears in CI logs) but suppresses the repair, so
+        # this step accurately reports the resolution state that the next
+        # assertion step depends on.
+        # timeout-minutes: diagnostic step that loads the run-managed-jest
+        # module and prints a handful of resolved paths; should complete in
+        # seconds. A per-step timeout makes wedged require() calls obvious.
+        timeout-minutes: 2
+        env:
+          DXMSG_HOOK_NO_AUTOREPAIR: "1"
         shell: bash
         run: |
           set -euo pipefail
@@ -222,6 +286,29 @@ jobs:
           NODE
 
       - name: Assert isolated Jest fallback path is active
+        # DXMSG_HOOK_NO_AUTOREPAIR=1: the previous "Remove managed Jest runner
+        # to force fallback path" step deletes node_modules/jest-circus/build/runner.js.
+        # Production scripts/run-managed-jest.js (correctly) repairs that via
+        # the integrity gate + npm ci before the tier dispatcher runs, which
+        # would defeat this assertion. NO_AUTOREPAIR keeps the integrity probe
+        # (and its diagnostic logging) active but skips the npm ci repair so
+        # the local tier remains unhealthy and the isolated-fallback selection
+        # diagnostic is emitted. Coverage:
+        #   scripts/__tests__/run-managed-jest-fallback-integrity-isolation.test.js.
+        # timeout-minutes: this step is where the isolated fallback is actually
+        # MATERIALIZED. With the local runner removed and auto-repair disabled,
+        # `run-managed-jest.js --version` performs a fresh `npm install
+        # jest@<pinned>` into an isolated dir -- ~3s on macos / ~7s on ubuntu but
+        # MUCH slower on windows-latest (npm file I/O). This is exactly where the
+        # old 10-minute JOB timeout fired (windows install still running at ~40s,
+        # opaque "operation was canceled"). Give it a per-step timeout generous
+        # enough for a slow Windows install yet a true subset of the job budget,
+        # so a genuine wedge (registry hang) surfaces as a clear "step timed out"
+        # instead of an opaque job cancel. If the integrity probe ever wedges,
+        # this is the step that catches it.
+        timeout-minutes: 5
+        env:
+          DXMSG_HOOK_NO_AUTOREPAIR: "1"
         shell: bash
         run: |
           set -euo pipefail
@@ -230,16 +317,32 @@ jobs:
 
           if ! grep -Fq "Using isolated fallback Jest" "$output_file"; then
             echo "::error::Expected isolated fallback Jest to be used after removing local runner."
+            echo "::error::Active DXMSG_* env vars (one-line dump):"
+            env | grep -E '^DXMSG_' | tr '\n' ' ' || true
+            echo ""
             exit 1
           fi
 
-          if ! grep -Fq "Injected isolated Jest test runner" "$output_file"; then
-            echo "::error::Expected isolated fallback test runner injection diagnostics."
-            exit 1
-          fi
+          # NOTE: scripts/run-managed-jest.js intentionally does NOT inject
+          # --testRunner (Jest 27+ resolves jest-circus by default; injecting
+          # absolute paths breaks jest-config's runner validator on Windows).
+          # The "Injected isolated Jest test runner" diagnostic is therefore
+          # absent by design. Re-introducing that injection is blocked by
+          # scripts/__tests__/run-managed-jest-no-injected-test-runner.test.js.
 
       - name: Verify managed Jest fallback test
+        # Unlike the two steps above, this step runs WITHOUT DXMSG_HOOK_NO_AUTOREPAIR,
+        # so its integrity probe takes the auto-repair path: the local jest-circus
+        # runner was deleted earlier, so run-managed-jest.js runs `npm ci` to
+        # restore the local node_modules and then runs the single named test on
+        # the repaired LOCAL Jest tier (it does NOT use the isolated fallback).
+        # timeout-minutes: the `npm ci` is the heaviest part on windows-latest (a
+        # warm-cache relink of the full tree); size it like the isolated-install
+        # step above -- generous for a slow Windows npm operation, yet a true
+        # subset of the job budget so a wedge is a clear "step timed out" instead
+        # of an opaque job cancel.
+        timeout-minutes: 5
         run: >-
           node scripts/run-managed-jest.js --runTestsByPath
           scripts/__tests__/run-managed-jest.test.js --testNamePattern
-          "runIsolatedFallbackJest injects isolated testRunner when caller did not provide one"
+          "runIsolatedFallbackJest does not inject --testRunner when caller did not provide one"

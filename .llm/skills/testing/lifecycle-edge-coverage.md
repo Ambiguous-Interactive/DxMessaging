@@ -7,14 +7,14 @@ created: "2026-05-02"
 updated: "2026-05-02"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Tests/Runtime/Core/LifecycleEdgeCasesTests.cs"
     - path: "Tests/Runtime/Core/ReentrantEmissionExtendedTests.cs"
     - path: "Tests/Runtime/TestUtilities/LeakWatcher.cs"
     - path: "Runtime/Core/MessageBus/MessageBus.cs"
     - path: "Runtime/Core/DxMessagingStaticState.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "testing"

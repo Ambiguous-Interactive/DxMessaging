@@ -2,7 +2,9 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections.Generic;
     using System.IO;
+    using DxMessaging.Editor;
     using NUnit.Framework;
 
     [TestFixture]
@@ -25,81 +27,59 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        [Test]
-        public void FiltersDuplicateAnalyzerEntries()
+        public static IEnumerable<TestCaseData> CscRspCleanupCases()
         {
-            // Arrange: Create a CSC.rsp file with duplicate entries from different package versions
-            string testContent =
-                @"-a:""Library/PackageCache/com.wallstop-studios.dxmessaging@4e74e1b2eec3/Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll""
--a:""Library/PackageCache/com.wallstop-studios.dxmessaging@4e74e1b2eec3/Editor/Analyzers/Microsoft.CodeAnalysis.dll""
--a:""Library/PackageCache/com.wallstop-studios.dxmessaging@3d05efca60e4/Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll""
--a:""Library/PackageCache/com.wallstop-studios.dxmessaging@3d05efca60e4/Editor/Analyzers/Microsoft.CodeAnalysis.dll""
--r:""SomeOtherAnalyzer.dll""
-";
-
-            File.WriteAllText(_testRspFilePath, testContent);
-
-            // Act: Simulate cleaning logic
-            string[] lines = File.ReadAllLines(_testRspFilePath);
-            int dxMessagingCount = 0;
-            int otherCount = 0;
-
-            foreach (string line in lines)
-            {
-                if (
-                    string.IsNullOrWhiteSpace(line)
-                    || !line.StartsWith("-a:", StringComparison.OrdinalIgnoreCase)
-                )
+            yield return new TestCaseData(
+                new[]
                 {
-                    continue;
-                }
+                    @"-a:""Library/PackageCache/com.wallstop-studios.dxmessaging@4e74e1b2eec3/Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll""",
+                    @"-a:""Library/PackageCache/com.wallstop-studios.dxmessaging@4e74e1b2eec3/Editor/Analyzers/Microsoft.CodeAnalysis.dll""",
+                    @"-a:""Library/PackageCache/com.wallstop-studios.dxmessaging@3d05efca60e4/Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll""",
+                    @"-r:""SomeOtherReference.dll""",
+                },
+                new[] { @"-r:""SomeOtherReference.dll""" }
+            ).SetName("removes all DxMessaging analyzer and dependency -a entries");
 
-                if (
-                    line.Contains(
-                        "com.wallstop-studios.dxmessaging",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                    || line.Contains(
-                        "WallstopStudios.DxMessaging",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
+            yield return new TestCaseData(
+                new[]
                 {
-                    dxMessagingCount++;
-                }
-                else
+                    @"-a:""Library/PackageCache/some.other.package/Analyzers/OtherAnalyzer.dll""",
+                    @"-r:""System.Runtime.dll""",
+                    @"-define:SOMETHING",
+                },
+                new[]
                 {
-                    otherCount++;
+                    @"-a:""Library/PackageCache/some.other.package/Analyzers/OtherAnalyzer.dll""",
+                    @"-r:""System.Runtime.dll""",
+                    @"-define:SOMETHING",
                 }
-            }
+            ).SetName("preserves third-party analyzer and non-analyzer lines");
 
-            // Assert: Should detect duplicate DxMessaging entries
-            Assert.AreEqual(4, dxMessagingCount, "Should detect all DxMessaging analyzer entries");
-            Assert.AreEqual(0, otherCount, "Should have no other -a: entries in this test");
+            yield return new TestCaseData(
+                new[]
+                {
+                    @"-a:""Assets/Plugins/Editor/WallstopStudios.DxMessaging/WallstopStudios.DxMessaging.Analyzer.dll""",
+                    @"-additionalfile:""Assets/DxMessaging.BaseCallIgnore.generated.txt""",
+                },
+                new[] { @"-additionalfile:""Assets/DxMessaging.BaseCallIgnore.generated.txt""" }
+            ).SetName("preserves DxMessaging additionalfile while removing analyzer registration");
         }
 
-        [Test]
-        public void PreservesNonDxMessagingEntries()
+        [TestCaseSource(nameof(CscRspCleanupCases))]
+        public void RemovesDxMessagingAnalyzerEntriesAndPreservesEverythingElse(
+            string[] inputLines,
+            string[] expectedLines
+        )
         {
-            // Arrange: Create a CSC.rsp with mixed entries
-            string testContent =
-                @"-a:""Library/PackageCache/com.wallstop-studios.dxmessaging@abc123/Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll""
--a:""Library/PackageCache/some.other.package/Analyzers/OtherAnalyzer.dll""
--r:""System.Runtime.dll""
-";
+            File.WriteAllLines(_testRspFilePath, inputLines);
 
-            File.WriteAllText(_testRspFilePath, testContent);
+            string[] cleaned = SetupCscRsp.CleanDxMessagingAnalyzerLines(
+                File.ReadAllLines(_testRspFilePath),
+                out bool foundStaleEntries
+            );
 
-            // Act & Assert: Non-DxMessaging lines should be preserved
-            string content = File.ReadAllText(_testRspFilePath);
-            Assert.IsTrue(
-                content.Contains("OtherAnalyzer.dll"),
-                "Should preserve non-DxMessaging analyzer"
-            );
-            Assert.IsTrue(
-                content.Contains("System.Runtime.dll"),
-                "Should preserve reference entries"
-            );
+            CollectionAssert.AreEqual(expectedLines, cleaned);
+            Assert.AreEqual(inputLines.Length != expectedLines.Length, foundStaleEntries);
         }
     }
 }

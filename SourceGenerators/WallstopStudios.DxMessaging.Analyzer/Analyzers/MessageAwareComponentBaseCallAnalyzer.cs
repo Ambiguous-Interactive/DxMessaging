@@ -87,7 +87,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             "'{0}' overrides MessageAwareComponent.{1} but does not call base.{1}(); the messaging system may not function correctly on this component.";
 
         private const string HelpLinkBase =
-            "https://github.com/wallstop/DxMessaging/blob/master/docs/reference/analyzers.md#";
+            "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/reference/analyzers.md#";
 
         internal static readonly ImmutableHashSet<string> GuardedMethodNames =
             ImmutableHashSet.Create(

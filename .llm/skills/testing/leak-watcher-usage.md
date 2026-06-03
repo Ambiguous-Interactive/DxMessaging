@@ -7,13 +7,13 @@ created: "2026-05-02"
 updated: "2026-05-02"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Tests/Runtime/TestUtilities/LeakWatcher.cs"
     - path: "Tests/Runtime/Core/LeakWatcherSelfTests.cs"
     - path: "Runtime/Core/MessageBus/IMessageBus.cs"
     - path: "Tests/Runtime/Core/PublicSurfaceContractTests.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "testing"

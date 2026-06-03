@@ -1,0 +1,5 @@
+{
+  "_comment": "Canonical Unity version source of truth for all CI. The newest entry of `all` (last element) is the 'latest' tracked by perf-numbers/unity-benchmarks. `release` is the version release.yml and unity-gameci-experiment.yml pin. Bump versions HERE; scripts/validate-unity-versions.js fails if any consumer drifts. See .llm/skills/github-actions/ for the contract.",
+  "all": ["2021.3.45f1", "2022.3.45f1", "6000.3.16f1"],
+  "release": "2022.3.45f1"
+}

@@ -4,7 +4,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using System;
     using System.Collections;
     using System.Collections.Generic;
-    using System.Diagnostics;
     using System.Globalization;
     using System.Linq;
     using DxMessaging.Core;
@@ -22,7 +21,10 @@ namespace DxMessaging.Tests.Runtime.Core
         private const string TestSeedEnvVar = "DXMESSAGING_TEST_SEED";
         private const int DefaultTestSeed = unchecked((int)0xDB1ABCED);
 
+        private const string VerboseLogEnvVar = "DXM_TEST_VERBOSE_LOG";
+
         private static int? _cachedSeed;
+        private static bool? _cachedVerbose;
 
         protected int _numRegistrations;
         protected readonly List<GameObject> _spawned = new();
@@ -33,12 +35,26 @@ namespace DxMessaging.Tests.Runtime.Core
         protected virtual int StressRegistrations => 150;
 
         /// <summary>
-        /// Maximum time the polling loop in
-        /// <see cref="WaitUntilMessageHandlerIsFresh"/> waits for the message
-        /// bus to drain before failing. Override in derived fixtures that need
-        /// a tighter or looser bound.
+        /// Maximum number of polled frames the loop in
+        /// <see cref="WaitUntilMessageHandlerIsFresh"/> yields, waiting for the
+        /// message bus to drain before failing. Override in derived fixtures
+        /// that need a tighter or looser bound.
         /// </summary>
-        protected virtual TimeSpan FreshHandlerWaitTimeout => TimeSpan.FromSeconds(1.5);
+        /// <remarks>
+        /// This budget is expressed in FRAMES, not wall-clock time, on purpose.
+        /// A wall-clock threshold (the prior 1.5s <see cref="TimeSpan"/> bound)
+        /// is inherently runner-speed dependent: a slower CI runner (observed on
+        /// Unity 2021.3 PlayMode) can exceed a fixed millisecond budget for the
+        /// same amount of deterministic work and flake, even though the bus
+        /// drains in the same NUMBER of frames everywhere. The bus drains
+        /// synchronously on the deferred-destroy flush, which Unity performs in
+        /// a single frame, so the happy path clears in zero-to-one polled
+        /// frames. The budget below is a generous deterministic safety margin
+        /// that polls a fixed maximum number of frames regardless of how fast
+        /// each frame executes; it cannot flake on a slow machine because it is
+        /// not measuring wall clock.
+        /// </remarks>
+        protected virtual int FreshHandlerWaitFrameBudget => 600;
 
         /// <summary>
         /// Resolved test seed cached for the lifetime of the process. The
@@ -54,9 +70,39 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <summary>
+        /// When <c>true</c>, the test-harness <see cref="MessagingDebug.LogFunction"/>
+        /// routes <see cref="LogLevel.Debug"/>/<see cref="LogLevel.Info"/> messages and
+        /// the per-test/per-fixture status dumps to <see cref="Debug.Log"/>. Default is
+        /// <c>false</c>: the bus emits an <see cref="LogLevel.Info"/> "Could not find a
+        /// matching ... handler" line on normal deregistered-emit flow, and each
+        /// <see cref="Debug.Log"/> captures a full stack trace, so leaving this on during
+        /// a full PlayMode run produced a multi-tens-of-megabytes log. Opt in by setting
+        /// the <c>DXM_TEST_VERBOSE_LOG</c> environment variable to a truthy value
+        /// (<c>1</c>/<c>true</c>/<c>yes</c>, case-insensitive). Warnings and errors are
+        /// always routed regardless of this flag.
+        /// </summary>
+        /// <remarks>
+        /// Resolved once for the lifetime of the process (mirroring <see cref="TestSeed"/>)
+        /// so the environment variable is parsed a single time rather than on every Setup.
+        /// </remarks>
+        protected static bool VerboseConsoleLogging
+        {
+            get
+            {
+                _cachedVerbose ??= ResolveVerboseConsoleLogging();
+                return _cachedVerbose.Value;
+            }
+        }
+
         [OneTimeSetUp]
         public virtual void LogTestSeedOnce()
         {
+            if (!VerboseConsoleLogging)
+            {
+                return;
+            }
+
             Debug.Log($"DxMessaging test seed = {TestSeed} (env {TestSeedEnvVar}).");
         }
 
@@ -102,7 +148,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     case LogLevel.Debug:
                     case LogLevel.Info:
-                        Debug.Log(message);
+                        if (VerboseConsoleLogging)
+                        {
+                            Debug.Log(message);
+                        }
                         return;
                     case LogLevel.Warn:
                         Debug.LogWarning(message);
@@ -159,8 +208,27 @@ namespace DxMessaging.Tests.Runtime.Core
             return DefaultTestSeed;
         }
 
+        private static bool ResolveVerboseConsoleLogging()
+        {
+            string raw = Environment.GetEnvironmentVariable(VerboseLogEnvVar);
+            if (string.IsNullOrEmpty(raw))
+            {
+                return false;
+            }
+
+            string normalized = raw.Trim();
+            return normalized.Equals("1", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("true", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("yes", StringComparison.OrdinalIgnoreCase);
+        }
+
         protected void LogMessageBusStatus()
         {
+            if (!VerboseConsoleLogging)
+            {
+                return;
+            }
+
             IMessageBus messageBus = MessageHandler.MessageBus;
             Debug.Log(DescribeMessageBusState(messageBus));
         }
@@ -325,19 +393,26 @@ namespace DxMessaging.Tests.Runtime.Core
             IMessageBus messageBus = MessageHandler.MessageBus;
             Assert.IsNotNull(messageBus);
 
-            Stopwatch timer = Stopwatch.StartNew();
-            // Generous safety margin; the loop exits as soon as state clears, so this only bites under extreme load.
-            TimeSpan timeout = FreshHandlerWaitTimeout;
+            // Deterministic, runner-speed-independent budget: poll a bounded
+            // NUMBER of frames rather than a wall-clock interval. The loop
+            // exits as soon as state clears (zero-to-one frames on the happy
+            // path), so this only bites under extreme load. Frame counting
+            // cannot flake on a slow CI runner the way the prior 1.5s
+            // wall-clock bound could (see FreshHandlerWaitFrameBudget remarks).
+            int frameBudget = FreshHandlerWaitFrameBudget;
+            int framesWaited = 0;
 
-            while (IsStale() && timer.Elapsed < timeout)
+            while (IsStale() && framesWaited < frameBudget)
             {
+                ++framesWaited;
                 yield return null;
             }
 
             Assert.IsFalse(
                 IsStale(),
-                "MessageHandler remained stale after waiting {0}ms (isPlaying={1}). {2}",
-                timer.Elapsed.TotalMilliseconds,
+                "MessageHandler remained stale after polling {0} frames (budget {1}, isPlaying={2}). {3}",
+                framesWaited,
+                frameBudget,
                 Application.isPlaying,
                 DescribeMessageBusState(messageBus, includeLog: true)
             );

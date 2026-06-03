@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   update-release-draft:
-    if: github.repository == 'wallstop/DxMessaging'
+    if: github.repository == 'Ambiguous-Interactive/DxMessaging'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

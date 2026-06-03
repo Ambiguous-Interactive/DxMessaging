@@ -7,11 +7,11 @@ created: "2026-01-30"
 updated: "2026-03-17"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "scripts/validate-skills.js"
     - path: "scripts/__tests__/validate-skills-optional-fields.test.js"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "validation"

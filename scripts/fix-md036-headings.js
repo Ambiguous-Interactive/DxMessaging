@@ -6,8 +6,8 @@
 
 "use strict";
 
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
 /**
  * Apply the MD036 auto-fix to a markdown source string. Pure function: does
@@ -19,7 +19,7 @@ const path = require('path');
  * @returns {{content: string, changed: boolean}}
  */
 function processMarkdownContent(source) {
-  const lines = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const lines = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   let inFence = false;
   let lastHeadingLevel = 0;
   let changed = false;
@@ -42,9 +42,9 @@ function processMarkdownContent(source) {
       continue;
     }
 
-    const prev = i > 0 ? lines[i - 1].trim() : '';
-    const next = i < lines.length - 1 ? lines[i + 1].trim() : '';
-    const isIsolated = (prev === '' || i === 0) && (next === '' || i === lines.length - 1);
+    const prev = i > 0 ? lines[i - 1].trim() : "";
+    const next = i < lines.length - 1 ? lines[i + 1].trim() : "";
+    const isIsolated = (prev === "" || i === 0) && (next === "" || i === lines.length - 1);
 
     // Match **text** or __text__ (no extra characters on line)
     const m = trimmed.match(/^(\*\*|__)([^*_].*?)(\1)$/);
@@ -52,7 +52,7 @@ function processMarkdownContent(source) {
       const text = m[2].trim();
       if (text.length > 0) {
         const level = Math.min((lastHeadingLevel || 2) + 1, 6);
-        const hashes = '#'.repeat(level);
+        const hashes = "#".repeat(level);
         lines[i] = `${hashes} ${text}`;
         lastHeadingLevel = level;
         changed = true;
@@ -60,26 +60,28 @@ function processMarkdownContent(source) {
     }
   }
 
-  return { content: lines.join('\n'), changed };
+  return { content: lines.join("\n"), changed };
 }
 
 function printHelp() {
-  process.stdout.write([
-    'Usage: node scripts/fix-md036-headings.js <file1.md> [file2.md] ...',
-    '',
-    'Rewrites isolated bold-only paragraphs (e.g. **Heading**) into level-N',
-    'headings to satisfy markdownlint MD036.',
-    '',
-    'Options:',
-    '  -h, --help    Show this message.',
-    '',
-  ].join('\n'));
+  process.stdout.write(
+    [
+      "Usage: node scripts/fix-md036-headings.js <file1.md> [file2.md] ...",
+      "",
+      "Rewrites isolated bold-only paragraphs (e.g. **Heading**) into level-N",
+      "headings to satisfy markdownlint MD036.",
+      "",
+      "Options:",
+      "  -h, --help    Show this message.",
+      ""
+    ].join("\n")
+  );
 }
 
 function main(argv) {
   const args = argv || [];
-  const wantsHelp = args.some((arg) => arg === '-h' || arg === '--help');
-  const files = args.filter((arg) => arg !== '-h' && arg !== '--help');
+  const wantsHelp = args.some((arg) => arg === "-h" || arg === "--help");
+  const files = args.filter((arg) => arg !== "-h" && arg !== "--help");
 
   if (wantsHelp) {
     printHelp();
@@ -87,7 +89,7 @@ function main(argv) {
   }
 
   if (files.length === 0) {
-    console.error('Usage: node scripts/fix-md036-headings.js <file1.md> [file2.md] ...');
+    console.error("Usage: node scripts/fix-md036-headings.js <file1.md> [file2.md] ...");
     return 1;
   }
 
@@ -95,7 +97,7 @@ function main(argv) {
     const filePath = path.resolve(process.cwd(), rel);
     let src;
     try {
-      src = fs.readFileSync(filePath, 'utf8');
+      src = fs.readFileSync(filePath, "utf8");
     } catch (e) {
       console.error(`Skipping ${rel}: ${e.message}`);
       continue;
@@ -116,5 +118,5 @@ if (require.main === module) {
 
 module.exports = {
   processMarkdownContent,
-  main,
+  main
 };

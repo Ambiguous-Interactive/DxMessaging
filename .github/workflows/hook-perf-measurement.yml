@@ -55,8 +55,8 @@ jobs:
             npm i --no-audit --no-fund
           fi
 
-      - name: Install pre-commit
-        run: pip install pre-commit==4.6.0
+      - name: Ensure pinned pre-commit
+        run: node scripts/ensure-pre-commit.js
 
       - name: Configure git user (pre-commit needs an author)
         run: |
@@ -71,14 +71,14 @@ jobs:
           dotnet --info
           dotnet tool list
 
-      - name: Install pre-commit hooks
-        run: pre-commit install --install-hooks
+      - name: Install pre-commit hook environments
+        run: node scripts/ensure-pre-commit.js install-hooks
 
       - name: Warm up the hook caches (first run is always cold)
         run: |
-          pre-commit run --hook-stage pre-commit \
+          node scripts/ensure-pre-commit.js run --hook-stage pre-commit \
             --files Runtime/Core/MessageBus/MessageBus.cs >/dev/null 2>&1 || true
-          pre-commit run --hook-stage pre-commit \
+          node scripts/ensure-pre-commit.js run --hook-stage pre-commit \
             --files .llm/skills/performance/git-hook-performance.md >/dev/null 2>&1 || true
 
       - name: Measure wall-clock

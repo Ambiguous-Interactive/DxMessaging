@@ -60,6 +60,43 @@ internal static class GeneratorTestUtilities
         return driver.GetRunResult();
     }
 
+    internal static ImmutableArray<Diagnostic> CompileDxMessageIdGeneratedOutput(
+        string userSource,
+        params string[] preprocessorSymbols
+    )
+    {
+        CSharpParseOptions parseOptions = ParseOptions.WithPreprocessorSymbols(
+            preprocessorSymbols ?? Array.Empty<string>()
+        );
+        GeneratorDriverRunResult result = RunDxMessageId(userSource);
+
+        List<SyntaxTree> syntaxTrees = new()
+        {
+            CSharpSyntaxTree.ParseText(SharedStubs, parseOptions, path: "DxMessagingStubs.cs"),
+            CSharpSyntaxTree.ParseText(userSource, parseOptions, path: "UserSource.cs"),
+        };
+        syntaxTrees.AddRange(
+            result
+                .Results.SelectMany(static run => run.GeneratedSources)
+                .Select(generated =>
+                    CSharpSyntaxTree.ParseText(
+                        generated.SourceText.ToString(),
+                        parseOptions,
+                        path: generated.HintName
+                    )
+                )
+        );
+
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            assemblyName: "GeneratedOutputCompilation",
+            syntaxTrees: syntaxTrees,
+            references: CoreReferences,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
+
+        return compilation.GetDiagnostics();
+    }
+
     internal static ImmutableArray<Diagnostic> CompileSnippet(string userSource)
     {
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
@@ -267,13 +304,13 @@ namespace DxMessaging.Core.Attributes
         public string Expression { get; set; }
     }
 
-    [AttributeUsage(AttributeTargets.Struct)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxTargetedMessageAttribute : Attribute { }
 
-    [AttributeUsage(AttributeTargets.Struct)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxUntargetedMessageAttribute : Attribute { }
 
-    [AttributeUsage(AttributeTargets.Struct)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxBroadcastMessageAttribute : Attribute { }
 
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
@@ -292,9 +329,78 @@ namespace DxMessaging.Core
 
 namespace DxMessaging.Core.Messages
 {
-    public interface IUntargetedMessage { }
-    public interface ITargetedMessage { }
-    public interface IBroadcastMessage { }
+    using System;
+    using DxMessaging.Core;
+
+    public interface IUntargetedMessage : IMessage { }
+    public interface ITargetedMessage : IMessage { }
+    public interface IBroadcastMessage : IMessage { }
+
+    public interface IUntargetedMessage<T> : IUntargetedMessage
+        where T : IUntargetedMessage
+    {
+        Type IMessage.MessageType => typeof(T);
+    }
+
+    public interface ITargetedMessage<T> : ITargetedMessage
+        where T : ITargetedMessage
+    {
+        Type IMessage.MessageType => typeof(T);
+    }
+
+    public interface IBroadcastMessage<T> : IBroadcastMessage
+        where T : IBroadcastMessage
+    {
+        Type IMessage.MessageType => typeof(T);
+    }
+}
+
+namespace DxMessaging.Core.MessageBus
+{
+    using DxMessaging.Core.Messages;
+
+    public interface IMessageBus
+    {
+        TrimResult Trim(bool force = false);
+
+        void UntargetedBroadcast<TMessage>(ref TMessage typedMessage)
+            where TMessage : IUntargetedMessage;
+
+        void TargetedBroadcast<TMessage>(
+            ref DxMessaging.Core.InstanceId target,
+            ref TMessage typedMessage
+        )
+            where TMessage : ITargetedMessage;
+
+        void SourcedBroadcast<TMessage>(
+            ref DxMessaging.Core.InstanceId source,
+            ref TMessage typedMessage
+        )
+            where TMessage : IBroadcastMessage;
+
+        public readonly struct TrimResult
+        {
+            public TrimResult(
+                int typeSlotsEvicted,
+                int targetSlotsEvicted,
+                int pooledCollectionsEvicted,
+                int liveTypeSlotsRemaining
+            )
+            {
+                TypeSlotsEvicted = typeSlotsEvicted;
+                TargetSlotsEvicted = targetSlotsEvicted;
+                PooledCollectionsEvicted = pooledCollectionsEvicted;
+                LiveTypeSlotsRemaining = liveTypeSlotsRemaining;
+            }
+
+            public int TypeSlotsEvicted { get; }
+            public int TargetSlotsEvicted { get; }
+            public int PooledCollectionsEvicted { get; }
+            public int LiveTypeSlotsRemaining { get; }
+        }
+    }
+
+    public sealed class MessageBus { }
 }
 
 namespace DxMessaging.Core.Extensions
@@ -356,6 +462,19 @@ namespace DxMessaging.Core
 
 namespace UnityEngine
 {
+    using System;
+
+    public enum RuntimeInitializeLoadType
+    {
+        AfterAssembliesLoaded,
+    }
+
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class RuntimeInitializeOnLoadMethodAttribute : Attribute
+    {
+        public RuntimeInitializeOnLoadMethodAttribute(RuntimeInitializeLoadType loadType) { }
+    }
+
     public struct Color
     {
         public static readonly Color green = default;
@@ -365,6 +484,14 @@ namespace UnityEngine
     public class GameObject : Object { }
     public class Component : Object { public GameObject gameObject => default; }
     public class MonoBehaviour : Component { }
+}
+
+namespace UnityEngine.Scripting
+{
+    using System;
+
+    [AttributeUsage(AttributeTargets.All)]
+    public sealed class PreserveAttribute : Attribute { }
 }
 
 namespace DxMessaging.Unity

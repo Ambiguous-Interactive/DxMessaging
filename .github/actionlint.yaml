@@ -1,0 +1,21 @@
+# actionlint configuration.
+# Declares custom self-hosted runner labels that actionlint cannot infer
+# from the workflow files. Without this, actionlint reports
+# "label \"<NAME>\" is unknown" for every job referencing them.
+self-hosted-runner:
+  labels:
+    # Marker label applied to self-hosted Windows runners with 64GB+ RAM,
+    # used by Unity workflows (release.yml, unity-benchmarks.yml,
+    # unity-tests.yml). Add additional custom labels here
+    # as new runner pools are introduced.
+    - RAM-64GB
+    # Speed marker reserved on ELI-MACHINE for future opt-in (e.g.,
+    # hotfix dispatch); no currently-active workflow requests it. The
+    # workflow validator and actionlint both still allow the label so a
+    # future workflow can opt in without churn.
+    - fast
+    # Legacy marker applied to old-linux (documented in .llm/context.md);
+    # reserved here so any future inline `runs-on: [self-hosted, Linux,
+    # ..., old]` does not trip an actionlint false-positive.
+    - old
+config-variables: null

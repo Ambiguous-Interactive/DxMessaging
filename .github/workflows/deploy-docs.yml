@@ -3,8 +3,8 @@
 # This workflow builds MkDocs documentation and deploys it to GitHub Pages.
 # It runs on pushes to master (for deployment) and on PRs (for validation only).
 #
-# Badge URL: https://github.com/wallstop/DxMessaging/actions/workflows/deploy-docs.yml/badge.svg
-# Pages URL: https://wallstop.github.io/DxMessaging/
+# Badge URL: https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/deploy-docs.yml/badge.svg
+# Pages URL: https://ambiguous-interactive.github.io/DxMessaging/
 
 name: Deploy Documentation
 
@@ -85,6 +85,13 @@ jobs:
         if: failure()
         run: |
           if [ -f build.log ]; then
+            echo "::group::Strict-mode escalation summary"
+            # mkdocs --strict prints "Aborted with N warnings in strict mode!"
+            # immediately before exit; that exact line tells the operator how
+            # many warnings escalated to errors.
+            grep -nE "Aborted with [0-9]+ warnings in strict mode" build.log || \
+              echo "(no 'Aborted with N warnings in strict mode!' line found)"
+            echo "::endgroup::"
             echo "::group::MkDocs warnings and errors"
             grep -nEi "warning|error|not found|aborted" build.log || true
             echo "::endgroup::"

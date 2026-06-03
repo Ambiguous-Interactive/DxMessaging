@@ -682,10 +682,10 @@ function getChangedFilesFromGitDetails(execFileSyncImpl = execFileSync, env = pr
 
     try {
       const output = execFileSyncImpl("git", args, {
-          cwd: REPO_ROOT,
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "pipe"]
-        });
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"]
+      });
 
       return {
         ok: true,
@@ -851,7 +851,64 @@ function describeChangedFilesSource(diagnostics) {
   return ` Changed-file source: ${diagnostics.source}${attempted}.`;
 }
 
-function validateChangedFilesDiscovery(diagnostics) {
+function probeShallowCloneState(execFileSyncImpl = execFileSync) {
+  const probe = (args) => {
+    try {
+      const output = execFileSyncImpl("git", args, {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      return { ok: true, output: String(output || "").trim() };
+    } catch (error) {
+      return {
+        ok: false,
+        output: "",
+        error: error && error.message ? error.message : String(error)
+      };
+    }
+  };
+
+  const isShallow = probe(["rev-parse", "--is-shallow-repository"]);
+  const originRefs = probe(["for-each-ref", "--format=%(refname)", "refs/remotes/origin"]);
+
+  return {
+    isShallow: isShallow.ok ? isShallow.output === "true" : null,
+    originRefs:
+      originRefs.ok && originRefs.output.length > 0
+        ? originRefs.output
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean)
+        : [],
+    originRefsProbeError: originRefs.ok ? null : originRefs.error
+  };
+}
+
+function formatShallowCloneDiagnostic(shallowState) {
+  if (!shallowState) {
+    return "";
+  }
+
+  const parts = [];
+  if (shallowState.isShallow === true) {
+    parts.push("Repository is a SHALLOW clone (git rev-parse --is-shallow-repository = true)");
+  } else if (shallowState.isShallow === false) {
+    parts.push("Repository is a full clone (not shallow)");
+  } else {
+    parts.push("Shallow-state probe could not run");
+  }
+
+  if (shallowState.originRefs && shallowState.originRefs.length > 0) {
+    parts.push(`origin refs present: ${shallowState.originRefs.join(", ")}`);
+  } else {
+    parts.push("origin refs present: <none>");
+  }
+
+  return ` ${parts.join("; ")}.`;
+}
+
+function validateChangedFilesDiscovery(diagnostics, shallowProbeImpl = probeShallowCloneState) {
   if (!diagnostics || diagnostics.source !== "unavailable") {
     return [];
   }
@@ -863,13 +920,36 @@ function validateChangedFilesDiscovery(diagnostics) {
           .join("; ")
       : "no Git sources were available";
 
+  const shallowState = typeof shallowProbeImpl === "function" ? shallowProbeImpl() : null;
+  const shallowDiagnostic = formatShallowCloneDiagnostic(shallowState);
+
+  // Build a suggestion that NAMES the fix when the shallow-clone signature
+  // is present. Operators saw "Fix the checkout/fetch configuration" and had
+  // no idea this meant fetch-depth: 0 in their workflow's checkout step.
+  const suggestionLines = [];
+  if (shallowState && shallowState.isShallow === true) {
+    suggestionLines.push(
+      "Set fetch-depth: 0 on actions/checkout (shallow clones do not have origin/master / origin/<base> refs needed for changelog coverage)."
+    );
+  } else if (shallowState && shallowState.originRefs && shallowState.originRefs.length === 0) {
+    suggestionLines.push(
+      "No remote-tracking refs were found. If running in CI, set fetch-depth: 0 on actions/checkout so origin/<base> is fetched."
+    );
+  } else {
+    suggestionLines.push(
+      "Fix the checkout/fetch configuration (set fetch-depth: 0 on actions/checkout) or pass --changed-file explicitly."
+    );
+  }
+
+  suggestionLines.push(`Git failures: ${failureSummary}.${shallowDiagnostic}`);
+
   return [
     new Violation(
       "E006",
       "ERROR",
       "Unable to determine changed files for changelog coverage.",
       null,
-      `Fix the checkout/fetch configuration or pass --changed-file explicitly. Git failures: ${failureSummary}`
+      suggestionLines.join(" ")
     )
   ];
 }
@@ -1067,6 +1147,8 @@ module.exports = {
   parseChangedFilesStatusOutput,
   getChangedFilesFromGitDetails,
   getChangedFilesFromGit,
+  probeShallowCloneState,
+  formatShallowCloneDiagnostic,
   validateChangedFilesDiscovery,
   validateCoverageRule,
   validateChangelogPolicy,

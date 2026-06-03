@@ -298,5 +298,5 @@ public class UI : MessageAwareComponent {
 - to [Quick Reference](quick-reference.md) -- API cheat sheet
 - to [API Reference](reference.md) -- Complete API documentation
 
-- to [Mini Combat sample](https://github.com/wallstop/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) -- See concepts in action
+- to [Mini Combat sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) -- See concepts in action
 - to [Patterns](../guides/patterns.md) -- Real-world usage patterns

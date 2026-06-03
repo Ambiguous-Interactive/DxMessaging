@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// cspell:words lscache
 /**
  * @fileoverview Validates NPM package meta file integrity.
  *
@@ -176,6 +177,7 @@ const metaRequirementExcludePatterns = [
 ];
 
 const developmentFileExcludePatterns = [
+  /^\.ambiguous-organization-build-lock(?:\/|\.meta$|$)/,
   /^\.config(?:\/|\.meta$|$)/,
   /^\.devcontainer(?:\/|\.meta$|$)/,
   /^\.git(?:\/|\.meta$|$)/,
@@ -319,7 +321,7 @@ function validateFilesHaveMetaFiles(files) {
 }
 
 // Patterns that catch build artifacts and IDE state that must never ship in the npm tarball.
-// See https://github.com/wallstop/DxMessaging/issues/204 -- pre-2.1.8 npm tarballs shipped
+// See https://github.com/Ambiguous-Interactive/DxMessaging/issues/204 -- pre-2.1.8 npm tarballs shipped
 // SourceGenerator `bin/` and `obj/` outputs whose paths had no .meta partner. Unity then
 // emitted `GuidDB::CreateMetaFileMappings` warnings on every asset-database refresh.
 const buildArtifactPatterns = [
@@ -331,12 +333,13 @@ const buildArtifactPatterns = [
   { pattern: /(^|\/)\.idea\//, label: "JetBrains IDE state (.idea/)" },
   { pattern: /\.suo$/, label: "Visual Studio solution user options (.suo)" },
   { pattern: /\.DotSettings\.user$/, label: "ReSharper per-user settings (.DotSettings.user)" },
+  { pattern: /\.lscache(\.meta)?$/, label: "C# Dev Kit per-project cache (.lscache)" },
   // Plain `.user` is checked last so the more specific .csproj.user / .DotSettings.user
   // patterns above own their richer messages first.
   { pattern: /\.user$/, label: "per-user IDE settings file (.user)" }
 ];
 
-const issue204Reference = "https://github.com/wallstop/DxMessaging/issues/204";
+const issue204Reference = "https://github.com/Ambiguous-Interactive/DxMessaging/issues/204";
 
 /**
  * Validate that no build artifacts, IDE state, or per-user files were packed.
@@ -393,6 +396,23 @@ const rootShippedFilesRequiringMeta = new Set([
 // Keep this set synchronized with package.json -- adding an entry here without a matching
 // allowlist entry (or vice versa) is the regression vector this validator is meant to catch.
 const sourceGeneratorTrackedNonCodeFiles = new Set(["SourceGenerators/Directory.Build.props"]);
+
+// The package MUST ship its own two analyzer assemblies
+// (WallstopStudios.DxMessaging.SourceGenerators.dll and
+// WallstopStudios.DxMessaging.Analyzer.dll) -- SetupCscRsp copies them to
+// Assets/Plugins and activates them with Unity's RoslynAnalyzer label.
+// Editor/Analyzers/ ALSO ships the Roslyn runtime
+// deps (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
+// System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe)
+// alongside them; the list below only enforces that the two REQUIRED analyzer
+// assemblies (and their .meta partners) are present, and intentionally does NOT
+// forbid the dep DLLs from shipping.
+const requiredAnalyzerPackageFiles = [
+  "Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll",
+  "Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
+  "Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll",
+  "Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll.meta"
+];
 
 /**
  * Determine whether a packaged path is "Unity-relevant" -- i.e. Unity will look
@@ -465,7 +485,7 @@ function isUnityRelevantPackagedDirectory(directory) {
  * Validate that every Unity-relevant file and directory shipped in the tarball
  * has its `.meta` partner shipped alongside it.
  *
- * Issue #204 (https://github.com/wallstop/DxMessaging/issues/204) was triggered
+ * Issue #204 (https://github.com/Ambiguous-Interactive/DxMessaging/issues/204) was triggered
  * by `.cs` files inside `bin/Debug/netstandard2.0/` reaching the published
  * tarball without `.meta` neighbours. Unity then logged
  * `GuidDB::CreateMetaFileMappings` warnings on every asset-database refresh.
@@ -534,6 +554,27 @@ function validatePublishedFilesArePairedWithMetas(tarballFiles) {
           `warnings on every refresh, the regression tracked by issue #204 (${issue204Reference}).`
       });
     }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+function validateRequiredAnalyzerFilesInTarball(tarballFiles) {
+  const fileSet = new Set(tarballFiles.map((file) => normalizeTarballPath(file)));
+  const errors = [];
+
+  for (const file of requiredAnalyzerPackageFiles) {
+    if (fileSet.has(file)) {
+      continue;
+    }
+
+    errors.push({
+      type: "missing-required-analyzer-file",
+      file,
+      message:
+        `Tarball is missing required analyzer file '${file}'. ` +
+        "SetupCscRsp copies DxMessaging analyzer DLLs into Assets/Plugins and activates them with the RoslynAnalyzer label; missing DLLs or .meta files break Unity package imports and CI compilation."
+    });
   }
 
   return { valid: errors.length === 0, errors };
@@ -645,13 +686,28 @@ function validateNpmMeta(options = {}) {
     console.log();
   }
 
+  console.log("Checking required analyzer DLLs are included in the tarball...");
+  const requiredAnalyzerResult = validateRequiredAnalyzerFilesInTarball(files);
+  if (requiredAnalyzerResult.valid) {
+    console.log("✓ Required analyzer DLLs and .meta files are included in the tarball\n");
+  } else {
+    console.log(
+      `✗ Found ${requiredAnalyzerResult.errors.length} missing analyzer file(s) in tarball:\n`
+    );
+    for (const error of requiredAnalyzerResult.errors) {
+      console.log(`  - ${error.message}`);
+    }
+    console.log();
+  }
+
   // Summary
   const allValid =
     orphanedResult.valid &&
     missingResult.valid &&
     developmentFilesResult.valid &&
     buildArtifactResult.valid &&
-    tarballMetaPairingResult.valid;
+    tarballMetaPairingResult.valid &&
+    requiredAnalyzerResult.valid;
   if (allValid) {
     console.log("✓ NPM package meta file validation passed!");
     return { valid: true, errors: [] };
@@ -662,7 +718,8 @@ function validateNpmMeta(options = {}) {
       ...missingResult.errors,
       ...developmentFilesResult.errors,
       ...buildArtifactResult.errors,
-      ...tarballMetaPairingResult.errors
+      ...tarballMetaPairingResult.errors,
+      ...requiredAnalyzerResult.errors
     ];
 
     if (options.check) {
@@ -696,5 +753,6 @@ module.exports = {
   validateFilesHaveMetaFiles,
   validateNoBuildArtifactsInTarball,
   validatePublishedFilesArePairedWithMetas,
+  validateRequiredAnalyzerFilesInTarball,
   validateNpmMeta
 };

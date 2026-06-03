@@ -12,94 +12,165 @@
 const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
-const { isShellShimCommand, spawnPlatformCommandSync } = require("./lib/shell-command");
+const { runBundledNpxCommand } = require("./lib/managed-prettier");
 const { getPinnedPrettierSpec } = require("./lib/prettier-version");
+const jestErrorDecoderModule = require("./lib/jest-error-decoder");
+const { isTruthyEnv } = jestErrorDecoderModule;
+const {
+  probeIntegrity,
+  probeResolverHealth,
+  probeIntegrityInSubprocess
+} = require("./lib/node-modules-integrity");
+const {
+  isAutoRepairAllowed: defaultIsAutoRepairAllowed,
+  runIntegrityGateWithRecovery
+} = require("./lib/integrity-gate-with-recovery");
+const {
+  getNpmMajorVersion,
+  attemptNpmCiRecovery,
+  printActionableRepairBanner
+} = require("./run-managed-jest");
 
 const REPO_ROOT = path.join(__dirname, "..");
-const LOCAL_PRETTIER_BIN = path.join(
-    REPO_ROOT,
-    "node_modules",
-    "prettier",
-    "bin",
-    "prettier.cjs"
-);
+const LOCAL_PRETTIER_BIN = path.join(REPO_ROOT, "node_modules", "prettier", "bin", "prettier.cjs");
 
 function runCommand(command, args, options = {}) {
-    const spawnSyncImpl = isShellShimCommand(command)
-        ? spawnPlatformCommandSync
-        : childProcess.spawnSync;
+  const result = childProcess.spawnSync(command, args, {
+    cwd: REPO_ROOT,
+    stdio: "inherit",
+    ...options
+  });
 
-    const result = spawnSyncImpl(command, args, {
-        cwd: REPO_ROOT,
-        stdio: "inherit",
-        ...options,
-    });
-
-    return {
-        status: result.status,
-        error: result.error || null,
-    };
+  return {
+    status: result.status,
+    error: result.error || null
+  };
 }
 
 function runLocalPrettier(args) {
-    return runCommand(process.execPath, [LOCAL_PRETTIER_BIN, ...args]);
+  return runCommand(process.execPath, [LOCAL_PRETTIER_BIN, ...args]);
 }
 
-function runNpxPrettier(args, prettierSpec = getPinnedPrettierSpec()) {
-    return runCommand("npx", [
-        "--yes",
-        `--package=${prettierSpec}`,
-        "prettier",
-        ...args,
-    ]);
+function runNpxPrettier(args, prettierSpec = getPinnedPrettierSpec(), options = {}) {
+  const { runBundledNpxCommandFn = runBundledNpxCommand } = options;
+
+  try {
+    const result = runBundledNpxCommandFn(
+      ["--yes", `--package=${prettierSpec}`, "prettier", ...args],
+      {
+        cwd: REPO_ROOT,
+        stdio: "inherit"
+      }
+    );
+
+    return {
+      status: result.status,
+      error: result.error || null
+    };
+  } catch (error) {
+    return {
+      status: null,
+      error
+    };
+  }
 }
 
 function runManagedPrettier(args, options = {}) {
-    const {
-        existsSyncFn = fs.existsSync,
-        runLocalPrettierFn = runLocalPrettier,
-        runNpxPrettierFn = runNpxPrettier,
-    } = options;
+  const {
+    existsSyncFn = fs.existsSync,
+    runLocalPrettierFn = runLocalPrettier,
+    runNpxPrettierFn = runNpxPrettier,
+    // Integrity gate dependencies (Step 7). Same shape as
+    // run-managed-jest; the gate logic lives in
+    // scripts/lib/integrity-gate-with-recovery.js.
+    runIntegrityGateWithRecoveryFn = runIntegrityGateWithRecovery,
+    probeIntegrityFn = probeIntegrity,
+    probeIntegrityInSubprocessFn = probeIntegrityInSubprocess,
+    probeResolverHealthFn = probeResolverHealth,
+    attemptNpmCiRecoveryFn = attemptNpmCiRecovery,
+    getNpmMajorVersionFn = getNpmMajorVersion,
+    printActionableRepairBannerFn = printActionableRepairBanner,
+    isAutoRepairAllowedFn = null,
+    envFn = () => process.env,
+    warnFn = console.warn
+  } = options;
 
-    if (existsSyncFn(LOCAL_PRETTIER_BIN)) {
-        return runLocalPrettierFn(args);
+  // ---- Integrity gate (runs BEFORE tier dispatch) ----
+  const env = (envFn && envFn()) || process.env;
+  if (!isTruthyEnv(env.DXMSG_HOOK_SKIP_INTEGRITY)) {
+    const resolvedIsAutoRepairAllowed =
+      isAutoRepairAllowedFn !== null
+        ? isAutoRepairAllowedFn
+        : () =>
+            defaultIsAutoRepairAllowed({
+              env,
+              repoRoot: REPO_ROOT,
+              getNpmMajorVersionFn
+            });
+
+    const gateResult = runIntegrityGateWithRecoveryFn({
+      repoRoot: REPO_ROOT,
+      probeIntegrityFn,
+      probeIntegrityInSubprocessFn,
+      probeResolverHealthFn,
+      attemptNpmCiRecoveryFn,
+      isAutoRepairAllowedFn: resolvedIsAutoRepairAllowed,
+      printActionableRepairBannerFn,
+      decoder: jestErrorDecoderModule,
+      warnFn,
+      env
+    });
+
+    if (!gateResult || !gateResult.ok) {
+      if (isTruthyEnv(env.DXMSG_HOOK_NO_AUTOREPAIR)) {
+        warnFn(
+          "WARNING: integrity gate failed but DXMSG_HOOK_NO_AUTOREPAIR=1 -> proceeding to Prettier invocation with degraded gate."
+        );
+      } else {
+        return { status: 1, error: null };
+      }
     }
+  }
 
-    return runNpxPrettierFn(args);
+  if (existsSyncFn(LOCAL_PRETTIER_BIN)) {
+    return runLocalPrettierFn(args);
+  }
+
+  return runNpxPrettierFn(args);
 }
 
 function printManagedPrettierLaunchError(error) {
-    const detail = error && error.message ? ` (${error.message})` : "";
-    console.error(`Failed to launch managed Prettier${detail}.`);
-    console.error("Ensure Node.js/npm are available in this shell, or run npm install.");
-    if (process.platform === "win32") {
-        console.error(
-            "Windows tip: if you use nvm/fnm, open PowerShell or Git Bash with Node initialized and verify npm --version."
-        );
-    }
+  const detail = error && error.message ? ` (${error.message})` : "";
+  console.error(`Failed to launch managed Prettier${detail}.`);
+  console.error("Ensure Node.js/npm are available in this shell, or run npm install.");
+  if (process.platform === "win32") {
+    console.error(
+      "Windows tip: if you use nvm/fnm, open PowerShell or Git Bash with Node initialized and verify npm --version."
+    );
+  }
 }
 
 function main() {
-    const result = runManagedPrettier(process.argv.slice(2));
+  const result = runManagedPrettier(process.argv.slice(2));
 
-    if (result.error) {
-        printManagedPrettierLaunchError(result.error);
-        process.exit(1);
-    }
+  if (result.error) {
+    printManagedPrettierLaunchError(result.error);
+    process.exit(1);
+  }
 
-    process.exit(typeof result.status === "number" ? result.status : 1);
+  process.exit(typeof result.status === "number" ? result.status : 1);
 }
 
 module.exports = {
-    REPO_ROOT,
-    LOCAL_PRETTIER_BIN,
-    runCommand,
-    runLocalPrettier,
-    runNpxPrettier,
-    runManagedPrettier,
-    printManagedPrettierLaunchError,
+  REPO_ROOT,
+  LOCAL_PRETTIER_BIN,
+  runCommand,
+  runLocalPrettier,
+  runNpxPrettier,
+  runManagedPrettier,
+  printManagedPrettierLaunchError
 };
 
 if (require.main === module) {
-    main();
+  main();
 }

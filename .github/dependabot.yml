@@ -12,10 +12,6 @@ updates:
           - "*"
     labels:
       - "dependencies"
-    assignees:
-      - wallstop
-    reviewers:
-      - wallstop
 
   # NuGet: SourceGenerator project - Roslyn packages pinned for Unity compiler compatibility
   - package-ecosystem: "nuget"
@@ -29,10 +25,6 @@ updates:
           - "*"
     labels:
       - "dependencies"
-    assignees:
-      - wallstop
-    reviewers:
-      - wallstop
     ignore:
       # SourceGenerator Roslyn packages - pinned for Unity compiler compatibility.
       # Unity's embedded compiler requires specific Roslyn versions; updating breaks SourceGenerator loading.
@@ -43,7 +35,7 @@ updates:
       - dependency-name: "System.Runtime.CompilerServices.Unsafe"
 
   # NuGet: SourceGenerator tests - uses newer Roslyn but ignores shared Roslyn dependencies
-  # Tests use newer Roslyn (4.14.0) than production (4.2.0), but ignoring shared Roslyn deps
+  # Tests use newer Roslyn (4.14.0) than production (3.8.0), but ignoring shared Roslyn deps
   # prevents Dependabot churn and keeps dependency versions aligned.
   - package-ecosystem: "nuget"
     directory: "/SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests"
@@ -56,10 +48,6 @@ updates:
           - "*"
     labels:
       - "dependencies"
-    assignees:
-      - wallstop
-    reviewers:
-      - wallstop
     ignore:
       # Shared Roslyn dependencies (pinned for Unity compatibility in SourceGenerator project)
       - dependency-name: "Microsoft.CodeAnalysis*"
@@ -80,7 +68,3 @@ updates:
     labels:
       - "dependencies"
     versioning-strategy: increase
-    assignees:
-      - wallstop
-    reviewers:
-      - wallstop

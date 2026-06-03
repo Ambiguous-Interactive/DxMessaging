@@ -394,7 +394,7 @@ The Inspector overlay's data source is the **`BaseCallTypeScanner`** -- a determ
 
 **Legacy console-scrape bridge (opt-in).** A toggle at **Project Settings -> DxMessaging -> Also Scrape Console (Legacy)** (`DxMessagingSettings.UseConsoleBridge`) re-enables the old data sources (`UnityEditor.LogEntries` reflection + `CompilationPipeline.assemblyCompilationFinished` `CompilerMessage[]`) and unions them INTO the IL scanner's snapshot -- never overrides it. Default off. Enable only if you want the union of both data sources, e.g. to surface a regression in the IL byte-walker that is correctly captured by the compile-time analyzer's console output.
 
-The unified per-FQN snapshot is persisted to `Library/DxMessaging/baseCallReport.json` so the overlay has data to render before the first post-load rescan completes; it is rewritten on every successful rescan. A manual `Tools  ->  DxMessaging  ->  Rescan Base-Call Warnings` menu is available for force-rescan.
+The unified per-FQN snapshot is persisted to `Library/DxMessaging/baseCallReport.json` so the overlay has data to render before the first post-load rescan completes; it is rewritten on every successful rescan. A manual `Tools -> DxMessaging -> Rescan Base-Call Warnings` menu is available for force-rescan.
 
 The overlay itself uses two complementary editor-injection paths, each with its own entry point in `MessageAwareComponentInspectorOverlay`:
 
@@ -437,16 +437,16 @@ Manual edits to `csc.rsp` are rarely necessary; the setup helper detects existin
 
 DxMessaging ships **two** Roslyn DLLs because Unity 2021's analyzer loader has a hard requirement that Unity 2022+ does not:
 
-- `WallstopStudios.DxMessaging.Analyzer.dll` -- the base-call analyzer (DXMSG006/007/008/009/010). Pinned to **Roslyn 3.8.0**. Unity 2021 silently rejects analyzer DLLs built against Roslyn 4.x; Microsoft's `Microsoft.Unity.Analyzers` package pins 3.8.0 for the same reason.
-- `WallstopStudios.DxMessaging.SourceGenerators.dll` -- the source generators (DXMSG002/003/004/005). Stays at **Roslyn 4.2.0** because the generators use `IIncrementalGenerator`, which was introduced in Roslyn 4.0. Unity 2021 loads source generators through a different code path that tolerates the 4.x dependency.
+- `WallstopStudios.DxMessaging.Analyzer.dll` -- the base-call analyzer (DXMSG006/007/008/009/010). Pinned to **Roslyn 3.8.0**. Unity 2021 rejects analyzer DLLs built against Roslyn 4.x; Microsoft's `Microsoft.Unity.Analyzers` package pins 3.8.0 for the same reason.
+- `WallstopStudios.DxMessaging.SourceGenerators.dll` -- the source generators (DXMSG002/003/004/005). Also pinned to **Roslyn 3.8.0** and implemented with classic `ISourceGenerator` APIs so Unity 2021 can instantiate the generators.
 
-Both DLLs are tagged `RoslynAnalyzer` and registered in `csc.rsp`. They live side-by-side in `Editor/Analyzers/`.
+Both DLLs are tagged `RoslynAnalyzer`, excluded from every build platform (the Editor included), and registered in `csc.rsp`. They live side-by-side in `Editor/Analyzers/`. Excluding every platform is what keeps Unity from treating them as managed precompiled assemblies: a `RoslynAnalyzer`-labeled DLL is fed to the C# compiler as an analyzer regardless of platform inclusion, and an Editor-enabled copy would instead be registered as a precompiled assembly that collides with the same-named copy Unity places under the consuming project's `Assets/`, aborting Unity 2021.3 with _Multiple precompiled assemblies with the same name_.
 
 If you are upgrading from a prior version and DXMSG warnings stop appearing on Unity 2021:
 
 1. Delete the package's `Library/ScriptAssemblies` folder so Unity's compiler cache re-evaluates the analyzer DLL hashes -- Unity 2021 caches "rejected analyzer" decisions per-DLL-hash.
 1. Reimport the package's `Editor/Analyzers/` folder (right-click -> Reimport).
-1. Force a clean rebuild via `Tools  ->  DxMessaging  ->  Rescan Base-Call Warnings` after the next compile finishes.
+1. Force a clean rebuild via `Tools -> DxMessaging -> Rescan Base-Call Warnings` after the next compile finishes.
 
 The Inspector overlay also has a Unity 2021 fallback: a `[CustomEditor(typeof(MessageAwareComponent), editorForChildClasses: true, isFallback: true)]` is registered alongside the cross-version `Editor.finishedDefaultHeaderGUI` hook. User-defined `[CustomEditor]`s for the same component type still win precedence over the fallback -- see the [Inspector integration](#inspector-integration) section above.
 

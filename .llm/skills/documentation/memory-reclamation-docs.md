@@ -7,7 +7,7 @@ created: "2026-05-06"
 updated: "2026-05-06"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Runtime/Core/Configuration/DxMessagingRuntimeSettings.cs"
     - path: "Runtime/Core/Configuration/DxMessagingRuntimeSettingsProvider.cs"
@@ -17,7 +17,7 @@ source:
     - path: "docs/guides/memory-reclamation.md"
     - path: "docs/reference/runtime-settings.md"
     - path: "CHANGELOG.md"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "documentation"

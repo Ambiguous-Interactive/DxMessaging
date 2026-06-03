@@ -7,13 +7,13 @@ created: "2026-03-16"
 updated: "2026-03-16"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: ".lychee.toml"
     - path: "scripts/validate-lychee-config.js"
     - path: ".github/workflows/lint-doc-links.yml"
     - path: ".github/workflows/markdown-link-validity.yml"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "github-actions"

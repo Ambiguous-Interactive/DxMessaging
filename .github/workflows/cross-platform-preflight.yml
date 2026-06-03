@@ -1,0 +1,137 @@
+name: Cross-platform preflight
+
+# Catches Windows-only regressions in the managed-Jest / integrity-gate /
+# resolver-probe code paths that motivated the path-separator and resolver-
+# health hardening. Runs the same preflight the developer runs locally
+# (npm run preflight:pre-push) on every supported OS so a path-separator
+# regression in a test or a resolver-binding failure cannot reach master
+# unobserved. See .llm/skills/scripting/integrity-gate-robustness.md for the
+# class-of-failure context.
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - ".pre-commit-config.yaml"
+      - "scripts/**"
+      - ".llm/**"
+      - ".github/workflows/cross-platform-preflight.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "package.json"
+      - ".pre-commit-config.yaml"
+      - "scripts/**"
+      - ".llm/**"
+      - ".github/workflows/cross-platform-preflight.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: cross-platform-preflight-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Preflight (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Same class as pre-commit-tooling-check.yml: this job runs npm install +
+    # `node scripts/ensure-pre-commit.js install-hooks` + a targeted suite + the full
+    # `preflight:pre-push` parity sweep. The windows-latest runner is ~2x slower
+    # at that work, so a tight job timeout silently cancels only the Windows leg.
+    # Size for the slowest OS with headroom; the heavy preflight step below
+    # carries its own per-step timeout for a clear "step timed out" signal.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # fetch-depth: 0 is REQUIRED because `npm run preflight:pre-push`
+          # transitively invokes `validate:changelog:coverage`, which runs
+          # `git diff origin/<base>...HEAD`. A shallow clone has no
+          # origin/<base> ref, the diff fails, and validate-changelog.js
+          # raises E006. See script-tests.yml and pre-commit-tooling-check.yml
+          # which already set this. The same requirement is enforced by
+          # findChangelogCoverageCheckoutViolations() in validate-workflows.js.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: npm
+          cache-dependency-path: package.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Node dependencies
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) {
+            npm ci
+          } else {
+            npm i --no-audit --no-fund
+          }
+
+      - name: Ensure pinned pre-commit
+        run: node scripts/ensure-pre-commit.js
+
+      - name: Install pre-commit hook environments
+        run: node scripts/ensure-pre-commit.js install-hooks
+
+      - name: Run cross-platform spawn + host-env hermeticity regression suite
+        # Targeted Jest run: these are the tests that regression-proof the
+        # classes of failures fixed in this branch -- path-separator /
+        # resolver-health PLUS npm/npx spawn-shape divergence and Unity
+        # ensure-editor host-env hermeticity. Keeping them as a first,
+        # dedicated step makes a CI failure immediately point at the right
+        # skill (integrity-gate-robustness) without hunting through a long
+        # combined log. The membership of this list is kept honest by
+        # scripts/__tests__/cross-platform-preflight-coverage.test.js: every
+        # test carrying the @cross-platform-regression marker must appear here.
+        shell: pwsh
+        run: |
+          $tests = @(
+            "scripts/__tests__/path-classifier.test.js"
+            "scripts/__tests__/cross-platform-path-handling.test.js"
+            "scripts/__tests__/node-modules-integrity.test.js"
+            "scripts/__tests__/run-managed-jest.test.js"
+            "scripts/__tests__/spawn-invocation-policy.test.js"
+            "scripts/__tests__/pwsh-output-assertion-policy.test.js"
+            "scripts/__tests__/shell-command.test.js"
+            "scripts/lib/__tests__/spawn-env-sandbox.test.js"
+            "scripts/__tests__/hermetic-host-env-policy.test.js"
+            "scripts/__tests__/unity-ensure-editor-il2cpp-idempotency.test.js"
+            "scripts/__tests__/unity-ensure-editor-install-resilience.test.js"
+            "scripts/__tests__/unity-ensure-editor-host-prereq-shortcircuit.test.js"
+            "scripts/__tests__/unity-native-startup-probe-isolation.test.js"
+            "scripts/__tests__/unity-runner-host-prereq-dot-source-safety.test.js"
+            "scripts/__tests__/path-containment-policy.test.js"
+            "scripts/__tests__/devcontainer-cache-contract.test.js"
+          )
+          node scripts/run-managed-jest.js --runTestsByPath @tests
+
+      - name: Run pre-push preflight
+        # timeout-minutes: the heaviest step (full parity sweep + full Jest
+        # suite), ~5 min on windows-latest. The per-step timeout allows that with
+        # margin but reports a genuine wedge as a clear "step timed out" instead
+        # of the opaque job-level cancel.
+        timeout-minutes: 12
+        run: npm run preflight:pre-push

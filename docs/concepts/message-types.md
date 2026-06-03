@@ -215,4 +215,4 @@ void OnAnyTookDamage(ref InstanceId source, ref TookDamage m) => Track(source, m
 ##### Try It
 
 - to [Quick Start](../getting-started/quick-start.md) -- Working example
-- to [Mini Combat sample](https://github.com/wallstop/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) -- See all 3 types in action
+- to [Mini Combat sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) -- See all 3 types in action

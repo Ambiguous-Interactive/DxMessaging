@@ -16,6 +16,14 @@ coverage/
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
+# Locally-downloaded CI artifacts.
+# `gh run download` (e.g. when inspecting a failed Unity job's provisioning
+# diagnostics) drops `<artifact-name>.zip` files in the repo root by default.
+# The Unity test workflow uploads `unity-provisioning-<unity-version>-<test-mode>`
+# artifacts (see .github/workflows/unity-tests.yml -> "Upload Unity
+# provisioning diagnostics"); downloads of those land here.
+unity-provisioning-*.zip
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -31,9 +39,14 @@ bld/
 logs_*.zip
 logs_*.zip.meta
 logs_*
+# Local upload scaffold for the external organization build-lock repository.
+.ambiguous-organization-build-lock/
 
 Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.pdb*
-com.wallstop-studios.dxmessaging.sln.DotSettings.user.meta
+
+# C# Dev Kit per-project cache
+*.lscache
+*.lscache.meta
 
 # Visual Studio 2015 cache/options directory
 .vs/
@@ -78,6 +91,11 @@ artifacts/
 *.tmp
 *.tmp_proj
 *.log
+# Unity auto-generates a .meta sibling for any file under the package root,
+# including ignored *.log diagnostics (e.g. an Editor.log dropped here for
+# triage). The *.log rule above does not match the .meta suffix, so ignore it
+# too -- otherwise the untracked-and-unignored policy fails on Editor.log.meta.
+*.log.meta
 *.vspscc
 *.vssscc
 .builds
@@ -115,6 +133,8 @@ $tf/
 _ReSharper*/
 *.[Rr]e[Ss]harper
 *.DotSettings.user
+# .meta sidecar for the *.DotSettings.user rule above
+*.DotSettings.user.meta
 
 # JustCode is a .NET coding add-in
 .JustCode
@@ -344,13 +364,17 @@ __pycache__.meta
 site.meta
 progress.meta
 
-.claude/
+.claude/*
+!.claude/settings.json
 .vscode/settings.json
 pre-commit.md*
 pre-commit.txt*
 pre-push.md*
 pre-push.txt*
 pr-description.md*
+
+# Local operator runbooks may contain environment-specific execution notes.
+.operator-runbooks/
 
 SourceGenerators/WallstopStudios.DxMessaging.Analyzer/bin.meta
 SourceGenerators/WallstopStudios.DxMessaging.Analyzer/obj.meta
@@ -359,26 +383,36 @@ Temp.meta
 
 failed-tests.txt*
 
+# In-repo scratch dirs for the check-eol/fix-eol closure + NUL contract tests
+# (scripts/__tests__/check-eol.test.js). These MUST live inside the repo working
+# tree -- NOT under os.tmpdir() -- because check-eol.js drops any path carrying a
+# `Temp` segment (case-sensitive), which Windows os.tmpdir() always has, before
+# text-file collection. afterAll removes them on a clean run, but a hard-kill
+# (SIGKILL / CI timeout / Ctrl-C) between fixture creation and afterAll would
+# leave an untracked dir at the repo root that trips validate-untracked-policy
+# (a pre-commit + preflight gate) and a repo-wide check-eol -- blocking the next
+# commit/push until a manual `rm -rf`, contradicting the zero-manual-touch hook
+# requirement. Ignoring the prefix makes both the happy and the interrupted path
+# zero-touch. The prefix is NOT in check-eol's excludeRegexes (gitignore is a
+# separate list), so the in-makeTempDir `isPathExcluded(dir) === false` self-guard
+# stays green and the fixtures are still collected.
+dxm-eol-closure-*
+dxm-cspell-fixture-*
+dxm-uv-test-*
+
 PERF-PLAN.md*
 OLD-PLAN.md*
 *PLAN.md*
 
 # Unity test harness (.unity-test-project/) - track only the thin harness contract.
 .unity-test-project/*
-!.unity-test-project/Assets/
-.unity-test-project/Assets/*
-!.unity-test-project/Assets/Editor/
-!.unity-test-project/Assets/Editor.meta
-!.unity-test-project/Assets/Editor/TestRunnerBuilder.cs
-!.unity-test-project/Assets/Editor/TestRunnerBuilder.cs.meta
-!.unity-test-project/Assets/Editor/WallstopStudios.DxMessaging.TestHarness.Editor.asmdef
-!.unity-test-project/Assets/Editor/WallstopStudios.DxMessaging.TestHarness.Editor.asmdef.meta
 !.unity-test-project/Packages/
 !.unity-test-project/Packages/manifest.json
 !.unity-test-project/Packages/packages-lock.json
 !.unity-test-project/ProjectSettings/
 .unity-test-project/ProjectSettings/*
 !.unity-test-project/ProjectSettings/ProjectVersion.txt
+!.unity-test-project/ProjectSettings/ProjectSettings.asset
 
 # Unity test harness generated artifacts.
 .unity-test-project/Library/

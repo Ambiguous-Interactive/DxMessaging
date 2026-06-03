@@ -7,10 +7,10 @@ created: "2026-01-22"
 updated: "2026-03-17"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "CHANGELOG.md"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "changelog"
@@ -108,7 +108,7 @@ Write entries that are:
 ### Added
 
 - New `UntargetedInterceptableMessage` base class for broadcast messages that support
-  interception and cancellation ([#142](https://github.com/wallstop/DxMessaging/pull/142))
+  interception and cancellation ([#142](https://github.com/Ambiguous-Interactive/DxMessaging/pull/142))
 ```
 
 ### Example 2: Fixing a Bug in Message Routing
@@ -119,7 +119,7 @@ Write entries that are:
 ### Fixed
 
 - Messages are now correctly delivered to components on inactive GameObjects when
-  using `IncludeInactive` delivery option ([#156](https://github.com/wallstop/DxMessaging/issues/156))
+  using `IncludeInactive` delivery option ([#156](https://github.com/Ambiguous-Interactive/DxMessaging/issues/156))
 ```
 
 ### Example 3: Deprecating an Old API
@@ -264,7 +264,7 @@ To upgrade from v2.x:
 ### Fixed
 
 - Fixed message delivery order when using priority handlers
-  ([#178](https://github.com/wallstop/DxMessaging/issues/178))
+  ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
 ```
 
 ### Bad: Updating Changelog After Release
@@ -287,7 +287,7 @@ To upgrade from v2.x:
 ### Fixed
 
 - Fixed message delivery order when using priority handlers
-  ([#178](https://github.com/wallstop/DxMessaging/issues/178))
+  ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
 ```
 
 ## See Also

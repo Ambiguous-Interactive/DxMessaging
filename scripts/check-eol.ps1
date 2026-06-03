@@ -66,7 +66,14 @@ function Get-GitIndexEolIssues {
         
         $indexToken = $tokens | Where-Object { $_ -like 'i/*' } | Select-Object -First 1
         if (-not $indexToken) { continue }
-        if ($indexToken -ne 'i/lf' -and $indexToken -ne 'i/none') {
+        # MIRROR scripts/check-eol.js isIndexEolViolation(): only i/crlf and
+        # i/mixed are genuine non-normalized index endings. i/lf and i/none are
+        # already correct; i/-text means git classified the indexed blob as
+        # BINARY (e.g. it contains NUL bytes) and a binary blob is never
+        # line-ending converted, so flagging it is a false positive that NO
+        # line-ending fixer (fix-eol) can ever clear. Whitelist semantics keep
+        # any future/unknown token a non-violation by default.
+        if ($indexToken -eq 'i/crlf' -or $indexToken -eq 'i/mixed') {
             $issues.Add("$relPath ($indexToken)")
         }
     }

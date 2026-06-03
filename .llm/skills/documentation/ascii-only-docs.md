@@ -7,13 +7,13 @@ created: "2026-04-30"
 updated: "2026-04-30"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "docs/"
     - path: "README.md"
     - path: "Runtime/"
     - path: "Editor/"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "documentation"
@@ -149,16 +149,16 @@ Three layers, all wired up:
 
 1. **`scripts/validate-docs-ascii.js`** - the runtime check, exits non-zero on any banned character. Reports `file:line:column` with codepoint and char.
 1. **`scripts/normalize-docs-ascii.js`** - the auto-fixer, idempotent, applies the substitution table. Run with `--check` for a dry run.
-1. **Pre-commit hooks** - the validator runs as part of `run-staged-md-pipeline` (for `.md` / `.markdown` files) and `run-staged-validators` (for `.cs` files) in `.pre-commit-config.yaml`. The standalone CLI `node scripts/validate-docs-ascii.js` is preserved for ad-hoc invocations. The same validator runs on every PR via the **CI workflow** at `.github/workflows/docs-lint.yml`.
+1. **Pre-commit hooks** - `run-staged-md-pipeline` runs the normalizer before Markdown validation and is wrapped by `scripts/run-and-restage.js`, so successful auto-fixes are staged automatically. `run-staged-validators` keeps validator coverage for `.cs` XML doc comments. The standalone CLI `node scripts/validate-docs-ascii.js` is preserved for ad-hoc invocations. The same validator runs on every PR via the **CI workflow** at `.github/workflows/docs-lint.yml`.
 
 ## How to Fix Violations
 
 ```bash
 # Apply auto-substitutions (idempotent).
-node scripts/normalize-docs-ascii.js
+node scripts/normalize-docs-ascii.js <changed-doc-files...>
 
 # Confirm clean.
-node scripts/validate-docs-ascii.js
+node scripts/validate-docs-ascii.js <changed-doc-files...>
 ```
 
 For arrows, review the diff carefully: `to` / `from` reads better in prose than `->` / `<-`, but a menu path like `Tools > Wallstop Studios > DxMessaging` should keep the `>` form. The normalizer already attempts this distinction; hand-tune ambiguous cases.

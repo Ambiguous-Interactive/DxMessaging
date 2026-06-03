@@ -149,9 +149,13 @@ describe("fix-csharp-underscore-methods", () => {
       })
     ).toBe(true);
     expect(
-      isExcludedRepoLocalPath("/private/var/folders/repo", "/var/folders/repo/.git/nested/FixMe.cs", {
-        realpathSync
-      })
+      isExcludedRepoLocalPath(
+        "/private/var/folders/repo",
+        "/var/folders/repo/.git/nested/FixMe.cs",
+        {
+          realpathSync
+        }
+      )
     ).toBe(true);
   });
 

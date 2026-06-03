@@ -4,10 +4,9 @@
 # =============================================================================
 # Tiny NUnit XML summary extractor. The single source of truth for parsing the
 # first <test-run> element from a Unity Test Framework results.xml. Used by:
-#   - .github/workflows-disabled/unity-il2cpp.yml (parse step template)
 #   - scripts/unity/run-tests.sh        (print_results_summary)
 #   - scripts/unity/run-tests.ps1       (Write-ResultsSummary)
-# All three callers consume the same one-line "OK ..." format below, so any
+# Both callers consume the same one-line "OK ..." format below, so any
 # behavioral change here applies uniformly.
 #
 # Usage:

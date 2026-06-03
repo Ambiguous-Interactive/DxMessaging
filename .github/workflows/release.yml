@@ -1,0 +1,450 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify-tag:
+    name: Verify release tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      package-version: ${{ steps.verify.outputs.package-version }}
+      tag: ${{ steps.verify.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify semver tag matches package.json
+        id: verify
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! printf '%s\n' "${tag}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Release tags must use vX.Y.Z semver format."
+            exit 1
+          fi
+          PACKAGE_VERSION="$(jq -r '.version // empty' package.json)"
+          if [ -z "${PACKAGE_VERSION}" ]; then
+            echo "::error::package.json version is missing."
+            exit 1
+          fi
+          if [ "${tag}" != "v${PACKAGE_VERSION}" ]; then
+            echo "::error::Tag ${tag} does not match package.json version v${PACKAGE_VERSION}."
+            exit 1
+          fi
+          {
+            echo "package-version=${PACKAGE_VERSION}"
+            echo "tag=${tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+  validate:
+    name: Validate package
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
+      - name: Install Node dependencies
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
+
+      - name: Run release validation
+        run: |
+          set -euo pipefail
+          npm run test:scripts
+          npm run test:unity-contracts
+          npm run validate:npm-meta
+          npm run validate:llms-txt
+          npm run validate:repo-identity
+          npm run validate:all
+
+      - name: Pack npm package
+        id: pack
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/release
+          # npm pack ignores --provenance (provenance is a publish-only
+          # feature); the artifact is attested by the attest-build-provenance
+          # step below.
+          pack_json="$(npm pack --json)"
+          package_file="$(printf '%s' "${pack_json}" | jq -r '.[0].filename')"
+          mv "${package_file}" ".artifacts/release/${package_file}"
+          (cd .artifacts/release && sha256sum "${package_file}" > "${package_file}.sha256")
+          # Single-quoted format contains literal backticks for Markdown code fences;
+          # SC2016 heuristically warns of unintended command substitution.
+          # shellcheck disable=SC2016
+          printf 'Release %s\n\nPackage: `%s`\n' \
+            "${{ needs.verify-tag.outputs.tag }}" \
+            "${package_file}" > .artifacts/release/release-notes.md
+          echo "package-file=${package_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-package
+          path: .artifacts/release/
+          if-no-files-found: error
+
+      - name: Attest release package
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: .artifacts/release/*.tgz
+
+  runner-preflight:
+    name: Self-hosted runner access preflight
+    # See docs/runbooks/unity-runners-after-transfer.md for the design
+    # contract. CRITICAL: this preflight must NEVER make CI more broken
+    # than the no-preflight baseline -- if both runner-inventory endpoints
+    # return 403/404, soft-pass with a ::warning::.
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      # NOTE: `administration: read` is NOT a valid permissions key for
+      # workflow GITHUB_TOKEN (per actionlint and the GitHub docs schema).
+      # Listing self-hosted runners requires admin:org (org-scope) OR a
+      # fine-grained PAT with repo "Administration: read" -- neither of
+      # which the default GITHUB_TOKEN can carry. The soft-pass path in
+      # the run script below is the supported coverage when the token
+      # is unscoped. See docs/runbooks/unity-runners-after-transfer.md.
+    concurrency:
+      group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Probe self-hosted runner availability
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_AUDIT_PAT || secrets.GITHUB_TOKEN }}
+          REQUIRED_LABELS: "self-hosted,Windows,RAM-64GB"
+        # gh api --paginate | jq -s pattern mirrors stuck-job-watchdog.yml.
+        run: |
+          set -euo pipefail
+          echo "::group::Runner-access preflight"
+          echo "Required labels: ${REQUIRED_LABELS}"
+          IFS=',' read -r -a required <<< "${REQUIRED_LABELS}"
+          runners_json="$(mktemp)"
+          runners_scope=""
+          if gh api --paginate \
+              "orgs/${GITHUB_REPOSITORY_OWNER}/actions/runners?per_page=100" \
+              2>/dev/null \
+              | jq -s '[.[] | (.runners // [])[]]' > "${runners_json}" 2>/dev/null; then
+            runners_scope="org"
+          else
+            if gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100" \
+                2>/dev/null \
+                | jq -s '[.[] | (.runners // [])[]]' > "${runners_json}" 2>/dev/null; then
+              runners_scope="repo"
+            fi
+          fi
+          if [ -z "${runners_scope}" ]; then
+            org_url="orgs/${GITHUB_REPOSITORY_OWNER}/actions/runners"
+            repo_url="repos/${GITHUB_REPOSITORY}/actions/runners"
+            {
+              echo "::warning::Runner inventory unavailable from both ${org_url}"
+              echo "::warning::and ${repo_url} (likely 403: GITHUB_TOKEN lacks admin:org"
+              echo "::warning::or administration:read)."
+              echo "::warning::See docs/runbooks/unity-runners-after-transfer.md"
+              echo "::warning::for how to plumb a RUNNER_AUDIT_PAT secret to upgrade"
+              echo "::warning::this soft-pass to a hard-pass."
+            }
+            echo "Soft pass: skipping runner inventory check."
+            echo "::endgroup::"
+            exit 0
+          fi
+          echo "Runner inventory scope: ${runners_scope}"
+          total="$(jq 'length' < "${runners_json}")"
+          echo "Visible runners (${runners_scope} scope): ${total}"
+          matched="$(jq --argjson labels "$(printf '%s\n' "${required[@]}" | jq -R . | jq -s .)" '
+            [ .[]
+              | select(.status == "online")
+              | select(($labels | all(. as $l | (.labels // []) | map(.name) | index($l) | type == "number")))
+            ] | length
+          ' < "${runners_json}")"
+          echo "Runners satisfying ${REQUIRED_LABELS}: ${matched}"
+          if [ "${matched}" -lt 1 ]; then
+            {
+              echo "::error::No online self-hosted runner satisfies the required labels (${REQUIRED_LABELS})."
+              echo "The release would block forever on unity-checks."
+              echo "See docs/runbooks/unity-runners-after-transfer.md for the post-transfer runner-group ACL fix."
+            }
+            jq '[ .[] | {name, status, busy, labels: [(.labels // [])[].name]} ]' \
+              < "${runners_json}"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+  unity-checks:
+    name: Trusted Unity release checks
+    needs:
+      - verify-tag
+      - runner-preflight
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    # Workflow-level permissions are `contents: read` (no checks: write), so
+    # this job needs its own checks: write or game-ci's check-run creation
+    # 403s and the release Unity gate silently stops failing on red tests.
+    permissions:
+      contents: read
+      checks: write
+    timeout-minutes: 660
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Print runner diagnostics
+        # Composite action runs PowerShell internally; `shell: bash` on this
+        # self-hosted Windows runner resolved to the WSL stub at
+        # C:\Windows\System32\bash.exe and failed with "Windows Subsystem
+        # for Linux has no installed distributions." See FIX #4 sweep
+        # report in the dev/wallstop/swap branch and validate-workflows.js
+        # rule `forbidPlainShellBashOnSelfHostedWindows`.
+        uses: ./.github/actions/print-self-hosted-runner-diagnostics
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
+      - name: Run Unity contract checks
+        shell: pwsh
+        run: npm run test:unity-contracts
+
+      # Single source of truth for the assembly include list: the same
+      # asmdef-discovery.js module the local run-tests scripts use. Extracted
+      # into a composite action shared by all three Unity workflows; shell: pwsh
+      # is enforced inside the composite.
+      - name: Compute test assembly list
+        id: compute
+        uses: ./.github/actions/compute-unity-assemblies
+        with:
+          target: editmode
+
+      - name: Validate Unity license secrets
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      # Skip provisioning, the org lock, and the run when no DxMessaging test
+      # assembly matched (compute resolved an empty list). The verify step
+      # stays !cancelled() but is told the run was an expected skip via
+      # expected-empty. Mirrors unity-tests.yml. For the current asmdef set
+      # this never triggers; it is the robustness path for an empty target.
+      - name: Provision Unity Editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        timeout-minutes: 180
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/release-editmode'
+          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '2022.3.45f1' `
+            -CiManagedOnly `
+            -RequireHealthyExisting `
+            -ProvisioningProfile EditorOnly `
+            -DiagnosticsPath $diagnosticsFile
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload Unity provisioning diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unity-release-provisioning-editmode
+          path: .artifacts/unity/release-editmode/provisioning
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Acquire organization Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: release-editmode
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+
+      - name: Run Unity Test Runner
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        timeout-minutes: 120
+        shell: pwsh
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          DXM_UNITY_TEST_CATEGORY: "!Stress;!Performance;!Allocation;!MemoryReclaim;!UnityRuntime;!PerfBench;!PerfGate;!PerfBaseline"
+        run: |
+          ./scripts/unity/run-ci-tests.ps1 `
+            -UnityVersion '2022.3.45f1' `
+            -TestMode 'editmode' `
+            -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
+            -ArtifactsPath '.artifacts/unity/release-editmode'
+
+      - name: Return Unity license
+        if: always()
+        uses: ./.github/actions/return-unity-license
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Release organization Unity lock
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: release-editmode
+        env:
+          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+
+      # CANCELLATION + TIMEOUT DIAGNOSTIC: when Unity 2022 hangs in csc the
+      # runner step times out (or the operator cancels), and the verify
+      # step below (gated on `!cancelled()`) skips -- so its catastrophic-
+      # pattern scan never fires either. This step covers both
+      # failure() AND cancelled() so the operator has SOMETHING to look at
+      # in the GitHub summary; matches unity-tests.yml / unity-benchmarks.yml.
+      - name: Dump Unity log tail on failure or cancellation
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/dump-unity-log-tail
+        with:
+          results-dir: .artifacts/unity/release-editmode
+          label: Unity release editmode
+
+      # CLASS GUARD: Unity can fail before NUnit writes results. The shared
+      # composite fails unless a results XML exists AND reports total > 0.
+      # Gated with !cancelled() (NOT always()) so a user-initiated cancel
+      # does not race against this step and emit a misleading "tests did not
+      # run" annotation; matches unity-tests.yml and unity-benchmarks.yml.
+      - name: Verify tests actually ran
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/verify-unity-results
+        with:
+          results-dir: .artifacts/unity/release-editmode
+          label: Unity release editmode
+          expected-empty: ${{ steps.compute.outputs.is-empty }}
+
+      - name: Upload release Unity artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unity-release-editmode
+          path: .artifacts/unity/release-editmode
+          if-no-files-found: warn
+          retention-days: 14
+
+  publish:
+    name: Publish npm package and GitHub Release
+    needs:
+      - verify-tag
+      - validate
+      - unity-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download release package
+        uses: actions/download-artifact@v7
+        with:
+          name: release-package
+          path: .artifacts/release
+
+      # ORDERING INVARIANT: a published GitHub Release must never exist
+      # without the matching npm version. The IRREVERSIBLE npm publish runs
+      # FIRST; the GitHub Release is created/finalized only AFTER npm publish
+      # succeeds. If npm publish failed and the GitHub Release ran first, a
+      # non-draft Release would advertise a version that npm never received.
+      - name: Publish to npm with provenance
+        run: |
+          set -euo pipefail
+          npx --yes --package=npm@^11.5.1 npm --version
+          package_file="$(find .artifacts/release -maxdepth 1 -name '*.tgz' -print -quit)"
+          if [ -z "${package_file}" ]; then
+            echo "::error::Packed npm package artifact is missing."
+            exit 1
+          fi
+          # Make publish safely RE-RUNNABLE: if this exact name@version is
+          # already on the registry (a prior run published it before failing
+          # downstream), skip the publish instead of failing on the
+          # immutable-version error. The GitHub Release step still runs after.
+          pkg="$(jq -r .name package.json)"
+          ver="${{ needs.verify-tag.outputs.package-version }}"
+          if npx --yes --package=npm@^11.5.1 npm view "${pkg}@${ver}" version \
+              >/dev/null 2>&1; then
+            echo "::notice::${pkg}@${ver} is already on the npm registry; skipping publish."
+          else
+            npx --yes --package=npm@^11.5.1 npm publish "${package_file}" --provenance --access public
+          fi
+
+      # Runs only AFTER npm publish above succeeds (or confirmed the version
+      # already exists), preserving the ordering invariant: no published
+      # GitHub Release without the matching npm version.
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.verify-tag.outputs.tag }}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" \
+              .artifacts/release/*.tgz \
+              .artifacts/release/*.sha256 \
+              --clobber
+            gh release edit "${tag}" \
+              --title "${tag}" \
+              --notes-file .artifacts/release/release-notes.md \
+              --draft=false
+          else
+            gh release create "${tag}" \
+              .artifacts/release/*.tgz \
+              .artifacts/release/*.sha256 \
+              --title "${tag}" \
+              --notes-file .artifacts/release/release-notes.md \
+              --verify-tag
+          fi

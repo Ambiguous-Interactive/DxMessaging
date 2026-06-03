@@ -35,7 +35,7 @@ public sealed class MessageAwareComponentBaseCallAnalyzerTests
         );
 
         string expectedLink =
-            $"https://github.com/wallstop/DxMessaging/blob/master/docs/reference/analyzers.md#{expectedAnchor}";
+            $"https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/reference/analyzers.md#{expectedAnchor}";
         Assert.That(
             descriptor.HelpLinkUri,
             Is.EqualTo(expectedLink),

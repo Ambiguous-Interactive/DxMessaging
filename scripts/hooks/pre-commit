@@ -1,59 +1,90 @@
-#!/bin/bash
-#
-# Git pre-commit hook for DxMessaging
-#
-# This hook:
-# 1. Syncs the banner version from package.json to the SVG banner
-# 2. Regenerates the skills index.md when skill files are modified
-#
-# Installation:
-#   cp scripts/hooks/pre-commit .git/hooks/pre-commit
-#   chmod +x .git/hooks/pre-commit
-#
+#!/usr/bin/env node
+"use strict";
 
-set -e
+const path = require("path");
+const { spawnPlatformCommandSync } = require("../lib/shell-command");
+const {
+  fingerprintGitState,
+  hasValidHookValidationStamp
+} = require("../lib/hook-validation-stamp");
 
-# 0) Sync banner version from package.json (runs before each commit is created)
-# This ensures the SVG banner always displays the correct version.
-#
-# NOTE: PowerShell is optional here. If not found, we skip silently because:
-#   - The banner version is purely cosmetic (README appearance)
-#   - Contributors without PowerShell should not be blocked from committing
-#   - CI/CD can enforce version sync separately if needed
-echo "🏷️  Syncing banner version..."
-if command -v pwsh &> /dev/null; then
-    pwsh -NoProfile -File scripts/sync-banner-version.ps1 || echo "⚠️  Banner version sync failed (cosmetic only, continuing)"
-elif command -v powershell &> /dev/null; then
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-banner-version.ps1 || echo "⚠️  Banner version sync failed (cosmetic only, continuing)"
-else
-    echo "⚠️  PowerShell not found. Skipping banner version sync (cosmetic only)."
-fi
+function resolveRepoRoot() {
+  const result = spawnPlatformCommandSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (!result.error && result.status === 0 && result.stdout.trim().length > 0) {
+    return result.stdout.trim();
+  }
+  return path.resolve(__dirname, "..", "..");
+}
 
-SKILLS_DIR=".llm/skills"
-INDEX_FILE="$SKILLS_DIR/index.md"
+const REPO_ROOT = resolveRepoRoot();
 
-# Check if any skill files are staged (excluding index.md and specification.md)
-STAGED_SKILLS=$(git diff --cached --name-only --diff-filter=ACMR | grep -F "$SKILLS_DIR/" | grep -v "index.md" | grep -v "specification.md" | grep -v "templates/" || true)
+function run(command, args) {
+  const result = spawnPlatformCommandSync(command, args, {
+    cwd: REPO_ROOT,
+    stdio: "inherit"
+  });
 
-if [ -n "$STAGED_SKILLS" ]; then
-    echo "📚 Skill files modified, regenerating index..."
+  if (result.error && result.error.code === "ENOENT") {
+    process.stderr.write(`Unable to find required command '${command}'.\n`);
+    return 127;
+  }
 
-    # Prefer node, fall back to pwsh (which delegates to the JS script)
-    if command -v node &> /dev/null; then
-        node scripts/generate-skills-index.js
-    elif command -v pwsh &> /dev/null; then
-        pwsh scripts/generate-skills-index.ps1
-    else
-        echo "⚠️  Neither 'node' nor 'pwsh' found. Skipping index generation."
-        echo "   Please run scripts/generate-skills-index.js or .ps1 manually."
-        exit 0
-    fi
+  return typeof result.status === "number" ? result.status : 1;
+}
 
-    # Add the regenerated index to the commit
-    if [ -f "$INDEX_FILE" ]; then
-        git add "$INDEX_FILE"
-        echo "✅ index.md regenerated and staged"
-    fi
-fi
+function captureGitState() {
+  try {
+    return JSON.stringify(fingerprintGitState(REPO_ROOT));
+  } catch (error) {
+    return null;
+  }
+}
 
-exit 0
+function main() {
+  const stamp = hasValidHookValidationStamp(REPO_ROOT, "pre-commit");
+  if (stamp.valid) {
+    process.stdout.write("Pre-commit preflight stamp is current; skipping repeated hook run.\n");
+    return 0;
+  }
+
+  process.stdout.write("Repairing hook Node tooling if needed...\n");
+  const repairStatus = run(process.execPath, ["scripts/repair-node-tooling.js"]);
+  if (repairStatus !== 0) {
+    return repairStatus;
+  }
+
+  process.stdout.write("Running pre-commit stage hooks...\n");
+  const beforeState = captureGitState();
+  const firstStatus = run(process.execPath, [
+    "scripts/ensure-pre-commit.js",
+    "run",
+    "--hook-stage",
+    "pre-commit"
+  ]);
+  if (firstStatus === 0 || firstStatus === 127) {
+    return firstStatus;
+  }
+
+  const afterState = captureGitState();
+  if (beforeState !== null && afterState !== null && beforeState === afterState) {
+    process.stdout.write("Pre-commit hooks failed without detected file changes; not retrying.\n");
+    return firstStatus;
+  } else {
+    process.stdout.write("Pre-commit hooks changed files; retrying once after auto-fixes...\n");
+  }
+
+  return run(process.execPath, [
+    "scripts/ensure-pre-commit.js",
+    "run",
+    "--hook-stage",
+    "pre-commit"
+  ]);
+}
+
+if (require.main === module) {
+  process.exit(main());
+}

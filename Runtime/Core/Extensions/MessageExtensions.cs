@@ -79,12 +79,6 @@ namespace DxMessaging.Core.Extensions
         {
             InstanceId targetId = target;
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(ITargetedMessage))
-            {
-                resolvedBus.UntypedTargetedBroadcast(targetId, message);
-                return;
-            }
-
             resolvedBus.TargetedBroadcast(ref targetId, ref message);
         }
 
@@ -129,12 +123,6 @@ namespace DxMessaging.Core.Extensions
         {
             InstanceId targetId = target;
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(ITargetedMessage))
-            {
-                resolvedBus.UntypedTargetedBroadcast(targetId, message);
-                return;
-            }
-
             resolvedBus.TargetedBroadcast(ref targetId, ref message);
         }
 #endif
@@ -178,12 +166,6 @@ namespace DxMessaging.Core.Extensions
             where TMessage : struct, ITargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(ITargetedMessage))
-            {
-                resolvedBus.UntypedTargetedBroadcast(target, message);
-                return;
-            }
-
             resolvedBus.TargetedBroadcast(ref target, ref message);
         }
 
@@ -259,12 +241,6 @@ namespace DxMessaging.Core.Extensions
             where TMessage : struct, IUntargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(IUntargetedMessage))
-            {
-                resolvedBus.UntypedUntargetedBroadcast(message);
-                return;
-            }
-
             resolvedBus.UntargetedBroadcast(ref message);
         }
 
@@ -296,12 +272,6 @@ namespace DxMessaging.Core.Extensions
             where TMessage : struct, IUntargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(IUntargetedMessage))
-            {
-                resolvedBus.UntypedUntargetedBroadcast(message);
-                return;
-            }
-
             resolvedBus.UntargetedBroadcast(ref message);
         }
 
@@ -341,12 +311,6 @@ namespace DxMessaging.Core.Extensions
             where TMessage : struct, ITargetedMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(ITargetedMessage))
-            {
-                resolvedBus.UntypedTargetedBroadcast(target, message);
-                return;
-            }
-
             resolvedBus.TargetedBroadcast(ref target, ref message);
         }
 
@@ -386,12 +350,6 @@ namespace DxMessaging.Core.Extensions
             where TMessage : struct, IBroadcastMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(ITargetedMessage))
-            {
-                resolvedBus.UntypedSourcedBroadcast(source, message);
-                return;
-            }
-
             resolvedBus.SourcedBroadcast(ref source, ref message);
         }
 
@@ -437,12 +395,6 @@ namespace DxMessaging.Core.Extensions
         {
             InstanceId sourceId = source;
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(IBroadcastMessage))
-            {
-                resolvedBus.UntypedSourcedBroadcast(sourceId, message);
-                return;
-            }
-
             resolvedBus.SourcedBroadcast(ref sourceId, ref message);
         }
 
@@ -487,12 +439,6 @@ namespace DxMessaging.Core.Extensions
         {
             InstanceId sourceId = source;
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(IBroadcastMessage))
-            {
-                resolvedBus.UntypedSourcedBroadcast(sourceId, message);
-                return;
-            }
-
             resolvedBus.SourcedBroadcast(ref sourceId, ref message);
         }
 #endif
@@ -536,12 +482,6 @@ namespace DxMessaging.Core.Extensions
             where TMessage : struct, IBroadcastMessage
         {
             IMessageBus resolvedBus = ResolveMessageBus(messageBus, messageBusProvider);
-            if (typeof(TMessage) == typeof(IBroadcastMessage))
-            {
-                resolvedBus.UntypedSourcedBroadcast(source, message);
-                return;
-            }
-
             resolvedBus.SourcedBroadcast(ref source, ref message);
         }
 

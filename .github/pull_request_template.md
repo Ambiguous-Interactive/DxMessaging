@@ -29,28 +29,11 @@ Fixes #
 - [ ] I have updated the [CHANGELOG](../CHANGELOG.md)
 - [ ] My changes do not introduce breaking changes, or breaking changes are documented
 
-### Performance numbers
-
 <!--
-REQUIRED if this PR modifies hot-path files:
-  Runtime/Core/MessageBus/MessageBus.cs
-  Runtime/Core/MessageHandler.cs
-  Runtime/Core/Pooling/**
-
-The perf-numbers-check workflow gates on this section's presence.
-
-Format:
-  | Scenario | Baseline run | This PR | Delta |
-  | --- | --- | --- | --- |
-  | UntargetedFlood_OneHandler (Mono Editor) | X.XX M emits/sec | Y.YY M emits/sec | +Z.Z% |
-  ...
-
-Acceptable substitutions:
-  - "N/A - refactor only <one-line justification>" when the change cannot
-    affect runtime perf, e.g. comments / docs / tests-only changes.
-  - "N/A - non-hot-path edit only <one-line description>" to describe what was
-    actually touched, e.g. settings asset shape or editor tooling.
-
-See docs/architecture/performance.md for the budget and dispatch throughput
-benchmark invocation.
+Dispatch-throughput numbers are owned entirely by CI: the Performance Numbers
+workflow (.github/workflows/perf-numbers.yml) re-runs the benchmarks on every
+pull_request change and posts the refreshed numbers as a non-blocking comment on
+this PR; the committed docs/architecture/performance.md is refreshed
+automatically by a commit to master after the PR merges. You do NOT need to paste
+before/after numbers into this description.
 -->

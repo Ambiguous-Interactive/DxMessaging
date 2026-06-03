@@ -2,6 +2,7 @@ namespace DxMessaging.Core.Extensions
 {
     using System;
     using System.Runtime.CompilerServices;
+    using DxMessaging.Core.Internal;
 
     internal static class EnumExtensions
     {
@@ -26,12 +27,12 @@ namespace DxMessaging.Core.Extensions
         {
             try
             {
-                return Unsafe.SizeOf<T>() switch
+                return DxUnsafe.SizeOf<T>() switch
                 {
-                    1 => Unsafe.As<T, byte>(ref value),
-                    2 => Unsafe.As<T, ushort>(ref value),
-                    4 => Unsafe.As<T, uint>(ref value),
-                    8 => Unsafe.As<T, ulong>(ref value),
+                    1 => DxUnsafe.As<T, byte>(ref value),
+                    2 => DxUnsafe.As<T, ushort>(ref value),
+                    4 => DxUnsafe.As<T, uint>(ref value),
+                    8 => DxUnsafe.As<T, ulong>(ref value),
                     _ => null,
                 };
             }

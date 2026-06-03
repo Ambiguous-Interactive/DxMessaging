@@ -463,7 +463,9 @@ function reportResult(result, options = {}) {
   logger.log("validate-untracked-policy: FAILED");
   for (const error of result.errors) {
     if (error.type === "untracked-directory") {
-      logger.log(`  - [${error.type}] ${error.directory}/ (${error.count} files): ${error.message}`);
+      logger.log(
+        `  - [${error.type}] ${error.directory}/ (${error.count} files): ${error.message}`
+      );
     } else if (error.file) {
       logger.log(`  - [${error.type}] ${error.file}: ${error.message}`);
     } else {

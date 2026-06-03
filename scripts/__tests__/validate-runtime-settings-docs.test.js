@@ -297,7 +297,9 @@ describe("validate-runtime-settings-docs", () => {
     });
 
     test("returns empty when class is missing", () => {
-      const { names } = extractPublicReadOnlyProperties("public class Other { public int X => 1; }");
+      const { names } = extractPublicReadOnlyProperties(
+        "public class Other { public int X => 1; }"
+      );
       expect(names).toEqual([]);
     });
 
@@ -597,7 +599,9 @@ describe("validate-runtime-settings-docs", () => {
 
       const result = validate({ sourcePath, docPath });
       expect(result.valid).toBe(false);
-      expect(result.errors.some((error) => error.type === "extra-doc-row" && error.name === "Hidden")).toBe(true);
+      expect(
+        result.errors.some((error) => error.type === "extra-doc-row" && error.name === "Hidden")
+      ).toBe(true);
       expect(result.errors.some((error) => error.type === "missing-doc-row")).toBe(false);
     });
 
@@ -607,10 +611,7 @@ describe("validate-runtime-settings-docs", () => {
         "Runtime/Core/Configuration/DxMessagingRuntimeSettings.cs",
         bom + buildSource(["A"])
       );
-      const docPath = writeTempFile(
-        "docs/reference/runtime-settings.md",
-        bom + buildDoc(["A"])
-      );
+      const docPath = writeTempFile("docs/reference/runtime-settings.md", bom + buildDoc(["A"]));
 
       const result = validate({ sourcePath, docPath });
       expect(result.valid).toBe(true);
@@ -731,7 +732,9 @@ describe("validate-runtime-settings-docs", () => {
         if (!result.valid) {
           // Surface the names so a maintainer reading the test failure does
           // not have to re-run the validator manually to see the drift.
-          const messages = result.errors.map((error) => `[${error.type}] ${error.message}`).join("\n");
+          const messages = result.errors
+            .map((error) => `[${error.type}] ${error.message}`)
+            .join("\n");
           throw new Error(`validate-runtime-settings-docs failed:\n${messages}`);
         }
         expect(result.valid).toBe(true);

@@ -66,7 +66,7 @@
     noteTextColor: "#c43e00",
     activationBorderColor: "#1976d2",
     activationBkgColor: "#e3f2fd",
-    sequenceNumberColor: "#ffffff",
+    sequenceNumberColor: "#ffffff"
   };
 
   const darkTheme = {
@@ -116,7 +116,7 @@
     noteTextColor: "#ffb74d",
     activationBorderColor: "#42a5f5",
     activationBkgColor: "#1e3a5f",
-    sequenceNumberColor: "#1e1e1e",
+    sequenceNumberColor: "#1e1e1e"
   };
 
   /**
@@ -176,7 +176,7 @@
     const themeVars = getThemeConfig();
     const sequenceDefaults = {
       useMaxWidth: true,
-      wrap: true,
+      wrap: true
     };
 
     return {
@@ -186,7 +186,7 @@
       flowchart: {
         htmlLabels: true,
         curve: "basis",
-        useMaxWidth: true,
+        useMaxWidth: true
       },
       sequence: {
         ...sequenceDefaults,
@@ -197,9 +197,9 @@
         boxTextMargin: 5,
         noteMargin: 10,
         messageMargin: 35,
-        ...options.sequence,
+        ...options.sequence
       },
-      securityLevel: "loose",
+      securityLevel: "loose"
     };
   }
 
@@ -338,10 +338,7 @@
     // MkDocs Material changes the data-md-color-scheme attribute on the body
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (
-          mutation.type === "attributes" &&
-          mutation.attributeName === "data-md-color-scheme"
-        ) {
+        if (mutation.type === "attributes" && mutation.attributeName === "data-md-color-scheme") {
           // Theme changed, re-render diagrams (debounced)
           debouncedReRender();
           break;
@@ -351,7 +348,7 @@
 
     observer.observe(document.body, {
       attributes: true,
-      attributeFilter: ["data-md-color-scheme"],
+      attributeFilter: ["data-md-color-scheme"]
     });
   }
 

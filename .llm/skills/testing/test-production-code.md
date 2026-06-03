@@ -7,11 +7,11 @@ created: "2026-01-30"
 updated: "2026-01-30"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "scripts/__tests__/"
     - path: "scripts/"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "testing"

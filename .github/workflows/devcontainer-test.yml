@@ -12,8 +12,8 @@
 #     - The asmdef-discovery node module loads and self-tests cleanly
 #     - The cache-mount contract still holds (validate-caching.sh)
 #     - The Unity test runner script's --help is wired up (smoke test only;
-#       a real Unity run requires the UNITY_LICENSE secret which this gate
-#       does not exercise)
+#       a real Unity run requires the UNITY_SERIAL / UNITY_EMAIL / UNITY_PASSWORD
+#       secrets (or a local ULF fallback) which this gate does not exercise)
 #     - The script-test Jest suite passes inside the devcontainer image
 #
 # Triggers:

@@ -4,14 +4,14 @@ This page helps you install DxMessaging into a Unity 2021.3+ project using the U
 
 ## Quick Reference
 
-| Method                       | Command/URL                                    | Auto-Updates |
-| ---------------------------- | ---------------------------------------------- | ------------ |
-| **OpenUPM** (Recommended)    | `openupm add com.wallstop-studios.dxmessaging` | Yes          |
-| **Git URL**                  | `https://github.com/wallstop/DxMessaging.git`  | No           |
-| **NPM Scoped Registry**      | Add registry + resolve                         | Yes          |
-| **From Releases**            | Download .unitypackage                         | No           |
-| **From Source**              | Clone/download zip                             | No           |
-| **Manual** (not recommended) | Edit manifest.json                             | No           |
+| Method                       | Command/URL                                                | Auto-Updates |
+| ---------------------------- | ---------------------------------------------------------- | ------------ |
+| **OpenUPM** (Recommended)    | `openupm add com.wallstop-studios.dxmessaging`             | Yes          |
+| **Git URL**                  | `https://github.com/Ambiguous-Interactive/DxMessaging.git` | No           |
+| **NPM Scoped Registry**      | Add registry + resolve                                     | Yes          |
+| **From Releases**            | Download npm `.tgz`                                        | No           |
+| **From Source**              | Clone/download zip                                         | No           |
+| **Manual** (not recommended) | Edit manifest.json                                         | No           |
 
 ## Methods
 
@@ -40,7 +40,7 @@ openupm add com.wallstop-studios.dxmessaging
 - Paste:
 
 ```text
-https://github.com/wallstop/DxMessaging.git
+https://github.com/Ambiguous-Interactive/DxMessaging.git
 ```
 
 - Click Add. Unity imports the package and its analyzers/generators.
@@ -48,7 +48,6 @@ https://github.com/wallstop/DxMessaging.git
 ### NPM Scoped Registry
 
 1. Open Unity Package Manager
-1. (Optional) Enable Pre-release packages to receive pre-release builds (RCs and betas) before they ship as stable
 1. Open the Advanced Package Settings
 1. Add an entry for a new "Scoped Registry"
    - Name: `NPM`
@@ -60,11 +59,20 @@ Unity will notify you of version updates when using scoped registries.
 
 ### From Releases
 
-Check out the latest [Releases](https://github.com/wallstop/DxMessaging/releases) to grab the Unity Package and import to your project.
+Check out the latest [Releases](https://github.com/Ambiguous-Interactive/DxMessaging/releases) to download the npm `.tgz` package and checksum. Current releases do not include a `.unitypackage` asset.
 
 ### From Source
 
-Grab a copy of this repo (either `git clone` [this repo](https://github.com/wallstop/DxMessaging) or [download a zip of the source](https://github.com/wallstop/DxMessaging/archive/refs/heads/master.zip)) and copy the contents to your project's `Assets` directory.
+Embed the package under your Unity project's `Packages` directory, preserving
+the package manifest and analyzer layout:
+
+```bash
+git clone https://github.com/Ambiguous-Interactive/DxMessaging.git Packages/com.wallstop-studios.dxmessaging
+```
+
+For ZIP downloads, extract the repository contents into
+`Packages/com.wallstop-studios.dxmessaging`. Do not copy the package into
+`Assets`; that bypasses Unity Package Manager behavior.
 
 ### Manual - Manifest.json (not recommended)
 
@@ -73,7 +81,7 @@ Grab a copy of this repo (either `git clone` [this repo](https://github.com/wall
 ```json
 {
   "dependencies": {
-    "com.wallstop-studios.dxmessaging": "https://github.com/wallstop/DxMessaging.git"
+    "com.wallstop-studios.dxmessaging": "https://github.com/Ambiguous-Interactive/DxMessaging.git"
   }
 }
 ```

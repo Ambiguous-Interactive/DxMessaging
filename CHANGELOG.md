@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Analyzer payload builds are now reproducible under the pinned
+  `SourceGenerators/global.json` SDK. The shipped analyzer and source-generator
+  DLLs no longer embed source revision or PDB metadata, CI double-builds them
+  into temporary payload directories before comparing against
+  `Editor/Analyzers`, and Unity runner maintenance now verifies or repairs the
+  full active editor matrix outside ordinary test jobs.
+- IL2CPP builds now root untyped dispatch bridges for concrete
+  source-visible message types without changing the public API. The source
+  generator emits IL2CPP-only AOT bridge registration for attributed messages
+  and manual `IUntargetedMessage` / `ITargetedMessage` /
+  `IBroadcastMessage` implementations, while open generic definitions are
+  skipped until a closed generic type is used through the typed registration
+  path. Untyped dispatch also keeps separate per-kind delegate caches, so a
+  message type that participates in more than one dispatch kind can no longer
+  reuse the wrong cached delegate shape.
+- Unity projects no longer keep stale DxMessaging analyzer `-a:` entries in `csc.rsp`; the setup script removes package-cache analyzer registrations so Unity loads the shipped analyzer and source generator once through the `RoslynAnalyzer`-labeled plugin copy.
+- Provider-backed emit helpers now route sourced, targeted, and untargeted messages through the resolved `IMessageBus`, so custom bus and DI-provider callers no longer fall back to the global bus for interface-shaped message dispatch.
+- Standalone and IL2CPP player builds now compile. The dispatch hot path performs reinterpret casts that previously used `System.Runtime.CompilerServices.Unsafe`; the Unity Editor supplies that type, but player builds under the .NET Standard 2.0 profile do not, so editmode and playmode passed while standalone IL2CPP failed to build with `CS0103: The name 'Unsafe' does not exist in the current context`. Those calls now route through Unity's built-in `UnsafeUtility` (in `UnityEngine.CoreModule`), which resolves identically in the Editor and every player scripting backend. The change preserves the existing zero-allocation dispatch behavior and adds no package dependency or shipped assembly.
+- Shipped source generators now compile against Unity 2021-compatible Roslyn 3.8 APIs and use the classic `ISourceGenerator` entry point, preventing Unity 2021.3 analyzer-host load failures (`CS8032`) while preserving the generated message-id and auto-constructor output for newer Unity editors.
+- Unity CI editor provisioning now self-heals managed partial or manually copied installs through explicit provisioning profiles: edit/play/release/benchmark jobs verify only the editor, standalone jobs verify `windows-il2cpp`, Android tooling is opt-in, and missing profile-required module groups trigger quarantine plus fresh Unity CLI reinstall instead of failing later in setup.
+- `MessageRegistrationToken.RemoveRegistration(handle)` now compiles cleanly on Unity 2021 while preserving the existing behavior of removing the active deregistration, staged registration, metadata, and diagnostic call-count entries.
+- Unity 2021.3 no longer aborts compilation with _Multiple precompiled assemblies with the same name_ (`PrecompiledAssemblyException`). The shipped Roslyn analyzer and source-generator DLLs are now excluded from every build platform (the Editor included) and activated solely by the `RoslynAnalyzer` asset label, so Unity treats them as compiler analyzers rather than managed precompiled assemblies that collide with the copy placed in the consuming project's `Assets/`. Generated message-id and auto-constructor output is unchanged.
+
 ## [3.0.1]
 
 ### Added
@@ -44,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RegisterGlobalAcceptAll` (`HandleGlobalUntargeted`/`HandleGlobalTargeted`/`HandleGlobalBroadcast`) is intentionally NOT covered by this fix. The bus's global accept-all dispatch path prefreezes lazily per-entry inside the dispatch loop, so a sibling `MessageHandler` that removes another's global registration mid-emit causes the removed handler to be skipped on the in-flight emission. The behavior is pinned by `MutationPostProcessorAcrossHandlersTests.RemoveOtherGlobalAcceptAllAcrossHandlersDuringDispatch`; if a future change introduces upfront global-handler prefreeze, that test must be updated to expect the snapshot semantics that the per-kind paths already provide.
 - `DxMessagingStaticState.Reset` is now race-safe against deferred deregistrations. Previously, when a message-aware component was destroyed but its disable callback had not yet run (Unity defers Object.Destroy to end of frame) and Reset ran in between, the deferred token teardown would log spurious "Received over-deregistration of {type} for {handler}" errors against the user's Unity console. The bus now stamps each captured deregister closure with a generation counter and silently no-ops closures captured before a Reset. Applied uniformly across every register entry point (untargeted, targeted, broadcast, GlobalAcceptAll, and all three interceptor kinds). The same race-safety guarantee is now propagated to user-installed custom global buses via `MessageBus.BumpResetGeneration()`, which `DxMessagingStaticState.Reset` invokes on the active global bus when it differs from the built-in default; the custom bus's sinks are intentionally left intact to avoid clobbering state the user installed it to preserve. User code is unaffected except that previously-spurious error logs disappear.
 - `MessageRegistrationToken.RemoveRegistration(handle)` no longer leaks the staged registration entry, so a `Disable()`/`Enable()` cycle after `RemoveRegistration` no longer silently re-registers the removed handler. The fix also drops the matching metadata and call-count entries so diagnostic mode does not accumulate stale handles.
-- Resolved [issue #204](https://github.com/wallstop/DxMessaging/issues/204) (build artifacts and orphaned `.meta` files leaking into the npm tarball) and prevented its regression: `scripts/validate-npm-meta.js` now runs `validateNoBuildArtifactsInTarball` (rejects `bin/`, `obj/`, `*.pdb`, `*.tmp`, `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, and `*.DotSettings.user` paths in the tarball) and `validatePublishedFilesArePairedWithMetas` (every shipped Unity-relevant file has its `.meta` neighbour and every shipped directory has its directory `.meta`), wired into `prepack` and the `validate-npm-meta` workflow so the next publish cannot reintroduce the regression.
+- Resolved [issue #204](https://github.com/Ambiguous-Interactive/DxMessaging/issues/204) (build artifacts and orphaned `.meta` files leaking into the npm tarball) and prevented its regression: `scripts/validate-npm-meta.js` now runs `validateNoBuildArtifactsInTarball` (rejects `bin/`, `obj/`, `*.pdb`, `*.tmp`, `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, and `*.DotSettings.user` paths in the tarball) and `validatePublishedFilesArePairedWithMetas` (every shipped Unity-relevant file has its `.meta` neighbour and every shipped directory has its directory `.meta`), wired into `prepack` and the `validate-npm-meta` workflow so the next publish cannot reintroduce the regression.
 
 ## [2.2.0]
 
@@ -90,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wiki synchronization workflow that automatically syncs documentation to GitHub Wiki
 - Documentation validation workflow that runs on pull requests and pushes
 - MkDocs build validation in pre-push hooks
-- Searchable documentation site at <https://wallstop.github.io/DxMessaging/>
+- Searchable documentation site at <https://ambiguous-interactive.github.io/DxMessaging/>
 - Theme-aware Mermaid diagrams with automatic light/dark mode switching for GitHub Pages
 - User-visible error messages when Mermaid diagrams fail to render
 

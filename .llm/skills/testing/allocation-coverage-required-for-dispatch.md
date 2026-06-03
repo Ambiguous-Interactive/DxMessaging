@@ -7,12 +7,12 @@ created: "2026-05-01"
 updated: "2026-05-01"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Tests/Editor/Allocations/AllocationMatrixTests.cs"
     - path: "Tests/Runtime/TestUtilities/AllocationAssertions.cs"
     - path: "Tests/Runtime/TestUtilities/MessageScenarios.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "testing"

@@ -149,21 +149,28 @@ namespace DxMessaging.Editor
                         {
                             bool importerDirty = false;
 
+                            // A RoslynAnalyzer-labeled DLL must be EXCLUDED from every
+                            // build platform, including the Editor, so Unity treats it as a
+                            // C# compiler analyzer rather than a managed precompiled
+                            // assembly. The same-named DLL is importable from two locations
+                            // (the package's own Editor/Analyzers copy and this Assets
+                            // copy); if either is an Editor-enabled precompiled assembly,
+                            // Unity 2021 aborts with "Multiple precompiled assemblies with
+                            // the same name". The Roslyn runtime dependencies in the same
+                            // folder already ship Editor-disabled and never collide -- this
+                            // converges the analyzer DLLs onto that proven-safe shape.
+                            // NOTE: SetExcludeFromAnyPlatform is a no-op once
+                            // CompatibleWithAnyPlatform is false, so the Editor platform is
+                            // disabled through the effective SetCompatibleWithEditor API.
                             if (importer.GetCompatibleWithAnyPlatform())
                             {
                                 importer.SetCompatibleWithAnyPlatform(false);
                                 importerDirty = true;
                             }
 
-                            if (importer.GetExcludeFromAnyPlatform("Editor"))
+                            if (importer.GetCompatibleWithEditor())
                             {
-                                importer.SetExcludeFromAnyPlatform("Editor", false);
-                                importerDirty = true;
-                            }
-
-                            if (!importer.GetExcludeFromAnyPlatform("Standalone"))
-                            {
-                                importer.SetExcludeFromAnyPlatform("Standalone", true);
+                                importer.SetCompatibleWithEditor(false);
                                 importerDirty = true;
                             }
 
@@ -214,9 +221,14 @@ namespace DxMessaging.Editor
         }
 
         /// <summary>
-        /// Synchronizes <c>csc.rsp</c> with the current set of analyzer arguments derived from the
-        /// on-disk DLL roster.
+        /// Removes stale DxMessaging analyzer <c>-a:</c> entries from <c>csc.rsp</c>.
         /// </summary>
+        /// <remarks>
+        /// DxMessaging analyzers are activated solely through the RoslynAnalyzer-labeled
+        /// <c>Assets/Plugins/Editor/WallstopStudios.DxMessaging</c> copy. A second
+        /// <c>-a:</c> registration here double-loads the analyzer/source-generator, and
+        /// registering dependency DLLs as analyzers makes Unity's compiler path fragile.
+        /// </remarks>
         private static void EnsureCscRsp()
         {
             try
@@ -229,72 +241,12 @@ namespace DxMessaging.Editor
 
                 string rspContent = File.ReadAllText(RspFilePath);
 
-                // Get current valid analyzer arguments
-                HashSet<string> currentAnalyzerArgs = new(
-                    GetAnalyzerArguments(),
-                    StringComparer.OrdinalIgnoreCase
+                string[] newLines = CleanDxMessagingAnalyzerLines(
+                    rspContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries),
+                    out bool foundStaleEntries
                 );
 
-                // Parse existing lines and filter out stale DxMessaging analyzer entries
-                List<string> newLines = new();
-                bool foundStaleEntries = false;
-
-                foreach (
-                    string line in rspContent.Split(
-                        new[] { '\r', '\n' },
-                        StringSplitOptions.RemoveEmptyEntries
-                    )
-                )
-                {
-                    string trimmedLine = line.Trim();
-
-                    // Check if this is a DxMessaging analyzer line
-                    bool isDxMessagingAnalyzer =
-                        trimmedLine.StartsWith("-a:", StringComparison.OrdinalIgnoreCase)
-                        && (
-                            trimmedLine.Contains(
-                                "com.wallstop-studios.dxmessaging",
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                            || trimmedLine.Contains(
-                                "WallstopStudios.DxMessaging",
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                        );
-
-                    if (isDxMessagingAnalyzer)
-                    {
-                        // Only keep if it's in the current valid set
-                        if (currentAnalyzerArgs.Contains(trimmedLine))
-                        {
-                            newLines.Add(trimmedLine);
-                        }
-                        else
-                        {
-                            foundStaleEntries = true;
-                        }
-                    }
-                    else
-                    {
-                        // Keep all non-DxMessaging lines as-is
-                        newLines.Add(trimmedLine);
-                    }
-                }
-
-                // Add any new analyzer arguments that aren't already present
-                bool foundNewEntries = false;
-                foreach (string analyzerArgument in currentAnalyzerArgs)
-                {
-                    if (!newLines.Contains(analyzerArgument, StringComparer.OrdinalIgnoreCase))
-                    {
-                        newLines.Add(analyzerArgument);
-                        foundNewEntries = true;
-                    }
-                }
-
-                bool modified = foundStaleEntries || foundNewEntries;
-
-                if (modified)
+                if (foundStaleEntries)
                 {
                     // Write the cleaned up content
                     string newContent = string.Join(Environment.NewLine, newLines);
@@ -311,6 +263,44 @@ namespace DxMessaging.Editor
             {
                 Debug.LogError($"Failed to modify csc.rsp: {ex}");
             }
+        }
+
+        internal static string[] CleanDxMessagingAnalyzerLines(
+            IEnumerable<string> lines,
+            out bool foundStaleEntries
+        )
+        {
+            List<string> newLines = new();
+            foundStaleEntries = false;
+
+            foreach (string line in lines)
+            {
+                string trimmedLine = line.Trim();
+                if (IsDxMessagingAnalyzerArgument(trimmedLine))
+                {
+                    foundStaleEntries = true;
+                    continue;
+                }
+
+                newLines.Add(trimmedLine);
+            }
+
+            return newLines.ToArray();
+        }
+
+        private static bool IsDxMessagingAnalyzerArgument(string trimmedLine)
+        {
+            return trimmedLine.StartsWith("-a:", StringComparison.OrdinalIgnoreCase)
+                && (
+                    trimmedLine.Contains(
+                        "com.wallstop-studios.dxmessaging",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    || trimmedLine.Contains(
+                        "WallstopStudios.DxMessaging",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                );
         }
 
         /// <summary>
@@ -423,44 +413,6 @@ namespace DxMessaging.Editor
             catch (IOException ex)
             {
                 Debug.LogError($"Failed to update csc.rsp additionalfile entry: {ex}");
-            }
-        }
-
-        private static IEnumerable<string> GetAnalyzerArguments()
-        {
-            HashSet<string> yielded = new(StringComparer.OrdinalIgnoreCase);
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-
-            foreach (string directory in AnalyzerDirectories)
-            {
-                foreach (string dllName in RequiredDllNames)
-                {
-                    string absoluteDirectory = Path.IsPathRooted(directory)
-                        ? directory
-                        : Path.GetFullPath(Path.Combine(projectRoot, directory));
-
-                    string absoluteAnalyzerPath = Path.Combine(absoluteDirectory, dllName);
-                    if (!File.Exists(absoluteAnalyzerPath))
-                    {
-                        continue;
-                    }
-
-                    string projectRelativePath = FileUtil.GetProjectRelativePath(
-                        absoluteAnalyzerPath
-                    );
-                    if (string.IsNullOrEmpty(projectRelativePath))
-                    {
-                        continue;
-                    }
-
-                    string normalizedRelativePath = projectRelativePath.Replace("\\", "/");
-                    if (!yielded.Add(normalizedRelativePath))
-                    {
-                        continue;
-                    }
-
-                    yield return $"-a:\"{normalizedRelativePath}\"";
-                }
             }
         }
     }

@@ -17,7 +17,7 @@ import re
 from urllib.parse import quote
 
 # GitHub repository configuration
-REPO_URL = "https://github.com/wallstop/DxMessaging"
+REPO_URL = "https://github.com/Ambiguous-Interactive/DxMessaging"
 BRANCH = "master"
 
 # Patterns that indicate source file references (not doc-relative links)

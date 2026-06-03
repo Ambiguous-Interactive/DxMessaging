@@ -1,6 +1,6 @@
 # Quick Start - Your First Message in 5 Minutes
 
-[Back to Index](index.md) | [Getting Started](getting-started.md) | [Visual Guide](visual-guide.md) | [Samples](https://github.com/wallstop/DxMessaging/tree/master/Samples~)
+[Back to Index](index.md) | [Getting Started](getting-started.md) | [Visual Guide](visual-guide.md) | [Samples](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Samples~)
 
 ---
 
@@ -15,7 +15,7 @@
 Unity Package Manager -> Add package from git URL:
 
 ```text
-https://github.com/wallstop/DxMessaging.git
+https://github.com/Ambiguous-Interactive/DxMessaging.git
 ```
 
 **Requirements:** Unity 2021.3+ | .NET Standard 2.1 | All render pipelines supported
@@ -167,8 +167,8 @@ Registration cleanup is automatic. Messages are type-safe.
   - -> [Getting Started Guide](getting-started.md) (10 min) - Full explanation with examples
   - -> [Visual Guide](visual-guide.md) (5 min) - Pictures and analogies
 - **Try Real Examples**
-  - -> [Mini Combat sample](https://github.com/wallstop/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) - Working combat example
-  - -> [UI Buttons + Inspector sample](https://github.com/wallstop/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md) - See diagnostics in action
+  - -> [Mini Combat sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) - Working combat example
+  - -> [UI Buttons + Inspector sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md) - See diagnostics in action
 - **Go Deeper**
   - -> [Message Types](../concepts/message-types.md) (10 min) - When to use which type
   - -> [Common Patterns](../guides/patterns.md) (15 min) - Real-world solutions

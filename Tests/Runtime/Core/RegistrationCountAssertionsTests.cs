@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
+    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
@@ -44,9 +45,117 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        [Test]
-        public void HelperFailsWithPerBucketDeltaCallSiteAndBusExpression()
+        public static IEnumerable FailureMessageCases()
         {
+            yield return new TestCaseData(
+                new StubCountingMessageBus(untargeted: 1, targeted: 4, broadcast: 3),
+                1,
+                5,
+                3,
+                "second component disabled",
+                true,
+                "explicitBus",
+                new[]
+                {
+                    "Targeted: expected 5, actual 4 (delta -1)",
+                    "Untargeted=1, Targeted=4, Broadcast=3",
+                    "second component disabled",
+                    "explicitBus",
+                    "Bucketing reminder",
+                },
+                new[] { "Untargeted: expected 1, actual 1", "Broadcast: expected 3, actual 3" }
+            ).SetName("single targeted mismatch includes explicit bus label");
+
+            yield return new TestCaseData(
+                new StubCountingMessageBus(untargeted: 2, targeted: 9, broadcast: 0),
+                1,
+                5,
+                3,
+                "all buckets diverge",
+                true,
+                "allMismatchBus",
+                new[]
+                {
+                    "Untargeted: expected 1, actual 2 (delta +1)",
+                    "Targeted: expected 5, actual 9 (delta +4)",
+                    "Broadcast: expected 3, actual 0 (delta -3)",
+                    "allMismatchBus",
+                },
+                Array.Empty<string>()
+            ).SetName("all buckets mismatch");
+
+            yield return new TestCaseData(
+                new StubCountingMessageBus(untargeted: 0, targeted: 1, broadcast: 0),
+                0,
+                0,
+                0,
+                "no reminder",
+                false,
+                "noReminderBus",
+                new[] { "Targeted: expected 0, actual 1 (delta +1)", "noReminderBus" },
+                new[] { "Bucketing reminder" }
+            ).SetName("reminder can be omitted");
+
+            yield return new TestCaseData(
+                new StubCountingMessageBus(untargeted: 0, targeted: 1, broadcast: 0),
+                0,
+                0,
+                0,
+                "unknown bus fallback",
+                true,
+                null,
+                new[] { "<unknown bus>", "Targeted: expected 0, actual 1 (delta +1)" },
+                Array.Empty<string>()
+            ).SetName("null bus expression uses fallback");
+        }
+
+        [TestCaseSource(nameof(FailureMessageCases))]
+        public void HelperFailureMessageIsDataDriven(
+            IMessageBus bus,
+            int untargeted,
+            int targeted,
+            int broadcast,
+            string context,
+            bool includeBucketingReminder,
+            string busExpression,
+            string[] expectedFragments,
+            string[] forbiddenFragments
+        )
+        {
+            AssertionException exception = Assert.Throws<AssertionException>(() =>
+                RegistrationCountAssertions.AssertRegistrationCounts(
+                    bus,
+                    untargeted,
+                    targeted,
+                    broadcast,
+                    context,
+                    includeBucketingReminder,
+                    busExpression: busExpression
+                )
+            );
+
+            string message = exception.Message;
+            foreach (string expected in expectedFragments)
+            {
+                StringAssert.Contains(expected, message);
+            }
+
+            foreach (string forbidden in forbiddenFragments)
+            {
+                StringAssert.DoesNotContain(forbidden, message);
+            }
+
+            StringAssert.Contains(nameof(HelperFailureMessageIsDataDriven), message);
+            StringAssert.Contains("RegistrationCountAssertionsTests.cs", message);
+        }
+
+        [Test]
+        public void HelperAutoBusExpressionIsCapabilityDetected()
+        {
+            bool supportsCallerArgumentExpression = SupportsCallerArgumentExpression();
+            TestContext.Out.WriteLine(
+                $"CallerArgumentExpression auto-capture supported: {supportsCallerArgumentExpression}"
+            );
             StubCountingMessageBus expectedBusName = new(untargeted: 1, targeted: 4, broadcast: 3);
 
             AssertionException exception = Assert.Throws<AssertionException>(() =>
@@ -55,75 +164,18 @@ namespace DxMessaging.Tests.Runtime.Core
                     untargeted: 1,
                     targeted: 5,
                     broadcast: 3,
-                    context: "second component disabled"
+                    context: "auto expression"
                 )
             );
 
-            string message = exception.Message;
-            // Per-bucket delta line for the diverging bucket (Targeted), with
-            // the explicit signed delta and the actual/expected pair.
-            StringAssert.Contains("Targeted: expected 5, actual 4 (delta -1)", message);
-            // Buckets that match must NOT appear in the per-bucket diff. Cheap
-            // way to confirm: the matching buckets do not have a "(delta " suffix.
-            StringAssert.DoesNotContain("Untargeted: expected 1, actual 1", message);
-            StringAssert.DoesNotContain("Broadcast: expected 3, actual 3", message);
-            // The full triple appears as tail-line context.
-            StringAssert.Contains("Untargeted=1, Targeted=4, Broadcast=3", message);
-            // Caller-supplied label propagates.
-            StringAssert.Contains("second component disabled", message);
-            // CallerArgumentExpression must surface the local name passed for
-            // the bus parameter so multi-bus tests can attribute the failure.
-            StringAssert.Contains("expectedBusName", message);
-            // The call site is captured (file path + this test method name).
-            StringAssert.Contains(
-                nameof(HelperFailsWithPerBucketDeltaCallSiteAndBusExpression),
-                message
-            );
-            StringAssert.Contains("RegistrationCountAssertionsTests.cs", message);
-            // Bucketing reminder is on by default.
-            StringAssert.Contains("Bucketing reminder", message);
-        }
-
-        [Test]
-        public void HelperReportsAllDivergingBucketsWhenAllMismatch()
-        {
-            StubCountingMessageBus stub = new(untargeted: 2, targeted: 9, broadcast: 0);
-
-            AssertionException exception = Assert.Throws<AssertionException>(() =>
-                RegistrationCountAssertions.AssertRegistrationCounts(
-                    stub,
-                    untargeted: 1,
-                    targeted: 5,
-                    broadcast: 3,
-                    context: "all buckets diverge"
-                )
-            );
-
-            string message = exception.Message;
-            StringAssert.Contains("Untargeted: expected 1, actual 2 (delta +1)", message);
-            StringAssert.Contains("Targeted: expected 5, actual 9 (delta +4)", message);
-            StringAssert.Contains("Broadcast: expected 3, actual 0 (delta -3)", message);
-        }
-
-        [Test]
-        public void HelperOmitsBucketingReminderWhenOptedOut()
-        {
-            StubCountingMessageBus stub = new(untargeted: 0, targeted: 1, broadcast: 0);
-
-            AssertionException exception = Assert.Throws<AssertionException>(() =>
-                RegistrationCountAssertions.AssertRegistrationCounts(
-                    stub,
-                    untargeted: 0,
-                    targeted: 0,
-                    broadcast: 0,
-                    context: "no reminder",
-                    includeBucketingReminder: false
-                )
-            );
-
-            StringAssert.DoesNotContain("Bucketing reminder", exception.Message);
-            // The actionable per-bucket delta line is still present.
-            StringAssert.Contains("Targeted: expected 0, actual 1 (delta +1)", exception.Message);
+            if (supportsCallerArgumentExpression)
+            {
+                StringAssert.Contains("expectedBusName", exception.Message);
+            }
+            else
+            {
+                StringAssert.Contains("<unknown bus>", exception.Message);
+            }
         }
 
         [Test]
@@ -140,6 +192,21 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.AreEqual("bus", exception.ParamName);
+        }
+
+        private static bool SupportsCallerArgumentExpression()
+        {
+            StubCountingMessageBus probeBus = new(untargeted: 0, targeted: 0, broadcast: 0);
+            return CaptureBusExpression(probeBus) == nameof(probeBus);
+        }
+
+        private static string CaptureBusExpression(
+            IMessageBus bus,
+            [System.Runtime.CompilerServices.CallerArgumentExpression("bus")]
+                string busExpression = null
+        )
+        {
+            return busExpression;
         }
 
         /// <summary>

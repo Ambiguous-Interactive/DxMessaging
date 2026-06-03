@@ -74,5 +74,5 @@ Diagnostics overhead
   - to [Listening Patterns](../concepts/listening-patterns.md) -- Verify you're listening correctly
   - to [Message Types](../concepts/message-types.md) -- Ensure you're using the right type
 - **Examples**
-  - to [Mini Combat sample](https://github.com/wallstop/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) -- See working code
+  - to [Mini Combat sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) -- See working code
   - to [Common Patterns](../guides/patterns.md) -- Real-world solutions

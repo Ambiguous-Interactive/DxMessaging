@@ -7,13 +7,13 @@ created: "2026-05-05"
 updated: "2026-05-05"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Runtime/Core/MessageBus/MessageBus.cs"
     - path: "Runtime/Core/MessageHandler.cs"
     - path: "Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs"
     - path: "Tests/Editor/Allocations/EmitGateClockReadIsRare.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "dispatch"
@@ -106,9 +106,12 @@ The dispatch hot path lives across:
   `HandlerActionCache<T>` invocation paths.
 - `Runtime/Core/Pooling/*.cs` -- anything called from those sites.
 
-Any PR touching these files MUST include a `### Performance numbers` section
-in the PR description per the `pull_request_template.md` checklist; the
-`perf-numbers-check.yml` workflow enforces this.
+Any PR touching these files has its dispatch-throughput numbers regenerated
+automatically by the `perf-numbers.yml` workflow (it re-runs the benchmarks on
+ELI-MACHINE at the latest Unity version on every PR change and posts the refreshed
+numbers as a non-blocking PR comment; the committed
+`docs/architecture/performance.md` is refreshed by a commit to master after the PR
+merges). There is no manual `### Performance numbers` PR-body requirement.
 
 ## Prohibited operations on the dispatch hot path
 
@@ -185,10 +188,12 @@ list above must paste before/after T0 numbers in the PR description.
 - `Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` -- `[Explicit,
 Category("PerfGate")]`; opt-in via `DX_PERF_GATE=1`. Median-of-5; fails
   when within-platform regression vs. baseline CSV exceeds 1.5x.
-- `.github/workflows/perf-numbers-check.yml` -- `paths:`-triggered workflow
-  that requires PR body to contain a populated `### Performance numbers`
-  section when hot-path files are modified. `N/A - refactor only` is an
-  acceptable populated value with a one-line justification.
+- `.github/workflows/perf-numbers.yml` -- per-PR workflow that re-runs the
+  editmode + playmode dispatch benchmarks on ELI-MACHINE (the `fast` runner) at
+  the latest Unity version on every pull_request change and posts the regenerated
+  dispatch-throughput numbers as a non-blocking PR comment; the committed
+  `docs/architecture/performance.md` is refreshed by a commit to master after the
+  PR merges. The numbers are owned by CI, not by PR-body text.
 
 ## Common pitfalls
 

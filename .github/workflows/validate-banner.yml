@@ -1,0 +1,49 @@
+name: Validate Banner
+
+on:
+  pull_request:
+    paths:
+      - "docs/images/DxMessaging-banner.svg"
+      - "scripts/validate-banner.js"
+      - "scripts/sync-banner-version.ps1"
+      - "package.json"
+      - ".github/workflows/validate-banner.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "docs/images/DxMessaging-banner.svg"
+      - "scripts/validate-banner.js"
+      - "scripts/sync-banner-version.ps1"
+      - "package.json"
+      - ".github/workflows/validate-banner.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate-banner:
+    name: Validate banner SVG
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: "npm"
+          cache-dependency-path: package.json
+
+      - name: Run validate-banner
+        run: node scripts/validate-banner.js

@@ -1,9 +1,9 @@
 site_name: DxMessaging Documentation
-site_url: https://wallstop.github.io/DxMessaging/
+site_url: https://ambiguous-interactive.github.io/DxMessaging/
 site_description: High-performance type-safe messaging library for Unity
 site_author: Wallstop Studios
-repo_name: wallstop/DxMessaging
-repo_url: https://github.com/wallstop/DxMessaging
+repo_name: Ambiguous-Interactive/DxMessaging
+repo_url: https://github.com/Ambiguous-Interactive/DxMessaging
 edit_uri: edit/master/docs/
 
 copyright: Copyright &copy; 2017-2026 Wallstop Studios
@@ -95,7 +95,7 @@ markdown_extensions:
   - pymdownx.keys
   - pymdownx.magiclink:
       repo_url_shorthand: true
-      user: wallstop
+      user: Ambiguous-Interactive
       repo: DxMessaging
   - pymdownx.mark
   - pymdownx.smartsymbols
@@ -199,6 +199,16 @@ nav:
   - Examples:
       - End-to-End: examples/end-to-end.md
       - Scene Transitions: examples/end-to-end-scene-transitions.md
+  - Operations:
+      - ops/index.md
+      - Ambiguous Release Migration: ops/ambiguous-release-migration.md
+      - Release Operations: ops/release-operations.md
+      - GitHub Transfer: ops/github-transfer.md
+      - CI and GitHub Settings: ops/ci-and-github-settings.md
+      - npm Release Publishing: ops/npm-release-publishing.md
+      - OpenUPM Metadata: ops/openupm-metadata.md
+      - Unity Asset Store UPM: ops/unity-asset-store-upm.md
+      - Post-Transfer Verification: ops/post-transfer-verification.md
   - Reference:
       - reference/reference.md
       - Quick Reference: reference/quick-reference.md
@@ -209,3 +219,6 @@ nav:
       - Troubleshooting: reference/troubleshooting.md
       - Analyzers: reference/analyzers.md
       - Compatibility: reference/compatibility.md
+  - Runbooks:
+      - Unity Runners After Transfer: runbooks/unity-runners-after-transfer.md
+      - Windows Partial Extract: runbooks/windows-partial-extract.md

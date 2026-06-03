@@ -193,6 +193,11 @@ status: "draft|review|stable|deprecated"
 
 After the frontmatter, skills follow this structure:
 
+Each skill file must stay within the repository line-budget policy: target
+120-260 lines, treat 261-300 as a split warning, and never exceed 300 lines.
+Run `npm run repair:llm-policy` and `npm run validate:llm-policy` before
+handoff.
+
 ```markdown
 ---
 [YAML Frontmatter]

@@ -7,14 +7,14 @@ created: "2026-05-05"
 updated: "2026-05-05"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Runtime/Core/MessageBus/MessageBus.cs"
     - path: "Runtime/Core/Pooling/StopwatchClock.cs"
     - path: "Runtime/Core/Pooling/IDxMessagingClock.cs"
     - path: "Tests/Editor/Allocations/EmitGateClockReadIsRare.cs"
     - path: "Tests/Editor/Contract/EvictionSweepContractTests.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "sweep"
@@ -148,9 +148,10 @@ constructor-injected.
 <!-- to be measured by Week 1b T0.3 baseline runs and updated in Week 5 -->
 
 `EmitGateClockReadIsRare` asserts the per-emission clock-read rate stays
-below `(emitCount / SweepGateMaskSampleSize) + 1` over a 10k-emit run. Any
-PR that increases the gate's clock-read rate must explicitly justify it in
-the `### Performance numbers` PR description section.
+below `(emitCount / SweepGateMaskSampleSize) + 1` over a 10k-emit run. A PR
+that increases the gate's clock-read rate will surface in the dispatch
+throughput numbers CI regenerates per PR (`perf-numbers.yml`); justify any
+regression in the PR description.
 
 ## Enforcement
 

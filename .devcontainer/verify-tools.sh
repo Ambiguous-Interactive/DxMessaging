@@ -34,11 +34,11 @@ check_tool() {
         local version
         version=$("$cmd" $version_flag 2>&1 | head -n 1) || version="installed"
         echo -e "${GREEN}✓${NC} $version"
-        ((PASS++))
+        ((++PASS))
         return 0
     else
         echo -e "${RED}✗ NOT FOUND${NC}"
-        ((FAIL++))
+        ((++FAIL))
         return 1
     fi
 }
@@ -52,11 +52,11 @@ check_tool_exists() {
     
     if command -v "$cmd" &> /dev/null; then
         echo -e "${GREEN}✓${NC} available"
-        ((PASS++))
+        ((++PASS))
         return 0
     else
         echo -e "${RED}✗ NOT FOUND${NC}"
-        ((FAIL++))
+        ((++FAIL))
         return 1
     fi
 }
@@ -73,11 +73,11 @@ check_optional() {
         local version
         version=$("$cmd" $version_flag 2>&1 | head -n 1) || version="installed"
         echo -e "${GREEN}✓${NC} $version"
-        ((PASS++))
+        ((++PASS))
         return 0
     else
         echo -e "${YELLOW}○ not found (optional)${NC}"
-        ((WARN++))
+        ((++WARN))
         return 1
     fi
 }
@@ -119,10 +119,10 @@ printf "%-20s" "tree"
 if command -v tree &> /dev/null; then
     version=$(tree --version 2>&1 | head -n 1) || version=$(tree -V 2>&1 | head -n 1) || version="installed"
     echo -e "${GREEN}✓${NC} $version"
-    ((PASS++))
+    ((++PASS))
 else
     echo -e "${RED}✗ NOT FOUND${NC}"
-    ((FAIL++))
+    ((++FAIL))
 fi
 
 echo ""
@@ -161,10 +161,10 @@ printf "%-20s" "npm prefix"
 npm_prefix=$(npm config get prefix 2>/dev/null || echo "error")
 if [ "$npm_prefix" = "$HOME/.local" ]; then
     echo -e "${GREEN}✓${NC} $npm_prefix"
-    ((PASS++))
+    ((++PASS))
 else
     echo -e "${RED}✗${NC} $npm_prefix (expected $HOME/.local)"
-    ((FAIL++))
+    ((++FAIL))
 fi
 
 echo ""

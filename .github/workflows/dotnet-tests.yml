@@ -10,7 +10,10 @@ on:
       - "**/*.cs"
       - "**/*.csproj"
       - "**/*.sln"
+      - ".github/workflows/dotnet-tests.yml"
+      - "Editor/Analyzers/**"
       - "SourceGenerators/**"
+      - "SourceGenerators/global.json"
       - ".config/dotnet-tools.json"
   pull_request:
     branches:
@@ -19,7 +22,10 @@ on:
       - "**/*.cs"
       - "**/*.csproj"
       - "**/*.sln"
+      - ".github/workflows/dotnet-tests.yml"
+      - "Editor/Analyzers/**"
       - "SourceGenerators/**"
+      - "SourceGenerators/global.json"
       - ".config/dotnet-tools.json"
   workflow_dispatch:
 
@@ -34,7 +40,12 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "9.0.x"
+          global-json-file: SourceGenerators/global.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
 
       - name: Install reportgenerator tool
         run: |
@@ -42,19 +53,36 @@ jobs:
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Restore
-        run: dotnet restore SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj
+        working-directory: SourceGenerators
+        run: >
+          dotnet restore
+          WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj
+          /p:CopyAnalyzerPayload=false
 
       - name: Run generator diagnostics tests
+        working-directory: SourceGenerators
         run: >
-          dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj
+          dotnet test
+          WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj
           --configuration Release
+          /p:CopyAnalyzerPayload=false
           --collect:"XPlat Code Coverage"
+
+      - name: Verify committed analyzer payload is current
+        run: npm run check:analyzers
 
       - name: Generate coverage summary
         run: |
           mkdir -p artifacts/coverage
+          # SourceGenerators/Directory.Build.props redirects test output to
+          # .artifacts/$(MSBuildProjectName)/TestResults/, i.e.
+          # .artifacts/WallstopStudios.DxMessaging.SourceGenerators.Tests/TestResults/...
+          # A glob hardcoding ".artifacts/SourceGenerators.Tests/..." misses the
+          # MSBuildProjectName prefix and reportgenerator fails with "found no
+          # matching files". Match any redirected TestResults coverage file so a
+          # future project rename cannot silently break the summary again.
           reportgenerator \
-            -reports:".artifacts/SourceGenerators.Tests/TestResults/**/coverage.cobertura.xml" \
+            -reports:".artifacts/**/TestResults/**/coverage.cobertura.xml" \
             -targetdir:"artifacts/coverage" \
             -reporttypes:"TextSummary;HtmlSummary;Cobertura"
           cat artifacts/coverage/Summary.txt

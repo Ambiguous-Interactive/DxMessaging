@@ -63,10 +63,15 @@ usage() {
 Usage: scripts/unity/activate-license.sh [mode]
 
 Modes:
-  --check                   (default) Diagnostic mode. Verifies that EITHER
-                            UNITY_LICENSE, UNITY_LICENSE_B64, or
-                            UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD are set.
-                            Exit 0 on success, 2 on configuration failure.
+  --check                   (default) Diagnostic mode. Detects, in order:
+                            UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD
+                            (preferred paid serial activation), then
+                            UNITY_LICENSE or UNITY_LICENSE_B64 (.ulf fallback).
+                            For the .ulf paths it sanity-checks the file shape;
+                            for the serial path it confirms PRESENCE of the vars
+                            ONLY and does not verify the serial is valid (that is
+                            checked at live activation). Exit 0 on success, 2 on
+                            configuration failure.
 
   --apply <path-to.ulf>     Validate and base64-encode a .ulf obtained from
                             license.unity3d.com or the Unity Hub. Prints
@@ -75,18 +80,18 @@ Modes:
   --help                    Show this help.
 
 UNITY_EMAIL + UNITY_PASSWORD alone is not enough for headless Unity in docker.
-Use a raw .ulf in UNITY_LICENSE, local base64 .ulf in UNITY_LICENSE_B64, or
-UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD for paid serial activation. See
+Use UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD for paid serial activation, a
+raw .ulf in UNITY_LICENSE, or a local base64 .ulf in UNITY_LICENSE_B64. See
 .llm/skills/unity/unity-license-bootstrap.md for the full flow.
 
 Environment:
-  UNITY_LICENSE             Raw Unity .ulf contents. Same shape GameCI expects.
-  UNITY_LICENSE_B64         Base64-encoded Unity .ulf for local shell profiles.
-  UNITY_SERIAL              Paid Unity serial. Requires UNITY_EMAIL and
-                            UNITY_PASSWORD.
+  UNITY_SERIAL              Preferred. Paid Unity serial. Requires UNITY_EMAIL
+                            and UNITY_PASSWORD.
   UNITY_EMAIL, UNITY_PASSWORD  Unity account email and password. Required for
-                            UNITY_SERIAL and commonly required by GameCI when
-                            reactivating a .ulf.
+                            UNITY_SERIAL (and to return the seat afterwards).
+  UNITY_LICENSE             Raw Unity .ulf contents (fallback). Same shape
+                            GameCI expects.
+  UNITY_LICENSE_B64         Base64-encoded Unity .ulf for local shell profiles.
   UNITY_VERSION             Override the Unity Editor image tag (default:
                             2022.3.45f1). Used by --check.
   LOCAL_WORKSPACE_FOLDER    HOST path to the repo root. Auto-set by VS Code
@@ -168,18 +173,22 @@ resolve_host_repo_root() {
 # ---------------------------------------------------------------------------
 do_check() {
     local mode=""
-    if [[ -n "${UNITY_LICENSE:-}" ]]; then
+    # Serial-first: paid serial activation (UNITY_SERIAL + UNITY_EMAIL +
+    # UNITY_PASSWORD) is the preferred path; a .ulf in UNITY_LICENSE /
+    # UNITY_LICENSE_B64 is the fallback. The credentials are treated as secrets
+    # and never printed.
+    if [[ -n "${UNITY_SERIAL:-}" ]] && [[ -n "${UNITY_EMAIL:-}" ]] && [[ -n "${UNITY_PASSWORD:-}" ]]; then
+        mode="serial"
+    elif [[ -n "${UNITY_LICENSE:-}" ]]; then
         mode="ulf"
     elif [[ -n "${UNITY_LICENSE_B64:-}" ]]; then
         mode="ulf-b64"
-    elif [[ -n "${UNITY_SERIAL:-}" ]] && [[ -n "${UNITY_EMAIL:-}" ]] && [[ -n "${UNITY_PASSWORD:-}" ]]; then
-        mode="serial"
     else
         printf '%sNo Unity license configured.%s\n' "${C_RED}" "${C_NC}" >&2
         printf 'Set EITHER:\n' >&2
+        printf '  UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD   (paid serial activation)\n' >&2
         printf '  UNITY_LICENSE       (raw .ulf contents; GameCI-compatible)\n' >&2
         printf '  UNITY_LICENSE_B64   (base64 .ulf contents; local shell convenience)\n' >&2
-        printf '  UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD   (paid serial activation)\n' >&2
         printf '\nUNITY_EMAIL + UNITY_PASSWORD alone is not a supported headless container license path.\n' >&2
         return 2
     fi
@@ -216,6 +225,13 @@ do_check() {
 
     printf '%sUNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD are present.%s\n' \
         "${C_GREEN}" "${C_NC}"
+    # Unlike the ULF paths above (which sanity-check the .ulf shape), --check
+    # confirms PRESENCE of the serial vars ONLY -- it does not validate the serial's
+    # format or that it is accepted by Unity. The serial is verified at live
+    # activation (a real `-serial` editor launch), which is the only place Unity
+    # actually checks it. We deliberately do not echo the values.
+    printf '%sNote: --check confirms presence only; the serial is verified at live activation.%s\n' \
+        "${C_YELLOW}" "${C_NC}"
     printf 'Run scripts/unity/run-tests.sh to perform the live Unity activation.\n'
     return 0
 }

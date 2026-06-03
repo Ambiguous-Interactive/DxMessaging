@@ -7,11 +7,11 @@ created: "2026-01-22"
 updated: "2026-01-22"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: ".llm/skills/specification.md"
     - path: "scripts/validate-skills.js"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "documentation"
@@ -63,7 +63,7 @@ status: "stable"
 
 # Skill File Sizing Guidelines
 
-> **One-line summary**: Keep skill files between 200-350 lines for optimal LLM context usage and maintainability.
+> **One-line summary**: Keep skill files between 120-260 lines, split at the warning range, and never exceed 300 lines.
 
 ## Overview
 
@@ -112,7 +112,8 @@ const LINE_LIMIT_HARD_MAX = 300;
 Run validation manually:
 
 ```bash
-node scripts/validate-skills.js
+npm run repair:llm-policy
+npm run validate:llm-policy
 ```
 
 ### Enforcement Points
@@ -137,7 +138,7 @@ The main `context.md` file follows the same limits. If it grows too large, extra
 
 ### Example 1: Splitting a Large Skill
 
-If `object-pooling.md` exceeds 350 lines:
+If `object-pooling.md` exceeds the 260-line warning range:
 
 **Before** (one large file):
 
@@ -205,18 +206,19 @@ Validation is automated:
 
 ```bash
 # Run validation
-node scripts/validate-skills.js
+npm run repair:llm-policy
+npm run validate:llm-policy
 
 # Check output for size warnings/errors
-#   size: File has 380 lines (ideal: 200-350)
-#  size: File has 520 lines (max: 500)
+#   size: File has 278 lines (ideal: 120-260)
+#  size: File has 317 lines (max: 300)
 ```
 
 ## When to Split a Skill
 
 Consider splitting when:
 
-1. **Line count exceeds 350**: The primary trigger
+1. **Line count exceeds 260**: Split before the hard 300-line ceiling
 1. **Multiple distinct variations**: Each variation could stand alone
 1. **Different complexity levels**: Basic vs. advanced usage
 1. **Different use cases**: Unity-specific vs. general .NET
@@ -226,7 +228,7 @@ Consider splitting when:
 
 ```text
 .llm/skills/{category}/
-+-- {main-concept}.md           # Core pattern (200-350 lines)
++-- {main-concept}.md           # Core pattern (120-260 lines)
 +-- {concept}-{variation1}.md   # Specific variation
 +-- {concept}-{variation2}.md   # Another variation
 +-- {concept}-advanced.md       # Advanced usage

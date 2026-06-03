@@ -1,3 +1,4 @@
+# cspell:words lscache
 # npm package exclusions for com.wallstop-studios.dxmessaging
 #
 # This file works together with package.json "files" to control npm packaging:
@@ -16,6 +17,12 @@
 **/bin/
 **/obj/
 **/*.pdb
+# C# Dev Kit per-project cache files (auto-regenerated; never publish).
+**/*.lscache
+**/*.lscache.meta
+# JetBrains Rider per-user solution settings.
+**/*.DotSettings.user
+**/*.DotSettings.user.meta
 
 # =============================================================================
 # Tooling Output Directories
@@ -82,6 +89,9 @@ site/
 site.meta
 progress/
 progress.meta
+
+# Local operator runbooks are generated on demand and never packaged.
+.operator-runbooks/
 
 # =============================================================================
 # Node.js / JavaScript Tooling

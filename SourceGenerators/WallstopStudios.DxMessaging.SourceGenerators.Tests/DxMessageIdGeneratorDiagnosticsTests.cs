@@ -1,14 +1,49 @@
 using System.Linq;
+using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using NUnit.Framework;
+using WallstopStudios.DxMessaging.SourceGenerators;
+using WallstopStudios.DxMessaging.SourceGenerators.Analyzers;
 
 namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 
 [TestFixture]
 public sealed class DxMessageIdGeneratorDiagnosticsTests
 {
+    [Test]
+    public void GeneratorsUseUnity2021CompatibleClassicSourceGeneratorApi()
+    {
+        Assert.That(new DxMessageIdGenerator(), Is.AssignableTo<ISourceGenerator>());
+        Assert.That(new DxAutoConstructorGenerator(), Is.AssignableTo<ISourceGenerator>());
+        Assert.That(new DxMessageIdGenerator(), Is.Not.AssignableTo<IIncrementalGenerator>());
+        Assert.That(new DxAutoConstructorGenerator(), Is.Not.AssignableTo<IIncrementalGenerator>());
+    }
+
+    [TestCase(typeof(DxMessageIdGenerator), "source generator")]
+    [TestCase(typeof(MessageAwareComponentBaseCallAnalyzer), "analyzer")]
+    public void ShippedCompilerHostAssembliesReferenceUnity2021CompatibleRoslyn(
+        Type compilerHostType,
+        string label
+    )
+    {
+        Version expectedVersion = new(3, 8, 0, 0);
+        AssemblyName[] references = compilerHostType.Assembly.GetReferencedAssemblies();
+        Version? codeAnalysisVersion = references
+            .Single(reference => reference.Name == "Microsoft.CodeAnalysis")
+            .Version;
+        Version? csharpVersion = references
+            .Single(reference => reference.Name == "Microsoft.CodeAnalysis.CSharp")
+            .Version;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(codeAnalysisVersion, Is.EqualTo(expectedVersion), label);
+            Assert.That(csharpVersion, Is.EqualTo(expectedVersion), label);
+        });
+    }
+
     [Test]
     public void ReportsMultipleMessageAttributes()
     {
@@ -404,8 +439,184 @@ public partial struct M
     }
 
     // ------------------------------------------------------------------------------------------
+    // AOT bridge generation.
+    // ------------------------------------------------------------------------------------------
+
+    [Test]
+    public void AttributedConcreteMessagesEmitIl2CppAotBridges()
+    {
+        string source = """
+using DxMessaging.Core.Attributes;
+
+namespace Sample;
+
+[DxUntargetedMessage]
+public readonly partial struct AttributedUntargeted { }
+
+[DxTargetedMessage]
+public sealed partial class AttributedTargeted { }
+
+[DxBroadcastMessage]
+public readonly partial struct AttributedBroadcast { }
+""";
+
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+
+        Assert.That(result.Results[0].Diagnostics, Is.Empty);
+        Assert.That(
+            generated,
+            Does.Contain("#if ENABLE_IL2CPP && UNITY_2021_3_OR_NEWER"),
+            "AOT bridge code must stay behind IL2CPP/Unity guards."
+        );
+        Assert.That(generated, Does.Contain("RegisterAotUntargetedBridge"));
+        Assert.That(generated, Does.Contain("RegisterAotTargetedBridge"));
+        Assert.That(generated, Does.Contain("RegisterAotSourcedBridge"));
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    [Test]
+    public void ManualInterfaceMessagesEmitTopLevelIl2CppRegistrar()
+    {
+        string source = """
+using DxMessaging.Core.Messages;
+
+namespace Sample;
+
+public readonly struct ManualUntargeted : IUntargetedMessage<ManualUntargeted> { }
+
+internal sealed class ManualTargeted : ITargetedMessage<ManualTargeted> { }
+
+public readonly struct ManualBroadcast : IBroadcastMessage<ManualBroadcast> { }
+""";
+
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+
+        Assert.That(result.Results[0].Diagnostics, Is.Empty);
+        Assert.That(generated, Does.Contain("DxMessagingIl2CppMessageRegistrar"));
+        Assert.That(generated, Does.Contain("RegisterAotUntargetedBridge"));
+        Assert.That(generated, Does.Contain("RegisterAotTargetedBridge"));
+        Assert.That(generated, Does.Contain("RegisterAotSourcedBridge"));
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    [Test]
+    public void OpenGenericMessagesDoNotEmitIl2CppAotBridges()
+    {
+        string source = """
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Messages;
+
+namespace Sample;
+
+[DxUntargetedMessage]
+public readonly partial struct AttributedGeneric<T> { }
+
+public readonly struct ManualGeneric<T> : IUntargetedMessage<ManualGeneric<T>> { }
+""";
+
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+
+        Assert.That(result.Results[0].Diagnostics, Is.Empty);
+        Assert.That(
+            generated,
+            Does.Not.Contain("RuntimeInitializeOnLoadMethod"),
+            "Open generic definitions cannot root a concrete IL2CPP bridge."
+        );
+        Assert.That(generated, Does.Not.Contain("RegisterAotUntargetedBridge"));
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    [Test]
+    public void ConflictingMessageAttributesDoNotEmitIl2CppAotRegistrar()
+    {
+        string source = """
+using DxMessaging.Core.Attributes;
+
+namespace Sample;
+
+[DxUntargetedMessage]
+[DxTargetedMessage]
+public readonly partial struct Conflicting { }
+""";
+
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+
+        Assert.That(
+            result.Results[0].Diagnostics,
+            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG002")
+        );
+        Assert.That(generated, Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"));
+        Assert.That(generated, Does.Not.Contain("RegisterAot"));
+    }
+
+    [Test]
+    public void ManualMessageWithMultipleInterfacesEmitsEachAotBridgeOnce()
+    {
+        string source = """
+using System;
+using DxMessaging.Core.Messages;
+
+namespace Sample;
+
+public readonly struct Omnibus : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
+{
+    public Type MessageType => typeof(Omnibus);
+}
+""";
+
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+
+        Assert.That(result.Results[0].Diagnostics, Is.Empty);
+        Assert.That(CountOccurrences(generated, "RegisterAotUntargetedBridge"), Is.EqualTo(1));
+        Assert.That(CountOccurrences(generated, "RegisterAotTargetedBridge"), Is.EqualTo(1));
+        Assert.That(CountOccurrences(generated, "RegisterAotSourcedBridge"), Is.EqualTo(1));
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    // ------------------------------------------------------------------------------------------
     // Helpers.
     // ------------------------------------------------------------------------------------------
+
+    private static string GetGeneratedSource(GeneratorDriverRunResult result)
+    {
+        return string.Join(
+            "\n",
+            result.Results.SelectMany(r => r.GeneratedSources).Select(g => g.SourceText.ToString())
+        );
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            ++count;
+            index += value.Length;
+        }
+
+        return count;
+    }
+
+    private static void AssertGeneratedOutputCompilesForIl2Cpp(string source)
+    {
+        Diagnostic[] errors = GeneratorTestUtilities
+            .CompileDxMessageIdGeneratedOutput(source, "ENABLE_IL2CPP", "UNITY_2021_3_OR_NEWER")
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+
+        Assert.That(
+            errors,
+            Is.Empty,
+            "Generated IL2CPP output must compile cleanly. Errors:\n"
+                + string.Join("\n", errors.Select(static diagnostic => diagnostic.ToString()))
+        );
+    }
 
     private static void AssertGeneratedSourceContains(
         GeneratorDriverRunResult result,
@@ -415,10 +626,7 @@ public partial struct M
     {
         // Walk every generated tree, concatenate text, then assert. Roslyn's GeneratedSources is
         // an ImmutableArray<GeneratedSourceResult>; we don't care about the partition here.
-        string joined = string.Join(
-            "\n",
-            result.Results.SelectMany(r => r.GeneratedSources).Select(g => g.SourceText.ToString())
-        );
+        string joined = GetGeneratedSource(result);
         Assert.That(joined, Does.Contain(fragment), failureMessage);
     }
 

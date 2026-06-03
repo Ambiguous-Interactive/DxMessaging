@@ -1,0 +1,2314 @@
+#Requires -Version 5.1
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^\d+\.\d+\.\d+f\d+$')]
+    [string]$UnityVersion,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('editmode', 'playmode', 'standalone')]
+    [string]$TestMode,
+
+    [Parameter(Mandatory = $true)]
+    [string]$AssemblyNames,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ArtifactsPath,
+
+    [string]$RepoRoot = $(if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }),
+
+    [string]$ProjectPath,
+
+    [string]$UnityEditorPath = $env:UNITY_EDITOR_PATH,
+
+    [string]$UnityInstallRoot = $(if ($env:UNITY_EDITOR_INSTALL_ROOT) { $env:UNITY_EDITOR_INSTALL_ROOT } else { 'C:\Unity\Editors' }),
+
+    [string]$TestCategory = $(if ($env:DXM_UNITY_TEST_CATEGORY) { $env:DXM_UNITY_TEST_CATEGORY } else { '' }),
+
+    [switch]$GenerateOnly
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# PowerShell 7.4 introduced $PSNativeCommandUseErrorActionPreference (stabilizing
+# the native-error experimental feature). Its default is $false on current builds,
+# so `& <native>` does NOT throw on a non-zero exit and our explicit checks run as
+# written. However, a host profile or a future/different build could enable it,
+# which would make `& <native>` THROW on a non-zero exit BEFORE our explicit
+# `$LASTEXITCODE` check runs -- short-circuiting Invoke-UnityEditor's exit-code
+# diagnostic and making the best-effort license return rely on its catch block
+# instead of finishing. Pinning it $false makes LASTEXITCODE-based handling
+# authoritative and identical across hosts/versions. (PS 5.1 lacks this variable;
+# assigning it there is harmless, and the assignment is StrictMode-safe.)
+$PSNativeCommandUseErrorActionPreference = $false
+
+$PackageName = 'com.wallstop-studios.dxmessaging'
+$TestFrameworkVersion = '1.4.5'
+$PerformanceFrameworkVersion = '3.4.2'
+# DxMessaging's own analyzer + source-generator assemblies. These MUST be present
+# in Editor/Analyzers/; the harness pre-copies the whole Editor/Analyzers/ roster
+# into the generated project's Assets/Plugins (see Copy-DxMessagingAnalyzersToAssets)
+# and tags these two RoslynAnalyzer, reproducing the single registration that
+# SetupCscRsp makes for real consumers. Editor/Analyzers/ ALSO ships the Roslyn
+# runtime deps (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
+# System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe) the generator
+# loads at compile time; those ride along as Editor-EXCLUDED analyzer dependencies
+# co-located with the labeled analyzers (Unity passes co-located deps to the compiler
+# alongside the analyzer; they are not loaded as managed Editor plugins).
+$RequiredDxMessagingAnalyzerDllNames = @(
+    'WallstopStudios.DxMessaging.SourceGenerators.dll',
+    'WallstopStudios.DxMessaging.Analyzer.dll'
+)
+
+function Write-CiError {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    Write-Host "::error::$Message"
+}
+
+function Write-CiNotice {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    Write-Host "::notice::$Message"
+}
+
+# SINGLE SOURCE OF TRUTH for the catastrophic-pattern list that both
+# Write-UnityCatastrophicErrorAnnotations (new ::error:: annotation surface)
+# AND Write-UnityResultFailureDiagnostics (older line-numbered selected-line
+# printer) scan for. Each entry has:
+#   Label    : human-readable label written into the GitHub group/error line
+#   Pattern  : the Select-String pattern (regex when UseSimple=false, literal
+#              substring when UseSimple=true)
+#   UseSimple: whether to invoke Select-String -SimpleMatch (literal substring,
+#              cheaper) or as a regex
+# Keeping this at $script: scope keeps the array deterministic and shared
+# even when callers run from inside a try/finally or a child function.
+#
+# Patterns covered:
+#   - PrecompiledAssemblyException -- "Multiple precompiled assemblies with
+#     the same name" (the analyzer-DLL duplicate that motivated this
+#     diagnostic; the runtime auto-copy that caused it has been removed).
+#   - CompilationFailedException -- generic compile-failure path.
+#   - error CS\d+ -- compiler errors (CS0246, CS0103, CS0117, etc).
+#   - warning CS8032 -- "An instance of analyzer cannot be created" (analyzer
+#     failed to instantiate; same class of issue).
+$script:CatastrophicPatterns = @(
+    @{ Label = 'PrecompiledAssemblyException'; Pattern = 'PrecompiledAssemblyException'; UseSimple = $true }
+    @{ Label = 'CompilationFailedException'; Pattern = 'CompilationFailedException'; UseSimple = $true }
+    @{ Label = 'Multiple precompiled assemblies with the same name'; Pattern = 'Multiple precompiled assemblies with the same name'; UseSimple = $true }
+    @{ Label = 'error CS\d+'; Pattern = 'error CS\d+'; UseSimple = $false }
+    @{ Label = 'warning CS8032'; Pattern = 'warning CS8032'; UseSimple = $false }
+)
+
+# CLASS-OF-ISSUE DIAGNOSTIC: when Unity exits non-zero, the operator's next
+# question is "WHY did Unity fail?". The most common silent-killer answers are
+# catastrophic compile-time errors -- the editor exits before running tests at
+# all, leaving no NUnit XML. Surface these patterns as `::error::` annotations
+# directly from the runner script so they ALWAYS show up in both the runner log
+# and GitHub's error summary, independent of whether the workflow-level verify
+# step also runs. Reusable at top-level so additional call sites can adopt it.
+# Patterns come from the single-source-of-truth $script:CatastrophicPatterns
+# array above; see Write-UnityResultFailureDiagnostics for the second consumer.
+function Write-UnityCatastrophicErrorAnnotations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [int]$MaxPerPattern = 5
+    )
+
+    if (-not $LogPath -or -not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+        return
+    }
+
+    foreach ($entry in $script:CatastrophicPatterns) {
+        try {
+            if ($entry.UseSimple) {
+                $hits = @(
+                    Select-String -LiteralPath $LogPath -SimpleMatch -Pattern $entry.Pattern -ErrorAction SilentlyContinue |
+                        Select-Object -First $MaxPerPattern
+                )
+            } else {
+                $hits = @(
+                    Select-String -LiteralPath $LogPath -Pattern $entry.Pattern -ErrorAction SilentlyContinue |
+                        Select-Object -First $MaxPerPattern
+                )
+            }
+        } catch {
+            # Best-effort; never throw from a diagnostic helper -- the caller is
+            # already in the middle of a throw path.
+            continue
+        }
+
+        if ($hits.Count -lt 1) {
+            continue
+        }
+
+        Write-Host "::group::Catastrophic pattern: $($entry.Label)"
+        foreach ($hit in $hits) {
+            $line = $hit.Line.Trim()
+            Write-Host "::error::Pattern detected -- $($entry.Label):: $line"
+            Write-Host "  $($hit.Path):$($hit.LineNumber): $line"
+        }
+        Write-Host "::endgroup::"
+    }
+}
+
+# Collapse any run of whitespace (including CR/LF) to a single space and trim, so
+# a multi-line NUnit <failure>/<message> renders as ONE line. GitHub `::error::`
+# annotations are single-line: an embedded newline silently truncates the
+# annotation at the first line break, so the whole message must be flattened
+# before it is emitted. Mirrors the `.Trim()` collapse the catastrophic-pattern
+# scanner applies to each matched log line.
+function ConvertTo-SingleLineDiagnostic {
+    param([string]$Text)
+    if (-not $Text) {
+        return ''
+    }
+    return (($Text -replace '\s+', ' ').Trim())
+}
+
+# Holder for the ::stop-commands::<token> ... ::<token>:: fence token that wraps
+# caller-controlled raw multi-line dumps (NUnit <message>/<stack-trace>). GitHub
+# parses every stdout line for `::command::` directives; fencing the raw body
+# disables that processing so an assertion message containing a line like
+# `::error file=...::` or `::set-output name=x::` cannot inject a spurious
+# workflow command. The token is NOT a fixed literal: a crafted message
+# containing the exact `::<literal>::` close line could otherwise end the fence
+# early and re-enable injection. Instead a FRESH random token is generated per
+# enumeration via New-WorkflowCommandStopToken (mirroring GitHub's own
+# @actions/core, which uses a random per-invocation delimiter) and the SAME
+# value is used for the opening and closing fence lines. The matching fence in
+# .github/actions/verify-unity-results/action.yml uses the same scheme.
+$script:WorkflowCommandStopToken = $null
+
+# Generate a fresh, unpredictable stop-commands fence token. A GUID 'N' form is
+# 32 hex chars with no separators, so it can never collide with caller text and
+# is regenerated each call so it is neither predictable nor committed.
+function New-WorkflowCommandStopToken {
+    return ('dxm-stop-commands-{0}' -f [guid]::NewGuid().ToString('N'))
+}
+
+# Resolve an NUnit test-case / test-suite node's display name using
+# XmlElement.GetAttribute, which returns '' for an ABSENT attribute instead of
+# THROWING under Set-StrictMode -Version Latest (the dynamic `$node.fullname`
+# property accessor throws "The property 'fullname' cannot be found" when the
+# attribute is missing, which would degrade the whole failed-test enumeration to
+# a generic warning for any NUnit XML lacking a fullname). Prefers fullname, then
+# name, then a final '(unnamed test)' fallback.
+function Get-NUnitNodeFullName {
+    param([Parameter(Mandatory = $true)]$Node)
+
+    $fullName = $Node.GetAttribute('fullname')
+    if (-not $fullName) {
+        $fullName = $Node.GetAttribute('name')
+    }
+    if (-not $fullName) {
+        $fullName = '(unnamed test)'
+    }
+    return $fullName
+}
+
+# DIAGNOSTIC: when a Unity test run reports failures, the operator's next question
+# is "WHICH tests failed and WHY?". The aggregate `failed=N` count alone is not
+# actionable -- a real 2021.3 PlayMode run failed 1 of 697 tests and the logs
+# never named it. This best-effort helper enumerates each failed test from the
+# NUnit3 results XML and emits BOTH:
+#   - a single-line `::error::` GitHub annotation per failed test (label +
+#     fullname + first line of the failure message), and
+#   - a `::group::Failed test: <fullname>` ... `::endgroup::` console block with
+#     the full multi-line message and stack trace.
+# It NEVER throws (the caller is already on a throw path; a diagnostic error must
+# not mask the real test failure) and follows the structure of the other
+# best-effort scanners (Write-UnityCatastrophicErrorAnnotations /
+# Write-UnityResultFailureDiagnostics).
+#
+# Two classes of failed node are enumerated:
+#   (1) Failed leaf cases: //test-case[@result='Failed'] -- the ordinary
+#       assertion failure.
+#   (2) Failed suites that carry their OWN direct <failure> child:
+#       //test-suite[@result='Failed'] with a direct <failure> element. This is
+#       the OneTimeSetUp / OneTimeTearDown failure shape (e.g.
+#       SuiteWallClockBudgetTest's [OneTimeTearDown] Assert.Fail) -- a suite can
+#       carry its OWN teardown failure message EVEN WHEN it also has a failed
+#       child case, so we report on the direct <failure> regardless of failed
+#       descendants. The fullname de-dup keeps a suite distinct from its child
+#       cases (suite fullname differs from case fullname), so this never
+#       double-prints; an aggregate-only suite (no direct <failure>) is still
+#       skipped because its failure is just the roll-up of the child cases.
+# De-duplicated by fullname so the same logical node is never printed twice, and
+# capped at the first $MaxFailures (a truncation notice is printed -- no silent
+# cap). Attribute reads use XmlElement.GetAttribute (returns '' when absent,
+# never throws) so a results.xml lacking a fullname/name attribute does NOT
+# degrade the whole enumeration to a generic warning under Set-StrictMode.
+function Write-UnityFailedTestAnnotations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Xml,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [int]$MaxFailures = 50
+    )
+
+    try {
+        $failedCases = @($Xml.SelectNodes("//test-case[@result='Failed']"))
+        $failedSuites = @($Xml.SelectNodes("//test-suite[@result='Failed']"))
+
+        # A failed suite is reported on its OWN merits whenever it carries a
+        # direct <failure> child element. This captures the OneTimeSetUp /
+        # OneTimeTearDown failure message even when the suite ALSO has a failed
+        # descendant case (the teardown's own message would otherwise be lost).
+        # An aggregate-only suite (no direct <failure>, just a roll-up of failed
+        # children) is skipped. The fullname de-dup below keeps the suite
+        # distinct from its child cases, so this never double-prints.
+        $ownFailureSuites = @(
+            foreach ($suite in $failedSuites) {
+                $directFailure = $suite.SelectSingleNode('failure')
+                if ($directFailure) {
+                    $suite
+                }
+            }
+        )
+
+        $failedNodes = @($failedCases) + @($ownFailureSuites)
+        if ($failedNodes.Count -lt 1) {
+            return
+        }
+
+        # De-duplicate by fullname (fallback name) so the same logical test is
+        # never printed twice.
+        $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+        $uniqueNodes = New-Object 'System.Collections.Generic.List[object]'
+        foreach ($node in $failedNodes) {
+            $fullName = Get-NUnitNodeFullName -Node $node
+            if ($seen.Add($fullName)) {
+                $uniqueNodes.Add($node)
+            }
+        }
+
+        $totalFailed = $uniqueNodes.Count
+        $shown = @($uniqueNodes | Select-Object -First $MaxFailures)
+        foreach ($node in $shown) {
+            $fullName = Get-NUnitNodeFullName -Node $node
+
+            $failureNode = $node.SelectSingleNode('failure')
+            $message = ''
+            $stackTrace = ''
+            if ($failureNode) {
+                $messageNode = $failureNode.SelectSingleNode('message')
+                if ($messageNode) {
+                    $message = $messageNode.InnerText
+                }
+                $stackNode = $failureNode.SelectSingleNode('stack-trace')
+                if ($stackNode) {
+                    $stackTrace = $stackNode.InnerText
+                }
+            }
+
+            $firstMessageLine = ConvertTo-SingleLineDiagnostic -Text $message
+            # The single-line ::error:: annotation stays OUTSIDE the fence so it
+            # is still processed as a GitHub annotation. ConvertTo-SingleLineDiagnostic
+            # already flattens it to one line, so an embedded `::error::`/`::set-output::`
+            # token cannot start a NEW directive on its own line here.
+            Write-Host "::error::${Label} failed test: $fullName -- $firstMessageLine"
+
+            Write-Host "::group::Failed test: $fullName"
+            # SECURITY: the raw NUnit <message>/<stack-trace> are caller-controlled
+            # (an assertion message can contain ANY text). GitHub parses every
+            # stdout line for `::command::` directives, so a message line like
+            # `::error file=...::` or `::set-output name=x::` would inject a
+            # spurious workflow command. Fence the raw multi-line dump with
+            # ::stop-commands::<token> ... ::<token>:: so command processing is
+            # disabled for the enclosed lines. The token is a FRESH random GUID
+            # per dump (never a fixed literal) so a crafted message containing
+            # the exact `::<literal>::` close line cannot end the fence early and
+            # re-enable injection. The ::group::/::endgroup:: markers stay OUTSIDE
+            # the fence so they are still processed.
+            $script:WorkflowCommandStopToken = New-WorkflowCommandStopToken
+            Write-Host "::stop-commands::$script:WorkflowCommandStopToken"
+            if ($message) {
+                Write-Host "Message:"
+                Write-Host $message
+            } else {
+                Write-Host "Message: (none recorded)"
+            }
+            if ($stackTrace) {
+                Write-Host "Stack trace:"
+                Write-Host $stackTrace
+            }
+            Write-Host "::$script:WorkflowCommandStopToken::"
+            Write-Host "::endgroup::"
+        }
+
+        if ($totalFailed -gt $shown.Count) {
+            $omitted = $totalFailed - $shown.Count
+            Write-CiNotice "${Label}: $omitted additional failed test(s) not shown (showing first $($shown.Count) of $totalFailed)."
+        }
+    } catch {
+        # Best-effort; a diagnostic must never mask the real test failure.
+        Write-Host "::warning::Could not enumerate failed tests for ${Label}: $($_.Exception.Message)"
+    }
+}
+
+function Resolve-FullPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
+function Assert-RepoRoot {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath (Join-Path $Path 'package.json') -PathType Leaf)) {
+        throw "Repo root '$Path' does not contain package.json."
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $Path 'Runtime') -PathType Container)) {
+        throw "Repo root '$Path' does not contain Runtime/."
+    }
+}
+
+function ConvertTo-UnityFileUriPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return ($Path -replace '\\', '/')
+}
+
+function Initialize-UnityCacheEnvironment {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Version
+    )
+
+    $cacheRoot = Join-Path $Root ".artifacts\unity\cache\$Version"
+    $upmRoot = Join-Path $cacheRoot 'upm'
+    $npmRoot = Join-Path $cacheRoot 'npm'
+    $gitLfsRoot = Join-Path $cacheRoot 'git-lfs'
+    $localUnityCaches = if ($env:LOCALAPPDATA) {
+        Join-Path $env:LOCALAPPDATA 'Unity\Caches'
+    } else {
+        Join-Path $cacheRoot 'localappdata\Unity\Caches'
+    }
+
+    foreach ($path in @($cacheRoot, $upmRoot, $npmRoot, $gitLfsRoot, $localUnityCaches)) {
+        New-Item -ItemType Directory -Force -Path $path | Out-Null
+    }
+
+    $env:UPM_CACHE_ROOT = $upmRoot
+    $env:UPM_NPM_CACHE_PATH = $npmRoot
+    $env:UPM_GIT_LFS_CACHE_PATH = $gitLfsRoot
+    $env:UPM_ENABLE_GIT_LFS_CACHE = 'true'
+
+    Write-Host "::group::Unity cache environment"
+    Write-Host "LOCALAPPDATA Unity caches: $localUnityCaches"
+    Write-Host "UPM_CACHE_ROOT: $env:UPM_CACHE_ROOT"
+    Write-Host "UPM_NPM_CACHE_PATH: $env:UPM_NPM_CACHE_PATH"
+    Write-Host "UPM_GIT_LFS_CACHE_PATH: $env:UPM_GIT_LFS_CACHE_PATH"
+    Write-Host "::endgroup::"
+}
+
+function New-ManifestJson {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $packagePath = ConvertTo-UnityFileUriPath -Path $Root
+    $manifest = [ordered]@{
+        dependencies = [ordered]@{
+            'com.unity.test-framework' = $TestFrameworkVersion
+            'com.unity.test-framework.performance' = $PerformanceFrameworkVersion
+            $PackageName = "file:$packagePath"
+        }
+        testables = @($PackageName)
+    }
+
+    return ($manifest | ConvertTo-Json -Depth 8)
+}
+
+function New-ConfiguratorSource {
+    @'
+using UnityEditor;
+
+public static class DxmCiTestConfigurator
+{
+    public static void Apply()
+    {
+        EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);
+        PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.IL2CPP);
+        PlayerSettings.SetApiCompatibilityLevel(BuildTargetGroup.Standalone, ApiCompatibilityLevel.NET_Standard_2_0);
+    }
+}
+'@
+}
+
+# STANDALONE ONLY. The Editor-side type that severs the test player's outbound
+# PlayerConnection/Profiler TCP dependency at build time AND makes the editor's
+# `-runTests` build step terminate. Emitted into Assets/Editor/ of the standalone
+# CI project by Initialize-EphemeralProject. It mirrors Unity's documented
+# "Split build and run" example (vendored com.unity.test-framework
+# TestPlayerBuildModifierAttribute.cs): ITestPlayerBuildModifier rewrites the
+# BuildPlayerOptions, IPostBuildCleanup exits the editor after the build.
+#
+# CRITICAL: clearing BuildOptions.AutoRunPlayer ALONE is NOT enough. The CLI
+# `-runTests` path registers Executer.ExitIfRunIsCompleted on
+# EditorApplication.update, which returns early while TestRunnerApi.IsRunActive()
+# is true; for a player run that flag clears only on the PlayerConnection
+# runFinished message. With the player never launched the message never arrives,
+# so the editor idles forever. The PostBuildCleanup exit (run AFTER the build via
+# ExecutePostBuildCleanupMethods) is mandatory.
+function New-StandaloneBuildModifierSource {
+    @'
+using System;
+using System.IO;
+using System.Linq;
+using UnityEditor;
+using UnityEditor.TestTools;
+using UnityEngine;
+using UnityEngine.TestTools;
+
+[assembly: TestPlayerBuildModifier(typeof(DxmCiStandaloneBuildModifier))]
+[assembly: PostBuildCleanup(typeof(DxmCiStandaloneBuildModifier))]
+
+// Mirrors the documented Unity "Split build and run" example. Clearing
+// AutoRunPlayer alone is NOT enough: the CLI -runTests path registers
+// Executer.ExitIfRunIsCompleted on EditorApplication.update, which returns early
+// while TestRunnerApi.IsRunActive() is true; for a player run that flag only
+// clears on the PlayerConnection runFinished message, which never arrives when
+// the player is not launched. PostBuildCleanup is the framework's hook (run after
+// the build) to exit the editor cleanly.
+public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPostBuildCleanup
+{
+    private static bool s_Armed;
+    private static readonly EditorApplication.CallbackFunction s_Exit = () => EditorApplication.Exit(0);
+
+    public BuildPlayerOptions ModifyOptions(BuildPlayerOptions playerOptions)
+    {
+        playerOptions.options &= ~BuildOptions.AutoRunPlayer;
+        playerOptions.options &= ~BuildOptions.ConnectToHost;
+        playerOptions.options &= ~BuildOptions.ConnectWithProfiler;
+        playerOptions.options |= BuildOptions.IncludeTestAssemblies;
+        playerOptions.options |= BuildOptions.Development;
+        string outPath = Environment.GetEnvironmentVariable("DXM_PLAYER_BUILD_PATH");
+        if (!string.IsNullOrEmpty(outPath))
+        {
+            string dir = Path.GetDirectoryName(outPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            playerOptions.locationPathName = outPath;
+        }
+        return playerOptions;
+    }
+
+    public void Cleanup()
+    {
+        if (s_Armed)
+        {
+            return;
+        }
+        s_Armed = true;
+        if (Environment.GetCommandLineArgs().Any(a => a == "-runTests"))
+        {
+            EditorApplication.update += s_Exit;
+        }
+    }
+}
+'@
+}
+
+# STANDALONE ONLY. The player-side [assembly:TestRunCallback] that REPLACES the
+# editor's need to receive results over PlayerConnection/TCP. On RunFinished it
+# serializes the NUnit result to NUnit-compatible XML (mirroring Unity's
+# ResultsWriter.WriteResultsToXml) at the path from the -dxmTestResults <path>
+# command-line arg, then Application.Quit(0 pass / 1 fail / 2 no-path / 3 write
+# error). Emitted into Assets/DxmCiStandaloneTestCallback/ with its own .asmdef.
+# [Preserve] keeps the type for IL2CPP.
+#
+# On the PLAYER, ITestResult.ResultState is a NUnit.Framework.Interfaces.ResultState
+# OBJECT, so we call .ToString() (the editor adaptor does the same). The single
+# results channel is -dxmTestResults; there is NO environment-variable fallback and
+# NO per-user-data-folder silent-loss fallback.
+function New-StandaloneTestCallbackSource {
+    @'
+using System;
+using System.IO;
+using System.Xml;
+using NUnit.Framework.Interfaces;
+using UnityEngine;
+using UnityEngine.Scripting;
+using UnityEngine.TestRunner;
+
+[assembly: TestRunCallback(typeof(DxmCiStandaloneTestCallback))]
+
+[Preserve]
+internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
+{
+    public void RunStarted(ITest testsToRun)
+    {
+    }
+
+    public void TestStarted(ITest test)
+    {
+    }
+
+    public void TestFinished(ITestResult result)
+    {
+    }
+
+    public void RunFinished(ITestResult result)
+    {
+        string path = ResolveResultsPath();
+        if (string.IsNullOrEmpty(path))
+        {
+            Debug.LogError("DXM: standalone test player received no -dxmTestResults <path>; not writing results.");
+            Application.Quit(2);
+            return;
+        }
+        int exitCode;
+        try
+        {
+            WriteNUnitXml(result, path);
+            exitCode = result.FailCount > 0 ? 1 : 0;
+            int total = result.PassCount + result.FailCount + result.SkipCount + result.InconclusiveCount;
+            Debug.LogFormat(
+                LogType.Log,
+                LogOption.NoStacktrace,
+                null,
+                "DXM: wrote standalone results to {0} (total={1} passed={2} failed={3} skipped={4})",
+                path,
+                total,
+                result.PassCount,
+                result.FailCount,
+                result.SkipCount);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogException(ex);
+            exitCode = 3;
+        }
+        Application.Quit(exitCode);
+    }
+
+    private static string ResolveResultsPath()
+    {
+        string[] args = Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (string.Equals(args[i], "-dxmTestResults", StringComparison.Ordinal))
+            {
+                return args[i + 1];
+            }
+        }
+        return null;
+    }
+
+    private static void WriteNUnitXml(ITestResult result, string filePath)
+    {
+        string dir = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+        XmlWriterSettings settings = new XmlWriterSettings
+        {
+            Indent = true,
+            NewLineOnAttributes = false
+        };
+        using (StreamWriter sw = File.CreateText(filePath))
+        using (XmlWriter xw = XmlWriter.Create(sw, settings))
+        {
+            int total = result.PassCount + result.FailCount + result.SkipCount + result.InconclusiveCount;
+            TNode run = new TNode("test-run");
+            run.AddAttribute("id", "2");
+            run.AddAttribute("testcasecount", total.ToString());
+            run.AddAttribute("result", result.ResultState.ToString());
+            run.AddAttribute("total", total.ToString());
+            run.AddAttribute("passed", result.PassCount.ToString());
+            run.AddAttribute("failed", result.FailCount.ToString());
+            run.AddAttribute("inconclusive", result.InconclusiveCount.ToString());
+            run.AddAttribute("skipped", result.SkipCount.ToString());
+            run.AddAttribute("asserts", result.AssertCount.ToString());
+            run.AddAttribute("engine-version", "3.5.0.0");
+            run.AddAttribute("clr-version", Environment.Version.ToString());
+            run.AddAttribute("start-time", result.StartTime.ToString("u"));
+            run.AddAttribute("end-time", result.EndTime.ToString("u"));
+            run.AddAttribute("duration", result.Duration.ToString());
+            run.ChildNodes.Add(result.ToXml(true));
+            run.WriteTo(xw);
+        }
+    }
+}
+'@
+}
+
+# STANDALONE ONLY. The asmdef for the player-side test callback above. Referencing
+# UnityEngine.TestRunner is MANDATORY: TestRunCallbackListener.GetAllCallbacks only
+# scans assemblies that reference UnityEngine.TestRunner. overrideReferences +
+# precompiledReferences=nunit.framework.dll gives the callback the NUnit types;
+# defineConstraints UNITY_INCLUDE_TESTS keeps it out of non-test builds. This must
+# be a PLAYER assembly (NOT under Assets/Editor/), so includePlatforms is empty.
+function New-StandaloneTestCallbackAsmdef {
+    @'
+{
+    "name": "DxmCiStandaloneTestCallback",
+    "references": [
+        "UnityEngine.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ]
+}
+'@
+}
+
+# The two DLLs that MUST be tagged with Unity's "RoslynAnalyzer" asset label in
+# the Assets copy (mirrors SetupCscRsp.AnalyzerLabeledDllNames). The remaining
+# DLLs in Editor/Analyzers/ are the Roslyn runtime the generator loads at compile
+# time; they ride along as Editor-EXCLUDED analyzer dependencies (every platform
+# disabled), exactly as SetupCscRsp leaves them.
+$RoslynAnalyzerLabeledDllNames = @(
+    'WallstopStudios.DxMessaging.SourceGenerators.dll',
+    'WallstopStudios.DxMessaging.Analyzer.dll'
+)
+
+function Assert-DxMessagingAnalyzerDllsPresent {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $missingRequired = New-Object System.Collections.Generic.List[string]
+    foreach ($dllName in $RequiredDxMessagingAnalyzerDllNames) {
+        $sourcePath = Join-Path $Root "Editor\Analyzers\$dllName"
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            $missingRequired.Add($sourcePath)
+        }
+    }
+
+    if ($missingRequired.Count -gt 0) {
+        throw "Missing required DxMessaging analyzer DLL(s) in Editor/Analyzers:`n$($missingRequired.ToArray() -join "`n")"
+    }
+}
+
+# Pre-create the SAME Assets/Plugins/Editor/WallstopStudios.DxMessaging/ analyzer
+# copy that the package's Editor/SetupCscRsp.cs makes at editor load, but do it
+# BEFORE Unity launches so the source generator is registered EXACTLY ONCE and is
+# present at the very first compile.
+#
+# WHY: when the package is consumed from Packages/ (the real install shape, and
+# the shape the CI manifest uses via a file: mount), SetupCscRsp copies the
+# analyzer DLLs into the project's Assets and tags the two analyzer DLLs
+# RoslynAnalyzer. The harness pre-creates the SAME copy before Unity launches so
+# the source generator is present at the very first compile.
+#
+# CRITICAL CONTRACT (the root cause of the Unity 2021 "Multiple precompiled
+# assemblies with the same name" abort): each analyzer DLL must be EXCLUDED from
+# every platform, the Editor included, and activated SOLELY by the RoslynAnalyzer
+# asset label. A platform-ENABLED managed DLL is registered as a precompiled
+# assembly. The same-named DLL is importable from BOTH the file:-mounted package
+# (its bytes ARE physically present under Packages/com.wallstop-studios.dxmessaging/
+# Editor/Analyzers/ -- a UPM file: package is NOT resolved purely virtually, proven
+# by the failing CI logs that import the analyzer DLL from that path) AND this
+# Assets copy. When BOTH copies were Editor-ENABLED, Unity 2021 aborted before
+# compile with PrecompiledAssemblyException; 2022/6000 tolerate the duplicate. The
+# Roslyn runtime dependencies in the same folder already ship excluded-from-all-
+# platforms and never collide despite the identical two-copy layout -- the analyzer
+# DLLs now match that proven-safe shape (Editor: enabled 0 in every meta -- the
+# shipped Editor/Analyzers/*.dll.meta, the template clone, AND the fallback heredoc
+# below), so the RoslynAnalyzer label still feeds them to the compiler while neither
+# copy is a precompiled assembly. The harness writes NO csc.rsp; SetupCscRsp manages
+# only the base-call ignore -additionalfile sidecar at editor load.
+function Copy-DxMessagingAnalyzersToAssets {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Project
+    )
+
+    Assert-DxMessagingAnalyzerDllsPresent -Root $Root
+
+    $analyzersDir = Join-Path $Root 'Editor\Analyzers'
+    # SourceGenerators.dll.meta already carries the RoslynAnalyzer label AND the
+    # Editor-only / Standalone-excluded PluginImporter settings SetupCscRsp
+    # converges to, so it is the template for BOTH analyzer DLLs (Analyzer.dll's
+    # own .meta lacks the label). Reusing the package's proven .meta -- changing
+    # only the GUID -- avoids hand-authoring importer YAML that could drift.
+    $analyzerTemplateMeta = Join-Path $analyzersDir 'WallstopStudios.DxMessaging.SourceGenerators.dll.meta'
+    $destDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
+    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+
+    $copied = New-Object System.Collections.Generic.List[string]
+    foreach ($dll in @(Get-ChildItem -LiteralPath $analyzersDir -Filter '*.dll' -File)) {
+        $destDll = Join-Path $destDir $dll.Name
+
+        # Copy the DLL only when missing or its bytes changed, so reruns against
+        # the cached project do not needlessly invalidate Unity's import cache.
+        $needsCopy = -not (Test-Path -LiteralPath $destDll -PathType Leaf)
+        if (-not $needsCopy) {
+            $needsCopy = (Get-Item -LiteralPath $destDll).Length -ne $dll.Length
+        }
+        if ($needsCopy) {
+            Copy-Item -LiteralPath $dll.FullName -Destination $destDll -Force
+        }
+
+        # Author the .meta only when missing so the GUID -- and thus Unity's asset
+        # identity and import cache -- stays stable across reruns. Fresh GUID so
+        # the Assets copy never collides with the package-resident asset.
+        $destMeta = "$destDll.meta"
+        if (-not (Test-Path -LiteralPath $destMeta -PathType Leaf)) {
+            $isAnalyzer = $RoslynAnalyzerLabeledDllNames -contains $dll.Name
+            $sourceMeta = if ($isAnalyzer) { $analyzerTemplateMeta } else { "$($dll.FullName).meta" }
+            $freshGuid = [guid]::NewGuid().ToString('N')
+            if (Test-Path -LiteralPath $sourceMeta -PathType Leaf) {
+                $metaContent = Get-Content -LiteralPath $sourceMeta -Raw
+                $metaContent = [regex]::Replace(
+                    $metaContent,
+                    '(?m)^guid:\s*[0-9A-Fa-f]+\s*$',
+                    "guid: $freshGuid"
+                )
+            } else {
+                # No shipped .meta to template from. Author a minimal meta that is
+                # EXCLUDED from every platform (Editor included), adding the
+                # RoslynAnalyzer label only for the two analyzer DLLs (deps are the
+                # Roslyn runtime, not analyzers). Disabling every platform keeps the DLL
+                # a compiler analyzer (activated solely by the RoslynAnalyzer label)
+                # rather than a managed precompiled assembly, so a same-named copy under
+                # the package's own Editor/Analyzers cannot trip Unity 2021's "Multiple
+                # precompiled assemblies with the same name" abort.
+                $labelBlock = if ($isAnalyzer) { "labels:`n- RoslynAnalyzer`n" } else { '' }
+                $metaContent = @"
+fileFormatVersion: 2
+guid: $freshGuid
+${labelBlock}PluginImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  iconMap: {}
+  executionOrder: {}
+  defineConstraints: []
+  isPreloaded: 0
+  isOverridable: 1
+  isExplicitlyReferenced: 0
+  validateReferences: 1
+  platformData:
+  - first:
+      Any:
+    second:
+      enabled: 0
+      settings: {}
+  - first:
+      Editor: Editor
+    second:
+      enabled: 0
+      settings:
+        DefaultValueInitialized: true
+  userData:
+  assetBundleName:
+  assetBundleVariant:
+"@
+            }
+            Set-Content -LiteralPath $destMeta -Value $metaContent -Encoding UTF8
+        }
+        $copied.Add($dll.Name)
+    }
+
+    Write-Host "::group::DxMessaging analyzer Assets copy"
+    Write-Host "Pre-created the single analyzer registration under $destDir (no csc.rsp is written)."
+    foreach ($name in @($copied | Sort-Object)) {
+        $suffix = if ($RoslynAnalyzerLabeledDllNames -contains $name) { ' [RoslynAnalyzer]' } else { '' }
+        Write-Host "  $name$suffix"
+    }
+    Write-Host "::endgroup::"
+}
+
+function Write-AnalyzerSetupDiagnostics {
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [string]$LogPath,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    $destDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
+    $sourceGeneratorDll = Join-Path $destDir 'WallstopStudios.DxMessaging.SourceGenerators.dll'
+    $analyzerDll = Join-Path $destDir 'WallstopStudios.DxMessaging.Analyzer.dll'
+
+    $sourceGeneratorLabeled = (Test-Path -LiteralPath "$sourceGeneratorDll.meta" -PathType Leaf) -and
+        ((Get-Content -LiteralPath "$sourceGeneratorDll.meta" -Raw) -match 'RoslynAnalyzer')
+    $analyzerLabeled = (Test-Path -LiteralPath "$analyzerDll.meta" -PathType Leaf) -and
+        ((Get-Content -LiteralPath "$analyzerDll.meta" -Raw) -match 'RoslynAnalyzer')
+
+    # A RoslynAnalyzer DLL must ALSO be excluded from the Editor platform (its meta's
+    # "Editor: Editor" block must be enabled: 0). An Editor-ENABLED copy is registered
+    # as a managed precompiled assembly; combined with the same-named copy under the
+    # package's own Editor/Analyzers, Unity 2021 aborts with "Multiple precompiled
+    # assemblies with the same name". Assert the EFFECTIVE excluded state here so a meta
+    # regression is caught in CI before Unity compiles, not just the label presence.
+    $editorEnabledPattern = 'Editor:\s+Editor\s+second:\s+enabled:\s*1'
+    $sourceGeneratorEditorDisabled = (Test-Path -LiteralPath "$sourceGeneratorDll.meta" -PathType Leaf) -and
+        -not ((Get-Content -LiteralPath "$sourceGeneratorDll.meta" -Raw) -match $editorEnabledPattern)
+    $analyzerEditorDisabled = (Test-Path -LiteralPath "$analyzerDll.meta" -PathType Leaf) -and
+        -not ((Get-Content -LiteralPath "$analyzerDll.meta" -Raw) -match $editorEnabledPattern)
+
+    $logHasSourceGeneratorArg = $false
+    $logHasAnalyzerArg = $false
+    if ($LogPath -and (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+        $logText = Get-Content -LiteralPath $LogPath -Raw
+        $logHasSourceGeneratorArg = $logText -match 'WallstopStudios\.DxMessaging\.SourceGenerators\.dll'
+        $logHasAnalyzerArg = $logText -match 'WallstopStudios\.DxMessaging\.Analyzer\.dll'
+    }
+
+    Write-Host "::group::DxMessaging analyzer setup diagnostics ($Label)"
+    Write-Host "Assets analyzer copy: RoslynAnalyzer-labeled source generator: $sourceGeneratorLabeled"
+    Write-Host "Assets analyzer copy: RoslynAnalyzer-labeled analyzer: $analyzerLabeled"
+    Write-Host "Assets analyzer copy: source generator excluded from Editor platform: $sourceGeneratorEditorDisabled"
+    Write-Host "Assets analyzer copy: analyzer excluded from Editor platform: $analyzerEditorDisabled"
+    Write-Host "Unity compile log mentioned DxMessaging source-generator arg: $logHasSourceGeneratorArg"
+    Write-Host "Unity compile log mentioned DxMessaging analyzer arg: $logHasAnalyzerArg"
+    Write-Host "::endgroup::"
+
+    if (-not ($sourceGeneratorLabeled -and $analyzerLabeled)) {
+        throw "Generated Assets/Plugins analyzer copy is missing the RoslynAnalyzer-labeled DxMessaging source-generator/analyzer DLLs."
+    }
+    if (-not ($sourceGeneratorEditorDisabled -and $analyzerEditorDisabled)) {
+        throw "Generated Assets/Plugins analyzer copy is Editor-ENABLED (a managed precompiled assembly). The analyzer DLLs must be excluded from every platform (Editor included) so Unity treats them as RoslynAnalyzer-only DLLs; otherwise the same-named copy under the package's Editor/Analyzers trips Unity 2021's 'Multiple precompiled assemblies with the same name' abort."
+    }
+}
+
+function Initialize-EphemeralProject {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$Mode,
+        [string]$Path
+    )
+
+    $project = if ($Path) {
+        Resolve-FullPath -Path $Path
+    } else {
+        Join-Path $Root ".artifacts\unity\projects\$Version-$Mode"
+    }
+
+    New-Item -ItemType Directory -Force -Path (Join-Path $project 'Packages') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $project 'ProjectSettings') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $project 'Assets\Editor') | Out-Null
+
+    New-ManifestJson -Root $Root |
+        Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
+    "m_EditorVersion: $Version`n" |
+        Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
+    New-ConfiguratorSource |
+        Set-Content -LiteralPath (Join-Path $project 'Assets\Editor\DxmCiTestConfigurator.cs') -Encoding UTF8
+
+    # Pre-create the same Assets/Plugins analyzer copy SetupCscRsp makes for consumers
+    # (see Copy-DxMessagingAnalyzersToAssets) so the source generator is registered at
+    # the very first compile. The analyzer DLLs are excluded from every platform and
+    # activated solely by the RoslynAnalyzer label, so neither this Assets copy nor the
+    # package's own Editor/Analyzers copy is a managed precompiled assembly -- the
+    # Editor-ENABLED duplicate of those same-named DLLs is what aborted Unity 2021 with
+    # "Multiple precompiled assemblies with the same name". The harness writes NO
+    # Assets/csc.rsp; for the CI file: mount SetupCscRsp emits no -a: line anyway (the
+    # package's bytes live at the repo root, outside <project>/Packages, so its
+    # File.Exists probe is false), and it manages only the base-call ignore sidecar.
+    Copy-DxMessagingAnalyzersToAssets -Root $Root -Project $project
+
+    # STANDALONE ONLY: generate the split-build helpers that sever the test
+    # player's PlayerConnection/TCP result streaming (the 10060 hang on multi-NIC
+    # self-hosted runners). The Editor-side build modifier clears the player's
+    # outbound-connection BuildOptions and exits the editor after the build; the
+    # player-side TestRunCallback writes NUnit XML to -dxmTestResults and quits.
+    # Written idempotently (only when missing or changed), exactly like
+    # Copy-DxMessagingAnalyzersToAssets, so reruns against the cached project do
+    # not needlessly invalidate Unity's import cache. editmode/playmode never emit
+    # these files (the local single -runTests path is untouched).
+    if ($Mode -eq 'standalone') {
+        $standaloneFiles = @(
+            @{ Path = (Join-Path $project 'Assets\Editor\DxmCiStandaloneBuildModifier.cs'); Content = (New-StandaloneBuildModifierSource) },
+            @{ Path = (Join-Path $project 'Assets\DxmCiStandaloneTestCallback\DxmCiStandaloneTestCallback.cs'); Content = (New-StandaloneTestCallbackSource) },
+            @{ Path = (Join-Path $project 'Assets\DxmCiStandaloneTestCallback\DxmCiStandaloneTestCallback.asmdef'); Content = (New-StandaloneTestCallbackAsmdef) }
+        )
+        foreach ($file in $standaloneFiles) {
+            $dir = Split-Path -Parent $file.Path
+            if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+                New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            }
+            $needsWrite = -not (Test-Path -LiteralPath $file.Path -PathType Leaf)
+            if (-not $needsWrite) {
+                # Compare EOL-trailing-tolerantly: Set-Content appends a trailing
+                # newline that the here-string content lacks, so a naive `-ne` would
+                # rewrite on every run and needlessly bust Unity's import cache.
+                $existing = Get-Content -LiteralPath $file.Path -Raw
+                $needsWrite = ($existing.TrimEnd("`r", "`n") -ne $file.Content.TrimEnd("`r", "`n"))
+            }
+            if ($needsWrite) {
+                Set-Content -LiteralPath $file.Path -Value $file.Content -Encoding UTF8
+            }
+        }
+        Write-Host "::group::DxMessaging standalone split-build helpers"
+        Write-Host "Generated the standalone build modifier + player TestRunCallback under $project (file-based results; no PlayerConnection)."
+        foreach ($file in $standaloneFiles) {
+            Write-Host "  $($file.Path)"
+        }
+        Write-Host "::endgroup::"
+    }
+
+    return $project
+}
+
+function ConvertTo-NormalizedAcceleratorEndpoint {
+    param([string]$Endpoint)
+
+    # Pure: returns $null for empty input or a non-empty 'host:port' string;
+    # THROWS with form-only diagnostics (never echoes the input value -- the
+    # raw form is sensitive even if it just looks like a URL, and a future
+    # secret-masking lapse must not exfiltrate it through our error text).
+    if (-not $Endpoint -or $Endpoint.Trim().Length -eq 0) {
+        return $null
+    }
+
+    $trimmed = $Endpoint.Trim()
+    $hostPart = $null
+    $portPart = 0
+
+    # URL form: a scheme is present. [System.Uri]::TryCreate handles userinfo
+    # stripping, path/query/fragment stripping, bracketed IPv6 hosts, and
+    # explicit port extraction in one call. PS 5.1 compatible.
+    if ($trimmed -match '^[a-zA-Z][a-zA-Z0-9+.\-]*://') {
+        [System.Uri]$uri = $null
+        # NOTE (leak-guard): the throw text below is form-only and intentionally
+        # interpolates NO part of `$Endpoint`/`$trimmed`. The fourth normalizer
+        # throw path (URL TryCreate failure) is therefore statically safe even
+        # though it cannot be deterministically triggered from a unit test --
+        # [System.Uri]::TryCreate is too permissive about most malformed URLs.
+        if (-not [System.Uri]::TryCreate($trimmed, [System.UriKind]::Absolute, [ref]$uri)) {
+            throw 'UNITY_ACCELERATOR_ENDPOINT could not be parsed as a URL form (scheme present, but not RFC 3986 well-formed). Expected host:port or scheme://host:port.'
+        }
+        # IsDefaultPort=TRUE means the URL OMITTED :port and the scheme's
+        # default (e.g. 80/443 for http/https) was substituted -- both cases
+        # are wrong for a Unity cache server, which needs an EXPLICIT port.
+        # The `$uri.Port -lt 0` clause is belt-and-suspenders: on pwsh 7+ a
+        # missing port yields Port == -1 AND IsDefaultPort == True, so the
+        # -lt 0 check is subsumed -- it stays here as defense against a future
+        # .NET runtime change that decouples the two flags.
+        if ($uri.Port -lt 0 -or $uri.IsDefaultPort) {
+            throw 'UNITY_ACCELERATOR_ENDPOINT URL is missing an explicit :port. Provide host:port or scheme://host:port.'
+        }
+        # `Uri.Host` returns `[::1]` (with brackets) on pwsh 7+ / .NET Core (the
+        # CI runtime), and historically returned `::1` (no brackets) on PS 5.1 /
+        # .NET Framework. The `StartsWith('[')` guard makes the assembled
+        # 'host:port' string unambiguous on both runtimes; the production target
+        # is pwsh 7+, so this is defense-in-depth against a future PS 5.1
+        # backport.
+        $hostPart = $uri.Host
+        if ($uri.HostNameType -eq [System.UriHostNameType]::IPv6 -and -not $hostPart.StartsWith('[')) {
+            $hostPart = "[$hostPart]"
+        }
+        $portPart = $uri.Port
+    }
+    else {
+        # Bare host:port (canonical). Bracketed IPv6 first because the v4 /
+        # hostname regex would mis-anchor on the closing bracket.
+        #
+        # LEAK GUARD: pre-validate the port digit length BEFORE the `[int]` cast.
+        # The .NET Int32 overflow exception text echoes the offending value
+        # verbatim ("Cannot convert value "99999999999" to type ...") which would
+        # contradict the function's "never echoes the input" invariant. 5 digits
+        # is the max legal port (65535); anything longer is automatically out of
+        # range, so reject with the existing form-only message before the cast.
+        if ($trimmed -match '^\[([0-9A-Fa-f:]+)\]:(\d+)$') {
+            if ($matches[2].Length -gt 5) {
+                throw 'UNITY_ACCELERATOR_ENDPOINT port is out of range (must be 1-65535).'
+            }
+            $hostPart = "[$($matches[1])]"
+            $portPart = [int]$matches[2]
+        }
+        elseif ($trimmed -match '^([^:\s/?#]+):(\d+)$') {
+            if ($matches[2].Length -gt 5) {
+                throw 'UNITY_ACCELERATOR_ENDPOINT port is out of range (must be 1-65535).'
+            }
+            $hostPart = $matches[1]
+            $portPart = [int]$matches[2]
+        }
+        else {
+            throw 'UNITY_ACCELERATOR_ENDPOINT could not be parsed: expected host:port (e.g. 127.0.0.1:10080), [ipv6]:port, or scheme://host:port[/path].'
+        }
+    }
+
+    if ($portPart -le 0 -or $portPart -gt 65535) {
+        throw 'UNITY_ACCELERATOR_ENDPOINT port is out of range (must be 1-65535).'
+    }
+
+    return ('{0}:{1}' -f $hostPart, $portPart)
+}
+
+function Get-AcceleratorArguments {
+    param(
+        [string]$Endpoint,
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$Mode
+    )
+
+    $normalized = ConvertTo-NormalizedAcceleratorEndpoint -Endpoint $Endpoint
+    if (-not $normalized) {
+        return @()
+    }
+
+    # SECURITY: defense-in-depth masking. GitHub Actions masks the original
+    # secret value, but here we extract a NEW substring (the normalized
+    # host:port form) -- masking a parent string does NOT propagate to derived
+    # substrings. Register BOTH the raw trimmed input (defense-in-depth, in
+    # case the secret was passed via non-secret env in some other call path)
+    # AND the normalized form BEFORE any downstream log line could echo them:
+    # Invoke-UnityEditor prints "$EditorPath $($Arguments -join ' ')" later in
+    # this same script (search for `Write-Host "`"$EditorPath`"`) which WOULD
+    # leak the host:port unmasked without these directives.
+    #
+    # `::add-mask::` is a no-op outside GitHub Actions, so local runs are
+    # unaffected. Done at the top of the success path so all callers benefit.
+    Write-Host "::add-mask::$($Endpoint.Trim())"
+    Write-Host "::add-mask::$normalized"
+
+    return @(
+        '-EnableCacheServer',
+        '-cacheServerEndpoint', $normalized,
+        '-cacheServerNamespacePrefix', "dxmessaging-$Version-$Mode",
+        '-cacheServerEnableDownload', 'true',
+        '-cacheServerEnableUpload', 'true'
+    )
+}
+
+function Invoke-UnityLicenseActivate {
+    param(
+        [Parameter(Mandatory = $true)][string]$EditorPath,
+        [Parameter(Mandatory = $true)][string]$Serial,
+        [Parameter(Mandatory = $true)][string]$Email,
+        [Parameter(Mandatory = $true)][string]$Password,
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    # Classic SERIAL activation: a single editor invocation that activates the
+    # paid Unity seat and immediately quits. This MUST succeed before the test
+    # run, so unlike the return path it THROWS on a non-zero exit -- a failed
+    # activation means the test editor would launch unlicensed and fail opaquely.
+    $logDir = Split-Path -Parent $LogPath
+    if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    }
+
+    # SECURITY: the serial/email/password ride in the argument array, so this site
+    # must NEVER echo the args (no "...$activateArgs..." Write-Host). The caller
+    # passes a $LogPath that lives under a NON-uploaded temp dir (RUNNER_TEMP /
+    # system temp), never under $ArtifactsPath, so the credentials cannot leak into
+    # an uploaded artifact.
+    $activateArgs = @(
+        '-quit',
+        '-batchmode',
+        '-nographics',
+        '-serial', $Serial,
+        '-username', $Email,
+        '-password', $Password,
+        '-logFile', '-'
+    )
+
+    Write-Host "::group::Activate Unity license (serial)"
+    # Unity.exe is a Windows GUI-subsystem binary: PowerShell's `&` does NOT wait
+    # for it or set $LASTEXITCODE unless its stdout is consumed via the pipeline.
+    # `-logFile -` puts the Unity log on stdout and `| Tee-Object` forces the wait,
+    # sets $LASTEXITCODE, and persists the (non-uploaded) temp log. (Proven idiom;
+    # see Invoke-UnityEditor.)
+    & $EditorPath @activateArgs 2>&1 | Tee-Object -FilePath $LogPath
+    $exitCode = $LASTEXITCODE
+    Write-Host "::endgroup::"
+    if ($exitCode -ne 0) {
+        # The message names the failure and the (non-uploaded) log path ONLY -- it
+        # must never embed the serial/email/password values.
+        throw "Unity license activation failed with exit code $exitCode. See the activation log at $LogPath (not uploaded as an artifact)."
+    }
+
+    Write-CiNotice 'Activated the Unity license (serial).'
+}
+
+function Invoke-UnityLicenseReturn {
+    param(
+        [Parameter(Mandatory = $true)][string]$EditorPath,
+        [Parameter(Mandatory = $true)][string]$Email,
+        [Parameter(Mandatory = $true)][string]$Password,
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    # Best-effort, defense-in-depth: this MUST NEVER throw. The license is also
+    # returned by the workflow if:always() step (a backstop for a hard-killed
+    # editor that never reaches this finally) and by the NEXT run's
+    # return-at-start (which reclaims a seat leaked by a prior force-killed run on
+    # this persistent self-hosted runner).
+    try {
+        $logDir = Split-Path -Parent $LogPath
+        if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
+            New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+        }
+
+        # SECURITY: email/password ride in the argument array; never echo the args
+        # and keep the return log in the NON-uploaded temp dir, never under
+        # $ArtifactsPath.
+        $returnArgs = @(
+            '-quit',
+            '-batchmode',
+            '-nographics',
+            '-returnlicense',
+            '-username', $Email,
+            '-password', $Password,
+            '-logFile', '-'
+        )
+
+        Write-Host "::group::Return Unity license (serial)"
+        # Same Tee-Object wait + $LASTEXITCODE idiom as Invoke-UnityLicenseActivate
+        # / Invoke-UnityEditor (a bare `&` would not wait for the GUI-subsystem
+        # binary). `-logFile -` puts the log on stdout; Tee-Object DOES persist it
+        # to $LogPath, but the caller keeps $LogPath under the NON-uploaded temp dir
+        # (RUNNER_TEMP / system temp), so it stays out of any UPLOADED ARTIFACT and
+        # the account fragments Unity may print cannot leak into uploads.
+        & $EditorPath @returnArgs 2>&1 | Tee-Object -FilePath $LogPath
+        $exitCode = $LASTEXITCODE
+        Write-Host "::endgroup::"
+
+        if ($exitCode -ne 0) {
+            Write-Host "::warning::Unity license return exited with code $exitCode; the workflow if:always() return step and the next run's return-at-start are the backstops for the leaked seat."
+        } else {
+            Write-CiNotice 'Returned the Unity license (serial).'
+        }
+    } catch {
+        Write-Host "::warning::Unity license return failed: $($_.Exception.Message). The workflow if:always() return step and the next run's return-at-start are the backstops."
+    }
+}
+
+function Get-StandaloneTestPlayerTimeoutSeconds {
+    # Single source of truth for the TOTAL wall-clock timeout applied to the
+    # DIRECTLY-LAUNCHED standalone test player (Invoke-StandaloneTestPlayer). The
+    # player runs ~700 runtime tests headless in single-digit minutes; the 30 min
+    # default is a generous backstop so a player that hangs (e.g. a residual
+    # connection dial-out or a deadlocked test) is tree-killed instead of running
+    # until the 120-minute GitHub step is cancelled. Mirrors ensure-editor.ps1
+    # Get-EnsureEditorInstallTimeoutSeconds EXACTLY: honors
+    # DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS; a non-integer or NEGATIVE override is
+    # ignored with a ::warning:: and the default is used; 0 is the explicit OPT-OUT
+    # (unbounded wait). StrictMode-safe: no collection reads.
+    param([int]$Default = 1800)
+
+    if ($env:DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS) {
+        $parsed = 0
+        if (
+            [int]::TryParse($env:DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS, [ref]$parsed) -and
+            $parsed -ge 0
+        ) {
+            return $parsed
+        }
+        Write-Host "::warning::Ignoring invalid DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS='$env:DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS'; using $Default second(s)."
+    }
+    return $Default
+}
+
+function Get-StandaloneBuildTimeoutSeconds {
+    # Single source of truth for the TOTAL wall-clock timeout applied to the editor
+    # BUILD step that produces the standalone IL2CPP test player. The IL2CPP build
+    # is the long pole; the 45 min default matches the install default and comfortably
+    # exceeds a slow-but-progressing build, so a build that idles forever (e.g. the
+    # PostBuildCleanup exit never fired because the modifier failed to compile and
+    # AutoRunPlayer stayed set) is tree-killed instead of consuming the 120-minute
+    # GitHub step. Mirrors ensure-editor.ps1 Get-EnsureEditorInstallTimeoutSeconds
+    # EXACTLY: honors DXM_STANDALONE_BUILD_TIMEOUT_SECONDS; a non-integer or NEGATIVE
+    # override is ignored with a ::warning:: and the default is used; 0 is the
+    # explicit OPT-OUT (unbounded wait). StrictMode-safe: no collection reads.
+    param([int]$Default = 2700)
+
+    if ($env:DXM_STANDALONE_BUILD_TIMEOUT_SECONDS) {
+        $parsed = 0
+        if (
+            [int]::TryParse($env:DXM_STANDALONE_BUILD_TIMEOUT_SECONDS, [ref]$parsed) -and
+            $parsed -ge 0
+        ) {
+            return $parsed
+        }
+        Write-Host "::warning::Ignoring invalid DXM_STANDALONE_BUILD_TIMEOUT_SECONDS='$env:DXM_STANDALONE_BUILD_TIMEOUT_SECONDS'; using $Default second(s)."
+    }
+    return $Default
+}
+
+function ConvertTo-ProcessArgumentLine {
+    # MIRROR of scripts/unity/ensure-editor.ps1 ConvertTo-ProcessArgumentLine
+    # (run-ci-tests.ps1 does not import that script, so the helper is copied here
+    # verbatim). Builds a single Windows command-line argument string from an array,
+    # quoting any argument containing whitespace or a quote and escaping embedded
+    # backslashes/quotes per the CommandLineToArgvW rules. Used by
+    # Invoke-ProcessWithTreeKillTimeout (it assigns ProcessStartInfo.Arguments, the
+    # single command-line string form, NOT the per-element argument-list property
+    # the contract forbids).
+    param([string[]]$Arguments)
+
+    $quoted = foreach ($arg in @($Arguments)) {
+        if ($null -eq $arg) {
+            '""'
+            continue
+        }
+
+        $value = [string]$arg
+        if ($value.Length -gt 0 -and $value -notmatch '[\s"]') {
+            $value
+            continue
+        }
+
+        $builder = New-Object System.Text.StringBuilder
+        [void]$builder.Append('"')
+        $backslashes = 0
+        foreach ($ch in $value.ToCharArray()) {
+            if ($ch -eq '\') {
+                $backslashes++
+                continue
+            }
+
+            if ($ch -eq '"') {
+                if ($backslashes -gt 0) {
+                    [void]$builder.Append('\' * ($backslashes * 2))
+                }
+                [void]$builder.Append('\"')
+                $backslashes = 0
+                continue
+            }
+
+            if ($backslashes -gt 0) {
+                [void]$builder.Append('\' * $backslashes)
+                $backslashes = 0
+            }
+            [void]$builder.Append($ch)
+        }
+
+        if ($backslashes -gt 0) {
+            [void]$builder.Append('\' * ($backslashes * 2))
+        }
+        [void]$builder.Append('"')
+        $builder.ToString()
+    }
+
+    return ($quoted -join ' ')
+}
+
+function Invoke-ProcessWithTreeKillTimeout {
+    # GENERALIZED hard tree-kill watchdog, STRUCTURALLY IDENTICAL to
+    # scripts/unity/ensure-editor.ps1 Invoke-UnityCliCaptureWithTimeout (the proven
+    # resilience core). It launches $FilePath with $Arguments via
+    # System.Diagnostics.Process + ProcessStartInfo, drains BOTH stdout and stderr
+    # from a MAIN-THREAD ReadLineAsync poll loop (live echo via Write-Host + Tee to
+    # $LogPath), enforces an absolute UTC deadline, and on a breach $proc.Kill($true)
+    # tree-kills the whole process tree (the Unity editor build spawns child
+    # processes -- IL2CPP/bee -- and the player may too, so a bare Kill() would orphan
+    # them). The process is held in a try/finally that kills it on ANY throw between
+    # launch and reap, so a pwsh cancellation cannot leave an orphaned editor/player.
+    #
+    # WHY a Process and NOT `& <exe>`: the call operator cannot be interrupted -- a
+    # hung child runs until the whole job is killed. WHY the main-thread poll loop:
+    # every line is echoed LIVE the instant it arrives (no silent multi-minute build
+    # console) AND both pipes are continuously drained so neither can fill and
+    # back-pressure the child (the classic full-pipe-buffer deadlock is impossible).
+    # A Process.Start() launch is NOT an `&`/`.` call, so it does not trip the
+    # powershell-unity-process-wait-safety parser rule; the contract test additionally
+    # forbids a bare empty-parens WaitForExit and the per-element argument-list
+    # property here, both of which this implementation avoids.
+    #
+    # Returns a StrictMode-safe hashtable @{ ExitCode; TimedOut }. The caller throws
+    # on $TimedOut or a non-zero $ExitCode; the FILE written by the player is the
+    # source of truth for pass/fail.
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$Arguments,
+        [int]$TimeoutSeconds = 1800,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    $logDir = Split-Path -Parent $LogPath
+    if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    }
+
+    # Sentinel exit code for a wall-clock timeout kill. 124 mirrors GNU coreutils
+    # `timeout`; it is non-zero so the caller's "exit != 0 -> fail" path applies.
+    $timeoutExitCode = 124
+
+    Write-Host "::group::$Label"
+    Write-Host "`"$FilePath`" $($Arguments -join ' ')"
+
+    $buffer = New-Object System.Collections.Generic.List[string]
+
+    if ($TimeoutSeconds -le 0) {
+        $hasDeadline = $false
+        $timeoutMs = -1
+    } else {
+        $hasDeadline = $true
+        $timeoutMsLong = [int64]$TimeoutSeconds * 1000
+        if ($timeoutMsLong -gt [int64]::MaxValue - 1) {
+            $timeoutMs = [int64]::MaxValue - 1
+        } else {
+            $timeoutMs = $timeoutMsLong
+        }
+    }
+
+    $proc = $null
+    $exit = -1
+    $timedOut = $false
+    $reaped = $false
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $FilePath
+        $psi.Arguments = ConvertTo-ProcessArgumentLine -Arguments $Arguments
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo = $psi
+
+        [void]$proc.Start()
+
+        $outReader = $proc.StandardOutput
+        $errReader = $proc.StandardError
+        $oTask = $outReader.ReadLineAsync()
+        $eTask = $errReader.ReadLineAsync()
+
+        if ($hasDeadline) {
+            $deadline = [DateTime]::UtcNow.AddMilliseconds([double]$timeoutMs)
+        } else {
+            $deadline = [DateTime]::MaxValue
+        }
+
+        $oDone = $false
+        $eDone = $false
+        while (-not ($oDone -and $eDone)) {
+            $progressed = $false
+
+            if (-not $oDone -and $oTask.Wait(0)) {
+                $line = $oTask.Result
+                if ($null -eq $line) {
+                    $oDone = $true
+                } else {
+                    Write-Host $line
+                    $buffer.Add([string]$line)
+                    $oTask = $outReader.ReadLineAsync()
+                }
+                $progressed = $true
+            }
+
+            if (-not $eDone -and $eTask.Wait(0)) {
+                $line = $eTask.Result
+                if ($null -eq $line) {
+                    $eDone = $true
+                } else {
+                    Write-Host $line
+                    $buffer.Add([string]$line)
+                    $eTask = $errReader.ReadLineAsync()
+                }
+                $progressed = $true
+            }
+
+            if ([DateTime]::UtcNow -ge $deadline) {
+                # HUNG (or a quick-exit child whose grandchild still holds the pipe
+                # open, so EOF never arrives): tree-kill the WHOLE process tree.
+                $timedOut = $true
+                try {
+                    $proc.Kill($true)
+                } catch {
+                    try { $proc.Kill() } catch { }
+                }
+                break
+            }
+
+            if (-not $progressed) {
+                Start-Sleep -Milliseconds 50
+            }
+        }
+
+        # Reap so ExitCode is valid; bounded so a stuck reap cannot hang the harness.
+        $reaped = $proc.WaitForExit(5000)
+
+        # Drain any reads that completed during/after the kill so no pre-kill output
+        # is dropped.
+        foreach ($pending in @($oTask, $eTask)) {
+            try {
+                if ($pending.Wait(2000) -and $null -ne $pending.Result) {
+                    $line = $pending.Result
+                    Write-Host $line
+                    $buffer.Add([string]$line)
+                }
+            } catch {
+                # A faulted/cancelled read on a killed pipe carries nothing to add.
+            }
+        }
+
+        if ($timedOut) {
+            $exit = $timeoutExitCode
+        } elseif ($reaped -and $proc.HasExited) {
+            $exit = $proc.ExitCode
+        } else {
+            $exit = $timeoutExitCode
+            $timedOut = $true
+        }
+    } catch {
+        $message = "Process watchdog '$Label' threw: $($_.Exception.Message)"
+        Write-Host "::warning::$message"
+        $buffer.Add($message)
+        $exit = -1
+    } finally {
+        # If we are unwinding on a throw/cancellation and the process is still alive,
+        # tree-kill it so a cancelled step never orphans the editor/player.
+        if ($proc -and -not $proc.HasExited) {
+            try { $proc.Kill($true) } catch { }
+        }
+        if ($proc) { $proc.Dispose() }
+    }
+
+    Write-Host "::endgroup::"
+
+    # Persist the captured (already-streamed) output to $LogPath for diagnostics.
+    try {
+        Set-Content -LiteralPath $LogPath -Value (@($buffer.ToArray()) -join "`n") -Encoding UTF8
+    } catch {
+        Write-Host "::warning::Could not persist '$Label' log to ${LogPath}: $($_.Exception.Message)"
+    }
+
+    return @{
+        ExitCode = $exit
+        TimedOut = [bool]$timedOut
+    }
+}
+
+function Invoke-StandaloneTestPlayer {
+    # RUN the editor-built standalone IL2CPP test player DIRECTLY (no
+    # PlayerConnection): the player-side TestRunCallback writes NUnit XML to the
+    # -dxmTestResults path and quits 0/1/2/3. The exe is launched under the hard
+    # tree-kill watchdog so a hung player is killed long before the GitHub step is
+    # cancelled. Returns @{ ExitCode; TimedOut }. The FILE is the source of truth: the
+    # caller validates results.xml and treats a watchdog timeout as fatal ONLY when no
+    # usable results file was written (a player can finish writing results in
+    # RunFinished and then have Application.Quit deferred in -batchmode IL2CPP, which
+    # the watchdog would otherwise turn into a spurious failure). Exit 2 (the player got
+    # no -dxmTestResults arg -- a harness-contract violation) is still thrown here.
+    #
+    # ONE results channel: -dxmTestResults. There is NO environment-variable handoff
+    # and NO per-user-data-folder fallback.
+    param(
+        [Parameter(Mandatory = $true)][string]$EditorBuiltExePath,
+        [Parameter(Mandatory = $true)][string]$ResultsPath,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [int]$TimeoutSeconds = 1800
+    )
+
+    $playerArgs = @(
+        '-batchmode',
+        '-nographics',
+        '-logFile', '-',
+        '-dxmTestResults', $ResultsPath
+    )
+
+    $result = Invoke-ProcessWithTreeKillTimeout `
+        -FilePath $EditorBuiltExePath `
+        -Arguments $playerArgs `
+        -TimeoutSeconds $TimeoutSeconds `
+        -LogPath $LogPath `
+        -Label 'Run standalone test player'
+
+    # Exit 2 means the player received no -dxmTestResults arg (a harness-contract
+    # violation -- the harness always passes it), so no file can exist: fail fast.
+    if ($result.ExitCode -eq 2) {
+        throw "Standalone test player reported no -dxmTestResults path (exit 2); no results were written. See the player log at $LogPath."
+    }
+
+    # Do NOT throw on a watchdog timeout here. A player can write a complete results
+    # file in its RunFinished callback and then have Application.Quit deferred/ignored
+    # in -batchmode -nographics IL2CPP; the watchdog then tree-kills it (TimedOut) even
+    # though the results are valid. The caller validates the FILE (the source of truth)
+    # and decides, so a deferred-quit run is not turned into a spurious failure.
+    return @{ ExitCode = $result.ExitCode; TimedOut = $result.TimedOut }
+}
+
+function Invoke-UnityEditor {
+    param(
+        [Parameter(Mandatory = $true)][string]$EditorPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    # Unity.exe is a Windows GUI-subsystem binary. PowerShell's `&` launches such
+    # executables ASYNCHRONOUSLY: it does NOT wait for them and does NOT set
+    # $LASTEXITCODE. Callers therefore pass `-logFile -` (Unity logs to stdout) so
+    # that consuming the process's stdout via the pipeline forces PowerShell to
+    # BLOCK until the process exits AND reliably sets $LASTEXITCODE. Tee-Object both
+    # streams the log live to the CI console and persists it to $LogPath. This is
+    # the proven idiom from scripts/unity/run-tests.ps1.
+    $logDir = Split-Path -Parent $LogPath
+    if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    }
+
+    Write-Host "::group::$Label"
+    Write-Host "`"$EditorPath`" $($Arguments -join ' ')"
+    & $EditorPath @Arguments 2>&1 | Tee-Object -FilePath $LogPath
+    $exitCode = $LASTEXITCODE
+    Write-Host "::endgroup::"
+    if ($exitCode -ne 0) {
+        # Proactively surface catastrophic compile-time failure patterns
+        # (PrecompiledAssemblyException, CompilationFailedException, CS####,
+        # CS8032) as ::error:: annotations so the operator sees the root cause
+        # in BOTH the runner log AND GitHub's error summary, independent of
+        # whether the workflow-level verify step also fires.
+        Write-UnityCatastrophicErrorAnnotations -LogPath $LogPath
+        throw "$Label failed with exit code $exitCode. See the streamed Unity log above (also saved to $LogPath)."
+    }
+}
+
+function Get-NativeExitCodeDescription {
+    param([Parameter(Mandatory = $true)][int]$ExitCode)
+
+    $normalized = if ($ExitCode -lt 0) {
+        [uint32]($ExitCode + 4294967296)
+    } else {
+        [uint32]$ExitCode
+    }
+    $hexBare = $normalized.ToString('X8')
+    $hex = "0x$hexBare"
+    # Compare against the hex STRING form (not the literal 0xC0000135 token) because
+    # PowerShell parses `0xC0000135` as Int32 -1073741515 and `$normalized -eq
+    # 0xC0000135` therefore coerces to Int32 -- $normalized (the unsigned value
+    # 3221225781) and -1073741515 are NOT -eq. String compare on the canonical 8-char
+    # hex avoids the int/uint conflation entirely (mirrors the same fix applied to
+    # ensure-editor.ps1's Get-NativeExitCodeDescription / Test-IsNativeDllNotFound).
+    if ($hexBare -eq 'C0000135') {
+        return "$hex / STATUS_DLL_NOT_FOUND"
+    }
+
+    return $hex
+}
+
+function Invoke-UnityNativeStartupProbe {
+    param(
+        [Parameter(Mandatory = $true)][string]$EditorPath,
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    $logDir = Split-Path -Parent $LogPath
+    if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    }
+
+    Write-Host "::group::Unity native startup diagnostics"
+    Write-Host "Runner name: $env:RUNNER_NAME"
+    Write-Host "Runner OS: $env:RUNNER_OS"
+    Write-Host "Runner architecture: $env:RUNNER_ARCH"
+    Write-Host "Unity editor path: $EditorPath"
+    try {
+        $editorItem = Get-Item -LiteralPath $EditorPath
+        Write-Host "Unity editor file version: $($editorItem.VersionInfo.FileVersion)"
+        Write-Host "Unity editor product version: $($editorItem.VersionInfo.ProductVersion)"
+    } catch {
+        Write-Host "::notice::Could not read Unity editor version info: $($_.Exception.Message)"
+    }
+
+    Write-Host "Unity licensing client inventory:"
+    $licensingClientCandidates = New-Object System.Collections.Generic.List[string]
+    foreach ($root in @(${env:ProgramFiles}, ${env:ProgramFiles(x86)})) {
+        if ($root -and $root.Trim().Length -gt 0) {
+            $licensingClientCandidates.Add(
+                (Join-Path $root 'Common Files\Unity\UnityLicensingClient\Unity.Licensing.Client.exe')
+            )
+        }
+    }
+    if ($env:LOCALAPPDATA -and $env:LOCALAPPDATA.Trim().Length -gt 0) {
+        $licensingClientCandidates.Add(
+            (Join-Path $env:LOCALAPPDATA 'Unity\Unity.Licensing.Client\Unity.Licensing.Client.exe')
+        )
+    }
+    foreach ($candidate in $licensingClientCandidates) {
+        $exists = Test-Path -LiteralPath $candidate -PathType Leaf
+        Write-Host "  [$exists] $candidate"
+    }
+
+    $probeArgs = @(
+        '-version',
+        '-batchmode',
+        '-nographics',
+        '-quit',
+        '-logFile', '-'
+    )
+
+    Write-Host "`"$EditorPath`" $($probeArgs -join ' ')"
+    & $EditorPath @probeArgs 2>&1 | Tee-Object -FilePath $LogPath
+    $exitCode = $LASTEXITCODE
+    $description = Get-NativeExitCodeDescription -ExitCode $exitCode
+    Write-Host "Unity native startup probe exit code: $exitCode ($description)"
+    Write-Host "::endgroup::"
+
+    if ($exitCode -ne 0) {
+        throw "Unity native startup probe failed with exit code $exitCode ($description) after the pre-lock healthy-existing editor check. CI Unity jobs do not repair editors in-job; run scripts/unity/maintain-windows-runner.ps1 or dispatch .github/workflows/runner-bootstrap.yml, then retry. See the streamed probe log above (also saved to $LogPath)."
+    }
+}
+
+# CLASS-OF-ISSUE GUARD: the defect this whole change fixes is a single analyzer
+# DLL handed to the compiler from MORE THAN ONE path (the Assets/Plugins copy plus
+# a duplicate registration). That is invisible in a raw csc command line, so this
+# best-effort scanner reads the Unity compile log, collects every analyzer the
+# compiler was given (-a:/-analyzer:, quoted or not), and -- when the SAME DLL file
+# name came from more than one distinct path -- names the offending DLL and every
+# path. It catches a regression of the project-generation fix loudly. NEVER throws
+# (the caller is already on a throw path).
+function Write-DuplicateAnalyzerDiagnostics {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$LogPath)
+
+    if (-not $LogPath -or -not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+        return
+    }
+
+    try {
+        # -a:"path" / -a:path / -analyzer:"path" / -analyzer:path. Captured lazily
+        # up to the first '.dll' so an unquoted, space-separated token does not
+        # swallow the next argument.
+        $pattern = '-(?:a|analyzer):"?([^"\r\n]+?\.dll)"?(?:"|\s|$)'
+        $pathsByName = @{}
+        $hits = @(
+            Select-String -LiteralPath $LogPath -Pattern $pattern -AllMatches -ErrorAction SilentlyContinue
+        )
+        foreach ($hit in $hits) {
+            foreach ($match in $hit.Matches) {
+                $fullPath = $match.Groups[1].Value.Trim() -replace '\\', '/'
+                if (-not $fullPath) {
+                    continue
+                }
+                $name = Split-Path -Leaf $fullPath
+                if (-not $pathsByName.ContainsKey($name)) {
+                    $pathsByName[$name] = New-Object 'System.Collections.Generic.HashSet[string]'
+                }
+                [void]$pathsByName[$name].Add($fullPath)
+            }
+        }
+
+        $duplicates = @($pathsByName.GetEnumerator() | Where-Object { $_.Value.Count -gt 1 })
+        if ($duplicates.Count -lt 1) {
+            return
+        }
+
+        Write-Host "::group::Duplicate analyzer registration"
+        foreach ($entry in $duplicates) {
+            $joinedPaths = (@($entry.Value) | Sort-Object) -join '; '
+            Write-CiError ("Analyzer/source-generator '$($entry.Key)' was handed to the compiler from " +
+                "$($entry.Value.Count) distinct paths: $joinedPaths. A source generator that runs more than " +
+                "once emits each member twice (CS0102) and duplicate precompiled assemblies are rejected " +
+                "outright. The harness must register each analyzer DLL EXACTLY ONCE (the pre-created " +
+                "Assets/Plugins copy); it must NOT also wire one via csc.rsp.")
+        }
+        Write-Host "::endgroup::"
+    } catch {
+        Write-Host "::warning::Could not scan for duplicate analyzer registration: $($_.Exception.Message)"
+    }
+}
+
+function Write-UnityResultFailureDiagnostics {
+    param(
+        [string]$LogPath,
+        [string]$Project,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    Write-Host "::group::Unity result failure diagnostics ($Label)"
+    try {
+        if ($LogPath -and (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+            Write-Host "Unity log path: $LogPath"
+            # Compose this function's scan list as:
+            #   (catastrophic patterns from the shared $script:CatastrophicPatterns
+            #    array; ONLY the regex-form entries, since Select-String's
+            #    -Pattern overload is regex when -SimpleMatch is absent)
+            # plus this function's local additions (Aborting/Exiting/No tests/
+            # TestRunner/results.xml/assemblyNames) -- the latter are NOT
+            # catastrophic-class patterns and are intentionally NOT in the
+            # shared array. This keeps the "single source of truth" rule for
+            # the overlapping patterns (error CS\d+, warning CS8032) without
+            # changing the function's overall scan behavior.
+            $catastrophicRegexes = @(
+                foreach ($entry in $script:CatastrophicPatterns) {
+                    if (-not $entry.UseSimple) {
+                        $entry.Pattern
+                    }
+                }
+            )
+            $localDiagnosticPatterns = @(
+                'Aborting batchmode',
+                'Exiting batchmode successfully',
+                'No tests',
+                'TestRunner',
+                'results\.xml',
+                'assemblyNames'
+            )
+            $diagnosticPatterns = @($catastrophicRegexes) + @($localDiagnosticPatterns)
+            $matches = @(
+                Select-String -LiteralPath $LogPath -Pattern $diagnosticPatterns -ErrorAction SilentlyContinue |
+                    Select-Object -First 80
+            )
+            if ($matches.Count -gt 0) {
+                Write-Host "Selected Unity log lines:"
+                foreach ($match in $matches) {
+                    Write-Host ("  line {0}: {1}" -f $match.LineNumber, $match.Line.Trim())
+                }
+            } else {
+                Write-Host "No targeted diagnostic lines matched in the Unity log."
+            }
+
+            $logText = Get-Content -LiteralPath $LogPath -Raw
+            if ($logText -match 'warning CS8032') {
+                Write-CiError "Unity could not instantiate one or more DxMessaging analyzers/source generators (CS8032). Check that Editor/Analyzers DLLs target the Roslyn version supported by this Unity editor."
+            }
+            if ($logText -match 'error CS0315' -and $logText -match 'Simple(?:Untargeted|Targeted|Broadcast)Message') {
+                Write-CiError "Message fixture compile errors followed missing generated interfaces. This usually means the DxMessaging source generator did not load."
+            }
+            if ($logText -match 'Exiting batchmode successfully') {
+                Write-CiError "Unity exited with code 0 but did not write NUnit results. Check the selected assembly list, test platform, and TestRunner log lines above."
+            }
+
+            # Name a duplicate analyzer registration (the same generator/analyzer
+            # DLL fed to csc from two paths) -- the precise root cause of the
+            # "Multiple precompiled assemblies" / CS0102 duplicate-'MessageType'
+            # failures this harness change fixes.
+            Write-DuplicateAnalyzerDiagnostics -LogPath $LogPath
+        } else {
+            Write-Host "Unity log path unavailable or missing: $LogPath"
+        }
+
+        if ($Project) {
+            $analyzerCopyDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
+            Write-Host "Pre-created analyzer copy dir exists: $(Test-Path -LiteralPath $analyzerCopyDir -PathType Container)"
+            $scriptAssemblies = Join-Path $Project 'Library\ScriptAssemblies'
+            if (Test-Path -LiteralPath $scriptAssemblies -PathType Container) {
+                Write-Host "Script assemblies present:"
+                Get-ChildItem -LiteralPath $scriptAssemblies -Filter '*.dll' -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty Name |
+                    Sort-Object |
+                    ForEach-Object { Write-Host "  $_" }
+            } else {
+                Write-Host "Script assemblies directory missing: $scriptAssemblies"
+            }
+        }
+    } catch {
+        Write-Host "::warning::Could not collect Unity result failure diagnostics: $($_.Exception.Message)"
+    }
+    Write-Host "::endgroup::"
+}
+
+function Invoke-UnityEditorWithFailureDiagnostics {
+    param(
+        [Parameter(Mandatory = $true)][string]$EditorPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][string]$CscLabel,
+        [Parameter(Mandatory = $true)][string]$DiagnosticsLabel
+    )
+
+    try {
+        Invoke-UnityEditor -EditorPath $EditorPath -Arguments $Arguments -Label $Label -LogPath $LogPath
+    } catch {
+        Write-AnalyzerSetupDiagnostics -Project $Project -LogPath $LogPath -Label $CscLabel
+        Write-UnityResultFailureDiagnostics -LogPath $LogPath -Project $Project -Label $DiagnosticsLabel
+        throw
+    }
+}
+
+function Write-StandaloneDirectorySnapshot {
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$MaxEntries = 60
+    )
+
+    try {
+        Write-Host "${Label}: $Path"
+        if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+            Write-Host "  (missing)"
+            return
+        }
+
+        $entries = @(
+            Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue |
+                Sort-Object FullName |
+                Select-Object -First $MaxEntries
+        )
+        if ($entries.Count -lt 1) {
+            Write-Host "  (empty)"
+            return
+        }
+
+        foreach ($entry in $entries) {
+            $kind = if ($entry.PSIsContainer) { 'dir ' } else { 'file' }
+            $length = if ($entry.PSIsContainer) { '' } else { " $($entry.Length) bytes" }
+            Write-Host "  [$kind] $($entry.FullName)$length"
+        }
+    } catch {
+        Write-Host "::warning::Could not snapshot ${Label}: $($_.Exception.Message)"
+    }
+}
+
+function Write-StandaloneBuildOutputDiagnostics {
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][string]$ExpectedExe,
+        [string]$LogPath,
+        [datetime]$BuildStartedUtc
+    )
+
+    Write-Host "::group::Standalone player build output diagnostics"
+    try {
+        Write-Host "Expected exe: $ExpectedExe"
+        Write-Host "DXM_PLAYER_BUILD_PATH: $env:DXM_PLAYER_BUILD_PATH"
+        Write-Host "Build started UTC: $($BuildStartedUtc.ToString('o'))"
+
+        $expectedDir = Split-Path -Parent $ExpectedExe
+        Write-StandaloneDirectorySnapshot -Label 'Expected output directory' -Path $expectedDir
+        Write-StandaloneDirectorySnapshot -Label 'Project Build directory' -Path (Join-Path $Project 'Build')
+        Write-StandaloneDirectorySnapshot -Label 'Project Temp\DxmTestPlayer directory' -Path (Join-Path $Project 'Temp\DxmTestPlayer')
+        Write-StandaloneDirectorySnapshot -Label 'Project Temp\PlayerWithTests directory' -Path (Join-Path $Project 'Temp\PlayerWithTests')
+
+        Write-Host "Discovered executable candidates under Build/Temp:"
+        $candidateRoots = @(
+            Join-Path $Project 'Build',
+            Join-Path $Project 'Temp'
+        )
+        $candidates = @(
+            foreach ($root in $candidateRoots) {
+                if (Test-Path -LiteralPath $root -PathType Container) {
+                    Get-ChildItem -LiteralPath $root -Recurse -Filter '*.exe' -File -ErrorAction SilentlyContinue
+                }
+            }
+        )
+        if ($candidates.Count -lt 1) {
+            Write-Host "  (none)"
+        } else {
+            foreach ($candidate in ($candidates | Sort-Object FullName | Select-Object -First 40)) {
+                Write-Host ("  {0} ({1} bytes, LastWriteTimeUtc={2:o})" -f $candidate.FullName, $candidate.Length, $candidate.LastWriteTimeUtc)
+            }
+        }
+
+        if ($LogPath -and (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+            $logText = Get-Content -LiteralPath $LogPath -Raw
+            Write-Host "Build log markers:"
+            foreach ($marker in @(
+                    'DxmCiStandaloneBuildModifier',
+                    'DXM_PLAYER_BUILD_PATH',
+                    'DxmTestPlayer',
+                    'PlayerWithTests',
+                    'AutoRunPlayer',
+                    'CopyFiles'
+                )) {
+                Write-Host "  ${marker}: $($logText.Contains($marker))"
+            }
+            Write-Host "Build log tail:"
+            Get-Content -LiteralPath $LogPath -Tail 80 -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "  $_" }
+        } else {
+            Write-Host "Build log missing: $LogPath"
+        }
+    } catch {
+        Write-Host "::warning::Could not collect standalone player build diagnostics: $($_.Exception.Message)"
+    }
+    Write-Host "::endgroup::"
+}
+
+function Test-StandalonePlayerBuildOutput {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExpectedExe,
+        [Parameter(Mandatory = $true)][datetime]$BuildStartedUtc
+    )
+
+    if (-not (Test-Path -LiteralPath $ExpectedExe -PathType Leaf)) {
+        return "missing exe"
+    }
+
+    $exe = Get-Item -LiteralPath $ExpectedExe
+    if ($exe.LastWriteTimeUtc -lt $BuildStartedUtc.AddSeconds(-5)) {
+        return "stale exe; LastWriteTimeUtc=$($exe.LastWriteTimeUtc.ToString('o'))"
+    }
+
+    $dataDir = Join-Path (Split-Path -Parent $ExpectedExe) ("{0}_Data" -f [System.IO.Path]::GetFileNameWithoutExtension($ExpectedExe))
+    if (-not (Test-Path -LiteralPath $dataDir -PathType Container)) {
+        return "missing player data directory: $dataDir"
+    }
+
+    return ''
+}
+
+function Test-NUnitResults {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [string]$LogPath,
+        [string]$Project
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        Write-CiError "No NUnit results XML exists at $Path for $Label."
+        Write-UnityResultFailureDiagnostics -LogPath $LogPath -Project $Project -Label $Label
+        throw "Unity did not produce NUnit results for $Label."
+    }
+
+    [xml]$xml = Get-Content -LiteralPath $Path -Raw
+    $run = $xml.SelectSingleNode('//test-run')
+    if (-not $run) {
+        Write-CiError "NUnit results at $Path do not contain a <test-run> element."
+        Write-UnityResultFailureDiagnostics -LogPath $LogPath -Project $Project -Label $Label
+        throw "Invalid NUnit results for $Label."
+    }
+
+    $total = [int]$run.total
+    $passed = [int]$run.passed
+    $failed = [int]$run.failed
+    $skipped = [int]$run.skipped
+
+    Write-Host "Results: total=$total passed=$passed failed=$failed skipped=$skipped"
+    if ($total -lt 1) {
+        Write-CiError "0 tests ran for $Label -- check assembly selection and package testables."
+        throw "0 tests ran for $Label."
+    }
+    if ($failed -gt 0) {
+        # Enumerate WHICH tests failed (fullname + message + stack) BEFORE the
+        # throw so the operator sees the actionable detail, not just the count.
+        # Best-effort inside the helper's own try/catch -- it never masks the
+        # real failure below.
+        Write-UnityFailedTestAnnotations -Xml $xml -Label $Label
+        Write-CiError "$failed tests failed for $Label."
+        throw "$failed tests failed for $Label."
+    }
+
+        Write-CiNotice "${Label}: total=$total passed=$passed failed=$failed skipped=$skipped"
+}
+
+$RepoRoot = Resolve-FullPath -Path $RepoRoot
+Assert-RepoRoot -Path $RepoRoot
+$ArtifactsPath = Resolve-FullPath -Path $ArtifactsPath
+New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
+
+Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion
+
+$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath
+$LibraryPath = Join-Path $ProjectPath 'Library'
+New-Item -ItemType Directory -Force -Path $LibraryPath | Out-Null
+
+Write-Host "::group::Ephemeral Unity project"
+Write-Host "RepoRoot: $RepoRoot"
+Write-Host "ProjectPath: $ProjectPath"
+Write-Host "LibraryPath: $LibraryPath"
+Write-Host "ArtifactsPath: $ArtifactsPath"
+Write-Host "Manifest:"
+Get-Content -LiteralPath (Join-Path $ProjectPath 'Packages\manifest.json')
+Write-Host "Pre-created analyzer copy (Assets/Plugins/Editor/WallstopStudios.DxMessaging):"
+$analyzerCopyDir = Join-Path $ProjectPath 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
+if (Test-Path -LiteralPath $analyzerCopyDir -PathType Container) {
+    Get-ChildItem -LiteralPath $analyzerCopyDir -File |
+        Select-Object -ExpandProperty Name |
+        Sort-Object |
+        ForEach-Object { Write-Host "  $_" }
+} else {
+    Write-Host "  (missing)"
+}
+Write-Host "::endgroup::"
+
+if ($GenerateOnly) {
+    Write-CiNotice "Generated ephemeral Unity project only: $ProjectPath"
+    exit 0
+}
+
+if (-not $UnityEditorPath -or $UnityEditorPath.Trim().Length -eq 0) {
+    $ensureEditor = Join-Path $PSScriptRoot 'ensure-editor.ps1'
+    $provisioningProfile = if ($TestMode -eq 'standalone') { 'StandaloneWindowsIl2Cpp' } else { 'EditorOnly' }
+    $ensureArgs = @{
+        UnityVersion         = $UnityVersion
+        InstallRoot          = $UnityInstallRoot
+        ProvisioningProfile = $provisioningProfile
+    }
+    if ($env:GITHUB_ACTIONS -eq 'true') {
+        $ensureArgs.RequireHealthyExisting = $true
+    }
+    $UnityEditorPath = (& $ensureEditor @ensureArgs | Select-Object -Last 1)
+}
+
+if (-not (Test-Path -LiteralPath $UnityEditorPath -PathType Leaf)) {
+    throw "Unity editor not found: $UnityEditorPath"
+}
+
+# Export the resolved editor path so a workflow if:always() step (which runs in a
+# SEPARATE process after this one exits) can run `Unity.exe -returnlicense` to
+# return the seat as defense-in-depth.
+if ($env:GITHUB_ENV) {
+    Add-Content -LiteralPath $env:GITHUB_ENV -Value "UNITY_EDITOR_PATH=$UnityEditorPath"
+}
+
+# Classic SERIAL activation: the paid seat is activated from UNITY_SERIAL +
+# UNITY_EMAIL + UNITY_PASSWORD and explicitly returned on EVERY exit path so the
+# seat is never leaked. All three credentials are required together; we test each
+# with IsNullOrWhiteSpace so a blank-but-set secret counts as missing.
+$hasLicenseCreds = (
+    -not [string]::IsNullOrWhiteSpace($env:UNITY_SERIAL) -and
+    -not [string]::IsNullOrWhiteSpace($env:UNITY_EMAIL) -and
+    -not [string]::IsNullOrWhiteSpace($env:UNITY_PASSWORD)
+)
+# In CI all three credentials are MANDATORY: a missing one means the editor would
+# launch unlicensed and fail opaquely. The error names the missing VARS (never
+# their values). Locally, missing creds is fine -- we assume the machine is
+# already licensed (Hub sign-in / a local .ulf) and simply skip activate/return.
+if ($env:GITHUB_ACTIONS -eq 'true' -and -not $hasLicenseCreds) {
+    $missing = @()
+    if ([string]::IsNullOrWhiteSpace($env:UNITY_SERIAL)) { $missing += 'UNITY_SERIAL' }
+    if ([string]::IsNullOrWhiteSpace($env:UNITY_EMAIL)) { $missing += 'UNITY_EMAIL' }
+    if ([string]::IsNullOrWhiteSpace($env:UNITY_PASSWORD)) { $missing += 'UNITY_PASSWORD' }
+    throw "Serial Unity activation requires UNITY_SERIAL, UNITY_EMAIL, and UNITY_PASSWORD in CI. Missing or empty: $($missing -join ', ')."
+}
+
+# Array-wrap the capture so it is ALWAYS an array under Set-StrictMode -Version
+# Latest. Get-AcceleratorArguments `return @()` on its empty path emits ZERO
+# objects, so a bare `$x = Get-Foo` assigns AutomationNull (the empty array
+# unwraps to nothing). Then reading `$x.Count` THROWS "property 'Count' cannot be
+# found on this object" under StrictMode 2.0+ (verified on pwsh 7.6.1). @(...)
+# forces Count 0 when empty so the read is safe. (The later `... + $x` concat was
+# fine either way: `+` DROPS the empty/AutomationNull capture rather than adding
+# it -- only a LITERAL $null operand would add a spurious element.)
+$acceleratorArgs = @(Get-AcceleratorArguments -Endpoint $env:UNITY_ACCELERATOR_ENDPOINT -Version $UnityVersion -Mode $TestMode)
+if ($acceleratorArgs.Count -gt 0) {
+    Write-CiNotice "Unity Accelerator enabled for namespace dxmessaging-$UnityVersion-$TestMode (endpoint normalized at the script boundary; value masked)."
+} else {
+    Write-CiNotice "Unity Accelerator disabled; UNITY_ACCELERATOR_ENDPOINT is unset."
+}
+
+$testPlatform = switch ($TestMode) {
+    'editmode' { 'EditMode' }
+    'playmode' { 'PlayMode' }
+    'standalone' { 'StandaloneWindows64' }
+}
+
+$categoryArgs = @()
+if (-not [string]::IsNullOrWhiteSpace($TestCategory)) {
+    $categoryArgs = @('-testCategory', $TestCategory)
+    Write-CiNotice "Unity test category filter enabled: $TestCategory"
+} else {
+    Write-CiNotice "Unity test category filter disabled."
+}
+
+$resultsPath = Join-Path $ArtifactsPath 'results.xml'
+$logPath = Join-Path $ArtifactsPath 'unity.log'
+$configureLogPath = Join-Path $ArtifactsPath 'configure.log'
+$startupProbeLogPath = Join-Path $ArtifactsPath 'unity-startup-probe.log'
+
+# STANDALONE split-build artifacts. The built IL2CPP player goes under a stable
+# per-run project Build directory, not project Temp: Unity's test player build
+# pipeline can populate Temp/PlayerWithTests or copy through Temp and then clean
+# it before this script's post-build assertion runs. The player still stays out
+# of $ArtifactsPath because a full IL2CPP player is hundreds of MB; only the
+# small player log and NUnit XML are uploaded.
+$standaloneExe = Join-Path $ProjectPath 'Build\DxmTestPlayer\DxmTestPlayer.exe'
+$playerLogPath = Join-Path $ArtifactsPath 'player.log'
+
+# Activation/return carry the serial/email/password in their argument arrays and
+# Unity may echo account/serial fragments into the activation log, so these logs
+# MUST NOT live under $ArtifactsPath (the workflow uploads that as an artifact and
+# the credentials would leak). Write them to a NON-uploaded temp dir instead.
+$licenseLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+$activateLogPath = Join-Path $licenseLogDir "unity-activate-$UnityVersion-$TestMode.log"
+$returnLogPath = Join-Path $licenseLogDir "unity-return-$UnityVersion-$TestMode.log"
+
+# Return-at-start (defense-in-depth): reclaim a seat that a PRIOR force-killed run
+# on this persistent self-hosted runner may have leaked before its own finally /
+# the workflow if:always() step could run. Best-effort and never throws; if no
+# seat is held this is a harmless no-op. Done BEFORE the activate so we start each
+# run from a clean licensing state.
+if ($hasLicenseCreds) {
+    Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $returnLogPath
+}
+
+try {
+    Invoke-UnityNativeStartupProbe -EditorPath $UnityEditorPath -LogPath $startupProbeLogPath
+
+    # Activate the paid seat BEFORE configure/run so the test editor launches
+    # licensed. Activation THROWS on failure (caught by this try's finally, which
+    # still returns the seat). Skipped locally when creds are absent (the machine
+    # is assumed already licensed).
+    if ($hasLicenseCreds) {
+        Invoke-UnityLicenseActivate -EditorPath $UnityEditorPath -Serial $env:UNITY_SERIAL -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $activateLogPath
+    }
+
+    if ($TestMode -eq 'standalone') {
+        $configureArgs = @(
+            '-quit',
+            '-batchmode',
+            '-nographics',
+            '-projectPath', $ProjectPath,
+            '-buildTarget', 'StandaloneWindows64',
+            '-executeMethod', 'DxmCiTestConfigurator.Apply',
+            '-logFile', '-'
+        ) + $acceleratorArgs
+        Invoke-UnityEditorWithFailureDiagnostics `
+            -EditorPath $UnityEditorPath `
+            -Arguments $configureArgs `
+            -Label 'Configure standalone IL2CPP project' `
+            -LogPath $configureLogPath `
+            -Project $ProjectPath `
+            -CscLabel 'standalone configure' `
+            -DiagnosticsLabel 'Unity standalone configure'
+        Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $configureLogPath -Label 'standalone configure'
+    }
+
+    if ($TestMode -eq 'standalone') {
+        # STANDALONE SPLIT BUILD + FILE-BASED RESULTS (zero PlayerConnection
+        # dependency). The legacy `-runTests -testPlatform StandaloneWindows64` flow
+        # had the built player stream NUnit results back to the editor over
+        # PlayerConnection/TCP; on the self-hosted runners' multi-NIC networks the
+        # player cannot reach the editor's listener (TcpProtobufClient errorcode
+        # 10060) and the editor's run never completes, hanging the 120-minute step.
+        # Instead we (2a) BUILD the player via the editor -- the generated
+        # DxmCiStandaloneBuildModifier clears AutoRunPlayer|ConnectToHost|
+        # ConnectWithProfiler and IPostBuildCleanup exits the editor after the build
+        # -- then (2b) RUN the built exe directly, where the generated
+        # DxmCiStandaloneTestCallback writes NUnit XML to -dxmTestResults and quits,
+        # then (2c) validate the FILE (the source of truth). Both 2a and 2b run under
+        # the hard tree-kill watchdog so neither can hang to the step timeout.
+
+        # (2a) BUILD. Set DXM_PLAYER_BUILD_PATH so the modifier redirects the player
+        # output to a known path under the project's Build dir, then build with
+        # -runTests (so PlayerLauncher's ModifyBuildOptions reflection path fires) but
+        # NO -quit (the editor must reach PostBuildCleanup, which arms the exit).
+        $env:DXM_PLAYER_BUILD_PATH = $standaloneExe
+        $standaloneBuildStartedUtc = [DateTime]::UtcNow
+        $standaloneExeDir = Split-Path -Parent $standaloneExe
+        if ($standaloneExeDir -and (Test-Path -LiteralPath $standaloneExeDir -PathType Container)) {
+            Remove-Item -LiteralPath $standaloneExeDir -Recurse -Force
+        }
+        if ($standaloneExeDir) {
+            New-Item -ItemType Directory -Force -Path $standaloneExeDir | Out-Null
+        }
+        if (Test-Path -LiteralPath $playerLogPath -PathType Leaf) {
+            Remove-Item -LiteralPath $playerLogPath -Force
+        }
+        $buildArgs = @(
+            '-batchmode',
+            '-nographics',
+            '-projectPath', $ProjectPath,
+            '-runTests',
+            '-testPlatform', 'StandaloneWindows64',
+            '-testResults', $resultsPath,
+            '-assemblyNames', $AssemblyNames,
+            '-buildTarget', 'StandaloneWindows64',
+            '-logFile', '-'
+        ) + $categoryArgs + $acceleratorArgs
+
+        $buildResult = Invoke-ProcessWithTreeKillTimeout `
+            -FilePath $UnityEditorPath `
+            -Arguments $buildArgs `
+            -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
+            -LogPath $logPath `
+            -Label "Build standalone IL2CPP test player (Unity $UnityVersion)"
+        if ($buildResult.TimedOut -or $buildResult.ExitCode -ne 0) {
+            Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion standalone build"
+            Write-UnityResultFailureDiagnostics -LogPath $logPath -Project $ProjectPath -Label "Unity $UnityVersion standalone build"
+            if ($buildResult.TimedOut) {
+                throw "Standalone test-player build timed out and the process tree was killed. Raise the limit via DXM_STANDALONE_BUILD_TIMEOUT_SECONDS (0 disables the timeout). See the build log at $logPath."
+            }
+            throw "Standalone test-player build failed with exit code $($buildResult.ExitCode). See the streamed Unity log above (also saved to $logPath)."
+        }
+
+        # POST-BUILD ASSERT: the exe MUST exist at DXM_PLAYER_BUILD_PATH, be fresh
+        # for this build, and include its companion _Data directory. If not, either
+        # the build modifier did not run, Unity wrote through Temp and cleaned it, or
+        # a stale player survived. Fail fast with diagnostics before launching
+        # anything.
+        $standaloneBuildProblem = Test-StandalonePlayerBuildOutput `
+            -ExpectedExe $standaloneExe `
+            -BuildStartedUtc $standaloneBuildStartedUtc
+        if (-not [string]::IsNullOrWhiteSpace($standaloneBuildProblem)) {
+            Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion standalone build"
+            Write-UnityResultFailureDiagnostics -LogPath $logPath -Project $ProjectPath -Label "Unity $UnityVersion standalone build"
+            Write-StandaloneBuildOutputDiagnostics `
+                -Project $ProjectPath `
+                -ExpectedExe $standaloneExe `
+                -LogPath $logPath `
+                -BuildStartedUtc $standaloneBuildStartedUtc
+            throw "Editor build produced invalid DxMessaging test player output at $standaloneExe ($standaloneBuildProblem). The build modifier may not have run, Unity may have cleaned a Temp output, or a stale player was detected. See the build log at $logPath."
+        }
+
+        # MISSED-CASE GUARD: even when the exe exists, scan the build log for the
+        # signatures of a NON-redirected AutoRun build (PlayerWithTests /
+        # AutoRunPlayer = True). If present, the modifier did not fully take and a
+        # live run may still attempt the 10060 dial-out -- surface a ::warning::.
+        if (Test-Path -LiteralPath $logPath -PathType Leaf) {
+            $buildLogText = Get-Content -LiteralPath $logPath -Raw
+            if ($buildLogText -match 'PlayerWithTests' -or $buildLogText -match 'options\.AutoRunPlayer = True') {
+                Write-Host "::warning::Standalone build log mentions PlayerWithTests / AutoRunPlayer = True; the DxmCiStandaloneBuildModifier may not have fully suppressed the player auto-run. If the player run hangs on a TcpProtobufClient 10060, verify the modifier compiled."
+            }
+        }
+
+        # Delete any STALE results file before the player runs, so the
+        # timeout-honors-file branch below can only honor results THIS player run
+        # wrote -- never a prior run's leftover. (Defensive for local re-runs against
+        # the same -ArtifactsPath; CI checkout already cleans the gitignored
+        # .artifacts tree per job.)
+        if (Test-Path -LiteralPath $resultsPath -PathType Leaf) {
+            Remove-Item -LiteralPath $resultsPath -Force
+        }
+
+        # (2b) RUN the built exe directly (no PlayerConnection), under the watchdog.
+        $playerTimeoutSeconds = Get-StandaloneTestPlayerTimeoutSeconds
+        $playerResult = Invoke-StandaloneTestPlayer `
+            -EditorBuiltExePath $standaloneExe `
+            -ResultsPath $resultsPath `
+            -LogPath $playerLogPath `
+            -TimeoutSeconds $playerTimeoutSeconds
+
+        # A watchdog timeout is fatal ONLY when the player wrote no results. If the
+        # results file exists, honor it as the source of truth (Application.Quit can be
+        # deferred in -batchmode -nographics IL2CPP after RunFinished already wrote the
+        # file) and fall through to Test-NUnitResults; otherwise fail with the timeout.
+        if ($playerResult.TimedOut) {
+            if (Test-Path -LiteralPath $resultsPath -PathType Leaf) {
+                Write-Host "::warning::Standalone test player exceeded the ${playerTimeoutSeconds}s watchdog and was tree-killed, but it had already written $resultsPath; honoring that results file as the source of truth (Application.Quit was likely deferred in -batchmode IL2CPP). Raise DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS if this recurs."
+            } else {
+                throw "Standalone test player timed out after $playerTimeoutSeconds second(s) and was tree-killed before writing any results to $resultsPath. Raise the limit via DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS (0 disables the timeout). See the player log at $playerLogPath."
+            }
+        }
+
+        # (2c) VALIDATE the FILE (the source of truth). The player log carries the
+        # diagnostics for a missing/empty file (its stdout no longer flows through
+        # unity.log).
+        Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion standalone" -LogPath $playerLogPath -Project $ProjectPath
+    } else {
+        # MUST NOT include '-quit' alongside '-runTests': per the Unity Editor manual
+        # (https://docs.unity3d.com/Manual/EditorCommandLineArguments.html), if the
+        # Editor is running tests with -runTests, -quit causes it to QUIT IMMEDIATELY
+        # before in-progress tests can complete -- the editor exits 0 having written
+        # no results.xml. Pinned by scripts/__tests__/unity-runner-script-contract.test.js.
+        $testArgs = @(
+            '-batchmode',
+            '-nographics',
+            '-projectPath', $ProjectPath,
+            '-runTests',
+            '-testPlatform', $testPlatform,
+            '-testResults', $resultsPath,
+            '-assemblyNames', $AssemblyNames,
+            '-logFile', '-'
+        ) + $categoryArgs + $acceleratorArgs
+
+        Invoke-UnityEditorWithFailureDiagnostics `
+            -EditorPath $UnityEditorPath `
+            -Arguments $testArgs `
+            -Label "Run Unity $UnityVersion $TestMode tests" `
+            -LogPath $logPath `
+            -Project $ProjectPath `
+            -CscLabel "$UnityVersion $TestMode test compile" `
+            -DiagnosticsLabel "Unity $UnityVersion $TestMode"
+        Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion $TestMode test compile"
+        Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath
+    }
+} finally {
+    # Deterministic RETURN of the seat on EVERY exit path (clean exit, throw, or a
+    # kill that still unwinds this finally). The workflow if:always() step is the
+    # additional backstop for a hard-killed process that never reaches this finally,
+    # and the NEXT run's return-at-start reclaims anything still leaked. Best-effort
+    # and never throws, so it cannot mask a real test failure.
+    if ($hasLicenseCreds) {
+        Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $returnLogPath
+    }
+}

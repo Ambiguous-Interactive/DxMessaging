@@ -7,7 +7,7 @@ created: "2026-05-06"
 updated: "2026-05-06"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "scripts/validate-no-plan-vocabulary.js"
     - path: "scripts/__tests__/validate-no-plan-vocabulary.test.js"
@@ -17,7 +17,7 @@ source:
     - path: "Samples~/"
     - path: "docs/"
     - path: "llms.txt"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "documentation"

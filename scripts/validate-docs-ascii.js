@@ -46,20 +46,21 @@
 
 const fs = require("fs");
 const path = require("path");
+const { formatCodepointGlyph } = require("./lib/staged-doc-formatters");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 
 const EXCLUDE_DIRS = new Set([
-    ".git",
-    "node_modules",
-    "Library",
-    "Temp",
-    "obj",
-    "bin",
-    "Logs",
-    "site",
-    "coverage",
-    "__pycache__",
+  ".git",
+  "node_modules",
+  "Library",
+  "Temp",
+  "obj",
+  "bin",
+  "Logs",
+  "site",
+  "coverage",
+  "__pycache__"
 ]);
 
 const CS_SCAN_ROOTS = ["Runtime", "Editor", "Tests", "SourceGenerators"];
@@ -67,20 +68,8 @@ const CS_SCAN_ROOTS = ["Runtime", "Editor", "Tests", "SourceGenerators"];
 const EXTRA_FILES = [path.join(ROOT_DIR, "llms.txt")];
 
 const ALLOWED_PATHS = new Set([
-    path.join(
-        ROOT_DIR,
-        ".llm",
-        "skills",
-        "documentation",
-        "markdown-compatibility-part-1.md",
-    ),
-    path.join(
-        ROOT_DIR,
-        ".llm",
-        "skills",
-        "documentation",
-        "markdown-compatibility-part-2.md",
-    ),
+  path.join(ROOT_DIR, ".llm", "skills", "documentation", "markdown-compatibility-part-1.md"),
+  path.join(ROOT_DIR, ".llm", "skills", "documentation", "markdown-compatibility-part-2.md")
 ]);
 
 const EMOJI_SOFT_CAP = 5;
@@ -101,277 +90,272 @@ const DINGBAT_HI = 0x27bf;
 const EMOJI_LO = 0x1f300;
 
 function isAsciiPrintable(cp) {
-    return cp >= SPACE && cp <= TILDE;
+  return cp >= SPACE && cp <= TILDE;
 }
 
 function isAsciiWhitespace(cp) {
-    return cp === TAB || cp === LF || cp === CR;
+  return cp === TAB || cp === LF || cp === CR;
 }
 
 function isVariationSelector(cp) {
-    return cp === VS15 || cp === VS16;
+  return cp === VS15 || cp === VS16;
 }
 
 function isDingbat(cp) {
-    return cp >= DINGBAT_LO && cp <= DINGBAT_HI;
+  return cp >= DINGBAT_LO && cp <= DINGBAT_HI;
 }
 
 function isEmoji(cp) {
-    return cp >= EMOJI_LO;
+  return cp >= EMOJI_LO;
 }
 
 // --- File enumeration -------------------------------------------------------
 
 function walk(dir, predicate, out) {
-    let entries;
-    try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch (error) {
-        return;
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (error) {
+    return;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (EXCLUDE_DIRS.has(entry.name)) continue;
+      walk(full, predicate, out);
+    } else if (entry.isFile()) {
+      if (predicate(full)) out.push(full);
     }
-    for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (EXCLUDE_DIRS.has(entry.name)) continue;
-            walk(full, predicate, out);
-        } else if (entry.isFile()) {
-            if (predicate(full)) out.push(full);
-        }
-    }
+  }
 }
 
 function defaultFileSet() {
-    const out = [];
-    walk(ROOT_DIR, (p) => p.endsWith(".md"), out);
-    for (const root of CS_SCAN_ROOTS) {
-        const abs = path.join(ROOT_DIR, root);
-        if (!fs.existsSync(abs)) continue;
-        walk(abs, (p) => p.endsWith(".cs"), out);
-    }
-    for (const extra of EXTRA_FILES) {
-        if (fs.existsSync(extra)) out.push(extra);
-    }
-    return out;
+  const out = [];
+  walk(ROOT_DIR, (p) => p.endsWith(".md"), out);
+  for (const root of CS_SCAN_ROOTS) {
+    const abs = path.join(ROOT_DIR, root);
+    if (!fs.existsSync(abs)) continue;
+    walk(abs, (p) => p.endsWith(".cs"), out);
+  }
+  for (const extra of EXTRA_FILES) {
+    if (fs.existsSync(extra)) out.push(extra);
+  }
+  return out;
 }
 
 // --- Scanning ---------------------------------------------------------------
 
 function isCalloutLine(line) {
-    // Markdown blockquote / GFM admonition lead character.
-    return /^\s*>/.test(line);
+  // Markdown blockquote / GFM admonition lead character.
+  return /^\s*>/.test(line);
 }
 
 function shouldScanLineCs(line) {
-    return /^\s*\/\/\//.test(line);
+  return /^\s*\/\/\//.test(line);
 }
 
 function classifyChar(cp, line, isFirstCharOfFile) {
-    if (isAsciiPrintable(cp) || isAsciiWhitespace(cp)) {
-        return { kind: "ok" };
-    }
-    if (isVariationSelector(cp)) {
-        return { kind: "ok" };
-    }
-    if (cp === BOM && isFirstCharOfFile) {
-        return { kind: "ok" };
-    }
-    if (isDingbat(cp)) {
-        return {
-            kind: "banned",
-            reason: "dingbat/geometric character (U+2300-U+27BF) is banned outright",
-        };
-    }
-    if (isEmoji(cp)) {
-        if (isCalloutLine(line)) {
-            return { kind: "emoji" };
-        }
-        return {
-            kind: "banned",
-            reason: "emoji outside a callout position (line must start with '>')",
-        };
-    }
-    if (cp < SPACE) {
-        return {
-            kind: "banned",
-            reason: `control character U+${cp.toString(16).toUpperCase().padStart(4, "0")} is not in the allow list`,
-        };
+  if (isAsciiPrintable(cp) || isAsciiWhitespace(cp)) {
+    return { kind: "ok" };
+  }
+  if (isVariationSelector(cp)) {
+    return { kind: "ok" };
+  }
+  if (cp === BOM && isFirstCharOfFile) {
+    return { kind: "ok" };
+  }
+  if (isDingbat(cp)) {
+    return {
+      kind: "banned",
+      reason: "dingbat/geometric character (U+2300-U+27BF) is banned outright"
+    };
+  }
+  if (isEmoji(cp)) {
+    if (isCalloutLine(line)) {
+      return { kind: "emoji" };
     }
     return {
-        kind: "banned",
-        reason: `non-ASCII codepoint U+${cp.toString(16).toUpperCase().padStart(4, "0")} is not in the allow list`,
+      kind: "banned",
+      reason: "emoji outside a callout position (line must start with '>')"
     };
+  }
+  if (cp < SPACE) {
+    return {
+      kind: "banned",
+      reason: `control character U+${cp.toString(16).toUpperCase().padStart(4, "0")} is not in the allow list`
+    };
+  }
+  return {
+    kind: "banned",
+    reason: `non-ASCII codepoint U+${cp.toString(16).toUpperCase().padStart(4, "0")} is not in the allow list`
+  };
 }
 
 function scanContent(filePath, content, isCsharp) {
-    const allowedFile = ALLOWED_PATHS.has(filePath);
-    const violations = [];
-    const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-    let emojiCount = 0;
+  const allowedFile = ALLOWED_PATHS.has(filePath);
+  const violations = [];
+  const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  let emojiCount = 0;
 
-    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-        const line = lines[lineIndex];
-        const eligible = isCsharp ? shouldScanLineCs(line) : true;
-        if (!eligible) continue;
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    const eligible = isCsharp ? shouldScanLineCs(line) : true;
+    if (!eligible) continue;
 
-        let column = 0;
-        for (let i = 0; i < line.length; ) {
-            const cp = line.codePointAt(i);
-            const ch = String.fromCodePoint(cp);
-            const isFirstCharOfFile = lineIndex === 0 && i === 0;
-            const result = classifyChar(cp, line, isFirstCharOfFile);
-            if (result.kind === "banned" && !allowedFile) {
-                violations.push({
-                    file: filePath,
-                    line: lineIndex + 1,
-                    column: column + 1,
-                    codepoint: cp,
-                    char: ch,
-                    reason: result.reason,
-                });
-            } else if (result.kind === "emoji") {
-                emojiCount++;
-            }
-            i += ch.length;
-            column += ch.length;
-        }
+    let column = 0;
+    for (let i = 0; i < line.length; ) {
+      const cp = line.codePointAt(i);
+      const ch = String.fromCodePoint(cp);
+      const isFirstCharOfFile = lineIndex === 0 && i === 0;
+      const result = classifyChar(cp, line, isFirstCharOfFile);
+      if (result.kind === "banned" && !allowedFile) {
+        violations.push({
+          file: filePath,
+          line: lineIndex + 1,
+          column: column + 1,
+          codepoint: cp,
+          char: ch,
+          reason: result.reason
+        });
+      } else if (result.kind === "emoji") {
+        emojiCount++;
+      }
+      i += ch.length;
+      column += ch.length;
     }
+  }
 
-    let warning = null;
-    if (!allowedFile && emojiCount > EMOJI_SOFT_CAP) {
-        warning = {
-            file: filePath,
-            count: emojiCount,
-            cap: EMOJI_SOFT_CAP,
-        };
-    }
-    return { violations, emojiCount, warning };
+  let warning = null;
+  if (!allowedFile && emojiCount > EMOJI_SOFT_CAP) {
+    warning = {
+      file: filePath,
+      count: emojiCount,
+      cap: EMOJI_SOFT_CAP
+    };
+  }
+  return { violations, emojiCount, warning };
 }
 
 function scanFile(filePath) {
-    let content;
-    try {
-        content = fs.readFileSync(filePath, "utf8");
-    } catch (error) {
-        return { violations: [], warning: null, emojiCount: 0 };
-    }
-    const isCsharp = filePath.endsWith(".cs");
-    return scanContent(filePath, content, isCsharp);
+  let content;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    return { violations: [], warning: null, emojiCount: 0 };
+  }
+  const isCsharp = filePath.endsWith(".cs");
+  return scanContent(filePath, content, isCsharp);
 }
 
 // --- CLI --------------------------------------------------------------------
 
 function parseArgs(argv) {
-    const args = { check: true, paths: null, files: [] };
-    for (let i = 0; i < argv.length; i++) {
-        const a = argv[i];
-        if (a === "--check") {
-            args.check = true;
-        } else if (a === "--paths") {
-            args.paths = argv[++i];
-        } else if (a === "--help" || a === "-h") {
-            printHelp();
-            process.exit(0);
-        } else if (a.startsWith("--")) {
-            console.error(`Unknown option: ${a}`);
-            process.exit(1);
-        } else {
-            args.files.push(a);
-        }
+  const args = { check: true, paths: null, files: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--check") {
+      args.check = true;
+    } else if (a === "--paths") {
+      args.paths = argv[++i];
+    } else if (a === "--help" || a === "-h") {
+      printHelp();
+      process.exit(0);
+    } else if (a.startsWith("--")) {
+      console.error(`Unknown option: ${a}`);
+      process.exit(1);
+    } else {
+      args.files.push(a);
     }
-    return args;
+  }
+  return args;
 }
 
 function printHelp() {
-    process.stdout.write(
-        [
-            "Usage: node scripts/validate-docs-ascii.js [options] [files...]",
-            "",
-            "Options:",
-            "  --check         Default. Exit 1 on any banned char.",
-            "  --paths <list>  Comma-separated explicit paths or directory roots.",
-            "  -h, --help      Show this message.",
-            "",
-        ].join("\n"),
-    );
+  process.stdout.write(
+    [
+      "Usage: node scripts/validate-docs-ascii.js [options] [files...]",
+      "",
+      "Options:",
+      "  --check         Default. Exit 1 on any banned char.",
+      "  --paths <list>  Comma-separated explicit paths or directory roots.",
+      "  -h, --help      Show this message.",
+      ""
+    ].join("\n")
+  );
 }
 
 function resolveFileList(args) {
-    if (args.files.length > 0) {
-        return args.files.map((f) => path.resolve(process.cwd(), f));
+  if (args.files.length > 0) {
+    return args.files.map((f) => path.resolve(process.cwd(), f));
+  }
+  if (args.paths) {
+    const out = [];
+    for (const entry of args.paths.split(",")) {
+      const abs = path.resolve(process.cwd(), entry);
+      if (!fs.existsSync(abs)) continue;
+      const stat = fs.statSync(abs);
+      if (stat.isDirectory()) {
+        walk(
+          abs,
+          (p) =>
+            p.endsWith(".md") ||
+            (p.endsWith(".cs") &&
+              CS_SCAN_ROOTS.some((root) => p.includes(`${path.sep}${root}${path.sep}`))),
+          out
+        );
+      } else if (stat.isFile()) {
+        out.push(abs);
+      }
     }
-    if (args.paths) {
-        const out = [];
-        for (const entry of args.paths.split(",")) {
-            const abs = path.resolve(process.cwd(), entry);
-            if (!fs.existsSync(abs)) continue;
-            const stat = fs.statSync(abs);
-            if (stat.isDirectory()) {
-                walk(
-                    abs,
-                    (p) =>
-                        p.endsWith(".md") ||
-                        (p.endsWith(".cs") &&
-                            CS_SCAN_ROOTS.some((root) =>
-                                p.includes(`${path.sep}${root}${path.sep}`),
-                            )),
-                    out,
-                );
-            } else if (stat.isFile()) {
-                out.push(abs);
-            }
-        }
-        return out;
-    }
-    return defaultFileSet();
+    return out;
+  }
+  return defaultFileSet();
 }
 
 function main() {
-    const args = parseArgs(process.argv.slice(2));
-    const files = resolveFileList(args);
+  const args = parseArgs(process.argv.slice(2));
+  const files = resolveFileList(args);
 
-    const allViolations = [];
-    const allWarnings = [];
+  const allViolations = [];
+  const allWarnings = [];
 
-    for (const file of files) {
-        const { violations, warning } = scanFile(file);
-        if (violations.length > 0) allViolations.push(...violations);
-        if (warning) allWarnings.push(warning);
-    }
+  for (const file of files) {
+    const { violations, warning } = scanFile(file);
+    if (violations.length > 0) allViolations.push(...violations);
+    if (warning) allWarnings.push(warning);
+  }
 
-    for (const w of allWarnings) {
-        const rel = path.relative(ROOT_DIR, w.file) || w.file;
-        process.stderr.write(
-            `WARN ${rel}: ${w.count} emoji(s) found, soft cap is ${w.cap}.\n`,
-        );
-    }
+  for (const w of allWarnings) {
+    const rel = path.relative(ROOT_DIR, w.file) || w.file;
+    process.stderr.write(`WARN ${rel}: ${w.count} emoji(s) found, soft cap is ${w.cap}.\n`);
+  }
 
-    if (allViolations.length === 0) {
-        process.stdout.write(
-            `validate-docs-ascii: 0 violations across ${files.length} file(s).\n`,
-        );
-        return 0;
-    }
+  if (allViolations.length === 0) {
+    process.stdout.write(`validate-docs-ascii: 0 violations across ${files.length} file(s).\n`);
+    return 0;
+  }
 
-    for (const v of allViolations) {
-        const rel = path.relative(ROOT_DIR, v.file) || v.file;
-        const cpHex = v.codepoint.toString(16).toUpperCase().padStart(4, "0");
-        process.stderr.write(
-            `${rel}:${v.line}:${v.column}: U+${cpHex} '${v.char}' -- ${v.reason}\n`,
-        );
-    }
+  for (const v of allViolations) {
+    const rel = path.relative(ROOT_DIR, v.file) || v.file;
+    const cpHex = v.codepoint.toString(16).toUpperCase().padStart(4, "0");
     process.stderr.write(
-        `\nvalidate-docs-ascii: ${allViolations.length} violation(s) found.\n`,
+      `${rel}:${v.line}:${v.column}: U+${cpHex} ${formatCodepointGlyph(
+        v.char,
+        v.codepoint
+      )} -- ${v.reason}\n`
     );
-    return 1;
+  }
+  process.stderr.write(`\nvalidate-docs-ascii: ${allViolations.length} violation(s) found.\n`);
+  return 1;
 }
 
 if (require.main === module) {
-    process.exit(main());
+  process.exit(main());
 }
 
 module.exports = {
-    scanContent,
-    classifyChar,
-    isCalloutLine,
-    EMOJI_SOFT_CAP,
+  scanContent,
+  classifyChar,
+  isCalloutLine,
+  EMOJI_SOFT_CAP
 };

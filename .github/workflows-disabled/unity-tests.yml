@@ -11,6 +11,11 @@
 #   game-ci while these tests are kept local-only.
 #
 # When re-enabled as a PR gate:
+#   ADD a license backstop. These game-ci jobs activate a serial seat but have
+#   NO if:always() ./.github/actions/return-unity-license step (disabled
+#   workflows are exempt from the leak-safety guard). Before re-enabling, add
+#   that step after the game-ci run and before the lock release, with
+#   UNITY_EMAIL/UNITY_PASSWORD env -- otherwise a failed run leaks the seat.
 #   The default assembly include list explicitly EXCLUDES the perf,
 #   allocation, and comparison suites — those run on a separate scheduled
 #   workflow (.github/workflows-disabled/unity-benchmarks.yml). DI-integration suites
@@ -27,22 +32,16 @@
 #   automatically.
 #
 # Required repository secrets (set in repo Settings -> Secrets and variables):
-#   For Unity Personal: UNITY_LICENSE (raw .ulf contents) + UNITY_EMAIL + UNITY_PASSWORD
-#   For Unity Professional serial: UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD
+#   UNITY_SERIAL / UNITY_EMAIL / UNITY_PASSWORD — classic serial activation
+#                            credentials (Unity Pro/Plus seat). This is the
+#                            single CI activation path now that the repo moved
+#                            off the floating-license server.
 #   See .llm/skills/unity/unity-license-bootstrap.md for setup.
-#   2FA on the Unity account MUST be disabled, or use a dedicated CI account.
-#
-#   UNITY_LICENSE   — Raw contents of a Unity .ulf license file. This is the
-#                     shape expected by game-ci/unity-test-runner@v4.
-#   UNITY_SERIAL    — Paid Unity serial for Professional activation.
-#   UNITY_EMAIL     — Unity account email.
-#   UNITY_PASSWORD  — Unity account password.
 #
 # Common failure modes & remediation:
 #   1. "License activation failed" — the most common new-contributor failure.
-#      The UNITY_LICENSE secret is missing/expired, or UNITY_SERIAL does not
-#      match the configured Unity account. Re-bootstrap via
-#      unity-license-bootstrap.md and re-set the secret.
+#      One of UNITY_SERIAL / UNITY_EMAIL / UNITY_PASSWORD is missing or wrong.
+#      Re-bootstrap via unity-license-bootstrap.md and re-set the secrets.
 #   2. "Test framework not found" — usually means the .unity-test-project
 #      Library cache is corrupted. Bump the cache key prefix below to bust it,
 #      or push a no-op commit to .unity-test-project/Packages/manifest.json
@@ -104,7 +103,7 @@ jobs:
           if [ -n "${INPUT_UNITY_VERSION:-}" ]; then
             versions="[\"${INPUT_UNITY_VERSION}\"]"
           else
-            versions='["2021.3.45f1","2022.3.45f1","6000.0.32f1"]'
+            versions='["2021.3.45f1","2022.3.45f1","6000.3.16f1"]'
           fi
           if [ -n "${INPUT_TEST_MODE:-}" ] && [ "${INPUT_TEST_MODE}" != "all" ]; then
             modes="[\"${INPUT_TEST_MODE}\"]"
@@ -168,12 +167,14 @@ jobs:
           echo "Resolved assemblies: ${assemblies}"
 
       - name: Run Unity Test Runner
-        uses: game-ci/unity-test-runner@v4
+        # game-ci reads UNITY_SERIAL/UNITY_EMAIL/UNITY_PASSWORD from env for
+        # classic serial activation (the unityLicensingServer input is retired
+        # now that this repo moved off the floating-license server).
         env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        uses: game-ci/unity-test-runner@v4
         with:
           projectPath: .unity-test-project
           unityVersion: ${{ matrix.unity-version }}

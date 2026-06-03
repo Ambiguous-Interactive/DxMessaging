@@ -106,36 +106,56 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// Flags TRUE TRIPLETS: <c>[UnityTest]</c> methods whose names start
-        /// with <c>Untargeted</c>, <c>Targeted</c>, AND <c>Broadcast</c> for
-        /// the same kind-stripped base name within a single fixture, none of
-        /// which are parameterized over <see cref="MessageScenario"/>. Such
-        /// triplets should be consolidated via
-        /// <c>[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]</c>.
-        /// Methods that exist in only one or two kind variants (legitimate
-        /// kind-asymmetric tests, like <c>RemoveRegistrationInsideUntargetedHandler</c>)
-        /// are intentionally not flagged, because their counterpart kinds
-        /// either do not exist or test materially different mechanics.
-        /// Kind-specific fixtures named <c>*Specific*Tests</c> (for example
-        /// <c>EmitUntargetedSpecificTests</c>) are exempt because their
-        /// assertion semantics do not translate across kinds. The contract
-        /// pin lives in the <c>tests-must-be-parameterized-by-message-kind</c>
-        /// skill.
+        /// Flags kind-duplicated tests that should be consolidated via
+        /// <c>[ValueSource(typeof(MessageScenarios), ...)]</c>. Two shapes are
+        /// caught:
+        /// <list type="bullet">
+        /// <item><description>
+        /// TRUE TRIPLETS: methods whose names start with <c>Untargeted</c>,
+        /// <c>Targeted</c>, AND <c>Broadcast</c> for the same kind-stripped
+        /// base name within a single fixture (suggested source:
+        /// <c>MessageScenarios.AllKinds</c>).
+        /// </description></item>
+        /// <item><description>
+        /// TWO-KIND PAIRS: methods whose names start with <c>Targeted</c> AND
+        /// <c>Broadcast</c> for the same kind-stripped base name (with no
+        /// <c>Untargeted</c> sibling) within a single fixture. These differ
+        /// only by message kind and should collapse to a single method over
+        /// <c>MessageScenarios.KindsWithComponentTarget</c>.
+        /// </description></item>
+        /// </list>
+        /// Both <c>[UnityTest]</c> and plain <c>[Test]</c> methods are scanned,
+        /// and the two-kind Targeted+Broadcast pair shape is detected in addition
+        /// to triplets, as a forward-looking guard so a future kind-named
+        /// <c>[Test]</c> or Targeted+Broadcast group cannot slip past a
+        /// <c>[UnityTest]</c>-only, triplet-only scan. Methods already
+        /// parameterized over <see cref="MessageScenario"/>
+        /// short-circuit out so they cannot satisfy either criterion. Methods
+        /// that exist in only one kind variant (legitimate kind-asymmetric
+        /// tests) are not flagged. Kind-specific fixtures named
+        /// <c>*Specific*Tests</c> are exempt because their assertion semantics
+        /// do not translate across kinds. The contract pin lives in the
+        /// <c>tests-must-be-parameterized-by-message-kind</c> skill.
         /// </summary>
         [Test]
         public void TripletEmitTestsUseScenarioParameterization()
         {
-            // Group [UnityTest] methods by their declaring fixture and by the
-            // kind-stripped base name. A "triplet" is a base name that has
-            // Untargeted, Targeted, AND Broadcast siblings in the same
-            // fixture, none of which already accept a MessageScenario
-            // parameter. Already-consolidated methods short-circuit out so
-            // they cannot accidentally satisfy the triplet criterion.
-            Dictionary<Type, Dictionary<string, HashSet<string>>> tripletsByFixture = new();
+            // Group [UnityTest] AND [Test] methods by their declaring fixture
+            // and by the kind-stripped base name, tracking which leading kinds
+            // appear for each base name. A "triplet" is a base name that has
+            // Untargeted, Targeted, AND Broadcast siblings in the same fixture;
+            // a "two-kind pair" is a base name with exactly Targeted AND
+            // Broadcast (no Untargeted). Already-consolidated methods (those
+            // accepting a MessageScenario parameter) short-circuit out so they
+            // cannot accidentally satisfy either criterion.
+            Dictionary<Type, Dictionary<string, HashSet<string>>> kindsByFixture = new();
 
             foreach (MethodInfo method in GetDxMessagingTestMethods())
             {
-                if (!HasAttribute<UnityTestAttribute>(method))
+                if (
+                    !HasAttribute<UnityTestAttribute>(method)
+                    && !HasAttribute<TestAttribute>(method)
+                )
                 {
                     continue;
                 }
@@ -178,19 +198,19 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 if (HasMessageScenarioParameter(method))
                 {
-                    // Already consolidated; do not contribute to triplet bucket.
+                    // Already consolidated; do not contribute to any bucket.
                     continue;
                 }
 
                 if (
-                    !tripletsByFixture.TryGetValue(
+                    !kindsByFixture.TryGetValue(
                         fixture,
                         out Dictionary<string, HashSet<string>> nameMap
                     )
                 )
                 {
                     nameMap = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-                    tripletsByFixture[fixture] = nameMap;
+                    kindsByFixture[fixture] = nameMap;
                 }
 
                 if (!nameMap.TryGetValue(kindStripped, out HashSet<string> kindsSet))
@@ -244,19 +264,63 @@ namespace DxMessaging.Tests.Runtime.Core
                 "DxMessaging.Tests.Runtime.Core.RegistrationTests.Interceptor",
             };
 
+            // Two-kind Targeted+Broadcast pairs intentionally NOT consolidated.
+            // Each entry's bodies differ by more than message-kind plumbing, so
+            // a ScenarioHarness merge (which expresses a target as a single
+            // InstanceId) would silently drop coverage. Remove an entry only
+            // when the bodies become plumbing-only-different.
+            HashSet<string> exemptedTwoKindPairs = new HashSet<string>(StringComparer.Ordinal)
+            {
+                // MutationDestructionTests.ComponentDestroyOtherListenerDoesNotRun:
+                // the Targeted/Broadcast Component variants register and emit via
+                // the COMPONENT-identity overloads (RegisterComponentTargeted /
+                // EmitComponentTargeted, RegisterComponentBroadcast /
+                // EmitComponentBroadcast). The fixture's parameterized
+                // DestroyOtherListenerDoesNotRun already covers the GameObject /
+                // *WithoutTargeting paths; these two pin the distinct
+                // Component-identity dispatch path that ScenarioHarness's single
+                // InstanceId target cannot express without collapsing the two
+                // identity kinds. Remove when ScenarioHarness grows a
+                // Component-vs-GameObject target distinction.
+                "DxMessaging.Tests.Runtime.Core.MutationDestructionTests.ComponentDestroyOtherListenerDoesNotRun",
+                // OrderingTests Targeted/Broadcast GameObject-identity ordering
+                // pairs: each pair registers and emits through the
+                // GameObject-targeted / GameObject-broadcast overloads and has a
+                // sibling Component-identity variant (the
+                // *Component* methods below). The "...GameObject..." vs
+                // "...Component..." split is the coverage these tests exist to
+                // pin; ScenarioHarness resolves a target to a single InstanceId
+                // and cannot preserve the GameObject-vs-Component identity-path
+                // distinction, so a merge would erase one path. Remove an entry
+                // when ScenarioHarness can express the target-identity kind.
+                "DxMessaging.Tests.Runtime.Core.OrderingTests.SamePriorityActionsGameObjectInRegistrationOrder",
+                "DxMessaging.Tests.Runtime.Core.OrderingTests.SamePriorityFastGameObjectInRegistrationOrder",
+                "DxMessaging.Tests.Runtime.Core.OrderingTests.MixedFastBeforeActionsGameObject",
+                // OrderingTests Targeted/Broadcast Component-identity ordering
+                // pairs: the mirror of the GameObject pairs above, pinning the
+                // Component-identity ordering path. Same justification and same
+                // removal condition.
+                "DxMessaging.Tests.Runtime.Core.OrderingTests.SamePriorityActionsComponentInRegistrationOrder",
+                "DxMessaging.Tests.Runtime.Core.OrderingTests.SamePriorityFastComponentInRegistrationOrder",
+                "DxMessaging.Tests.Runtime.Core.OrderingTests.MixedFastBeforeActionsComponent",
+                "DxMessaging.Tests.Runtime.Core.OrderingTests.MixedFastThenActionsComponent",
+            };
+
             List<string> offenders = new();
             foreach (
                 KeyValuePair<
                     Type,
                     Dictionary<string, HashSet<string>>
-                > fixturePair in tripletsByFixture
+                > fixturePair in kindsByFixture
             )
             {
                 foreach (KeyValuePair<string, HashSet<string>> namePair in fixturePair.Value)
                 {
-                    if (namePair.Value.Count == 3)
+                    HashSet<string> kinds = namePair.Value;
+                    string fullKey = $"{fixturePair.Key.FullName}.{namePair.Key}";
+
+                    if (kinds.Count == 3)
                     {
-                        string fullKey = $"{fixturePair.Key.FullName}.{namePair.Key}";
                         if (exemptedTriplets.Contains(fullKey))
                         {
                             continue;
@@ -268,16 +332,37 @@ namespace DxMessaging.Tests.Runtime.Core
                                 + "consolidate via [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))])"
                         );
                     }
+                    else if (
+                        kinds.Count == 2
+                        && kinds.Contains("Targeted")
+                        && kinds.Contains("Broadcast")
+                    )
+                    {
+                        if (exemptedTwoKindPairs.Contains(fullKey))
+                        {
+                            continue;
+                        }
+
+                        offenders.Add(
+                            $"{fixturePair.Key.FullName}: Targeted+Broadcast pair '*{namePair.Key}' "
+                                + "(Targeted and Broadcast variants of the same base name differ only by "
+                                + "message kind; consolidate via "
+                                + "[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))])"
+                        );
+                    }
                 }
             }
 
             Assert.That(
                 offenders,
                 Is.Empty,
-                "Found triplet [UnityTest] methods (Untargeted/Targeted/Broadcast variants of the same base name in the same fixture) "
-                    + "that are not parameterized by MessageScenario. Consolidate via "
-                    + "[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]. See "
-                    + ".llm/skills/testing/tests-must-be-parameterized-by-message-kind.md. Offenders:\n"
+                "Found kind-duplicated [UnityTest]/[Test] methods (Untargeted/Targeted/Broadcast triplets "
+                    + "or Targeted+Broadcast pairs of the same base name in the same fixture) that are not "
+                    + "parameterized by MessageScenario. Consolidate triplets via "
+                    + "[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] and "
+                    + "Targeted+Broadcast pairs via "
+                    + "[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))]. "
+                    + "See .llm/skills/testing/tests-must-be-parameterized-by-message-kind.md. Offenders:\n"
                     + string.Join("\n", offenders)
             );
         }

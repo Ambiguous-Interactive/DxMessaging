@@ -9,11 +9,11 @@ updated: "2026-01-30"
 status: stable
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "scripts/__tests__/validate-skills-tags.test.js"
     - path: "scripts/__tests__/validate-skills-optional-fields.test.js"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - testing

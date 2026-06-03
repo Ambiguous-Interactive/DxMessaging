@@ -1,4 +1,13 @@
-#if UNITY_2021_3_OR_NEWER
+// This fixture drives MessagingComponent's serialized "auto configure" field via
+// UnityEditor's SerializedObject/SerializedProperty to mimic the inspector
+// workflow, so it can only compile/run inside the Editor (EditMode or in-Editor
+// PlayMode). It lives in the all-platforms Tests.Runtime assembly, which is ALSO
+// compiled into the IL2CPP standalone test player where UnityEditor does not
+// exist -- without the UNITY_EDITOR guard that player build fails with
+// "CS0246: The type or namespace name 'SerializedObject' could not be found".
+// The UNITY_EDITOR guard excludes it from the player build (it cannot run there
+// anyway) while keeping full EditMode/PlayMode coverage in the Editor.
+#if UNITY_2021_3_OR_NEWER && UNITY_EDITOR
 namespace DxMessaging.Tests.Runtime.Unity
 {
     using System.Collections;

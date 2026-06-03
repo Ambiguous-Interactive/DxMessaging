@@ -217,7 +217,7 @@ npm pack --dry-run 2>&1 | grep "Tests\.meta" || echo "Tests.meta correctly exclu
 
 ## Issue #204 invariants
 
-[Issue #204](https://github.com/wallstop/DxMessaging/issues/204) shipped
+[Issue #204](https://github.com/Ambiguous-Interactive/DxMessaging/issues/204) shipped
 build artifacts and orphaned `.meta` files in the npm tarball. The fix lives
 in `scripts/validate-npm-meta.js` and is enforced at pre-push, in
 `prepack`, and by the `validate-npm-meta` workflow. The invariants the

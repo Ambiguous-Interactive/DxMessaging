@@ -34,6 +34,36 @@ source "${SCRIPT_DIR}/cache-contract.sh" || {
     exit 1
 }
 
+if [[ ! -f "${SCRIPT_DIR}/lib/parse-devcontainer-mounts.sh" ]]; then
+    echo -e "${RED}FATAL: lib/parse-devcontainer-mounts.sh not found at ${SCRIPT_DIR}/lib/${NC}"
+    exit 1
+fi
+
+# shellcheck source=.devcontainer/lib/parse-devcontainer-mounts.sh
+source "${SCRIPT_DIR}/lib/parse-devcontainer-mounts.sh" || {
+    echo -e "${RED}FATAL: failed to source parse-devcontainer-mounts.sh${NC}"
+    exit 1
+}
+
+# =============================================================================
+# Sourcing guard (round-3 NIT-E)
+# =============================================================================
+# When this file is `source`-d (rather than executed), only the helper
+# library imports above happen -- the validation flow below is skipped.
+# This lets a Jest test (or a debugging shell) load the helpers without
+# kicking off a full validation run, and it makes attack-surface auditing
+# easier ("does sourcing this file run any production logic?").
+#
+# We compare BASH_SOURCE[0] to $0:
+#   - When executed directly (e.g. `bash validate-caching.sh`), they match.
+#   - When sourced (`. validate-caching.sh` / `source ...`), they differ
+#     because $0 is the parent shell's $0, not this file path.
+# Locked in by scripts/__tests__/devcontainer-cache-contract.test.js
+# (round-3 NIT-E coverage block).
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    return 0 2>/dev/null || exit 0
+fi
+
 CHECKS_PASSED=0
 CHECKS_FAILED=0
 CHECKS_TOTAL=0
@@ -81,9 +111,44 @@ matches_expected_mount() {
     local source_name="$2"
     local target_dir="$3"
 
-    [[ "$mount_entry" == *"source=${source_name},"* ]] \
-        && [[ "$mount_entry" == *"target=${target_dir},"* ]] \
-        && [[ "$mount_entry" == *",type=volume"* ]]
+    # The devcontainer mount spec allows additional fields beyond
+    # source/target/type (e.g. bind-propagation, consistency, readonly).
+    # Parse the comma-separated `key=value` pairs explicitly so the match
+    # is independent of field ordering AND tolerant of extra fields. Any
+    # extra fields are surfaced via stderr at INFO level so the operator
+    # has a paper trail when reviewing diagnostics.
+    local got_source=""
+    local got_target=""
+    local got_type=""
+    local extras=()
+    local IFS=','
+    # shellcheck disable=SC2206
+    local parts=($mount_entry)
+    unset IFS
+    local part
+    for part in "${parts[@]}"; do
+        case "$part" in
+            source=*) got_source="${part#source=}" ;;
+            target=*) got_target="${part#target=}" ;;
+            type=*) got_type="${part#type=}" ;;
+            "") ;;
+            *) extras+=("$part") ;;
+        esac
+    done
+
+    if [[ "$got_source" != "$source_name" ]]; then
+        return 1
+    fi
+    if [[ "$got_target" != "$target_dir" ]]; then
+        return 1
+    fi
+    if [[ "$got_type" != "volume" ]]; then
+        return 1
+    fi
+    if [[ "${#extras[@]}" -gt 0 ]]; then
+        echo -e "${BLUE}INFO${NC}: mount entry for ${source_name} -> ${target_dir} includes extra field(s): ${extras[*]}" >&2
+    fi
+    return 0
 }
 
 is_exact_mount_point() {
@@ -109,6 +174,10 @@ script_sources_contract() {
 }
 
 log_header "Checking Contract and Static Files"
+
+# Surface how the workspace root was resolved so an operator can SEE which path
+# is being validated (catching a wrong-path / config-drift situation by eye).
+echo -e "${BLUE}$(cache_contract_describe_workspace_root)${NC}"
 
 if cache_contract_validate_shape; then
     check_pass "Cache contract shape is valid (${#CACHE_MOUNT_SOURCES[@]} entries)"
@@ -150,32 +219,50 @@ fi
 
 log_header "Checking devcontainer.json Mount Contract"
 
+# JSONC parsing is now PRIMARY. We rely on lib/parse-devcontainer-mounts.sh
+# (which strip-then-pipes-to-jq) to read .devcontainer/devcontainer.json. Any
+# failure is a hard error -- the previous grep-based fallback silently kept
+# unresolved `${containerWorkspaceFolder}` template variables in the mount
+# strings, producing false "Mount contract entry missing" failures.
 declare -a configured_mounts=()
-if command -v jq >/dev/null 2>&1; then
-    jq_output=""
-    if jq_output="$(jq -r '.mounts[]? // empty' "${SCRIPT_DIR}/devcontainer.json" 2>/dev/null)"; then
-        if [[ -n "$jq_output" ]]; then
-            mapfile -t configured_mounts <<< "$jq_output"
-            check_pass "Parsed mounts from devcontainer.json using jq (count=${#configured_mounts[@]})"
-        else
-            check_warning "Parsed devcontainer.json with jq, but mounts array is empty"
-        fi
-    else
-        check_warning "jq could not parse devcontainer.json (comments likely); falling back to grep parsing"
-        mapfile -t configured_mounts < <(grep -o 'source=[^"]*,target=[^"]*,type=volume' "${SCRIPT_DIR}/devcontainer.json" || true)
+declare -a resolved_contract_targets=()
+parsed_local_workspace_folder="${LOCAL_WORKSPACE_FOLDER:-${CACHE_WORKSPACE_ROOT}}"
+
+mounts_output=""
+if ! mounts_output="$(parse_devcontainer_mounts \
+        "${SCRIPT_DIR}/devcontainer.json" \
+        "${CACHE_WORKSPACE_ROOT}" \
+        "${parsed_local_workspace_folder}" 2>&1)"; then
+    check_fail "Failed to parse devcontainer.json via parse_devcontainer_mounts; aborting mount checks"
+    if [[ -n "$mounts_output" ]]; then
+        echo "Parser diagnostic output:"
+        printf '  %s\n' "$mounts_output"
     fi
+    configured_mounts=()
 else
-    check_warning "jq is not available; falling back to grep parsing for mount checks"
-    mapfile -t configured_mounts < <(grep -o 'source=[^"]*,target=[^"]*,type=volume' "${SCRIPT_DIR}/devcontainer.json" || true)
+    if [[ -n "$mounts_output" ]]; then
+        while IFS= read -r line; do
+            configured_mounts+=("$line")
+        done <<< "$mounts_output"
+    fi
+    check_pass "Parsed mounts from devcontainer.json via JSONC->jq pipeline (count=${#configured_mounts[@]})"
 fi
 
 if [[ "${#configured_mounts[@]}" -eq 0 ]]; then
     check_fail "No mounts found in devcontainer.json"
 fi
 
+# Resolve contract targets up-front so the diagnostic block below can present
+# the operator with the exact strings we are comparing.
+for i in "${!CACHE_MOUNT_TARGETS[@]}"; do
+    raw_target="${CACHE_MOUNT_TARGETS[$i]}"
+    resolved="${raw_target//\$\{CACHE_WORKSPACE_ROOT\}/${CACHE_WORKSPACE_ROOT}}"
+    resolved_contract_targets[i]="$resolved"
+done
+
 for i in "${!CACHE_MOUNT_SOURCES[@]}"; do
     source_name="${CACHE_MOUNT_SOURCES[$i]}"
-    target_dir="${CACHE_MOUNT_TARGETS[$i]}"
+    target_dir="${resolved_contract_targets[$i]}"
 
     found_match=false
     for mount_entry in "${configured_mounts[@]}"; do
@@ -189,13 +276,39 @@ for i in "${!CACHE_MOUNT_SOURCES[@]}"; do
         check_pass "Mount contract entry configured: ${source_name} -> ${target_dir}"
     else
         check_fail "Mount contract entry missing from devcontainer.json: ${source_name} -> ${target_dir}"
+        echo "  Diagnostic: configured mount strings parsed from devcontainer.json:"
+        if [[ "${#configured_mounts[@]}" -eq 0 ]]; then
+            echo "    (none)"
+        else
+            for mount_entry in "${configured_mounts[@]}"; do
+                echo "    - ${mount_entry}"
+            done
+        fi
+        echo "  Diagnostic: resolved contract targets from cache-contract.sh:"
+        for j in "${!CACHE_MOUNT_SOURCES[@]}"; do
+            echo "    - ${CACHE_MOUNT_SOURCES[$j]} -> ${resolved_contract_targets[$j]}"
+        done
+        echo "  Diagnostic: CACHE_WORKSPACE_ROOT=${CACHE_WORKSPACE_ROOT}, LOCAL_WORKSPACE_FOLDER=${parsed_local_workspace_folder}"
     fi
 done
 
-if grep -Eq '"remoteUser"[[:space:]]*:[[:space:]]*"vscode"' "${SCRIPT_DIR}/devcontainer.json"; then
+# JSONC-aware remoteUser check. The previous grep approach silently matched
+# commented-out `// "remoteUser": "vscode"` lines (because grep does not
+# understand JSON-with-comments). get_devcontainer_property strips JSONC
+# comments before extracting the live top-level property via jq.
+remote_user_value=""
+remote_user_status=0
+remote_user_value="$(get_devcontainer_property "${SCRIPT_DIR}/devcontainer.json" "remoteUser" 2>&1)" \
+    || remote_user_status=$?
+if [[ "$remote_user_status" -ne 0 ]]; then
+    check_fail "Failed to read remoteUser from devcontainer.json (jq exit ${remote_user_status})"
+    if [[ -n "$remote_user_value" ]]; then
+        printf '  %s\n' "$remote_user_value"
+    fi
+elif [[ "$remote_user_value" == "vscode" ]]; then
     check_pass "devcontainer.json remoteUser is vscode (matches cache mount targets)"
 else
-    check_fail "devcontainer.json remoteUser is not vscode; update cache-contract.sh targets or remoteUser"
+    check_fail "devcontainer.json remoteUser is '${remote_user_value:-<unset>}' (expected vscode); update cache-contract.sh targets or remoteUser"
 fi
 
 check_devcontainer_test_workflow() {

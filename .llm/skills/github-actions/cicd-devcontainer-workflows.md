@@ -7,13 +7,13 @@ created: "2026-05-05"
 updated: "2026-05-05"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: ".github/workflows/devcontainer-prebuild.yml"
     - path: ".github/workflows/devcontainer-test.yml"
     - path: ".devcontainer/Dockerfile"
     - path: ".devcontainer/devcontainer.json"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "github-actions"
@@ -205,7 +205,7 @@ Include a debug step early in the workflow:
     echo "Actor: ${{ github.actor }}"
 ```
 
-The repo's `wallstop-studios/com.wallstop-studios.dxmessaging` slug forces a lowercase conversion every time, so the debug step also surfaces a wrong-actor or wrong-ref problem before it consumes 15 minutes of runner time.
+The repo's `Ambiguous-Interactive/DxMessaging` slug forces a lowercase conversion every time, so the debug step also surfaces a wrong-actor or wrong-ref problem before it consumes 15 minutes of runner time.
 
 ### Diagnostic Verification
 

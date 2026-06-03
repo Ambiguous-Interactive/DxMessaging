@@ -43,7 +43,8 @@
     "source=dxm-nuget-cache,target=/home/vscode/.nuget,type=volume",
     "source=dxm-dotnet-tools,target=/home/vscode/.dotnet/tools,type=volume",
     "source=dxm-powershell-modules,target=/home/vscode/.local/share/powershell,type=volume",
-    "source=dxm-python-cache,target=/home/vscode/.cache/pip,type=volume"
+    "source=dxm-python-cache,target=/home/vscode/.cache/pip,type=volume",
+    "source=dxm-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
   ],
   // -------------------------------------------------------------------------
   // Container Environment

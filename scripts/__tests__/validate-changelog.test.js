@@ -21,6 +21,8 @@ const {
   parseChangedFilesStatusOutput,
   getChangedFilesFromGitDetails,
   getChangedFilesFromGit,
+  probeShallowCloneState,
+  formatShallowCloneDiagnostic,
   validateChangedFilesDiscovery,
   validateCoverageRule,
   validateChangelogPolicy
@@ -752,6 +754,194 @@ describe("validate-changelog", () => {
       expect(errors).toHaveLength(1);
       expect(errors[0].code).toBe("E004");
       expect(errors[0].suggestion).toContain("Runtime/Core/LegacyMessage.cs");
+    });
+  });
+
+  describe("shallow-clone diagnostic (Bug 2 / fetch-depth: 0)", () => {
+    test("formatShallowCloneDiagnostic flags a shallow clone with no origin refs", () => {
+      const text = formatShallowCloneDiagnostic({
+        isShallow: true,
+        originRefs: [],
+        originRefsProbeError: null
+      });
+
+      expect(text).toContain("SHALLOW clone");
+      expect(text).toContain("origin refs present: <none>");
+    });
+
+    test("formatShallowCloneDiagnostic reports full-clone state when not shallow", () => {
+      const text = formatShallowCloneDiagnostic({
+        isShallow: false,
+        originRefs: ["refs/remotes/origin/master", "refs/remotes/origin/HEAD"],
+        originRefsProbeError: null
+      });
+
+      expect(text).toContain("full clone");
+      expect(text).toContain("origin/master");
+    });
+
+    test("formatShallowCloneDiagnostic tolerates a failed probe", () => {
+      const text = formatShallowCloneDiagnostic({
+        isShallow: null,
+        originRefs: [],
+        originRefsProbeError: "git: command not found"
+      });
+
+      expect(text).toContain("could not run");
+    });
+
+    test("validateChangedFilesDiscovery names fetch-depth: 0 explicitly when the clone is shallow", () => {
+      // Reproduce the symptom from logs_69627069942: PR-context CI run, all
+      // origin/<base> diffs fail because the checkout is shallow.
+      const execFileSyncMock = jest.fn((_command, args) => {
+        const joined = args.join(" ");
+        if (joined === "diff -z --name-status -M --cached") {
+          return "";
+        }
+        const error = new Error(`failed ${joined}`);
+        error.stderr = "fatal: ambiguous argument 'origin/master...HEAD'\n";
+        throw error;
+      });
+
+      const details = getChangedFilesFromGitDetails(execFileSyncMock, {
+        CI: "true",
+        GITHUB_ACTIONS: "true",
+        GITHUB_EVENT_NAME: "pull_request",
+        GITHUB_BASE_REF: "master"
+      });
+
+      // Inject a synthetic probe so the test does not depend on the actual
+      // checkout state. This mirrors the Bug 1 fix: helpers must accept env
+      // / probe state as parameters so tests can be deterministic.
+      const shallowProbe = () => ({
+        isShallow: true,
+        originRefs: [],
+        originRefsProbeError: null
+      });
+
+      const errors = validateChangedFilesDiscovery(details, shallowProbe);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].code).toBe("E006");
+      expect(errors[0].suggestion).toContain("fetch-depth: 0");
+      expect(errors[0].suggestion).toContain("actions/checkout");
+      expect(errors[0].suggestion).toContain("SHALLOW clone");
+    });
+
+    test("validateChangedFilesDiscovery suggests fetch-depth: 0 when origin refs are missing even on a full clone", () => {
+      // Defensive: a not-shallow repo without remote-tracking refs (e.g. a
+      // bare CI workspace) still benefits from the same remediation.
+      const execFileSyncMock = jest.fn(() => {
+        const error = new Error("boom");
+        error.stderr = "fatal: bad revision\n";
+        throw error;
+      });
+
+      const details = getChangedFilesFromGitDetails(execFileSyncMock, {
+        CI: "true",
+        GITHUB_ACTIONS: "true"
+      });
+
+      const shallowProbe = () => ({
+        isShallow: false,
+        originRefs: [],
+        originRefsProbeError: null
+      });
+
+      const errors = validateChangedFilesDiscovery(details, shallowProbe);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].suggestion).toContain("fetch-depth: 0");
+      expect(errors[0].suggestion).toContain("No remote-tracking refs");
+    });
+
+    test("validateChangedFilesDiscovery falls back to generic remediation when state is normal", () => {
+      const execFileSyncMock = jest.fn(() => {
+        const error = new Error("local checkout error");
+        error.stderr = "fatal: not a git repository\n";
+        throw error;
+      });
+
+      const details = getChangedFilesFromGitDetails(execFileSyncMock, { CI: "false" });
+
+      const shallowProbe = () => ({
+        isShallow: false,
+        originRefs: ["refs/remotes/origin/master"],
+        originRefsProbeError: null
+      });
+
+      const errors = validateChangedFilesDiscovery(details, shallowProbe);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].suggestion).toContain("fetch-depth: 0");
+      expect(errors[0].suggestion).toContain("full clone");
+    });
+
+    test("probeShallowCloneState returns a structured snapshot of the live repository state", () => {
+      // Light smoke test: do not assert specific values (the test repo
+      // could be either shallow or full depending on CI checkout config);
+      // just verify the function returns the documented shape.
+      const state = probeShallowCloneState();
+      expect(state).toHaveProperty("isShallow");
+      expect(state).toHaveProperty("originRefs");
+      expect(Array.isArray(state.originRefs)).toBe(true);
+    });
+
+    test("probeShallowCloneState returns a structured failure when git is unavailable (M4)", () => {
+      // Inject an execFileSyncImpl that always throws, simulating the
+      // "git missing" scenario (or running outside a git repository).
+      // The function MUST NOT throw; it must return a structured snapshot
+      // with isShallow=null, an empty originRefs array, and an error
+      // message naming the underlying cause so the diagnostic is useful.
+      const gitMissingImpl = (cmd, args) => {
+        const err = new Error(
+          `spawn ${cmd} ENOENT (simulated: git not installed; args=${args.join(" ")})`
+        );
+        err.code = "ENOENT";
+        throw err;
+      };
+
+      const state = probeShallowCloneState(gitMissingImpl);
+
+      expect(state.isShallow).toBeNull();
+      expect(state.originRefs).toEqual([]);
+      expect(typeof state.originRefsProbeError).toBe("string");
+      // The error message must surface "git" as the cause so the
+      // operator can act on it.
+      expect(state.originRefsProbeError).toMatch(/git/i);
+      // And carry the ENOENT marker so the operator knows the binary
+      // could not be located.
+      expect(state.originRefsProbeError).toMatch(/ENOENT/);
+    });
+
+    test("probeShallowCloneState in a temp dir with no .git surfaces a real git error (M4 real-probe)", () => {
+      // Real-probe variant: spawn the actual `git` binary with a cwd
+      // that is a freshly-created temp directory containing no .git.
+      // The probe uses REPO_ROOT for cwd internally, so we can't
+      // redirect cwd; instead we wrap execFileSync with an
+      // implementation that ignores the passed cwd and substitutes our
+      // temp dir. This exercises the live `git` binary (so git must be
+      // on PATH for this test to be meaningful) and asserts the
+      // structured failure shape.
+      const os = require("os");
+      const realExecFileSync = require("child_process").execFileSync;
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-changelog-no-git-"));
+      try {
+        const cwdOverrideImpl = (cmd, args, options) =>
+          realExecFileSync(cmd, args, { ...options, cwd: tempDir });
+
+        const state = probeShallowCloneState(cwdOverrideImpl);
+
+        // Outside a git repo: rev-parse fails (so isShallow is null),
+        // for-each-ref fails (so originRefs is [] and probeError is set
+        // to a message that names git).
+        expect(state.isShallow).toBeNull();
+        expect(state.originRefs).toEqual([]);
+        expect(typeof state.originRefsProbeError).toBe("string");
+        expect(state.originRefsProbeError.length).toBeGreaterThan(0);
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 

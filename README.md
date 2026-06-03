@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://wallstop.github.io/DxMessaging/">
+  <a href="https://ambiguous-interactive.github.io/DxMessaging/">
     <img src="https://img.shields.io/badge/Full_Documentation-Visit_the_Docs_Site-2ea44f?style=for-the-badge" alt="Full Documentation" />
   </a>
 </p>
@@ -15,8 +15,8 @@
 [![openupm](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging?label=openupm&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.wallstop-studios.dxmessaging/)<br/>
 [![Version](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging.svg)](https://www.npmjs.com/package/com.wallstop-studios.dxmessaging)<br/>
 [![Performance: OS-Specific Benchmarks](https://img.shields.io/badge/Performance-OS--specific-blueviolet.svg)](docs/architecture/performance.md)<br/>
-[![Markdown Link Validity](https://github.com/wallstop/DxMessaging/actions/workflows/markdown-link-validity.yml/badge.svg)](https://github.com/wallstop/DxMessaging/actions/workflows/markdown-link-validity.yml)<br/>
-[![Markdown Link Text Check](https://github.com/wallstop/DxMessaging/actions/workflows/markdown-link-text-check.yml/badge.svg)](https://github.com/wallstop/DxMessaging/actions/workflows/markdown-link-text-check.yml)
+[![Markdown Link Validity](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml)<br/>
+[![Markdown Link Text Check](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-text-check.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-text-check.yml)
 
 > **🤖 AI Assistance Disclosure:**
 >
@@ -90,7 +90,7 @@ You have data. You need to pass it around. That's the problem. DxMessaging provi
 
 ### The Three Message Types: Real-World Analogies
 
-> 💡 _Diagrams below require Mermaid support. If they don't render, try viewing this file directly on [GitHub](https://github.com/wallstop/DxMessaging)._
+> 💡 _Diagrams below require Mermaid support. If they don't render, try viewing this file directly on [GitHub](https://github.com/Ambiguous-Interactive/DxMessaging)._
 
 Each message type maps to a real-world communication pattern:
 
@@ -192,7 +192,7 @@ openupm add com.wallstop-studios.dxmessaging
 
 ```bash
 # Unity Package Manager > Add package from git URL...
-https://github.com/wallstop/DxMessaging.git
+https://github.com/Ambiguous-Interactive/DxMessaging.git
 ```
 
 See the [Install Guide](docs/getting-started/install.md) for all options including NPM scoped registries and local tarballs.
@@ -672,8 +672,8 @@ public void TestAchievementSystem() {
 
 ## Documentation
 
-- **[Documentation Site](https://wallstop.github.io/DxMessaging/)** - Full searchable documentation
-- **[Wiki](https://github.com/wallstop/DxMessaging/wiki)** - Quick reference wiki
+- **[Documentation Site](https://ambiguous-interactive.github.io/DxMessaging/)** - Full searchable documentation
+- **[Wiki](https://github.com/Ambiguous-Interactive/DxMessaging/wiki)** - Quick reference wiki
 - **[Changelog](CHANGELOG.md)** - Version history
 
 ### Learn
@@ -896,10 +896,10 @@ Created and maintained by [wallstop studios](https://wallstopstudios.com)
 
 ## Links
 
-- [Package on GitHub](https://github.com/wallstop/DxMessaging)
-- [Report Issues](https://github.com/wallstop/DxMessaging/issues)
-- [Documentation Site](https://wallstop.github.io/DxMessaging/)
-- [Wiki](https://github.com/wallstop/DxMessaging/wiki)
+- [Package on GitHub](https://github.com/Ambiguous-Interactive/DxMessaging)
+- [Report Issues](https://github.com/Ambiguous-Interactive/DxMessaging/issues)
+- [Documentation Site](https://ambiguous-interactive.github.io/DxMessaging/)
+- [Wiki](https://github.com/Ambiguous-Interactive/DxMessaging/wiki)
 
 ## AI Agent Integration
 

@@ -14,12 +14,18 @@
 
 const fs = require("fs");
 const path = require("path");
+const {
+  expandExtensionPattern,
+  getCspellHookExtensions,
+  getPackageCspellAllExtensions
+} = require("../lib/cspell-extension-parity");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const PACKAGE_JSON_PATH = path.join(REPO_ROOT, "package.json");
 const PRE_COMMIT_CONFIG_PATH = path.join(REPO_ROOT, ".pre-commit-config.yaml");
 const CSPELL_CONFIG_PATH = path.join(REPO_ROOT, ".cspell.json");
 const WORKFLOWS_DIR = path.join(REPO_ROOT, ".github", "workflows");
+const MANAGED_CSPELL_PATH = path.join(REPO_ROOT, "scripts", "run-managed-cspell.js");
 
 function readPackageJson() {
   return JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8"));
@@ -90,10 +96,6 @@ describe("cspell version parity", () => {
     {
       name: ".pre-commit-config.yaml cspell fallback",
       version: entryVersion
-    },
-    {
-      name: "package.json scripts.check:cspell:scripts",
-      version: findPinnedVersionInEntry(pkg.scripts?.["check:cspell:scripts"], "cspell")
     }
   ];
 
@@ -116,6 +118,21 @@ describe("cspell version parity", () => {
     }
   );
 
+  test("package cspell scripts use the managed runner with the repository-pinned fallback", () => {
+    expect(pkg.scripts?.["check:cspell:all"]).toContain("node scripts/run-managed-cspell.js");
+    expect(pkg.scripts?.["check:cspell:scripts"]).toContain("node scripts/run-managed-cspell.js");
+    expect(pkg.scripts?.["check:workflow-cspell"]).toContain("node scripts/run-managed-cspell.js");
+
+    const managedCspell = fs.readFileSync(MANAGED_CSPELL_PATH, "utf8");
+    expect(managedCspell).toContain(`FALLBACK_CSPELL_SPEC = "cspell@${declaredVersion}"`);
+  });
+
+  test("check:cspell:all covers the same extensions as the pre-push cspell hook", () => {
+    expect(getPackageCspellAllExtensions(pkg.scripts?.["check:cspell:all"])).toEqual(
+      getCspellHookExtensions(block)
+    );
+  });
+
   test("workflow npx fallback pins match package.json devDependency version", () => {
     const workflowPins = readWorkflowFiles().flatMap((workflowFile) =>
       findPinnedVersionsInText(workflowFile.content, "cspell").map((version) => ({
@@ -135,6 +152,43 @@ describe("cspell version parity", () => {
 
     expect(spellcheckWorkflow).toContain(`cspell@${declaredVersion}`);
     expect(spellcheckWorkflow).not.toContain("streetsidesoftware/cspell-action");
+  });
+});
+
+describe("cspell-lib version parity (edit-time checker tracks the cspell CLI)", () => {
+  // scripts/hooks/post-edit-validate-guard.js dynamic-requires the cspell-lib
+  // engine by a HARD path (node_modules/cspell-lib/dist/index.js) for in-process
+  // edit-time spellchecking, while CI runs the `cspell` CLI. The cspell monorepo
+  // publishes cspell and cspell-lib in EXACT lockstep, so cspell-lib is declared
+  // pinned to the same version. Without this guard, a future one-sided bump of
+  // `cspell` would leave a stale `cspell-lib` pin: npm then installs cspell-lib
+  // TWICE (a top-level copy for the hook, a nested copy for the CLI) and the
+  // edit-time engine silently diverges from CI -- the same resolve-by-luck skew
+  // this PR exists to kill. These assertions pin the lockstep.
+  const pkg = readPackageJson();
+  const declaredCspell = normalizeVersion(pkg.devDependencies?.cspell);
+  const declaredCspellLib = normalizeVersion(pkg.devDependencies?.["cspell-lib"]);
+
+  test("package.json pins cspell-lib to a concrete version", () => {
+    expect(declaredCspellLib).not.toBeNull();
+    expect(declaredCspellLib).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  test("cspell-lib is pinned to the exact same version as cspell", () => {
+    expect(pkg.devDependencies?.["cspell-lib"]).toBe(pkg.devDependencies?.cspell);
+  });
+
+  test("the installed (top-level) cspell-lib matches the declared cspell version", () => {
+    // Mirrors the markdownlint-cli2 installed-version check below. cspell-lib's
+    // package `exports` map blocks `require("cspell-lib/package.json")`, so read
+    // the manifest directly off disk. This is the copy post-edit-validate-guard.js
+    // loads, so it must equal the CLI version a one-sided bump would skew it from.
+    const installedPkgPath = path.resolve(REPO_ROOT, "node_modules", "cspell-lib", "package.json");
+    expect(fs.existsSync(installedPkgPath)).toBe(true);
+    const installedVersion = normalizeVersion(
+      JSON.parse(fs.readFileSync(installedPkgPath, "utf8")).version
+    );
+    expect(installedVersion).toBe(declaredCspell);
   });
 });
 

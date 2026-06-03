@@ -7,8 +7,8 @@
  * @returns {boolean} True when value starts and ends with matching single or double quotes
  */
 function hasMatchingBoundaryQuotes(value) {
-    const trimmed = String(value).trim();
-    return hasMatchingBoundaryQuotesInTrimmed(trimmed);
+  const trimmed = String(value).trim();
+  return hasMatchingBoundaryQuotesInTrimmed(trimmed);
 }
 
 /**
@@ -18,15 +18,15 @@ function hasMatchingBoundaryQuotes(value) {
  * @returns {boolean} True when boundaries are matching quotes
  */
 function hasMatchingBoundaryQuotesInTrimmed(trimmed) {
-    if (trimmed.length < 2) {
-        return false;
-    }
+  if (trimmed.length < 2) {
+    return false;
+  }
 
-    const firstChar = trimmed[0];
-    const lastChar = trimmed[trimmed.length - 1];
-    const isQuote = firstChar === '"' || firstChar === "'";
+  const firstChar = trimmed[0];
+  const lastChar = trimmed[trimmed.length - 1];
+  const isQuote = firstChar === '"' || firstChar === "'";
 
-    return isQuote && firstChar === lastChar;
+  return isQuote && firstChar === lastChar;
 }
 
 /**
@@ -36,12 +36,12 @@ function hasMatchingBoundaryQuotesInTrimmed(trimmed) {
  * @returns {string} Trimmed value with matching boundary quotes removed
  */
 function stripMatchingBoundaryQuotes(value) {
-    const trimmed = String(value).trim();
-    if (!hasMatchingBoundaryQuotesInTrimmed(trimmed)) {
-        return trimmed;
-    }
+  const trimmed = String(value).trim();
+  if (!hasMatchingBoundaryQuotesInTrimmed(trimmed)) {
+    return trimmed;
+  }
 
-    return trimmed.slice(1, -1);
+  return trimmed.slice(1, -1);
 }
 
 /**
@@ -53,11 +53,11 @@ function stripMatchingBoundaryQuotes(value) {
  * @returns {string} Text normalized to LF line endings
  */
 function normalizeToLf(value) {
-    return String(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return String(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 module.exports = {
-    hasMatchingBoundaryQuotes,
-    stripMatchingBoundaryQuotes,
-    normalizeToLf,
+  hasMatchingBoundaryQuotes,
+  stripMatchingBoundaryQuotes,
+  normalizeToLf
 };

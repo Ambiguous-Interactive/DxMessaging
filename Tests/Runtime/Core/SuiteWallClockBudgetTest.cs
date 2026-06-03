@@ -71,10 +71,56 @@ namespace DxMessaging.Tests.Runtime
         public static readonly TimeSpan SoftBudget = TimeSpan.FromSeconds(60);
 
         /// <summary>
-        /// Hard budget: a default-suite breach above this threshold fails
-        /// the suite (so a regression is unmissable).
+        /// Hard budget applied on Unity 2021.x runners. Deliberately wider
+        /// than <see cref="DefaultHardBudget"/> because the 2021.3 PlayMode
+        /// runner is the slowest supported environment; the extra headroom
+        /// absorbs runner-speed variance without hiding an algorithmic
+        /// regression (which the unchanged 60s soft warning still flags).
         /// </summary>
-        public static readonly TimeSpan HardBudget = TimeSpan.FromSeconds(180);
+        private static readonly TimeSpan Unity2021HardBudget = TimeSpan.FromSeconds(300);
+
+        /// <summary>
+        /// Hard budget applied on Unity 2022.3 / 6000.x and newer runners,
+        /// which complete the default suite comfortably under this bound.
+        /// </summary>
+        private static readonly TimeSpan DefaultHardBudget = TimeSpan.FromSeconds(180);
+
+        /// <summary>
+        /// Hard budget: a default-suite breach above this threshold fails
+        /// the suite (so a regression is unmissable). The budget is selected
+        /// per Unity version because the wall clock is inherently
+        /// runner-speed dependent: the Unity 2021.3 CI runner is measurably
+        /// slower than 2022.3 / 6000.x for the SAME deterministic suite
+        /// (1-of-697 timing flakes were observed only on 2021.3), so a single
+        /// fixed ceiling would either flake on 2021 or be uselessly loose on
+        /// the faster runners. We widen the 2021.x ceiling rather than mask a
+        /// real regression: the soft 60s warning below still fires on every
+        /// version to surface a creeping slowdown early, and the per-version
+        /// hard ceiling only trips on an unmistakable blow-out. Declared after
+        /// the two component budgets so the textual static-field
+        /// initialization order has them assigned before
+        /// <see cref="ResolveHardBudget"/> reads them at type-init time.
+        /// </summary>
+        public static readonly TimeSpan HardBudget = ResolveHardBudget();
+
+        /// <summary>
+        /// Selects the hard wall-clock budget for the current Unity version.
+        /// Reads <see cref="Application.unityVersion"/> at runtime (rather than
+        /// a compile-time <c>#if</c>) so both component budgets are always
+        /// referenced - this keeps the selection correct across editor versions
+        /// and avoids a conditionally-unused-field warning under any single
+        /// define configuration.
+        /// </summary>
+        private static TimeSpan ResolveHardBudget()
+        {
+            string version = UnityEngine.Application.unityVersion;
+            if (version != null && version.StartsWith("2021.", StringComparison.Ordinal))
+            {
+                return Unity2021HardBudget;
+            }
+
+            return DefaultHardBudget;
+        }
 
         private static readonly string[] GatedCategories =
         {
@@ -115,10 +161,14 @@ namespace DxMessaging.Tests.Runtime
             TimeSpan elapsed = _suiteTimer.Elapsed;
 
             // Sanity: dump the elapsed time so CI logs make the budget
-            // proximity visible without a failure.
+            // proximity visible without a failure. The Unity version is
+            // included because the hard budget is selected per version (the
+            // 2021.x runner gets a wider ceiling); seeing both together makes
+            // a near-budget run easy to triage.
             UnityEngine.Debug.Log(
                 $"DxMessaging suite wall clock: {elapsed.TotalSeconds:0.00}s "
-                    + $"(soft budget {SoftBudget.TotalSeconds:0.0}s, hard budget {HardBudget.TotalSeconds:0.0}s)."
+                    + $"(soft budget {SoftBudget.TotalSeconds:0.0}s, hard budget {HardBudget.TotalSeconds:0.0}s "
+                    + $"for Unity {UnityEngine.Application.unityVersion})."
             );
 
             if (_gatedCategoryDetected)
@@ -133,9 +183,13 @@ namespace DxMessaging.Tests.Runtime
             if (elapsed > HardBudget)
             {
                 Assert.Fail(
-                    $"Default suite wall clock ({elapsed.TotalSeconds:0.00}s) exceeded the hard budget "
-                        + $"({HardBudget.TotalSeconds:0.0}s). Reduce iteration counts or move offending tests "
-                        + "behind a gated category (Stress/Performance/Allocation/MemoryReclaim/UnityRuntime)."
+                    $"DxMessaging default-suite wall-clock budget exceeded: {elapsed.TotalSeconds:0.00}s "
+                        + $"over the {HardBudget.TotalSeconds:0.0}s hard budget for Unity "
+                        + $"{UnityEngine.Application.unityVersion}. This per-version ceiling already "
+                        + "absorbs runner-speed variance (2021.x gets a wider bound), so a breach this "
+                        + "large means a genuine regression, not slowness. Reduce iteration counts or move "
+                        + "offending tests behind a gated category "
+                        + "(Stress/Performance/Allocation/MemoryReclaim/UnityRuntime)."
                 );
             }
             else if (elapsed > SoftBudget)

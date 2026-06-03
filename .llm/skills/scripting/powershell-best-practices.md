@@ -2,16 +2,16 @@
 title: "PowerShell Scripting Best Practices"
 id: "powershell-best-practices"
 category: "scripting"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-01-27"
-updated: "2026-01-28"
+updated: "2026-05-21"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "scripts/"
     - path: ".github/workflows/"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "powershell"
@@ -89,6 +89,7 @@ terminology for git hooks.
 1. **Use single `"` in here-strings** - double quotes are NOT needed for escaping
 1. **Use precise hook terminology** - say "runs before each commit is created" not "on every commit"
 1. **Know your encoding defaults** - `WriteAllText()` uses UTF-8 without BOM
+1. **`@()`-wrap captured results** before reading `.Count`/`.Length` or indexing under StrictMode 2.0+ (the 0/1/many gotcha)
 
 ## Case-Sensitive File Paths
 

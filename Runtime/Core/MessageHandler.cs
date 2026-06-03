@@ -2092,7 +2092,7 @@ namespace DxMessaging.Core
             MessageCache<object> handlersByType = _handlersByTypeByMessageBus[messageBusIndex];
             if (handlersByType.TryGetValue<T>(out object untypedHandler))
             {
-                return Unsafe.As<TypedHandler<T>>(untypedHandler);
+                return DxUnsafe.As<TypedHandler<T>>(untypedHandler);
             }
 
             TypedHandler<T> typedHandler = new();
@@ -2124,7 +2124,7 @@ namespace DxMessaging.Core
                     .TryGetValue<T>(out object untypedHandler)
             )
             {
-                existingTypedHandler = Unsafe.As<TypedHandler<T>>(untypedHandler);
+                existingTypedHandler = DxUnsafe.As<TypedHandler<T>>(untypedHandler);
                 return true;
             }
 
@@ -4809,7 +4809,7 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                ref T typedMessage = ref Unsafe.As<TMessage, T>(ref message);
+                ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 List<FastHandler<T>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 switch (handlersCount)
@@ -4880,7 +4880,7 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                ref T typedMessage = ref Unsafe.As<TMessage, T>(ref message);
+                ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 List<FastHandler<T>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 switch (handlersCount)
@@ -4956,7 +4956,7 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                ref TU typedMessage = ref Unsafe.As<TMessage, TU>(ref message);
+                ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
                 List<FastHandler<TU>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
@@ -5025,7 +5025,7 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                ref TU typedMessage = ref Unsafe.As<TMessage, TU>(ref message);
+                ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
                 List<FastHandlerWithContext<TU>> handlers = GetOrAddNewHandlerStack(
                     cache,
                     emissionId
@@ -5156,7 +5156,7 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                ref TU typedMessage = ref Unsafe.As<TMessage, TU>(ref message);
+                ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
                 List<FastHandlerWithContext<TU>> handlers = GetOrAddNewHandlerStack(
                     cache,
                     emissionId
@@ -5278,7 +5278,7 @@ namespace DxMessaging.Core
                 }
 
                 List<Action<T>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
-                ref T typedMessage = ref Unsafe.As<TMessage, T>(ref message);
+                ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 int handlersCount = handlers.Count;
                 switch (handlersCount)
                 {
@@ -5344,7 +5344,7 @@ namespace DxMessaging.Core
                 }
 
                 List<Action<T>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
-                ref T typedMessage = ref Unsafe.As<TMessage, T>(ref message);
+                ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 int handlersCount = handlers.Count;
                 switch (handlersCount)
                 {
@@ -5417,7 +5417,7 @@ namespace DxMessaging.Core
                     cache,
                     emissionId
                 );
-                ref T typedMessage = ref Unsafe.As<TMessage, T>(ref message);
+                ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 int handlersCount = typedHandlers.Count;
                 switch (handlersCount)
                 {
@@ -5492,7 +5492,7 @@ namespace DxMessaging.Core
                     cache,
                     emissionId
                 );
-                ref T typedMessage = ref Unsafe.As<TMessage, T>(ref message);
+                ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 int handlersCount = typedHandlers.Count;
                 switch (handlersCount)
                 {

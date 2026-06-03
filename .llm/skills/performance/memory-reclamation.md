@@ -7,7 +7,7 @@ created: "2026-05-04"
 updated: "2026-05-06"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Runtime/Core/MessageBus/MessageBus.cs"
     - path: "Runtime/Core/MessageBus/IMessageBus.cs"
@@ -15,7 +15,7 @@ source:
     - path: "Runtime/Core/Pooling/DxPools.cs"
     - path: "Tests/Runtime/MemoryReclaim/MemoryReclamationTests.cs"
     - path: "Tests/Editor/Contract/MessageBusInvariantTests.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "memory"

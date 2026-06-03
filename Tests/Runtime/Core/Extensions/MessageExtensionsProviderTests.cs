@@ -197,6 +197,89 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
         }
 
         [Test]
+        public void EmitFromWithProviderRoutesToProviderBus()
+        {
+            MessageBus providerBus = new();
+            InstanceId source = new(778);
+
+            MessageHandler handler = new(new InstanceId(503), providerBus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
+            int providerCount = 0;
+            _ = token.RegisterBroadcast(source, (ref TestBroadcastMessage _) => providerCount++);
+            token.Enable();
+
+            MessageHandler globalHandler = new(new InstanceId(504)) { active = true };
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
+                globalHandler,
+                MessageHandler.MessageBus
+            );
+            int globalCount = 0;
+            _ = globalToken.RegisterBroadcast(
+                source,
+                (ref TestBroadcastMessage _) => globalCount++
+            );
+            globalToken.Enable();
+
+            TestBroadcastMessage message = new(24);
+            TestMessageBusProvider provider = new(providerBus);
+            message.EmitFrom(source, messageBusProvider: provider);
+
+            Assert.AreEqual(1, providerCount);
+            Assert.AreEqual(0, globalCount);
+
+            token.Disable();
+            globalToken.Disable();
+        }
+
+        [Test]
+        public void EmitFromPrefersExplicitBusOverProvider()
+        {
+            MessageBus explicitBus = new();
+            MessageBus providerBus = new();
+            InstanceId source = new(779);
+
+            MessageHandler explicitHandler = new(new InstanceId(505), explicitBus)
+            {
+                active = true,
+            };
+            MessageRegistrationToken explicitToken = MessageRegistrationToken.Create(
+                explicitHandler,
+                explicitBus
+            );
+            int explicitCount = 0;
+            _ = explicitToken.RegisterBroadcast(
+                source,
+                (ref TestBroadcastMessage _) => explicitCount++
+            );
+            explicitToken.Enable();
+
+            MessageHandler providerHandler = new(new InstanceId(506), providerBus)
+            {
+                active = true,
+            };
+            MessageRegistrationToken providerToken = MessageRegistrationToken.Create(
+                providerHandler,
+                providerBus
+            );
+            int providerCount = 0;
+            _ = providerToken.RegisterBroadcast(
+                source,
+                (ref TestBroadcastMessage _) => providerCount++
+            );
+            providerToken.Enable();
+
+            TestBroadcastMessage message = new(25);
+            TestMessageBusProvider provider = new(providerBus);
+            message.EmitFrom(source, explicitBus, provider);
+
+            Assert.AreEqual(1, explicitCount);
+            Assert.AreEqual(0, providerCount);
+
+            explicitToken.Disable();
+            providerToken.Disable();
+        }
+
+        [Test]
         public void StringEmitUsesProvidedBus()
         {
             MessageBus providerBus = new();
@@ -224,6 +307,43 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             "provider-route".Emit(target, messageBusProvider: provider);
 
             Assert.AreEqual("provider-route", received);
+            Assert.IsNull(globalReceived);
+
+            token.Disable();
+            globalToken.Disable();
+        }
+
+        [Test]
+        public void StringEmitFromUsesProvidedBus()
+        {
+            MessageBus providerBus = new();
+            InstanceId source = new(1235);
+
+            MessageHandler handler = new(new InstanceId(603), providerBus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
+            string received = null;
+            _ = token.RegisterBroadcast(
+                source,
+                (ref SourcedStringMessage m) => received = m.message
+            );
+            token.Enable();
+
+            MessageHandler globalHandler = new(new InstanceId(604)) { active = true };
+            MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
+                globalHandler,
+                MessageHandler.MessageBus
+            );
+            string globalReceived = null;
+            _ = globalToken.RegisterBroadcast(
+                source,
+                (ref SourcedStringMessage m) => globalReceived = m.message
+            );
+            globalToken.Enable();
+
+            TestMessageBusProvider provider = new(providerBus);
+            "provider-broadcast".EmitFrom(source, messageBusProvider: provider);
+
+            Assert.AreEqual("provider-broadcast", received);
             Assert.IsNull(globalReceived);
 
             token.Disable();

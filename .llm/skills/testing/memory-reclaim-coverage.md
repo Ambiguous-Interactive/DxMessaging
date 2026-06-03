@@ -7,13 +7,13 @@ created: "2026-05-04"
 updated: "2026-05-04"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Tests/Runtime/MemoryReclaim/MemoryReclamationTests.cs"
     - path: "Tests/Runtime/TestUtilities/LeakWatcher.cs"
     - path: "Tests/Editor/Allocations/AllocationMatrixTests.cs"
     - path: "Tests/Editor/Contract/MessageBusInvariantTests.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "testing"

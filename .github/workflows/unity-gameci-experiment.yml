@@ -1,0 +1,234 @@
+name: Unity GameCI Experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      unity-version:
+        description: "Unity version to test through GameCI normal project mode."
+        required: false
+        default: "2022.3.45f1"
+        type: string
+      test-mode:
+        description: "Test mode to run through GameCI normal project mode."
+        required: false
+        default: "editmode"
+        type: choice
+        options:
+          - editmode
+          - playmode
+          - standalone
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  runner-preflight:
+    name: Self-hosted runner access preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+    steps:
+      - name: Probe self-hosted runner availability
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_AUDIT_PAT || secrets.GITHUB_TOKEN }}
+          REQUIRED_LABELS: "self-hosted,Windows,RAM-64GB"
+        run: |
+          set -euo pipefail
+          echo "::group::Runner-access preflight"
+          echo "Required labels: ${REQUIRED_LABELS}"
+          IFS=',' read -r -a required <<< "${REQUIRED_LABELS}"
+          runners_json="$(mktemp)"
+          runners_scope=""
+          if gh api --paginate \
+              "orgs/${GITHUB_REPOSITORY_OWNER}/actions/runners?per_page=100" \
+              2>/dev/null \
+              | jq -s '[.[] | (.runners // [])[]]' > "${runners_json}" 2>/dev/null; then
+            runners_scope="org"
+          else
+            if gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100" \
+                2>/dev/null \
+                | jq -s '[.[] | (.runners // [])[]]' > "${runners_json}" 2>/dev/null; then
+              runners_scope="repo"
+            fi
+          fi
+          if [ -z "${runners_scope}" ]; then
+            echo "::warning::Runner inventory unavailable; soft-passing GameCI experiment preflight."
+            echo "::endgroup::"
+            exit 0
+          fi
+          matched="$(jq --argjson labels "$(printf '%s\n' "${required[@]}" | jq -R . | jq -s .)" '
+            [ .[]
+              | select(.status == "online")
+              | select(($labels | all(. as $l | (.labels // []) | map(.name) | index($l) | type == "number")))
+            ] | length
+          ' < "${runners_json}")"
+          if [ "${matched}" -lt 1 ]; then
+            echo "::error::No online self-hosted runner satisfies ${REQUIRED_LABELS}."
+            exit 1
+          fi
+          echo "::endgroup::"
+
+  game-ci-experiment:
+    name: GameCI ${{ inputs.unity-version }} ${{ inputs.test-mode }}
+    needs: runner-preflight
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    timeout-minutes: 660
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Print runner diagnostics
+        uses: ./.github/actions/print-self-hosted-runner-diagnostics
+        with:
+          matrix-note: "GameCI compatibility experiment (non-required)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
+      - name: Compute test assembly list
+        id: compute
+        uses: ./.github/actions/compute-unity-assemblies
+        with:
+          target: "${{ inputs.test-mode }}"
+          runtime-only: "${{ inputs.test-mode == 'standalone' && 'true' || 'false' }}"
+
+      # Skip provisioning, the ephemeral-project generation, the org lock, and
+      # the GameCI run when the compute step resolved an empty assembly list, so
+      # an empty discovery never takes the paid Unity seat / org lock only to
+      # fail late at verify. Mirrors unity-tests.yml. The list is structurally
+      # non-empty for the supported inputs, so this is defense-in-depth.
+      - name: Provision Unity Editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        timeout-minutes: 180
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}'
+          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $provisioningProfile = if ('${{ inputs.test-mode }}' -eq 'standalone') {
+            'StandaloneWindowsIl2Cpp'
+          } else {
+            'EditorOnly'
+          }
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '${{ inputs.unity-version }}' `
+            -CiManagedOnly `
+            -RequireHealthyExisting `
+            -ProvisioningProfile $provisioningProfile `
+            -DiagnosticsPath $diagnosticsFile
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload Unity provisioning diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unity-game-ci-provisioning-${{ inputs.unity-version }}-${{ inputs.test-mode }}
+          path: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}/provisioning
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Generate ephemeral Unity project
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        shell: pwsh
+        run: |
+          ./scripts/unity/run-ci-tests.ps1 `
+            -UnityVersion '${{ inputs.unity-version }}' `
+            -TestMode '${{ inputs.test-mode }}' `
+            -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
+            -ArtifactsPath '.artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}' `
+            -ProjectPath '.artifacts/unity/game-ci-projects/${{ inputs.unity-version }}-${{ inputs.test-mode }}' `
+            -GenerateOnly
+
+      - name: Validate Unity license secrets
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Acquire organization Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: game-ci-experiment
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+
+      - name: Run GameCI normal project mode
+        id: game_ci
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        timeout-minutes: 120
+        # game-ci reads UNITY_SERIAL/UNITY_EMAIL/UNITY_PASSWORD from env for
+        # classic serial activation (the unityLicensingServer input is retired
+        # now that this repo moved off the floating-license server).
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        uses: game-ci/unity-test-runner@v4
+        with:
+          packageMode: false
+          projectPath: .artifacts/unity/game-ci-projects/${{ inputs.unity-version }}-${{ inputs.test-mode }}
+          unityVersion: ${{ inputs.unity-version }}
+          testMode: ${{ inputs.test-mode }}
+          customParameters: -nographics -assemblyNames "${{ env.DXM_TEST_ASSEMBLIES }}"
+          artifactsPath: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}
+          checkName: GameCI experiment ${{ inputs.unity-version }} ${{ inputs.test-mode }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      # Kept for uniformity with the required workflows and to satisfy the
+      # leak-safety guard (every Unity-native job must carry this if:always()
+      # step). HONEST CAVEAT: this experiment uses game-ci's own editor install,
+      # and run-ci-tests.ps1 ran above only with -GenerateOnly (it exits before
+      # exporting UNITY_EDITOR_PATH), so this composite has no editor path to
+      # resolve and intentionally NO-OPS here (it logs a notice and exits 0).
+      # The serial seat game-ci activated is reclaimed by: (1) game-ci's own
+      # return-license (best-effort; Linux-only/flaky on Windows self-hosted),
+      # and definitively by (2) the next REQUIRED Unity run's return-at-start,
+      # which is account-wide and version-agnostic (Layer 4). This is acceptable
+      # because the experiment is workflow_dispatch-only and continue-on-error.
+      - name: Return Unity license
+        if: always()
+        uses: ./.github/actions/return-unity-license
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Release organization Unity lock
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: game-ci-experiment
+        env:
+          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+
+      - name: Verify tests actually ran
+        if: steps.game_ci.outcome == 'success'
+        uses: ./.github/actions/verify-unity-results
+        with:
+          results-dir: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}
+          label: GameCI experiment ${{ inputs.unity-version }} ${{ inputs.test-mode }}
+          expected-empty: ${{ steps.compute.outputs.is-empty }}
+
+      - name: Upload GameCI experiment artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unity-game-ci-experiment-${{ inputs.unity-version }}-${{ inputs.test-mode }}
+          path: |
+            .artifacts/unity/game-ci/
+            .artifacts/unity/game-ci-projects/
+          if-no-files-found: warn
+          retention-days: 14

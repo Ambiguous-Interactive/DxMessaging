@@ -7,14 +7,14 @@ created: "2026-05-05"
 updated: "2026-05-05"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "scripts/unity/lib/asmdef-discovery.js"
     - path: ".github/workflows-disabled/unity-tests.yml"
     - path: ".github/workflows-disabled/unity-benchmarks.yml"
     - path: "scripts/unity/run-tests.sh"
     - path: ".llm/context.md"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "unity"
@@ -103,7 +103,7 @@ const PERF_NAME_REGEX = /(?:Benchmarks|Allocations)/;
 const COMPARISON_NAME_REGEX = /(?:Comparisons)/;
 ```
 
-Any asmdef under `Tests/` whose `name` field contains `Benchmarks` or `Allocations` is classified as `perf`; `Comparisons` is classified as `comparison` because those suites depend on external comparison packages that are not in the default harness manifest. The perf path assumes `.unity-test-project/Packages/manifest.json` includes `com.unity.test-framework.performance`, because benchmark and allocation asmdefs reference `Unity.PerformanceTesting`. Three things have to be true for the isolation to hold:
+Any asmdef under `Tests/` whose `name` field contains `Benchmarks` or `Allocations` is classified as `perf`; `Comparisons` is classified as `comparison` because those suites depend on external comparison packages that are not in the default harness manifest. The generated CI manifest in `scripts/unity/run-ci-tests.ps1` includes `com.unity.test-framework.performance`, because benchmark and allocation asmdefs reference `Unity.PerformanceTesting`. Three things have to be true for the isolation to hold:
 
 1. Perf assemblies live under `Tests/Editor/Benchmarks`, `Tests/Editor/Allocations`, `Tests/Editor/Comparisons`, or `Tests/Runtime/Benchmarks`.
 1. Their asmdef `name` field contains `Benchmarks`, `Allocations`, or `Comparisons` so classification matches.
@@ -124,8 +124,8 @@ Three callers consume this module:
 
 - `scripts/unity/run-tests.sh` builds its assembly list at startup and passes it to Unity via `-assemblyNames`.
 - `scripts/unity/run-tests.ps1` does the same on Windows.
-- Disabled workflow templates under `.github/workflows-disabled/` still shell out to the same asmdef-discovery module so they can be re-enabled without hand-maintained lists.
-- The disabled `unity-benchmarks.yml` template calls `defaultIncludeAssemblies(process.cwd(), { includePerf: true })` and skips integrations plus external comparisons.
+- The active workflows under `.github/workflows/unity-*.yml` resolve the list through the `.github/actions/compute-unity-assemblies` composite action, which calls the same asmdef-discovery module -- no hand-maintained lists.
+- The active `unity-benchmarks.yml` passes `include-perf: "true"` to that composite (which calls `defaultIncludeAssemblies(process.cwd(), { includePerf: true })`) and skips integrations plus external comparisons. The `.github/workflows-disabled/*` files are the ubuntu reference mirrors of the active self-hosted Windows workflows.
 
 Because every caller goes through the same module, adding a new perf asmdef requires no edits to the workflows or runner scripts.
 
@@ -163,25 +163,27 @@ If the asmdef ends up in the `core` bucket instead, the most common cause is the
 
 ## Where Perf Actually Runs
 
-| Workflow               | Triggers                         | Includes Perf? |
-| ---------------------- | -------------------------------- | -------------- |
-| `unity-tests.yml`      | Moved out of `.github/workflows` | NO             |
-| `unity-il2cpp.yml`     | Moved out of `.github/workflows` | NO             |
-| `unity-benchmarks.yml` | Moved out of `.github/workflows` | YES            |
+| Workflow               | Triggers                        | Includes Perf? |
+| ---------------------- | ------------------------------- | -------------- |
+| `unity-tests.yml`      | PR / push / schedule / dispatch | NO             |
+| `unity-benchmarks.yml` | schedule / dispatch             | YES            |
 
-Unity game-ci jobs are temporarily disabled in GitHub by moving them to
-`.github/workflows-disabled/` and kept local-only via `scripts/unity/run-tests.sh`.
-Verify any time you edit the workflow templates:
+The active `.github/workflows/unity-*.yml` workflows run Unity directly on
+self-hosted Windows runners through `scripts/unity/run-ci-tests.ps1` (benchmarks
+included). The `.github/workflows-disabled/*` files are the ubuntu reference
+mirrors kept for parity, not the live templates. Note: IL2CPP is now the
+`standalone` entry in the `unity-tests.yml` `test-mode` matrix; the direct runner
+maps it to `StandaloneWindows64` and configures IL2CPP in the generated project.
+Verify the active workflows still exist any time you edit them:
 
 ```bash
-test ! -e .github/workflows/unity-tests.yml
-test ! -e .github/workflows/unity-il2cpp.yml
-test ! -e .github/workflows/unity-benchmarks.yml
+test -e .github/workflows/unity-tests.yml
+test -e .github/workflows/unity-benchmarks.yml
 ```
 
 ## Comparison Suites
 
-Comparison asmdefs live under `Tests/Editor/Comparisons/` and benchmark against external libraries such as MessagePipe, UniRx, UniTask, and Zenject. They are excluded from `--include-perf` because the default `.unity-test-project/Packages/manifest.json` does not install those packages. To run them locally, add the external packages to the harness manifest and pass:
+Comparison asmdefs live under `Tests/Editor/Comparisons/` and benchmark against external libraries such as MessagePipe, UniRx, UniTask, and Zenject. They are excluded from `--include-perf` because the default generated manifest does not install those packages. To run them locally, add the external packages to the generated manifest or a local harness manifest and pass:
 
 ```bash
 bash scripts/unity/run-tests.sh --platform editmode --include-comparisons
@@ -195,7 +197,7 @@ The runner should print `comparisons=true` and include the comparison asmdef in 
 
 - Every asmdef matching the perf regex is classified as `perf`.
 - Every asmdef NOT matching the perf or integration regex is classified as `core` and appears in `defaultIncludeAssemblies(repo)`.
-- Disabled `unity-tests.yml` and `unity-il2cpp.yml` templates resolve their assembly lists via `defaultIncludeAssemblies` rather than hand-rolled YAML.
+- The disabled `unity-tests.yml` template resolves its assembly list via `defaultIncludeAssemblies` rather than hand-rolled YAML.
 - Disabled `unity-benchmarks.yml` template opts into perf via `{ includePerf: true }`.
 
 The test catches the silent regression "I added a new perf asmdef and forgot to update the exclusion list" because the exclusion list is computed, not hand-maintained.
@@ -211,4 +213,6 @@ The test catches the silent regression "I added a new perf asmdef and forgot to 
 
 - Source: `scripts/unity/lib/asmdef-discovery.js`
 - Source-of-truth: `.llm/context.md`
-- Workflow templates: `.github/workflows-disabled/unity-tests.yml`, `.github/workflows-disabled/unity-benchmarks.yml`
+- Active workflows: `.github/workflows/unity-tests.yml`, `.github/workflows/unity-benchmarks.yml` (direct Unity on self-hosted Windows)
+- Shared composite: `.github/actions/compute-unity-assemblies/action.yml`
+- Ubuntu reference mirrors: `.github/workflows-disabled/unity-tests.yml`, `.github/workflows-disabled/unity-benchmarks.yml`

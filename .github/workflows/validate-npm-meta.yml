@@ -1,3 +1,4 @@
+# cspell:words lscache
 name: NPM Package Validation
 
 on:
@@ -100,7 +101,7 @@ jobs:
         # produced tarball for any build artifact paths. The dry-run validator above
         # already enforces this, but a real pack on each runner OS catches platform
         # drift (e.g. case sensitivity, path separators, glob expansion differences).
-        # See https://github.com/wallstop/DxMessaging/issues/204 for the original
+        # See https://github.com/Ambiguous-Interactive/DxMessaging/issues/204 for the original
         # GuidDB::CreateMetaFileMappings regression that motivated this guard.
         #
         # IMPORTANT: keep the grep alternation below in sync with `buildArtifactPatterns`
@@ -112,7 +113,7 @@ jobs:
           npm pack
           tarball="$(find . -maxdepth 1 -type f -name '*.tgz' -print | sort | head -n1)"
           echo "Inspecting tarball: ${tarball}"
-          leaks="$(tar -tzf "${tarball}" | grep -E '(^|/)(bin|obj)/|\.pdb$|\.tmp$|\.csproj\.user$|(^|/)\.vs/|(^|/)\.idea/|\.suo$|\.DotSettings\.user$|\.user$' || true)"
+          leaks="$(tar -tzf "${tarball}" | grep -E '(^|/)(bin|obj)/|\.pdb$|\.tmp$|\.csproj\.user$|(^|/)\.vs/|(^|/)\.idea/|\.suo$|\.DotSettings\.user$|\.lscache(\.meta)?$|\.user$' || true)"
           if [ -n "${leaks}" ]; then
             echo "::error::npm pack tarball contains forbidden build artifact paths (issue 204 regression):"
             echo "${leaks}"

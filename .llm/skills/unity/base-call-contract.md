@@ -7,13 +7,13 @@ created: "2026-05-02"
 updated: "2026-05-03"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Runtime/Unity/MessageAwareComponent.cs"
     - path: "SourceGenerators/WallstopStudios.DxMessaging.Analyzer/Analyzers/MessageAwareComponentBaseCallAnalyzer.cs"
     - path: "Editor/Analyzers/BaseCallTypeScannerCore.cs"
     - path: "Editor/CustomEditors/MessageAwareComponentInspectorOverlay.cs"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "unity"

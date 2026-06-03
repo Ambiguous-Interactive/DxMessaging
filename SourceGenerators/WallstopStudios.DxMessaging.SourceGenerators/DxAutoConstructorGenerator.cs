@@ -13,8 +13,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
     using Microsoft.CodeAnalysis.CSharp.Syntax;
     using Microsoft.CodeAnalysis.Text;
 
-    [Generator(LanguageNames.CSharp)]
-    public sealed class DxAutoConstructorGenerator : IIncrementalGenerator
+    [Generator]
+    public sealed class DxAutoConstructorGenerator : ISourceGenerator
     {
         private static readonly DiagnosticDescriptor NonPartialContainerDiagnostic = new(
             id: "DXMSG003",
@@ -57,46 +57,34 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         );
 
         /// <summary>
-        /// Configures the incremental generator pipeline that discovers annotated types and emits constructors.
+        /// Configures syntax collection for annotated types that need generated constructors.
         /// </summary>
         /// <param name="context">Initialization context provided by Roslyn.</param>
-        public void Initialize(IncrementalGeneratorInitializationContext context)
+        public void Initialize(GeneratorInitializationContext context)
         {
-            // Find all class/struct/record declarations that have attribute lists
-            IncrementalValuesProvider<TypeDeclarationSyntax> potentialTypeDeclarations =
-                context.SyntaxProvider.CreateSyntaxProvider(
-                    predicate: static (node, _) => IsSyntaxTargetForGeneration(node),
-                    transform: static (ctx, _) => (TypeDeclarationSyntax)ctx.Node
-                );
+            context.RegisterForSyntaxNotifications(static () => new TypeSyntaxReceiver());
+        }
 
-            // Get semantic info for potential types
-            IncrementalValuesProvider<TypeToGenerateInfo?> semanticTargets =
-                potentialTypeDeclarations
-                    .Combine(context.CompilationProvider)
-                    .Select(
-                        static (data, ct) =>
-                            GetSemanticTargetForGeneration(data.Left, data.Right, ct)
-                    );
+        public void Execute(GeneratorExecutionContext context)
+        {
+            if (context.SyntaxReceiver is not TypeSyntaxReceiver receiver)
+            {
+                return;
+            }
 
-            // Filter out nulls (types that aren't valid for auto-gen constructor)
-            IncrementalValuesProvider<TypeToGenerateInfo> validSemanticTargets = semanticTargets
+            ImmutableArray<TypeToGenerateInfo> typesToGenerate = receiver
+                .Candidates.Select(typeDeclarationSyntax =>
+                    GetSemanticTargetForGeneration(
+                        typeDeclarationSyntax,
+                        context.Compilation,
+                        context.CancellationToken
+                    )
+                )
                 .Where(static target => target.HasValue)
-                .Select(static (target, _) => target!.Value);
+                .Select(static target => target!.Value)
+                .ToImmutableArray();
 
-            // Collect all valid types for generation
-            IncrementalValueProvider<ImmutableArray<TypeToGenerateInfo>> collectedTargets =
-                validSemanticTargets.Collect();
-
-            IncrementalValueProvider<(
-                Compilation,
-                ImmutableArray<TypeToGenerateInfo>
-            )> compilationAndTypes = context.CompilationProvider.Combine(collectedTargets);
-
-            // Register the source output step
-            context.RegisterSourceOutput(
-                compilationAndTypes,
-                static (spc, source) => Execute(source.Item1, source.Item2, spc)
-            );
+            Execute(typesToGenerate, context);
         }
 
         private static bool IsSyntaxTargetForGeneration(SyntaxNode node) =>
@@ -105,7 +93,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 typeDecl.IsKind(SyntaxKind.ClassDeclaration)
                 || typeDecl.IsKind(SyntaxKind.StructDeclaration)
                 || typeDecl.IsKind(SyntaxKind.RecordDeclaration)
-                || typeDecl.IsKind(SyntaxKind.RecordStructDeclaration)
+                || string.Equals(
+                    typeDecl.Kind().ToString(),
+                    "RecordStructDeclaration",
+                    StringComparison.Ordinal
+                )
             );
 
         private static TypeToGenerateInfo? GetSemanticTargetForGeneration(
@@ -163,9 +155,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static void Execute(
-            Compilation compilation,
             ImmutableArray<TypeToGenerateInfo> typesToGenerate,
-            SourceProductionContext context
+            GeneratorExecutionContext context
         )
         {
             if (typesToGenerate.IsDefaultOrEmpty)
@@ -235,7 +226,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
 
                 // Generate the partial class/struct with the constructor
-                string generatedSource = GenerateConstructorSource(compilation, typeInfo, context);
+                string generatedSource = GenerateConstructorSource(
+                    context.Compilation,
+                    typeInfo,
+                    context
+                );
                 string hintName =
                     $"{typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.AutoGenConstructor.g.cs"
                         .Replace("global::", "")
@@ -250,7 +245,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         private static string GenerateConstructorSource(
             Compilation compilation,
             TypeToGenerateInfo typeInfo,
-            SourceProductionContext spc
+            GeneratorExecutionContext spc
         )
         {
             INamedTypeSymbol typeSymbol = typeInfo.TypeSymbol;
@@ -290,10 +285,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     _ => "internal",
                 };
 
+                bool containerIsRecord = IsRecordDeclaration(container);
                 string containerKind = container.TypeKind switch
                 {
-                    TypeKind.Class => container.IsRecord ? "record class" : "class",
-                    TypeKind.Struct => container.IsRecord ? "record struct" : "struct",
+                    TypeKind.Class => containerIsRecord ? "record class" : "class",
+                    TypeKind.Struct => containerIsRecord ? "record struct" : "struct",
                     _ => "class",
                 };
 
@@ -323,10 +319,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         + ">"
                     : string.Empty;
             string typeName = typeSymbol.Name + typeGenericParams;
+            bool typeIsRecord = IsRecordDeclaration(typeSymbol);
             string typeKind = typeSymbol.TypeKind switch
             {
-                TypeKind.Class => typeSymbol.IsRecord ? "record class" : "class",
-                TypeKind.Struct => typeSymbol.IsRecord ? "record struct" : "struct",
+                TypeKind.Class => typeIsRecord ? "record class" : "class",
+                TypeKind.Struct => typeIsRecord ? "record struct" : "struct",
                 _ => throw new InvalidOperationException(
                     "Unsupported type kind for constructor generation"
                 ),
@@ -524,25 +521,30 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 containersClose.Append(currentIndent).AppendLine("}");
             }
 
-            return $$"""
-                // <auto-generated by DxAutoGenConstructorGenerator/>
-                #pragma warning disable
-                #nullable enable annotations
-
-                {{namespaceBlockOpen}}
-                {{containersOpen}}{{innerIndent}}{{typeAccessibility}} partial {{typeKind}} {{typeName}}
-                {{innerIndent}}{
-                {{Indent}}    /// <summary>
-                {{Indent}}    /// Auto-generated constructor by DxAutoGenConstructorGenerator.
-                {{Indent}}    /// </summary>
-                {{innerIndent}}    {{constructorAccessibility}} {{typeSymbol.Name}}({{constructorParams}})
-                {{innerIndent}}    {
-                {{constructorBody}}
-                {{innerIndent}}    }
-                {{innerIndent}}}
-                {{containersClose}}
-                {{namespaceBlockClose}}
-                """;
+            return string.Join(
+                "\r\n",
+                new[]
+                {
+                    "// <auto-generated by DxAutoGenConstructorGenerator/>",
+                    "#pragma warning disable",
+                    "#nullable enable annotations",
+                    string.Empty,
+                    namespaceBlockOpen,
+                    $"{containersOpen}{innerIndent}{typeAccessibility} partial {typeKind} {typeName}",
+                    $"{innerIndent}{{",
+                    $"{Indent}    /// <summary>",
+                    $"{Indent}    /// Auto-generated constructor by DxAutoGenConstructorGenerator.",
+                    $"{Indent}    /// </summary>",
+                    $"{innerIndent}    {constructorAccessibility} {typeSymbol.Name}({constructorParams})",
+                    $"{innerIndent}    {{",
+                    $"{constructorBody}",
+                    $"{innerIndent}    }}",
+                    $"{innerIndent}}}",
+                    $"{containersClose}",
+                    namespaceBlockClose,
+                    string.Empty,
+                }
+            );
         }
 
         private static string FormatLiteral(object value, ITypeSymbol type)
@@ -651,6 +653,23 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
         }
 
+        private static bool IsRecordDeclaration(INamedTypeSymbol symbol)
+        {
+            foreach (SyntaxReference syntaxReference in symbol.DeclaringSyntaxReferences)
+            {
+                if (syntaxReference.GetSyntax() is TypeDeclarationSyntax declaration)
+                {
+                    string kind = declaration.Kind().ToString();
+                    if (kind.IndexOf("Record", StringComparison.Ordinal) >= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         private static List<INamedTypeSymbol> GetNonPartialContainers(INamedTypeSymbol typeSymbol)
         {
             List<INamedTypeSymbol> result = new();
@@ -693,6 +712,20 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
 
             return true;
+        }
+
+        private sealed class TypeSyntaxReceiver : ISyntaxReceiver
+        {
+            public List<TypeDeclarationSyntax> Candidates { get; } =
+                new List<TypeDeclarationSyntax>();
+
+            public void OnVisitSyntaxNode(SyntaxNode syntaxNode)
+            {
+                if (IsSyntaxTargetForGeneration(syntaxNode))
+                {
+                    Candidates.Add((TypeDeclarationSyntax)syntaxNode);
+                }
+            }
         }
     }
 }

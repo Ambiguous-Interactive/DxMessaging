@@ -4,6 +4,7 @@ namespace DxMessaging.Core.MessageBus.Internal
     using System.Diagnostics;
     using System.Runtime.CompilerServices;
     using DxMessaging.Core;
+    using DxMessaging.Core.Internal;
     using DxMessaging.Core.Pooling;
 
     /// <summary>
@@ -277,7 +278,7 @@ namespace DxMessaging.Core.MessageBus.Internal
     /// <c>Dictionary&lt;InstanceId, object&gt;</c> -- generic-erased to share a
     /// single pool across every message-type instantiation. Each value is a
     /// <see cref="BusSinkSlot"/>, accessed via
-    /// <see cref="Unsafe.As{T}(object)"/>; the class is sealed and only inserted
+    /// <see cref="DxUnsafe.As{T}(object)"/>; the class is sealed and only inserted
     /// from this type's own methods, so the cast cannot encounter a foreign
     /// runtime type. <c>DEBUG</c> builds verify the invariant at every
     /// cast site.
@@ -378,7 +379,7 @@ namespace DxMessaging.Core.MessageBus.Internal
                 return false;
             }
             DebugAssertSlot(boxed);
-            slot = Unsafe.As<BusSinkSlot>(boxed);
+            slot = DxUnsafe.As<BusSinkSlot>(boxed);
             return true;
         }
 
@@ -403,7 +404,7 @@ namespace DxMessaging.Core.MessageBus.Internal
             if (map.TryGetValue(context, out object boxed))
             {
                 DebugAssertSlot(boxed);
-                return Unsafe.As<BusSinkSlot>(boxed);
+                return DxUnsafe.As<BusSinkSlot>(boxed);
             }
             BusSinkSlot slot = new BusSinkSlot();
             map[context] = slot;
@@ -463,7 +464,7 @@ namespace DxMessaging.Core.MessageBus.Internal
                         continue;
                     }
                     DebugAssertSlot(boxed);
-                    Unsafe.As<BusSinkSlot>(boxed).Clear();
+                    DxUnsafe.As<BusSinkSlot>(boxed).Clear();
                 }
                 map.Clear();
             }
@@ -494,7 +495,7 @@ namespace DxMessaging.Core.MessageBus.Internal
                         continue;
                     }
                     DebugAssertSlot(boxed);
-                    Unsafe.As<BusSinkSlot>(boxed).Reset();
+                    DxUnsafe.As<BusSinkSlot>(boxed).Reset();
                 }
                 // Pool's onRecycled callback clears the dictionary before re-use.
                 DxPools.InstanceIdDicts.Return(map);
@@ -513,7 +514,7 @@ namespace DxMessaging.Core.MessageBus.Internal
             Debug.Assert(
                 boxed is BusSinkSlot,
                 "BusContextSlot.byContext must only contain BusSinkSlot values; "
-                    + "Unsafe.As<BusSinkSlot> would otherwise produce undefined behavior."
+                    + "DxUnsafe.As<BusSinkSlot> would otherwise produce undefined behavior."
             );
         }
     }

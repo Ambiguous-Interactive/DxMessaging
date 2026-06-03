@@ -2,16 +2,16 @@
 title: "Cross-Platform Script Compatibility"
 id: "cross-platform-compatibility"
 category: "scripting"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-01-28"
-updated: "2026-01-28"
+updated: "2026-05-30"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "scripts/"
     - path: ".github/workflows/"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "cross-platform"
@@ -195,6 +195,76 @@ wsl pwsh -File scripts/sync-banner-version.ps1
 # (requires disk utility to create APFS case-sensitive volume)
 ```
 
+## Stub executables on Windows: PE-binary requirement
+
+Linux and macOS execute scripts with a shebang via kernel `execve` dispatch
+regardless of file extension: a file named `Unity.exe` whose contents are
+`#!/usr/bin/env sh\n...` runs as a shell script when chmod-executable. Windows
+`CreateProcess()` does NOT honor shebangs and instead requires:
+
+- `.exe` / `.com` files to be valid PE binaries
+- `.bat` / `.cmd` files to be batch text
+- Anything else to be routed through an interpreter explicitly
+
+Spawning a shebang-bodied `Unity.exe` on Windows fails with
+_"The specified executable is not a valid application for this OS platform"_,
+and the surrounding script aborts. The class of failure is invisible on
+Linux/macOS CI and only surfaces on Windows runners.
+
+Two acceptable patterns in tests that need a fake Unity binary:
+
+1. **Bypass the native startup probe** by setting
+   `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE=1` in the spawn env. This is the
+   preferred path when only the surrounding `ensure-editor.ps1` logic is under
+   test (module install/repair/quarantine/host-env hermeticity). The early-
+   return gate lives in `Ensure-UnityNativeStartupHealthy` in
+   `scripts/unity/ensure-editor.ps1`.
+1. **Use a real PE-shaped stub**: on Windows write a `.cmd` companion file and
+   reroute through it instead of writing a shebang `.exe`. See the
+   `unity.cmd` pattern in
+   `scripts/__tests__/unity-ensure-editor-il2cpp-idempotency.test.js`
+   (around the `makeFakeUnityCli` helper).
+
+The static guard `scripts/__tests__/unity-native-startup-probe-isolation.test.js`
+pins both halves of the contract (production gate + test-harness opt-in) and
+fans out to scan every other test under `scripts/__tests__/` that drives
+`ensure-editor.ps1` with a fake `Unity.exe`. Any such test must reference
+`DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE` or carry the comment escape hatch
+`// @allow-unity-native-probe`.
+
+Production CI never sets `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE`; the probe and
+auto-repair behavior in `Ensure-UnityNativeStartupHealthy` is unchanged for real
+Unity editors.
+
+## Host DLL state in PowerShell tests
+
+Tests for Windows loader diagnostics must not infer missing DLLs from
+`DXM_UNITY_FAKE_IMPORTS` alone. That override supplies a fake Unity import list,
+but `Test-UnityImportResolution` still resolves those names against the native
+host: on Windows, `KERNEL32.dll` can resolve through KnownDLLs and
+`VCRUNTIME140.dll` / `MSVCP140.dll` can resolve from System32 when the Visual C++
+Redistributable is installed.
+
+When a test needs the `MISSING DLL(s):` annotation branch, force the missing
+bucket with `DXM_UNITY_FAKE_MISSING_IMPORTS` or use synthetic DLL names that
+cannot resolve on any supported host. Reserve `DXM_UNITY_FAKE_IMPORTS` alone for
+tests that are explicitly about the import-list or all-imports-resolve branches.
+
+## Cross-drive path containment (Windows)
+
+`path.relative(dir, file)` does NOT always return a `..`-prefixed path. On
+DIFFERENT Windows drives -- the common hook case (repo on `D:\`, `os.tmpdir()` on
+`C:\`) -- it returns the ABSOLUTE target (`C:\Users\...`), so `rel.startsWith("..")`
+is `false` for a genuinely-outside path (mislabeled INSIDE), and its negation is
+wrong for "inside" too (UNC and 8.3-short-name paths also break a raw compare).
+Never hand-roll it -- use `isPathInsideDirectory` / `isPathOutsideDirectory` /
+`isOutsideRelative` from `scripts/lib/path-classifier.js`, which add the
+`path.isAbsolute` branch plus symlink-resolve + case-fold on Windows
+(`isOutsideRelative(rel)` is `""`->false, else `..` / `..`+sep / absolute). If you
+truly cannot use the helper, pair with `path.isAbsolute(rel)` (idiom
+`!rel.startsWith("..") && !path.isAbsolute(rel)`). Enforced by
+`scripts/__tests__/path-containment-policy.test.js` (CATEGORY A).
+
 ## Validation Checklist
 
 Before merging scripts:
@@ -216,9 +286,12 @@ Before merging scripts:
 - [Shell Best Practices](./shell-best-practices.md) - Shell-specific case sensitivity patterns
 - [PowerShell Best Practices](./powershell-best-practices.md) - PowerShell scripting patterns
 - [Test Coverage Requirements](../testing/comprehensive-test-coverage.md) - General test coverage requirements
+- [Jest Hook Robustness](./jest-hook-robustness.md)
+- [Let Tools Resolve Modules](./let-tools-resolve-modules.md)
 
 ## Changelog
 
-| Version | Date       | Changes                               |
-| ------- | ---------- | ------------------------------------- |
-| 1.0.0   | 2026-01-28 | Initial version from PR #144 feedback |
+| Version | Date       | Changes                                                          |
+| ------- | ---------- | ---------------------------------------------------------------- |
+| 1.1.0   | 2026-05-30 | Add cross-drive path containment section (Windows `os.tmpdir()`) |
+| 1.0.0   | 2026-01-28 | Initial version from PR #144 feedback                            |

@@ -13,6 +13,7 @@ on:
       - ".github/**"
       - ".llm/**"
       - ".cspell.json"
+      - ".gitignore"
   push:
     branches:
       - main
@@ -28,6 +29,7 @@ on:
       - ".github/**"
       - ".llm/**"
       - ".cspell.json"
+      - ".gitignore"
   workflow_dispatch:
 
 concurrency:
@@ -56,4 +58,5 @@ jobs:
           cache-dependency-path: package.json
 
       - name: Run cspell
-        run: npx --yes cspell@10.0.0 --no-progress --no-summary .
+        # Keep the summary line on failures so CI logs show files-scanned vs. issues count.
+        run: npx --yes cspell@10.0.0 --no-progress .

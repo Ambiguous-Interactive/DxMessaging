@@ -199,7 +199,10 @@ function normalizeLineEndings(content) {
  * @returns {string}
  */
 function toPosixPath(value) {
-  return String(value || "").split(path.sep).join("/").replace(/\\/g, "/");
+  return String(value || "")
+    .split(path.sep)
+    .join("/")
+    .replace(/\\/g, "/");
 }
 
 /**
@@ -267,8 +270,7 @@ function maskCodeFences(content) {
     } else {
       // Inside a fence. The fence closes on a line consisting only of the
       // same fence character (3 or more), optionally indented.
-      const closingRegex =
-        openFence === "`" ? /^\s*`{3,}\s*$/ : /^\s*~{3,}\s*$/;
+      const closingRegex = openFence === "`" ? /^\s*`{3,}\s*$/ : /^\s*~{3,}\s*$/;
       if (closingRegex.test(lines[i])) {
         inFence = false;
         openFence = null;
@@ -349,7 +351,7 @@ function scanContent(relativePath, content) {
 
   // Sort by (line, column) so the output is deterministic regardless of the
   // order patterns are evaluated.
-  violations.sort((a, b) => (a.line - b.line) || (a.column - b.column));
+  violations.sort((a, b) => a.line - b.line || a.column - b.column);
   return violations;
 }
 
@@ -435,8 +437,7 @@ function filterInScopeFiles(trackedFiles) {
  */
 function run(options = {}) {
   const cwd = options.cwd || REPO_ROOT;
-  const readFile =
-    options.readFile || ((file) => fs.readFileSync(path.join(cwd, file), "utf8"));
+  const readFile = options.readFile || ((file) => fs.readFileSync(path.join(cwd, file), "utf8"));
 
   const list = listTrackedFiles({ cwd, spawn: options.spawn });
   if (!list.ok) {

@@ -7,9 +7,11 @@
 # in .devcontainer/devcontainer.json) and streams Unity's log to stdout in
 # realtime.
 #
-# This is the canonical local entry point. CI (Phase 3) invokes
-# game-ci/unity-test-runner@v4 directly; in CI mode this script prints the
-# equivalent parameters and exits 0 instead of spawning docker locally.
+# This is the canonical LOCAL entry point (devcontainer / local docker) for the
+# headless Unity test flow. CI no longer calls this script: the GitHub workflows
+# run Unity via the maintained game-ci actions directly (see
+# .github/workflows/unity-*.yml). Locally, the run FAILS if zero tests run
+# (results.xml is validated, total>0 required).
 #
 # Default behavior excludes Benchmarks/Allocations/Comparisons assemblies per
 # .llm/context.md line 114 (perf isolation). Use --include-perf to override.
@@ -94,18 +96,22 @@ Options:
   --help                     Show this help and exit 0
 
 Environment:
-  UNITY_LICENSE              Raw Unity .ulf contents. This is the same shape
-                             expected by game-ci/unity-test-runner@v4.
+  UNITY_SERIAL               Preferred. Paid Unity serial for Professional
+                             activation. Requires UNITY_EMAIL + UNITY_PASSWORD.
+                             When set, the editor is activated with -serial
+                             -username -password and the license is RETURNED on
+                             exit (the EXIT trap runs -returnlicense) so a local
+                             run never leaks the seat. Treated as a secret; never
+                             printed.
+  UNITY_EMAIL, UNITY_PASSWORD  Unity account credentials. Required with
+                             UNITY_SERIAL (and to return the seat afterwards).
+  UNITY_LICENSE              Raw Unity .ulf contents (fallback). This is the same
+                             shape expected by game-ci/unity-test-runner@v4.
   UNITY_LICENSE_B64          Base64-encoded Unity .ulf contents for local shell
                              profiles that cannot hold multiline secrets.
-  UNITY_SERIAL               Paid Unity serial for Professional activation.
-                             Requires UNITY_EMAIL + UNITY_PASSWORD.
-  UNITY_EMAIL, UNITY_PASSWORD  Unity account credentials. Required with
-                             UNITY_SERIAL and commonly required by GameCI when
-                             reactivating a UNITY_LICENSE .ulf.
-  CI                         When "true", prints the equivalent
-                             game-ci/unity-test-runner@v4 parameters and exits
-                             without invoking docker locally.
+  CI                         When "true", emits GitHub Actions ::error::
+                             annotations on failure; the docker run still
+                             executes normally.
   LOCAL_WORKSPACE_FOLDER     HOST path to the repo root. Set automatically by
                              the VS Code Dev Containers extension when
                              docker-outside-of-docker is configured.
@@ -226,43 +232,32 @@ build_assembly_list() {
     local include_perf="$1"
     local include_integrations="$2"
     local include_comparisons="$3"
+    local target="$4"
+    local runtime_only="$5"
     local node_script
 
     # Pass the include options through to defaultIncludeAssemblies so the
     # opt-in semantics defined in scripts/unity/lib/asmdef-discovery.js are
-    # the single source of truth.
-    local opts="{ includePerf: ${include_perf}, includeIntegrations: ${include_integrations}, includeComparisons: ${include_comparisons} }"
+    # the single source of truth. target keeps EditMode, PlayMode, and
+    # standalone assembly compatibility aligned with CI.
+    local opts="{ includePerf: ${include_perf}, includeIntegrations: ${include_integrations}, includeComparisons: ${include_comparisons}, target: '${target}', runtimeOnly: ${runtime_only} }"
     node_script="const m=require('./scripts/unity/lib/asmdef-discovery.js');"
     node_script+="console.log(m.defaultIncludeAssemblies(process.cwd(), ${opts}).join(';'));"
 
     (cd "${REPO_ROOT}" && node -e "${node_script}")
 }
 
-ASSEMBLIES="$(build_assembly_list "${INCLUDE_PERF}" "${INCLUDE_INTEGRATIONS}" "${INCLUDE_COMPARISONS}")"
+# standalone runs the IL2CPP player, so it must use runtime-only assemblies.
+RUNTIME_ONLY="false"
+if [[ "${PLATFORM}" == "standalone" ]]; then
+    RUNTIME_ONLY="true"
+fi
+
+ASSEMBLIES="$(build_assembly_list "${INCLUDE_PERF}" "${INCLUDE_INTEGRATIONS}" "${INCLUDE_COMPARISONS}" "${PLATFORM}" "${RUNTIME_ONLY}")"
 if [[ -z "${ASSEMBLIES}" ]]; then
     printf '%sError: assembly include list is empty (asmdef discovery failed).%s\n' \
         "${C_RED}" "${C_NC}" >&2
     exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# CI mode short-circuit
-# ---------------------------------------------------------------------------
-if [[ "${CI:-false}" == "true" ]]; then
-    printf '%sCI mode detected — skipping local docker invocation.%s\n' \
-        "${C_BLUE}" "${C_NC}"
-    printf 'game-ci/unity-test-runner@v4 parameters:\n'
-    printf '  projectPath:      .unity-test-project\n'
-    printf '  unityVersion:     %s\n' "${UNITY_VERSION_RESOLVED}"
-    printf '  testMode:         %s\n' "${PLATFORM}"
-    assemblies_ci_q="$(printf '%q' "${ASSEMBLIES}")"
-    printf '  customParameters: -nographics -assemblyNames %s' "${assemblies_ci_q}"
-    if [[ -n "${TEST_FILTER}" ]]; then
-        filter_ci_q="$(printf '%q' "${TEST_FILTER}")"
-        printf ' -testFilter %s' "${filter_ci_q}"
-    fi
-    printf '\n'
-    exit 0
 fi
 
 # ---------------------------------------------------------------------------
@@ -299,12 +294,19 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
-# License activation: auto-detect ULF vs paid serial vs failure.
-# Current Unity/GameCI behavior does not support email/password-only Personal
-# headless activation in docker. Personal users need a .ulf in UNITY_LICENSE
-# (raw) or UNITY_LICENSE_B64 (local convenience). Paid users may use
-# UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD.
-if [[ -z "${UNITY_LICENSE:-}" ]] && [[ -z "${UNITY_LICENSE_B64:-}" ]]; then
+# ---------------------------------------------------------------------------
+# License activation: auto-detect paid serial vs ULF vs failure.
+# Serial is the PREFERRED path (UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD ->
+# -serial -username -password on the editor; the seat is RETURNED on exit, see
+# the trap below, so a local run never leaks it). Current Unity/GameCI behavior
+# does not support email/password-only Personal headless activation in docker,
+# so Personal users fall back to a .ulf in UNITY_LICENSE (raw) or
+# UNITY_LICENSE_B64 (local convenience).
+# ---------------------------------------------------------------------------
+# Only auto-load a local .ulf when neither a serial NOR an explicit .ulf is set:
+# a present serial is the preferred path and must not be shadowed by a stray
+# local .ulf on disk.
+if [[ -z "${UNITY_SERIAL:-}" ]] && [[ -z "${UNITY_LICENSE:-}" ]] && [[ -z "${UNITY_LICENSE_B64:-}" ]]; then
     UNITY_LICENSE_CANDIDATES=()
     if [[ -n "${UNITY_LICENSE_FILE:-}" ]]; then
         UNITY_LICENSE_CANDIDATES+=("${UNITY_LICENSE_FILE}")
@@ -330,18 +332,21 @@ if [[ -z "${UNITY_LICENSE:-}" ]] && [[ -z "${UNITY_LICENSE_B64:-}" ]]; then
 fi
 
 LICENSE_MODE=""
-if [[ -n "${UNITY_LICENSE:-}" ]]; then
+if [[ -n "${UNITY_SERIAL:-}" ]] && [[ -n "${UNITY_EMAIL:-}" ]] && [[ -n "${UNITY_PASSWORD:-}" ]]; then
+    LICENSE_MODE="serial"
+elif [[ -n "${UNITY_LICENSE:-}" ]]; then
     LICENSE_MODE="ulf"
 elif [[ -n "${UNITY_LICENSE_B64:-}" ]]; then
     LICENSE_MODE="ulf-b64"
-elif [[ -n "${UNITY_SERIAL:-}" ]] && [[ -n "${UNITY_EMAIL:-}" ]] && [[ -n "${UNITY_PASSWORD:-}" ]]; then
-    LICENSE_MODE="serial"
 else
     printf '%sError: No Unity license configured.%s\n' "${C_RED}" "${C_NC}" >&2
+    # Serial-first ordering: serial is the preferred/primary path, the .ulf vars
+    # are the fallback. Keep this list in the SAME order as the --help text and the
+    # PowerShell mirror so the recommended path is always shown first.
     printf 'Set EITHER:\n' >&2
+    printf '  UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD   (preferred paid serial activation)\n' >&2
     printf '  UNITY_LICENSE       (raw .ulf contents; GameCI-compatible)\n' >&2
     printf '  UNITY_LICENSE_B64   (base64 .ulf contents; local shell convenience)\n' >&2
-    printf '  UNITY_SERIAL + UNITY_EMAIL + UNITY_PASSWORD   (paid serial activation)\n' >&2
     printf '\nUNITY_EMAIL + UNITY_PASSWORD alone is not a supported headless container license path.\n' >&2
     printf "Run 'bash scripts/unity/activate-license.sh --check' for diagnostics.\n" >&2
     exit 2
@@ -420,23 +425,38 @@ USER_UID_VAL="$(id -u)"
 USER_GID_VAL="$(id -g)"
 
 # ---------------------------------------------------------------------------
-# Build inner Unity commands (editmode/playmode share one; standalone needs
-# two passes — build, then launch).
+# Build inner Unity command. editmode, playmode, AND standalone all run through
+# a single editor invocation: `Unity -runTests -testPlatform <platform>`.
+# standalone maps to StandaloneLinux64, which builds AND runs the IL2CPP player
+# natively in one pass (IL2CPP backend from ProjectSettings).
 # ---------------------------------------------------------------------------
 
-# Container-side path (relative to .unity-test-project/) for the IL2CPP
-# binary. Kept in sync with TestRunnerBuilder.cs DefaultBuildPathRelative.
-STANDALONE_BUILD_REL="Builds/IL2CPPTests/Tests.x86_64"
-STANDALONE_BUILD_HOST="${REPO_ROOT}/.unity-test-project/${STANDALONE_BUILD_REL}"
-STANDALONE_BUILD_CONTAINER="/workspace/.unity-test-project/${STANDALONE_BUILD_REL}"
-
 build_editor_cmd_inner() {
-    # Editor-driven editmode/playmode invocation.
+    # Single inner command shared by editmode/playmode AND standalone. The only
+    # difference is the -testPlatform value: editmode/playmode are passed
+    # literally; standalone maps to StandaloneLinux64 so a single editor
+    # invocation builds AND runs the IL2CPP player (IL2CPP backend now comes from
+    # ProjectSettings; no executeMethod, no separate build pass).
     local cmd
-    local project_path_q results_q assemblies_q filter_q
+    local project_path_q results_q assemblies_q filter_q test_platform
     project_path_q="$(printf '%q' "/workspace/.unity-test-project")"
     results_q="$(printf '%q' "${RESULTS_CONTAINER}")"
     assemblies_q="$(printf '%q' "${ASSEMBLIES}")"
+    if [[ "${PLATFORM}" == "standalone" ]]; then
+        test_platform="StandaloneLinux64"
+    else
+        test_platform="${PLATFORM}"
+    fi
+    # `set -o pipefail` (part of `set -euo pipefail` below) is LOAD-BEARING for the
+    # editor test pipeline `Unity ... | tee log.txt`: without it the pipeline's exit
+    # status would be `tee`'s (always 0), masking a failing Unity behind a passing
+    # tee. With pipefail a non-zero Unity propagates as the script's exit code.
+    #
+    # EVERY command in the EXIT trap body below is suffixed `|| true` ON PURPOSE: the
+    # trap fires AFTER the editor pipeline has already set the script's exit code, so
+    # a license-return failure (or a chown failure) must NEVER overwrite the editor's
+    # non-zero exit code with its own. `|| true` forces each cleanup command to a 0
+    # status so the trap cannot clobber the real test result.
     cmd=$'set -euo pipefail\n'
     cmd+=$'cleanup_ownership() {\n'
     cmd+=$'    chown -R "${USER_UID}:${USER_GID}" /workspace/.artifacts || true\n'
@@ -450,6 +470,18 @@ build_editor_cmd_inner() {
     cmd+=$'        fi\n'
     cmd+=$'    fi\n'
     cmd+=$'    chown -R "${USER_UID}:${USER_GID}" /workspace/.unity-test-project/Library || true\n'
+    if [[ "${LICENSE_MODE}" == "serial" ]]; then
+        # Serial activation consumes a seat, so we MUST return it on EVERY exit
+        # path -- clean exit, test failure, or Ctrl-C -- or a local run leaks the
+        # seat. The return runs INSIDE the same EXIT trap as the chown cleanup so
+        # it fires even when the editor (and the `tee` pipeline) failed. It is
+        # best-effort (|| true): a failed return must never mask the real test
+        # exit code. The return log goes to /tmp (NOT under /workspace/.artifacts,
+        # which is bind-mounted to the repo and would persist the creds Unity may
+        # echo). UNITY_EMAIL/UNITY_PASSWORD are forwarded into the container via
+        # -e; we never echo them.
+        cmd+=$'    /opt/unity/Editor/Unity -quit -batchmode -nographics -returnlicense -username "${UNITY_EMAIL}" -password "${UNITY_PASSWORD}" -logFile - > /tmp/unity-return-license.log 2>&1 || true\n'
+    fi
     cmd+=$'}\n'
     cmd+=$'trap cleanup_ownership EXIT\n'
     cmd+=$'mkdir -p /root/.cache/unity3d\n'
@@ -468,7 +500,7 @@ build_editor_cmd_inner() {
 "
     cmd+="  -projectPath ${project_path_q} \\
 "
-    cmd+="  -runTests -testPlatform ${PLATFORM} \\
+    cmd+="  -runTests -testPlatform ${test_platform} \\
 "
     cmd+="  -testResults ${results_q} \\
 "
@@ -481,116 +513,6 @@ build_editor_cmd_inner() {
     fi
     if [[ "${LICENSE_MODE}" == "serial" ]]; then
         cmd+="  -username \"\${UNITY_EMAIL}\" -password \"\${UNITY_PASSWORD}\" -serial \"\${UNITY_SERIAL}\" \\
-"
-    fi
-    cmd+="  -logFile - 2>&1 | tee /workspace/.artifacts/unity/log.txt
-"
-    printf '%s' "${cmd}"
-}
-
-build_standalone_build_cmd_inner() {
-    # Pass 1 of standalone: invoke the editor to build the IL2CPP test player.
-    # B1: export DXM_IL2CPP_BUILD_PATH so TestRunnerBuilder.BuildIL2CPPTestPlayer
-    # writes to the same path we read from below. Local + CI use the same
-    # env-var contract; the value differs but the mechanism is identical.
-    local cmd
-    local project_path_q build_path_q
-    project_path_q="$(printf '%q' "/workspace/.unity-test-project")"
-    build_path_q="$(printf '%q' "${STANDALONE_BUILD_CONTAINER}")"
-    cmd=$'set -euo pipefail\n'
-    cmd+=$'cleanup_ownership() {\n'
-    cmd+=$'    chown -R "${USER_UID}:${USER_GID}" /workspace/.artifacts || true\n'
-    cmd+=$'    if [[ -n "${DX_PERF_BASELINE:-}" ]]; then\n'
-    cmd+=$'        baseline_path="${DX_PERF_BASELINE}"\n'
-    cmd+=$'        [[ "${baseline_path}" = /* ]] || baseline_path="/workspace/${baseline_path}"\n'
-    cmd+=$'        if [[ "${baseline_path}" == /workspace/* ]]; then\n'
-    cmd+=$'            chown "${USER_UID}:${USER_GID}" "${baseline_path}" 2>/dev/null || true\n'
-    cmd+=$'            baseline_dir="$(dirname "${baseline_path}")"\n'
-    cmd+=$'            [[ "${baseline_dir}" == "/workspace" ]] || chown -R "${USER_UID}:${USER_GID}" "${baseline_dir}" 2>/dev/null || true\n'
-    cmd+=$'        fi\n'
-    cmd+=$'    fi\n'
-    cmd+=$'    chown -R "${USER_UID}:${USER_GID}" /workspace/.unity-test-project/Builds || true\n'
-    cmd+=$'    chown -R "${USER_UID}:${USER_GID}" /workspace/.unity-test-project/Library || true\n'
-    cmd+=$'}\n'
-    cmd+=$'trap cleanup_ownership EXIT\n'
-    cmd+=$'mkdir -p /root/.cache/unity3d\n'
-    if [[ "${LICENSE_MODE}" == "ulf" ]] || [[ "${LICENSE_MODE}" == "ulf-b64" ]]; then
-        cmd+=$'mkdir -p /root/.local/share/unity3d/Unity\n'
-        if [[ "${LICENSE_MODE}" == "ulf-b64" ]]; then
-            cmd+=$'printf "%s" "${UNITY_LICENSE_B64}" | base64 -d > /root/.local/share/unity3d/Unity/Unity_lic.ulf\n'
-        else
-            cmd+=$'printf "%s" "${UNITY_LICENSE}" > /root/.local/share/unity3d/Unity/Unity_lic.ulf\n'
-        fi
-        cmd+=$'chmod 644 /root/.local/share/unity3d/Unity/Unity_lic.ulf\n'
-    fi
-    cmd+=$'mkdir -p /workspace/.unity-test-project/Builds/IL2CPPTests\n'
-    cmd+="export DXM_IL2CPP_BUILD_PATH=${build_path_q}
-"
-    cmd+="/opt/unity/Editor/Unity \\
-"
-    cmd+="  -batchmode -nographics \\
-"
-    cmd+="  -projectPath ${project_path_q} \\
-"
-    cmd+="  -buildTarget StandaloneLinux64 \\
-"
-    cmd+="  -executeMethod WallstopStudios.DxMessaging.TestHarness.Editor.TestRunnerBuilder.BuildIL2CPPTestPlayer \\
-"
-    if [[ "${LICENSE_MODE}" == "serial" ]]; then
-        cmd+="  -username \"\${UNITY_EMAIL}\" -password \"\${UNITY_PASSWORD}\" -serial \"\${UNITY_SERIAL}\" \\
-"
-    fi
-    cmd+="  -logFile - 2>&1 | tee /workspace/.artifacts/unity/build-log.txt
-"
-    printf '%s' "${cmd}"
-}
-
-build_standalone_run_cmd_inner() {
-    # Pass 2 of standalone: launch the IL2CPP binary that was just built.
-    # The Unity Test Framework embeds a command-line runner in the player
-    # when built with BuildOptions.Development | IncludeTestAssemblies; the
-    # binary writes results.xml itself and exits with non-zero on failure.
-    local cmd
-    local build_path_q results_q assemblies_q filter_q
-    build_path_q="$(printf '%q' "${STANDALONE_BUILD_CONTAINER}")"
-    results_q="$(printf '%q' "${RESULTS_CONTAINER}")"
-    assemblies_q="$(printf '%q' "${ASSEMBLIES}")"
-    cmd=$'set -euo pipefail\n'
-    cmd+=$'cleanup_ownership() {\n'
-    cmd+=$'    chown -R "${USER_UID}:${USER_GID}" /workspace/.artifacts || true\n'
-    cmd+=$'    if [[ -n "${DX_PERF_BASELINE:-}" ]]; then\n'
-    cmd+=$'        baseline_path="${DX_PERF_BASELINE}"\n'
-    cmd+=$'        [[ "${baseline_path}" = /* ]] || baseline_path="/workspace/${baseline_path}"\n'
-    cmd+=$'        if [[ "${baseline_path}" == /workspace/* ]]; then\n'
-    cmd+=$'            chown "${USER_UID}:${USER_GID}" "${baseline_path}" 2>/dev/null || true\n'
-    cmd+=$'            baseline_dir="$(dirname "${baseline_path}")"\n'
-    cmd+=$'            [[ "${baseline_dir}" == "/workspace" ]] || chown -R "${USER_UID}:${USER_GID}" "${baseline_dir}" 2>/dev/null || true\n'
-    cmd+=$'        fi\n'
-    cmd+=$'    fi\n'
-    cmd+=$'    chown -R "${USER_UID}:${USER_GID}" /workspace/.unity-test-project/Library || true\n'
-    cmd+=$'}\n'
-    cmd+=$'trap cleanup_ownership EXIT\n'
-    cmd+="if [[ ! -x ${build_path_q} ]]; then
-"
-    cmd+="    echo \"[run-tests] ERROR: built test player not found at ${STANDALONE_BUILD_CONTAINER}\" >&2
-"
-    cmd+="    exit 1
-"
-    cmd+="fi
-"
-    cmd+="${build_path_q} \\
-"
-    cmd+="  -batchmode -nographics \\
-"
-    cmd+="  -runTests \\
-"
-    cmd+="  -testResults ${results_q} \\
-"
-    cmd+="  -assemblyNames ${assemblies_q} \\
-"
-    if [[ -n "${TEST_FILTER}" ]]; then
-        filter_q="$(printf '%q' "${TEST_FILTER}")"
-        cmd+="  -testFilter ${filter_q} \\
 "
     fi
     cmd+="  -logFile - 2>&1 | tee /workspace/.artifacts/unity/log.txt
@@ -601,6 +523,10 @@ build_standalone_run_cmd_inner() {
 # ---------------------------------------------------------------------------
 # Invoke docker
 # ---------------------------------------------------------------------------
+# Plan banner: one line describing exactly what is about to run, emitted before
+# the docker dispatch so the chosen path is visible in local + CI logs.
+printf '%s[run-tests] runner=docker platform=%s unity=%s ci=%s%s\n' \
+    "${C_BLUE}" "${PLATFORM}" "${UNITY_VERSION_RESOLVED}" "${CI:-}" "${C_NC}"
 printf '%sLaunching %s%s\n' "${C_BLUE}" "${IMAGE_REF}" "${C_NC}"
 printf '  platform=%s assemblies=%s\n' "${PLATFORM}" "${ASSEMBLIES}"
 printf '  results=%s log=%s/log.txt\n' "${RESULTS_PATH}" "${ARTIFACTS_DIR}"
@@ -609,7 +535,7 @@ printf '  perf=%s comparisons=%s integrations=%s filter=%s\n' \
 printf '  host_repo_root=%s\n' "${HOST_REPO_ROOT}"
 printf '  library_cache=%s\n' "${UNITY_LIBRARY_CACHE_SOURCE}"
 
-# Standard docker args reused across passes.
+# Standard docker args reused across all platforms.
 DOCKER_BASE_ARGS=(
     run --rm
     -v "${HOST_REPO_ROOT}:/workspace:rw"
@@ -628,40 +554,20 @@ DOCKER_BASE_ARGS=(
 
 EXIT_CODE=0
 if [[ "${PLATFORM}" == "standalone" ]]; then
-    BUILD_CMD_INNER="$(build_standalone_build_cmd_inner)"
-    printf '%sStep 1/2: building IL2CPP test player...%s\n' "${C_BLUE}" "${C_NC}"
-    BUILD_EXIT=0
-    docker "${DOCKER_BASE_ARGS[@]}" "${IMAGE_REF}" \
-        bash -c "${BUILD_CMD_INNER}" \
-        || BUILD_EXIT=$?
-
-    if [[ "${BUILD_EXIT}" -ne 0 ]]; then
-        printf '%sIL2CPP build failed (exit %s).%s\n' \
-            "${C_RED}" "${BUILD_EXIT}" "${C_NC}" >&2
-        exit "${BUILD_EXIT}"
-    fi
-
-    if [[ ! -x "${STANDALONE_BUILD_HOST}" ]]; then
-        printf '%sIL2CPP build reported success but binary missing at %s.%s\n' \
-            "${C_RED}" "${STANDALONE_BUILD_HOST}" "${C_NC}" >&2
-        exit 1
-    fi
-
-    RUN_CMD_INNER="$(build_standalone_run_cmd_inner)"
-    printf '%sStep 2/2: running IL2CPP test player...%s\n' "${C_BLUE}" "${C_NC}"
-    docker "${DOCKER_BASE_ARGS[@]}" "${IMAGE_REF}" \
-        bash -c "${RUN_CMD_INNER}" \
-        || EXIT_CODE=$?
-else
-    UNITY_CMD_INNER="$(build_editor_cmd_inner)"
-    docker "${DOCKER_BASE_ARGS[@]}" "${IMAGE_REF}" \
-        bash -c "${UNITY_CMD_INNER}" \
-        || EXIT_CODE=$?
+    printf '%sRunning IL2CPP standalone player (native single pass)...%s\n' \
+        "${C_BLUE}" "${C_NC}"
 fi
+# editmode, playmode, and standalone all use the same single editor invocation.
+# standalone maps -testPlatform to StandaloneLinux64, which builds AND runs the
+# IL2CPP player in one pass (no separate build-log.txt, no executeMethod).
+UNITY_CMD_INNER="$(build_editor_cmd_inner)"
+docker "${DOCKER_BASE_ARGS[@]}" "${IMAGE_REF}" \
+    bash -c "${UNITY_CMD_INNER}" \
+    || EXIT_CODE=$?
 
 # ---------------------------------------------------------------------------
 # Summary tail (B2: delegate parsing to scripts/unity/lib/parse-test-results.py
-# so this script, the IL2CPP workflow, and run-tests.ps1 all share one parser
+# so this script and run-tests.ps1 share one parser
 # implementation. The helper emits "OK total=.. passed=.. failed=.. skipped=.."
 # on success and "PARSE_ERROR:<reason>" on failure with exit code 2.)
 # ---------------------------------------------------------------------------
@@ -669,6 +575,10 @@ print_results_summary() {
     local results_xml="$1"
     if [[ ! -f "${results_xml}" ]]; then
         printf '%sNo results.xml at %s%s\n' "${C_YELLOW}" "${results_xml}" "${C_NC}"
+        if [[ "${CI:-false}" == "true" ]]; then
+            printf '::error::run-tests: no results.xml produced for %s/%s -- tests did not run\n' \
+                "${PLATFORM}" "${UNITY_VERSION_RESOLVED}"
+        fi
         return 2
     fi
 
@@ -677,12 +587,20 @@ print_results_summary() {
     if ! summary="$(python3 "${parser}" "${results_xml}")"; then
         printf '%sCould not parse results summary: %s%s\n' \
             "${C_YELLOW}" "${summary}" "${C_NC}"
+        if [[ "${CI:-false}" == "true" ]]; then
+            printf '::error::run-tests: could not parse results.xml for %s/%s -- %s\n' \
+                "${PLATFORM}" "${UNITY_VERSION_RESOLVED}" "${summary}"
+        fi
         return 2
     fi
 
     if [[ "${summary}" != OK* ]]; then
         printf '%sCould not parse results summary: %s%s\n' \
             "${C_YELLOW}" "${summary}" "${C_NC}"
+        if [[ "${CI:-false}" == "true" ]]; then
+            printf '::error::run-tests: could not parse results.xml for %s/%s -- %s\n' \
+                "${PLATFORM}" "${UNITY_VERSION_RESOLVED}" "${summary}"
+        fi
         return 2
     fi
 
@@ -703,17 +621,29 @@ print_results_summary() {
             "${C_RED}" "${C_NC}" >&2
         printf '  failed=%s passed=%s skipped=%s\n' \
             "${failed:-0}" "${passed:-0}" "${skipped:-0}" >&2
+        if [[ "${CI:-false}" == "true" ]]; then
+            printf '::error::run-tests: 0 tests ran (total=0) for %s/%s -- check assembly list / filter\n' \
+                "${PLATFORM}" "${UNITY_VERSION_RESOLVED}"
+        fi
         return 2
     fi
 
     if [[ "${failed:-0}" == "0" ]]; then
         printf '%sPASS%s %s passed (total=%s skipped=%s)\n' \
             "${C_GREEN}" "${C_NC}" "${passed:-0}" "${total}" "${skipped:-0}"
+        if [[ "${CI:-false}" == "true" ]]; then
+            printf '::notice::run-tests: %s passed (total=%s skipped=%s) for %s/%s\n' \
+                "${passed:-0}" "${total}" "${skipped:-0}" "${PLATFORM}" "${UNITY_VERSION_RESOLVED}"
+        fi
         return 0
     fi
 
     printf '%sFAIL%s %s failed of %s (passed=%s skipped=%s)\n' \
         "${C_RED}" "${C_NC}" "${failed}" "${total}" "${passed:-0}" "${skipped:-0}"
+    if [[ "${CI:-false}" == "true" ]]; then
+        printf '::error::run-tests: %s failed of %s for %s/%s (passed=%s skipped=%s)\n' \
+            "${failed}" "${total}" "${PLATFORM}" "${UNITY_VERSION_RESOLVED}" "${passed:-0}" "${skipped:-0}"
+    fi
     return 1
 }
 

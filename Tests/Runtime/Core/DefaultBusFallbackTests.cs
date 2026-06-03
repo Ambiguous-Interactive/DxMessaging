@@ -6,6 +6,7 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using DxMessaging.Unity;
@@ -34,74 +35,143 @@ namespace DxMessaging.Tests.Runtime.Core
             _tokens.Clear();
         }
 
+        /// <summary>
+        /// A handler whose token is created without an explicit bus (so it
+        /// inherits the bus injected into its owning <see cref="MessageHandler"/>)
+        /// must observe emissions on that injected bus and stay isolated from
+        /// the global bus. Parameterized over every dispatch kind via
+        /// <see cref="MessageScenarios.AllKinds"/>; the prior per-kind triplet
+        /// (WhenTokenOmitsBus / ForTargetedMessages / ForBroadcastMessages)
+        /// collapsed into this single method.
+        /// The source-agnostic broadcast-without-source variant is covered by
+        /// <see cref="HandlerUsesInjectedDefaultBusForBroadcastWithoutSource"/>.
+        /// </summary>
         [Test]
-        public void HandlerUsesInjectedDefaultBusWhenTokenOmitsBus()
+        public void HandlerUsesInjectedDefaultBus(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
         {
             MessageBus customBus = new();
             MessageHandler handler = new(new InstanceId(42), customBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler);
             _tokens.Add(token);
 
-            int callCount = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                _ => ++callCount
-            );
-            _handles.Add(handle);
-
-            token.Enable();
-
-            SimpleUntargetedMessage message = new();
-            message.EmitUntargeted(customBus);
-            Assert.AreEqual(
-                1,
-                callCount,
-                "Handler should observe messages emitted through its injected bus."
-            );
-
-            message.EmitUntargeted();
-            Assert.AreEqual(
-                1,
-                callCount,
-                "Handler should remain isolated from the global bus when using an injected default."
-            );
-        }
-
-        [Test]
-        public void HandlerUsesInjectedDefaultBusForTargetedMessages()
-        {
-            MessageBus customBus = new();
-            MessageHandler handler = new(new InstanceId(99), customBus) { active = true };
-            MessageRegistrationToken token = MessageRegistrationToken.Create(handler);
-            _tokens.Add(token);
-
             InstanceId target = new(1234);
             int callCount = 0;
-            MessageRegistrationHandle handle = token.RegisterTargeted<SimpleTargetedMessage>(
-                target,
-                _ => ++callCount
-            );
+            MessageRegistrationHandle handle;
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                {
+                    handle = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
+                        scenario,
+                        token,
+                        (ref SimpleUntargetedMessage _) => ++callCount
+                    );
+                    break;
+                }
+                case MessageKind.Targeted:
+                {
+                    handle = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
+                        scenario,
+                        token,
+                        target,
+                        (ref SimpleTargetedMessage _) => ++callCount
+                    );
+                    break;
+                }
+                case MessageKind.Broadcast:
+                {
+                    handle = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
+                        scenario,
+                        token,
+                        target,
+                        (ref SimpleBroadcastMessage _) => ++callCount
+                    );
+                    break;
+                }
+                default:
+                {
+                    throw new System.ArgumentOutOfRangeException(
+                        nameof(scenario),
+                        scenario.Kind,
+                        "Unsupported message kind."
+                    );
+                }
+            }
             _handles.Add(handle);
 
             token.Enable();
 
-            SimpleTargetedMessage message = new();
-            message.EmitTargeted(target, customBus);
+            EmitForScenario(scenario, target, callOnCustomBus: true, customBus);
             Assert.AreEqual(
                 1,
                 callCount,
-                "Targeted handlers should fire when messages emit on the injected bus."
+                "[{0}] Handler should observe messages emitted through its injected bus.",
+                scenario.Kind
             );
 
-            message.EmitTargeted(target);
+            EmitForScenario(scenario, target, callOnCustomBus: false, customBus);
             Assert.AreEqual(
                 1,
                 callCount,
-                "Targeted handler should ignore global bus emissions when a default bus is injected."
+                "[{0}] Handler should remain isolated from the global bus when using an injected default.",
+                scenario.Kind
             );
         }
 
+        private static void EmitForScenario(
+            MessageScenario scenario,
+            InstanceId target,
+            bool callOnCustomBus,
+            MessageBus customBus
+        )
+        {
+            IMessageBus bus = callOnCustomBus ? customBus : null;
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                {
+                    SimpleUntargetedMessage message = new();
+                    ScenarioHarness.EmitUntargeted(scenario, ref message, bus);
+                    return;
+                }
+                case MessageKind.Targeted:
+                {
+                    SimpleTargetedMessage message = new();
+                    ScenarioHarness.EmitTargeted(scenario, ref message, target, bus);
+                    return;
+                }
+                case MessageKind.Broadcast:
+                {
+                    SimpleBroadcastMessage message = new();
+                    ScenarioHarness.EmitBroadcast(scenario, ref message, target, bus);
+                    return;
+                }
+                default:
+                {
+                    throw new System.ArgumentOutOfRangeException(
+                        nameof(scenario),
+                        scenario.Kind,
+                        "Unsupported message kind."
+                    );
+                }
+            }
+        }
+
+        /// <summary>
+        /// Dedicated coverage for the source-agnostic broadcast path: a handler
+        /// registered via <see cref="MessageRegistrationToken.RegisterBroadcastWithoutSource{T}(MessageHandler.FastHandlerWithContext{T}, int)"/>
+        /// on a token whose bus is injected (omitted at create time) must observe
+        /// a broadcast emitted from any source on that injected bus and stay
+        /// isolated from the global bus. This reproduces the original
+        /// HandlerUsesInjectedDefaultBusForBroadcastMessages assertions, which the
+        /// data-driven <see cref="HandlerUsesInjectedDefaultBus"/> (register-with-target)
+        /// does not exercise.
+        /// </summary>
         [Test]
-        public void HandlerUsesInjectedDefaultBusForBroadcastMessages()
+        public void HandlerUsesInjectedDefaultBusForBroadcastWithoutSource()
         {
             MessageBus customBus = new();
             MessageHandler handler = new(new InstanceId(1337), customBus) { active = true };
@@ -109,9 +179,10 @@ namespace DxMessaging.Tests.Runtime.Core
             _tokens.Add(token);
 
             int callCount = 0;
-            MessageRegistrationHandle handle = token.RegisterBroadcastWithoutSource(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => ++callCount
-            );
+            MessageRegistrationHandle handle =
+                token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                    (ref InstanceId _, ref SimpleBroadcastMessage _) => ++callCount
+                );
             _handles.Add(handle);
 
             token.Enable();

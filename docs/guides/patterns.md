@@ -1,6 +1,6 @@
 # DxMessaging Patterns: Real-World Solutions
 
-[Back to Index](../getting-started/index.md) | [Getting Started](../getting-started/getting-started.md) | [Message Types](../concepts/message-types.md) | [Samples](https://github.com/wallstop/DxMessaging/tree/master/Samples~)
+[Back to Index](../getting-started/index.md) | [Getting Started](../getting-started/getting-started.md) | [Message Types](../concepts/message-types.md) | [Samples](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Samples~)
 
 ---
 
@@ -1064,8 +1064,8 @@ For SOA variables:
 
 ### Try Real Examples
 
-- to [Mini Combat sample](https://github.com/wallstop/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) -- Working combat example
-- to [UI Buttons + Inspector sample](https://github.com/wallstop/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md) -- Interactive diagnostics
+- to [Mini Combat sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) -- Working combat example
+- to [UI Buttons + Inspector sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md) -- Interactive diagnostics
 - to [End-to-End Example](../examples/end-to-end.md) -- Complete feature walkthrough
 
 ### Deep Dives

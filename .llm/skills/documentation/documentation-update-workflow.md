@@ -7,12 +7,12 @@ created: "2026-01-22"
 updated: "2026-01-22"
 
 source:
-  repository: "wallstop/DxMessaging"
+  repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "docs/"
     - path: "README.md"
     - path: "CHANGELOG.md"
-  url: "https://github.com/wallstop/DxMessaging"
+  url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
   - "documentation"

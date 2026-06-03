@@ -1973,7 +1973,7 @@ namespace DxMessaging.Core
         /// </example>
         public void RemoveRegistration(MessageRegistrationHandle handle)
         {
-            if (_deregistrations?.Remove(handle, out Action deregistrationAction) == true)
+            if (_deregistrations.Remove(handle, out Action deregistrationAction))
             {
                 deregistrationAction?.Invoke();
             }
