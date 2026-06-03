@@ -124,6 +124,7 @@ jobs:
             "scripts/__tests__/unity-native-startup-probe-isolation.test.js"
             "scripts/__tests__/unity-runner-host-prereq-dot-source-safety.test.js"
             "scripts/__tests__/path-containment-policy.test.js"
+            "scripts/__tests__/devcontainer-cache-contract.test.js"
           )
           node scripts/run-managed-jest.js --runTestsByPath @tests
 

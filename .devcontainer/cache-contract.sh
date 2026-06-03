@@ -37,7 +37,18 @@ if [[ -z "${CACHE_WORKSPACE_ROOT}" ]]; then
     # the caller's CWD if this file is ever sourced without a resolvable path
     # (every real consumer sources by absolute path, so this never trips). Never
     # silently default to a permissive/incorrect path.
-    CACHE_WORKSPACE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:?cache-contract.sh must be sourced by path so the workspace root can be derived}")/.." && pwd)"
+    #
+    # Normalize backslashes to forward slashes BEFORE deriving the directory.
+    # GNU `dirname` splits only on `/`, so a Windows-native BASH_SOURCE path
+    # (`D:\repo\.devcontainer\cache-contract.sh`, as produced when a Windows
+    # bash flavor is handed a native path) would yield `.` and then resolve the
+    # WRONG root relative to the shell CWD. `cd` accepts the forward-slash form
+    # on every bash flavor (Git-Bash/MSYS/Cygwin/WSL), so normalizing first is
+    # robust everywhere; on Linux/macOS the substitution is a no-op.
+    _dxm_cache_contract_source="${BASH_SOURCE[0]:?cache-contract.sh must be sourced by path so the workspace root can be derived}"
+    _dxm_cache_contract_source="${_dxm_cache_contract_source//\\//}"
+    CACHE_WORKSPACE_ROOT="$(cd -- "$(dirname -- "${_dxm_cache_contract_source}")/.." && pwd)"
+    unset _dxm_cache_contract_source
 fi
 readonly CACHE_WORKSPACE_ROOT
 

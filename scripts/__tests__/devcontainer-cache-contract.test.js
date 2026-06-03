@@ -7,6 +7,16 @@
  * file because Jest runs in pure Node.js — and even when a bash were available,
  * `set -e` + the file's re-source guard would make repeat runs of the test
  * suite spuriously fail. The line-scan also keeps the test fast (<10ms).
+ *
+ * @cross-platform-regression -- this file spawns `bash` and compares the
+ * resolved workspace root against the repo root. A bash `pwd` string
+ * (`/d/Code/...`, `/cygdrive/d/...`, `/mnt/d/...`) is NOT string-equal to a
+ * Node `path.resolve()` string (`D:\Code\...`) on Windows even when both name
+ * the SAME directory, so this suite is platform-divergent and must run on the
+ * cross-OS targeted gate (enforced by cross-platform-preflight-coverage.test.js
+ * and cross-toolchain-path-comparison-policy.test.js). All path-identity
+ * assertions below route BOTH sides through one toolchain via `bashResolveDir`;
+ * see .llm/skills/scripting/cross-toolchain-path-comparison.md.
  */
 
 "use strict";
@@ -196,26 +206,113 @@ describe(".devcontainer cache mount contract", () => {
 // and (e) the diagnostic helper reports both resolution branches. We spawn a
 // fresh `bash -c` per case so the re-source guard / readonly do not interfere.
 // =============================================================================
-(canRunBash() ? describe : describe.skip)(
-  "CACHE_WORKSPACE_ROOT resolution (anti-drift)",
-  () => {
-    const cacheContractPath = path.join(DEVCONTAINER_DIR, "cache-contract.sh");
-    const devcontainerJsonPath = path.join(DEVCONTAINER_DIR, "devcontainer.json");
+(canRunBash() ? describe : describe.skip)("CACHE_WORKSPACE_ROOT resolution (anti-drift)", () => {
+  const cacheContractPath = path.join(DEVCONTAINER_DIR, "cache-contract.sh");
+  const devcontainerJsonPath = path.join(DEVCONTAINER_DIR, "devcontainer.json");
 
-    let cacheContract;
-    let devcontainerJson;
+  let cacheContract;
+  let devcontainerJson;
 
-    beforeAll(() => {
-      cacheContract = fs.readFileSync(cacheContractPath, "utf8");
-      devcontainerJson = fs.readFileSync(devcontainerJsonPath, "utf8");
+  beforeAll(() => {
+    cacheContract = fs.readFileSync(cacheContractPath, "utf8");
+    devcontainerJson = fs.readFileSync(devcontainerJsonPath, "utf8");
+  });
+
+  // Resolve an absolute directory through the SAME `bash` that produces
+  // CACHE_WORKSPACE_ROOT (a `cd ... && pwd`), so BOTH sides of every
+  // path-identity assertion live in one path-convention space. This is the
+  // load-bearing anti-drift detail: on Windows the bash flavor git invokes
+  // (Git-Bash / MSYS / Cygwin / WSL) prints a POSIX mount form
+  // (`/d/...`, `/cygdrive/d/...`, `/mnt/d/...`) that is NOT string-equal to
+  // Node's `path.resolve()` output (`D:\Code\...`) even when both name the
+  // same directory. Comparing a bash `pwd` to a Node `path` string therefore
+  // PASSES on Linux/macOS and FAILS on Windows -- the exact drift that reached
+  // a contributor's pre-push. Routing the Node-side reference through bash too
+  // neutralizes the pwd-SPELLING axis.
+  //
+  // SCOPE: bashResolveDir normalizes separators to `/` (a no-op on Linux/macOS)
+  // and does a `cd -- "$1" && pwd`, so it only neutralizes the pwd-spelling
+  // axis. resolveWorkspaceRoot(undefined) below instead exercises the
+  // production fallback, which runs `dirname` on a Node-interpolated
+  // BASH_SOURCE that is backslash-separated on Windows. GNU `dirname` splits
+  // only on `/`, so that is a SECOND, independent divergence axis. It is closed
+  // in production (cache-contract.sh normalizes `\` -> `/` before `dirname`),
+  // not by this helper. The @cross-platform-regression marker + windows-latest
+  // gate (cross-platform-preflight.yml) backstop any residual axis as an
+  // attributed CI failure rather than silent drift.
+  // See .llm/skills/scripting/cross-toolchain-path-comparison.md.
+  function bashResolveDir(absoluteDir) {
+    // `cd` accepts the forward-slash form on every bash flavor; a raw-backslash
+    // Windows path (`D:\Code\...`) is flavor-dependent. Normalize in JS, then
+    // pass as an argv element (never interpolated) so spaces and shell
+    // metacharacters cannot inject.
+    const posixDir = absoluteDir.replace(/\\/g, "/");
+    const result = childProcess.spawnSync("bash", ["-c", 'cd -- "$1" && pwd', "bash", posixDir], {
+      encoding: "utf8"
     });
+    expect(result.status).toBe(0);
+    return result.stdout.trim();
+  }
 
-    // Source cache-contract.sh in a fresh shell and echo the resolved root.
-    function resolveWorkspaceRoot(workspaceFolderValue) {
+  // Source cache-contract.sh in a fresh shell and echo the resolved root.
+  function resolveWorkspaceRoot(workspaceFolderValue) {
+    const command =
+      workspaceFolderValue === undefined
+        ? `unset WORKSPACE_FOLDER; source "${cacheContractPath}"; printf '%s' "$CACHE_WORKSPACE_ROOT"`
+        : `source "${cacheContractPath}"; printf '%s' "$CACHE_WORKSPACE_ROOT"`;
+    const env = { ...process.env };
+    if (workspaceFolderValue === undefined) {
+      env.WORKSPACE_FOLDER = "";
+    } else {
+      env.WORKSPACE_FOLDER = workspaceFolderValue;
+    }
+    const result = childProcess.spawnSync("bash", ["-c", command], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      env
+    });
+    expect(result.status).toBe(0);
+    return result.stdout.trim();
+  }
+
+  test("no hardcoded absolute workspace literal in cache-contract.sh", () => {
+    // A stale absolute literal silently diverges from the real mount target.
+    expect(cacheContract).not.toContain("/workspaces/com.wallstop-studios.dxmessaging");
+  });
+
+  test("derived fallback (WORKSPACE_FOLDER unset) resolves to the repo root", () => {
+    // Both sides land in one path-convention space: bashResolveDir(REPO_ROOT)
+    // routes the Node reference through bash `pwd` (neutralizing the pwd-
+    // spelling axis), and resolveWorkspaceRoot's production fallback normalizes
+    // a backslash BASH_SOURCE to `/` before `dirname` (neutralizing the
+    // dirname-on-backslash axis). Comparing the bash result to the raw Node
+    // `REPO_ROOT` string would pass on Linux/macOS and FAIL on Windows for the
+    // same directory.
+    expect(resolveWorkspaceRoot(undefined)).toBe(bashResolveDir(REPO_ROOT));
+  });
+
+  test("explicit WORKSPACE_FOLDER wins (precedence over derived fallback)", () => {
+    expect(resolveWorkspaceRoot("/tmp/some-other-workspace")).toBe("/tmp/some-other-workspace");
+  });
+
+  test("node_modules contract target aligns with devcontainer.json mount", () => {
+    const resolvedRoot = resolveWorkspaceRoot(undefined);
+    // The fallback maps onto the real mount target under the
+    // ${containerWorkspaceFolder} <-> repoRoot identity. Both sides routed
+    // through bash `pwd` (see bashResolveDir) so the compare is
+    // convention-agnostic across Linux/macOS/Windows bash flavors.
+    expect(`${resolvedRoot}/node_modules`).toBe(`${bashResolveDir(REPO_ROOT)}/node_modules`);
+    expect(devcontainerJson).toContain(
+      "source=dxm-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+    );
+  });
+
+  test("diagnostic helper reports both resolution branches", () => {
+    function describe(workspaceFolderValue) {
       const command =
         workspaceFolderValue === undefined
-          ? `unset WORKSPACE_FOLDER; source "${cacheContractPath}"; printf '%s' "$CACHE_WORKSPACE_ROOT"`
-          : `source "${cacheContractPath}"; printf '%s' "$CACHE_WORKSPACE_ROOT"`;
+          ? `unset WORKSPACE_FOLDER; source "${cacheContractPath}"; cache_contract_describe_workspace_root`
+          : `source "${cacheContractPath}"; cache_contract_describe_workspace_root`;
       const env = { ...process.env };
       if (workspaceFolderValue === undefined) {
         env.WORKSPACE_FOLDER = "";
@@ -228,60 +325,13 @@ describe(".devcontainer cache mount contract", () => {
         env
       });
       expect(result.status).toBe(0);
-      return result.stdout.trim();
+      return result.stdout;
     }
 
-    test("no hardcoded absolute workspace literal in cache-contract.sh", () => {
-      // A stale absolute literal silently diverges from the real mount target.
-      expect(cacheContract).not.toContain("/workspaces/com.wallstop-studios.dxmessaging");
-    });
-
-    test("derived fallback (WORKSPACE_FOLDER unset) resolves to the repo root", () => {
-      expect(resolveWorkspaceRoot(undefined)).toBe(REPO_ROOT);
-    });
-
-    test("explicit WORKSPACE_FOLDER wins (precedence over derived fallback)", () => {
-      expect(resolveWorkspaceRoot("/tmp/some-other-workspace")).toBe("/tmp/some-other-workspace");
-    });
-
-    test("node_modules contract target aligns with devcontainer.json mount", () => {
-      const resolvedRoot = resolveWorkspaceRoot(undefined);
-      // The fallback maps onto the real mount target under the
-      // ${containerWorkspaceFolder} <-> repoRoot identity.
-      expect(`${resolvedRoot}/node_modules`).toBe(`${REPO_ROOT}/node_modules`);
-      expect(devcontainerJson).toContain(
-        "source=dxm-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
-      );
-    });
-
-    test("diagnostic helper reports both resolution branches", () => {
-      function describe(workspaceFolderValue) {
-        const command =
-          workspaceFolderValue === undefined
-            ? `unset WORKSPACE_FOLDER; source "${cacheContractPath}"; cache_contract_describe_workspace_root`
-            : `source "${cacheContractPath}"; cache_contract_describe_workspace_root`;
-        const env = { ...process.env };
-        if (workspaceFolderValue === undefined) {
-          env.WORKSPACE_FOLDER = "";
-        } else {
-          env.WORKSPACE_FOLDER = workspaceFolderValue;
-        }
-        const result = childProcess.spawnSync("bash", ["-c", command], {
-          cwd: REPO_ROOT,
-          encoding: "utf8",
-          env
-        });
-        expect(result.status).toBe(0);
-        return result.stdout;
-      }
-
-      expect(describe("/tmp/some-other-workspace")).toContain("(from WORKSPACE_FOLDER env)");
-      expect(describe(undefined)).toContain(
-        "(derived from script location; WORKSPACE_FOLDER unset)"
-      );
-    });
-  }
-);
+    expect(describe("/tmp/some-other-workspace")).toContain("(from WORKSPACE_FOLDER env)");
+    expect(describe(undefined)).toContain("(derived from script location; WORKSPACE_FOLDER unset)");
+  });
+});
 
 /**
  * Inline behavioural tests for matches_expected_mount in validate-caching.sh.

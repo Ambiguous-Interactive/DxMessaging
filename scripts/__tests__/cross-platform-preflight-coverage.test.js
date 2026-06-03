@@ -91,7 +91,14 @@ const WALK_SKIP_DIRS = new Set(["node_modules", ".git", ".venv", "__pycache__", 
 
 // THIS guard file references the marker in its own JSDoc/self-tests as data, so
 // it must not count as a real opt-in. Allow-listed by repo-relative POSIX path.
-const ALLOW_LIST = new Set(["scripts/__tests__/cross-platform-preflight-coverage.test.js"]);
+// cross-toolchain-path-comparison-policy.test.js likewise documents the marker
+// token in its header/error messages as DATA while being a pure static scan
+// (no shell spawn, no platform divergence), so it is NOT promoted onto the
+// cross-OS gate either.
+const ALLOW_LIST = new Set([
+  "scripts/__tests__/cross-platform-preflight-coverage.test.js",
+  "scripts/__tests__/cross-toolchain-path-comparison-policy.test.js"
+]);
 
 function readUtf8(absolutePath) {
   // normalizeToLf collapses CR/CRLF; strip a leading UTF-8 BOM too so the first
