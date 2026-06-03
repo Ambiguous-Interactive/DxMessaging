@@ -31,7 +31,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 
 const {
   findForbiddenSharedConcurrencyViolations,
@@ -65,19 +65,15 @@ const STUCK_WATCHDOG_PATH = path.join(WORKFLOWS_DIR_FOR_FILES, "stuck-job-watchd
 
 function loadWorkflowYamlFromPath(absPath) {
   const text = fs.readFileSync(absPath, "utf8");
-  // js-yaml interprets bare `on` as YAML 1.1 boolean true; load with the
-  // default schema and let the caller pull either `on` or `true`.
-  return yaml.load(text);
+  // The `yaml` package parses with the YAML 1.2 core schema, so the bare `on:`
+  // trigger key stays the string `"on"` (no YAML 1.1 boolean coercion).
+  return yaml.parse(text);
 }
 
 function getOnBlock(doc) {
-  // Pull the trigger block whether it parses as `on` (string key) or
-  // `true` (YAML 1.1 boolean coercion).
+  // YAML 1.2 core schema (the `yaml` package default) keeps `on:` a string key.
   if (doc && Object.prototype.hasOwnProperty.call(doc, "on")) {
     return doc.on;
-  }
-  if (doc && Object.prototype.hasOwnProperty.call(doc, true)) {
-    return doc[true];
   }
   return undefined;
 }
@@ -2745,7 +2741,7 @@ describe("unstick-run.yml workflow contract", () => {
     expect(fs.existsSync(UNSTICK_RUN_PATH)).toBe(true);
   });
 
-  test("parses cleanly with js-yaml", () => {
+  test("parses cleanly as YAML", () => {
     expect(doc).toBeTruthy();
     expect(typeof doc).toBe("object");
   });

@@ -35,7 +35,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const COMPUTE_ACTION = path.join(
@@ -151,14 +151,14 @@ describe("asmdef discovery excludes foreign assemblies", () => {
 // ---------------------------------------------------------------------------
 describe("skip-on-empty CI contract", () => {
   test("compute-unity-assemblies exposes assemblies + is-empty outputs", () => {
-    const action = yaml.load(read(COMPUTE_ACTION));
+    const action = yaml.parse(read(COMPUTE_ACTION));
     expect(action.outputs).toBeDefined();
     expect(action.outputs.assemblies).toBeDefined();
     expect(action.outputs["is-empty"]).toBeDefined();
   });
 
   test("compute-unity-assemblies SKIPS on empty and only hard-fails on a discovery error", () => {
-    const run = yaml.load(read(COMPUTE_ACTION)).runs.steps[0].run;
+    const run = yaml.parse(read(COMPUTE_ACTION)).runs.steps[0].run;
     // Empty branch: notice + is-empty=true + exit 0 (NOT exit 1).
     expect(run).toMatch(/::notice::/);
     expect(run).toMatch(/is-empty=true[\s\S]*exit 0/);
@@ -167,7 +167,7 @@ describe("skip-on-empty CI contract", () => {
   });
 
   test("verify-unity-results honors expected-empty (input + DXM_EXPECTED_EMPTY env + early skip)", () => {
-    const action = yaml.load(read(VERIFY_ACTION));
+    const action = yaml.parse(read(VERIFY_ACTION));
     expect(action.inputs["expected-empty"]).toBeDefined();
     const step = action.runs.steps[0];
     expect(String(step.env.DXM_EXPECTED_EMPTY)).toContain("inputs.expected-empty");
@@ -178,7 +178,7 @@ describe("skip-on-empty CI contract", () => {
   });
 
   test("unity-tests.yml gates provision/acquire/run on is-empty and passes expected-empty to verify", () => {
-    const workflow = yaml.load(read(UNITY_WORKFLOW));
+    const workflow = yaml.parse(read(UNITY_WORKFLOW));
     const steps = workflow.jobs["unity-tests"].steps;
     const byName = (name) => steps.find((step) => step.name === name);
 
@@ -234,9 +234,10 @@ describe("single analyzer registration (CI project generation)", () => {
 // from both the package's Editor/Analyzers and the harness Assets copy, 2021
 // rejects the duplicate. The Roslyn runtime deps in the same folder ship
 // excluded-from-all-platforms and never collide -- the analyzer DLLs now match
-// that proven-safe shape. Assertions use REGEX/substring, never yaml.load: the
-// shipped metas use Unity's ": Any" empty-key platform block, which js-yaml
-// cannot parse (it throws YAMLException).
+// that proven-safe shape. Assertions on the shipped metas use REGEX/substring,
+// never the YAML parser: the metas use Unity's ": Any" empty-key platform
+// block, and a narrow substring assertion is clearer and more stable here than
+// walking the parsed object graph.
 // ---------------------------------------------------------------------------
 describe("analyzer DLLs are Editor-disabled (non-precompiled) and label-activated", () => {
   const ANALYZERS_DIR = path.join(REPO_ROOT, "Editor", "Analyzers");

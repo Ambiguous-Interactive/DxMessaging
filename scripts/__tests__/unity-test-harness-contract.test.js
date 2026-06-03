@@ -11,7 +11,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 const { spawnSync } = require("child_process");
 
 const { sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
@@ -290,8 +290,8 @@ describe("generated Unity test harness contract", () => {
   // Sanity: unused yaml import elsewhere would be dead weight; reference it
   // here so removing the dependency without updating other suites still trips
   // CI early. (Other tests use yaml extensively.)
-  test("js-yaml is available for downstream YAML-shape suites", () => {
-    expect(typeof yaml.load).toBe("function");
+  test("the yaml package is available for downstream YAML-shape suites", () => {
+    expect(typeof yaml.parse).toBe("function");
   });
 
   describe("Unity 2021 compiler compatibility guards", () => {

@@ -10,7 +10,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const MAINTAIN_SCRIPT = path.join(REPO_ROOT, "scripts", "unity", "maintain-windows-runner.ps1");
@@ -42,7 +42,7 @@ function readUtf8(absPath) {
 }
 
 function readYaml(absPath) {
-  return yaml.load(readUtf8(absPath));
+  return yaml.parse(readUtf8(absPath));
 }
 
 describe("maintain-windows-runner.ps1 contract", () => {

@@ -28,7 +28,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -88,7 +88,7 @@ function buildSnippets() {
   // 2) Composite-action pwsh steps.
   for (const rel of listTrackedFiles(".github/actions/**/action.yml")) {
     const abs = path.join(REPO_ROOT, rel);
-    const doc = yaml.load(fs.readFileSync(abs, "utf8"));
+    const doc = yaml.parse(fs.readFileSync(abs, "utf8"));
     if (doc && doc.runs && Array.isArray(doc.runs.steps)) {
       collectPwshSteps(doc.runs.steps, rel, snippets);
     }
@@ -97,7 +97,7 @@ function buildSnippets() {
   // 3) Workflow pwsh steps across every job.
   for (const rel of listTrackedFiles(".github/workflows/*.yml")) {
     const abs = path.join(REPO_ROOT, rel);
-    const doc = yaml.load(fs.readFileSync(abs, "utf8"));
+    const doc = yaml.parse(fs.readFileSync(abs, "utf8"));
     const jobs = (doc && doc.jobs) || {};
     for (const [jobId, job] of Object.entries(jobs)) {
       if (job && Array.isArray(job.steps)) {

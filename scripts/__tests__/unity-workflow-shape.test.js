@@ -12,7 +12,7 @@
  *   - The devcontainer workflows must override `eventFilterForPush: ""` to
  *     avoid devcontainers/ci@v0.3's silent push-skip on schedule/dispatch.
  *
- * We use js-yaml when available for the structural parts (the on: block in
+ * We parse with the `yaml` package for the structural parts (the on: block in
  * particular) and fall back to text-grep for cross-cutting requirements that
  * are easier to verify line-by-line (cache key references, action versions).
  */
@@ -21,7 +21,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOWS_DIR = path.join(REPO_ROOT, ".github", "workflows");
@@ -51,19 +51,19 @@ function readDisabledWorkflow(name) {
 
 function loadWorkflowYaml(name) {
   const text = readWorkflow(name);
-  // js-yaml interprets the bare `on` key as the YAML 1.1 boolean `true`
-  // unless we use FAILSAFE / CORE schemas; load with default schema and
-  // pull either key when present.
-  return yaml.load(text);
+  // The `yaml` package parses with the YAML 1.2 core schema, so the bare `on:`
+  // trigger key stays the string `"on"` (no YAML 1.1 boolean coercion to
+  // `true`); read it directly via `parsed.on`.
+  return yaml.parse(text);
 }
 
 function loadDisabledWorkflowYaml(name) {
-  return yaml.load(readDisabledWorkflow(name));
+  return yaml.parse(readDisabledWorkflow(name));
 }
 
 function loadDiagnosticsAction() {
   expect(fs.existsSync(DIAGNOSTICS_ACTION)).toBe(true);
-  return yaml.load(fs.readFileSync(DIAGNOSTICS_ACTION, "utf8"));
+  return yaml.parse(fs.readFileSync(DIAGNOSTICS_ACTION, "utf8"));
 }
 
 function readEnsureEditorScript() {
@@ -100,7 +100,8 @@ function expectExactUnityLibraryCache(text) {
 }
 
 function getOnBlock(parsed) {
-  return parsed.on || parsed[true];
+  // YAML 1.2 core schema (the `yaml` package default) keeps `on:` a string key.
+  return parsed.on;
 }
 
 function expectUnityRunnerContract(job, expectation) {
@@ -868,7 +869,7 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
     // `Unity.exe -returnlicense` (classic serial activation).
     const actionPath = path.join(ACTIONS_DIR, "return-unity-license", "action.yml");
     expect(fs.existsSync(actionPath)).toBe(true);
-    const parsed = yaml.load(fs.readFileSync(actionPath, "utf8"));
+    const parsed = yaml.parse(fs.readFileSync(actionPath, "utf8"));
     expect(parsed.runs.using).toBe("composite");
     const text = fs.readFileSync(actionPath, "utf8");
     expect(text).toMatch(/shell:\s*pwsh/);
@@ -886,7 +887,7 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
 
     expect(actionFiles.length).toBeGreaterThan(0);
     for (const actionPath of actionFiles) {
-      const parsed = yaml.load(fs.readFileSync(actionPath, "utf8"));
+      const parsed = yaml.parse(fs.readFileSync(actionPath, "utf8"));
       if (!parsed || !parsed.inputs) {
         continue;
       }
@@ -1426,6 +1427,26 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     const commentText = JSON.stringify(commentJob);
     expect(commentText).not.toContain("git-auto-commit-action");
     expect(commentText).not.toContain("github.event.pull_request.head.ref");
+  });
+
+  test("the PR comment references the rendered PR head commit, not the merge commit", () => {
+    // The numbers reflect the PR head commit the job checked out and rendered
+    // against. The comment must link THAT commit so a reviewer can see exactly
+    // which code produced the numbers. It must NOT use context.sha, which on
+    // pull_request events is the transient merge commit that is not navigable
+    // on the branch (the open PR feedback this guards against).
+    const checkout = commentJob.steps.find((step) => step.uses === "actions/checkout@v6");
+    expect(checkout.with.ref).toBe("${{ github.event.pull_request.head.sha }}");
+
+    const comment = commentJob.steps.find(
+      (step) => typeof step.uses === "string" && step.uses.startsWith("actions/github-script@")
+    );
+    // The head SHA is passed through env and the body builds a /commit/<sha> link.
+    expect(comment.env.PERF_HEAD_SHA).toBe("${{ github.event.pull_request.head.sha }}");
+    expect(comment.with.script).toContain("PERF_HEAD_SHA");
+    expect(comment.with.script).toContain("/commit/");
+    // Never reference the transient merge commit.
+    expect(comment.with.script).not.toContain("context.sha");
   });
 
   test("the master-commit job commits the rendered doc to master ONLY on push, loop-guarded", () => {

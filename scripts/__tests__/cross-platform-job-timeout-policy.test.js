@@ -30,7 +30,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 
 const WORKFLOWS_DIR = path.resolve(__dirname, "..", "..", ".github", "workflows");
 const MIN_PREFLIGHT_JOB_TIMEOUT = 20;
@@ -70,7 +70,7 @@ function discoverPreflightWindowsJobs() {
     }
     let doc;
     try {
-      doc = yaml.load(fs.readFileSync(path.join(WORKFLOWS_DIR, file), "utf8"));
+      doc = yaml.parse(fs.readFileSync(path.join(WORKFLOWS_DIR, file), "utf8"));
     } catch {
       // A non-parseable workflow is another validator's concern.
       continue;

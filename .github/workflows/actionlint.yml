@@ -44,6 +44,23 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22.18.0"
+          cache: npm
+          cache-dependency-path: package.json
+
+      - name: Install dependencies
+        # validate-workflows.js parses workflows structurally with the declared
+        # `yaml` devDependency (formatting-invariant gate checks), so the job
+        # MUST install node_modules before running it. A cached install is a few
+        # seconds; without it `require("yaml")` throws MODULE_NOT_FOUND and every
+        # workflow fails the compute-unity-assemblies gate check. package-lock.json
+        # is gitignored, so the block is lockfile-aware (npm ci when present, npm
+        # install fallback otherwise) per the workflow install-policy.
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
 
       - name: Validate workflow patterns
         run: node scripts/validate-workflows.js

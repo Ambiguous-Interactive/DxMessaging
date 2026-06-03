@@ -4,7 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 const { combinedText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -38,7 +38,7 @@ function escapePwshDoubleQuoted(value) {
 }
 
 function getActionRunScript(resultsDir, label = "Unity action test") {
-  const action = yaml.load(fs.readFileSync(ACTION_PATH, "utf8"));
+  const action = yaml.parse(fs.readFileSync(ACTION_PATH, "utf8"));
   const step = action.runs.steps.find(
     (candidate) => candidate.name === "Verify tests actually ran"
   );
@@ -121,7 +121,7 @@ function writeFailingResultsXml(resultsDir) {
 describe("verify-unity-results composite action", () => {
   test("action exists and uses pwsh", () => {
     expect(fs.existsSync(ACTION_PATH)).toBe(true);
-    const action = yaml.load(fs.readFileSync(ACTION_PATH, "utf8"));
+    const action = yaml.parse(fs.readFileSync(ACTION_PATH, "utf8"));
     expect(action.runs.steps[0].shell).toBe("pwsh");
   });
 

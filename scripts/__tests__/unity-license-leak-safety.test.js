@@ -60,7 +60,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -259,7 +259,7 @@ function scanPowerShellFinallyReturn(relPath, text) {
 
 // ---------------------------------------------------------------------------
 // Detector (b): workflow if:always() return step ordered after the Unity run.
-// Operates on parsed YAML (js-yaml), like unity-workflow-shape.test.js.
+// Operates on parsed YAML (the `yaml` package), like unity-workflow-shape.test.js.
 // ---------------------------------------------------------------------------
 
 // True when a step is a native Unity run: a pwsh `run:` invoking
@@ -379,7 +379,7 @@ describe("Unity serial-activation license-leak static guard", () => {
     const actionAbs = path.join(REPO_ROOT, RETURN_ACTION_REL);
     expect(fs.existsSync(actionAbs)).toBe(true);
     const actionText = fs.readFileSync(actionAbs, "utf8");
-    const actionDoc = yaml.load(actionText);
+    const actionDoc = yaml.parse(actionText);
     expect(actionDoc.runs.using).toBe("composite");
     expect(actionText).toMatch(/shell:\s*pwsh/);
     expect(actionText).toContain("-returnlicense");
@@ -421,7 +421,7 @@ describe("Unity serial-activation license-leak static guard", () => {
   test.each(ACTIVE_WORKFLOW_FILES)(
     "%s has an if: always() license return step after every Unity run",
     (rel) => {
-      const doc = yaml.load(fs.readFileSync(path.join(REPO_ROOT, rel), "utf8"));
+      const doc = yaml.parse(fs.readFileSync(path.join(REPO_ROOT, rel), "utf8"));
       expect(scanWorkflowReturnStep(rel, doc)).toEqual([]);
     }
   );
@@ -530,7 +530,7 @@ describe("Unity serial-activation license-leak static guard", () => {
   });
 
   describe("detector (b) workflow return-step behavior on fixtures", () => {
-    const GOOD_RUN_CI = yaml.load(
+    const GOOD_RUN_CI = yaml.parse(
       [
         "jobs:",
         "  unity:",
@@ -549,7 +549,7 @@ describe("Unity serial-activation license-leak static guard", () => {
       ].join("\n")
     );
 
-    const MISSING_RETURN = yaml.load(
+    const MISSING_RETURN = yaml.parse(
       [
         "jobs:",
         "  unity:",
@@ -563,7 +563,7 @@ describe("Unity serial-activation license-leak static guard", () => {
       ].join("\n")
     );
 
-    const RETURN_BEFORE_RUN = yaml.load(
+    const RETURN_BEFORE_RUN = yaml.parse(
       [
         "jobs:",
         "  unity:",
@@ -577,7 +577,7 @@ describe("Unity serial-activation license-leak static guard", () => {
       ].join("\n")
     );
 
-    const GOOD_GAMECI = yaml.load(
+    const GOOD_GAMECI = yaml.parse(
       [
         "jobs:",
         "  experiment:",
@@ -590,7 +590,7 @@ describe("Unity serial-activation license-leak static guard", () => {
       ].join("\n")
     );
 
-    const RETURN_WITHOUT_ALWAYS = yaml.load(
+    const RETURN_WITHOUT_ALWAYS = yaml.parse(
       [
         "jobs:",
         "  unity:",
@@ -603,7 +603,7 @@ describe("Unity serial-activation license-leak static guard", () => {
       ].join("\n")
     );
 
-    const NO_UNITY = yaml.load(
+    const NO_UNITY = yaml.parse(
       ["jobs:", "  lint:", "    steps:", "      - run: npm test"].join("\n")
     );
 

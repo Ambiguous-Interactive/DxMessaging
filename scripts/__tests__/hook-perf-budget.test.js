@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const yaml = require("js-yaml");
+const yaml = require("yaml");
 
 const {
   scoreConfig,
@@ -30,7 +30,7 @@ describe("git hook performance budget", () => {
     const content = readConfig();
     let parsed;
     expect(() => {
-      parsed = yaml.load(content);
+      parsed = yaml.parse(content);
     }).not.toThrow();
     expect(parsed).toBeTruthy();
     expect(Array.isArray(parsed.repos)).toBe(true);

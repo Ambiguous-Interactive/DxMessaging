@@ -11,8 +11,8 @@
  * -- which takes down EVERY job/step that uses it. This exact bug shipped in
  * verify-unity-results/action.yml: a PowerShell comment that wrote `${{ }}` to
  * *refer to* the concept of an inline expansion broke every Unity job's verify
- * step. js-yaml-based tests do not catch it because js-yaml never evaluates
- * `${{ }}`; only GitHub's template parser does.
+ * step. YAML-parsing-based tests do not catch it because a YAML parser never
+ * evaluates `${{ }}`; only GitHub's template parser does.
  *
  * Fast static scan. An empty `${{ }}` is unambiguously a bug, so this guard is
  * robust and non-fragile: to reference the expansion concept in prose/comments,
