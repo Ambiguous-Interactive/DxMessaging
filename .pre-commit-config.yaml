@@ -542,7 +542,7 @@ repos:
         require_serial: true
         stages:
           - pre-push
-        # Pinned npx fallback is `cspell@10.0.0` (kept in sync by the
+        # Pinned npx fallback is `cspell@10.0.1` (kept in sync by the
         # cspell-version-parity test with package.json devDependencies).
         # The managed wrapper at scripts/run-managed-cspell.js prefers the
         # local devDependency (node_modules/cspell/bin.mjs) and falls back
@@ -553,7 +553,7 @@ repos:
           Check spelling in changed files via scripts/run-managed-cspell.js,
           which gates on node_modules integrity, prefers local cspell
           (node_modules/cspell/bin.mjs) and falls back to the pinned npx
-          install (cspell@10.0.0) only on cold caches. Pre-push only; see
+          install (cspell@10.0.1) only on cold caches. Pre-push only; see
           .llm/skills/performance/git-hook-performance.md.
 
   - repo: local

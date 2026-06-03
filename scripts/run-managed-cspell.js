@@ -46,7 +46,7 @@ const PACKAGE_JSON_PATH = path.join(REPO_ROOT, "package.json");
 const LOCAL_CSPELL_BIN = path.join(REPO_ROOT, "node_modules", "cspell", "bin.mjs");
 // Static fallback used only when package.json is unparseable. Kept in sync
 // with the package.json devDependency by the cspell-version-parity test.
-const FALLBACK_CSPELL_SPEC = "cspell@10.0.0";
+const FALLBACK_CSPELL_SPEC = "cspell@10.0.1";
 
 function normalizeVersion(rawVersion) {
   if (typeof rawVersion !== "string") {

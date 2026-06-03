@@ -59,4 +59,4 @@ jobs:
 
       - name: Run cspell
         # Keep the summary line on failures so CI logs show files-scanned vs. issues count.
-        run: npx --yes cspell@10.0.0 --no-progress .
+        run: npx --yes cspell@10.0.1 --no-progress .

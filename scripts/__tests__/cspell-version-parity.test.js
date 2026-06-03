@@ -2,7 +2,7 @@
  * @fileoverview Version-parity tests for cspell and markdownlint-cli2.
  *
  * The hook entries in `.pre-commit-config.yaml` invoke pinned package
- * versions (e.g. `cspell@10.0.0`) for the npx fallback path. Those literal
+ * versions (e.g. `cspell@10.0.1`) for the npx fallback path. Those literal
  * versions MUST match the devDependencies versions in `package.json` so
  * cold-cache fallback installs the same binary that `npm install` brings
  * in. The previous round used a managed Node wrapper to derive the version
