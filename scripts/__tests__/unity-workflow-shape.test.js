@@ -1014,9 +1014,15 @@ describe(".github/workflows/unity-tests.yml", () => {
   });
 
   test("uses the full Unity version x test mode matrix incl. standalone", () => {
+    // The version list is no longer hardcoded here: matrix-config reads the
+    // canonical single source (.github/unity-versions.json) at runtime via jq,
+    // so the workflow must carry ZERO version literals and instead read the
+    // file. See scripts/validate-unity-versions.js (no-literals policy).
     for (const unityVersion of UNITY_VERSIONS) {
-      expect(text).toContain(unityVersion);
+      expect(text).not.toContain(unityVersion);
     }
+    expect(text).toContain("jq -c '.all' .github/unity-versions.json");
+    expect(text).toContain("uses: actions/checkout@v6");
     expect(text).toContain('modes=\'["editmode","playmode","standalone"]\'');
     // workflow_dispatch test-mode choice must offer standalone too.
     expect(text).toContain("- standalone");
@@ -1277,10 +1283,28 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
 
   test("the matrix is LATEST-version only and runs BOTH editmode and playmode legs", () => {
     const matrix = perfJob.strategy.matrix;
-    // Single latest version (6000.3.16f1), never the full historical matrix.
-    expect(matrix["unity-version"]).toEqual(["6000.3.16f1"]);
-    expect(matrix["unity-version"]).not.toContain("2021.3.45f1");
-    expect(matrix["unity-version"]).not.toContain("2022.3.45f1");
+    // The single latest version is resolved from the canonical source
+    // (.github/unity-versions.json) via loop-guard, so the matrix references the
+    // loop-guard output rather than a hardcoded literal (no version can drift).
+    expect(matrix["unity-version"]).toBe(
+      "${{ fromJSON(needs.loop-guard.outputs.unity-versions) }}"
+    );
+    // No historical version literals remain in the workflow text.
+    expect(text).not.toContain("2021.3.45f1");
+    expect(text).not.toContain("2022.3.45f1");
+    expect(text).not.toContain("6000.3.16f1");
+    // loop-guard resolves the latest entry of `all` from the canonical file and
+    // emits both the scalar latest-version and the single-element matrix list.
+    expect(loopGuardJob.outputs["latest-version"]).toBe(
+      "${{ steps.versions.outputs.latest-version }}"
+    );
+    expect(loopGuardJob.outputs["unity-versions"]).toBe(
+      "${{ steps.versions.outputs.unity-versions }}"
+    );
+    const versionsStep = loopGuardJob.steps.find((step) => step.id === "versions");
+    expect(versionsStep).toBeDefined();
+    expect(versionsStep.run).toContain("jq -r '.all[-1]' \"${file}\"");
+    expect(versionsStep.run).toContain("jq -c '[.all[-1]]' \"${file}\"");
     // render-perf-doc.js consumes both legs, so both must run.
     expect(matrix["test-mode"].sort()).toEqual(["editmode", "playmode"]);
     // One seat, serialized within the run.

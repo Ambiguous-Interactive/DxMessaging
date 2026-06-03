@@ -175,6 +175,10 @@ script_sources_contract() {
 
 log_header "Checking Contract and Static Files"
 
+# Surface how the workspace root was resolved so an operator can SEE which path
+# is being validated (catching a wrong-path / config-drift situation by eye).
+echo -e "${BLUE}$(cache_contract_describe_workspace_root)${NC}"
+
 if cache_contract_validate_shape; then
     check_pass "Cache contract shape is valid (${#CACHE_MOUNT_SOURCES[@]} entries)"
 else

@@ -6,6 +6,10 @@ on:
       - ".github/workflows/**"
       - ".github/actionlint.yaml"
       - "scripts/validate-workflows.js"
+      - ".github/unity-versions.json"
+      - "scripts/validate-unity-versions.js"
+      - "scripts/unity/maintain-windows-runner.ps1"
+      - "scripts/unity/install-runner-maintenance-task.ps1"
   push:
     branches:
       - main
@@ -14,6 +18,10 @@ on:
       - ".github/workflows/**"
       - ".github/actionlint.yaml"
       - "scripts/validate-workflows.js"
+      - ".github/unity-versions.json"
+      - "scripts/validate-unity-versions.js"
+      - "scripts/unity/maintain-windows-runner.ps1"
+      - "scripts/unity/install-runner-maintenance-task.ps1"
   workflow_dispatch:
 
 concurrency:
@@ -64,3 +72,6 @@ jobs:
 
       - name: Validate workflow patterns
         run: node scripts/validate-workflows.js
+
+      - name: Validate Unity version single-source
+        run: node scripts/validate-unity-versions.js

@@ -1,6 +1,6 @@
 # Skills Index
 
-> **Auto-generated** on 2026-06-01. Do not edit manually.
+> **Auto-generated** on 2026-06-03. Do not edit manually.
 > Run `node scripts/generate-skills-index.js` to regenerate.
 
 ---
@@ -9,7 +9,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 167   |
+| Total Skills | 168   |
 | Categories   | 8     |
 
 ---
@@ -17,7 +17,7 @@
 ## Table of Contents
 
 - [Documentation](#documentation) (30)
-- [GitHub Actions](#github-actions) (7)
+- [GitHub Actions](#github-actions) (8)
 - [Packaging](#packaging) (2)
 - [Performance](#performance) (45)
 - [Scripting](#scripting) (20)
@@ -72,6 +72,7 @@
 | [GitHub Actions Workflow Consistency Part 1](./github-actions/workflow-consistency-part-1.md)          | [ok] 196   | [intermediate] | [stable] | [risk: low]    | migration, split      |
 | [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [ok] 252   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
 | [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 72 | [intermediate] | [stable] | [risk: low]    | migration, split      |
+| [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 209   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
 | [YAML Line-Length Budget](./github-actions/yaml-line-length.md)                                        | [ok] 169   | [intermediate] | [stable] | [risk: low]    | github-actions, yaml  |
 
 ## Packaging
@@ -223,10 +224,10 @@
 
 | Skill                                                                       | Lines      | Complexity     | Status   | Performance  | Tags                 |
 | --------------------------------------------------------------------------- | ---------- | -------------- | -------- | ------------ | -------------------- |
-| [Devcontainer Cache Contract](./unity/devcontainer-cache-contract.md)       | [ok] 180   | [intermediate] | [stable] | [risk: high] | devcontainer, docker |
+| [Devcontainer Cache Contract](./unity/devcontainer-cache-contract.md)       | [ok] 208   | [intermediate] | [stable] | [risk: high] | devcontainer, docker |
 | [Headless Unity Test Runner](./unity/headless-test-runner.md)               | [ok] 228   | [intermediate] | [stable] | [risk: none] | unity, testing       |
 | [MessageAwareComponent Base-Call Contract](./unity/base-call-contract.md)   | [warn] 267 | [intermediate] | [stable] | [risk: none] | unity, analyzer      |
-| [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 227   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
+| [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 224   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
 | [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 220   | [intermediate] | [stable] | [risk: none] | unity, cli           |
 | [Unity License Bootstrap](./unity/unity-license-bootstrap.md)               | [ok] 240   | [basic]        | [stable] | [risk: none] | unity, license       |
 | [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 290 | [intermediate] | [stable] | [risk: none] | unity, serial        |

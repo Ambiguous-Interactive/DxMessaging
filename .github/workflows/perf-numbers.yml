@@ -146,6 +146,8 @@ jobs:
     timeout-minutes: 3
     outputs:
       should-run: ${{ steps.guard.outputs.should-run }}
+      latest-version: ${{ steps.versions.outputs.latest-version }}
+      unity-versions: ${{ steps.versions.outputs.unity-versions }}
     steps:
       - name: Checkout PR head commit
         uses: actions/checkout@v6
@@ -181,6 +183,21 @@ jobs:
             echo "should-run=true" >> "${GITHUB_OUTPUT}"
           fi
 
+      - name: Resolve Unity version from canonical source
+        id: versions
+        # Single source of truth: .github/unity-versions.json. perf tracks the
+        # LATEST entry only (last element of `all`); emitting it here means the
+        # matrix leg, the artifact-download pattern, and render-perf-doc.js all
+        # consume ONE value and cannot drift. See scripts/validate-unity-versions.js.
+        run: |
+          set -euo pipefail
+          file=.github/unity-versions.json
+          latest="$(jq -r '.all[-1]' "${file}")"
+          {
+            printf 'latest-version=%s\n' "${latest}"
+            printf 'unity-versions=%s\n' "$(jq -c '[.all[-1]]' "${file}")"
+          } >> "${GITHUB_OUTPUT}"
+
   perf-benchmarks:
     name: Perf benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
     needs:
@@ -207,10 +224,12 @@ jobs:
       max-parallel: 1
       matrix:
         # LATEST Unity version only -- the documented numbers track the newest
-        # supported runtime. Single-entry matrix (not a bare scalar) so the leg
-        # name still carries the version.
-        unity-version:
-          - "6000.3.16f1"
+        # supported runtime. The single latest version is resolved from the
+        # canonical source (.github/unity-versions.json) via loop-guard, so the
+        # matrix leg, the artifact-download pattern, and render-perf-doc.js all
+        # consume ONE value and cannot drift. Single-entry matrix (not a bare
+        # scalar) so the leg name still carries the version.
+        unity-version: ${{ fromJSON(needs.loop-guard.outputs.unity-versions) }}
         # render-perf-doc.js consumes BOTH editmode and playmode legs.
         test-mode:
           - editmode
@@ -401,7 +420,7 @@ jobs:
       contents: read
       pull-requests: write
     env:
-      LATEST_VERSION: "6000.3.16f1"
+      LATEST_VERSION: ${{ needs.loop-guard.outputs.latest-version }}
       PERF_DOC: docs/architecture/performance.md
     steps:
       - name: Checkout PR head
@@ -560,7 +579,7 @@ jobs:
     permissions:
       contents: write
     env:
-      LATEST_VERSION: "6000.3.16f1"
+      LATEST_VERSION: ${{ needs.loop-guard.outputs.latest-version }}
       PERF_DOC: docs/architecture/performance.md
     steps:
       - name: Checkout master

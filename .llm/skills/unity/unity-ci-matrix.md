@@ -98,6 +98,8 @@ status: "stable"
 
 Nine matrix cells. `editmode`/`playmode` run in-editor on Mono; `standalone` builds and runs a `StandaloneWindows64` IL2CPP player. The direct runner generates a temporary package host project under `.artifacts/unity/projects/<version>-<mode>/`, imports the repo package with a `file:` dependency, sets `testables`, and configures IL2CPP before running standalone tests. Workflow_dispatch inputs let you pin a single version or single mode for triage.
 
+The Unity version list is canonical in `.github/unity-versions.json`; `unity-tests.yml` reads it at runtime and carries no version literal. Bump versions only in that file -- see [Unity Version Single Source of Truth](../github-actions/unity-version-single-source.md).
+
 Licensed Unity execution is serialized by the central
 `Ambiguous-Interactive/ambiguous-organization-build-lock` actions. The workflows
 validate the three Unity serial secrets, acquire `wallstop-organization-builds`
@@ -154,7 +156,7 @@ The `Verify tests actually ran` step keeps its `!cancelled()` gate (never an is-
 
 ## When to Add a Unity Version
 
-Add a version to `unity-tests.yml`'s `unity-versions` JSON array when one of the following is true:
+Add a version to the canonical `.github/unity-versions.json` `all` array when one of the following is true:
 
 - A new LTS reaches general availability (e.g., when 2024.3 LTS or 7000.0 LTS ships) and the package's `package.json` `unity` field still permits it.
 - A user files an issue reproducing only on a specific Editor version.
@@ -162,13 +164,7 @@ Add a version to `unity-tests.yml`'s `unity-versions` JSON array when one of the
 
 ## How to Add a Unity Version
 
-1. Edit the active `.github/workflows/unity-tests.yml`. The matrix is computed in the `matrix-config` job:
-
-   ```yaml
-   versions='["2021.3.45f1","2022.3.45f1","6000.3.16f1"]'
-   ```
-
-   Append the new tag to the JSON array. Use the `unityci/editor` tag format (e.g., `2024.3.10f1`).
+1. Edit `.github/unity-versions.json` and append the new tag to the `all` array (keep it strictly ascending). `unity-tests.yml` reads this file at runtime, so the workflow itself needs no edit. Use the `unityci/editor` tag format (e.g., `2024.3.10f1`), then run `npm run validate:unity-versions`. See [Unity Version Single Source of Truth](../github-actions/unity-version-single-source.md).
 
 1. Verify the Unity standalone CLI can install the requested version on the self-hosted Windows runner, or that the version already exists under `UNITY_EDITOR_INSTALL_ROOT` / `C:\Unity\Editors` / Unity Hub's install path.
 
@@ -212,6 +208,7 @@ For `standalone` runs, the direct runner first configures the generated project 
 ## See Also
 
 - [Unity Editor CLI Bootstrap](./unity-editor-cli-bootstrap.md)
+- [Unity Version Single Source of Truth](../github-actions/unity-version-single-source.md)
 - [Headless Test Runner](./headless-test-runner.md)
 - [Unity License Bootstrap](./unity-license-bootstrap.md)
 - [Unity Perf Test Isolation](./unity-perf-test-isolation.md)

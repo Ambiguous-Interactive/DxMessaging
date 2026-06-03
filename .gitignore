@@ -398,6 +398,7 @@ failed-tests.txt*
 # stays green and the fixtures are still collected.
 dxm-eol-closure-*
 dxm-cspell-fixture-*
+dxm-uv-test-*
 
 PERF-PLAN.md*
 OLD-PLAN.md*

@@ -42,6 +42,8 @@ jobs:
       unity-versions: ${{ steps.resolve.outputs.unity-versions }}
       test-modes: ${{ steps.resolve.outputs.test-modes }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
       - name: Resolve dispatch overrides
         id: resolve
         env:
@@ -52,7 +54,7 @@ jobs:
           if [ -n "${INPUT_UNITY_VERSION:-}" ]; then
             versions="[\"${INPUT_UNITY_VERSION}\"]"
           else
-            versions='["2021.3.45f1","2022.3.45f1","6000.3.16f1"]'
+            versions="$(jq -c '.all' .github/unity-versions.json)"
           fi
           if [ -n "${INPUT_TEST_MODE:-}" ] && [ "${INPUT_TEST_MODE}" != "all" ]; then
             modes="[\"${INPUT_TEST_MODE}\"]"

@@ -105,6 +105,7 @@ const PREFLIGHT_ONLY_EXTRAS = Object.freeze([
   { id: "validate-changed-docs", npm: "validate:changed-docs" },
   { id: "validate-llm-markdown", npm: "validate:llm-markdown" },
   { id: "validate-workflows", npm: "validate:workflows" },
+  { id: "validate-unity-versions", npm: "validate:unity-versions" },
   { id: "check-package-json-format", npm: "check:package-json-format" },
   { id: "check-prettier-hooks", npm: "check:prettier:hooks" },
   { id: "check-pwsh-output-assertions", npm: "check:pwsh-output-assertions" },

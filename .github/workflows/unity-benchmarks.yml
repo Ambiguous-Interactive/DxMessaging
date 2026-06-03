@@ -35,24 +35,28 @@ jobs:
       unity-versions: ${{ steps.resolve.outputs.unity-versions }}
       latest-version: ${{ steps.resolve.outputs.latest-version }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
       - name: Resolve dispatch overrides
         id: resolve
         env:
           INPUT_UNITY_VERSION: ${{ inputs.unity-version }}
-        # The benchmark matrix mirrors the unity-tests.yml version list so the
-        # scheduled perf coverage tracks every supported runtime. The LAST entry
-        # is the latest Unity version (exposed as latest-version for reference;
-        # the documented doc table is now maintained by the per-PR Performance
-        # Numbers workflow, .github/workflows/perf-numbers.yml). A dispatch
-        # override pins a single version.
+        # The benchmark matrix list and the latest entry both come from the
+        # canonical source (.github/unity-versions.json), so the scheduled perf
+        # coverage tracks every supported runtime and the latest-vs-list pair
+        # cannot drift. The LAST entry is the latest Unity version (exposed as
+        # latest-version for reference; the documented doc table is now
+        # maintained by the per-PR Performance Numbers workflow,
+        # .github/workflows/perf-numbers.yml). A dispatch override pins a single
+        # version.
         run: |
           set -euo pipefail
           if [ -n "${INPUT_UNITY_VERSION:-}" ]; then
             versions="[\"${INPUT_UNITY_VERSION}\"]"
             latest="${INPUT_UNITY_VERSION}"
           else
-            versions='["2021.3.45f1","2022.3.45f1","6000.3.16f1"]'
-            latest="6000.3.16f1"
+            versions="$(jq -c '.all' .github/unity-versions.json)"
+            latest="$(jq -r '.all[-1]' .github/unity-versions.json)"
           fi
           {
             echo "unity-versions=${versions}"

@@ -22,7 +22,24 @@
 [[ "${_DXM_CACHE_CONTRACT_LOADED:-}" == "1" ]] && return 0
 _DXM_CACHE_CONTRACT_LOADED=1
 
-readonly CACHE_WORKSPACE_ROOT="${WORKSPACE_FOLDER:-/workspaces/com.wallstop-studios.dxmessaging}"
+# Workspace root resolution. Prefer the explicit WORKSPACE_FOLDER (set by
+# devcontainer.json remoteEnv == ${containerWorkspaceFolder}). When it is unset
+# -- e.g. during postCreateCommand, which runs BEFORE remoteEnv is applied --
+# derive it from THIS script's own location: cache-contract.sh lives in
+# <workspaceRoot>/.devcontainer/, so the parent of its directory is the
+# workspace root and equals ${containerWorkspaceFolder} by construction. This is
+# robust to repo path/name migration; never hardcode an absolute fallback (a
+# stale literal silently diverges from the real mount target). Enforced by
+# scripts/__tests__/devcontainer-cache-contract.test.js.
+CACHE_WORKSPACE_ROOT="${WORKSPACE_FOLDER:-}"
+if [[ -z "${CACHE_WORKSPACE_ROOT}" ]]; then
+    # ${BASH_SOURCE[0]:?...} fails LOUDLY rather than deriving a wrong root from
+    # the caller's CWD if this file is ever sourced without a resolvable path
+    # (every real consumer sources by absolute path, so this never trips). Never
+    # silently default to a permissive/incorrect path.
+    CACHE_WORKSPACE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:?cache-contract.sh must be sourced by path so the workspace root can be derived}")/.." && pwd)"
+fi
+readonly CACHE_WORKSPACE_ROOT
 
 readonly CACHE_MOUNT_SOURCES=(
     "dxm-nuget-cache"
@@ -48,6 +65,16 @@ cache_contract_validate_shape() {
     fi
 
     return 0
+}
+
+# Emit a one-line diagnostic describing how CACHE_WORKSPACE_ROOT was resolved.
+# Consumers (validate-caching.sh) call this explicitly; sourcing stays silent.
+cache_contract_describe_workspace_root() {
+    if [[ -n "${WORKSPACE_FOLDER:-}" ]]; then
+        echo "CACHE_WORKSPACE_ROOT=${CACHE_WORKSPACE_ROOT} (from WORKSPACE_FOLDER env)"
+    else
+        echo "CACHE_WORKSPACE_ROOT=${CACHE_WORKSPACE_ROOT} (derived from script location; WORKSPACE_FOLDER unset)"
+    fi
 }
 
 cache_contract_get_owner_uid() {
