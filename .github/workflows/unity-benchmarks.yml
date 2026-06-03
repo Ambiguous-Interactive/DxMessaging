@@ -205,6 +205,7 @@ jobs:
       # Extracted into a composite action shared by all three Unity workflows;
       # shell: pwsh is enforced inside the composite.
       - name: Compute benchmark assembly list
+        id: compute
         uses: ./.github/actions/compute-unity-assemblies
         with:
           include-perf: "true"
@@ -217,7 +218,14 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
+      # Skip provisioning, the org lock, and the run when the compute step
+      # resolved an empty assembly list, so an empty discovery never takes the
+      # paid Unity seat / org lock only to fail late at verify. The verify step
+      # stays !cancelled() and is told via expected-empty. Mirrors
+      # unity-tests.yml. The benchmark list is structurally non-empty, so this
+      # is defense-in-depth and uniformity with the required workflows.
       - name: Provision Unity Editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 180
         shell: pwsh
         run: |
@@ -243,6 +251,7 @@ jobs:
           retention-days: 90
 
       - name: Acquire organization Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
         with:
           lock-name: wallstop-organization-builds
@@ -252,6 +261,7 @@ jobs:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
       - name: Run Unity Test Runner
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 120
         shell: pwsh
         env:
@@ -311,6 +321,7 @@ jobs:
         with:
           results-dir: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
           label: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
+          expected-empty: ${{ steps.compute.outputs.is-empty }}
 
       - name: Upload benchmark artifacts
         if: always()

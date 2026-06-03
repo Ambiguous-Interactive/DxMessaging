@@ -144,6 +144,14 @@ The step-level `timeout-minutes: 120` protects the in-use seat from a hung edito
 
 The active `unity-benchmarks.yml` explicitly omits `pull_request` and `push` per the perf isolation rule.
 
+## compute-unity-assemblies is-empty Gate
+
+Every workflow that consumes `./.github/actions/compute-unity-assemblies` mirrors the canonical wiring in `unity-tests.yml`: the compute step carries `id: compute`, and every license-consuming step in the same job is gated with `if: ${{ steps.compute.outputs.is-empty != 'true' }}`. License-consuming means the three steps that spend the paid Unity seat: Provision (`scripts/unity/ensure-editor.ps1`), Acquire organization Unity lock (`acquire-build-lock`), and Run (`scripts/unity/run-ci-tests.ps1`). When asmdef discovery resolves no DxMessaging-owned assemblies for a target, the action sets `is-empty=true` and exits 0 -- a skip, not a failure. Without the gate that empty list still provisions the editor, takes the org lock, and runs Unity before failing late at verify, burning paid license and lock time.
+
+The `Verify tests actually ran` step keeps its `!cancelled()` gate (never an is-empty gate) and instead receives `expected-empty: ${{ steps.compute.outputs.is-empty }}`, so an intentional skip reads as success rather than a "tests did not run" failure. The skip path does not fire for the current asmdef set; it is the robustness path for a target whose assemblies are all filtered out, such as a runtime-only standalone run when every DxMessaging test asmdef is editor-only.
+
+`scripts/validate-workflows.js` enforces this through `findComputeUnityAssembliesGateViolations`, which parses each workflow structurally with the `yaml` package (formatting-invariant; a parse failure or a missing `yaml` module is a hard error, never a silent pass). It flags any compute step without an `id`, and any license-consuming step whose `if:` omits `steps.<compute-id>.outputs.is-empty != 'true'` (quote- and whitespace-tolerant, and allowed to be combined with other conditions). Do not gate verify on is-empty, and do not satisfy the rule by removing the gated steps; mirror `unity-tests.yml`.
+
 ## When to Add a Unity Version
 
 Add a version to `unity-tests.yml`'s `unity-versions` JSON array when one of the following is true:

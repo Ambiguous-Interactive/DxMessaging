@@ -80,7 +80,7 @@ function seedDoc() {
     "",
     BEGIN_MARKER,
     "",
-    "The dispatch throughput table populates after the first scheduled benchmark run.",
+    "The dispatch throughput table populates after the first CI benchmark run on master.",
     "",
     "| Scenario                       | Throughput / Wall clock | Allocated bytes |",
     "| ------------------------------ | ----------------------- | --------------- |",
@@ -163,6 +163,17 @@ describe("render-perf-doc buildBlock", () => {
     const lastIndex = block.indexOf("RegistrationFlood_1000Types_FromColdBus");
     expect(firstIndex).toBeGreaterThan(0);
     expect(lastIndex).toBeGreaterThan(firstIndex);
+  });
+
+  // ATTRIBUTION GUARD: the in-marker provenance comment is the source of truth
+  // for that region (editing only the committed .md is overwritten on the next
+  // CI run). It must point at the workflow that actually regenerates and commits
+  // the doc -- perf-numbers.yml -- not the scheduled unity-benchmarks.yml, which
+  // does not touch the doc.
+  test("emits a provenance comment that references perf-numbers.yml, not unity-benchmarks.yml", () => {
+    const block = blockFor(LATEST);
+    expect(block).toContain("See perf-numbers.yml.");
+    expect(block).not.toContain("unity-benchmarks.yml");
   });
 });
 

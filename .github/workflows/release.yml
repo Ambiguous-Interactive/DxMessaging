@@ -93,7 +93,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .artifacts/release
-          pack_json="$(npm pack --json --provenance=false)"
+          # npm pack ignores --provenance (provenance is a publish-only
+          # feature); the artifact is attested by the attest-build-provenance
+          # step below.
+          pack_json="$(npm pack --json)"
           package_file="$(printf '%s' "${pack_json}" | jq -r '.[0].filename')"
           mv "${package_file}" ".artifacts/release/${package_file}"
           (cd .artifacts/release && sha256sum "${package_file}" > "${package_file}.sha256")
@@ -243,6 +246,7 @@ jobs:
       # into a composite action shared by all three Unity workflows; shell: pwsh
       # is enforced inside the composite.
       - name: Compute test assembly list
+        id: compute
         uses: ./.github/actions/compute-unity-assemblies
         with:
           target: editmode
@@ -254,7 +258,13 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
+      # Skip provisioning, the org lock, and the run when no DxMessaging test
+      # assembly matched (compute resolved an empty list). The verify step
+      # stays !cancelled() but is told the run was an expected skip via
+      # expected-empty. Mirrors unity-tests.yml. For the current asmdef set
+      # this never triggers; it is the robustness path for an empty target.
       - name: Provision Unity Editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 180
         shell: pwsh
         run: |
@@ -280,6 +290,7 @@ jobs:
           retention-days: 14
 
       - name: Acquire organization Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
         with:
           lock-name: wallstop-organization-builds
@@ -289,6 +300,7 @@ jobs:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
       - name: Run Unity Test Runner
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 120
         shell: pwsh
         env:
@@ -344,6 +356,7 @@ jobs:
         with:
           results-dir: .artifacts/unity/release-editmode
           label: Unity release editmode
+          expected-empty: ${{ steps.compute.outputs.is-empty }}
 
       - name: Upload release Unity artifacts
         if: always()
@@ -382,6 +395,36 @@ jobs:
           name: release-package
           path: .artifacts/release
 
+      # ORDERING INVARIANT: a published GitHub Release must never exist
+      # without the matching npm version. The IRREVERSIBLE npm publish runs
+      # FIRST; the GitHub Release is created/finalized only AFTER npm publish
+      # succeeds. If npm publish failed and the GitHub Release ran first, a
+      # non-draft Release would advertise a version that npm never received.
+      - name: Publish to npm with provenance
+        run: |
+          set -euo pipefail
+          npx --yes --package=npm@^11.5.1 npm --version
+          package_file="$(find .artifacts/release -maxdepth 1 -name '*.tgz' -print -quit)"
+          if [ -z "${package_file}" ]; then
+            echo "::error::Packed npm package artifact is missing."
+            exit 1
+          fi
+          # Make publish safely RE-RUNNABLE: if this exact name@version is
+          # already on the registry (a prior run published it before failing
+          # downstream), skip the publish instead of failing on the
+          # immutable-version error. The GitHub Release step still runs after.
+          pkg="$(jq -r .name package.json)"
+          ver="${{ needs.verify-tag.outputs.package-version }}"
+          if npx --yes --package=npm@^11.5.1 npm view "${pkg}@${ver}" version \
+              >/dev/null 2>&1; then
+            echo "::notice::${pkg}@${ver} is already on the npm registry; skipping publish."
+          else
+            npx --yes --package=npm@^11.5.1 npm publish "${package_file}" --provenance --access public
+          fi
+
+      # Runs only AFTER npm publish above succeeds (or confirmed the version
+      # already exists), preserving the ordering invariant: no published
+      # GitHub Release without the matching npm version.
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -405,14 +448,3 @@ jobs:
               --notes-file .artifacts/release/release-notes.md \
               --verify-tag
           fi
-
-      - name: Publish to npm with provenance
-        run: |
-          set -euo pipefail
-          npx --yes --package=npm@^11.5.1 npm --version
-          package_file="$(find .artifacts/release -maxdepth 1 -name '*.tgz' -print -quit)"
-          if [ -z "${package_file}" ]; then
-            echo "::error::Packed npm package artifact is missing."
-            exit 1
-          fi
-          npx --yes --package=npm@^11.5.1 npm publish "${package_file}" --provenance --access public

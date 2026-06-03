@@ -94,12 +94,19 @@ jobs:
           node-version: "22.18.0"
 
       - name: Compute test assembly list
+        id: compute
         uses: ./.github/actions/compute-unity-assemblies
         with:
           target: "${{ inputs.test-mode }}"
           runtime-only: "${{ inputs.test-mode == 'standalone' && 'true' || 'false' }}"
 
+      # Skip provisioning, the ephemeral-project generation, the org lock, and
+      # the GameCI run when the compute step resolved an empty assembly list, so
+      # an empty discovery never takes the paid Unity seat / org lock only to
+      # fail late at verify. Mirrors unity-tests.yml. The list is structurally
+      # non-empty for the supported inputs, so this is defense-in-depth.
       - name: Provision Unity Editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 180
         shell: pwsh
         run: |
@@ -130,6 +137,7 @@ jobs:
           retention-days: 14
 
       - name: Generate ephemeral Unity project
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         shell: pwsh
         run: |
           ./scripts/unity/run-ci-tests.ps1 `
@@ -148,6 +156,7 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Acquire organization Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
         with:
           lock-name: wallstop-organization-builds
@@ -158,6 +167,7 @@ jobs:
 
       - name: Run GameCI normal project mode
         id: game_ci
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 120
         # game-ci reads UNITY_SERIAL/UNITY_EMAIL/UNITY_PASSWORD from env for
         # classic serial activation (the unityLicensingServer input is retired
@@ -210,6 +220,7 @@ jobs:
         with:
           results-dir: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}
           label: GameCI experiment ${{ inputs.unity-version }} ${{ inputs.test-mode }}
+          expected-empty: ${{ steps.compute.outputs.is-empty }}
 
       - name: Upload GameCI experiment artifacts
         if: always()

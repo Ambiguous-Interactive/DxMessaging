@@ -236,7 +236,7 @@ function buildBlock(byScenario, unityVersion) {
     BEGIN_MARKER,
     "",
     "<!-- Do not edit by hand. Rewritten by scripts/unity/render-perf-doc.js from",
-    "     the latest Unity version's benchmark run. See unity-benchmarks.yml. -->",
+    "     the latest Unity version's benchmark run. See perf-numbers.yml. -->",
     "",
     `Latest CI benchmark run: Unity ${unityVersion}, commit \`${commit}\`.`,
     "",
@@ -458,7 +458,7 @@ function main(argv = process.argv) {
       process.stderr.write(
         `Performance doc is out of date: ${path.relative(process.cwd(), options.doc)} ` +
           "would change. Re-run render-perf-doc.js without --check (or wait for the " +
-          "unity-benchmarks auto-update) to refresh it.\n"
+          "perf-numbers.yml commit to master) to refresh it.\n"
       );
       return 3;
     }

@@ -85,6 +85,32 @@ const ORGANIZATION_BUILD_LOCK_RELEASE_USES =
 // Lowercased `uses` ref for the game-ci test runner action.
 const GAME_CI_UNITY_TEST_RUNNER_USES = "game-ci/unity-test-runner@";
 
+// The `yaml` package is used to parse workflows structurally (formatting-
+// invariant) for the compute-unity-assemblies gate check. It is not a declared
+// dependency of this package; it arrives transitively through devDependencies
+// (cspell, markdownlint-cli2). Resolve it lazily and remember the outcome so a
+// missing module surfaces as an actionable policy Violation instead of crashing
+// the whole validator with an uncaught MODULE_NOT_FOUND. The result is cached
+// (module on success, Error on failure) so the require runs at most once.
+let cachedYamlModule;
+
+/**
+ * Loads the `yaml` package, caching the result across calls.
+ *
+ * @returns {{ module: object } | { error: Error }} The loaded module, or the
+ *   load error when `yaml` cannot be resolved.
+ */
+function loadYamlModule() {
+  if (cachedYamlModule === undefined) {
+    try {
+      cachedYamlModule = { module: require("yaml") };
+    } catch (error) {
+      cachedYamlModule = { error: error instanceof Error ? error : new Error(String(error)) };
+    }
+  }
+  return cachedYamlModule;
+}
+
 /**
  * Represents a validation violation.
  */
@@ -4308,6 +4334,288 @@ function findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lin
   return violations;
 }
 
+// Lowercased, leading-`./`-stripped `uses` ref for the compute-unity-assemblies
+// composite action. The validator normalizes each step's `uses` the same way
+// before comparing.
+const COMPUTE_UNITY_ASSEMBLIES_USES = ".github/actions/compute-unity-assemblies";
+
+// Lowercased substring marker for the organization build-lock acquire action.
+// A step whose `uses` contains this marker consumes the shared Unity
+// activation seat (the lock is only taken for licensed Unity work).
+const ORGANIZATION_BUILD_LOCK_ACQUIRE_MARKER = "acquire-build-lock";
+
+function normalizeUsesRef(rawUses) {
+  if (typeof rawUses !== "string") {
+    return "";
+  }
+
+  return rawUses.trim().toLowerCase().replace(/^\.\//, "");
+}
+
+function stepRunText(step) {
+  if (!step || typeof step !== "object") {
+    return "";
+  }
+
+  const run = step.run;
+  if (typeof run === "string") {
+    return run;
+  }
+
+  // A list-form `run:` is invalid GitHub Actions YAML, but tolerate it
+  // defensively by joining rather than throwing.
+  if (Array.isArray(run)) {
+    return run.filter((entry) => typeof entry === "string").join("\n");
+  }
+
+  return "";
+}
+
+function stepUsesComputeUnityAssemblies(step) {
+  return normalizeUsesRef(step && step.uses) === COMPUTE_UNITY_ASSEMBLIES_USES;
+}
+
+/**
+ * A "license-consuming" step is one that provisions or runs Unity under the
+ * paid activation seat. It is identified by concrete markers, mirroring the
+ * canonical is-empty gate in unity-tests.yml:
+ *   - a `run:` that invokes scripts/unity/ensure-editor.ps1 (editor provision),
+ *   - a `uses:` containing "acquire-build-lock" (the org Unity lock), OR
+ *   - a `run:` that invokes scripts/unity/run-ci-tests.ps1 (the Unity run /
+ *     ephemeral-project generation).
+ * These are exactly the steps that waste paid Unity license / lock time when
+ * the assembly discovery resolved an empty list, so each must be gated on the
+ * compute step's is-empty output.
+ */
+function stepConsumesUnityLicense(step) {
+  const runText = stepRunText(step);
+  if (/\bensure-editor\.ps1\b/.test(runText)) {
+    return true;
+  }
+  if (/\brun-ci-tests\.ps1\b/.test(runText)) {
+    return true;
+  }
+
+  const usesRef = normalizeUsesRef(step && step.uses);
+  return usesRef.includes(ORGANIZATION_BUILD_LOCK_ACQUIRE_MARKER);
+}
+
+/**
+ * Returns true when `ifExpression` gates the step on any of the provided
+ * compute step ids resolving a non-empty assembly list, i.e. contains the
+ * normalized token `steps.<id>.outputs.is-empty != 'true'`. The match is
+ * tolerant of surrounding whitespace and of single/double quote style around
+ * the `true` literal, and allows the token to be ANDed (or otherwise combined)
+ * with other conditions.
+ */
+function ifExpressionGatesOnComputeEmptiness(ifExpression, computeIds) {
+  if (typeof ifExpression !== "string" || computeIds.length === 0) {
+    return false;
+  }
+
+  // Strip whitespace and unify double quotes to single so quote/whitespace
+  // variants normalize to one token form.
+  const normalized = ifExpression.replace(/\s+/g, "").replace(/"/g, "'");
+
+  return computeIds.some((id) => {
+    const token = `steps.${id}.outputs.is-empty!='true'`;
+    return normalized.includes(token);
+  });
+}
+
+/**
+ * Resolves the 1-indexed start line of a step's mapping node from the parsed
+ * YAML document, for best-effort violation reporting. Falls back to line 0 when
+ * the AST node carries no usable range.
+ */
+function resolveNodeStartLine(content, node) {
+  if (!node || !Array.isArray(node.range) || typeof node.range[0] !== "number") {
+    return 0;
+  }
+
+  return content.slice(0, node.range[0]).split("\n").length;
+}
+
+/**
+ * Class-prevention rule for the compute-unity-assemblies is-empty gate.
+ *
+ * The canonical pattern lives in unity-tests.yml: the "Compute test assembly
+ * list" step carries an `id`, and every step that consumes the paid Unity
+ * activation seat (editor provision, org lock acquire, Unity run) is gated on
+ * `steps.<id>.outputs.is-empty != 'true'`. Without that gate an empty
+ * discovery still provisions the editor, takes the org Unity lock, and runs
+ * with an empty assembly list, wasting paid license/lock time before failing
+ * late at verify.
+ *
+ * For every job: if any step uses ./.github/actions/compute-unity-assemblies,
+ * that step MUST declare an `id`; and every license-consuming step in the SAME
+ * job MUST carry an `if:` whose expression gates on a compute id in this job.
+ *
+ * The workflow is parsed structurally with the `yaml` package so the check is
+ * formatting-invariant (no assumptions about single-line tags, attribute
+ * order, or line regex). A YAML parse failure is a HARD error, never a silent
+ * pass. Workflows that do not use the action produce no violations.
+ *
+ * @param {string} relativePath - Repo-relative workflow path (for messages)
+ * @param {string} content - Raw workflow file content
+ * @returns {Violation[]} Array of violations found
+ */
+function findComputeUnityAssembliesGateViolations(relativePath, content) {
+  const violations = [];
+
+  const yamlResult = loadYamlModule();
+  if (yamlResult.error) {
+    // Treat an unresolved `yaml` package as a HARD error, never a silent pass:
+    // without structural parsing the gate cannot be verified, so report an
+    // actionable Violation rather than letting the require crash the validator.
+    violations.push(
+      new Violation(
+        relativePath,
+        0,
+        "compute-unity-assemblies gate",
+        `Unable to load the 'yaml' package needed to verify the compute-unity-assemblies is-empty gate (${yamlResult.error.message}). Run 'npm ci' (or 'npm install yaml') so the validator can parse workflows structurally.`,
+        "error"
+      )
+    );
+    return violations;
+  }
+  const yaml = yamlResult.module;
+
+  let document;
+  try {
+    document = yaml.parseDocument(content, { prettyErrors: true });
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    violations.push(
+      new Violation(
+        relativePath,
+        0,
+        "compute-unity-assemblies gate",
+        `Unable to parse workflow YAML to verify the compute-unity-assemblies is-empty gate: ${message}`,
+        "error"
+      )
+    );
+    return violations;
+  }
+
+  if (document && Array.isArray(document.errors) && document.errors.length > 0) {
+    const first = document.errors[0];
+    const message = first && first.message ? first.message : String(first);
+    violations.push(
+      new Violation(
+        relativePath,
+        0,
+        "compute-unity-assemblies gate",
+        `Unable to parse workflow YAML to verify the compute-unity-assemblies is-empty gate: ${message}`,
+        "error"
+      )
+    );
+    return violations;
+  }
+
+  let parsed;
+  try {
+    parsed = document.toJS({ maxAliasCount: -1 });
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    violations.push(
+      new Violation(
+        relativePath,
+        0,
+        "compute-unity-assemblies gate",
+        `Unable to materialize workflow YAML to verify the compute-unity-assemblies is-empty gate: ${message}`,
+        "error"
+      )
+    );
+    return violations;
+  }
+
+  const jobs = parsed && typeof parsed === "object" ? parsed.jobs : null;
+  if (!jobs || typeof jobs !== "object") {
+    // A workflow with no jobs cannot use the action; nothing to gate.
+    return violations;
+  }
+
+  const jobsNode = document.get("jobs", true);
+
+  for (const [jobId, job] of Object.entries(jobs)) {
+    if (!job || typeof job !== "object" || !Array.isArray(job.steps)) {
+      continue;
+    }
+
+    const stepsNode =
+      jobsNode && typeof jobsNode.getIn === "function"
+        ? jobsNode.getIn([jobId, "steps"], true)
+        : null;
+    const stepNodes = stepsNode && Array.isArray(stepsNode.items) ? stepsNode.items : [];
+
+    const computeSteps = [];
+    job.steps.forEach((step, index) => {
+      if (step && typeof step === "object" && stepUsesComputeUnityAssemblies(step)) {
+        computeSteps.push({ step, index });
+      }
+    });
+
+    if (computeSteps.length === 0) {
+      // This job does not use the action -- no gate is required.
+      continue;
+    }
+
+    // Every compute step must declare an id (the gate references it).
+    const computeIds = [];
+    for (const { step, index } of computeSteps) {
+      const id = typeof step.id === "string" ? step.id.trim() : "";
+      if (id.length > 0) {
+        computeIds.push(id);
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          resolveNodeStartLine(content, stepNodes[index]),
+          "compute-unity-assemblies without id",
+          `Job '${jobId}': the step using ./.github/actions/compute-unity-assemblies must declare an 'id' so license-consuming steps can gate on its is-empty output (mirror unity-tests.yml's 'id: compute').`,
+          "error"
+        )
+      );
+    }
+
+    // Without a usable compute id there is nothing for the license-consuming
+    // steps to reference; the missing-id violation already covers this job.
+    if (computeIds.length === 0) {
+      continue;
+    }
+
+    job.steps.forEach((step, index) => {
+      if (!step || typeof step !== "object" || !stepConsumesUnityLicense(step)) {
+        return;
+      }
+
+      if (ifExpressionGatesOnComputeEmptiness(step.if, computeIds)) {
+        return;
+      }
+
+      const stepLabel =
+        typeof step.name === "string" && step.name.trim().length > 0
+          ? `'${step.name.trim()}'`
+          : `index ${index}`;
+
+      violations.push(
+        new Violation(
+          relativePath,
+          resolveNodeStartLine(content, stepNodes[index]),
+          "Unity license-consuming step not gated on is-empty",
+          `Job '${jobId}': license-consuming step ${stepLabel} must be gated on the compute step's is-empty output. Add an if: containing steps.${computeIds[0]}.outputs.is-empty != 'true' (combine with any existing condition) so an empty assembly discovery does not provision the editor, take the org Unity lock, or run Unity. Mirror unity-tests.yml.`,
+          "error"
+        )
+      );
+    });
+  }
+
+  return violations;
+}
+
 /**
  * Validates a single workflow file.
  *
@@ -4421,6 +4729,8 @@ function validateWorkflow(filePath, options = {}) {
     violations.push(...findUnityLockTimeoutViolations(relativePath, lines));
 
     violations.push(...findCrossPlatformPreflightTargetedGateViolations(relativePath, lines));
+
+    violations.push(...findComputeUnityAssembliesGateViolations(relativePath, content));
   } catch (error) {
     violations.push(
       new Violation(
@@ -4547,6 +4857,10 @@ if (typeof module !== "undefined" && module.exports) {
     extractStepTimeoutMinutes,
     findUnityLockTimeoutViolations,
     findCrossPlatformPreflightTargetedGateViolations,
+    findComputeUnityAssembliesGateViolations,
+    stepUsesComputeUnityAssemblies,
+    stepConsumesUnityLicense,
+    ifExpressionGatesOnComputeEmptiness,
     UNITY_LOCK_RUN_BUDGET_MINUTES,
     extractJobRunsOn,
     extractJobNeeds,

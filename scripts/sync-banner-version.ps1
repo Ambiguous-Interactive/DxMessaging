@@ -158,11 +158,12 @@ function Get-RepositoryTestCount {
         }
 
         foreach ($file in $files) {
-            $content = Remove-SourceComments -Content (Get-Content $file.FullName -Raw)
+            $rawContent = Get-Content $file.FullName -Raw
             if ($file.Extension -eq '.cs') {
+                $content = Remove-SourceComments -Content $rawContent
                 $count += [regex]::Matches($content, '\[(?:UnityTest|Test|TestCase|TestCaseSource|Theory|Fact)\b').Count
             } else {
-                $content = Remove-JavaScriptNonCode -Content (Get-Content $file.FullName -Raw)
+                $content = Remove-JavaScriptNonCode -Content $rawContent
                 $count += [regex]::Matches($content, '(?<![\w.])(?:test|it)\s*\(').Count
             }
         }

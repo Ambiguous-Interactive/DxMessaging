@@ -261,6 +261,7 @@ jobs:
       # OPT IN to the Benchmarks/Allocations assemblies via include-perf, exactly
       # as unity-benchmarks.yml does.
       - name: Compute benchmark assembly list
+        id: compute
         uses: ./.github/actions/compute-unity-assemblies
         with:
           include-perf: "true"
@@ -275,8 +276,14 @@ jobs:
 
       # Editor install/repair does NOT require the paid Unity seat, so it runs
       # BEFORE the org lock. EditorOnly: editmode/playmode benchmarks do not need
-      # a player toolchain.
+      # a player toolchain. Skip provisioning, the org lock, and the run when the
+      # compute step resolved an empty assembly list, so an empty discovery never
+      # takes the paid Unity seat / org lock only to fail late at verify. The
+      # verify step stays !cancelled() and is told via expected-empty. Mirrors
+      # unity-tests.yml. The perf list is structurally non-empty, so this is
+      # defense-in-depth and uniformity with the required workflows.
       - name: Provision Unity Editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 180
         shell: pwsh
         run: |
@@ -302,6 +309,7 @@ jobs:
           retention-days: 14
 
       - name: Acquire organization Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
         with:
           lock-name: wallstop-organization-builds
@@ -311,6 +319,7 @@ jobs:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
       - name: Run Unity Test Runner
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 120
         shell: pwsh
         env:
@@ -354,6 +363,7 @@ jobs:
         with:
           results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}
           label: Perf ${{ matrix.unity-version }} ${{ matrix.test-mode }}
+          expected-empty: ${{ steps.compute.outputs.is-empty }}
 
       - name: Upload perf benchmark artifacts
         if: always()
