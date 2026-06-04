@@ -45,7 +45,7 @@ Before committing documentation or skill files:
 ## References
 
 - [Markdown Guide - Basic Syntax](https://www.markdownguide.org/basic-syntax/)
-- [WebAIM - Links and Hypertext](https://webaim.org/techniques/hypertext/)
+- [W3C WAI - Writing for Web Accessibility (Link Text)](https://www.w3.org/WAI/tips/writing/#make-link-text-meaningful)
 - [GitHub Actions - Using Actions](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsuses)
 
 ## Changelog
