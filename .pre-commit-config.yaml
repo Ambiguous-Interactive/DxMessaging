@@ -410,7 +410,7 @@ repos:
         stages:
           - pre-commit
           - pre-push
-        description: Validate .lychee.toml fields against lychee v0.23.0 valid options.
+        description: Validate .lychee.toml fields against lychee v0.24.2 valid options.
       # perf-allow[scans-the-world-with-files]: validator walks .devcontainer/*.sh
       # to enforce a JSONC-aware extraction policy; scan is bounded to
       # .devcontainer/ and staged argv would not narrow it

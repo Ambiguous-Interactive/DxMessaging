@@ -1,11 +1,12 @@
 name: Markdown Link Validity (scheduled external scan)
 
 # Advisory deep scan of EXTERNAL links across all tracked docs. The blocking PR
-# check (lint-doc-links.yml) only sees links in the diff; this runs on a timer to
-# catch links that rot on the default branch with no PR touching them. It NEVER
-# fails the run -- instead it maintains a single tracking issue listing the dead
-# links. Bot-detection and transient responses are accepted (see .lychee.toml), so
-# the issue stays signal-rich (a timeout is reported too, since a persistently slow
+# check (lint-doc-links.yml) also checks all tracked docs, but only runs when a
+# PR/push touches docs or link-checking config; this runs on a timer to catch
+# links that rot on the default branch with no PR touching them. It NEVER fails
+# the run -- instead it maintains a single tracking issue listing the dead links.
+# Bot-detection and transient responses are accepted (see .lychee.toml), so the
+# issue stays signal-rich (a timeout is reported too, since a persistently slow
 # host is worth a look, but bot-block/throttle/5xx never appear).
 #
 # NOTE: GitHub fires `schedule:` only from the default branch, so this scan is
@@ -58,6 +59,7 @@ jobs:
             --max-cache-age 1d
             --cache-exclude-status "429,500..=599"
             --files-from ${{ runner.temp }}/doc-files.txt
+          lycheeVersion: v0.24.2
           fail: false
           failIfEmpty: false
           jobSummary: true

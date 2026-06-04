@@ -150,6 +150,18 @@ function statusToExitCode(status) {
   return status === "fail" ? 1 : 0;
 }
 
+function isDependencyVersionParityResult(result) {
+  return (
+    result !== null &&
+    typeof result === "object" &&
+    !Array.isArray(result) &&
+    typeof result.ok === "boolean" &&
+    Number.isInteger(result.checked) &&
+    result.checked >= 0 &&
+    Array.isArray(result.drifted)
+  );
+}
+
 /**
  * 1. Node modules freshness -- for each entry in validate-node-tooling's
  *    TOOL_SPECS, report a resolve + exists + load triple.
@@ -304,29 +316,55 @@ function checkNodeModulesFreshness(options = {}) {
   let parityFailed = 0;
   try {
     const parity = probeDependencyVersionParityFn({ repoRoot });
-    if (parity && parity.ok) {
+    if (!isDependencyVersionParityResult(parity)) {
+      parityFailed = 1;
+      lines.push("  FAIL  dependency version parity");
+      lines.push("          - parity probe returned invalid result");
+    } else if (parity.ok) {
       lines.push(`  ok    dependency version parity (${parity.checked} pinned deps)`);
-    } else if (parity) {
+    } else {
       parityFailed = 1;
       lines.push("  FAIL  dependency version parity");
       for (const line of formatDriftLines(parity)) {
         lines.push(`          - ${line}`);
       }
       lines.push(
-        "          Reconcile: run `npm install` (or `npm run repair:node-tooling`) to align " +
+        "          Reconcile: run `npm run repair:node-tooling` (or `npm install`) to align " +
           "node_modules + the local lockfile with package.json."
       );
     }
   } catch (error) {
     const detail = error && error.message ? error.message : String(error);
-    lines.push(`  ok    dependency version parity (probe skipped: ${detail})`);
+    parityFailed = 1;
+    lines.push("  FAIL  dependency version parity");
+    lines.push(`          - parity probe threw: ${detail}`);
   }
 
-  if (failed > 0) {
+  if (failed > 0 || parityFailed > 0) {
     lines.push("");
-    lines.push(
-      "  Remediation: run `npm ci` to restore node_modules, then re-run `npm run doctor`."
-    );
+    if (failed > 0 && parityFailed > 0) {
+      lines.push(
+        "  Remediation: run `npm run repair:node-tooling` first, or run `npm install` to reconcile dependency versions;"
+      );
+      lines.push(
+        "              then re-run `npm run doctor` before trying any integrity-only repair."
+      );
+    } else if (parityFailed > 0) {
+      lines.push(
+        "  Remediation: run `npm run repair:node-tooling` (or `npm install`) to align node_modules"
+      );
+      lines.push(
+        "              and the local lockfile with package.json, then re-run `npm run doctor`."
+      );
+    } else {
+      lines.push(
+        "  Remediation: run `npm run repair:node-tooling` to restore node_modules, then re-run `npm run doctor`."
+      );
+      lines.push(
+        "              If repair reports integrity corruption and cannot complete, `npm ci --no-audit --no-fund`"
+      );
+      lines.push("              can re-extract node_modules from the local lockfile.");
+    }
   }
 
   return {

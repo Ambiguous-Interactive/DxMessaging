@@ -7,8 +7,9 @@ name: Lint Docs Links
 #      liveness-checked -- a remote page restructuring its anchors must never red a
 #      PR. Local anchors are deterministic; external ones are not.)
 #   2. Lenient external liveness: bot-detection / rate-limit / transient codes are
-#      accepted (see .lychee.toml) and timeouts are treated as advisory, so a PR
-#      fails only on a genuinely dead link (404/410 or a DNS/connection failure).
+#      accepted (see .lychee.toml), and this blocking pass treats timeouts as
+#      advisory via lychee's native --accept-timeouts=true CLI flag. A PR fails
+#      only on a genuinely dead link (404/410 or DNS/connection failure).
 # Both passes are fed the set of TRACKED docs via `git ls-files | --files-from`, so
 # vendored/generated/scratch trees are excluded automatically (lychee's glob does
 # NOT honor .gitignore). Deep external rot is tracked by the scheduled advisory
@@ -80,56 +81,28 @@ jobs:
             --offline
             --include-fragments
             --files-from ${{ runner.temp }}/doc-files.txt
+          lycheeVersion: v0.24.2
           fail: true
           failIfEmpty: false
           jobSummary: true
 
-      # Gate 2 -- external liveness, captured as JSON so the next step can treat a
-      # TIMEOUT (slow-but-alive host) as advisory while still failing on a genuinely
-      # dead link. fail:false here; the gating decision is made in the next step.
+      # Gate 2 -- external liveness. Timeout acceptance is command-line-only here:
+      # the scheduled advisory scan should still report persistent slow hosts.
       - name: Probe external link liveness
-        id: external
         uses: lycheeverse/lychee-action@v2
         with:
           args: >-
             -c .lychee.toml
             --scheme https
             --scheme http
+            --accept-timeouts=true
             --files-from ${{ runner.temp }}/doc-files.txt
-          fail: false
+          lycheeVersion: v0.24.2
+          fail: true
           failIfEmpty: false
-          format: json
-          output: ${{ runner.temp }}/external.json
-          jobSummary: false
+          jobSummary: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Fail only on genuinely-dead external links. Timeouts are advisory: a slow
-      # host is not a broken link, and there is no native "accept timeouts" in
-      # lychee 0.23.0, so we classify from the JSON report. Only runs when the
-      # probe found at least one failure.
-      - name: Fail only on genuinely-dead external links
-        if: steps.external.outputs.exit_code != '0'
-        run: |
-          report="${RUNNER_TEMP}/external.json"
-          if [ ! -f "${report}" ]; then
-            echo "::error::external link report ${report} was not produced"
-            exit 1
-          fi
-          timeouts="$(jq '.timeouts // 0' "${report}")"
-          dead="$(jq '[.error_map[]?[]? | select(.status.text != "Timeout")] | length' "${report}")"
-          if [ "${timeouts}" -gt 0 ]; then
-            echo "::warning::${timeouts} external link(s) timed out -- advisory only;" \
-              "the scheduled scan tracks persistent timeouts."
-          fi
-          if [ "${dead}" -gt 0 ]; then
-            echo "::error::${dead} external link(s) are genuinely broken (404/410/DNS):"
-            jq -r '.error_map[]?[]? | select(.status.text != "Timeout")
-              | "  - \(.url) -> \(.status.text)"' "${report}"
-            exit 1
-          fi
-          echo "External links: reachable, or accepted bot/transient responses;" \
-            "only timeouts (advisory) were seen."
 
       # Diagnostics: explain how to read a failure so contributors never reach for a
       # per-domain exclude again (the pattern that caused the original incident).
@@ -151,7 +124,7 @@ jobs:
 
           Bot-detection and throttling responses
           (401/403/405/406/408/415/418/429/451/999/5xx) are ACCEPTED, and timeouts
-          are advisory -- none fail this job. Do NOT add a per-domain `exclude` to
-          silence a 403; widen `accept` in `.lychee.toml` only if a site adopts a
-          brand-new blocking status code.
+          are accepted by this workflow's `--accept-timeouts=true` flag. Do NOT add
+          a per-domain `exclude` to silence a 403; widen `accept` in `.lychee.toml`
+          only if a site adopts a brand-new blocking status code.
           EOF

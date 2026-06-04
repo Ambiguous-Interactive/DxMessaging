@@ -57,7 +57,7 @@ applies_to:
     - "GitHub Actions"
     - "lychee"
   versions:
-    lychee: ">=0.23.0"
+    lychee: "v0.24.2"
 
 aliases:
   - "lychee config validation"
@@ -105,9 +105,9 @@ CI failure with an unhelpful error message.
 
 ### Floating Version Tags
 
-The `lycheeverse/lychee-action@v2` action uses a floating major tag: you pin `@v2` for
-stability across minor/patch updates, but a new release can change which config fields are
-valid with no advance warning, so CI simply starts failing.
+The action tag stays on `@v2`, but the lychee binary itself must be pinned with
+`with.lycheeVersion: v0.24.2`. Without that input, a new lychee release can change
+which config fields are valid with no advance warning.
 
 ### Known Deprecated Field Mappings (pre-v0.23.0 to v0.23.0)
 
@@ -122,7 +122,7 @@ valid with no advance warning, so CI simply starts failing.
 ### 1. Validation Script
 
 The `scripts/validate-lychee-config.js` script validates `.lychee.toml` against a
-known-good field list for lychee v0.23.0:
+known-good field list for lychee v0.24.2:
 
 ```bash
 # Run from repository root
@@ -134,12 +134,14 @@ The script:
 1. Reads `.lychee.toml` and parses top-level TOML keys
    (including `[table]` and `[[array_of_tables]]` headers by extracting the top-level
    table segment)
-1. Checks each key against a `VALID_FIELDS` set containing all valid v0.23.0 options
+1. Checks each key against a `VALID_FIELDS` set containing all valid v0.24.2 options
 1. Validates field values where applicable (e.g., `verbose` must be one of the allowed
    string enum values: "error", "warn", "info", "debug", "trace", including when
    key-value pairs are defined inside TOML tables)
 1. Requires properly paired quote boundaries before unquoting string-enum values (invalid
    quote forms like `"info` or `"info'` are rejected, not normalized)
+1. Keeps v0.24.2's `accept_timeouts` in `VALID_FIELDS` but rejects it in the shared
+   config because timeout acceptance is command-line-only in the blocking workflow.
 1. Enforces the link-acceptance policy via `validateStrictLinkPolicy`: it FORBIDS
    accepting 404 or 410 (those mean the link is gone) and REQUIRES accepting 403 and
    429 (sites return these to CI bots even when the page is valid). This is the inverse
@@ -178,8 +180,9 @@ Key design decisions:
 
 ### 3. CI Workflow Integration
 
-Both link-checking workflows validate the config before running lychee, and both
-share the single `.lychee.toml`. They differ in how they use it:
+Both link-checking workflows share the single `.lychee.toml`. The blocking workflow
+validates it before lychee; the scheduled advisory scan does not run
+`validate-lychee-config.js` and relies on hooks/preflight when config changes.
 
 - **`lint-doc-links.yml`** (blocking PR/push check) runs two passes. An OFFLINE pass
   validates relative/local links and in-repo `#anchor` fragments against the working
@@ -187,12 +190,17 @@ share the single `.lychee.toml`. They differ in how they use it:
   fails only on 404/410 or a DNS/connection error; the broad `accept` list absorbs
   bot-detection and transient codes.
 - **`markdown-link-validity.yml`** (scheduled advisory scan) runs daily on a cron plus
-  `workflow_dispatch`. It NEVER fails the run; instead it opens or updates a single
-  tracking issue listing genuinely-dead links.
+  `workflow_dispatch`. It NEVER fails the run; it opens or updates one tracking issue,
+  pins the lychee binary, keeps `fail: false`, and does not run the config validator.
 
 ```yaml
 - name: Validate lychee configuration
   run: node scripts/validate-lychee-config.js
+- name: Collect tracked docs
+  run: |
+    git ls-files -z '*.md' '*.markdown' | tr '\0' '\n' \
+      > "${RUNNER_TEMP}/doc-files.txt"
+    echo "Checking $(wc -l < "${RUNNER_TEMP}/doc-files.txt") tracked doc(s)."
 
 # Gate 1: offline -- relative links and in-repo "#anchor" fragments (PR-blocking).
 - name: Check internal links and anchors (offline)
@@ -202,9 +210,8 @@ share the single `.lychee.toml`. They differ in how they use it:
       -c .lychee.toml
       --offline
       --include-fragments
-      --no-progress
-      --verbose
-      "./**/*.md"
+      --files-from ${{ runner.temp }}/doc-files.txt
+    lycheeVersion: v0.24.2
     fail: true
 
 # Gate 2: lenient external liveness -- only 404/410/DNS fail (accept list in config).
@@ -215,18 +222,18 @@ share the single `.lychee.toml`. They differ in how they use it:
       -c .lychee.toml
       --scheme https
       --scheme http
-      --no-progress
-      --verbose
-      "./**/*.md"
+      --accept-timeouts=true
+      --files-from ${{ runner.temp }}/doc-files.txt
+    lycheeVersion: v0.24.2
     fail: true
 ```
 
-The validation step runs first, so if the config is invalid, the workflow fails fast
-with a clear error message instead of a cryptic lychee parse failure.
+In the blocking workflow, validation runs first, so invalid config fails fast with a
+clear message instead of a cryptic lychee parse failure.
 
 ## Current Valid Configuration
 
-The `.lychee.toml` file uses these v0.23.0 field names (values mirror the live config):
+The `.lychee.toml` file uses these v0.24.2 field names (values mirror the live config):
 
 ```toml
 verbose = "info"              # string enum ("error","warn","info","debug","trace"), not "verbosity = 1"
@@ -269,29 +276,21 @@ exclude = [
 ```
 
 `scheme` is NOT set in the config; the two jobs pass `--scheme https --scheme http` on
-the command line for the external-liveness pass only (the offline pass omits it). There
-is no `user_agent` override.
+the command line for the external-liveness pass only (the offline pass omits it).
+`accept_timeouts` is valid in v0.24.2 but is NOT set here: the blocking workflow passes
+`--accept-timeouts=true`, while the advisory scan should still report slow hosts.
 
 ## Best Practices for Tool Config Drift
 
 ### Pin and Validate
 
-When a CI tool uses floating version tags, add a validation script that checks config
-against the current version's schema, run it before the tool in CI and in git hooks so
-failures are clear and caught pre-push, and document the target version in the script.
+When a CI tool can float, pin its effective binary version, add a validation script that
+checks config against that schema, run it before the tool in CI and hooks, and document
+the target version in the script.
 
 ### Keep the Valid Field List Updated
 
 When lychee releases a new version, diff the
-[lychee example config](https://github.com/lycheeverse/lychee/blob/master/lychee.example.toml)
+[lychee example config](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee.example.toml)
 for added/removed/renamed fields, update the `VALID_FIELDS` set and version comment in
 `scripts/validate-lychee-config.js`, then re-run validation against `.lychee.toml`.
-
-### Test the Validation Script
-
-Unit tests live at `scripts/__tests__/validate-lychee-config.test.js`; update their
-expectations whenever the valid field list changes.
-
-## See Also
-
-- [lychee configuration part 1](./lychee-configuration-part-1.md)

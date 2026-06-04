@@ -31,12 +31,13 @@ Continuation extracted from `lychee-configuration.md` to keep files within the r
 | Using `verbosity = 1`                       | Changed to string enum in v0.23.0                          | Use `verbose = "info"` (or "error", "warn", "debug", "trace")      |
 | Skipping validation in CI                   | Config errors surface as cryptic lychee failures           | Add validation step before lychee-action                           |
 | Not updating VALID_FIELDS after lychee bump | New valid fields flagged as errors                         | Sync the set with upstream example config                          |
-| Pinning to `@v2` without validation         | New lychee versions can break config silently              | Always pair floating tags with config validation                   |
+| Missing `lycheeVersion` in workflow steps   | New lychee binaries can break config silently              | Pin every active lychee-action step to `v0.24.2`                   |
 | Ignoring TOML table headers in validators   | Invalid table-based config bypasses validation             | Parse `[table]` and `[[array]]` headers as top-level fields        |
 | Reading config files at test module scope   | Jest can fail during test collection with poor context     | Read files in `beforeAll` with an existence guard                  |
 | Per-domain `exclude` to silence a 403/429   | Fragile whack-a-mole; the next bot-blocked site repeats it | Widen `accept` instead; reserve `exclude` for unreachable hosts    |
 | Swapping a flaky link to a "stable" domain  | The new domain blocks CI bots too (webaim -> w3 failed)    | Keep the correct URL; widen `accept` for the blocking status       |
 | Accepting 404/410, or omitting 403/429      | Hides dead links, or reintroduces flaky bot-block failures | Follow `validateStrictLinkPolicy`: forbid 404/410, require 403/429 |
+| Setting `accept_timeouts` in `.lychee.toml` | Scheduled scans stop reporting persistent slow hosts       | Pass `--accept-timeouts=true` only in the blocking workflow        |
 
 Additional parser guard: malformed quoted values such as `"info` or `"info'`
 must be treated as invalid and rejected unless opening/closing quotes are present
@@ -47,6 +48,8 @@ and use the same quote character.
 Before modifying `.lychee.toml`:
 
 - [ ] All field names are in the `VALID_FIELDS` set in `validate-lychee-config.js`
+- [ ] `accept_timeouts` remains absent from `.lychee.toml`; timeout acceptance is CLI-only
+      in `lint-doc-links.yml`
 - [ ] No deprecated field names used (check the mapping table above)
 - [ ] Boolean fields use `true`/`false`, not integers; `verbose` uses a string enum value
 - [ ] Validation script passes: `node scripts/validate-lychee-config.js`
@@ -57,6 +60,7 @@ After a lychee version upgrade:
 - [ ] Compare upstream example config for new/removed/renamed fields
 - [ ] Update `VALID_FIELDS` in `validate-lychee-config.js`
 - [ ] Update version comment in the script
+- [ ] Update every active lychee-action `lycheeVersion` pin
 - [ ] Run validation against existing `.lychee.toml`
 - [ ] Update unit tests if field list changed
 

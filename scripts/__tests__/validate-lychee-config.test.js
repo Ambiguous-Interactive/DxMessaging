@@ -3,7 +3,7 @@
  *
  * These tests validate the TOML parsing and field validation logic
  * for the lychee configuration validator. Also validates the actual
- * .lychee.toml configuration file against lychee v0.23.0's valid fields.
+ * .lychee.toml configuration file against lychee v0.24.2's valid fields.
  */
 
 "use strict";
@@ -17,6 +17,7 @@ const {
   validateFields,
   validateFieldValues,
   validateStrictLinkPolicy,
+  validateSharedConfigPolicy,
   VALID_FIELDS,
   VALID_VERBOSE_VALUES
 } = require("../validate-lychee-config.js");
@@ -109,13 +110,9 @@ describe("parseTopLevelKeys", () => {
   test("should not mis-parse multiline array elements that contain '=' as keys", () => {
     // Regression: range elements like "200..=299" contain '=', so a parser that
     // does not track multiline-array depth reads them as bogus keys (200.., 500..).
-    const content = [
-      "accept = [",
-      '  "200..=299",',
-      '  "500..=599",',
-      "]",
-      "verbose = true"
-    ].join("\n");
+    const content = ["accept = [", '  "200..=299",', '  "500..=599",', "]", "verbose = true"].join(
+      "\n"
+    );
 
     const keys = parseTopLevelKeys(content);
     expect(keys).toEqual(["accept", "verbose"]);
@@ -196,7 +193,7 @@ describe("validateFields", () => {
 
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("invalid_field");
-    expect(errors[0]).toContain("not a valid lychee v0.23.0 configuration option");
+    expect(errors[0]).toContain("not a valid lychee v0.24.2 configuration option");
   });
 
   test("should reject multiple invalid fields", () => {
@@ -296,13 +293,7 @@ describe("parseTopLevelKeyValues", () => {
   });
 
   test("should skip multiline array element lines instead of treating them as keys", () => {
-    const content = [
-      "accept = [",
-      '  "200..=299",',
-      '  "429",',
-      "]",
-      "timeout = 20"
-    ].join("\n");
+    const content = ["accept = [", '  "200..=299",', '  "429",', "]", "timeout = 20"].join("\n");
 
     const pairs = parseTopLevelKeyValues(content);
     expect(pairs).toEqual([
@@ -464,14 +455,16 @@ describe("validateStrictLinkPolicy", () => {
     // Open-ended ranges (lychee `[start]..[[=]end]`) must not slip 404/410 past the guard.
     ["404 inside open-ended range 404..", 'accept = ["200..=299", "403", "429", "404.."]', 404],
     ["410 inside open-start range ..=410", 'accept = ["200..=299", "403", "429", "..=410"]', 410],
-    ["404 inside open-start exclusive range ..405", 'accept = ["200..=299", "403", "429", "..405"]', 404],
+    [
+      "404 inside open-start exclusive range ..405",
+      'accept = ["200..=299", "403", "429", "..405"]',
+      404
+    ],
     ["404 inside inclusive boundary 200..=404", 'accept = ["200..=404", "403", "429"]', 404]
   ])("forbids accepting a gone-status: %s", (_label, acceptToml, status) => {
     test(`flags HTTP ${status} as must-not-be-accepted`, () => {
       const { errors } = validateStrictLinkPolicy(withAccept(acceptToml));
-      expect(
-        errors.some((e) => e.includes(`HTTP ${status} must not be accepted`))
-      ).toBe(true);
+      expect(errors.some((e) => e.includes(`HTTP ${status} must not be accepted`))).toBe(true);
     });
   });
 
@@ -561,6 +554,33 @@ describe("validateStrictLinkPolicy", () => {
   });
 });
 
+describe("validateSharedConfigPolicy", () => {
+  test("allows shared configs that leave timeout acceptance CLI-only", () => {
+    const content = [
+      'verbose = "info"',
+      "timeout = 20",
+      'accept = ["200..=299", "403", "429"]'
+    ].join("\n");
+    const keys = parseTopLevelKeys(content);
+
+    expect(validateSharedConfigPolicy(keys)).toEqual({ errors: [], warnings: [] });
+  });
+
+  test("rejects top-level accept_timeouts even though lychee v0.24.2 accepts it", () => {
+    const content = ['verbose = "info"', "accept_timeouts = true"].join("\n");
+    const keys = parseTopLevelKeys(content);
+
+    expect(VALID_FIELDS.has("accept_timeouts")).toBe(true);
+    expect(validateFields(keys).errors).toEqual([]);
+
+    const { errors, warnings } = validateSharedConfigPolicy(keys);
+    expect(warnings).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("accept_timeouts");
+    expect(errors[0]).toContain("scheduled advisory scan must report timeouts");
+  });
+});
+
 // SYNC: VALID_VERBOSE_VALUES is the source of truth defined in validate-lychee-config.js VALID_VERBOSE_VALUES constant
 describe("VALID_VERBOSE_VALUES", () => {
   test("should be a non-empty array", () => {
@@ -638,10 +658,11 @@ describe("VALID_FIELDS", () => {
     }
   });
 
-  test("should exclude accept_timeouts (lychee v0.23.0's parser rejects it)", () => {
-    // lychee 0.23.0 errors with "unknown field `accept_timeouts`" and exits 3, so
-    // treating it as valid would let a CI-breaking config slip past the validator.
-    expect(VALID_FIELDS.has("accept_timeouts")).toBe(false);
+  test("should include accept_timeouts for lychee v0.24.2", () => {
+    // v0.24.2 accepts this TOML field, even though this repository keeps timeout
+    // acceptance CLI-only in the blocking workflow so the scheduled advisory scan
+    // can still report persistent slow hosts.
+    expect(VALID_FIELDS.has("accept_timeouts")).toBe(true);
   });
 });
 
@@ -756,8 +777,8 @@ describe("actual .lychee.toml config file validation", () => {
     expect(configKeys.length).toBeGreaterThan(0);
   });
 
-  describe("all config keys are valid for lychee v0.23.0", () => {
-    test("each parsed key should be a recognized lychee v0.23.0 field", () => {
+  describe("all config keys are valid for lychee v0.24.2", () => {
+    test("each parsed key should be a recognized lychee v0.24.2 field", () => {
       for (const key of configKeys) {
         expect(VALID_FIELDS.has(key)).toBe(true);
       }
@@ -793,9 +814,21 @@ describe("actual .lychee.toml config file validation", () => {
     });
   });
 
+  test("config keeps timeout acceptance out of shared TOML", () => {
+    expect(configKeys).not.toContain("accept_timeouts");
+    expect(configContent).toContain("--accept-timeouts=true");
+    expect(configContent).toContain("scheduled advisory scan");
+  });
+
   test("config should pass full validation with no errors", () => {
-    const { errors } = validateFields(configKeys);
-    expect(errors).toEqual([]);
+    const fieldResult = validateFields(configKeys);
+    const sharedPolicyResult = validateSharedConfigPolicy(configKeys);
+
+    expect([...fieldResult.errors, ...sharedPolicyResult.errors]).toEqual([]);
+  });
+
+  test("config should pass shared config policy with no errors", () => {
+    expect(validateSharedConfigPolicy(configKeys)).toEqual({ errors: [], warnings: [] });
   });
 
   test("config should pass value validation with no errors", () => {

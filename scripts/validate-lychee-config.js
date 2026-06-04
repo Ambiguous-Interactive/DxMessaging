@@ -2,7 +2,7 @@
 /**
  * validate-lychee-config.js
  *
- * Validates .lychee.toml configuration against lychee v0.23.0's valid field list.
+ * Validates .lychee.toml configuration against lychee v0.24.2's valid field list.
  * Catches deprecated or misspelled fields before they break CI.
  *
  * @usage
@@ -32,11 +32,12 @@ const {
 
 const CONFIG_PATH = path.join(__dirname, "..", ".lychee.toml");
 
-// SYNC: Keep in sync with lychee v0.23.0 valid configuration fields.
-// Source: https://github.com/lycheeverse/lychee/blob/master/lychee.example.toml
+// SYNC: Keep in sync with lychee v0.24.2 valid configuration fields.
+// Source: https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee.example.toml
 // SYNC: Tests in validate-lychee-config.test.js VALID_FIELDS describe block reference this constant
 const VALID_FIELDS = new Set([
   "accept",
+  "accept_timeouts",
   "archive",
   "base_url",
   "basic_auth",
@@ -98,8 +99,8 @@ const VALID_FIELDS = new Set([
   "verbose"
 ]);
 
-// SYNC: Keep in sync with lychee v0.23.0 valid verbose values.
-// Source: https://github.com/lycheeverse/lychee/blob/master/lychee.example.toml
+// SYNC: Keep in sync with lychee v0.24.2 valid verbose values.
+// Source: https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee.example.toml
 // SYNC: Tests in validate-lychee-config.test.js validateFieldValues describe block reference this constant
 const VALID_VERBOSE_VALUES = ["error", "warn", "info", "debug", "trace"];
 
@@ -551,6 +552,7 @@ const FORBIDDEN_ACCEPT_STATUSES = [404, 410];
 // human. Omitting them reintroduces the per-domain whack-a-mole this policy
 // exists to retire (the original CI failure was a 403 from www.w3.org).
 const REQUIRED_ACCEPT_STATUSES = [403, 429];
+const SHARED_CONFIG_FORBIDDEN_FIELDS = new Set(["accept_timeouts"]);
 
 /**
  * Enforce the repository's link-acceptance policy. External link liveness is
@@ -565,7 +567,7 @@ function validateStrictLinkPolicy(content) {
   const acceptItems = parseRequiredArray(content, "accept", errors);
 
   for (const status of FORBIDDEN_ACCEPT_STATUSES) {
-    if (acceptItems.some(item => acceptsHttpStatus(item, status))) {
+    if (acceptItems.some((item) => acceptsHttpStatus(item, status))) {
       errors.push(
         `Invalid value for 'accept': HTTP ${status} must not be accepted -- it means the link is gone, so accepting it hides real breakage.`
       );
@@ -573,11 +575,39 @@ function validateStrictLinkPolicy(content) {
   }
 
   for (const status of REQUIRED_ACCEPT_STATUSES) {
-    if (!acceptItems.some(item => acceptsHttpStatus(item, status))) {
+    if (!acceptItems.some((item) => acceptsHttpStatus(item, status))) {
       errors.push(
         `Invalid value for 'accept': HTTP ${status} must be accepted -- external sites return it to CI bots even when the link is valid; omitting it reintroduces flaky failures.`
       );
     }
+  }
+
+  return { errors, warnings };
+}
+
+/**
+ * Enforce repository-specific policy for the shared `.lychee.toml`.
+ *
+ * Some fields are valid lychee v0.24.2 TOML but still unsafe in this shared
+ * config because both the blocking workflow and scheduled advisory scan read it.
+ *
+ * @param {string[]} keys - Array of top-level key names from the TOML file
+ * @returns {{ errors: string[], warnings: string[] }} Validation results
+ */
+function validateSharedConfigPolicy(keys) {
+  const errors = [];
+  const warnings = [];
+  const reported = new Set();
+
+  for (const key of keys) {
+    if (!SHARED_CONFIG_FORBIDDEN_FIELDS.has(key) || reported.has(key)) {
+      continue;
+    }
+
+    reported.add(key);
+    errors.push(
+      `Invalid field '${key}': this repository's shared .lychee.toml must not set accept_timeouts; the blocking workflow passes --accept-timeouts=true, while the scheduled advisory scan must report timeouts.`
+    );
   }
 
   return { errors, warnings };
@@ -595,7 +625,7 @@ function validateFields(keys) {
 
   for (const key of keys) {
     if (!VALID_FIELDS.has(key)) {
-      errors.push(`Invalid field '${key}': not a valid lychee v0.23.0 configuration option`);
+      errors.push(`Invalid field '${key}': not a valid lychee v0.24.2 configuration option`);
     }
   }
 
@@ -647,6 +677,10 @@ function main() {
   errors.push(...strictLinkPolicyResult.errors);
   warnings.push(...strictLinkPolicyResult.warnings);
 
+  const sharedConfigPolicyResult = validateSharedConfigPolicy(keys);
+  errors.push(...sharedConfigPolicyResult.errors);
+  warnings.push(...sharedConfigPolicyResult.warnings);
+
   for (const warning of warnings) {
     console.log(`  Warning: ${warning}`);
   }
@@ -659,7 +693,7 @@ function main() {
     console.log();
     console.log(`Validation failed: ${errors.length} error(s), ${warnings.length} warning(s)`);
     console.log();
-    console.log("Valid lychee v0.23.0 fields:");
+    console.log("Valid lychee v0.24.2 fields:");
     const sortedFields = [...VALID_FIELDS].sort();
     for (const field of sortedFields) {
       console.log(`  - ${field}`);
@@ -671,7 +705,7 @@ function main() {
     console.log();
     console.log(`Validation passed with ${warnings.length} warning(s)`);
   } else {
-    console.log("All fields are valid lychee v0.23.0 configuration options.");
+    console.log("All fields are valid lychee v0.24.2 configuration options.");
   }
 
   return 0;
@@ -679,7 +713,7 @@ function main() {
 
 /**
  * @module validate-lychee-config
- * @description Validates .lychee.toml configuration against lychee v0.23.0's valid field list.
+ * @description Validates .lychee.toml configuration against lychee v0.24.2's valid field list.
  * Used by pre-push hooks and CI pipelines to catch deprecated or misspelled fields.
  *
  * @exports {Function} parseTopLevelKeys - Parses top-level key names from TOML content
@@ -687,7 +721,8 @@ function main() {
  * @exports {Function} validateFields - Validates field names against the known valid set
  * @exports {Function} validateFieldValues - Validates field values against known constraints
  * @exports {Function} validateStrictLinkPolicy - Validates repository-specific strict link policy
- * @exports {Set<string>} VALID_FIELDS - Set of valid lychee v0.23.0 configuration field names
+ * @exports {Function} validateSharedConfigPolicy - Validates shared config repository policy
+ * @exports {Set<string>} VALID_FIELDS - Set of valid lychee v0.24.2 configuration field names
  * @exports {string[]} VALID_VERBOSE_VALUES - Array of valid verbose log level values
  */
 if (typeof module !== "undefined" && module.exports) {
@@ -697,6 +732,7 @@ if (typeof module !== "undefined" && module.exports) {
     validateFields,
     validateFieldValues,
     validateStrictLinkPolicy,
+    validateSharedConfigPolicy,
     VALID_FIELDS,
     VALID_VERBOSE_VALUES
   };
