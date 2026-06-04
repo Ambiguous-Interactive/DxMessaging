@@ -79,6 +79,10 @@ const shellCommand = require("./lib/shell-command");
 const { isTruthyEnv } = require("./lib/jest-error-decoder");
 const { ISOLATED_JEST_CACHE_ROOT, hasHealthyLocalJestInstall } = require("./run-managed-jest");
 const { INTEGRITY_TARGETS, probeIntegrity } = require("./lib/node-modules-integrity");
+const {
+  probeDependencyVersionParity,
+  formatDriftLines
+} = require("./lib/dependency-version-parity");
 const { runChangedDocValidators } = require("./validate-changed-docs");
 const { findPython, probePreCommitModule } = require("./ensure-pre-commit");
 
@@ -159,6 +163,7 @@ function checkNodeModulesFreshness(options = {}) {
     toolSpecs = TOOL_SPECS,
     integrityTargets = INTEGRITY_TARGETS,
     probeIntegrityFn = probeIntegrity,
+    probeDependencyVersionParityFn = probeDependencyVersionParity,
     repoRoot = REPO_ROOT
   } = options;
 
@@ -290,6 +295,33 @@ function checkNodeModulesFreshness(options = {}) {
     }
   }
 
+  // Dependency VERSION parity (offline): exact-pinned direct deps must match
+  // package.json on disk + in the local lockfile; range pins must be
+  // satisfied. Catches the gitignored-lockfile drift class that file-presence
+  // probes structurally cannot (cspell-lib 10.0.0-vs-10.0.1). Reconcile is
+  // `npm install` (not `npm ci`) because the lockfile is gitignored and may be
+  // stale; `repair:node-tooling` does this automatically.
+  let parityFailed = 0;
+  try {
+    const parity = probeDependencyVersionParityFn({ repoRoot });
+    if (parity && parity.ok) {
+      lines.push(`  ok    dependency version parity (${parity.checked} pinned deps)`);
+    } else if (parity) {
+      parityFailed = 1;
+      lines.push("  FAIL  dependency version parity");
+      for (const line of formatDriftLines(parity)) {
+        lines.push(`          - ${line}`);
+      }
+      lines.push(
+        "          Reconcile: run `npm install` (or `npm run repair:node-tooling`) to align " +
+          "node_modules + the local lockfile with package.json."
+      );
+    }
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error);
+    lines.push(`  ok    dependency version parity (probe skipped: ${detail})`);
+  }
+
   if (failed > 0) {
     lines.push("");
     lines.push(
@@ -299,7 +331,7 @@ function checkNodeModulesFreshness(options = {}) {
 
   return {
     name: "node_modules freshness",
-    status: failed === 0 ? "ok" : "fail",
+    status: failed === 0 && parityFailed === 0 ? "ok" : "fail",
     lines
   };
 }

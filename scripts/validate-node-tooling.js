@@ -8,6 +8,10 @@ const { pathToFileURL } = require("url");
 const { resolveBundledNpxCliPath } = require("./lib/managed-prettier");
 const { INTEGRITY_TARGETS, probeIntegrity } = require("./lib/node-modules-integrity");
 const { isOutsideRelative } = require("./lib/path-classifier");
+const {
+  probeDependencyVersionParity,
+  formatDriftLines
+} = require("./lib/dependency-version-parity");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const REPO_REQUIRE = createRequire(path.join(REPO_ROOT, "package.json"));
@@ -308,9 +312,25 @@ async function validateTooling(options = {}) {
     scriptsDir = SCRIPTS_DIR,
     readdirSyncFn = fs.readdirSync,
     readFileSyncFn = fs.readFileSync,
-    enforceManagedNpxCliAvailability = true
+    enforceManagedNpxCliAvailability = true,
+    enforceVersionParity = true,
+    probeDependencyVersionParityFn = probeDependencyVersionParity
   } = options;
   const violations = [];
+
+  // Dependency version parity: every exact-pinned direct dependency's
+  // INSTALLED version (and the local lockfile's resolved version, when
+  // present) must equal the package.json pin; range pins must be satisfied.
+  // This is the offline guard against the gitignored-lockfile drift class
+  // (cspell-lib 10.0.0-vs-10.0.1) that file-presence/resolver probes miss.
+  if (enforceVersionParity) {
+    const parity = probeDependencyVersionParityFn({ repoRoot: REPO_ROOT });
+    if (parity && !parity.ok) {
+      for (const line of formatDriftLines(parity)) {
+        violations.push(`dependency-version-parity: ${line}`);
+      }
+    }
+  }
 
   if (enforceIntegrityProbe) {
     const integrity = probeIntegrityFn({

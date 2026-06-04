@@ -152,9 +152,9 @@ working copy could be silently overwritten. Refusal cases:
   exclusion for `node_modules/` (Defender, Symantec, etc.).
 - Operator override via `DXMSG_HOOK_NO_AUTOREPAIR=1`.
 
-CI runners are deliberately NOT special-cased: `npm ci` is the correct
-repair in CI too because the lockfile is committed. Operators who want
-CI to fail rather than auto-repair set `DXMSG_HOOK_NO_AUTOREPAIR=1`.
+CI runners are NOT special-cased; set `DXMSG_HOOK_NO_AUTOREPAIR=1` to
+fail instead of repair. `npm ci` CANNOT fix a dependency VERSION drift:
+`package-lock.json` is gitignored, so drift is reconciled via `npm install`.
 
 ## Environment variables
 

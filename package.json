@@ -106,6 +106,7 @@
     "validate:llms-txt": "npm run test:llms-txt && npm run check:llms-txt",
     "validate:no-plan-vocabulary": "node scripts/validate-no-plan-vocabulary.js",
     "validate:node-tooling": "node scripts/validate-node-tooling.js",
+    "validate:dependency-parity": "node scripts/validate-dependency-version-parity.js",
     "repair:pre-commit": "node scripts/ensure-pre-commit.js",
     "repair:node-tooling": "node scripts/repair-node-tooling.js",
     "validate:npm-meta": "node scripts/validate-npm-meta.js --check",

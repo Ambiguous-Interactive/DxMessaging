@@ -62,6 +62,7 @@ const CHANGELOG_SKILL = ".llm/skills/scripting/change-aware-preflight.md";
 // AI-agent guidelines (.llm/context.md) alongside the other repo-wide rules, so
 // the remediation links there. The target is a real, tracked file.
 const XML_BUILD_CONTRACT_SKILL = ".llm/context.md";
+const DEPENDENCY_PARITY_SKILL = ".llm/skills/scripting/dependency-version-parity.md";
 const CSPELL_EXTENSIONS = Object.freeze([
   "cs",
   "js",
@@ -181,6 +182,20 @@ function isSpellcheckRelevant(rel) {
  */
 function isXmlBuildContractRelevant(rel) {
   return /^SourceGenerators\/.*\.(props|csproj|targets)$/i.test(rel);
+}
+
+/**
+ * True when an edit can change dependency version parity: the manifest
+ * (package.json) or the local lockfile (package-lock.json). Editing a pin in
+ * package.json without reinstalling leaves node_modules stale; surfacing the
+ * drift at edit time tells the agent to reconcile (`npm install`) before the
+ * slow native pre-push Jest parity suite ever runs.
+ *
+ * @param {string} rel Repo-relative POSIX path.
+ * @returns {boolean} True when dependency-version-parity validation is relevant.
+ */
+function isDependencyManifestRelevant(rel) {
+  return rel === "package.json" || rel === "package-lock.json";
 }
 
 /**
@@ -401,6 +416,24 @@ function buildDispatchTable() {
           // Whole-contract validator: it resolves the SourceGenerators build
           // files itself and does not take a single-file arg.
           args: () => ["scripts/validate-analyzer-build-contract.js"]
+        }
+      ]
+    },
+    {
+      id: "dependency-version-parity",
+      matches: isDependencyManifestRelevant,
+      remediation:
+        `Editing package.json/package-lock.json can leave node_modules + the ` +
+        `gitignored local lockfile out of sync with the manifest (the ` +
+        `cspell-lib 10.0.0-vs-10.0.1 drift class). Run 'npm install' (or ` +
+        `'npm run repair:node-tooling') to reconcile -- 'npm ci' cannot, ` +
+        `because it honors the stale local lockfile. See ${DEPENDENCY_PARITY_SKILL}.`,
+      validators: [
+        {
+          label: "dependency-version-parity",
+          // Whole-manifest validator: resolves package.json vs node_modules vs
+          // lockfile itself; does not take a single-file arg.
+          args: () => ["scripts/validate-dependency-version-parity.js"]
         }
       ]
     }
@@ -670,6 +703,7 @@ module.exports = {
   isChangelogCoverageRelevant,
   isSpellcheckRelevant,
   isXmlBuildContractRelevant,
+  isDependencyManifestRelevant,
   formatCspellIssues,
   hasCspellInfrastructureError,
   runCspellApiValidator,

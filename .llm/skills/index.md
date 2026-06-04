@@ -1,6 +1,6 @@
 # Skills Index
 
-> **Auto-generated** on 2026-06-03. Do not edit manually.
+> **Auto-generated** on 2026-06-04. Do not edit manually.
 > Run `node scripts/generate-skills-index.js` to regenerate.
 
 ---
@@ -9,7 +9,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 169   |
+| Total Skills | 170   |
 | Categories   | 8     |
 
 ---
@@ -20,7 +20,7 @@
 - [GitHub Actions](#github-actions) (8)
 - [Packaging](#packaging) (2)
 - [Performance](#performance) (45)
-- [Scripting](#scripting) (21)
+- [Scripting](#scripting) (22)
 - [Solid](#solid) (15)
 - [Testing](#testing) (38)
 - [Unity](#unity) (10)
@@ -139,6 +139,7 @@
 | [Change-Aware Preflight](./scripting/change-aware-preflight.md)                                          | [ok] 205    | [intermediate] | [stable] | [risk: medium] | pre-commit, pre-push             |
 | [Cross-Platform Script Compatibility](./scripting/cross-platform-compatibility.md)                       | [warn] 298  | [intermediate] | [stable] | [risk: none]   | cross-platform, case-sensitivity |
 | [Cross-Toolchain Path Comparison](./scripting/cross-toolchain-path-comparison.md)                        | [ok] 229    | [intermediate] | [stable] | [risk: none]   | cross-platform, testing          |
+| [Dependency Version Parity](./scripting/dependency-version-parity.md)                                    | [ok] 194    | [intermediate] | [stable] | [risk: low]    | dependencies, lockfile           |
 | [Integrity Gate Robustness](./scripting/integrity-gate-robustness.md)                                    | [warn] 299  | [intermediate] | [stable] | [risk: low]    | integrity, auto-repair           |
 | [JavaScript Code Quality Practices](./scripting/javascript-code-quality.md)                              | [ok] 159    | [intermediate] | [stable] | [risk: none]   | javascript, code-quality         |
 | [JavaScript Code Quality Practices Part 1](./scripting/javascript-code-quality-part-1.md)                | [ok] 178    | [intermediate] | [stable] | [risk: low]    | migration, split                 |

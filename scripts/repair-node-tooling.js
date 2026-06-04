@@ -19,6 +19,7 @@ const {
   printActionableRepairBanner
 } = require("./run-managed-jest");
 const { healRegenerableCaches } = require("./lib/regenerable-cache-registry");
+const { repairDependencyDrift } = require("./lib/dependency-drift-recovery");
 
 const REPO_ROOT = path.join(__dirname, "..");
 
@@ -34,6 +35,7 @@ function repairNodeTooling(options = {}) {
     getNpmMajorVersionFn = getNpmMajorVersion,
     printActionableRepairBannerFn = printActionableRepairBanner,
     healRegenerableCachesFn = healRegenerableCaches,
+    repairDependencyDriftFn = repairDependencyDrift,
     warnFn = console.warn
   } = options;
 
@@ -73,6 +75,22 @@ function repairNodeTooling(options = {}) {
   if (isTruthyEnv(env.DXMSG_HOOK_SKIP_INTEGRITY)) {
     warnFn("WARNING: DXMSG_HOOK_SKIP_INTEGRITY=1 set; skipping node_modules repair bootstrap.");
     return { status: 0, skipped: true };
+  }
+
+  // Reconcile dependency VERSIONS to package.json BEFORE the npm-ci integrity
+  // gate. The lockfile is gitignored (local, regenerated), so a stale local
+  // lockfile after a pin bump would otherwise let the gate's `npm ci`
+  // re-cement the wrong version (this is the exact cspell-lib 10.0.0-vs-10.0.1
+  // failure class). `npm install` here rewrites the lockfile + node_modules to
+  // satisfy the manifest; the gate then observes a consistent tree. Best-effort
+  // and only mutates on real drift -- the happy path is a few JSON reads. The
+  // authoritative pass/fail for parity is validate-node-tooling + the jest
+  // suite, which run after this repair; here we only FIX.
+  try {
+    repairDependencyDriftFn({ env, repoRoot, warnFn });
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error);
+    warnFn(`WARNING: dependency-drift recovery threw (best-effort, ignored): ${detail}`);
   }
 
   const gateResult = runIntegrityGateWithRecoveryFn({

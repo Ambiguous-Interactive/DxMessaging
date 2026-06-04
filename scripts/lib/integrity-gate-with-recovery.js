@@ -671,6 +671,7 @@ function printIntegrityGateBanner(printActionableRepairBannerFn, decoder, opts =
 }
 
 module.exports = {
+  REPAIR_LOCK_NAME,
   isAutoRepairAllowed,
   acquireRepairLock,
   runWithRepairLock,
