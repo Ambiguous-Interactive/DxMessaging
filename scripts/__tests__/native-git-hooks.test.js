@@ -9,12 +9,15 @@ const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
 const { installGitHooks, REQUIRED_NATIVE_HOOKS } = require("../install-git-hooks");
+const {
+  parseGitVersion,
+  versionAtLeast,
+  configureLocalGitPerformance
+} = require("../configure-local-git-performance");
 const { repairNodeTooling } = require("../repair-node-tooling");
 const { ensurePreCommit, runPreCommit, PACKAGE_SPEC } = require("../ensure-pre-commit");
-const { maskCommentsAndStrings } = require("../lib/source-stripping");
 const {
   fingerprintGitState,
-  fingerprintPrePushGitState,
   hasValidHookValidationStamp,
   writeHookValidationStamp
 } = require("../lib/hook-validation-stamp");
@@ -39,10 +42,7 @@ function stampSpawnFor(options) {
   return jest.fn((command, args) => {
     expect(command).toBe("git");
     const joined = args.join(" ");
-    if (
-      joined === "rev-parse --git-path dxmsg-pre-commit-stamp.json" ||
-      joined === "rev-parse --git-path dxmsg-pre-push-stamp.json"
-    ) {
+    if (joined === "rev-parse --git-path dxmsg-pre-commit-stamp.json") {
       return { status: 0, stdout: `${stampPath}\n`, stderr: "" };
     }
     if (joined === "rev-parse --verify HEAD") {
@@ -108,69 +108,54 @@ describe("native Git hooks", () => {
     expect(frameworkIndex).toBeGreaterThan(ensureIndex);
   });
 
-  test("pre-push hook is a Node wrapper for the parallel full pre-push preflight", () => {
+  test("pre-push hook is a Node wrapper for the native range-aware runner", () => {
     expect(fs.existsSync(PRE_PUSH_HOOK)).toBe(true);
 
     const content = fs.readFileSync(PRE_PUSH_HOOK, "utf8");
     expect(content.startsWith("#!/usr/bin/env node\n")).toBe(true);
-    expect(content).toContain("hasValidHookValidationStamp");
-    expect(content).toContain("writeHookValidationStamp");
-    expect(content).toContain('"pre-push"');
-    expect(content).toContain("repair-node-tooling.js");
-    expect(content).toContain("ensure-pre-commit.js");
-    expect(content).toContain('"doctor"');
-    // The hook delegates the full parity sweep to the parallel orchestrator
-    // (same coverage as `npm run preflight:pre-push`, run concurrently). The
-    // serial `preflight:pre-push` npm script remains the on-demand/CI parity
-    // command; coverage equivalence is pinned by run-prepush-parallel.test.js.
-    expect(content).toContain("scripts/run-prepush-parallel.js");
-    expect(content).toContain("spawnPlatformCommandSync");
+    expect(content).toContain("../run-native-prepush");
+    expect(content).not.toContain("hasValidHookValidationStamp");
+    expect(content).not.toContain("writeHookValidationStamp");
+    expect(content).not.toContain("repair-node-tooling.js");
+    expect(content).not.toContain("ensure-pre-commit.js");
+    expect(content).not.toContain('"doctor"');
+    expect(content).not.toContain("run-prepush-parallel.js");
+    expect(content).not.toContain("preflight:pre-push");
+    expect(content).not.toContain("--all-files");
     expect(content).not.toMatch(/\b(?:bash|sh|pwsh|powershell)\b/);
     expect(content).not.toContain("shell: true");
-
-    const repairIndex = content.indexOf("repair-node-tooling.js");
-    const ensureIndex = content.indexOf("ensure-pre-commit.js");
-    const doctorIndex = content.indexOf('"doctor"');
-    const preflightIndex = content.indexOf("scripts/run-prepush-parallel.js");
-    const stampIndex = content.indexOf("hasValidHookValidationStamp");
-    expect(stampIndex).toBeGreaterThanOrEqual(0);
-    expect(repairIndex).toBeGreaterThan(stampIndex);
-    expect(ensureIndex).toBeGreaterThan(repairIndex);
-    expect(doctorIndex).toBeGreaterThan(ensureIndex);
-    expect(preflightIndex).toBeGreaterThan(doctorIndex);
   });
 
-  test("pre-push runs the doctor with DXMSG_DOCTOR_FAST=1 (perf wiring; ~1.7s budget guard)", () => {
-    // PERF REGRESSION GUARD: the in-hook doctor MUST carry DXMSG_DOCTOR_FAST=1 so
-    // it skips the two redundant git-walk sections (working-tree + changed-docs,
-    // re-run authoritatively by preflight:pre-push). Measured full=~2.0s vs
-    // fast=~0.28s; dropping this env silently reverts the hook to the ~2.0s
-    // git-walk -- a ~1.7s hook-budget regression that every OTHER test would
-    // miss. Pin it structurally: the doctor `run(...)` call carries the env, and
-    // the repair / ensure-pre-commit invocations deliberately do NOT.
+  test("native range runner is local-fast and keeps exhaustive parity explicit", () => {
+    const content = fs.readFileSync(path.join(REPO_ROOT, "scripts", "run-native-prepush.js"), "utf8");
+
+    expect(content).toContain("parsePrePushInput");
+    expect(content).toContain("--stage=pre-push");
+    expect(content).toContain("--profile=guard");
+    expect(content).toContain("--range-from");
+    expect(content).toContain("--range-to");
+    expect(content).toContain("--no-worktree");
+    expect(content).toContain("removeKeys: [\"SKIP\"]");
+    expect(content).toContain("preflight:pre-push");
+    expect(content).not.toContain("run-prepush-parallel.js");
+    expect(content).not.toContain("writeHookValidationStamp");
+    expect(content).not.toContain("hasValidHookValidationStamp");
+    expect(content).not.toContain("--all-files");
+  });
+
+  test("native pre-push hook contract forbids old exhaustive local behavior", () => {
     const content = fs.readFileSync(PRE_PUSH_HOOK, "utf8");
 
-    // The doctor invocation must pass DXMSG_DOCTOR_FAST as the env override
-    // (raw source: the string literals "doctor"/"1" are load-bearing here).
-    expect(content).toMatch(
-      /run\(\s*"npm",\s*\[\s*"run",\s*"doctor"\s*\][^)]*DXMSG_DOCTOR_FAST\s*:\s*"1"/s
-    );
-
-    // And ONLY the doctor: the repair-node-tooling and ensure-pre-commit run(...)
-    // calls must NOT carry DXMSG_DOCTOR_FAST (they intentionally run full so a
-    // fresh clone gets the complete bootstrap). Strip comments first (the
-    // rationale comment legitimately names the env) so we count CODE occurrences
-    // only; in code the env identifier must appear EXACTLY once.
-    const code = maskCommentsAndStrings(content);
-    const codeOccurrences = code.match(/DXMSG_DOCTOR_FAST/g) || [];
-    expect(codeOccurrences).toHaveLength(1);
-
-    // The sole code occurrence sits on the doctor `run(...)` call, which is the
-    // only `run(...)` taking a third (env) argument: assert no env object is
-    // passed to the repair / ensure-pre-commit run(...) calls (they are
-    // two-argument calls). maskCommentsAndStrings blanks string CONTENTS but
-    // preserves the call structure, so a third-arg `{ ... }` would show here.
-    expect(code).toMatch(/run\(\s*process\.execPath,\s*\[[^\]]*\]\s*\)/);
+    for (const forbidden of [
+      "run-prepush-parallel.js",
+      "npm run doctor",
+      "--all-files",
+      "dxmsg-pre-push-stamp",
+      "writeHookValidationStamp",
+      "hasValidHookValidationStamp"
+    ]) {
+      expect(content).not.toContain(forbidden);
+    }
   });
 
   test("native hook executability is tracked in Git metadata", () => {
@@ -277,103 +262,17 @@ describe("native Git hooks", () => {
     }
   });
 
-  test("pre-push stamp fingerprint covers tracked state and rejects untracked paths", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-pre-push-stamp-"));
-    try {
-      const stampFile = path.join(temp, "stamp.json");
-      fs.writeFileSync(path.join(temp, "index"), "index-a", "utf8");
-      const rawDiff =
-        ":100644 100644 1111111111111111111111111111111111111111 0000000000000000000000000000000000000000 M\0tracked.txt\0";
-      fs.writeFileSync(path.join(temp, "tracked.txt"), "tracked-before", "utf8");
-      writeHookValidationStamp(temp, "pre-push", {
-        spawnFn: stampSpawnFor({
-          stampPath: stampFile,
-          trackedWorktreeRawDiff: rawDiff
-        })
-      });
-
-      expect(
-        hasValidHookValidationStamp(temp, "pre-push", {
-          spawnFn: stampSpawnFor({
-            stampPath: stampFile,
-            trackedWorktreeRawDiff: rawDiff
-          })
-        }).valid
-      ).toBe(true);
-      expect(
-        hasValidHookValidationStamp(temp, "pre-push", {
-          spawnFn: stampSpawnFor({
-            stampPath: stampFile,
-            trackedWorktreeRawDiff: rawDiff
-          }),
-          readFileSyncFn: (filePath, ...args) =>
-            filePath === path.join(temp, "index")
-              ? Buffer.from("index-b")
-              : fs.readFileSync(filePath, ...args)
-        }).valid
-      ).toBe(false);
-      fs.writeFileSync(path.join(temp, "tracked.txt"), "tracked-after", "utf8");
-      expect(
-        hasValidHookValidationStamp(temp, "pre-push", {
-          spawnFn: stampSpawnFor({
-            stampPath: stampFile,
-            trackedWorktreeRawDiff: rawDiff
-          })
-        }).valid
-      ).toBe(false);
-      fs.writeFileSync(path.join(temp, "tracked.txt"), "tracked-before", "utf8");
-      fs.writeFileSync(path.join(temp, "scratch.txt"), "untracked-after", "utf8");
-      expect(
-        hasValidHookValidationStamp(temp, "pre-push", {
-          spawnFn: stampSpawnFor({
-            stampPath: stampFile,
-            trackedWorktreeRawDiff: rawDiff,
-            untracked: "scratch.txt\0"
-          })
-        }).valid
-      ).toBe(false);
-
-      const prePushFingerprint = fingerprintPrePushGitState(temp, {
-        spawnFn: stampSpawnFor({
-          stampPath: stampFile,
-          trackedWorktreeRawDiff: rawDiff,
-          untracked: "scratch.txt\0"
-        })
-      });
-      expect(prePushFingerprint.indexFileHash).toEqual(expect.any(String));
-      expect(prePushFingerprint.unstagedTrackedWorktreeStateHash).toEqual(expect.any(String));
-      expect(prePushFingerprint.indexTree).toBeUndefined();
-      expect(prePushFingerprint.trackedWorktreeStateHash).toBeUndefined();
-      expect(prePushFingerprint.untrackedPathCount).toBe(1);
-      expect(prePushFingerprint.untrackedPathsHash).toEqual(expect.any(String));
-      expect(prePushFingerprint.trackedWorktreeDiffHash).toBeUndefined();
-      expect(prePushFingerprint.untrackedFilesHash).toBeUndefined();
-      expect(prePushFingerprint.changelogUnstagedDiffHash).toBeUndefined();
-      expect(prePushFingerprint.changelogUntrackedFilesHash).toBeUndefined();
-    } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
-    }
-  });
-
-  test("pre-push stamp refuses to write while untracked paths are present", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-pre-push-untracked-"));
-    try {
-      const stampFile = path.join(temp, "stamp.json");
-      fs.writeFileSync(path.join(temp, "index"), "index-a", "utf8");
-      fs.writeFileSync(path.join(temp, "scratch.txt"), "untracked", "utf8");
-
-      expect(() =>
-        writeHookValidationStamp(temp, "pre-push", {
-          spawnFn: stampSpawnFor({
-            stampPath: stampFile,
-            untracked: "scratch.txt\0"
-          })
-        })
-      ).toThrow(/untracked paths present/);
-      expect(fs.existsSync(stampFile)).toBe(false);
-    } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
-    }
+  test("hook validation stamps are pre-commit-only", () => {
+    expect(
+      hasValidHookValidationStamp(REPO_ROOT, "pre-push", {
+        spawnFn: jest.fn()
+      })
+    ).toEqual({ valid: false, reason: "unsupported-hook", filePath: undefined });
+    expect(() =>
+      writeHookValidationStamp(REPO_ROOT, "pre-push", {
+        spawnFn: jest.fn()
+      })
+    ).toThrow(/Unsupported hook validation stamp/);
   });
 
   test("preflight repairs node tooling before read-only validation", () => {
@@ -613,8 +512,118 @@ describe("native Git hooks", () => {
     const content = fs.readFileSync(POSTINSTALL, "utf8");
 
     expect(content).toContain("install-git-hooks.js");
+    expect(content).toContain("configure-local-git-performance.js");
     expect(content).toContain("runNonFatal");
     expect(content).toContain("process.exit(0)");
+  });
+
+  test("local Git performance bootstrap enables supported local config", () => {
+    const calls = [];
+    const runGitFn = jest.fn((args) => {
+      calls.push(args.slice());
+      const joined = args.join(" ");
+      if (joined === "rev-parse --show-toplevel") {
+        return { status: 0, stdout: "/repo\n" };
+      }
+      if (joined === "update-index --test-untracked-cache") {
+        return { status: 0, stdout: "" };
+      }
+      if (joined === "--version") {
+        return { status: 0, stdout: "git version 2.44.0\n" };
+      }
+      if (joined === "config --local core.untrackedCache true") {
+        return { status: 0, stdout: "" };
+      }
+      if (joined === "config --local core.fsmonitor true") {
+        return { status: 0, stdout: "" };
+      }
+      return { status: 1, stdout: "", stderr: joined };
+    });
+
+    const result = configureLocalGitPerformance({
+      cwd: "/repo",
+      platform: "darwin",
+      runGitFn,
+      log: jest.fn(),
+      warn: jest.fn()
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.changed).toEqual(["core.untrackedCache", "core.fsmonitor"]);
+    expect(calls).toContainEqual(["config", "--local", "core.untrackedCache", "true"]);
+    expect(calls).toContainEqual(["config", "--local", "core.fsmonitor", "true"]);
+  });
+
+  test("local Git performance bootstrap skips unsupported fsmonitor platforms", () => {
+    const runGitFn = jest.fn((args) => {
+      const joined = args.join(" ");
+      if (joined === "rev-parse --show-toplevel") {
+        return { status: 0, stdout: "/repo\n" };
+      }
+      if (joined === "update-index --test-untracked-cache") {
+        return { status: 1, stdout: "" };
+      }
+      return { status: 1, stdout: "", stderr: joined };
+    });
+
+    const result = configureLocalGitPerformance({
+      cwd: "/repo",
+      platform: "linux",
+      runGitFn,
+      log: jest.fn(),
+      warn: jest.fn()
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.changed).toEqual([]);
+    expect(runGitFn.mock.calls.some((call) => call[0][0] === "--version")).toBe(false);
+  });
+
+  test("local Git performance bootstrap preserves explicit local config values", () => {
+    const calls = [];
+    const runGitFn = jest.fn((args) => {
+      calls.push(args.slice());
+      const joined = args.join(" ");
+      if (joined === "rev-parse --show-toplevel") {
+        return { status: 0, stdout: "/repo\n" };
+      }
+      if (joined === "update-index --test-untracked-cache") {
+        return { status: 0, stdout: "" };
+      }
+      if (joined === "--version") {
+        return { status: 0, stdout: "git version 2.44.0\n" };
+      }
+      if (joined === "config --local --get core.untrackedCache") {
+        return { status: 0, stdout: "false\n" };
+      }
+      if (joined === "config --local --get core.fsmonitor") {
+        return { status: 0, stdout: ".git/hooks/fsmonitor-watchman\n" };
+      }
+      return { status: 1, stdout: "", stderr: joined };
+    });
+
+    const result = configureLocalGitPerformance({
+      cwd: "/repo",
+      platform: "win32",
+      runGitFn,
+      log: jest.fn(),
+      warn: jest.fn()
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.changed).toEqual([]);
+    expect(calls).not.toContainEqual(["config", "--local", "core.untrackedCache", "true"]);
+    expect(calls).not.toContainEqual(["config", "--local", "core.fsmonitor", "true"]);
+  });
+
+  test("git version parser gates built-in fsmonitor support", () => {
+    expect(parseGitVersion("git version 2.44.1.windows.1")).toEqual({
+      major: 2,
+      minor: 44,
+      patch: 1
+    });
+    expect(versionAtLeast(parseGitVersion("git version 2.36.9"), 2, 37, 0)).toBe(false);
+    expect(versionAtLeast(parseGitVersion("git version 2.37.0"), 2, 37, 0)).toBe(true);
   });
 
   test("installer configures core.hooksPath in a Git worktree", () => {

@@ -19,6 +19,8 @@ const { findAllHookBlocks, extractStagesFromHookBlock } = require("../lib/precom
 const { normalizeToLf } = require("../lib/quote-parser");
 
 const CONFIG_PATH = path.resolve(__dirname, "../../.pre-commit-config.yaml");
+const NATIVE_PRE_PUSH_HOOK = path.resolve(__dirname, "../../scripts/hooks/pre-push");
+const NATIVE_PRE_PUSH_RUNNER = path.resolve(__dirname, "../../scripts/run-native-prepush.js");
 const SKILL_LINK = ".llm/skills/performance/git-hook-performance.md";
 
 function readConfig() {
@@ -112,5 +114,18 @@ describe("git hook performance budget", () => {
         ].join("\n")
       );
     }
+  });
+
+  test("native pre-push stays range-aware and never runs all-files parity locally", () => {
+    const hook = fs.readFileSync(NATIVE_PRE_PUSH_HOOK, "utf8");
+    const runner = fs.readFileSync(NATIVE_PRE_PUSH_RUNNER, "utf8");
+    const nativeText = `${hook}\n${runner}`;
+
+    expect(hook).toContain("run-native-prepush");
+    expect(nativeText).toContain("--range-from");
+    expect(nativeText).toContain("--range-to");
+    expect(nativeText).toContain("--no-worktree");
+    expect(nativeText).not.toContain("run-prepush-parallel.js");
+    expect(nativeText).not.toContain("--all-files");
   });
 });

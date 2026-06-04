@@ -9,10 +9,11 @@
  * i.e. the PR diff (committed range vs the merge-base with the integration
  * branch) combined with staged + unstaged + untracked working-tree edits.
  *
- * This set is intentionally NARROWER than the native pre-push `--all-files`
- * sweep; the native hook remains the exhaustive, tool-agnostic backstop. The
+ * This set is intentionally NARROWER than the manual/CI
+ * `npm run preflight:pre-push` exhaustive sweep. The native pre-push hook runs
+ * exact pushed ranges; exhaustive parity belongs to CI/manual use. The
  * preflight orchestrator delegates file -> hook matching to pre-commit itself
- * (`--from-ref/--to-ref` for the committed range, `--files` for the working
+ * (`--from-ref/--to-ref` for committed/range input, `--files` for the working
  * tree), so this module's only job is to enumerate the right paths.
  *
  * Two scopes are supported (see {@link computeChangeSet}):
@@ -22,6 +23,8 @@
  *     only staged + unstaged + untracked. This keeps the Stop hook fast on a
  *     many-commit branch (it never resolves a base or scans the committed
  *     range).
+ *   - "range": explicit `rangeFrom..rangeTo` diff, used by native pre-push to
+ *     validate the actual ref update without consulting origin/HEAD.
  *
  * Base-resolution order (full scope, fail-soft):
  *   1. `baseOverride` if provided (CI passes the PR base).
@@ -299,10 +302,10 @@ function resolveMergeBase(runGitFn, baseRef) {
  * @param {string} mergeBase merge-base sha.
  * @returns {string[]} changed paths.
  */
-function collectCommittedRange(runGitFn, mergeBase) {
+function collectCommittedRange(runGitFn, rangeFrom, rangeTo = "HEAD") {
   const result = runRequiredGit(
     runGitFn,
-    ["diff", "--name-status", `--diff-filter=${DIFF_FILTER}`, "-z", mergeBase, "HEAD"],
+    ["diff", "--name-status", `--diff-filter=${DIFF_FILTER}`, "-z", rangeFrom, rangeTo],
     "diff committed-range"
   );
   return parseNameStatusZ(result.stdout);
@@ -380,11 +383,16 @@ function normalizePaths(paths) {
  * @param {"full"|"worktree"} [options.scope] "full" (default) resolves a base
  *   and includes the committed range; "worktree" skips base resolution and the
  *   committed range entirely.
+ * @param {string|null} [options.rangeFrom] Explicit range start for native
+ *   pre-push. When paired with rangeTo, base resolution is skipped.
+ * @param {string|null} [options.rangeTo] Explicit range end for native
+ *   pre-push.
+ * @param {boolean} [options.noWorktree] Skip staged/unstaged/untracked scans.
  * @returns {{
  *   files: string[],
  *   base: string|null,
  *   mergeBase: string|null,
- *   scope: "full"|"worktree",
+ *   scope: "full"|"worktree"|"range",
  *   sources: {
  *     committed: string[],
  *     staged: string[],
@@ -393,9 +401,11 @@ function normalizePaths(paths) {
  *   }
  * }} Documented shape consumed by preflight.js and the tests:
  *   - `files`: the de-duped, sorted, POSIX-normalized union of every source.
- *   - `base`: the resolved base candidate ref, or null (worktree scope, or no
- *     base resolved).
- *   - `mergeBase`: the merge-base sha used as `--from-ref`, or null.
+ *   - `base`: the resolved base candidate ref, explicit range start, or null
+ *     (worktree scope, or no base resolved).
+ *   - `mergeBase`: the merge-base/range-start sha used as `--from-ref`, or
+ *     null.
+ *   - `rangeTo`: explicit range end used as `--to-ref`, or null/HEAD.
  *   - `scope`: the effective scope.
  *   - `sources`: each source's normalized contribution (for the two-pass
  *     dedupe in preflight.js: committed -> `--from-ref/--to-ref` pass, the rest
@@ -404,28 +414,45 @@ function normalizePaths(paths) {
  *   working-tree git command fails.
  */
 function computeChangeSet(options = {}) {
-  const { runGitFn = runGit, baseOverride = null, scope = "full" } = options;
-  const effectiveScope = scope === "worktree" ? "worktree" : "full";
+  const {
+    runGitFn = runGit,
+    baseOverride = null,
+    scope = "full",
+    rangeFrom = null,
+    rangeTo = null,
+    noWorktree = false
+  } = options;
+  const hasExplicitRange =
+    typeof rangeFrom === "string" &&
+    rangeFrom.length > 0 &&
+    typeof rangeTo === "string" &&
+    rangeTo.length > 0;
+  const effectiveScope = hasExplicitRange ? "range" : scope === "worktree" ? "worktree" : "full";
 
   let base = null;
   let mergeBase = null;
   let committed = [];
 
-  if (effectiveScope === "full") {
+  if (hasExplicitRange) {
+    base = rangeFrom;
+    mergeBase = rangeFrom;
+    committed = collectCommittedRange(runGitFn, rangeFrom, rangeTo);
+  } else if (effectiveScope === "full") {
     base = resolveBaseRef(runGitFn, baseOverride);
     if (base) {
       mergeBase = resolveMergeBase(runGitFn, base);
       if (mergeBase) {
-        committed = collectCommittedRange(runGitFn, mergeBase);
+        committed = collectCommittedRange(runGitFn, mergeBase, "HEAD");
       }
     }
   }
 
-  // Working-tree sources run in BOTH scopes. These are the commands that would
-  // surface a genuinely missing git binary as the hard ENOENT error.
-  const staged = collectStaged(runGitFn);
-  const unstaged = collectUnstaged(runGitFn);
-  const untracked = collectUntracked(runGitFn);
+  // Working-tree sources run in every scope unless explicitly disabled by the
+  // native pre-push range runner. These are the commands that surface a
+  // genuinely missing git binary as the hard ENOENT error in worktree/full mode.
+  const staged = noWorktree ? [] : collectStaged(runGitFn);
+  const unstaged = noWorktree ? [] : collectUnstaged(runGitFn);
+  const untracked = noWorktree ? [] : collectUntracked(runGitFn);
 
   const sources = {
     committed: normalizePaths(committed),
@@ -440,6 +467,7 @@ function computeChangeSet(options = {}) {
     files,
     base,
     mergeBase,
+    rangeTo: hasExplicitRange ? rangeTo : null,
     scope: effectiveScope,
     sources
   };

@@ -882,7 +882,8 @@ describe("change-aware preflight Claude hooks contract", () => {
       expect(options.timeout).toBeGreaterThan(0);
       const emitted = JSON.parse(writes.join(""));
       // A timeout is an infra condition, not a check failure -> allow; the
-      // native pre-push hook remains the real, exhaustive gate.
+      // native pre-push hook remains the real local gate, while exhaustive
+      // parity stays in CI/manual preflight.
       expect(emitted.hookSpecificOutput.permissionDecision).toBe("allow");
     } finally {
       process.stdout.write = original;

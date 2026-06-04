@@ -42,12 +42,16 @@ const preflight = require("../preflight");
 const {
   AGENT_STAGES,
   GUARD_DEFERRED_HOOK_IDS,
+  GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS,
   PRE_COMMIT_INTERNAL_ERROR_ID,
+  PREFLIGHT_INVALID_OPTIONS_ID,
   NODE_DIRECT_MAP,
   NODE_DIRECT_EXEMPT,
   POLICY_HOOK_IDS,
+  parseArgs,
   parseFailingHookIds,
   runPreCommitMode,
+  runNodeDirectMode,
   runPreflight
 } = preflight;
 
@@ -138,6 +142,23 @@ function runPreCommitOracle(args, cwd) {
 // ---------------------------------------------------------------------------
 
 describe("preflight delegation to pre-commit", () => {
+  test("parseArgs accepts explicit range and no-worktree options", () => {
+    const options = parseArgs([
+      "--stage=pre-push",
+      "--profile=guard",
+      "--range-from",
+      "old",
+      "--range-to=new",
+      "--no-worktree"
+    ]);
+
+    expect(options.stage).toBe("pre-push");
+    expect(options.profile).toBe("guard");
+    expect(options.rangeFrom).toBe("old");
+    expect(options.rangeTo).toBe("new");
+    expect(options.noWorktree).toBe(true);
+  });
+
   test("runPreCommitMode issues BOTH committed-range and working-tree passes per stage", () => {
     const calls = [];
     runPreCommitMode({
@@ -237,6 +258,133 @@ describe("preflight delegation to pre-commit", () => {
     expect(calls.length).toBe(1);
     expect(calls[0].args).toContain("--from-ref");
     expect(calls[0].args).not.toContain("--files");
+  });
+
+  test("range mode uses the exact range end instead of HEAD", () => {
+    const calls = [];
+    runPreCommitMode({
+      options: { all: false, json: true, profile: "guard" },
+      changeSet: {
+        mergeBase: "old",
+        rangeTo: "new",
+        files: ["a.cs"],
+        sources: { committed: ["a.cs"], staged: [], unstaged: [], untracked: [] }
+      },
+      stages: ["pre-push"],
+      runCommandFn: (command, args) => {
+        calls.push({ command, args });
+        return { status: 0 };
+      },
+      logFn: () => {},
+      env: {}
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args).toEqual([
+      "scripts/ensure-pre-commit.js",
+      "run",
+      "--hook-stage",
+      "pre-push",
+      "--from-ref",
+      "old",
+      "--to-ref",
+      "new"
+    ]);
+  });
+
+  test("runPreflight forwards range and no-worktree options to computeChangeSet", () => {
+    let captured;
+    const { report, exitCode } = runPreflight(
+      {
+        profile: "guard",
+        scope: "full",
+        stage: "pre-push",
+        recover: true,
+        json: true,
+        all: false,
+        rangeFrom: "old",
+        rangeTo: "new",
+        noWorktree: true
+      },
+      {
+        computeChangeSetFn: (options) => {
+          captured = options;
+          return {
+            files: ["a.cs"],
+            base: "old",
+            mergeBase: "old",
+            rangeTo: "new",
+            scope: "range",
+            sources: { committed: ["a.cs"], staged: [], unstaged: [], untracked: [] }
+          };
+        },
+        stagesInConfigFn: () => new Set(["pre-push"]),
+        repairNodeToolingFn: () => ({ status: 0 }),
+        ensurePreCommitFn: () => ({ ok: true }),
+        runCommandFn: () => ({ status: 0, stdout: "", stderr: "" }),
+        logFn: () => {},
+        env: {}
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(report.scope).toBe("range");
+    expect(captured).toEqual({
+      baseOverride: undefined,
+      scope: "full",
+      rangeFrom: "old",
+      rangeTo: "new",
+      noWorktree: true
+    });
+  });
+
+  test("runPreflight rejects one-sided explicit ranges before computing changes", () => {
+    const computeChangeSetFn = jest.fn();
+    const { report, exitCode } = runPreflight(
+      {
+        profile: "guard",
+        scope: "full",
+        recover: false,
+        json: true,
+        all: false,
+        rangeFrom: "old",
+        rangeTo: null,
+        noWorktree: true
+      },
+      {
+        computeChangeSetFn,
+        logFn: () => {}
+      }
+    );
+
+    expect(exitCode).toBe(1);
+    expect(report.mode).toBe("invalid-options");
+    expect(report.status.failures).toContain(PREFLIGHT_INVALID_OPTIONS_ID);
+    expect(report.status.warnings.join("\n")).toContain("--range-from and --range-to");
+    expect(computeChangeSetFn).not.toHaveBeenCalled();
+  });
+
+  test("runPreflight rejects no-worktree without an explicit range or all-files mode", () => {
+    const computeChangeSetFn = jest.fn();
+    const { report, exitCode } = runPreflight(
+      {
+        profile: "guard",
+        scope: "full",
+        recover: false,
+        json: true,
+        all: false,
+        noWorktree: true
+      },
+      {
+        computeChangeSetFn,
+        logFn: () => {}
+      }
+    );
+
+    expect(exitCode).toBe(1);
+    expect(report.status.failures).toContain(PREFLIGHT_INVALID_OPTIONS_ID);
+    expect(report.status.warnings.join("\n")).toContain("--no-worktree requires");
+    expect(computeChangeSetFn).not.toHaveBeenCalled();
   });
 
   test("--all routes to a single --all-files pass per stage", () => {
@@ -369,7 +517,7 @@ describe("preflight propagates the authoritative non-zero exit (anyFailed)", () 
 
 // ---------------------------------------------------------------------------
 // (a'') Guard-profile deferral in PRE-COMMIT mode (the common path): the heavy
-// Jest suites must be deferred to the native pre-push hook via pre-commit's
+// Jest suites must be deferred to CI/manual pre-push parity via pre-commit's
 // SKIP env var. The cross-platform suite only pins this in node-direct mode;
 // this pins it in the dominant pre-commit mode (design 5.4). Without it the
 // always-on Stop hook + the push-guard run the multi-minute suites in-loop.
@@ -443,6 +591,99 @@ describe("preflight guard profile defers heavy Jest suites in pre-commit mode", 
     for (const id of GUARD_DEFERRED_HOOK_IDS) {
       expect(skipped).toContain(id);
     }
+  });
+
+  test("guard range with --no-worktree skips worktree-only policy hooks", () => {
+    const childEnv = captureChildEnv({
+      profile: "guard",
+      all: false,
+      json: true,
+      noWorktree: true,
+      rangeFrom: "old",
+      rangeTo: "new"
+    });
+    const skipped = childEnv.SKIP.split(",").map((s) => s.trim());
+    for (const id of GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS) {
+      expect(skipped).toContain(id);
+    }
+  });
+
+  test("guard range without --no-worktree does not skip worktree-only policy hooks", () => {
+    const childEnv = captureChildEnv({
+      profile: "guard",
+      all: false,
+      json: true,
+      noWorktree: false,
+      rangeFrom: "old",
+      rangeTo: "new"
+    });
+    const skipped = childEnv.SKIP.split(",").map((s) => s.trim());
+    for (const id of GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS) {
+      expect(skipped).not.toContain(id);
+    }
+  });
+
+  test("profile=full range with --no-worktree does not set controlled SKIP", () => {
+    const childEnv = captureChildEnv({
+      profile: "full",
+      all: false,
+      json: true,
+      noWorktree: true,
+      rangeFrom: "old",
+      rangeTo: "new"
+    });
+    expect(childEnv.SKIP).toBeUndefined();
+  });
+});
+
+describe("preflight range no-worktree skips worktree-only hooks in Node-direct mode", () => {
+  test("guard range with --no-worktree does not run validate-untracked-policy locally", () => {
+    const calls = [];
+    runNodeDirectMode({
+      options: {
+        profile: "guard",
+        all: false,
+        json: true,
+        noWorktree: true,
+        rangeFrom: "old",
+        rangeTo: "new"
+      },
+      changeSet: {
+        files: ["Runtime/Foo.cs"],
+        sources: { committed: ["Runtime/Foo.cs"], staged: [], unstaged: [], untracked: [] }
+      },
+      stages: ["pre-push"],
+      runCommandFn: (command, args) => {
+        calls.push({ command, args });
+        return { status: 0 };
+      },
+      logFn: () => {},
+      env: {}
+    });
+
+    const commandText = calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commandText).not.toContain("scripts/validate-untracked-policy.js");
+  });
+
+  test("ordinary guard pre-push still runs validate-untracked-policy locally", () => {
+    const calls = [];
+    runNodeDirectMode({
+      options: { profile: "guard", all: false, json: true, noWorktree: false },
+      changeSet: {
+        files: ["Runtime/Foo.cs"],
+        sources: { committed: ["Runtime/Foo.cs"], staged: [], unstaged: [], untracked: [] }
+      },
+      stages: ["pre-push"],
+      runCommandFn: (command, args) => {
+        calls.push({ command, args });
+        return { status: 0 };
+      },
+      logFn: () => {},
+      env: {}
+    });
+
+    const commandText = calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commandText).toContain("scripts/validate-untracked-policy.js");
   });
 });
 
@@ -625,8 +866,8 @@ describe("Node-direct fallback map completeness", () => {
       throw new Error(
         "Node-direct coverage gap: these agent-stage hook id(s) have neither a " +
           "NODE_DIRECT_MAP entry, a NODE_DIRECT_EXEMPT reason, nor membership in " +
-          "GUARD_DEFERRED_HOOK_IDS (the heavy Jest suites deferred to the native " +
-          "pre-push hook):\n  " +
+          "GUARD_DEFERRED_HOOK_IDS (the heavy Jest suites deferred to CI/manual " +
+          "pre-push parity):\n  " +
           uncovered.join("\n  ") +
           "\nAdd a Node-direct command, an exemption with a cited reason, or " +
           "(if it is a heavy suite) add it to GUARD_DEFERRED_HOOK_IDS."

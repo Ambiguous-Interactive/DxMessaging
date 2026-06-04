@@ -186,8 +186,8 @@ The validator is wired exactly like `validate:workflows`:
 
 - `.github/workflows/actionlint.yml` runs it in CI, so drift blocks the merge.
 - `npm run validate:all` and `npm run preflight:pre-commit` run it locally.
-- The native pre-push runner `scripts/run-prepush-parallel.js` runs it through
-  `PREFLIGHT_ONLY_EXTRAS`.
+- The explicit exhaustive `npm run preflight:pre-push` path runs it through the
+  full pre-commit preflight.
 - The `script-parser-tests` pre-push hook runs
   `scripts/__tests__/validate-unity-versions.test.js`, which pins the schema rules
   and every consumer policy against fixtures.

@@ -7,10 +7,11 @@
  * cannot measure real cost on a real machine. This script does that job:
  *
  *   1. Resolves a small set of representative scenarios (one .cs file, one
- *      generic .md file, one skill .md file).
+ *      generic .md file, one skill .md file, plus native pre-push stdin cases).
  *   2. For each scenario, touches the file's mtime (no content change), runs
- *      `node scripts/ensure-pre-commit.js run --hook-stage <stage> --files <file>`, and measures
- *      wall-clock.
+ *      `node scripts/ensure-pre-commit.js run --hook-stage <stage> --files
+ *      <file>`, or the native pre-push runner with synthetic Git stdin, and
+ *      measures wall-clock.
  *   3. Reports per-scenario timings against per-scenario budgets and exits
  *      non-zero if any budget is exceeded.
  *
@@ -48,7 +49,18 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 // headroom so casual regressions trip the gate.
 const SCENARIOS = [
   {
+    id: "native-prepush-noop",
+    kind: "native-prepush-noop",
+    budgetMs: 2000
+  },
+  {
+    id: "native-prepush-one-file",
+    kind: "native-prepush-one-file",
+    budgetMs: 8000
+  },
+  {
     id: "csharp-precommit",
+    kind: "pre-commit-file",
     stage: "pre-commit",
     file: "Runtime/Core/MessageBus/MessageBus.cs",
     // Was 11.3 s before round-3; now ~5-6 s. Tight budget to lock the
@@ -57,6 +69,7 @@ const SCENARIOS = [
   },
   {
     id: "skill-md-precommit",
+    kind: "pre-commit-file",
     stage: "pre-commit",
     file: ".llm/skills/performance/git-hook-performance.md",
     // Was 16.3 s before round-3, ~11 s post round-3, ~7-9 s post
@@ -67,6 +80,7 @@ const SCENARIOS = [
   },
   {
     id: "csharp-prepush",
+    kind: "pre-commit-file",
     stage: "pre-push",
     file: "Runtime/Core/MessageBus/MessageBus.cs",
     // Was 9.4 s before round-3; now ~10-12 s because cspell moved from
@@ -76,6 +90,7 @@ const SCENARIOS = [
   },
   {
     id: "skill-md-prepush",
+    kind: "pre-commit-file",
     stage: "pre-push",
     file: ".llm/skills/performance/git-hook-performance.md",
     // Was 22.4 s before round-3, ~14 s post round-3, ~9 s post
@@ -142,6 +157,63 @@ function runPreCommit(stage, relPath) {
   };
 }
 
+function runNativePrePush(stdin) {
+  const start = process.hrtime.bigint();
+  const result = spawnSync(process.execPath, ["scripts/run-native-prepush.js"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    input: stdin
+  });
+  const elapsedNs = process.hrtime.bigint() - start;
+  const elapsedMs = Number(elapsedNs / 1000000n);
+  return {
+    elapsedMs,
+    status: result.status,
+    signal: result.signal,
+    stdout: result.stdout || "",
+    stderr: result.stderr || "",
+    error: result.error ? String(result.error.message) : null
+  };
+}
+
+function gitOutput(args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function findSingleFileCommitRange() {
+  const commits = gitOutput(["rev-list", "--max-count=80", "--parents", "HEAD"])
+    .split(/\r?\n/)
+    .filter(Boolean);
+  for (const line of commits) {
+    const [commit, parent] = line.split(/\s+/);
+    if (!commit || !parent) {
+      continue;
+    }
+    const files = gitOutput([
+      "diff-tree",
+      "--no-commit-id",
+      "--name-only",
+      "-r",
+      "--diff-filter=ACMR",
+      commit
+    ])
+      .split(/\r?\n/)
+      .filter(Boolean);
+    if (files.length === 1) {
+      return { from: parent, to: commit, file: files[0] };
+    }
+  }
+  return null;
+}
+
 function checkPreCommitAvailable() {
   const probe = spawnSync(process.execPath, ["scripts/ensure-pre-commit.js"], {
     cwd: REPO_ROOT,
@@ -154,6 +226,48 @@ function checkPreCommitAvailable() {
 }
 
 function measureScenario(scenario, options) {
+  if (scenario.kind === "native-prepush-noop") {
+    const head = gitOutput(["rev-parse", "--verify", "HEAD"]);
+    if (!head) {
+      return {
+        ...scenario,
+        error: "could not resolve HEAD",
+        elapsedMs: null,
+        pass: false
+      };
+    }
+    const run = runNativePrePush(`refs/heads/main ${head} refs/heads/main ${head}\n`);
+    const pipelineOk = run.status === 0;
+    const underBudget = run.elapsedMs <= scenario.budgetMs;
+    return { ...scenario, ...run, pipelineOk, underBudget, pass: pipelineOk && underBudget };
+  }
+
+  if (scenario.kind === "native-prepush-one-file") {
+    const range = findSingleFileCommitRange();
+    if (!range) {
+      return {
+        ...scenario,
+        skipped: true,
+        error: "no single-file commit found in recent history",
+        elapsedMs: null,
+        pass: true
+      };
+    }
+    const run = runNativePrePush(
+      `refs/heads/perf ${range.to} refs/heads/perf ${range.from}\n`
+    );
+    const pipelineOk = run.status === 0;
+    const underBudget = run.elapsedMs <= scenario.budgetMs;
+    return {
+      ...scenario,
+      file: range.file,
+      ...run,
+      pipelineOk,
+      underBudget,
+      pass: pipelineOk && underBudget
+    };
+  }
+
   const absFile = path.join(REPO_ROOT, scenario.file);
   if (!fs.existsSync(absFile)) {
     return {
@@ -215,7 +329,7 @@ function formatHuman(results) {
     const budget = `${r.budgetMs} ms`;
     let verdict;
     if (r.error) {
-      verdict = `ERROR (${r.error})`;
+      verdict = r.skipped ? `SKIPPED (${r.error})` : `ERROR (${r.error})`;
     } else if (!r.pipelineOk) {
       verdict = `HOOK FAILED (status=${r.status})`;
     } else if (!r.underBudget) {

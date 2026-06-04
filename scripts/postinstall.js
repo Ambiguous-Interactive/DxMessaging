@@ -15,6 +15,7 @@ const childProcess = require("child_process");
 
 const VALIDATOR = path.join(__dirname, "validate-node-tooling.js");
 const HOOK_INSTALLER = path.join(__dirname, "install-git-hooks.js");
+const GIT_PERFORMANCE = path.join(__dirname, "configure-local-git-performance.js");
 
 function runNonFatal(label, scriptPath) {
   try {
@@ -32,5 +33,6 @@ function runNonFatal(label, scriptPath) {
 
 runNonFatal("validate-node-tooling", VALIDATOR);
 runNonFatal("install-git-hooks", HOOK_INSTALLER);
+runNonFatal("configure-local-git-performance", GIT_PERFORMANCE);
 
 process.exit(0);

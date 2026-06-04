@@ -105,7 +105,7 @@
 | [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [ok] 218    | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path    |
 | [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 198    | [advanced]     | [stable] | [risk: critical] | memory, reclamation   |
 | [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 186    | [advanced]     | [stable] | [risk: critical] | sweep, eviction       |
-| [Git Hook Performance Budget](./performance/git-hook-performance.md)                                               | [warn] 300  | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |
+| [Git Hook Performance Budget](./performance/git-hook-performance.md)                                               | [warn] 299  | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |
 | [Git Hook Performance: Stages and Tooling](./performance/git-hook-performance-tooling.md)                          | [ok] 240    | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |
 | [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 177    | [advanced]     | [stable] | [risk: high]     | caching, memory       |
 | [Object Pooling Anti-Patterns](./performance/object-pooling-anti-patterns.md)                                      | [ok] 145    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
@@ -136,7 +136,7 @@
 
 | Skill                                                                                                    | Lines       | Complexity     | Status   | Performance    | Tags                             |
 | -------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | -------------- | -------------------------------- |
-| [Change-Aware Preflight](./scripting/change-aware-preflight.md)                                          | [ok] 205    | [intermediate] | [stable] | [risk: medium] | pre-commit, pre-push             |
+| [Change-Aware Preflight](./scripting/change-aware-preflight.md)                                          | [ok] 210    | [intermediate] | [stable] | [risk: medium] | pre-commit, pre-push             |
 | [Cross-Platform Script Compatibility](./scripting/cross-platform-compatibility.md)                       | [warn] 298  | [intermediate] | [stable] | [risk: none]   | cross-platform, case-sensitivity |
 | [Cross-Toolchain Path Comparison](./scripting/cross-toolchain-path-comparison.md)                        | [ok] 229    | [intermediate] | [stable] | [risk: none]   | cross-platform, testing          |
 | [Dependency Version Parity](./scripting/dependency-version-parity.md)                                    | [ok] 194    | [intermediate] | [stable] | [risk: low]    | dependencies, lockfile           |
@@ -146,7 +146,7 @@
 | [JavaScript Code Quality Practices Part 2](./scripting/javascript-code-quality-part-2.md)                | [ok] 142    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
 | [Jest Hook Robustness](./scripting/jest-hook-robustness.md)                                              | [warn] 300  | [intermediate] | [stable] | [risk: none]   | jest, pre-commit                 |
 | [Let Tools Resolve Modules](./scripting/let-tools-resolve-modules.md)                                    | [ok] 152    | [basic]        | [stable] | [risk: none]   | cross-platform, tooling          |
-| [Native Git Hook Bootstrap](./scripting/native-git-hooks.md)                                             | [ok] 126    | [intermediate] | [stable] | [risk: low]    | git-hooks, cross-platform        |
+| [Native Git Hook Bootstrap](./scripting/native-git-hooks.md)                                             | [ok] 127    | [intermediate] | [stable] | [risk: low]    | git-hooks, cross-platform        |
 | [PowerShell Scripting Best Practices](./scripting/powershell-best-practices.md)                          | [draft] 106 | [intermediate] | [stable] | [risk: none]   | powershell, scripting            |
 | [PowerShell Scripting Best Practices Part 1](./scripting/powershell-best-practices-part-1.md)            | [ok] 204    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
 | [PowerShell Scripting Best Practices Part 2](./scripting/powershell-best-practices-part-2.md)            | [ok] 223    | [intermediate] | [stable] | [risk: low]    | migration, split                 |

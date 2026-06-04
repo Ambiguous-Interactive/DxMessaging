@@ -4,9 +4,10 @@
 /**
  * run-prepush-parallel.js
  *
- * The OPTIMIZED executor for the full pre-push parity set, invoked by the native
- * `scripts/hooks/pre-push` hook. It runs the SAME validation coverage as
- * `npm run preflight:pre-push` but far faster.
+ * The OPTIMIZED executor for the full pre-push parity set. It runs the SAME
+ * validation coverage as `npm run preflight:pre-push` but far faster, and is
+ * retained as an explicit CI/manual exhaustive accelerator. Native local
+ * pre-push uses scripts/run-native-prepush.js instead.
  *
  * Cost model (measured on an 8-core Linux dev container; Windows ~2x):
  *   - `pre-commit` startup is ~10s PER INVOCATION (config load + env resolve +
@@ -53,9 +54,8 @@
  *     cspell over the same extension set on --all-files.
  *
  * `npm run preflight:pre-push` stays the byte-for-byte simple, serial parity
- * command for CI and on-demand use; this script is only the native-hook fast
- * path. Pure Node + scripts/lib/shell-command.js (no shell, no bash); runs on
- * native Linux, macOS, and Windows.
+ * command for CI and on-demand use. Pure Node + scripts/lib/shell-command.js
+ * (no shell, no bash); runs on native Linux, macOS, and Windows.
  */
 
 const os = require("os");

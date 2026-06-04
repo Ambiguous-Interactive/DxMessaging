@@ -43,7 +43,7 @@
  *       "policyFailures": ["<hookId>", ...],  // policy/security; force checks-failed
  *       "warnings": ["<message>", ...]        // e.g. the yamllint skip
  *     },
- *     "scope": "full" | "worktree",
+ *     "scope": "full" | "worktree" | "range",
  *     "profile": "guard" | "full",
  *     "mode": "pre-commit" | "node-direct",
  *     "base": "<ref>" | null,
@@ -55,7 +55,7 @@
  * Flags:
  *   --profile=guard|full  guard runs the fast subset and DEFERS the heavy Jest
  *                         suites (script-tests / script-parser-tests /
- *                         unity-contract-tests) to the native pre-push hook;
+ *                         unity-contract-tests) to CI/manual pre-push parity;
  *                         full runs everything change-scoped. Default: full
  *                         when run directly.
  *   --scope=worktree|full worktree skips base resolution + the committed range
@@ -64,6 +64,12 @@
  *   --stage=<name>        restrict to one stage (default: the agent-relevant
  *                         stages pre-commit + pre-push present in the config).
  *   --base=<ref>          explicit integration base (CI passes the PR base).
+ *   --range-from=<ref>    explicit committed range start; skips integration
+ *                         base discovery and uses this as --from-ref.
+ *   --range-to=<ref>      explicit committed range end; paired with
+ *                         --range-from as --to-ref.
+ *   --no-worktree         skip staged/unstaged/untracked scans. Used by native
+ *                         pre-push to validate only the pushed range.
  *   --files=<a,b,...>     explicit working-tree file list (comma or repeat).
  *   --all                 exhaustive: `pre-commit run --hook-stage <s>
  *                         --all-files` per stage (parity with the native hook).
@@ -108,7 +114,7 @@ const POLICY_HOOK_IDS = Object.freeze([
 ]);
 
 /**
- * Heavy Jest suites deferred to the native pre-push hook under
+ * Heavy Jest suites deferred to CI/manual `npm run preflight:pre-push` under
  * `--profile=guard`. They run on `scripts/**` edits and execute 100+ files, so
  * paying them in-loop on every guard pass would defeat the "earlier feedback"
  * goal (design 5.4).
@@ -120,6 +126,14 @@ const GUARD_DEFERRED_HOOK_IDS = Object.freeze([
 ]);
 
 /**
+ * Hooks that validate local worktree state rather than pushed range content.
+ * Native pre-push range validation runs with `--no-worktree`, so these must
+ * not fire for that internal guard path. Exhaustive `preflight:pre-push`
+ * still runs them through `--all`.
+ */
+const GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS = Object.freeze(["validate-untracked-policy"]);
+
+/**
  * Synthetic failure id used when a pre-commit pass exits non-zero but its
  * output contains no parseable `- hook id:` line (config/internal error, a hook
  * crash, an unattributed failure, or human-mode inherited stdio). The process
@@ -129,6 +143,7 @@ const GUARD_DEFERRED_HOOK_IDS = Object.freeze([
  * `failures[]` (not `policyFailures[]`).
  */
 const PRE_COMMIT_INTERNAL_ERROR_ID = "pre-commit-internal-error";
+const PREFLIGHT_INVALID_OPTIONS_ID = "preflight-invalid-options";
 
 /**
  * Node-direct fallback mapping: hook id -> the npm script / node command(s)
@@ -390,6 +405,9 @@ function parseArgs(argv) {
     scope: "full",
     stage: null,
     base: null,
+    rangeFrom: null,
+    rangeTo: null,
+    noWorktree: false,
     files: null,
     all: false,
     json: false,
@@ -423,6 +441,15 @@ function parseArgs(argv) {
         break;
       case "--base":
         options.base = takeValue(inline) || null;
+        break;
+      case "--range-from":
+        options.rangeFrom = takeValue(inline) || null;
+        break;
+      case "--range-to":
+        options.rangeTo = takeValue(inline) || null;
+        break;
+      case "--no-worktree":
+        options.noWorktree = true;
         break;
       case "--files": {
         const value = takeValue(inline);
@@ -463,12 +490,17 @@ to pre-commit when available (Node-direct fallback otherwise).
 
 Options:
   --profile=guard|full   guard = fast subset (defers heavy Jest suites to the
-                         native pre-push hook); full = everything (default).
+                         CI/manual pre-push parity); full = everything (default).
   --scope=worktree|full  worktree = staged+unstaged+untracked only (skips the
                          committed range; fast on long branches);
                          full = committed range + working tree (default).
   --stage=<name>         restrict to one stage (default: pre-commit + pre-push).
   --base=<ref>           explicit integration base (CI passes the PR base).
+  --range-from=<ref>     explicit committed range start; skips integration-base
+                         discovery and uses this as --from-ref.
+  --range-to=<ref>       explicit committed range end; paired with
+                         --range-from as --to-ref.
+  --no-worktree          skip staged/unstaged/untracked scans.
   --files=<a,b,...>      explicit working-tree file list.
   --all                  exhaustive --all-files parity per stage.
   --json                 emit a machine-readable status object.
@@ -637,17 +669,24 @@ function runPreCommitMode(ctx) {
 
   const childEnv = { ...env };
   // Honor the guard profile in pre-commit mode (the common path): defer the
-  // heavy Jest suites to the native pre-push hook by passing them through
+  // heavy Jest suites to CI/manual pre-push parity by passing them through
   // pre-commit's SKIP env var. Without this, `--profile=guard` is a no-op when
   // pre-commit is installed and the guard / advisory Stop hook would run the
   // multi-minute suites in-loop (design 5.4). `--all` (full parity) and
   // `--profile=full` keep running everything.
+  const controlledSkipIds = [];
   if (options.profile === "guard" && !options.all) {
+    controlledSkipIds.push(...GUARD_DEFERRED_HOOK_IDS);
+    if (isGuardRangeWithoutWorktree(options)) {
+      controlledSkipIds.push(...GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS);
+    }
+  }
+  if (controlledSkipIds.length > 0) {
     const existingSkip = String(childEnv.SKIP || "")
       .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean);
-    childEnv.SKIP = [...new Set([...existingSkip, ...GUARD_DEFERRED_HOOK_IDS])].join(",");
+    childEnv.SKIP = [...new Set([...existingSkip, ...controlledSkipIds])].join(",");
   }
   const failedHookIds = [];
   let anyFailed = false;
@@ -696,7 +735,11 @@ function runPreCommitMode(ctx) {
     // Two passes only when BOTH sides exist; otherwise the relevant single
     // pass (design 3.1 always_run dedupe).
     if (hasCommitted) {
-      runPass(stage, ["--from-ref", changeSet.mergeBase, "--to-ref", "HEAD"], "committed-range");
+      runPass(
+        stage,
+        ["--from-ref", changeSet.mergeBase, "--to-ref", changeSet.rangeTo || "HEAD"],
+        "committed-range"
+      );
     }
     if (hasWorking) {
       runPass(stage, ["--files", ...workingFiles], "working-tree");
@@ -767,6 +810,9 @@ function runNodeDirectMode(ctx) {
   }
 
   for (const id of targetedIds) {
+    if (GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS.includes(id) && isGuardRangeWithoutWorktree(options)) {
+      continue;
+    }
     if (GUARD_DEFERRED_HOOK_IDS.includes(id) && options.profile === "guard") {
       continue;
     }
@@ -785,7 +831,8 @@ function runNodeDirectMode(ctx) {
 
     const isPolicy = POLICY_HOOK_IDS.includes(id);
     for (const command of commands) {
-      // Policy hooks always run; non-policy commands gate on the change-set.
+      // Policy hooks always run except worktree-only policies in a native
+      // range/no-worktree guard pass; non-policy commands gate on the change-set.
       if (!isPolicy && !options.all && !nodeDirectCommandApplies(command, files)) {
         continue;
       }
@@ -851,6 +898,39 @@ function buildStatus({ failures = [], policyFailures = [], warnings = [], infraR
   };
 }
 
+function validateOptions(options) {
+  const hasRangeFrom = typeof options.rangeFrom === "string" && options.rangeFrom.length > 0;
+  const hasRangeTo = typeof options.rangeTo === "string" && options.rangeTo.length > 0;
+  const errors = [];
+
+  if (hasRangeFrom !== hasRangeTo) {
+    errors.push("--range-from and --range-to must be provided together");
+  }
+  if (options.noWorktree && !options.all && !(hasRangeFrom && hasRangeTo)) {
+    errors.push("--no-worktree requires a complete --range-from/--range-to pair or --all");
+  }
+
+  return errors;
+}
+
+function hasExplicitRange(options) {
+  return (
+    typeof options.rangeFrom === "string" &&
+    options.rangeFrom.length > 0 &&
+    typeof options.rangeTo === "string" &&
+    options.rangeTo.length > 0
+  );
+}
+
+function isGuardRangeWithoutWorktree(options) {
+  return (
+    options.profile === "guard" &&
+    options.noWorktree === true &&
+    options.all !== true &&
+    hasExplicitRange(options)
+  );
+}
+
 /**
  * Orchestrate a full preflight run. Returns the JSON-serializable report and an
  * exit code. Pure modulo the injected `deps`, so tests drive it with fakes.
@@ -868,10 +948,35 @@ function runPreflight(options = {}, deps = {}) {
     env = process.env
   } = deps;
 
+  const optionErrors = validateOptions(options);
+  if (optionErrors.length > 0) {
+    const status = buildStatus({
+      failures: [PREFLIGHT_INVALID_OPTIONS_ID],
+      warnings: optionErrors
+    });
+    return {
+      report: {
+        status,
+        scope: options.scope || "full",
+        profile: options.profile || "full",
+        mode: "invalid-options",
+        base: null,
+        changedFileCount: 0
+      },
+      exitCode: 1
+    };
+  }
+
   const recovery = runRecovery(options, deps);
   const stages = resolveTargetStages(options, stagesInConfigFn);
 
-  const changeSet = computeChangeSetFn({ baseOverride: options.base, scope: options.scope });
+  const changeSet = computeChangeSetFn({
+    baseOverride: options.base,
+    scope: options.scope,
+    rangeFrom: options.rangeFrom,
+    rangeTo: options.rangeTo,
+    noWorktree: options.noWorktree
+  });
 
   // Explicit --files overrides the working-tree sources (CI / guard reuse).
   if (Array.isArray(options.files)) {
@@ -992,7 +1097,9 @@ module.exports = {
   AGENT_STAGES,
   POLICY_HOOK_IDS,
   GUARD_DEFERRED_HOOK_IDS,
+  GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS,
   PRE_COMMIT_INTERNAL_ERROR_ID,
+  PREFLIGHT_INVALID_OPTIONS_ID,
   NODE_DIRECT_MAP,
   NODE_DIRECT_EXEMPT,
   parseArgs,
@@ -1006,6 +1113,9 @@ module.exports = {
   nodeDirectCommandApplies,
   runNodeDirectMode,
   buildStatus,
+  validateOptions,
+  hasExplicitRange,
+  isGuardRangeWithoutWorktree,
   runPreflight,
   formatHumanSummary,
   toPosixPath,

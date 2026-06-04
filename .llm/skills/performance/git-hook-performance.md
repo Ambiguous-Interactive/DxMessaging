@@ -2,7 +2,7 @@
 title: "Git Hook Performance Budget"
 id: "git-hook-performance"
 category: "performance"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-05-02"
 updated: "2026-05-02"
 
@@ -32,7 +32,7 @@ complexity:
 impact:
   performance:
     rating: "high"
-    details: "Keeps pre-commit under 8s on Linux (proxy for under 10s on Windows) on single-file commits; protects developer flow"
+    details: "Keeps local commit/push hooks fast and change-aware while exhaustive parity runs in CI/manual preflight"
   maintainability:
     rating: "high"
     details: "Static scorer plus wall-clock CI measurement catch regressions in PR review"
@@ -70,14 +70,13 @@ status: "stable"
 
 # Git Hook Performance Budget
 
-> **One-line summary**: Pre-commit on a single-file commit must finish under 8 seconds on the Linux dev container (proxy for under 10 seconds on Windows); a static scorer plus a wall-clock CI job enforce the budget.
+> **One-line summary**: Local commit and push hooks must stay fast and change-aware; a static scorer plus a wall-clock CI job enforce the budget, while exhaustive parity stays in CI/manual `npm run preflight:pre-push`.
 
 ## Budget
 
-- pre-commit on a single-file commit: under 8 seconds wall-clock on Linux
-  (proxies to under 16 seconds on Windows; the goal is under 10 seconds on
-  Windows for the .md path through aggressive Node-spawn minimization).
-- pre-push on a single-file push: under 8 seconds wall-clock on Linux.
+- native pre-push: no-op under 2 seconds and one-file pushed range under 8 seconds wall-clock on Linux.
+- pre-commit on a single-file commit: under 8 seconds wall-clock on Linux (proxy for Windows).
+- Native pre-push validates pushed ranges via `scripts/run-native-prepush.js`; full `--all-files` parity is explicit CI/manual `npm run preflight:pre-push`.
 - The static scorer enforces TWO ceilings:
   - Total budget (10): cumulative anti-pattern score across all
     pre-commit-stage hooks. Catches accumulated drift.
