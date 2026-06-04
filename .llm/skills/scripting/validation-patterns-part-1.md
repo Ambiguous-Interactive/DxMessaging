@@ -134,7 +134,7 @@ validateField("", "complexity.level");
 
 ## Real-World Example: Skill File Validation
 
-This pattern is implemented in [validate-skills.js](../../scripts/validate-skills.js):
+This pattern is implemented in [validate-skills.js](../../../scripts/validate-skills.js):
 
 ```javascript
 // Validate complexity level - exclude empty values from enum check

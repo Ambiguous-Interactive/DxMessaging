@@ -49,7 +49,6 @@ Continuation material extracted from `array-pooling.md` to keep .llm files withi
 ## Related Patterns
 
 - [Collection Pooling](./collection-pooling.md) - List/HashSet/etc. pooling
-- [Span/Memory Streams](./span-memory-streams.md) - Zero-copy stream access
 - [Array Pooling Usage Examples](./array-pooling-usage-examples.md) - Applied pooling scenarios
 
 ## See Also

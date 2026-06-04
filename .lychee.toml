@@ -1,38 +1,85 @@
+# DxMessaging link-checking configuration.
+#
+# Shared by both link-checking jobs:
+#   * lint-doc-links.yml          - blocking PR/push check (offline local pass +
+#                                   lenient external-liveness pass)
+#   * markdown-link-validity.yml  - scheduled advisory external scan that opens a
+#                                   tracking issue instead of failing
+#
+# Both jobs feed lychee the set of TRACKED docs via `git ls-files | --files-from`
+# (lychee's own glob does NOT honor .gitignore). Vendored / generated / scratch
+# trees -- node_modules, site, .artifacts, coverage, Temp, .venv, progress,
+# .unity-test-project/Library -- are therefore excluded automatically by virtue of
+# not being tracked, with no `exclude_path` denylist to drift out of date or to
+# accidentally match a real doc (a bare "coverage" once hid 9 tracked files).
+#
+# Philosophy: external link *liveness* is non-deterministic. Authoritative sites
+# (w3.org, MDN, learn.microsoft.com, ...) routinely return 403/429/503 to automated
+# clients via WAF / bot detection, even though the page loads fine in a browser.
+# Gating PRs on those responses produces endless whack-a-mole false positives (the
+# prior webaim.org -> w3.org link swap failed identically because BOTH block bots).
+# So:
+#   1. `accept` treats every "the server answered but refused/throttled the bot"
+#      status and every transient server error as OK.
+#   2. The blocking external pass additionally treats a TIMEOUT as advisory (a slow
+#      host is not a dead link); see lint-doc-links.yml. So a PR fails only on a
+#      genuinely dead link -- HTTP 404/410 or a DNS/connection/TLS failure.
+#   3. Local/relative links and in-repo `#anchor` fragments are validated OFFLINE
+#      and deterministically, so they never flake.
+#   4. Deep external rot is surfaced by the scheduled advisory scan, which opens a
+#      GitHub issue rather than blocking a PR.
+# Never add a per-domain `exclude` to silence a bot-detection 403 -- widen `accept`.
+
 verbose = "info"
 no_progress = true
 max_concurrency = 4
 include_mail = false
 
-# Network tuning
+# Network tuning. A 20s timeout with retries smooths over transient slowness; a
+# host that is still slow after that is treated as a timeout, which the blocking
+# pass classifies as advisory (so it never reds a PR) -- so resilience here comes
+# from the timeout classification, not from inflating the retry count or budget.
 timeout = 20            # seconds per request
-max_retries = 3         # retry transient failures
+max_retries = 2         # retry transient failures
 retry_wait_time = 2     # seconds between retries
 max_redirects = 10
-user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
-# Treat successes, rate-limiting, and transient server errors as acceptable in CI
-# Accept all 2xx as valid plus 429 (rate limited) and 502 (bad gateway - transient)
-accept = ["200..=299", 429, 502]
+# Accept every status that proves the server answered, EXCEPT the two that mean the
+# resource is genuinely gone (404 Not Found, 410 Gone -- deliberately absent, and
+# `validate-lychee-config.js` errors if either is ever added here).
+#   401/403          auth wall / WAF / bot detection (the page is real)
+#   405/406/415/451  method, content-type, or legal blocks against automated clients
+#   408/429          request timeout / rate limiting (throttling, not breakage)
+#   418/999          niche anti-bot signals (e.g. 999 from LinkedIn)
+#   5xx              transient server-side errors (down now, fine later)
+# A genuinely broken URL surfaces as 404, 410, or a network-level (DNS/connection)
+# error -- none of which are accepted -- so real rot is still caught.
+accept = [
+  "200..=299",
+  "401",
+  "403",
+  "405",
+  "406",
+  "408",
+  "415",
+  "418",
+  "429",
+  "451",
+  "999",
+  "500..=599",
+]
 
-# Only check web links
-scheme = ["https", "http"]
-
-# Ignore endpoints that block automated clients (local hosts, CF challenges)
+# `exclude` is reserved for endpoints genuinely unreachable from CI -- NOT for sites
+# that merely block bots (widen `accept` for those). Keep this list tiny. Do NOT add
+# `^file://`: the offline pass represents local links as file:// URLs, so excluding
+# that scheme would silently skip every local link.
 exclude = [
+  # Loopback / local-only hosts never resolve on a CI runner.
   "^https?://localhost",
-  "^http://127\\.0\\.0\\.1",
+  "^https?://127\\.0\\.0\\.1",
   "^https?://0\\.0\\.0\\.0",
-  "^file://",
-  # NPM package page serves a Cloudflare JS challenge to non-browser clients; registry endpoint remains covered.
-  "^https://www\\.npmjs\\.com/package/com\\.wallstop-studios\\.dxmessaging$",
-  # GitHub Pages site - not deployed yet, will be available after first successful deploy
-  "^https://wallstop\\.github\\.io/DxMessaging",
-  # Self-repo blob (file) and tree (directory) links are validated offline against the working tree by
-  # scripts/validate-docs-out-of-tree-links.js (avoids 404s for files added in the same PR before they reach master).
+  # Self-repo blob/tree links are validated OFFLINE against the working tree by
+  # scripts/validate-docs-out-of-tree-links.js -- a live check 404s for files added
+  # in the same PR before they reach the default branch.
   "^https://github\\.com/Ambiguous-Interactive/DxMessaging/(?:blob|tree)/",
-  # Game Programming Patterns site returns 415 (Unsupported Media Type) to automated clients despite valid content
-  "^https://gameprogrammingpatterns\\.com/",
-  # Unity Support (Zendesk + Cloudflare) returns 403 to non-browser clients regardless of User-Agent;
-  # links are user-facing documentation and stay valid in real browsers.
-  "^https?://support\\.unity\\.com/"
 ]

@@ -2,9 +2,9 @@
 title: "Lychee Link Checker Configuration Management Part 1"
 id: "lychee-configuration-part-1"
 category: "github-actions"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-03-16"
-updated: "2026-03-16"
+updated: "2026-06-04"
 status: "stable"
 tags:
   - migration
@@ -24,16 +24,19 @@ Continuation extracted from `lychee-configuration.md` to keep files within the r
 
 ## Common Mistakes
 
-| Mistake                                     | Problem                                                | Fix                                                           |
-| ------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------- |
-| Using `exclude_mail = true`                 | Deprecated in v0.23.0                                  | Use `include_mail = false`                                    |
-| Using `retries = 3`                         | Renamed in v0.23.0                                     | Use `max_retries = 3`                                         |
-| Using `verbosity = 1`                       | Changed to string enum in v0.23.0                      | Use `verbose = "info"` (or "error", "warn", "debug", "trace") |
-| Skipping validation in CI                   | Config errors surface as cryptic lychee failures       | Add validation step before lychee-action                      |
-| Not updating VALID_FIELDS after lychee bump | New valid fields flagged as errors                     | Sync the set with upstream example config                     |
-| Pinning to `@v2` without validation         | New lychee versions can break config silently          | Always pair floating tags with config validation              |
-| Ignoring TOML table headers in validators   | Invalid table-based config bypasses validation         | Parse `[table]` and `[[array]]` headers as top-level fields   |
-| Reading config files at test module scope   | Jest can fail during test collection with poor context | Read files in `beforeAll` with an existence guard             |
+| Mistake                                     | Problem                                                    | Fix                                                                |
+| ------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| Using `exclude_mail = true`                 | Deprecated in v0.23.0                                      | Use `include_mail = false`                                         |
+| Using `retries = 3`                         | Renamed in v0.23.0                                         | Use `max_retries = 3`                                              |
+| Using `verbosity = 1`                       | Changed to string enum in v0.23.0                          | Use `verbose = "info"` (or "error", "warn", "debug", "trace")      |
+| Skipping validation in CI                   | Config errors surface as cryptic lychee failures           | Add validation step before lychee-action                           |
+| Not updating VALID_FIELDS after lychee bump | New valid fields flagged as errors                         | Sync the set with upstream example config                          |
+| Pinning to `@v2` without validation         | New lychee versions can break config silently              | Always pair floating tags with config validation                   |
+| Ignoring TOML table headers in validators   | Invalid table-based config bypasses validation             | Parse `[table]` and `[[array]]` headers as top-level fields        |
+| Reading config files at test module scope   | Jest can fail during test collection with poor context     | Read files in `beforeAll` with an existence guard                  |
+| Per-domain `exclude` to silence a 403/429   | Fragile whack-a-mole; the next bot-blocked site repeats it | Widen `accept` instead; reserve `exclude` for unreachable hosts    |
+| Swapping a flaky link to a "stable" domain  | The new domain blocks CI bots too (webaim -> w3 failed)    | Keep the correct URL; widen `accept` for the blocking status       |
+| Accepting 404/410, or omitting 403/429      | Hides dead links, or reintroduces flaky bot-block failures | Follow `validateStrictLinkPolicy`: forbid 404/410, require 403/429 |
 
 Additional parser guard: malformed quoted values such as `"info` or `"info'`
 must be treated as invalid and rejected unless opening/closing quotes are present

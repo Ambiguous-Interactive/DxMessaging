@@ -63,7 +63,7 @@ public void OnAfterDeserialize()
 
 ## Related Patterns
 
-- [ScriptableObject Patterns](../solid/scriptable-object-singleton.md) - Configuration with SO
+- [ScriptableObject Singleton Pattern](./singleton-scriptableobject.md) - Configuration with SO
 - [Serializable Dictionary Property Drawer](./serializable-dictionary-property-drawer.md) - Inspector UI
 - [Serializable Dictionary Usage Examples](./serializable-dictionary-usage-examples.md) - Common setups
 

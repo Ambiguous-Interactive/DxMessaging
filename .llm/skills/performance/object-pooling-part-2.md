@@ -48,9 +48,6 @@ Continuation material extracted from `object-pooling.md` to keep .llm files with
 
 ## See Also
 
-- [Allocation Reduction Strategies](./allocation-reduction.md)
-- [Cache Strategies](./cache-strategies.md)
-- [Thread Safety Patterns](../concurrency/thread-safety.md)
 - [Object Pooling Variations](./object-pooling-variations.md)
 - [Object Pooling Usage Examples](./object-pooling-usage-examples.md)
 - [Object Pooling Anti-Patterns](./object-pooling-anti-patterns.md)

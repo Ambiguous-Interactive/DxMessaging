@@ -106,6 +106,21 @@ describe("parseTopLevelKeys", () => {
     expect(keys).toEqual(["exclude"]);
   });
 
+  test("should not mis-parse multiline array elements that contain '=' as keys", () => {
+    // Regression: range elements like "200..=299" contain '=', so a parser that
+    // does not track multiline-array depth reads them as bogus keys (200.., 500..).
+    const content = [
+      "accept = [",
+      '  "200..=299",',
+      '  "500..=599",',
+      "]",
+      "verbose = true"
+    ].join("\n");
+
+    const keys = parseTopLevelKeys(content);
+    expect(keys).toEqual(["accept", "verbose"]);
+  });
+
   test("should return empty array for empty content", () => {
     const keys = parseTopLevelKeys("");
     expect(keys).toEqual([]);
@@ -280,6 +295,22 @@ describe("parseTopLevelKeyValues", () => {
     ]);
   });
 
+  test("should skip multiline array element lines instead of treating them as keys", () => {
+    const content = [
+      "accept = [",
+      '  "200..=299",',
+      '  "429",',
+      "]",
+      "timeout = 20"
+    ].join("\n");
+
+    const pairs = parseTopLevelKeyValues(content);
+    expect(pairs).toEqual([
+      { key: "accept", value: "[" },
+      { key: "timeout", value: "20" }
+    ]);
+  });
+
   test("should return empty array for empty content", () => {
     const pairs = parseTopLevelKeyValues("");
     expect(pairs).toEqual([]);
@@ -409,52 +440,124 @@ describe("validateFieldValues", () => {
 });
 
 describe("validateStrictLinkPolicy", () => {
-  test("accepts this repository's strict status and exclusion policy", () => {
+  // Build a minimal config from just an `accept` line (the only field the policy
+  // inspects). 403 and 429 are kept present unless a case deliberately omits them.
+  const withAccept = (acceptToml) => [acceptToml, "exclude = []"].join("\n");
+
+  test("accepts the repository's broad bot-detection / transient accept policy", () => {
+    const content = withAccept(
+      'accept = ["200..=299", "401", "403", "405", "406", "408", "415", "429", "451", "500..=599"]'
+    );
+
+    expect(validateStrictLinkPolicy(content)).toEqual({ errors: [], warnings: [] });
+  });
+
+  // Invariant 1: the gone-status codes (404, 410) must never be accepted, whether
+  // expressed as a bare code, a quoted code, or covered by a range.
+  describe.each([
+    ["bare 404", 'accept = ["200..=299", "403", "429", 404]', 404],
+    ['quoted "404"', 'accept = ["200..=299", "403", "429", "404"]', 404],
+    ["404 inside range 400..=499", 'accept = ["200..=299", "403", "429", "400..=499"]', 404],
+    ["404 inside range 404..=404", 'accept = ["200..=299", "403", "429", "404..=404"]', 404],
+    ["bare 410", 'accept = ["200..=299", "403", "429", 410]', 410],
+    ["410 inside range 408..=410", 'accept = ["200..=299", "403", "429", "408..=410"]', 410],
+    // Open-ended ranges (lychee `[start]..[[=]end]`) must not slip 404/410 past the guard.
+    ["404 inside open-ended range 404..", 'accept = ["200..=299", "403", "429", "404.."]', 404],
+    ["410 inside open-start range ..=410", 'accept = ["200..=299", "403", "429", "..=410"]', 410],
+    ["404 inside open-start exclusive range ..405", 'accept = ["200..=299", "403", "429", "..405"]', 404],
+    ["404 inside inclusive boundary 200..=404", 'accept = ["200..=404", "403", "429"]', 404]
+  ])("forbids accepting a gone-status: %s", (_label, acceptToml, status) => {
+    test(`flags HTTP ${status} as must-not-be-accepted`, () => {
+      const { errors } = validateStrictLinkPolicy(withAccept(acceptToml));
+      expect(
+        errors.some((e) => e.includes(`HTTP ${status} must not be accepted`))
+      ).toBe(true);
+    });
+  });
+
+  // Invariant 2: the bot-detection / rate-limit codes (403, 429) must be accepted,
+  // or the external whack-a-mole returns.
+  describe.each([
+    ["omits 403", 'accept = ["200..=299", "429"]', 403],
+    ["omits 429", 'accept = ["200..=299", "403"]', 429],
+    ["omits both 403 and 429", 'accept = ["200..=299"]', 403]
+  ])("requires accepting bot-detection codes: %s", (_label, acceptToml, status) => {
+    test(`flags missing HTTP ${status} as must-be-accepted`, () => {
+      const { errors } = validateStrictLinkPolicy(withAccept(acceptToml));
+      expect(errors.some((e) => e.includes(`HTTP ${status} must be accepted`))).toBe(true);
+    });
+  });
+
+  test("a range satisfies a required code (403 via 401..=403)", () => {
+    // 401..=403 covers the required 403 without touching the forbidden 404/410;
+    // 429 is supplied explicitly. (No single contiguous range can cover both 403
+    // and 429 while skipping 404-410, which the next test relies on.)
+    const content = withAccept('accept = ["200..=299", "401..=403", "429"]');
+
+    expect(validateStrictLinkPolicy(content)).toEqual({ errors: [], warnings: [] });
+  });
+
+  test("a range that also covers 404/410 is rejected (e.g. 400..=429)", () => {
+    // 400..=429 includes the required 403/429 but ALSO the forbidden 404/410.
+    const { errors } = validateStrictLinkPolicy(withAccept('accept = ["200..=299", "400..=429"]'));
+
+    expect(errors.some((e) => /must not be accepted/.test(e))).toBe(true);
+    expect(errors.some((e) => /must be accepted/.test(e))).toBe(false);
+  });
+
+  test("an open-ended upper range that also grabs 404/410 is rejected (403..)", () => {
+    // 403.. covers the required 403/429 but ALSO every gone-status above it.
+    const { errors } = validateStrictLinkPolicy(withAccept('accept = ["200..=299", "403.."]'));
+
+    expect(errors.some((e) => e.includes("HTTP 404 must not be accepted"))).toBe(true);
+    expect(errors.some((e) => e.includes("HTTP 410 must not be accepted"))).toBe(true);
+  });
+
+  test("the match-all range .. is rejected (lychee treats it as accept-all)", () => {
+    // Bare `..` accepts every status in lychee, so it silently re-hides 404/410.
+    const { errors } = validateStrictLinkPolicy(withAccept('accept = ["..", "403", "429"]'));
+
+    expect(errors.some((e) => e.includes("HTTP 404 must not be accepted"))).toBe(true);
+    expect(errors.some((e) => e.includes("HTTP 410 must not be accepted"))).toBe(true);
+  });
+
+  test("open-ended ranges can satisfy the required codes without touching 404/410", () => {
+    // ..=403 covers 403 (and everything below) but not 404/410; 429 supplied explicitly.
+    const content = withAccept('accept = ["200..=299", "..=403", "429"]');
+
+    expect(validateStrictLinkPolicy(content)).toEqual({ errors: [], warnings: [] });
+  });
+
+  test("an exclusive upper bound excludes its endpoint (200..404 does not accept 404)", () => {
+    // 200..404 is 200-403, so it must NOT trip the forbidden-404 rule; 429 explicit.
+    const content = withAccept('accept = ["200..404", "403", "429"]');
+
+    expect(validateStrictLinkPolicy(content)).toEqual({ errors: [], warnings: [] });
+  });
+
+  test("evaluates a multiline accept array without mis-parsing range elements", () => {
     const content = [
-      'accept = ["200..=299", 429, 502]',
-      "exclude = [",
-      '  "^https?://localhost",',
-      '  "^https://support\\\\.unity\\\\.com/"',
-      "]"
+      "accept = [",
+      '  "200..=299",',
+      '  "403",',
+      '  "429",',
+      "]",
+      "exclude = []"
     ].join("\n");
 
     expect(validateStrictLinkPolicy(content)).toEqual({ errors: [], warnings: [] });
   });
 
-  test.each(["403", '"403"', '"400..=499"', '"403..=403"'])(
-    "rejects accept entry %s because it includes HTTP 403",
-    (entry) => {
-      const content = [`accept = ["200..=299", ${entry}, 502]`, "exclude = []"].join("\n");
-
-      const { errors } = validateStrictLinkPolicy(content);
-      expect(errors).toContain("Invalid value for 'accept': HTTP 403 must not be globally accepted.");
-    }
-  );
-
-  test("rejects multiline accept arrays that include HTTP 403", () => {
+  test("no longer bans per-domain exclusions (WebAIM is allowed)", () => {
+    // The old policy banned WebAIM exclusions; the robust policy is indifferent
+    // to which domains appear in `exclude` (widening `accept` is preferred, but
+    // an exclude is no longer a hard error).
     const content = [
-      "accept = [",
-      '  "200..=299",',
-      "  403,",
-      "  502",
-      "]",
-      "exclude = []"
+      'accept = ["200..=299", "403", "429"]',
+      'exclude = ["^https://webaim\\\\.org/"]'
     ].join("\n");
 
-    const { errors } = validateStrictLinkPolicy(content);
-    expect(errors).toContain("Invalid value for 'accept': HTTP 403 must not be globally accepted.");
-  });
-
-  test("rejects broad WebAIM exclusions", () => {
-    const content = [
-      'accept = ["200..=299", 429, 502]',
-      "exclude = [",
-      '  "^https://webaim\\\\.org/",',
-      "]"
-    ].join("\n");
-
-    const { errors } = validateStrictLinkPolicy(content);
-    expect(errors.join("\n")).toContain("broad WebAIM exclusions are not allowed");
+    expect(validateStrictLinkPolicy(content)).toEqual({ errors: [], warnings: [] });
   });
 });
 
@@ -486,7 +589,10 @@ describe("VALID_FIELDS", () => {
   });
 
   test("should contain core lychee fields used in this repository", () => {
-    // Fields used in .lychee.toml in this repository
+    // Fields actually present in this repository's .lychee.toml. (The config no
+    // longer sets user_agent or scheme; scheme is passed as a CLI flag on the
+    // external pass instead. The "actual .lychee.toml" suite below asserts every
+    // real key against VALID_FIELDS, so this list cannot silently drift.)
     const repoFields = [
       "verbose",
       "no_progress",
@@ -496,9 +602,7 @@ describe("VALID_FIELDS", () => {
       "max_retries",
       "retry_wait_time",
       "max_redirects",
-      "user_agent",
       "accept",
-      "scheme",
       "exclude"
     ];
 
@@ -532,6 +636,12 @@ describe("VALID_FIELDS", () => {
     for (const name of invalidNames) {
       expect(VALID_FIELDS.has(name)).toBe(false);
     }
+  });
+
+  test("should exclude accept_timeouts (lychee v0.23.0's parser rejects it)", () => {
+    // lychee 0.23.0 errors with "unknown field `accept_timeouts`" and exits 3, so
+    // treating it as valid would let a CI-breaking config slip past the validator.
+    expect(VALID_FIELDS.has("accept_timeouts")).toBe(false);
   });
 });
 
@@ -702,17 +812,19 @@ describe("actual .lychee.toml config file validation", () => {
     expect(warnings).toEqual([], "actual .lychee.toml should have no field value warnings");
   });
 
-  test("config should not globally accept HTTP 403", () => {
+  test("config accepts the bot-detection codes (403/429) the policy requires", () => {
     const { errors } = validateStrictLinkPolicy(configContent);
 
-    expect(errors).not.toContain(
-      "Invalid value for 'accept': HTTP 403 must not be globally accepted."
-    );
+    expect(errors.some((e) => /must be accepted/.test(e))).toBe(false);
   });
 
-  test("config should not broadly exclude WebAIM links", () => {
+  test("config does not accept the gone-status codes (404/410)", () => {
     const { errors } = validateStrictLinkPolicy(configContent);
 
-    expect(errors.join("\n")).not.toContain("broad WebAIM exclusions are not allowed");
+    expect(errors.some((e) => /must not be accepted/.test(e))).toBe(false);
+  });
+
+  test("config passes the full link-acceptance policy with no errors", () => {
+    expect(validateStrictLinkPolicy(configContent)).toEqual({ errors: [], warnings: [] });
   });
 });

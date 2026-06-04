@@ -1,5 +1,19 @@
 name: Lint Docs Links
 
+# Blocking PR/push link check. Two gates, both deterministic enough to gate a PR:
+#   1. Offline: relative/local links AND in-repo "#anchor" fragments are validated
+#      against the working tree with zero network, so they can never flake. (This
+#      is a separate pass from gate 2 precisely so that EXTERNAL fragments are NOT
+#      liveness-checked -- a remote page restructuring its anchors must never red a
+#      PR. Local anchors are deterministic; external ones are not.)
+#   2. Lenient external liveness: bot-detection / rate-limit / transient codes are
+#      accepted (see .lychee.toml) and timeouts are treated as advisory, so a PR
+#      fails only on a genuinely dead link (404/410 or a DNS/connection failure).
+# Both passes are fed the set of TRACKED docs via `git ls-files | --files-from`, so
+# vendored/generated/scratch trees are excluded automatically (lychee's glob does
+# NOT honor .gitignore). Deep external rot is tracked by the scheduled advisory
+# scan in markdown-link-validity.yml.
+
 on:
   push:
     branches:
@@ -11,6 +25,7 @@ on:
       - "docs/**"
       - ".lychee.toml"
       - "scripts/lint-doc-links.ps1"
+      - "scripts/validate-lychee-config.js"
   pull_request:
     paths:
       - "**/*.md"
@@ -18,7 +33,11 @@ on:
       - "docs/**"
       - ".lychee.toml"
       - "scripts/lint-doc-links.ps1"
+      - "scripts/validate-lychee-config.js"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   lint:
@@ -41,14 +60,98 @@ jobs:
         shell: pwsh
         run: ./scripts/lint-doc-links.ps1 -VerboseOutput
 
-      - name: Check dead links (lychee)
+      # Source of truth for "which docs to check": tracked files only. lychee's
+      # glob ignores .gitignore, so this is how node_modules / site / coverage /
+      # progress / etc. are kept out -- no denylist to drift or to over-match.
+      - name: Collect tracked docs
+        run: |
+          git ls-files -z '*.md' '*.markdown' | tr '\0' '\n' \
+            > "${RUNNER_TEMP}/doc-files.txt"
+          echo "Checking $(wc -l < "${RUNNER_TEMP}/doc-files.txt") tracked doc(s)."
+
+      # Gate 1 -- offline. Validates relative/local links and in-repo "#anchor"
+      # fragments against files on disk. No network, so a failure is a real broken
+      # local link or a missing heading anchor, never a flake.
+      - name: Check internal links and anchors (offline)
         uses: lycheeverse/lychee-action@v2
         with:
           args: >-
             -c .lychee.toml
-            --no-progress
+            --offline
             --include-fragments
-            --verbose
-            "./**/*.md"
+            --files-from ${{ runner.temp }}/doc-files.txt
+          fail: true
+          failIfEmpty: false
+          jobSummary: true
+
+      # Gate 2 -- external liveness, captured as JSON so the next step can treat a
+      # TIMEOUT (slow-but-alive host) as advisory while still failing on a genuinely
+      # dead link. fail:false here; the gating decision is made in the next step.
+      - name: Probe external link liveness
+        id: external
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            -c .lychee.toml
+            --scheme https
+            --scheme http
+            --files-from ${{ runner.temp }}/doc-files.txt
+          fail: false
+          failIfEmpty: false
+          format: json
+          output: ${{ runner.temp }}/external.json
+          jobSummary: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fail only on genuinely-dead external links. Timeouts are advisory: a slow
+      # host is not a broken link, and there is no native "accept timeouts" in
+      # lychee 0.23.0, so we classify from the JSON report. Only runs when the
+      # probe found at least one failure.
+      - name: Fail only on genuinely-dead external links
+        if: steps.external.outputs.exit_code != '0'
+        run: |
+          report="${RUNNER_TEMP}/external.json"
+          if [ ! -f "${report}" ]; then
+            echo "::error::external link report ${report} was not produced"
+            exit 1
+          fi
+          timeouts="$(jq '.timeouts // 0' "${report}")"
+          dead="$(jq '[.error_map[]?[]? | select(.status.text != "Timeout")] | length' "${report}")"
+          if [ "${timeouts}" -gt 0 ]; then
+            echo "::warning::${timeouts} external link(s) timed out -- advisory only;" \
+              "the scheduled scan tracks persistent timeouts."
+          fi
+          if [ "${dead}" -gt 0 ]; then
+            echo "::error::${dead} external link(s) are genuinely broken (404/410/DNS):"
+            jq -r '.error_map[]?[]? | select(.status.text != "Timeout")
+              | "  - \(.url) -> \(.status.text)"' "${report}"
+            exit 1
+          fi
+          echo "External links: reachable, or accepted bot/transient responses;" \
+            "only timeouts (advisory) were seen."
+
+      # Diagnostics: explain how to read a failure so contributors never reach for a
+      # per-domain exclude again (the pattern that caused the original incident).
+      - name: Explain link-check failures
+        if: failure()
+        run: |
+          cat >> "${GITHUB_STEP_SUMMARY}" <<'EOF'
+          ## How to read a link-check failure
+
+          This job fails for exactly these reasons:
+
+          - **Broken internal link or anchor** (offline gate): a relative link
+            points at a missing file, or a `#anchor` matches no heading. Fix the
+            path or the anchor text. (Note: lychee derives heading slugs slightly
+            differently from GitHub for headings with consecutive spaces -- collapse
+            double spaces in headings if a valid-looking anchor is flagged.)
+          - **Dead external link** (liveness gate): the URL returned 404/410 or
+            failed to connect/resolve. Update the link to its new location.
+
+          Bot-detection and throttling responses
+          (401/403/405/406/408/415/418/429/451/999/5xx) are ACCEPTED, and timeouts
+          are advisory -- none fail this job. Do NOT add a per-domain `exclude` to
+          silence a 403; widen `accept` in `.lychee.toml` only if a site adopts a
+          brand-new blocking status code.
+          EOF

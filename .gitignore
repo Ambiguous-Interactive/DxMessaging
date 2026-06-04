@@ -13,6 +13,14 @@ site/
 # Test coverage output
 coverage/
 
+# Link checker (lychee) artifacts: the response cache and the markdown report.
+# The blocking and scheduled link workflows produce these, and a local run drops
+# them in the repo root; they are never committed (the scheduled job persists the
+# cache via actions/cache) and stay ignored so they cannot trip the
+# untracked-and-unignored policy check.
+.lycheecache
+lychee/
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 

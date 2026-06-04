@@ -130,7 +130,7 @@ Explain the fundamental idea.
 
 ## See Also
 
-- [Related Skill](../category/skill.md)
+- Related Skill (link to a sibling skill, for example `../category/skill.md`)
 
 ## References
 
