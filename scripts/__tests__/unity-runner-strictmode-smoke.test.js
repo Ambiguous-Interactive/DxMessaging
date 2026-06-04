@@ -144,6 +144,23 @@ const RUNTESTS_PASSING = [
   "  exit 0"
 ].join("\n");
 
+// PASSING-THEN-CRASH test run: write a passing NUnit results.xml, THEN exit
+// non-zero. Models Unity crashing in a background thread (the DirectoryMonitor
+// teardown 0xC0000005) DURING shutdown AFTER RunFinished already wrote the file.
+// The results FILE is the source of truth, so the harness must PASS (with a
+// benign-crash warning), never turn a passing run red on the shutdown exit code.
+// 134 is a generic non-zero code that survives 8-bit truncation on POSIX (a
+// faithful 0xC0000005 is only reproducible as a real process exit on Windows).
+const RUNTESTS_PASSING_THEN_CRASH = [
+  "  $i = [array]::IndexOf($Rest, '-testResults')",
+  "  if ($i -ge 0 -and ($i + 1) -lt $Rest.Count) {",
+  "    $out = $Rest[$i + 1]; $d = Split-Path -Parent $out",
+  "    if ($d) { New-Item -ItemType Directory -Force -Path $d | Out-Null }",
+  '    \'<?xml version="1.0" encoding="utf-8"?><test-run total="1" passed="1" failed="0" skipped="0" result="Passed"></test-run>\' | Set-Content -LiteralPath $out -Encoding UTF8',
+  "  }",
+  "  exit 134"
+].join("\n");
+
 // LYING test run: exits 0 (a clean editor exit) but writes NO results.xml --
 // the "Unity quietly produced nothing" failure mode. Test-NUnitResults must
 // catch the missing file and fail LOUDLY rather than reporting a false green.
@@ -164,6 +181,7 @@ const STUB_EDITOR = stubEditor(RUNTESTS_PASSING);
 const STUB_EDITOR_NO_RESULTS = stubEditor(RUNTESTS_NO_RESULTS);
 const STUB_EDITOR_FAILING = stubEditor(RUNTESTS_FAILING);
 const STUB_EDITOR_FAILING_CS8032 = stubEditor(RUNTESTS_FAILING_CS8032);
+const STUB_EDITOR_PASSING_THEN_CRASH = stubEditor(RUNTESTS_PASSING_THEN_CRASH);
 
 // ===========================================================================
 // STANDALONE SPLIT-BUILD STUBS.
@@ -204,6 +222,12 @@ const SHEBANG = "#!/usr/bin/env pwsh";
 //                  watchdog tree-kills it AFTER results exist (models Application.Quit
 //                  deferred/ignored in -batchmode IL2CPP); the file is the source of
 //                  truth, so the harness must treat this as a PASS (with a warning)
+//   write-then-crash -> write a PASSING file, THEN exit NON-ZERO without hanging
+//                  (models the player crashing in a background thread during shutdown
+//                  AFTER RunFinished wrote the file -- the 0xC0000005 DirectoryMonitor
+//                  class, but on the PLAYER). NOT a watchdog timeout: this exercises
+//                  the player-exit-code (advisory) branch, so the harness honors the
+//                  file and passes with the benign-shutdown-crash warning.
 // The player NEVER reads an env results channel; only -dxmTestResults.
 function playerStubBody() {
   return [
@@ -229,6 +253,10 @@ function playerStubBody() {
     // player AFTER the file exists (models a deferred Application.Quit). The harness
     // must honor the file as the source of truth and pass.
     "if ($mode -eq 'write-then-hang') { Start-Sleep -Seconds 30; exit 0 }",
+    // write-then-crash: results are written; now exit NON-ZERO immediately (a
+    // background-thread shutdown crash, NOT a watchdog timeout). The harness honors
+    // the file and passes with the benign-crash warning (player exit is advisory).
+    "if ($mode -eq 'write-then-crash') { exit 134 }",
     "exit 0",
     ""
   ].join("\n");
@@ -237,6 +265,19 @@ function playerStubBody() {
 // The standalone editor BUILD stub. A shebang script (Process.Start-launchable on
 // Linux/macOS). Writes the player stub to $env:DXM_PLAYER_BUILD_PATH on a
 // standalone build, unless DXM_SMOKE_BUILD_SLEEP_SECONDS forces a build hang.
+//
+// The CONFIGURE pass (-executeMethod DxmCiTestConfigurator.Apply, with -quit, NO
+// -runTests) models the real DxmCiTestConfigurator.Apply: it writes the success
+// MARKER to $env:DXM_CONFIGURE_MARKER_PATH and then exits per
+// $env:DXM_SMOKE_CONFIGURE_MODE:
+//   pass (default) -> write the marker, exit 0 (normal success)
+//   crash          -> write the marker, then exit NON-ZERO (models Unity crashing
+//                     in a background thread during shutdown AFTER Apply completed,
+//                     e.g. the 0xC0000005 DirectoryMonitor teardown crash). The
+//                     runner must honor the marker and pass with a warning.
+//   no-marker      -> exit NON-ZERO WITHOUT writing the marker (models a configure
+//                     that genuinely failed before completing). The runner must
+//                     fail loudly.
 function standaloneEditorStub() {
   return [
     SHEBANG,
@@ -250,6 +291,24 @@ function standaloneEditorStub() {
     "    Add-Content -LiteralPath $marker -Value ('returned ' + ($Rest -join ' '))",
     "  }",
     "  exit 0",
+    "}",
+    // The CONFIGURE pass: -executeMethod (with -quit), NOT a -runTests build.
+    "if ($Rest -contains '-executeMethod') {",
+    "  $mode = $env:DXM_SMOKE_CONFIGURE_MODE",
+    "  if (-not $mode) { $mode = 'pass' }",
+    "  if ($mode -ne 'no-marker') {",
+    "    $cm = $env:DXM_CONFIGURE_MARKER_PATH",
+    "    if ($cm) {",
+    "      $d = Split-Path -Parent $cm",
+    "      if ($d -and -not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }",
+    "      Set-Content -LiteralPath $cm -Value 'DxmCiTestConfigurator.Apply completed' -Encoding UTF8",
+    "    }",
+    "  }",
+    "  if ($mode -eq 'pass') { exit 0 }",
+    // crash / no-marker: exit non-zero (a benign shutdown crash, or a real failure
+    // when the marker was withheld). 134 is a generic abort-style non-zero code that
+    // survives 8-bit truncation on POSIX.
+    "  exit 134",
     "}",
     // The standalone editor BUILD: -runTests WITHOUT -quit, WITH -buildTarget.
     "if (($Rest -contains '-runTests') -and ($Rest -contains '-buildTarget')) {",
@@ -266,11 +325,14 @@ function standaloneEditorStub() {
     "    Set-Content -LiteralPath $exe -Value $env:DXM_SMOKE_PLAYER_STUB_BODY -Encoding UTF8",
     "    if (-not $IsWindows) { & chmod +x $exe }",
     "  }",
+    // Optional: model a build that produces a VALID player exe but then exits
+    // non-zero (a background-thread shutdown crash after the build finished). The
+    // runner must honor the exe and pass with a warning.
+    "  if ($env:DXM_SMOKE_BUILD_CRASH_AFTER_OUTPUT -eq '1') { exit 134 }",
     // The split build writes NO results.xml; the PLAYER writes it later.
     "  exit 0",
     "}",
-    // Any other invocation (the -serial activation or the configure
-    // -executeMethod pass): a clean exit-0 no-op.
+    // Any other invocation (the -serial activation): a clean exit-0 no-op.
     "exit 0",
     ""
   ].join("\n");
@@ -341,6 +403,9 @@ function makeWorkspace() {
   const failingCs8032StubPath = path.join(base, "stub-editor-failing-cs8032.ps1");
   fs.writeFileSync(failingCs8032StubPath, STUB_EDITOR_FAILING_CS8032, "utf8");
 
+  const passingThenCrashStubPath = path.join(base, "stub-editor-passing-then-crash.ps1");
+  fs.writeFileSync(passingThenCrashStubPath, STUB_EDITOR_PASSING_THEN_CRASH, "utf8");
+
   // The standalone editor BUILD stub. Written WITHOUT a .ps1-via-`&` assumption:
   // run-ci-tests launches it via Process.Start (the watchdog), so it carries a
   // shebang and (on non-Windows) the executable bit. It writes the player stub to
@@ -362,6 +427,7 @@ function makeWorkspace() {
     noResultsStubPath,
     failingStubPath,
     failingCs8032StubPath,
+    passingThenCrashStubPath,
     standaloneEditorStubPath,
     returnMarker
   };
@@ -408,11 +474,18 @@ function runScript(mode, ws, editorPath = ws.stubPath) {
 // (pass/fail/no-results/sleep). `buildSleepSeconds` (> 0) forces the BUILD stub to
 // hang so the build watchdog fires (and it does NOT write the player). The
 // watchdog windows are pinned SHORT (2s) so a hang scenario resolves quickly.
-function runStandaloneScript(ws, { playerMode = "pass", buildSleepSeconds = 0 } = {}) {
+function runStandaloneScript(
+  ws,
+  { playerMode = "pass", buildSleepSeconds = 0, configureMode = "pass", buildCrashAfterOutput = false } = {}
+) {
   const env = cleanedEnv(path.join(ws.base, "host-env-sandbox"));
   env.DXM_SMOKE_RETURN_MARKER = ws.returnMarker;
   env.DXM_SMOKE_PLAYER_STUB_BODY = PLAYER_STUB_BODY;
   env.DXM_SMOKE_PLAYER_MODE = playerMode;
+  env.DXM_SMOKE_CONFIGURE_MODE = configureMode;
+  if (buildCrashAfterOutput) {
+    env.DXM_SMOKE_BUILD_CRASH_AFTER_OUTPUT = "1";
+  }
   if (buildSleepSeconds > 0) {
     env.DXM_SMOKE_BUILD_SLEEP_SECONDS = String(buildSleepSeconds);
   }
@@ -493,6 +566,10 @@ describe("run-ci-tests.ps1 StrictMode collection-safety smoke test", () => {
       "%s: fails LOUDLY when the editor exits 0 but produces no results.xml",
       () => {}
     );
+    test.skip.each(["editmode", "playmode"])(
+      "%s: editor writes passing results then crashes on shutdown -> honored, green + warning",
+      () => {}
+    );
     return;
   }
 
@@ -542,6 +619,29 @@ describe("run-ci-tests.ps1 StrictMode collection-safety smoke test", () => {
       expect(combined).toMatch(/did not produce NUnit results|No NUnit results XML/);
       // And it must NOT have fabricated a results.xml.
       expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(false);
+    }
+  );
+
+  // Artifact-is-source-of-truth for editmode/playmode: when the editor writes a
+  // PASSING results.xml and THEN exits non-zero (Unity crashing in a background
+  // thread during shutdown -- the DirectoryMonitor 0xC0000005 class), the runner
+  // must HONOR the file and pass (with a benign-crash warning), never turn a
+  // passing run red on the shutdown exit code. Data-driven over editmode/playmode.
+  test.each(["editmode", "playmode"])(
+    "%s: editor writes passing results then crashes on shutdown -> honored, green + warning",
+    (mode) => {
+      const ws = makeWorkspace();
+      workspaces.push(ws);
+
+      const result = runScript(mode, ws, ws.passingThenCrashStubPath);
+      const combined = combinedText(result);
+
+      expect(combined).not.toContain("cannot be found on this object");
+      // GREEN despite the non-zero editor exit, because the passing file exists.
+      expect(result.status).toBe(0);
+      expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
+      // The shutdown crash was surfaced as a non-fatal warning.
+      expect(combined).toMatch(/benign post-work shutdown crash/i);
     }
   );
 
@@ -682,6 +782,10 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     test.skip("NO-RESULTS: the player exits without writing -> the runner throws 'did not produce'", () => {});
     test.skip("PLAYER-WATCHDOG: a hung player is tree-killed and the run throws, no hang", () => {});
     test.skip("BUILD-WATCHDOG: a hung build is tree-killed and the run throws, no hang", () => {});
+    test.skip("CONFIGURE-SHUTDOWN-CRASH: configure writes the marker then crashes -> honored, green + warning", () => {});
+    test.skip("CONFIGURE-NO-MARKER: configure crashes WITHOUT writing the marker -> fails loudly", () => {});
+    test.skip("BUILD-SHUTDOWN-CRASH: build produces a valid player then crashes -> honored, green + warning", () => {});
+    test.skip("PLAYER-SHUTDOWN-CRASH: player writes passing results then exits non-zero (no timeout) -> honored, green + warning", () => {});
     return;
   }
 
@@ -777,6 +881,32 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     // The deferred quit was surfaced as a non-fatal warning, NOT a failure.
     expect(combined).toMatch(/honoring that results file/i);
     expect(combined).not.toMatch(/did not produce NUnit results|No NUnit results XML/);
+    // A watchdog timeout is NOT a native shutdown crash: the inline notice above is
+    // the SINGLE warning for this case -- the FILE validator must not ALSO emit the
+    // benign-shutdown-crash warning and mislabel the 124 timeout sentinel as a crash.
+    expect(combined).not.toMatch(/benign post-work shutdown crash/i);
+  });
+
+  test("PLAYER-SHUTDOWN-CRASH: player writes passing results then exits non-zero (no timeout) -> honored, green + warning", () => {
+    const ws = makeWorkspace();
+    workspaces.push(ws);
+
+    // The player writes a passing results.xml and THEN exits non-zero WITHOUT
+    // hanging (a background-thread shutdown crash on the player, not a watchdog
+    // timeout). The player exit code is advisory: the FILE wins, so the run is
+    // green with the benign-crash warning -- this exercises the
+    // $playerExitForValidation = $playerResult.ExitCode (non-timeout) branch.
+    const result = runStandaloneScript(ws, { playerMode: "write-then-crash" });
+    const combined = combinedText(result);
+
+    expect(combined).not.toContain("cannot be found on this object");
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
+    // The non-zero player exit was honored as a benign shutdown crash (one warning),
+    // NOT a failure and NOT a watchdog-timeout notice.
+    expect(combined).toMatch(/benign post-work shutdown crash/i);
+    expect(combined).not.toMatch(/tests failed|did not produce NUnit results/);
+    expect(combined).not.toMatch(/exceeded the .* watchdog/i);
   });
 
   test("BUILD-WATCHDOG: a hung build is tree-killed and the run throws, no hang", () => {
@@ -798,6 +928,71 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     const builtExe = path.join(ws.project, "Build", "DxmTestPlayer", "DxmTestPlayer.exe");
     expect(fs.existsSync(builtExe)).toBe(false);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(false);
+  });
+
+  // ===========================================================================
+  // THE REGRESSION for THIS investigation: the standalone CONFIGURE pass
+  // (DxmCiTestConfigurator.Apply) completed and logged "Batchmode quit
+  // successfully invoked", but Unity then crashed in its DirectoryMonitor
+  // file-watcher thread DURING shutdown and returned 0xC0000005. The runner used
+  // to treat that exit code as fatal and fail the whole job. Now the CONFIGURED
+  // PROJECT (proven by the marker Apply writes as its final action) is the source
+  // of truth: a crash AFTER the marker is honored (green + warning); a configure
+  // that crashes WITHOUT writing the marker still fails loudly.
+  // ===========================================================================
+  test("CONFIGURE-SHUTDOWN-CRASH: configure writes the marker then crashes -> honored, green + warning", () => {
+    const ws = makeWorkspace();
+    workspaces.push(ws);
+
+    // Configure writes the marker and THEN exits non-zero; build + player succeed.
+    const result = runStandaloneScript(ws, { playerMode: "pass", configureMode: "crash" });
+    const combined = combinedText(result);
+
+    expect(combined).not.toContain("cannot be found on this object");
+    // GREEN: the configure marker proves Apply ran to completion, so the benign
+    // shutdown crash does not fail the job; the player then produced passing results.
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(ws.artifacts, "configure-complete.marker"))).toBe(true);
+    expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
+    // The benign crash was surfaced as a non-fatal warning, NOT a failure.
+    expect(combined).toMatch(/benign post-work shutdown crash/i);
+    expect(combined).not.toMatch(/Configure standalone IL2CPP project failed/);
+  });
+
+  test("CONFIGURE-NO-MARKER: configure crashes WITHOUT writing the marker -> fails loudly", () => {
+    const ws = makeWorkspace();
+    workspaces.push(ws);
+
+    // Configure exits non-zero and withholds the marker (a real configure failure).
+    const result = runStandaloneScript(ws, { playerMode: "pass", configureMode: "no-marker" });
+    const combined = combinedText(result);
+
+    expect(combined).not.toContain("cannot be found on this object");
+    // RED: no marker means Apply did not complete -> the run fails before building.
+    expect(result.status).not.toBe(0);
+    expect(fs.existsSync(path.join(ws.artifacts, "configure-complete.marker"))).toBe(false);
+    expect(combined).toMatch(/configure marker was not written|Configure standalone IL2CPP project failed/);
+    // It must NOT have proceeded to build/run a player.
+    expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(false);
+  });
+
+  test("BUILD-SHUTDOWN-CRASH: build produces a valid player then crashes -> honored, green + warning", () => {
+    const ws = makeWorkspace();
+    workspaces.push(ws);
+
+    // The build writes a complete, fresh player exe and THEN exits non-zero (a
+    // background-thread shutdown crash after the build finished). The built exe is
+    // the source of truth, so the run proceeds and the player produces passing results.
+    const result = runStandaloneScript(ws, { playerMode: "pass", buildCrashAfterOutput: true });
+    const combined = combinedText(result);
+
+    expect(combined).not.toContain("cannot be found on this object");
+    expect(result.status).toBe(0);
+    const builtExe = path.join(ws.project, "Build", "DxmTestPlayer", "DxmTestPlayer.exe");
+    expect(fs.existsSync(builtExe)).toBe(true);
+    expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
+    expect(combined).toMatch(/benign post-work shutdown crash/i);
+    expect(combined).not.toMatch(/Editor build produced invalid/);
   });
 });
 

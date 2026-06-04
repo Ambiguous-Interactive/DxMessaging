@@ -226,7 +226,7 @@
 | Skill                                                                       | Lines      | Complexity     | Status   | Performance  | Tags                 |
 | --------------------------------------------------------------------------- | ---------- | -------------- | -------- | ------------ | -------------------- |
 | [Devcontainer Cache Contract](./unity/devcontainer-cache-contract.md)       | [ok] 208   | [intermediate] | [stable] | [risk: high] | devcontainer, docker |
-| [Headless Unity Test Runner](./unity/headless-test-runner.md)               | [ok] 228   | [intermediate] | [stable] | [risk: none] | unity, testing       |
+| [Headless Unity Test Runner](./unity/headless-test-runner.md)               | [ok] 238   | [intermediate] | [stable] | [risk: none] | unity, testing       |
 | [MessageAwareComponent Base-Call Contract](./unity/base-call-contract.md)   | [warn] 267 | [intermediate] | [stable] | [risk: none] | unity, analyzer      |
 | [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 224   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
 | [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 220   | [intermediate] | [stable] | [risk: none] | unity, cli           |

@@ -130,6 +130,16 @@ If a warm run takes more than 2x the expected time, the Library cache is likely 
 - NUnit XML lands at `.artifacts/unity/results.xml` (or `--results` override). The script invokes `python3 scripts/unity/lib/parse-test-results.py` on that XML and prints a one-line `PASS` or `FAIL` summary; the script's exit code matches the test status.
 - IL2CPP standalone runs natively in a single pass locally (`Unity -runTests -testPlatform StandaloneLinux64`), so it writes one `.artifacts/unity/log.txt` like editmode/playmode -- there is no separate build-log.txt. The local harness uses the local project settings, whereas CI generates a temporary Windows project and configures `StandaloneWindows64` IL2CPP in `scripts/unity/run-ci-tests.ps1`: both exercise the IL2CPP AOT toolchain but on different host OS, so local does NOT reproduce the CI standalone run byte-for-byte. Validate the headless standalone run on first use.
 
+## Pass/Fail Contract: the Artifact is the Source of Truth
+
+Every Unity batch invocation is judged by the DURABLE ARTIFACT it produces, never by the editor's process exit code:
+
+- editmode / playmode / standalone-player run -> the NUnit `results.xml` (`Test-NUnitResults`).
+- standalone CONFIGURE pass -> the success marker `DxmCiTestConfigurator.Apply` writes as its final action (`DXM_CONFIGURE_MARKER_PATH`, validated by `Test-UnityConfigureMarker`).
+- standalone BUILD -> the fresh, complete player `.exe` + `_Data` dir (`Test-StandalonePlayerBuildOutput`).
+
+A non-zero exit code is ADVISORY: it triggers extra diagnostics and, when the artifact is nonetheless valid, a `::warning::` -- it does NOT fail the job on its own. Unity can crash in a BACKGROUND thread (for example the `DirectoryMonitor` file-watcher's teardown, which exits `0xC0000005` / `STATUS_ACCESS_VIOLATION`) DURING shutdown, AFTER the work completed and the editor logged "Batchmode quit successfully invoked". Gating on the artifact makes those benign post-work shutdown-race crashes non-fatal while a genuinely failed run -- which leaves no valid artifact -- still fails loudly. A compile failure writes no `results.xml`, a test failure writes `failed>0`, and a crash mid-work leaves a missing/partial artifact, so "valid artifact wins" never masks a real defect. The `run-tests.sh` / `run-tests.ps1` local runners apply the same rule via `print_results_summary` / `Write-ResultsSummary` (and delete any stale `results.xml` before the run so the "honor the file" branch can only ever honor results this run produced). Pinned by `unity-runner-strictmode-smoke.test.js` (end-to-end, including the exact configure-crash repro), `unity-native-exit-code-decode.test.js` (the NTSTATUS decode table), and the `unity-runner-script-contract` / `unity-test-harness-contract` suites.
+
 ## License Setup
 
 The runner refuses to launch without a supported Unity license path. Local runs prefer a paid serial and fall back to a `.ulf`: `run-tests.sh` / `run-tests.ps1` use `UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD` (classic `-serial` activation, with the seat returned on exit) when all three are set, and fall back to the local ULF path (`UNITY_LICENSE_B64` / `UNITY_LICENSE_FILE` / raw `UNITY_LICENSE`) otherwise (for example, a Personal license in a cloud Codespace). The exact bootstrap flow lives in [unity-license-bootstrap](./unity-license-bootstrap.md):

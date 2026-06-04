@@ -203,16 +203,35 @@ describe("generated Unity test harness contract", () => {
       }
     });
 
-    test("validates real NUnit output instead of trusting Unity process success", () => {
+    test("validates real NUnit output instead of trusting the Unity process exit code", () => {
       expect(content).toContain("Test-NUnitResults");
       expect(content).toContain("SelectSingleNode('//test-run')");
       expect(content).toContain("$total -lt 1");
       expect(content).toContain("$failed -gt 0");
       expect(content).toContain("Write-UnityResultFailureDiagnostics");
-      expect(content).toContain("Invoke-UnityEditorWithFailureDiagnostics");
       expect(content).toContain("Write-AnalyzerSetupDiagnostics -Project $Project");
       expect(content).toContain("warning CS8032");
       expect(content).toContain("Unity exited with code 0 but did not write NUnit results");
+    });
+
+    test("the DURABLE ARTIFACT is the source of truth; a non-zero Unity exit is advisory", () => {
+      // The editor invocation RETURNS the exit code (it no longer throws on a
+      // non-zero value), and the artifact validators gate pass/fail: a valid
+      // results.xml / configure marker / built player exe wins even when Unity
+      // crashed in a background thread DURING shutdown (the 0xC0000005
+      // DirectoryMonitor class) and exited non-zero.
+      expect(content).toContain("$runExit = Invoke-UnityEditor");
+      expect(content).toContain("-UnityExitCode $runExit");
+      // The benign post-work shutdown crash is surfaced as a non-fatal warning.
+      expect(content).toContain("function Write-UnityBenignExitWarning");
+      expect(content).toContain("benign post-work shutdown crash");
+      // The configure pass is gated on the marker, not the exit code.
+      expect(content).toContain("function Test-UnityConfigureMarker");
+      expect(content).toContain("$env:DXM_CONFIGURE_MARKER_PATH = $configureMarkerPath");
+      // The crash exit code is decoded for humans (0xC0000005 / ACCESS_VIOLATION).
+      expect(content).toContain("STATUS_ACCESS_VIOLATION");
+      // The retired throw-on-non-zero wrapper is gone as a definition.
+      expect(content).not.toMatch(/function\s+Invoke-UnityEditorWithFailureDiagnostics\b/);
     });
 
     test("wires Unity Accelerator and UPM caches without mutating package source", () => {
