@@ -31,15 +31,15 @@ Each sample shows:
 1. **Place the prefab**  
    Drag `Prefabs/MessagingInstallerSample.prefab` into your test scene. The root object carries `MessagingComponentInstaller` with its provider handle already pointing at the global provider ScriptableObject.
 
-1. **Hook up the container**  
-   - **Zenject**:  
-     - Add `DxMessagingRegistrationInstaller` (from [Runtime/Unity/Integrations](../../Runtime/Unity/Integrations/)) to your ProjectContext or scene installer list.  
+1. **Hook up the container**
+   - **Zenject**:
+     - Add `DxMessagingRegistrationInstaller` (from [Runtime/Unity/Integrations](../../Runtime/Unity/Integrations/)) to your ProjectContext or scene installer list.
      - Drop [SampleInstaller.cs](./Zenject/SampleInstaller.cs) into your project and register it alongside other installers. When the scene runs, the installer resolves `IMessageRegistrationBuilder`, stages a `PlayerSpawned` listener, and activates via the Zenject lifecycle.
-   - **VContainer**:  
-     - Define `VCONTAINER_PRESENT` and reference the optional extension under [VContainerRegistrationExtensions.cs](../../Runtime/Unity/Integrations/VContainerRegistrationExtensions.cs).  
+   - **VContainer**:
+     - Define `VCONTAINER_PRESENT` and reference the optional extension under [VContainerRegistrationExtensions.cs](../../Runtime/Unity/Integrations/VContainer/VContainerRegistrationExtensions.cs).
      - Add [SampleLifetimeScope.cs](./VContainer/SampleLifetimeScope.cs) to the scene (or derive from it); the sample scope registers the builder and an entry point that emits/consumes `ScoreUpdated` messages each tick.
-   - **Reflex**:  
-     - Enable `REFLEX_PRESENT` and install `DxMessagingRegistrationInstaller` into your container bootstrap.  
+   - **Reflex**:
+     - Enable `REFLEX_PRESENT` and install `DxMessagingRegistrationInstaller` into your container bootstrap.
      - Include [SampleInstaller.cs](./Reflex/SampleInstaller.cs) in your installer chain. The sample service resolves `IMessageRegistrationBuilder`, subscribes to `PlayerAlert`, and can emit alerts via `EmitAlertFor`.
 
 1. **Emit a message**  

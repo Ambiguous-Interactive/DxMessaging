@@ -71,6 +71,47 @@ function readEnsureEditorScript() {
   return fs.readFileSync(ENSURE_EDITOR_SCRIPT, "utf8");
 }
 
+function collectActionMetadataFiles(root = ACTIONS_DIR) {
+  const files = [];
+  const stack = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (error) {
+      throw new Error(`Unable to enumerate action metadata under ${dir}: ${error.message}`);
+    }
+
+    for (const entry of entries) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(abs);
+      } else if (/^action\.ya?ml$/i.test(entry.name)) {
+        files.push(abs);
+      }
+    }
+  }
+  return files.sort();
+}
+
+function readActionYamlForDiagnostics(actionPath) {
+  try {
+    return fs.readFileSync(actionPath, "utf8");
+  } catch (error) {
+    const dir = path.dirname(actionPath);
+    let listing = "<unavailable>";
+    try {
+      listing = fs.readdirSync(dir).sort().join(", ");
+    } catch (listingError) {
+      listing = `<unavailable: ${listingError.message}>`;
+    }
+    throw new Error(
+      `Unable to read action metadata ${actionPath}: ${error.message}. Directory entries: ${listing}`
+    );
+  }
+}
+
 function extractEnsureEditorDefault(functionName) {
   const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(
@@ -879,15 +920,11 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
   });
 
   test("composite action input defaults do not reference workflow env context", () => {
-    const actionFiles = fs
-      .readdirSync(ACTIONS_DIR, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(ACTIONS_DIR, entry.name, "action.yml"))
-      .filter((actionPath) => fs.existsSync(actionPath));
+    const actionFiles = collectActionMetadataFiles();
 
     expect(actionFiles.length).toBeGreaterThan(0);
     for (const actionPath of actionFiles) {
-      const parsed = yaml.parse(fs.readFileSync(actionPath, "utf8"));
+      const parsed = yaml.parse(readActionYamlForDiagnostics(actionPath));
       if (!parsed || !parsed.inputs) {
         continue;
       }

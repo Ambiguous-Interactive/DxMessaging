@@ -192,6 +192,5 @@ private static IEnumerable<TestCaseData> ValidationCases() { }
 ## Related Patterns
 
 - [Test Categories](./test-categories.md) - Organizing tests
-- [Expressive Assertions](./expressive-assertions.md) - Clear failure messages
 - [Data-Driven Test Sources](./data-driven-tests-sources.md) - Advanced TestCaseSource patterns
 - [Data-Driven Test Usage Patterns](./data-driven-tests-usage.md) - Naming and diagnostics

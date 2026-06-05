@@ -418,6 +418,8 @@ function New-ManifestJson {
 
 function New-ConfiguratorSource {
     @'
+using System;
+using System.IO;
 using UnityEditor;
 
 public static class DxmCiTestConfigurator
@@ -427,6 +429,27 @@ public static class DxmCiTestConfigurator
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);
         PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.IL2CPP);
         PlayerSettings.SetApiCompatibilityLevel(BuildTargetGroup.Standalone, ApiCompatibilityLevel.NET_Standard_2_0);
+
+        // Write a success marker as the FINAL action so the runner can treat the
+        // CONFIGURED PROJECT -- not Unity's process exit code -- as the source of
+        // truth. Unity can crash in a BACKGROUND thread (for example the
+        // DirectoryMonitor file-watcher's teardown) DURING shutdown, AFTER Apply()
+        // has fully completed and the editor logged "Batchmode quit successfully
+        // invoked"; that returns a crash exit code (0xC0000005 STATUS_ACCESS_VIOLATION)
+        // for a run whose configuration work actually succeeded. A fresh marker
+        // proves Apply() ran to completion regardless of the shutdown exit code. The
+        // marker path is handed in via DXM_CONFIGURE_MARKER_PATH (mirrors how the
+        // standalone build modifier receives DXM_PLAYER_BUILD_PATH).
+        string markerPath = Environment.GetEnvironmentVariable("DXM_CONFIGURE_MARKER_PATH");
+        if (!string.IsNullOrEmpty(markerPath))
+        {
+            string dir = Path.GetDirectoryName(markerPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            File.WriteAllText(markerPath, "DxmCiTestConfigurator.Apply completed");
+        }
     }
 }
 '@
@@ -1544,7 +1567,14 @@ function Invoke-UnityEditor {
 
     Write-Host "::group::$Label"
     Write-Host "`"$EditorPath`" $($Arguments -join ' ')"
-    & $EditorPath @Arguments 2>&1 | Tee-Object -FilePath $LogPath
+    # Stream Unity's output LIVE to the console AND persist it to $LogPath, but route
+    # it to the HOST (Out-Host) so it never enters this function's success stream:
+    # the function RETURNS the exit code, and a bare `| Tee-Object` would otherwise
+    # collect every streamed log line into the caller's `$x = Invoke-UnityEditor`
+    # capture (turning the return value into an Object[] of log lines + the code).
+    # Consuming the process's stdout via the pipeline still forces PowerShell to
+    # BLOCK until the GUI-subsystem Unity.exe exits and to set $LASTEXITCODE.
+    & $EditorPath @Arguments 2>&1 | Tee-Object -FilePath $LogPath | Out-Host
     $exitCode = $LASTEXITCODE
     Write-Host "::endgroup::"
     if ($exitCode -ne 0) {
@@ -1552,33 +1582,178 @@ function Invoke-UnityEditor {
         # (PrecompiledAssemblyException, CompilationFailedException, CS####,
         # CS8032) as ::error:: annotations so the operator sees the root cause
         # in BOTH the runner log AND GitHub's error summary, independent of
-        # whether the workflow-level verify step also fires.
+        # whether the workflow-level verify step also fires. On a benign
+        # shutdown-race crash the log matches no catastrophic pattern, so this
+        # is a no-op; on a real compile failure it names the root cause.
         Write-UnityCatastrophicErrorAnnotations -LogPath $LogPath
-        throw "$Label failed with exit code $exitCode. See the streamed Unity log above (also saved to $LogPath)."
     }
+    # RETURN the exit code; do NOT throw on a non-zero value. The DURABLE ARTIFACT
+    # the invocation produces (the configure marker / the built player exe / the
+    # NUnit results.xml) is the source of truth, validated by the caller. Unity
+    # can crash in a BACKGROUND thread (for example the DirectoryMonitor file
+    # watcher) DURING shutdown AFTER the artifact is fully written, returning a
+    # crash exit code for an otherwise-successful run; gating on the artifact (not
+    # the exit code) makes those benign shutdown-race crashes non-fatal while a
+    # missing/invalid artifact still fails loudly.
+    return $exitCode
 }
 
-function Get-NativeExitCodeDescription {
-    param([Parameter(Mandatory = $true)][int]$ExitCode)
+# The Windows NTSTATUS codes a Unity batch process most commonly exits WITH when
+# it crashes or aborts. Keyed by the canonical 8-char uppercase hex of the
+# UNSIGNED exit code. This is the single source of truth for both the human
+# description (Get-NativeExitCodeDescription) and the "is this a native crash
+# code" classifier (Test-NativeCrashExitCode). Crash codes (the 0xC000xxxx
+# family) are EXACTLY the benign post-work shutdown-race exits the
+# artifact-is-source-of-truth gate tolerates when the durable artifact is valid.
+$script:NativeExitCodeDescriptions = [ordered]@{
+    'C0000005' = 'STATUS_ACCESS_VIOLATION'
+    'C000001D' = 'STATUS_ILLEGAL_INSTRUCTION'
+    'C0000017' = 'STATUS_NO_MEMORY'
+    'C00000FD' = 'STATUS_STACK_OVERFLOW'
+    'C0000135' = 'STATUS_DLL_NOT_FOUND'
+    'C0000139' = 'STATUS_ENTRYPOINT_NOT_FOUND'
+    'C0000374' = 'STATUS_HEAP_CORRUPTION'
+    'C0000409' = 'STATUS_STACK_BUFFER_OVERRUN'
+    'C0000420' = 'STATUS_ASSERTION_FAILURE'
+}
 
+function ConvertTo-UnsignedExitHex {
+    # Canonical 8-char uppercase hex of an exit code, normalizing the negative
+    # Int32 form PowerShell yields for a high-bit NTSTATUS (for example -1073741819
+    # -> 'C0000005'). Compare against this STRING form, never the 0xC0000005 token:
+    # PowerShell parses `0xC0000005` as a NEGATIVE Int32, so a numeric -eq against
+    # the unsigned value silently fails (the int/uint conflation this whole helper
+    # exists to avoid).
+    param([Parameter(Mandatory = $true)][int]$ExitCode)
     $normalized = if ($ExitCode -lt 0) {
         [uint32]($ExitCode + 4294967296)
     } else {
         [uint32]$ExitCode
     }
-    $hexBare = $normalized.ToString('X8')
+    return $normalized.ToString('X8')
+}
+
+function Test-NativeCrashExitCode {
+    # True when the exit code is a native Windows CRASH/abort NTSTATUS (the
+    # 0xC000xxxx severity-error family), i.e. a process the OS terminated rather
+    # than a value the app returned (0..255). Used ONLY to phrase the benign-exit
+    # ::warning:: accurately; the pass/fail decision is gated on the durable
+    # artifact, never on this classifier.
+    param([Parameter(Mandatory = $true)][int]$ExitCode)
+    $hexBare = ConvertTo-UnsignedExitHex -ExitCode $ExitCode
+    if ($script:NativeExitCodeDescriptions.Contains($hexBare)) {
+        return $true
+    }
+    # The 0xC000xxxx NTSTATUS family (STATUS_SEVERITY_ERROR + facility 0) covers
+    # the native crash/abort statuses a Unity batch process exits with. This is a
+    # best-effort classifier for the warning text ONLY; pass/fail is gated on the
+    # durable artifact, so a status outside this prefix is at worst a missing
+    # "(a native crash code)" note, never a wrong verdict.
+    return ($hexBare -like 'C0*')
+}
+
+function Get-NativeExitCodeDescription {
+    param([Parameter(Mandatory = $true)][int]$ExitCode)
+
+    $hexBare = ConvertTo-UnsignedExitHex -ExitCode $ExitCode
     $hex = "0x$hexBare"
-    # Compare against the hex STRING form (not the literal 0xC0000135 token) because
-    # PowerShell parses `0xC0000135` as Int32 -1073741515 and `$normalized -eq
-    # 0xC0000135` therefore coerces to Int32 -- $normalized (the unsigned value
-    # 3221225781) and -1073741515 are NOT -eq. String compare on the canonical 8-char
-    # hex avoids the int/uint conflation entirely (mirrors the same fix applied to
-    # ensure-editor.ps1's Get-NativeExitCodeDescription / Test-IsNativeDllNotFound).
-    if ($hexBare -eq 'C0000135') {
-        return "$hex / STATUS_DLL_NOT_FOUND"
+    if ($script:NativeExitCodeDescriptions.Contains($hexBare)) {
+        return "$hex / $($script:NativeExitCodeDescriptions[$hexBare])"
     }
 
     return $hex
+}
+
+function Get-UnityCrashSignature {
+    # Best-effort: scan a captured Unity log for the signature of a BACKGROUND-thread
+    # crash that fired DURING shutdown, AFTER the batch work completed. Returns a
+    # short human description (for the benign-exit ::warning::) or '' when no crash
+    # signature is present. NEVER throws -- a diagnostic must not mask the real
+    # decision (which is gated on the durable artifact, not on this scan).
+    param([string]$LogPath)
+
+    if (-not $LogPath -or -not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+        return ''
+    }
+    try {
+        $logText = Get-Content -LiteralPath $LogPath -Raw
+    } catch {
+        return ''
+    }
+    if (-not $logText) {
+        return ''
+    }
+
+    # The editor reached the end of batch execution before the crash -> the crash
+    # is in teardown, not in the work. (-quit prints this; -runTests prints the
+    # "Exiting batchmode successfully" variant.)
+    $cleanShutdown = ($logText -match 'Batchmode quit successfully invoked' -or
+        $logText -match 'Exiting batchmode successfully')
+
+    # A known benign Windows shutdown-race: the DirectoryMonitor file-watcher
+    # thread faulting while the editor tears down. This is the crash observed on
+    # the 6000.3 standalone configure pass.
+    if ($logText -match 'DirectoryMonitor') {
+        $suffix = if ($cleanShutdown) { ' after a clean batch shutdown' } else { '' }
+        return "Unity DirectoryMonitor file-watcher thread crash during shutdown$suffix"
+    }
+    if ($logText -match 'Crash!!!') {
+        $suffix = if ($cleanShutdown) { ' after a clean batch shutdown' } else { '' }
+        return "Unity native crash during shutdown$suffix"
+    }
+    if ($cleanShutdown) {
+        return 'Unity completed its batch work (clean shutdown logged) before exiting non-zero'
+    }
+    return ''
+}
+
+function Write-UnityBenignExitWarning {
+    # Emit a single ::warning:: when a Unity batch invocation produced a VALID
+    # durable artifact but still exited non-zero or was tree-killed by the
+    # watchdog. Decodes the exit code (for example 0xC0000005 /
+    # STATUS_ACCESS_VIOLATION) and names any crash signature found in the log, so
+    # the benign post-work shutdown crash stays VISIBLE and trackable in CI without
+    # failing the job. The artifact -- already validated by the caller -- is the
+    # source of truth; this only narrates why a non-zero exit was tolerated.
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [int]$ExitCode = 0,
+        [switch]$TimedOut,
+        [string]$LogPath
+    )
+
+    $cause = if ($TimedOut) {
+        'was tree-killed by the watchdog (likely a deferred Application.Quit)'
+    } else {
+        $description = Get-NativeExitCodeDescription -ExitCode $ExitCode
+        $crashNote = if (Test-NativeCrashExitCode -ExitCode $ExitCode) { ' (a native crash code)' } else { '' }
+        "exited with code $ExitCode / $description$crashNote"
+    }
+    $signature = Get-UnityCrashSignature -LogPath $LogPath
+    $signatureNote = if ($signature) { " Crash signature: $signature." } else { '' }
+    Write-Host "::warning::${Label}: Unity $cause AFTER producing a valid result artifact; honoring the artifact as the source of truth and treating this as a benign post-work shutdown crash.$signatureNote"
+}
+
+function Test-UnityConfigureMarker {
+    # Validate the standalone-configure SUCCESS MARKER as the source of truth for
+    # the configure pass (DxmCiTestConfigurator.Apply writes it as its final
+    # action). Returns '' when the marker exists and is FRESH for this run, else a
+    # short reason string (mirrors Test-StandalonePlayerBuildOutput's contract).
+    # A fresh marker proves Apply() ran to completion even if Unity then crashed in
+    # a background thread during shutdown and returned a crash exit code.
+    param(
+        [Parameter(Mandatory = $true)][string]$MarkerPath,
+        [Parameter(Mandatory = $true)][datetime]$StartedUtc
+    )
+
+    if (-not (Test-Path -LiteralPath $MarkerPath -PathType Leaf)) {
+        return 'configure marker was not written (DxmCiTestConfigurator.Apply did not run to completion)'
+    }
+    $marker = Get-Item -LiteralPath $MarkerPath
+    if ($marker.LastWriteTimeUtc -lt $StartedUtc.AddSeconds(-5)) {
+        return "stale configure marker; LastWriteTimeUtc=$($marker.LastWriteTimeUtc.ToString('o'))"
+    }
+    return ''
 }
 
 function Invoke-UnityNativeStartupProbe {
@@ -1793,24 +1968,26 @@ function Write-UnityResultFailureDiagnostics {
     Write-Host "::endgroup::"
 }
 
-function Invoke-UnityEditorWithFailureDiagnostics {
+function Write-UnityRunFailureDiagnostics {
+    # Emit the combined analyzer-setup + result-failure diagnostics for a Unity
+    # batch invocation whose DURABLE ARTIFACT validation failed (missing configure
+    # marker / invalid player exe / missing-or-invalid results.xml). This is the
+    # failure-path diagnostics bundle the retired Invoke-UnityEditorWithFailureDiagnostics
+    # wrapper used to emit on a thrown non-zero exit; it now fires from the
+    # artifact-validation failure branch (the exit code is no longer the trigger).
+    # Two callers: the configure marker-validation failure and the standalone build
+    # exe-validation failure (the latter then also emits Write-StandaloneBuildOutputDiagnostics).
+    # The editmode/playmode + standalone-player paths get the result-failure half
+    # directly from Test-NUnitResults, which calls Write-UnityResultFailureDiagnostics.
     param(
-        [Parameter(Mandatory = $true)][string]$EditorPath,
-        [Parameter(Mandatory = $true)][string[]]$Arguments,
-        [Parameter(Mandatory = $true)][string]$Label,
-        [Parameter(Mandatory = $true)][string]$LogPath,
         [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][string]$LogPath,
         [Parameter(Mandatory = $true)][string]$CscLabel,
         [Parameter(Mandatory = $true)][string]$DiagnosticsLabel
     )
 
-    try {
-        Invoke-UnityEditor -EditorPath $EditorPath -Arguments $Arguments -Label $Label -LogPath $LogPath
-    } catch {
-        Write-AnalyzerSetupDiagnostics -Project $Project -LogPath $LogPath -Label $CscLabel
-        Write-UnityResultFailureDiagnostics -LogPath $LogPath -Project $Project -Label $DiagnosticsLabel
-        throw
-    }
+    Write-AnalyzerSetupDiagnostics -Project $Project -LogPath $LogPath -Label $CscLabel
+    Write-UnityResultFailureDiagnostics -LogPath $LogPath -Project $Project -Label $DiagnosticsLabel
 }
 
 function Write-StandaloneDirectorySnapshot {
@@ -1936,23 +2113,37 @@ function Test-StandalonePlayerBuildOutput {
 }
 
 function Test-NUnitResults {
+    # The NUnit results.xml is the SOLE source of truth for editmode/playmode and
+    # the standalone player run. $UnityExitCode is the process exit code of the
+    # editor/player that produced the file; it is ADVISORY only -- a valid passing
+    # results.xml means the run succeeded EVEN IF the process then exited non-zero
+    # (a benign background-thread shutdown-race crash after RunFinished already
+    # wrote the file). A missing/invalid/failing file still fails loudly, and the
+    # exit code is folded into the diagnostics so a crash-before-results is named.
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$Label,
         [string]$LogPath,
-        [string]$Project
+        [string]$Project,
+        [int]$UnityExitCode = 0
     )
 
+    $exitNote = if ($UnityExitCode -ne 0) {
+        " Unity exited $UnityExitCode / $(Get-NativeExitCodeDescription -ExitCode $UnityExitCode) (the results FILE, not the exit code, is the source of truth)."
+    } else {
+        ''
+    }
+
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        Write-CiError "No NUnit results XML exists at $Path for $Label."
+        Write-CiError "No NUnit results XML exists at $Path for $Label.$exitNote"
         Write-UnityResultFailureDiagnostics -LogPath $LogPath -Project $Project -Label $Label
-        throw "Unity did not produce NUnit results for $Label."
+        throw "Unity did not produce NUnit results for $Label.$exitNote"
     }
 
     [xml]$xml = Get-Content -LiteralPath $Path -Raw
     $run = $xml.SelectSingleNode('//test-run')
     if (-not $run) {
-        Write-CiError "NUnit results at $Path do not contain a <test-run> element."
+        Write-CiError "NUnit results at $Path do not contain a <test-run> element.$exitNote"
         Write-UnityResultFailureDiagnostics -LogPath $LogPath -Project $Project -Label $Label
         throw "Invalid NUnit results for $Label."
     }
@@ -1964,20 +2155,29 @@ function Test-NUnitResults {
 
     Write-Host "Results: total=$total passed=$passed failed=$failed skipped=$skipped"
     if ($total -lt 1) {
-        Write-CiError "0 tests ran for $Label -- check assembly selection and package testables."
+        Write-CiError "0 tests ran for $Label -- check assembly selection and package testables.$exitNote"
         throw "0 tests ran for $Label."
     }
     if ($failed -gt 0) {
         # Enumerate WHICH tests failed (fullname + message + stack) BEFORE the
         # throw so the operator sees the actionable detail, not just the count.
         # Best-effort inside the helper's own try/catch -- it never masks the
-        # real failure below.
+        # real failure below. ($exitNote is intentionally omitted here: when tests
+        # genuinely failed, the named failing tests ARE the actionable signal and
+        # the producing process's exit code is noise. The exit note is folded into
+        # the missing-file / invalid / zero-test branches above, where the exit
+        # code IS the most informative remaining clue.)
         Write-UnityFailedTestAnnotations -Xml $xml -Label $Label
         Write-CiError "$failed tests failed for $Label."
         throw "$failed tests failed for $Label."
     }
 
-        Write-CiNotice "${Label}: total=$total passed=$passed failed=$failed skipped=$skipped"
+    # PASS. If the producing process exited non-zero despite the valid passing
+    # file, narrate the benign post-work shutdown crash (and KEEP it green).
+    if ($UnityExitCode -ne 0) {
+        Write-UnityBenignExitWarning -Label $Label -ExitCode $UnityExitCode -LogPath $LogPath
+    }
+    Write-CiNotice "${Label}: total=$total passed=$passed failed=$failed skipped=$skipped"
 }
 
 $RepoRoot = Resolve-FullPath -Path $RepoRoot
@@ -2094,6 +2294,12 @@ $resultsPath = Join-Path $ArtifactsPath 'results.xml'
 $logPath = Join-Path $ArtifactsPath 'unity.log'
 $configureLogPath = Join-Path $ArtifactsPath 'configure.log'
 $startupProbeLogPath = Join-Path $ArtifactsPath 'unity-startup-probe.log'
+# The standalone-configure SUCCESS MARKER: DxmCiTestConfigurator.Apply writes it
+# as its final action (path handed in via DXM_CONFIGURE_MARKER_PATH). A fresh
+# marker is the source of truth that the configure pass completed -- even if Unity
+# then crashed in a background thread during shutdown and returned a crash exit
+# code -- so we never fail a successful configure on a benign teardown crash.
+$configureMarkerPath = Join-Path $ArtifactsPath 'configure-complete.marker'
 
 # STANDALONE split-build artifacts. The built IL2CPP player goes under a stable
 # per-run project Build directory, not project Temp: Unity's test player build
@@ -2133,6 +2339,20 @@ try {
     }
 
     if ($TestMode -eq 'standalone') {
+        # CONFIGURE the standalone IL2CPP project. The CONFIGURED PROJECT (proven by
+        # the success marker DxmCiTestConfigurator.Apply writes as its final action)
+        # is the source of truth -- NOT Unity's process exit code. Delete any stale
+        # marker, hand the path in via DXM_CONFIGURE_MARKER_PATH, and validate a
+        # FRESH marker after the run. A non-zero exit with a fresh marker is a benign
+        # post-work shutdown crash (for example the DirectoryMonitor file-watcher
+        # thread faulting during teardown, which returns 0xC0000005 even though the
+        # configuration fully succeeded); a MISSING marker is a real configure
+        # failure that fails loudly with the usual diagnostics.
+        if (Test-Path -LiteralPath $configureMarkerPath -PathType Leaf) {
+            Remove-Item -LiteralPath $configureMarkerPath -Force
+        }
+        $env:DXM_CONFIGURE_MARKER_PATH = $configureMarkerPath
+        $configureStartedUtc = [DateTime]::UtcNow
         $configureArgs = @(
             '-quit',
             '-batchmode',
@@ -2142,14 +2362,27 @@ try {
             '-executeMethod', 'DxmCiTestConfigurator.Apply',
             '-logFile', '-'
         ) + $acceleratorArgs
-        Invoke-UnityEditorWithFailureDiagnostics `
+        $configureExit = Invoke-UnityEditor `
             -EditorPath $UnityEditorPath `
             -Arguments $configureArgs `
             -Label 'Configure standalone IL2CPP project' `
-            -LogPath $configureLogPath `
-            -Project $ProjectPath `
-            -CscLabel 'standalone configure' `
-            -DiagnosticsLabel 'Unity standalone configure'
+            -LogPath $configureLogPath
+        # The configurator has run; drop the marker-path env var so it cannot be
+        # inherited by the later build/player child processes (only Apply reads it,
+        # so this is hygiene against a future invocation accidentally writing it).
+        Remove-Item -LiteralPath Env:\DXM_CONFIGURE_MARKER_PATH -ErrorAction SilentlyContinue
+        $configureProblem = Test-UnityConfigureMarker -MarkerPath $configureMarkerPath -StartedUtc $configureStartedUtc
+        if (-not [string]::IsNullOrWhiteSpace($configureProblem)) {
+            Write-UnityRunFailureDiagnostics `
+                -Project $ProjectPath `
+                -LogPath $configureLogPath `
+                -CscLabel 'standalone configure' `
+                -DiagnosticsLabel 'Unity standalone configure'
+            throw "Configure standalone IL2CPP project failed ($configureProblem; Unity exit code $configureExit / $(Get-NativeExitCodeDescription -ExitCode $configureExit)). See the streamed Unity log above (also saved to $configureLogPath)."
+        }
+        if ($configureExit -ne 0) {
+            Write-UnityBenignExitWarning -Label 'Configure standalone IL2CPP project' -ExitCode $configureExit -LogPath $configureLogPath
+        }
         Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $configureLogPath -Label 'standalone configure'
     }
 
@@ -2202,32 +2435,40 @@ try {
             -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
             -LogPath $logPath `
             -Label "Build standalone IL2CPP test player (Unity $UnityVersion)"
-        if ($buildResult.TimedOut -or $buildResult.ExitCode -ne 0) {
-            Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion standalone build"
-            Write-UnityResultFailureDiagnostics -LogPath $logPath -Project $ProjectPath -Label "Unity $UnityVersion standalone build"
-            if ($buildResult.TimedOut) {
-                throw "Standalone test-player build timed out and the process tree was killed. Raise the limit via DXM_STANDALONE_BUILD_TIMEOUT_SECONDS (0 disables the timeout). See the build log at $logPath."
-            }
-            throw "Standalone test-player build failed with exit code $($buildResult.ExitCode). See the streamed Unity log above (also saved to $logPath)."
-        }
 
-        # POST-BUILD ASSERT: the exe MUST exist at DXM_PLAYER_BUILD_PATH, be fresh
-        # for this build, and include its companion _Data directory. If not, either
-        # the build modifier did not run, Unity wrote through Temp and cleaned it, or
-        # a stale player survived. Fail fast with diagnostics before launching
-        # anything.
+        # POST-BUILD ASSERT (the BUILT PLAYER EXE is the source of truth): the exe
+        # MUST exist at DXM_PLAYER_BUILD_PATH, be fresh for this build, and include
+        # its companion _Data directory. A non-zero build exit code OR a watchdog
+        # tree-kill is fatal ONLY when the exe is missing/stale/incomplete: Unity can
+        # crash in a background thread during shutdown AFTER the player is fully
+        # built, or defer Application.Quit in -batchmode IL2CPP (the watchdog then
+        # tree-kills an already-finished build). Validating the exe FIRST -- before
+        # consulting the exit code -- keeps those benign post-build crashes from
+        # turning a good build red, while a genuinely failed build (which leaves no
+        # fresh, complete exe) still fails loudly with full diagnostics.
         $standaloneBuildProblem = Test-StandalonePlayerBuildOutput `
             -ExpectedExe $standaloneExe `
             -BuildStartedUtc $standaloneBuildStartedUtc
         if (-not [string]::IsNullOrWhiteSpace($standaloneBuildProblem)) {
-            Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion standalone build"
-            Write-UnityResultFailureDiagnostics -LogPath $logPath -Project $ProjectPath -Label "Unity $UnityVersion standalone build"
+            Write-UnityRunFailureDiagnostics `
+                -Project $ProjectPath `
+                -LogPath $logPath `
+                -CscLabel "$UnityVersion standalone build" `
+                -DiagnosticsLabel "Unity $UnityVersion standalone build"
             Write-StandaloneBuildOutputDiagnostics `
                 -Project $ProjectPath `
                 -ExpectedExe $standaloneExe `
                 -LogPath $logPath `
                 -BuildStartedUtc $standaloneBuildStartedUtc
-            throw "Editor build produced invalid DxMessaging test player output at $standaloneExe ($standaloneBuildProblem). The build modifier may not have run, Unity may have cleaned a Temp output, or a stale player was detected. See the build log at $logPath."
+            if ($buildResult.TimedOut) {
+                throw "Standalone test-player build timed out and the process tree was killed before producing a valid player at $standaloneExe ($standaloneBuildProblem). Raise the limit via DXM_STANDALONE_BUILD_TIMEOUT_SECONDS (0 disables the timeout). See the build log at $logPath."
+            }
+            throw "Editor build produced invalid DxMessaging test player output at $standaloneExe ($standaloneBuildProblem; build exit code $($buildResult.ExitCode) / $(Get-NativeExitCodeDescription -ExitCode $buildResult.ExitCode)). The build modifier may not have run, Unity may have cleaned a Temp output, or a stale player was detected. See the build log at $logPath."
+        }
+        # The exe is valid. If the build process nonetheless exited non-zero or was
+        # tree-killed, narrate the benign post-build shutdown crash and keep going.
+        if ($buildResult.TimedOut -or $buildResult.ExitCode -ne 0) {
+            Write-UnityBenignExitWarning -Label "Build standalone IL2CPP test player (Unity $UnityVersion)" -ExitCode $buildResult.ExitCode -TimedOut:$buildResult.TimedOut -LogPath $logPath
         }
 
         # MISSED-CASE GUARD: even when the exe exists, scan the build log for the
@@ -2262,9 +2503,15 @@ try {
         # results file exists, honor it as the source of truth (Application.Quit can be
         # deferred in -batchmode -nographics IL2CPP after RunFinished already wrote the
         # file) and fall through to Test-NUnitResults; otherwise fail with the timeout.
+        $playerExitForValidation = $playerResult.ExitCode
         if ($playerResult.TimedOut) {
             if (Test-Path -LiteralPath $resultsPath -PathType Leaf) {
                 Write-Host "::warning::Standalone test player exceeded the ${playerTimeoutSeconds}s watchdog and was tree-killed, but it had already written $resultsPath; honoring that results file as the source of truth (Application.Quit was likely deferred in -batchmode IL2CPP). Raise DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS if this recurs."
+                # The inline timeout warning above is the single, correctly-phrased
+                # notice for this case; pass exit 0 to the validator so it does NOT
+                # re-warn and MISLABEL the watchdog timeout (sentinel 124) as a
+                # native shutdown crash.
+                $playerExitForValidation = 0
             } else {
                 throw "Standalone test player timed out after $playerTimeoutSeconds second(s) and was tree-killed before writing any results to $resultsPath. Raise the limit via DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS (0 disables the timeout). See the player log at $playerLogPath."
             }
@@ -2272,8 +2519,9 @@ try {
 
         # (2c) VALIDATE the FILE (the source of truth). The player log carries the
         # diagnostics for a missing/empty file (its stdout no longer flows through
-        # unity.log).
-        Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion standalone" -LogPath $playerLogPath -Project $ProjectPath
+        # unity.log). The player exit code is advisory only: a valid passing file
+        # with a non-zero player exit gets a benign-crash ::warning::, not a failure.
+        Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion standalone" -LogPath $playerLogPath -Project $ProjectPath -UnityExitCode $playerExitForValidation
     } else {
         # MUST NOT include '-quit' alongside '-runTests': per the Unity Editor manual
         # (https://docs.unity3d.com/Manual/EditorCommandLineArguments.html), if the
@@ -2291,16 +2539,25 @@ try {
             '-logFile', '-'
         ) + $categoryArgs + $acceleratorArgs
 
-        Invoke-UnityEditorWithFailureDiagnostics `
+        # Delete any STALE results file first so the file validation below can only
+        # honor results THIS run wrote (defensive for local re-runs; CI checkout
+        # already cleans the gitignored .artifacts tree per job).
+        if (Test-Path -LiteralPath $resultsPath -PathType Leaf) {
+            Remove-Item -LiteralPath $resultsPath -Force
+        }
+
+        # Run the editor; capture (do NOT throw on) its exit code. The NUnit
+        # results.xml is the source of truth: Test-NUnitResults fails loudly on a
+        # missing/invalid/failing file AND folds the exit code into its diagnostics,
+        # but PASSES a valid run that exited non-zero only because Unity crashed in a
+        # background thread during shutdown AFTER RunFinished wrote the file.
+        $runExit = Invoke-UnityEditor `
             -EditorPath $UnityEditorPath `
             -Arguments $testArgs `
             -Label "Run Unity $UnityVersion $TestMode tests" `
-            -LogPath $logPath `
-            -Project $ProjectPath `
-            -CscLabel "$UnityVersion $TestMode test compile" `
-            -DiagnosticsLabel "Unity $UnityVersion $TestMode"
+            -LogPath $logPath
         Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion $TestMode test compile"
-        Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath
+        Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath -UnityExitCode $runExit
     }
 } finally {
     # Deterministic RETURN of the seat on EVERY exit path (clean exit, throw, or a

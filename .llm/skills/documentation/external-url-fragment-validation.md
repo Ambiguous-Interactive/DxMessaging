@@ -2,9 +2,9 @@
 title: "External URL Fragment Validation"
 id: "external-url-fragment-validation"
 category: "documentation"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-01-27"
-updated: "2026-01-27"
+updated: "2026-06-04"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -69,6 +69,11 @@ status: "stable"
 ## Overview
 
 URL fragments (the `#section-name` portion after the main URL) are particularly fragile for external links. The target page's heading structure can change without notice, breaking fragment references.
+
+Two distinct cases, gated differently in CI:
+
+- **In-repo anchors** (a `#heading` fragment on a local/relative Markdown link) are validated OFFLINE with `lychee --offline --include-fragments` in the blocking PR check. A fragment that matches no heading fails the PR, so these are deterministic and must be correct.
+- **External-page fragments** are not fetched by the blocking offline gate. Authors verify them in a browser; deep external rot is surfaced by the scheduled advisory scan (which opens a tracking issue rather than failing CI). Bot-detection or transient responses on the external page never red a PR.
 
 ## Problem Statement
 
@@ -140,13 +145,15 @@ See [here](https://www.markdownguide.org/basic-syntax/).
 
 ### Automated Validation
 
-Use `lychee` or similar tools to validate fragments:
+In-repo anchors are validated offline; this is the same command the blocking PR check runs:
 
 ```bash
-# Check all links including fragments
-lychee --include-fragments docs/
+# Validate relative links and in-repo "#anchor" fragments against the working
+# tree, zero network -- this is the deterministic, PR-blocking gate.
+lychee --offline --include-fragments "./**/*.md"
 
-# Check a specific URL with fragment
+# Check a specific external URL with fragment (author-side spot check; not the
+# PR gate -- external fragments are not fetched by the offline check).
 lychee --include-fragments "https://example.com/page#section"
 ```
 
@@ -163,7 +170,8 @@ Consider omitting fragments when:
 
 Before committing links with fragments:
 
-- [ ] URL with fragment loads and scrolls to correct section
+- [ ] In-repo `#anchor` fragments match a real heading (the offline PR gate fails otherwise)
+- [ ] External URL with fragment loads and scrolls to correct section (author-side browser check; not gated)
 - [ ] Heading has an `id` attribute (inspect element to verify)
 - [ ] Fragment format matches site's ID generation pattern
 - [ ] Key information is quoted in case fragment breaks
@@ -176,6 +184,7 @@ Before committing links with fragments:
 
 ## Changelog
 
-| Version | Date       | Changes                                              |
-| ------- | ---------- | ---------------------------------------------------- |
-| 1.0.0   | 2026-01-27 | Split from link-quality-guidelines for focused scope |
+| Version | Date       | Changes                                                                                        |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------- |
+| 1.1.0   | 2026-06-04 | Distinguished offline-gated in-repo anchors from author-verified, non-gated external fragments |
+| 1.0.0   | 2026-01-27 | Split from link-quality-guidelines for focused scope                                           |

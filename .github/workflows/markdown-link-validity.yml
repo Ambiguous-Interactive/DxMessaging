@@ -1,22 +1,25 @@
-name: Markdown Link Validity
+name: Markdown Link Validity (scheduled external scan)
+
+# Advisory deep scan of EXTERNAL links across all tracked docs. The blocking PR
+# check (lint-doc-links.yml) also checks all tracked docs, but only runs when a
+# PR/push touches docs or link-checking config; this runs on a timer to catch
+# links that rot on the default branch with no PR touching them. It NEVER fails
+# the run -- instead it maintains a single tracking issue listing the dead links.
+# Bot-detection and transient responses are accepted (see .lychee.toml), so the
+# issue stays signal-rich (a timeout is reported too, since a persistently slow
+# host is worth a look, but bot-block/throttle/5xx never appear).
+#
+# NOTE: GitHub fires `schedule:` only from the default branch, so this scan is
+# dormant until merged to master; use `workflow_dispatch` to run it on demand.
 
 on:
-  pull_request:
-    paths:
-      - "**/*.md"
-      - "**/*.markdown"
-      - "docs/**"
-      - ".lychee.toml"
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - "**/*.md"
-      - "**/*.markdown"
-      - "docs/**"
-      - ".lychee.toml"
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   link-check:
@@ -25,26 +28,92 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22.18.0"
-          cache: "npm"
-          cache-dependency-path: package.json
+      # Same tracked-files source of truth as the blocking job (lychee's glob
+      # ignores .gitignore), so vendored/generated trees are never scanned.
+      - name: Collect tracked docs
+        run: |
+          git ls-files -z '*.md' '*.markdown' | tr '\0' '\n' \
+            > "${RUNNER_TEMP}/doc-files.txt"
+          echo "Scanning $(wc -l < "${RUNNER_TEMP}/doc-files.txt") tracked doc(s)."
 
-      - name: Validate lychee configuration
-        run: node scripts/validate-lychee-config.js
-
-      - name: Run lychee link checker (repo-wide)
-        uses: lycheeverse/lychee-action@v2
+      # Persist lychee's response cache across runs so the daily scan is fast and
+      # gentle on upstream servers. Transient statuses are excluded from the cache
+      # (below) so a one-off blip is never remembered as a result.
+      - name: Restore lychee cache
+        id: restore-cache
+        uses: actions/cache/restore@v4
         with:
-          # Include fragments ensures anchors are validated
-          # Use conservative concurrency (4) to avoid GitHub rate limiting
-          args: >-
-            -c .lychee.toml
-            --no-progress
-            --include-fragments
-            --verbose
-            "./**/*.md"
+          path: .lycheecache
+          key: cache-lychee-${{ github.sha }}
+          restore-keys: cache-lychee-
+
+      - name: Install pinned lychee
+        uses: ./.github/actions/install-pinned-lychee
+        with:
+          version: v0.24.2
+
+      - name: Scan external links (advisory)
+        id: lychee
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          mkdir -p ./lychee
+          lychee \
+            -c .lychee.toml \
+            --scheme https \
+            --scheme http \
+            --cache \
+            --max-cache-age 1d \
+            --cache-exclude-status "429,500..=599" \
+            --format markdown \
+            --output ./lychee/out.md \
+            --files-from "${RUNNER_TEMP}/doc-files.txt"
+          exit_code="${?}"
+          if [ "${exit_code}" != "0" ] && [ ! -s ./lychee/out.md ]; then
+            {
+              echo "# Scheduled external link scan failed"
+              echo
+              echo "lychee exited with code ${exit_code}, but did not produce a Markdown report."
+              echo
+              echo '```'
+              lychee --version || true
+              echo '```'
+            } > ./lychee/out.md
+          fi
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Save lychee cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .lycheecache
+          key: ${{ steps.restore-cache.outputs.cache-primary-key }}
+
+      # Maintain ONE tracking issue with a single gh lookup: open/refresh it when a
+      # link is dead, close it when everything is healthy again. No duplicate issues
+      # per run, no external action.
+      - name: Sync the dead-link tracking issue
+        if: ${{ !cancelled() && steps.lychee.outputs.exit_code != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TITLE: "Dead external links detected by the scheduled scan"
+          EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+        run: |
+          number="$(gh issue list --state open --search "${ISSUE_TITLE} in:title" \
+            --json number,title \
+            --jq "map(select(.title == \"${ISSUE_TITLE}\")) | first | .number // empty")"
+          if [ "${EXIT_CODE}" != "0" ]; then
+            if [ -n "${number}" ]; then
+              gh issue edit "${number}" --body-file ./lychee/out.md
+              echo "Refreshed tracking issue #${number}."
+            else
+              gh issue create --title "${ISSUE_TITLE}" --body-file ./lychee/out.md
+              echo "Opened a new tracking issue."
+            fi
+          elif [ -n "${number}" ]; then
+            gh issue close "${number}" \
+              --comment "All external links are healthy again; closing automatically."
+            echo "Closed tracking issue #${number}."
+          fi

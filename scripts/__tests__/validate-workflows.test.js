@@ -38,6 +38,10 @@ const {
   findWorkflowLineLengthViolations,
   validatePreCommitConfigLineLengths,
   findCrossPlatformPreflightTargetedGateViolations,
+  findLycheeActionPolicyViolations,
+  findRequiredWorkflowFileViolations,
+  REQUIRED_LYCHEE_VERSION,
+  ADVISORY_LYCHEE_REPORT_PATH,
   validateWorkflow
 } = require("../validate-workflows.js");
 
@@ -138,7 +142,7 @@ describe("findUnityNativeProvisioningViolations", () => {
       "            -CiManagedOnly `",
       ...(healthyFlag ? [healthyFlag] : []),
       "            -ProvisioningProfile StandaloneWindowsIl2Cpp",
-      "          \"UNITY_EDITOR_PATH=$editor\" | Out-File -FilePath $env:GITHUB_ENV -Append",
+      '          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append',
       "      - name: Acquire organization Unity lock",
       "        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1",
       "      - name: Run Unity Test Runner",
@@ -1251,6 +1255,548 @@ describe("findCrossPlatformPreflightTargetedGateViolations", () => {
   test("does not inspect unrelated workflows", () => {
     const lines = ["jobs:", "  test:", "    steps:", "      - run: echo ok"];
     expect(findCrossPlatformPreflightTargetedGateViolations("workflow.yml", lines)).toEqual([]);
+  });
+});
+
+describe("findLycheeActionPolicyViolations", () => {
+  const blockingWorkflowPath = ".github/workflows/lint-doc-links.yml";
+  const advisoryWorkflowPath = ".github/workflows/markdown-link-validity.yml";
+
+  function makeWorkflow(stepLines) {
+    return [
+      "name: Test",
+      "jobs:",
+      "  lint:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      ...stepLines
+    ].join("\n");
+  }
+
+  const installPinnedLycheeStep = [
+    "      - name: Install pinned lychee",
+    "        uses: ./.github/actions/install-pinned-lychee",
+    "        with:",
+    `          version: ${REQUIRED_LYCHEE_VERSION}`
+  ];
+  const validAdvisoryIssueBodyLine =
+    '          gh issue edit "${number}" --body-file ' + ADVISORY_LYCHEE_REPORT_PATH;
+
+  const validBlockingLycheeSteps = [
+    ...installPinnedLycheeStep,
+    "      - name: Check internal links and anchors (offline)",
+    "        run: >-",
+    "          lychee",
+    "          -c .lychee.toml",
+    "          --offline",
+    "          --include-fragments",
+    '          --files-from "${RUNNER_TEMP}/doc-files.txt"',
+    "      - name: Probe external link liveness",
+    "        run: >-",
+    "          lychee",
+    "          -c .lychee.toml",
+    "          --scheme https",
+    "          --scheme http",
+    "          --accept-timeouts=true",
+    '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+  ];
+
+  const validAdvisoryLycheeSteps = [
+    ...installPinnedLycheeStep,
+    "      - name: Scan external links (advisory)",
+    "        id: lychee",
+    "        run: |",
+    "          set +e",
+    "          mkdir -p ./lychee",
+    "          lychee \\",
+    "            -c .lychee.toml \\",
+    "            --scheme https \\",
+    "            --scheme http \\",
+    "            --format markdown \\",
+    `            --output ${ADVISORY_LYCHEE_REPORT_PATH} \\`,
+    '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
+    '          exit_code="${?}"',
+    '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
+    "          exit 0",
+    "      - name: Sync the dead-link tracking issue",
+    "        run: |",
+    validAdvisoryIssueBodyLine
+  ];
+
+  test("accepts the blocking workflow's pinned native-timeout lychee shape", () => {
+    const violations = findLycheeActionPolicyViolations(
+      blockingWorkflowPath,
+      makeWorkflow(validBlockingLycheeSteps)
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  test.each([
+    {
+      label: "missing pinned installer",
+      steps: validBlockingLycheeSteps.slice(4),
+      expectedPattern: "missing install-pinned-lychee",
+      expectedMessage: "installing"
+    },
+    {
+      label: "wrong pinned installer version",
+      steps: [
+        "      - name: Install pinned lychee",
+        "        uses: ./.github/actions/install-pinned-lychee",
+        "        with:",
+        "          version: v0.24.1",
+        ...validBlockingLycheeSteps.slice(4)
+      ],
+      expectedPattern: "version: v0.24.1",
+      expectedMessage: REQUIRED_LYCHEE_VERSION
+    },
+    {
+      label: "offline step missing fragment checks",
+      steps: [
+        ...installPinnedLycheeStep,
+        "      - name: Check internal links and anchors (offline)",
+        "        run: >-",
+        "          lychee",
+        "          -c .lychee.toml",
+        "          --offline",
+        '          --files-from "${RUNNER_TEMP}/doc-files.txt"',
+        ...validBlockingLycheeSteps.slice(11)
+      ],
+      expectedPattern: "--include-fragments",
+      expectedMessage: "heading anchors"
+    },
+    {
+      label: "CLI step missing tracked-docs file list",
+      steps: [
+        ...installPinnedLycheeStep,
+        "      - name: Check internal links and anchors (offline)",
+        "        run: >-",
+        "          lychee",
+        "          -c .lychee.toml",
+        "          --offline",
+        "          --include-fragments",
+        ...validBlockingLycheeSteps.slice(11)
+      ],
+      expectedPattern: "--files-from",
+      expectedMessage: "tracked docs"
+    }
+  ])("rejects blocking lychee CLI shape: $label", ({ steps, expectedPattern, expectedMessage }) => {
+    const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, makeWorkflow(steps));
+
+    expect(violations.some((violation) => violation.pattern === expectedPattern)).toBe(true);
+    expect(violations.some((violation) => violation.message.includes(expectedMessage))).toBe(true);
+  });
+
+  test("rejects active lycheeverse action usage before it can hide installer breakage", () => {
+    const content = makeWorkflow([
+      "      - name: Scan external links",
+      "        uses: lycheeverse/lychee-action@v2",
+      "        with:",
+      "          args: ./docs",
+      "          fail: false"
+    ]);
+
+    const violations = findLycheeActionPolicyViolations(".github/workflows/some.yml", content);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].pattern).toBe("lycheeverse/lychee-action");
+    expect(violations[0].message).toContain("install-pinned-lychee");
+  });
+
+  test("reports a blocking workflow missing the external lychee liveness step", () => {
+    const content = makeWorkflow([
+      ...installPinnedLycheeStep,
+      "      - name: Check internal links and anchors (offline)",
+      "        run: >-",
+      "          lychee",
+      "          -c .lychee.toml",
+      "          --offline",
+      "          --include-fragments",
+      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+    ]);
+
+    const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, content);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].pattern).toBe("lychee CLI external liveness step");
+    expect(violations[0].message).toContain("external liveness step");
+  });
+
+  test("reports a blocking workflow missing the offline lychee step", () => {
+    const content = makeWorkflow([
+      ...installPinnedLycheeStep,
+      "      - name: Probe external link liveness",
+      "        run: >-",
+      "          lychee",
+      "          -c .lychee.toml",
+      "          --scheme https",
+      "          --scheme http",
+      "          --accept-timeouts=true",
+      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+    ]);
+
+    const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, content);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].pattern).toBe("lychee CLI offline/internal step");
+    expect(violations[0].message).toContain("offline/internal step");
+  });
+
+  test("reports a blocking external lychee step missing required schemes", () => {
+    const content = makeWorkflow([
+      ...installPinnedLycheeStep,
+      "      - name: Check internal links and anchors (offline)",
+      "        run: >-",
+      "          lychee",
+      "          -c .lychee.toml",
+      "          --offline",
+      "          --include-fragments",
+      '          --files-from "${RUNNER_TEMP}/doc-files.txt"',
+      "      - name: Probe external link liveness",
+      "        run: >-",
+      "          lychee",
+      "          -c .lychee.toml",
+      "          --scheme https",
+      "          --accept-timeouts=true",
+      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+    ]);
+
+    const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, content);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].pattern).toBe("--scheme http");
+    expect(violations[0].message).toContain("both --scheme https and --scheme http");
+  });
+
+  test("allows the scheduled advisory scan to report through the tracking issue", () => {
+    const content = makeWorkflow(validAdvisoryLycheeSteps);
+
+    const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("reports a scheduled advisory workflow with no lychee scan step", () => {
+    const content = makeWorkflow(["      - name: Do nothing", "        run: echo ok"]);
+
+    const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].pattern).toBe("lychee CLI advisory scan step");
+    expect(violations[0].message).toContain("advisory scan step");
+  });
+
+  test("allows the current scheduled advisory workflow lychee shape", () => {
+    const content = fs.readFileSync(
+      path.resolve(__dirname, "../../.github/workflows/markdown-link-validity.yml"),
+      "utf8"
+    );
+
+    const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("install-pinned-lychee action keeps archive-layout diagnostics", () => {
+    const actionText = fs.readFileSync(
+      path.resolve(__dirname, "../../.github/actions/install-pinned-lychee/action.yml"),
+      "utf8"
+    );
+
+    expect(actionText).toContain("unknown-linux-musl");
+    expect(actionText).toContain("tar -tzf");
+    expect(actionText).toContain('find "${temp_dir}" -maxdepth 3 -type f -name lychee');
+    expect(actionText).toContain("Expected exactly one lychee binary");
+    expect(actionText).toContain("lychee\" --version");
+  });
+
+  test("rejects advisory workflow lychee steps that would fail the workflow directly", () => {
+    const content = makeWorkflow([
+      ...installPinnedLycheeStep,
+      "      - name: Scan external links (advisory)",
+      "        id: lychee",
+      "        run: |",
+      "          mkdir -p ./lychee",
+      "          lychee \\",
+      "            -c .lychee.toml \\",
+      "            --scheme https \\",
+      "            --scheme http \\",
+      "            --format markdown \\",
+      `            --output ${ADVISORY_LYCHEE_REPORT_PATH} \\`,
+      '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
+      "      - name: Sync the dead-link tracking issue",
+      "        run: |",
+      validAdvisoryIssueBodyLine
+    ]);
+
+    const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].pattern).toBe("advisory exit_code output");
+    expect(violations[0].message).toContain("exit 0");
+  });
+
+  test.each([
+    {
+      label: "missing report directory creation",
+      omittedLine: "          mkdir -p ./lychee",
+      expectedMessage: "Markdown lychee report"
+    },
+    {
+      label: "missing Markdown format",
+      omittedLine: "            --format markdown \\",
+      expectedMessage: "Markdown lychee report"
+    },
+    {
+      label: "missing report output path",
+      omittedLine: `            --output ${ADVISORY_LYCHEE_REPORT_PATH} \\`,
+      expectedMessage: ADVISORY_LYCHEE_REPORT_PATH
+    }
+  ])("rejects advisory report generation shape: $label", ({ omittedLine, expectedMessage }) => {
+    const content = makeWorkflow(validAdvisoryLycheeSteps.filter((line) => line !== omittedLine));
+
+    const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
+
+    expect(violations.some((violation) => violation.pattern === "advisory markdown report")).toBe(
+      true
+    );
+    expect(violations.some((violation) => violation.message.includes(expectedMessage))).toBe(true);
+  });
+
+  test("rejects advisory issue sync steps that drop the lychee report body file", () => {
+    const content = makeWorkflow(
+      validAdvisoryLycheeSteps.map((line) =>
+        line.includes("--body-file") ? '          gh issue edit "${number}"' : line
+      )
+    );
+
+    const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].pattern).toBe("advisory issue body file");
+    expect(violations[0].message).toContain(ADVISORY_LYCHEE_REPORT_PATH);
+  });
+
+  test.each(["--accept-timeouts", "--accept-timeouts=true"])(
+    "rejects advisory workflow timeout acceptance via %s",
+    (acceptTimeoutsArg) => {
+      const content = makeWorkflow([
+        ...installPinnedLycheeStep,
+        "      - name: Scan external links (advisory)",
+        "        id: lychee",
+        "        run: |",
+        "          set +e",
+        "          mkdir -p ./lychee",
+        "          lychee \\",
+        "            -c .lychee.toml \\",
+        "            --scheme https \\",
+        "            --scheme http \\",
+        `            ${acceptTimeoutsArg} \\`,
+        "            --format markdown \\",
+        `            --output ${ADVISORY_LYCHEE_REPORT_PATH} \\`,
+        '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
+        '          exit_code="${?}"',
+        '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
+        "          exit 0",
+        "      - name: Sync the dead-link tracking issue",
+        "        run: |",
+        validAdvisoryIssueBodyLine
+      ]);
+
+      const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
+
+      expect(violations).toHaveLength(1);
+      expect(violations[0].message).toContain("timeout reporting must stay enabled");
+    }
+  );
+
+  test("ignores archived disabled workflows when checking retired lychee-action usage", () => {
+    const content = makeWorkflow([
+      "      - name: Old scan",
+      "        uses: lycheeverse/lychee-action@v2",
+      "        with:",
+      "          args: ./docs",
+      "          fail: false"
+    ]);
+
+    const violations = findLycheeActionPolicyViolations(
+      ".github/workflows-disabled/old-lychee.yml",
+      content
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  test("rejects the old blocking fail:false JSON post-classification pattern", () => {
+    const content = makeWorkflow([
+      ...installPinnedLycheeStep,
+      "      - name: Probe external link liveness",
+      "        id: external",
+      "        run: |",
+      "          set +e",
+      "          lychee \\",
+      "            -c .lychee.toml \\",
+      "            --scheme https \\",
+      "            --scheme http \\",
+      '            --files-from "${RUNNER_TEMP}/doc-files.txt" \\',
+      '            > "${RUNNER_TEMP}/external.json"',
+      '          exit_code="${?}"',
+      '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
+      "          exit 0",
+      "      - name: Fail only on genuinely-dead external links",
+      "        if: steps.external.outputs.exit_code != '0'",
+      "        run: |",
+      '          dead="$(jq \'.error_map[]?[]? | select(.status.text != \"Timeout\")\' external.json)"',
+      '          echo "${dead}"'
+    ]);
+
+    const messages = findLycheeActionPolicyViolations(blockingWorkflowPath, content).map(
+      (violation) => violation.message
+    );
+
+    expect(messages.some((message) => message.includes("--accept-timeouts=true"))).toBe(true);
+    expect(messages.some((message) => message.includes("fail:false plus format/output"))).toBe(true);
+    expect(messages.some((message) => message.includes("retired JSON post-classifier"))).toBe(true);
+  });
+
+  test("does not let --offline hide malformed blocking external liveness steps", () => {
+    const content = makeWorkflow([
+      ...installPinnedLycheeStep,
+      "      - name: Probe external link liveness",
+      "        run: >-",
+      "          lychee",
+      "          -c .lychee.toml",
+      "          --offline",
+      "          --scheme https",
+      "          --scheme http",
+      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+    ]);
+
+    const messages = findLycheeActionPolicyViolations(blockingWorkflowPath, content).map(
+      (violation) => violation.message
+    );
+
+    expect(messages.some((message) => message.includes("must not combine --offline"))).toBe(true);
+    expect(messages.some((message) => message.includes("--accept-timeouts=true"))).toBe(true);
+  });
+
+  test("rejects --offline on a blocking external step even when native timeout policy is present", () => {
+    const content = makeWorkflow([
+      ...installPinnedLycheeStep,
+      "      - name: Probe external link liveness",
+      "        run: >-",
+      "          lychee",
+      "          -c .lychee.toml",
+      "          --offline",
+      "          --scheme=https",
+      "          --scheme http",
+      "          --accept-timeouts=true",
+      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+    ]);
+
+    const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, content);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("must not combine --offline");
+  });
+
+  test("validateWorkflow reports blocking external lychee steps missing timeout acceptance", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-lychee-"));
+    try {
+      const workflowPath = path.join(tempDir, ".github", "workflows", "lint-doc-links.yml");
+      fs.mkdirSync(path.dirname(workflowPath), { recursive: true });
+      fs.writeFileSync(
+        workflowPath,
+        makeWorkflow([
+          ...installPinnedLycheeStep,
+          "      - name: Probe external link liveness",
+          "        run: >-",
+          "          lychee",
+          "          -c .lychee.toml",
+          "          --scheme https",
+          "          --scheme http",
+          '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+        ]),
+        "utf8"
+      );
+
+      const violations = validateWorkflow(workflowPath, {
+        repoRoot: tempDir,
+        isIgnoredPathFn: () => false
+      });
+
+      expect(
+        violations.some((violation) => violation.message.includes("--accept-timeouts=true"))
+      ).toBe(true);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("validateWorkflow reports advisory lychee timeout acceptance", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-lychee-"));
+    try {
+      const workflowPath = path.join(tempDir, ".github", "workflows", "markdown-link-validity.yml");
+      fs.mkdirSync(path.dirname(workflowPath), { recursive: true });
+      fs.writeFileSync(
+        workflowPath,
+        makeWorkflow([
+          ...installPinnedLycheeStep,
+          "      - name: Scan external links (advisory)",
+          "        id: lychee",
+          "        run: |",
+          "          set +e",
+          "          lychee \\",
+          "            -c .lychee.toml \\",
+          "            --scheme https \\",
+          "            --scheme http \\",
+          "            --accept-timeouts=true \\",
+          '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
+          '          exit_code="${?}"',
+          '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
+          "          exit 0"
+        ]),
+        "utf8"
+      );
+
+      const violations = validateWorkflow(workflowPath, {
+        repoRoot: tempDir,
+        isIgnoredPathFn: () => false
+      });
+
+      expect(
+        violations.some((violation) =>
+          violation.message.includes("timeout reporting must stay enabled")
+        )
+      ).toBe(true);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("findRequiredWorkflowFileViolations", () => {
+  test("accepts the required active docs link workflows when both are present", () => {
+    const violations = findRequiredWorkflowFileViolations([
+      "lint-doc-links.yml",
+      "markdown-link-validity.yml"
+    ]);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("fails closed when required docs link workflows are missing", () => {
+    const violations = findRequiredWorkflowFileViolations(["unity-tests.yml"]);
+
+    expect(violations).toHaveLength(2);
+    expect(violations.map((violation) => violation.file)).toEqual([
+      ".github/workflows/lint-doc-links.yml",
+      ".github/workflows/markdown-link-validity.yml"
+    ]);
+    expect(violations.every((violation) => violation.pattern === "required workflow file")).toBe(
+      true
+    );
   });
 });
 

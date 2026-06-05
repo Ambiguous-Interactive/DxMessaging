@@ -43,6 +43,7 @@
     "dxmessaging",
     "DxUnsafe",
     "UnsafeUtility",
+    "fsmonitor",
     "greppable",
     "hermeticity",
     "HKLM",

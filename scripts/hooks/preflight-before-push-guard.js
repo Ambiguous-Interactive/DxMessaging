@@ -57,6 +57,11 @@
  *      exit 0. The guard NEVER relies on its exit code to block (that is
  *      PostToolUse semantics); if a CLI version ignores `deny`, the native
  *      git hook still gates the operation.
+ *   9. After a successful push guard with a resolved merge-base and no
+ *      caller-provided SKIP, write a pre-push validation stamp for that
+ *      validated committed range. The native hook may use it only when Git's
+ *      exact pre-push stdin range matches that validated range; otherwise the
+ *      native range validator still runs.
  *
  * All child-process spawns route through `spawnPlatformCommandSync`
  * (scripts/lib/shell-command.js); no raw spawn, no shell.
@@ -150,6 +155,12 @@ function resolveRepoRoot() {
  */
 function shouldSkip(env = process.env) {
   return !!env && env.DXMSG_PREFLIGHT_ACTIVE === "1";
+}
+
+function hasCallerSkip(env = process.env) {
+  return String((env && env.SKIP) || "")
+    .split(",")
+    .some((entry) => entry.trim().length > 0);
 }
 
 /**
@@ -913,6 +924,20 @@ function run(stdinPayload, deps = {}) {
     } catch (_error) {
       // Best-effort speed path only. A failed stamp write must not change the
       // guard decision; the native hook will run normally.
+    }
+  } else if (
+    operation === "push" &&
+    status.kind === "ok" &&
+    report &&
+    typeof report.mergeBase === "string" &&
+    report.mergeBase.length > 0 &&
+    !hasCallerSkip(env)
+  ) {
+    try {
+      writeStampFn(repoRoot, "pre-push", { validatedFrom: report.mergeBase });
+    } catch (_error) {
+      // Best-effort speed path only. A failed stamp write must not change the
+      // guard decision; the native hook will run normal range validation.
     }
   }
 

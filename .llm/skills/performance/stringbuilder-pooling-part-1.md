@@ -145,7 +145,6 @@ public static StringBuilder GetThreadLocal()
 ## Related Patterns
 
 - [Collection Pooling](./collection-pooling.md) - General collection pooling
-- [GC-Free String Formatting](./gc-free-string-formatting.md) - Advanced string techniques
 
 ## See Also
 

@@ -1,7 +1,6 @@
 /**
  * @fileoverview Tests for scripts/run-prepush-parallel.js -- the optimized
- * parallel executor of the full pre-push parity set used by the native
- * pre-push hook.
+ * parallel executor of the full CI/manual pre-push parity set.
  *
  * Behavior tests use an injected async spawn (no real child processes, so
  * OS-independent). The DRIFT-GUARD tests are the load-bearing ones: they prove
@@ -290,8 +289,7 @@ describe("extras completeness -- no preflight-only check dropped", () => {
   test("EVERY safe serial preflight:pre-push step is covered by the parallel plan", () => {
     // run-prepush-parallel.js claims parity with preflight:pre-push, which is
     // `preflight:pre-commit && check:cspell:all && <inline --hook-stage pre-push
-    // --all-files>`, now encoded in scripts/run-prepush-preflight.js so the
-    // success stamp is impossible to run without the preceding checks. The
+    // --all-files>`, now encoded in scripts/run-prepush-preflight.js. The
     // pre-commit accounting above covers the first; this guards a NEW step
     // added DIRECTLY to that runner from silently drifting past the parallel
     // orchestrator.

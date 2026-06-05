@@ -561,6 +561,11 @@ fi
 # standalone maps -testPlatform to StandaloneLinux64, which builds AND runs the
 # IL2CPP player in one pass (no separate build-log.txt, no executeMethod).
 UNITY_CMD_INNER="$(build_editor_cmd_inner)"
+# Delete any STALE results.xml before the run so the "honor the FILE on a non-zero
+# exit" branch below can only ever honor results THIS run wrote -- never a prior
+# run's leftover (a stale passing file + a newly-FAILED run would otherwise report
+# a false green). Mirrors run-ci-tests.ps1's delete-before-run discipline.
+rm -f "${RESULTS_PATH}"
 docker "${DOCKER_BASE_ARGS[@]}" "${IMAGE_REF}" \
     bash -c "${UNITY_CMD_INNER}" \
     || EXIT_CODE=$?
@@ -677,7 +682,23 @@ if [[ "${EXIT_CODE}" -ne 0 ]]; then
     fi
 fi
 
-# Surface a non-zero exit when either Unity OR the summary check failed.
+# The results.xml is the SOURCE OF TRUTH. When the validator says the run passed
+# (SUMMARY_EXIT 0), a non-zero Unity/docker exit is a benign post-work shutdown
+# crash (Unity can fault in a background thread during teardown AFTER RunFinished
+# wrote the file) -- honor the FILE and pass with a warning, never turn a passing
+# run red on the shutdown exit code. Otherwise a non-zero Unity exit still fails
+# (preferred over the summary's generic missing-file code so the operator sees the
+# real exit / activation cause), and a clean Unity exit defers to the summary
+# (which fails loudly on a missing / zero-test / unparseable results.xml).
+if [[ "${SUMMARY_EXIT}" -eq 0 ]] && [[ "${EXIT_CODE}" -ne 0 ]]; then
+    printf '%sWARNING run-tests: Unity exited with code %s but wrote a valid passing results.xml at %s; honoring the FILE as the source of truth (benign post-work shutdown crash).%s\n' \
+        "${C_YELLOW}" "${EXIT_CODE}" "${RESULTS_PATH}" "${C_NC}"
+    if [[ "${CI:-false}" == "true" ]]; then
+        printf '::warning::run-tests: Unity exited with code %s but wrote a valid passing results.xml for %s/%s; honoring the FILE as the source of truth (benign post-work shutdown crash)\n' \
+            "${EXIT_CODE}" "${PLATFORM}" "${UNITY_VERSION_RESOLVED}"
+    fi
+    exit 0
+fi
 if [[ "${EXIT_CODE}" -ne 0 ]]; then
     exit "${EXIT_CODE}"
 fi

@@ -122,6 +122,8 @@ __pycache__.meta
 .yamllint.yaml
 .cspell.json
 .lychee.toml
+.lycheecache
+lychee/
 .csharpierignore
 .csharpierrc.json
 .cursorrules

@@ -1692,16 +1692,36 @@ describe("scripts/unity direct CI runner contract", () => {
       const standaloneValidateIdx = runCi.indexOf(
         'Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion standalone" -LogPath $playerLogPath'
       );
+      // The standalone player path also threads the player's exit code into the
+      // FILE validator as advisory (a passing results.xml with a non-zero player
+      // exit is still green, with a benign-crash warning). On a watchdog TIMEOUT
+      // the inline notice already explains the kill, so 0 is threaded instead (no
+      // double-warning / no mislabeling the 124 sentinel as a crash).
+      expect(runCi).toContain(
+        'Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion standalone" -LogPath $playerLogPath -Project $ProjectPath -UnityExitCode $playerExitForValidation'
+      );
+      expect(runCi).toContain("$playerExitForValidation = $playerResult.ExitCode");
+      expect(runCi).toMatch(/if \(\$playerResult\.TimedOut\)[\s\S]*?\$playerExitForValidation = 0/);
       expect(playerCallIdx).toBeGreaterThan(-1);
       expect(standaloneValidateIdx).toBeGreaterThan(-1);
       // INDEX-ORDER: the player runs before the file validation.
       expect(playerCallIdx).toBeLessThan(standaloneValidateIdx);
-      // editmode/playmode still use the single -runTests editor invocation (byte
-      // unchanged: same Invoke-UnityEditorWithFailureDiagnostics + Test-NUnitResults
-      // on $logPath, not $playerLogPath).
+      // editmode/playmode use the single -runTests editor invocation and validate
+      // the FILE. The editor runs via Invoke-UnityEditor (which RETURNS the exit
+      // code, NOT throws), and Test-NUnitResults is the gate -- it receives the
+      // captured -UnityExitCode so the FILE, never the process exit code, decides
+      // pass/fail (a passing results.xml with a non-zero shutdown-crash exit is
+      // still green, with a benign-crash warning).
       expect(runCi).toContain(
-        'Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath'
+        'Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath -UnityExitCode $runExit'
       );
+      expect(runCi).toContain(
+        '$runExit = Invoke-UnityEditor `'
+      );
+      // The retired throw-on-non-zero wrapper must be GONE as a DEFINITION (the
+      // exit code is no longer a fatal trigger; the artifact is). A historical
+      // mention in a comment is allowed; a live `function ...` definition is not.
+      expect(runCi).not.toMatch(/function\s+Invoke-UnityEditorWithFailureDiagnostics\b/);
 
       // MAJOR-fix contract: on a player watchdog TIMEOUT the caller honors the results
       // FILE as the source of truth when one exists (a deferred Application.Quit after
@@ -1717,10 +1737,11 @@ describe("scripts/unity direct CI runner contract", () => {
       expect(guardRegion).toMatch(/timed out after \$playerTimeoutSeconds/);
     });
 
-    test("the standalone configure step (New-ConfiguratorSource) is UNCHANGED -- no waitForManagedDebugger / ConnectWithProfiler", () => {
-      // All connection suppression moved to the generated build modifier; the
-      // configurator must stay byte-identical (switch target + IL2CPP + NET_Standard
-      // only). A profiler/debugger PlayerSetting here would be the rejected,
+    test("the standalone configure step (New-ConfiguratorSource) configures IL2CPP and writes a success marker -- no waitForManagedDebugger / ConnectWithProfiler", () => {
+      // All connection suppression lives in the generated build modifier; the
+      // configurator does exactly three PlayerSettings mutations (switch target +
+      // IL2CPP + NET_Standard) PLUS writes the success marker as its FINAL action.
+      // A profiler/debugger PlayerSetting here would be the rejected,
       // cross-version-fragile design.
       const body = extractFunctionBody(runCi, "New-ConfiguratorSource");
       expect(body).not.toBe("");
@@ -1729,6 +1750,17 @@ describe("scripts/unity direct CI runner contract", () => {
       expect(body).toContain("SwitchActiveBuildTarget");
       expect(body).toContain("ScriptingImplementation.IL2CPP");
       expect(body).toContain("ApiCompatibilityLevel.NET_Standard_2_0");
+      // SOURCE-OF-TRUTH MARKER: Apply writes the marker handed in via
+      // DXM_CONFIGURE_MARKER_PATH as its final action, so a benign Unity shutdown
+      // crash AFTER configuration cannot fail the job (the runner gates on the
+      // marker, not the process exit code).
+      expect(body).toContain("DXM_CONFIGURE_MARKER_PATH");
+      expect(body).toContain("File.WriteAllText(markerPath");
+      // And the marker write must come AFTER the three PlayerSettings mutations
+      // (it proves Apply ran to COMPLETION).
+      expect(body.indexOf("File.WriteAllText(markerPath")).toBeGreaterThan(
+        body.indexOf("ApiCompatibilityLevel.NET_Standard_2_0")
+      );
     });
 
     test("New-StandaloneBuildModifierSource emits the dual-attribute modifier + cleanup", () => {

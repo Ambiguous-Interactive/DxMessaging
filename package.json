@@ -106,6 +106,7 @@
     "validate:llms-txt": "npm run test:llms-txt && npm run check:llms-txt",
     "validate:no-plan-vocabulary": "node scripts/validate-no-plan-vocabulary.js",
     "validate:node-tooling": "node scripts/validate-node-tooling.js",
+    "validate:dependency-parity": "node scripts/validate-dependency-version-parity.js",
     "repair:pre-commit": "node scripts/ensure-pre-commit.js",
     "repair:node-tooling": "node scripts/repair-node-tooling.js",
     "validate:npm-meta": "node scripts/validate-npm-meta.js --check",
@@ -124,12 +125,12 @@
     "prepack": "node scripts/validate-npm-meta.js --check"
   },
   "devDependencies": {
-    "cspell": "10.0.0",
-    "cspell-lib": "10.0.0",
+    "cspell": "10.0.1",
+    "cspell-lib": "10.0.1",
     "jest": "^30.4.2",
     "markdownlint-cli2": "0.22.1",
     "prettier": "3.8.3",
-    "yaml": "2.8.4"
+    "yaml": "2.9.0"
   },
   "samples": [
     {

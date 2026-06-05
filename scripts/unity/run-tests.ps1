@@ -387,23 +387,40 @@ Set UNITY_EDITOR_PATH to your Unity.exe path, for example:
     # finally, which would leak the seat.
     $exitToUse = 0
     try {
+        # Delete any STALE results.xml before the run so the "honor the FILE on a
+        # non-zero exit" branch below can only ever honor results THIS run wrote --
+        # never a prior run's leftover (a stale passing file + a newly-FAILED run
+        # would otherwise report a false green). Mirrors run-ci-tests.ps1's
+        # delete-before-run discipline.
+        if (Test-Path -LiteralPath $Results -PathType Leaf) {
+            Remove-Item -LiteralPath $Results -Force
+        }
         # SECURITY: the serial/email/password ride in $unityArgs (when $useSerial),
         # so this site must NEVER echo $unityArgs and the Unity log on stdout is the
         # only sink (no creds are written to a separate file by us).
         & $unityPath @unityArgs 2>&1 | Tee-Object -FilePath (Join-Path $ArtifactsDir 'log.txt')
         $UnityExit = $LASTEXITCODE
+        # The results.xml is the SOURCE OF TRUTH: validate it regardless of the
+        # editor's exit code. Write-ResultsSummary returns 0 (valid + passing),
+        # 1 (failing), or 2 (missing / unparseable / zero tests). A non-zero editor
+        # exit with a valid passing file is a benign post-work shutdown crash (Unity
+        # can fault in a background thread during teardown AFTER RunFinished wrote
+        # the file -- the 0xC0000005 DirectoryMonitor class); honor the FILE and warn,
+        # never turn a passing run red on the shutdown exit code. A non-zero exit
+        # that wrote NO file surfaces the editor code (more informative than the
+        # summary's generic "missing" 2).
+        $exitToUse = Write-ResultsSummary -ResultsXml $Results
         if ($UnityExit -ne 0) {
-            if (-not (Test-Path $Results)) {
-                Write-Host "No results.xml at $Results" -ForegroundColor Yellow
+            if ($exitToUse -eq 0) {
+                $warn = "run-tests: Unity exited with code $UnityExit but wrote a valid passing results.xml at $Results; honoring the FILE as the source of truth (benign post-work shutdown crash)."
+                Write-Host $warn -ForegroundColor Yellow
+                if ($env:CI -eq 'true') { Write-Host "::warning::$warn" }
+            } elseif (-not (Test-Path $Results)) {
+                Write-Host "Unity exited with code $UnityExit and wrote no results.xml at $Results." -ForegroundColor Red
+                $exitToUse = $UnityExit
+            } else {
+                Write-Host "Unity exited with code $UnityExit." -ForegroundColor Red
             }
-            Write-Host "Unity exited with code $UnityExit." -ForegroundColor Red
-            $exitToUse = $UnityExit
-        } else {
-            # Unity exited 0; route through the shared validator so the local path
-            # fails loudly on a missing results.xml or zero tests (total=0),
-            # exactly like the docker path. Write-ResultsSummary returns 2 for
-            # those cases.
-            $exitToUse = Write-ResultsSummary -ResultsXml $Results
         }
     } finally {
         # Return the seat on EVERY exit path (clean exit, test failure, throw, or
@@ -809,6 +826,13 @@ if ($Platform -eq 'standalone') {
 # standalone maps -testPlatform to StandaloneLinux64, which builds AND runs the
 # IL2CPP player in one pass (no separate build-log.txt, no executeMethod).
 $UnityCmdInner = Get-EditorCommandInner
+# Delete any STALE results.xml before the run so the "honor the FILE on a non-zero
+# exit" branch below can only ever honor results THIS run wrote -- never a prior
+# run's leftover (a stale passing file + a newly-FAILED run would otherwise report
+# a false green). Mirrors run-ci-tests.ps1's delete-before-run discipline.
+if (Test-Path -LiteralPath $Results -PathType Leaf) {
+    Remove-Item -LiteralPath $Results -Force
+}
 & $DockerCommand @dockerBaseArgs $ImageRef bash -c $UnityCmdInner
 $ExitCode = $LASTEXITCODE
 
@@ -835,7 +859,20 @@ if ($ExitCode -ne 0) {
     }
 }
 
-# Surface a non-zero exit when either Unity OR the summary check failed.
+# The results.xml is the SOURCE OF TRUTH. When the validator says the run passed
+# (SummaryExit 0), a non-zero Unity/docker exit is a benign post-work shutdown
+# crash (Unity can fault in a background thread during teardown AFTER RunFinished
+# wrote the file) -- honor the FILE and pass with a warning, never turn a passing
+# run red on the shutdown exit code. Otherwise a non-zero Unity exit still fails
+# (preferred over the summary's generic missing-file code so the operator sees the
+# real exit / activation cause), and a clean Unity exit defers to the summary
+# (which fails loudly on a missing / zero-test / unparseable results.xml).
+if ($SummaryExit -eq 0 -and $ExitCode -ne 0) {
+    $warn = "run-tests: Unity exited with code $ExitCode but wrote a valid passing results.xml at $Results; honoring the FILE as the source of truth (benign post-work shutdown crash)."
+    Write-Host $warn -ForegroundColor Yellow
+    if ($env:CI -eq 'true') { Write-Host "::warning::$warn" }
+    exit 0
+}
 if ($ExitCode -ne 0) {
     exit $ExitCode
 }

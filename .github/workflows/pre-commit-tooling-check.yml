@@ -188,6 +188,7 @@ jobs:
         run: npm run preflight:pre-push
 
       - name: Diagnose managed Jest fallback environment
+        if: ${{ !cancelled() }}
         # Quick diagnostic-only step (node --version + 5-line script). Add a
         # per-step timeout so a wedged probe is obvious in CI logs.
         timeout-minutes: 2
@@ -208,9 +209,11 @@ jobs:
           NODE
 
       - name: Remove managed Jest runner to force fallback path
+        if: ${{ !cancelled() }}
         run: node scripts/verify-managed-jest-fallback.js --force-delete-managed-runner
 
       - name: Confirm managed Jest runner was removed
+        if: ${{ !cancelled() }}
         # Quick assertion (filesystem stat + 8-line script). Add timeout.
         timeout-minutes: 2
         shell: bash
@@ -232,6 +235,7 @@ jobs:
           NODE
 
       - name: Diagnose isolated Jest fallback resolution inputs
+        if: ${{ !cancelled() }}
         # DXMSG_HOOK_NO_AUTOREPAIR=1: this diagnostic step runs immediately
         # after the previous step deleted node_modules/jest-circus/build/runner.js
         # to force the isolated-fallback path. The production integrity gate
@@ -286,6 +290,7 @@ jobs:
           NODE
 
       - name: Assert isolated Jest fallback path is active
+        if: ${{ !cancelled() }}
         # DXMSG_HOOK_NO_AUTOREPAIR=1: the previous "Remove managed Jest runner
         # to force fallback path" step deletes node_modules/jest-circus/build/runner.js.
         # Production scripts/run-managed-jest.js (correctly) repairs that via
@@ -331,6 +336,7 @@ jobs:
           # scripts/__tests__/run-managed-jest-no-injected-test-runner.test.js.
 
       - name: Verify managed Jest fallback test
+        if: ${{ !cancelled() }}
         # Unlike the two steps above, this step runs WITHOUT DXMSG_HOOK_NO_AUTOREPAIR,
         # so its integrity probe takes the auto-repair path: the local jest-circus
         # runner was deleted earlier, so run-managed-jest.js runs `npm ci` to

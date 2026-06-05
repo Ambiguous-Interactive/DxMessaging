@@ -312,6 +312,71 @@ describe("computeChangeSet (change-set unit, fake git)", () => {
     expect(calls.some(isUntracked)).toBe(true);
   });
 
+  test("explicit range skips base discovery and uses rangeFrom..rangeTo", () => {
+    const { fn, calls } = makeFakeGit({
+      rules: [
+        {
+          when: (a) => a[0] === "diff" && a.includes("old") && a.includes("new"),
+          result: { status: 0, stdout: "M\u0000range.cs\u0000" }
+        },
+        { when: isStagedDiff, result: { status: 0, stdout: "" } },
+        { when: isUnstagedDiff, result: { status: 0, stdout: "" } },
+        { when: isUntracked, result: { status: 0, stdout: "" } }
+      ]
+    });
+
+    const cs = computeChangeSet({
+      runGitFn: fn,
+      rangeFrom: "old",
+      rangeTo: "new",
+      scope: "full"
+    });
+
+    expect(cs.scope).toBe("range");
+    expect(cs.base).toBe("old");
+    expect(cs.mergeBase).toBe("old");
+    expect(cs.rangeTo).toBe("new");
+    expect(cs.sources.committed).toEqual(["range.cs"]);
+    expect(calls.some((a) => a[0] === "rev-parse")).toBe(false);
+    expect(calls.some(isMergeBase)).toBe(false);
+    expect(calls).toContainEqual([
+      "diff",
+      "--name-status",
+      "--diff-filter=ACMR",
+      "-z",
+      "old",
+      "new"
+    ]);
+  });
+
+  test("noWorktree skips staged, unstaged, and untracked scans", () => {
+    const { fn, calls } = makeFakeGit({
+      rules: [
+        {
+          when: (a) => a[0] === "diff" && a.includes("old") && a.includes("new"),
+          result: { status: 0, stdout: "M\u0000range.cs\u0000" }
+        }
+      ]
+    });
+
+    const cs = computeChangeSet({
+      runGitFn: fn,
+      rangeFrom: "old",
+      rangeTo: "new",
+      noWorktree: true
+    });
+
+    expect(cs.files).toEqual(["range.cs"]);
+    expect(cs.sources.staged).toEqual([]);
+    expect(cs.sources.unstaged).toEqual([]);
+    expect(cs.sources.untracked).toEqual([]);
+    expect(calls.some(isStagedDiff)).toBe(false);
+    expect(calls.some(isUntracked)).toBe(false);
+    expect(calls).toEqual([
+      ["diff", "--name-status", "--diff-filter=ACMR", "-z", "old", "new"]
+    ]);
+  });
+
   test("two-pass decision inputs: committed populated ONLY when base + merge-base resolve", () => {
     // With a base + merge-base + committed content, sources.committed is
     // non-empty (preflight.js then runs BOTH passes when working files exist).

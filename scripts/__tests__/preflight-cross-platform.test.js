@@ -3,6 +3,7 @@
  * the change-aware preflight engine and its hooks (design 7.4).
  *
  *   1. SOURCE-SCAN spawn policy: scripts/preflight.js, scripts/lib/changed-files.js,
+ *      scripts/run-native-prepush.js, scripts/configure-local-git-performance.js,
  *      scripts/hooks/preflight-before-push-guard.js, and
  *      scripts/hooks/preflight-on-stop.js must route EVERY child spawn through
  *      spawnPlatformCommandSync (or buildSpawnInvocation). No raw
@@ -53,6 +54,8 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCANNED_FILES = [
   "scripts/preflight.js",
   "scripts/lib/changed-files.js",
+  "scripts/run-native-prepush.js",
+  "scripts/configure-local-git-performance.js",
   "scripts/hooks/preflight-before-push-guard.js",
   "scripts/hooks/preflight-on-stop.js"
 ];

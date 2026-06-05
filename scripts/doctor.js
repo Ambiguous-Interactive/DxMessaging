@@ -79,6 +79,10 @@ const shellCommand = require("./lib/shell-command");
 const { isTruthyEnv } = require("./lib/jest-error-decoder");
 const { ISOLATED_JEST_CACHE_ROOT, hasHealthyLocalJestInstall } = require("./run-managed-jest");
 const { INTEGRITY_TARGETS, probeIntegrity } = require("./lib/node-modules-integrity");
+const {
+  probeDependencyVersionParity,
+  formatDriftLines
+} = require("./lib/dependency-version-parity");
 const { runChangedDocValidators } = require("./validate-changed-docs");
 const { findPython, probePreCommitModule } = require("./ensure-pre-commit");
 
@@ -146,6 +150,18 @@ function statusToExitCode(status) {
   return status === "fail" ? 1 : 0;
 }
 
+function isDependencyVersionParityResult(result) {
+  return (
+    result !== null &&
+    typeof result === "object" &&
+    !Array.isArray(result) &&
+    typeof result.ok === "boolean" &&
+    Number.isInteger(result.checked) &&
+    result.checked >= 0 &&
+    Array.isArray(result.drifted)
+  );
+}
+
 /**
  * 1. Node modules freshness -- for each entry in validate-node-tooling's
  *    TOOL_SPECS, report a resolve + exists + load triple.
@@ -159,6 +175,7 @@ function checkNodeModulesFreshness(options = {}) {
     toolSpecs = TOOL_SPECS,
     integrityTargets = INTEGRITY_TARGETS,
     probeIntegrityFn = probeIntegrity,
+    probeDependencyVersionParityFn = probeDependencyVersionParity,
     repoRoot = REPO_ROOT
   } = options;
 
@@ -290,16 +307,69 @@ function checkNodeModulesFreshness(options = {}) {
     }
   }
 
-  if (failed > 0) {
+  // Dependency VERSION parity (offline): exact-pinned direct deps must match
+  // package.json on disk + in the local lockfile; range pins must be
+  // satisfied. Catches the gitignored-lockfile drift class that file-presence
+  // probes structurally cannot (cspell-lib 10.0.0-vs-10.0.1). Reconcile is
+  // `npm install` (not `npm ci`) because the lockfile is gitignored and may be
+  // stale; `repair:node-tooling` does this automatically.
+  let parityFailed = 0;
+  try {
+    const parity = probeDependencyVersionParityFn({ repoRoot });
+    if (!isDependencyVersionParityResult(parity)) {
+      parityFailed = 1;
+      lines.push("  FAIL  dependency version parity");
+      lines.push("          - parity probe returned invalid result");
+    } else if (parity.ok) {
+      lines.push(`  ok    dependency version parity (${parity.checked} pinned deps)`);
+    } else {
+      parityFailed = 1;
+      lines.push("  FAIL  dependency version parity");
+      for (const line of formatDriftLines(parity)) {
+        lines.push(`          - ${line}`);
+      }
+      lines.push(
+        "          Reconcile: run `npm run repair:node-tooling` (or `npm install`) to align " +
+          "node_modules + the local lockfile with package.json."
+      );
+    }
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error);
+    parityFailed = 1;
+    lines.push("  FAIL  dependency version parity");
+    lines.push(`          - parity probe threw: ${detail}`);
+  }
+
+  if (failed > 0 || parityFailed > 0) {
     lines.push("");
-    lines.push(
-      "  Remediation: run `npm ci` to restore node_modules, then re-run `npm run doctor`."
-    );
+    if (failed > 0 && parityFailed > 0) {
+      lines.push(
+        "  Remediation: run `npm run repair:node-tooling` first, or run `npm install` to reconcile dependency versions;"
+      );
+      lines.push(
+        "              then re-run `npm run doctor` before trying any integrity-only repair."
+      );
+    } else if (parityFailed > 0) {
+      lines.push(
+        "  Remediation: run `npm run repair:node-tooling` (or `npm install`) to align node_modules"
+      );
+      lines.push(
+        "              and the local lockfile with package.json, then re-run `npm run doctor`."
+      );
+    } else {
+      lines.push(
+        "  Remediation: run `npm run repair:node-tooling` to restore node_modules, then re-run `npm run doctor`."
+      );
+      lines.push(
+        "              If repair reports integrity corruption and cannot complete, `npm ci --no-audit --no-fund`"
+      );
+      lines.push("              can re-extract node_modules from the local lockfile.");
+    }
   }
 
   return {
     name: "node_modules freshness",
-    status: failed === 0 ? "ok" : "fail",
+    status: failed === 0 && parityFailed === 0 ? "ok" : "fail",
     lines
   };
 }

@@ -208,7 +208,7 @@ For test coverage patterns specific to PowerShell scripts, see [Script Test Cove
 - [Cross-Platform Compatibility](./cross-platform-compatibility.md) - Case sensitivity patterns
 - [Script Test Coverage](../testing/script-test-coverage.md) - Script test coverage requirements
 - [Git Workflow Robustness](../testing/git-workflow-robustness.md) - Git command patterns
-- [Shell Pattern Matching](../../context.md#shell-pattern-matching) - Main context file patterns
+- [Script and Automation Conventions](../../context.md#script-and-automation-conventions) - Main context file patterns
 
 ## Changelog
 

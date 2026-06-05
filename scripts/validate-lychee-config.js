@@ -2,7 +2,7 @@
 /**
  * validate-lychee-config.js
  *
- * Validates .lychee.toml configuration against lychee v0.23.0's valid field list.
+ * Validates .lychee.toml configuration against lychee v0.24.2's valid field list.
  * Catches deprecated or misspelled fields before they break CI.
  *
  * @usage
@@ -32,8 +32,8 @@ const {
 
 const CONFIG_PATH = path.join(__dirname, "..", ".lychee.toml");
 
-// SYNC: Keep in sync with lychee v0.23.0 valid configuration fields.
-// Source: https://github.com/lycheeverse/lychee/blob/master/lychee.example.toml
+// SYNC: Keep in sync with lychee v0.24.2 valid configuration fields.
+// Source: https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee.example.toml
 // SYNC: Tests in validate-lychee-config.test.js VALID_FIELDS describe block reference this constant
 const VALID_FIELDS = new Set([
   "accept",
@@ -99,8 +99,8 @@ const VALID_FIELDS = new Set([
   "verbose"
 ]);
 
-// SYNC: Keep in sync with lychee v0.23.0 valid verbose values.
-// Source: https://github.com/lycheeverse/lychee/blob/master/lychee.example.toml
+// SYNC: Keep in sync with lychee v0.24.2 valid verbose values.
+// Source: https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee.example.toml
 // SYNC: Tests in validate-lychee-config.test.js validateFieldValues describe block reference this constant
 const VALID_VERBOSE_VALUES = ["error", "warn", "info", "debug", "trace"];
 
@@ -342,18 +342,34 @@ function normalizeTomlScalar(value) {
   return hasMatchingBoundaryQuotes(value) ? stripMatchingBoundaryQuotes(value) : value.trim();
 }
 
+// Does an `accept` entry cover `status`? Mirrors lychee's range grammar
+// `[start]..[[=]end] | code`: a bare code, a bounded range (`200..299` exclusive,
+// `200..=299` inclusive), OR an open-ended range (`500..`, `..404`, `..=410`).
+// Open-ended forms matter for the policy guard: a contributor who writes
+// `accept = ["404.."]` or `["..=599"]` would otherwise silently re-accept 404/410.
 function acceptsHttpStatus(item, status) {
   const value = normalizeTomlScalar(item);
-  const exact = value.match(/^\d+$/);
-  if (exact) {
+  if (/^\d+$/.test(value)) {
     return Number.parseInt(value, 10) === status;
   }
 
-  const range = value.match(/^(\d+)\s*\.\.=?\s*(\d+)$/);
+  const range = value.match(/^(\d*)\s*\.\.(=?)\s*(\d*)$/);
   if (range) {
-    const start = Number.parseInt(range[1], 10);
-    const end = Number.parseInt(range[2], 10);
-    return start <= status && status <= end;
+    const [, startRaw, inclusiveEnd, endRaw] = range;
+    // Bare `..` (no bounds) is lychee's match-ALL: it accepts every status code,
+    // 404 and 410 included. Report it as a match so the policy guard rejects it --
+    // an accept-all entry would otherwise silently re-hide the gone statuses.
+    if (startRaw === "" && endRaw === "") {
+      return true;
+    }
+    if (startRaw !== "" && status < Number.parseInt(startRaw, 10)) {
+      return false;
+    }
+    if (endRaw === "") {
+      return true; // open upper bound; lower bound already satisfied
+    }
+    const end = Number.parseInt(endRaw, 10);
+    return inclusiveEnd === "=" ? status <= end : status < end;
   }
 
   return false;
@@ -384,6 +400,11 @@ function parseTomlForLycheeValidation(content) {
   const keyValues = [];
   const lines = normalizeToLf(content).split("\n");
   let currentTable = null;
+  // Tracks open-bracket depth across lines so that elements of a MULTILINE array
+  // are not mistaken for `key = value` assignments. Without this, an element like
+  // `"200..=299",` (which contains `=`) is parsed as a bogus top-level key
+  // `200..`. Single-line arrays self-close on their own line (delta nets to 0).
+  let arrayDepth = 0;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -393,6 +414,13 @@ function parseTomlForLycheeValidation(content) {
 
     const lineWithoutComment = stripInlineTomlComment(trimmed).trim();
     if (lineWithoutComment === "") {
+      continue;
+    }
+
+    // Inside an open multiline array: this line is an element or the closing
+    // bracket, never a key. Update depth and skip.
+    if (arrayDepth > 0) {
+      arrayDepth = Math.max(0, arrayDepth + bracketDeltaOutsideQuotes(lineWithoutComment));
       continue;
     }
 
@@ -417,6 +445,10 @@ function parseTomlForLycheeValidation(content) {
     }
 
     const value = lineWithoutComment.slice(equalsIndex + 1).trim();
+    // If this assignment opens a multiline array (`key = [` with the closing
+    // bracket on a later line), record the depth so subsequent element lines are
+    // skipped rather than parsed as keys. A single-line array nets to 0.
+    arrayDepth = Math.max(0, arrayDepth + bracketDeltaOutsideQuotes(value));
     const keySegments = splitTomlPath(rawKey);
     if (keySegments.length === 0) {
       continue;
@@ -512,23 +544,70 @@ function validateFieldValues(keyValues) {
   return { errors, warnings };
 }
 
+// Status codes whose acceptance would hide a genuinely-dead link (the server
+// reports the resource does not exist). These must NEVER appear in `accept`.
+const FORBIDDEN_ACCEPT_STATUSES = [404, 410];
+// Status codes that MUST be accepted: external sites routinely return these to CI
+// bots (WAF / bot detection / rate limiting) even though the page is fine for a
+// human. Omitting them reintroduces the per-domain whack-a-mole this policy
+// exists to retire (the original CI failure was a 403 from www.w3.org).
+const REQUIRED_ACCEPT_STATUSES = [403, 429];
+const SHARED_CONFIG_FORBIDDEN_FIELDS = new Set(["accept_timeouts"]);
+
+/**
+ * Enforce the repository's link-acceptance policy. External link liveness is
+ * non-deterministic, so `accept` is intentionally broad; two invariants keep it
+ * from drifting back into fragility:
+ *   1. 404 and 410 must NOT be accepted (they mean the link is genuinely gone).
+ *   2. 403 and 429 MUST be accepted (bot-detection / rate-limit false positives).
+ */
 function validateStrictLinkPolicy(content) {
   const errors = [];
   const warnings = [];
   const acceptItems = parseRequiredArray(content, "accept", errors);
 
-  if (acceptItems.some(item => acceptsHttpStatus(item, 403))) {
-    errors.push("Invalid value for 'accept': HTTP 403 must not be globally accepted.");
-  }
-
-  const excludeItems = parseRequiredArray(content, "exclude", errors);
-  for (const item of excludeItems) {
-    const value = normalizeTomlScalar(item);
-    if (/webaim/i.test(value)) {
+  for (const status of FORBIDDEN_ACCEPT_STATUSES) {
+    if (acceptItems.some((item) => acceptsHttpStatus(item, status))) {
       errors.push(
-        `Invalid value for 'exclude': broad WebAIM exclusions are not allowed (${item}). Replace flaky links with stable equivalents.`
+        `Invalid value for 'accept': HTTP ${status} must not be accepted -- it means the link is gone, so accepting it hides real breakage.`
       );
     }
+  }
+
+  for (const status of REQUIRED_ACCEPT_STATUSES) {
+    if (!acceptItems.some((item) => acceptsHttpStatus(item, status))) {
+      errors.push(
+        `Invalid value for 'accept': HTTP ${status} must be accepted -- external sites return it to CI bots even when the link is valid; omitting it reintroduces flaky failures.`
+      );
+    }
+  }
+
+  return { errors, warnings };
+}
+
+/**
+ * Enforce repository-specific policy for the shared `.lychee.toml`.
+ *
+ * Some fields are valid lychee v0.24.2 TOML but still unsafe in this shared
+ * config because both the blocking workflow and scheduled advisory scan read it.
+ *
+ * @param {string[]} keys - Array of top-level key names from the TOML file
+ * @returns {{ errors: string[], warnings: string[] }} Validation results
+ */
+function validateSharedConfigPolicy(keys) {
+  const errors = [];
+  const warnings = [];
+  const reported = new Set();
+
+  for (const key of keys) {
+    if (!SHARED_CONFIG_FORBIDDEN_FIELDS.has(key) || reported.has(key)) {
+      continue;
+    }
+
+    reported.add(key);
+    errors.push(
+      `Invalid field '${key}': this repository's shared .lychee.toml must not set accept_timeouts; the blocking workflow passes --accept-timeouts=true, while the scheduled advisory scan must report timeouts.`
+    );
   }
 
   return { errors, warnings };
@@ -546,7 +625,7 @@ function validateFields(keys) {
 
   for (const key of keys) {
     if (!VALID_FIELDS.has(key)) {
-      errors.push(`Invalid field '${key}': not a valid lychee v0.23.0 configuration option`);
+      errors.push(`Invalid field '${key}': not a valid lychee v0.24.2 configuration option`);
     }
   }
 
@@ -598,6 +677,10 @@ function main() {
   errors.push(...strictLinkPolicyResult.errors);
   warnings.push(...strictLinkPolicyResult.warnings);
 
+  const sharedConfigPolicyResult = validateSharedConfigPolicy(keys);
+  errors.push(...sharedConfigPolicyResult.errors);
+  warnings.push(...sharedConfigPolicyResult.warnings);
+
   for (const warning of warnings) {
     console.log(`  Warning: ${warning}`);
   }
@@ -610,7 +693,7 @@ function main() {
     console.log();
     console.log(`Validation failed: ${errors.length} error(s), ${warnings.length} warning(s)`);
     console.log();
-    console.log("Valid lychee v0.23.0 fields:");
+    console.log("Valid lychee v0.24.2 fields:");
     const sortedFields = [...VALID_FIELDS].sort();
     for (const field of sortedFields) {
       console.log(`  - ${field}`);
@@ -622,7 +705,7 @@ function main() {
     console.log();
     console.log(`Validation passed with ${warnings.length} warning(s)`);
   } else {
-    console.log("All fields are valid lychee v0.23.0 configuration options.");
+    console.log("All fields are valid lychee v0.24.2 configuration options.");
   }
 
   return 0;
@@ -630,7 +713,7 @@ function main() {
 
 /**
  * @module validate-lychee-config
- * @description Validates .lychee.toml configuration against lychee v0.23.0's valid field list.
+ * @description Validates .lychee.toml configuration against lychee v0.24.2's valid field list.
  * Used by pre-push hooks and CI pipelines to catch deprecated or misspelled fields.
  *
  * @exports {Function} parseTopLevelKeys - Parses top-level key names from TOML content
@@ -638,7 +721,8 @@ function main() {
  * @exports {Function} validateFields - Validates field names against the known valid set
  * @exports {Function} validateFieldValues - Validates field values against known constraints
  * @exports {Function} validateStrictLinkPolicy - Validates repository-specific strict link policy
- * @exports {Set<string>} VALID_FIELDS - Set of valid lychee v0.23.0 configuration field names
+ * @exports {Function} validateSharedConfigPolicy - Validates shared config repository policy
+ * @exports {Set<string>} VALID_FIELDS - Set of valid lychee v0.24.2 configuration field names
  * @exports {string[]} VALID_VERBOSE_VALUES - Array of valid verbose log level values
  */
 if (typeof module !== "undefined" && module.exports) {
@@ -648,6 +732,7 @@ if (typeof module !== "undefined" && module.exports) {
     validateFields,
     validateFieldValues,
     validateStrictLinkPolicy,
+    validateSharedConfigPolicy,
     VALID_FIELDS,
     VALID_VERBOSE_VALUES
   };

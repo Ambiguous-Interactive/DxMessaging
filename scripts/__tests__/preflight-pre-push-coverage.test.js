@@ -1,6 +1,7 @@
 /**
- * @fileoverview Static enforcement that `npm run preflight:pre-push` covers
- * every hook declared at `stages: pre-push` in `.pre-commit-config.yaml`.
+ * @fileoverview Static enforcement that the explicit CI/manual
+ * `npm run preflight:pre-push` command covers every hook declared at
+ * `stages: pre-push` in `.pre-commit-config.yaml`.
  *
  * Phase 5 of the doctor / preflight rollout. Phase 3 added the chained
  * `preflight:pre-commit` + `pre-commit run --hook-stage pre-push --all-files`
@@ -132,31 +133,27 @@ describe("preflight:pre-push static coverage", () => {
     expect(prePushIndex).toBeGreaterThan(cspellIndex);
   });
 
-  test("preflight:pre-push writes the pre-push skip stamp only after hook parity", () => {
+  test("preflight:pre-push runs exhaustive steps without writing a native skip stamp", () => {
     const calls = [];
     const spawnFn = jest.fn((command, args) => {
       calls.push(stepText({ command, args }));
       return { status: 0 };
     });
-    const writeHookValidationStampFn = jest.fn();
 
-    const status = runPrePushPreflight({ spawnFn, writeHookValidationStampFn });
+    const status = runPrePushPreflight({ spawnFn });
 
     expect(status).toBe(0);
     expect(calls).toEqual(PREPUSH_PREFLIGHT_STEPS.map(stepText));
-    expect(writeHookValidationStampFn).toHaveBeenCalledWith(REPO_ROOT, "pre-push");
   });
 
-  test("preflight:pre-push does not write a skip stamp when any validation step fails", () => {
+  test("preflight:pre-push stops when any validation step fails", () => {
     const spawnFn = jest.fn((_command, args) => ({
       status: args.includes("check:cspell:all") ? 1 : 0
     }));
-    const writeHookValidationStampFn = jest.fn();
 
-    const status = runPrePushPreflight({ spawnFn, writeHookValidationStampFn });
+    const status = runPrePushPreflight({ spawnFn });
 
     expect(status).toBe(1);
-    expect(writeHookValidationStampFn).not.toHaveBeenCalled();
     expect(spawnFn).toHaveBeenCalledTimes(2);
   });
 
@@ -173,9 +170,8 @@ describe("preflight:pre-push static coverage", () => {
         envs.push(options.env);
         return { status: 0 };
       });
-      const writeHookValidationStampFn = jest.fn();
 
-      const status = runPrePushPreflight({ spawnFn, writeHookValidationStampFn });
+      const status = runPrePushPreflight({ spawnFn });
 
       expect(status).toBe(0);
       expect(envs).toHaveLength(PREPUSH_PREFLIGHT_STEPS.length);
@@ -184,7 +180,6 @@ describe("preflight:pre-push static coverage", () => {
         expect(env.skip).toBeUndefined();
         expect(env.SkIp).toBeUndefined();
       }
-      expect(writeHookValidationStampFn).toHaveBeenCalledWith(REPO_ROOT, "pre-push");
     } finally {
       if (originalSkip === undefined) {
         delete process.env.SKIP;
@@ -253,6 +248,13 @@ describe("preflight:pre-push static coverage", () => {
     }
 
     expect(missing).toEqual([]);
+  });
+
+  test("native pre-push does not call the exhaustive CI/manual preflight command", () => {
+    const nativeHook = fs.readFileSync(path.join(REPO_ROOT, "scripts/hooks/pre-push"), "utf8");
+    expect(nativeHook).not.toContain("preflight:pre-push");
+    expect(nativeHook).not.toContain("--all-files");
+    expect(nativeHook).toContain("run-native-prepush");
   });
 
   test("PREFLIGHT_EXEMPT_HOOKS entries reference real hook ids", () => {

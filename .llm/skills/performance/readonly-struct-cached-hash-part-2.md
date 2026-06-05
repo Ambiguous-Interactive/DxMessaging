@@ -97,7 +97,7 @@ _hash = x ^ (y << 2);
 
 ## Related Patterns
 
-- [IEquatable Implementation](./iequatable-implementation.md) - Full equality pattern
+- [IEquatable Usage Examples](../solid/iequatable-implementation-usage.md) - Full equality pattern
 - [Aggressive Inlining](./aggressive-inlining.md) - When to use MethodImpl
 - [Readonly Struct Cached Hash Performance Notes](./readonly-struct-cached-hash-performance-notes.md) - Benchmarks and rationale
 

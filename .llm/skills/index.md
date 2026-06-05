@@ -1,6 +1,6 @@
 # Skills Index
 
-> **Auto-generated** on 2026-06-03. Do not edit manually.
+> **Auto-generated** on 2026-06-04. Do not edit manually.
 > Run `node scripts/generate-skills-index.js` to regenerate.
 
 ---
@@ -9,7 +9,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 169   |
+| Total Skills | 170   |
 | Categories   | 8     |
 
 ---
@@ -20,7 +20,7 @@
 - [GitHub Actions](#github-actions) (8)
 - [Packaging](#packaging) (2)
 - [Performance](#performance) (45)
-- [Scripting](#scripting) (21)
+- [Scripting](#scripting) (22)
 - [Solid](#solid) (15)
 - [Testing](#testing) (38)
 - [Unity](#unity) (10)
@@ -43,12 +43,12 @@
 | [Documentation Style Guide](./documentation/documentation-style-guide.md)                             | [ok] 204   | [basic]        | [stable] | [risk: none] | documentation, style              |
 | [Documentation Update Workflow](./documentation/documentation-update-workflow.md)                     | [ok] 155   | [basic]        | [stable] | [risk: none] | documentation, workflow           |
 | [Documentation Updates and Maintenance](./documentation/documentation-updates.md)                     | [ok] 149   | [basic]        | [stable] | [risk: none] | documentation, code-comments      |
-| [External URL Fragment Validation](./documentation/external-url-fragment-validation.md)               | [ok] 182   | [basic]        | [stable] | [risk: none] | documentation, links              |
+| [External URL Fragment Validation](./documentation/external-url-fragment-validation.md)               | [ok] 191   | [basic]        | [stable] | [risk: none] | documentation, links              |
 | [GitHub Actions Version Consistency](./documentation/github-actions-version-consistency.md)           | [ok] 204   | [basic]        | [stable] | [risk: none] | github-actions, ci-cd             |
 | [Human-Prose Documentation Policy](./documentation/human-prose-policy.md)                             | [ok] 187   | [basic]        | [stable] | [risk: none] | documentation, prose              |
 | [Link Quality and External URL Management](./documentation/link-quality-guidelines.md)                | [ok] 120   | [basic]        | [stable] | [risk: none] | documentation, links              |
-| [Link Quality and External URL Management Part 1](./documentation/link-quality-guidelines-part-1.md)  | [ok] 196   | [intermediate] | [stable] | [risk: low]  | migration, split                  |
-| [Link Quality and External URL Management Part 2](./documentation/link-quality-guidelines-part-2.md)  | [draft] 64 | [intermediate] | [stable] | [risk: low]  | migration, split                  |
+| [Link Quality and External URL Management Part 1](./documentation/link-quality-guidelines-part-1.md)  | [ok] 206   | [intermediate] | [stable] | [risk: low]  | migration, split                  |
+| [Link Quality and External URL Management Part 2](./documentation/link-quality-guidelines-part-2.md)  | [draft] 66 | [intermediate] | [stable] | [risk: low]  | migration, split                  |
 | [Markdown Compatibility Guidelines](./documentation/markdown-compatibility.md)                        | [ok] 136   | [basic]        | [stable] | [risk: none] | documentation, markdown           |
 | [Markdown Compatibility Guidelines Part 1](./documentation/markdown-compatibility-part-1.md)          | [ok] 202   | [intermediate] | [stable] | [risk: low]  | migration, split                  |
 | [Markdown Compatibility Guidelines Part 2](./documentation/markdown-compatibility-part-2.md)          | [ok] 210   | [intermediate] | [stable] | [risk: low]  | migration, split                  |
@@ -70,8 +70,8 @@
 | [Git Renormalize Pattern Validation](./github-actions/git-renormalize-patterns.md)                     | [ok] 232   | [intermediate] | [stable] | [risk: low]    | github-actions, git   |
 | [GitHub Actions Workflow Consistency](./github-actions/workflow-consistency.md)                        | [ok] 183   | [intermediate] | [stable] | [risk: medium] | github-actions, ci-cd |
 | [GitHub Actions Workflow Consistency Part 1](./github-actions/workflow-consistency-part-1.md)          | [ok] 196   | [intermediate] | [stable] | [risk: low]    | migration, split      |
-| [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [ok] 252   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
-| [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 72 | [intermediate] | [stable] | [risk: low]    | migration, split      |
+| [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [warn] 299 | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
+| [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 81 | [intermediate] | [stable] | [risk: low]    | migration, split      |
 | [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 209   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
 | [YAML Line-Length Budget](./github-actions/yaml-line-length.md)                                        | [ok] 169   | [intermediate] | [stable] | [risk: low]    | github-actions, yaml  |
 
@@ -93,7 +93,7 @@
 | [Array Pooling Usage Examples](./performance/array-pooling-usage-examples.md)                                      | [ok] 146    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
 | [Array Pooling with ArrayPool and Custom Pools](./performance/array-pooling.md)                                    | [ok] 121    | [intermediate] | [stable] | [risk: critical] | memory, allocation    |
 | [Array Pooling with ArrayPool and Custom Pools Part 1](./performance/array-pooling-part-1.md)                      | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 58  | [intermediate] | [stable] | [risk: low]      | migration, split      |
+| [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 57  | [intermediate] | [stable] | [risk: low]      | migration, split      |
 | [Auto-Load Singleton Attribute](./performance/singleton-autoload.md)                                               | [draft] 112 | [intermediate] | [stable] | [risk: low]      | unity, singleton      |
 | [Cache Builder Configuration](./performance/cache-eviction-builder.md)                                             | [ok] 204    | [intermediate] | [stable] | [risk: high]     | caching, builder      |
 | [Cache Eviction Implementation](./performance/cache-eviction-implementation.md)                                    | [draft] 91  | [advanced]     | [stable] | [risk: high]     | caching, eviction     |
@@ -105,13 +105,13 @@
 | [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [ok] 218    | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path    |
 | [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 198    | [advanced]     | [stable] | [risk: critical] | memory, reclamation   |
 | [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 186    | [advanced]     | [stable] | [risk: critical] | sweep, eviction       |
-| [Git Hook Performance Budget](./performance/git-hook-performance.md)                                               | [warn] 300  | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |
+| [Git Hook Performance Budget](./performance/git-hook-performance.md)                                               | [warn] 299  | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |
 | [Git Hook Performance: Stages and Tooling](./performance/git-hook-performance-tooling.md)                          | [ok] 240    | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |
 | [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 177    | [advanced]     | [stable] | [risk: high]     | caching, memory       |
 | [Object Pooling Anti-Patterns](./performance/object-pooling-anti-patterns.md)                                      | [ok] 145    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
 | [Object Pooling for Zero-Allocation Messaging](./performance/object-pooling.md)                                    | [ok] 124    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
 | [Object Pooling for Zero-Allocation Messaging Part 1](./performance/object-pooling-part-1.md)                      | [ok] 191    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Object Pooling for Zero-Allocation Messaging Part 2](./performance/object-pooling-part-2.md)                      | [draft] 73  | [intermediate] | [stable] | [risk: low]      | migration, split      |
+| [Object Pooling for Zero-Allocation Messaging Part 2](./performance/object-pooling-part-2.md)                      | [draft] 70  | [intermediate] | [stable] | [risk: low]      | migration, split      |
 | [Object Pooling Usage Examples](./performance/object-pooling-usage-examples.md)                                    | [draft] 115 | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
 | [Object Pooling Variations](./performance/object-pooling-variations.md)                                            | [ok] 148    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
 | [Readonly Struct Cached Hash Performance Notes](./performance/readonly-struct-cached-hash-performance-notes.md)    | [draft] 92  | [intermediate] | [stable] | [risk: high]     | performance, struct   |
@@ -127,7 +127,7 @@
 | [Serializable Dictionary Usage Examples](./performance/serializable-dictionary-usage-examples.md)                  | [ok] 136    | [intermediate] | [stable] | [risk: medium]   | unity, serialization  |
 | [Singleton Usage Examples](./performance/singleton-usage-examples.md)                                              | [ok] 140    | [intermediate] | [stable] | [risk: low]      | unity, singleton      |
 | [StringBuilder Pooling for Zero-Allocation String Building](./performance/stringbuilder-pooling.md)                | [ok] 199    | [basic]        | [stable] | [risk: high]     | memory, allocation    |
-| [StringBuilder Pooling for Zero-Allocation String Building Part 1](./performance/stringbuilder-pooling-part-1.md)  | [ok] 153    | [intermediate] | [stable] | [risk: low]      | migration, split      |
+| [StringBuilder Pooling for Zero-Allocation String Building Part 1](./performance/stringbuilder-pooling-part-1.md)  | [ok] 152    | [intermediate] | [stable] | [risk: low]      | migration, split      |
 | [WaitForSeconds and Yield Instruction Pooling](./performance/yield-instruction-pooling.md)                         | [draft] 104 | [basic]        | [stable] | [risk: high]     | performance, unity    |
 | [WaitForSeconds and Yield Instruction Pooling Part 1](./performance/yield-instruction-pooling-part-1.md)           | [ok] 164    | [intermediate] | [stable] | [risk: low]      | migration, split      |
 | [WaitForSeconds and Yield Instruction Pooling Part 2](./performance/yield-instruction-pooling-part-2.md)           | [ok] 148    | [intermediate] | [stable] | [risk: low]      | migration, split      |
@@ -136,16 +136,17 @@
 
 | Skill                                                                                                    | Lines       | Complexity     | Status   | Performance    | Tags                             |
 | -------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | -------------- | -------------------------------- |
-| [Change-Aware Preflight](./scripting/change-aware-preflight.md)                                          | [ok] 205    | [intermediate] | [stable] | [risk: medium] | pre-commit, pre-push             |
+| [Change-Aware Preflight](./scripting/change-aware-preflight.md)                                          | [ok] 217    | [intermediate] | [stable] | [risk: medium] | pre-commit, pre-push             |
 | [Cross-Platform Script Compatibility](./scripting/cross-platform-compatibility.md)                       | [warn] 298  | [intermediate] | [stable] | [risk: none]   | cross-platform, case-sensitivity |
 | [Cross-Toolchain Path Comparison](./scripting/cross-toolchain-path-comparison.md)                        | [ok] 229    | [intermediate] | [stable] | [risk: none]   | cross-platform, testing          |
+| [Dependency Version Parity](./scripting/dependency-version-parity.md)                                    | [ok] 194    | [intermediate] | [stable] | [risk: low]    | dependencies, lockfile           |
 | [Integrity Gate Robustness](./scripting/integrity-gate-robustness.md)                                    | [warn] 299  | [intermediate] | [stable] | [risk: low]    | integrity, auto-repair           |
 | [JavaScript Code Quality Practices](./scripting/javascript-code-quality.md)                              | [ok] 159    | [intermediate] | [stable] | [risk: none]   | javascript, code-quality         |
 | [JavaScript Code Quality Practices Part 1](./scripting/javascript-code-quality-part-1.md)                | [ok] 178    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
 | [JavaScript Code Quality Practices Part 2](./scripting/javascript-code-quality-part-2.md)                | [ok] 142    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
 | [Jest Hook Robustness](./scripting/jest-hook-robustness.md)                                              | [warn] 300  | [intermediate] | [stable] | [risk: none]   | jest, pre-commit                 |
 | [Let Tools Resolve Modules](./scripting/let-tools-resolve-modules.md)                                    | [ok] 152    | [basic]        | [stable] | [risk: none]   | cross-platform, tooling          |
-| [Native Git Hook Bootstrap](./scripting/native-git-hooks.md)                                             | [ok] 126    | [intermediate] | [stable] | [risk: low]    | git-hooks, cross-platform        |
+| [Native Git Hook Bootstrap](./scripting/native-git-hooks.md)                                             | [ok] 127    | [intermediate] | [stable] | [risk: low]    | git-hooks, cross-platform        |
 | [PowerShell Scripting Best Practices](./scripting/powershell-best-practices.md)                          | [draft] 106 | [intermediate] | [stable] | [risk: none]   | powershell, scripting            |
 | [PowerShell Scripting Best Practices Part 1](./scripting/powershell-best-practices-part-1.md)            | [ok] 204    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
 | [PowerShell Scripting Best Practices Part 2](./scripting/powershell-best-practices-part-2.md)            | [ok] 223    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
@@ -186,7 +187,7 @@
 | [Data-Driven Coverage Patterns](./testing/test-coverage-data-driven.md)                                 | [ok] 173    | [intermediate] | [stable] | [risk: none]     | testing, data-driven         |
 | [Data-Driven Test Sources](./testing/data-driven-tests-sources.md)                                      | [ok] 256    | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Test Usage Patterns](./testing/data-driven-tests-usage.md)                                 | [draft] 108 | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
-| [Data-Driven Tests with TestCaseSource](./testing/data-driven-tests.md)                                 | [ok] 198    | [intermediate] | [stable] | [risk: low]      | testing, parameterized       |
+| [Data-Driven Tests with TestCaseSource](./testing/data-driven-tests.md)                                 | [ok] 197    | [intermediate] | [stable] | [risk: low]      | testing, parameterized       |
 | [Git and Parser Robustness in CI/CD](./testing/git-workflow-robustness.md)                              | [ok] 215    | [intermediate] | [stable] | [risk: none]     | testing, git                 |
 | [Git and Parser Robustness in CI/CD Part 1](./testing/git-workflow-robustness-part-1.md)                | [ok] 188    | [intermediate] | [stable] | [risk: low]      | migration, split             |
 | [Inspector Overlay Invariants for MessageAwareComponent](./testing/inspector-overlay-invariants.md)     | [ok] 153    | [intermediate] | [stable] | [risk: low]      | testing, editor              |
@@ -226,7 +227,7 @@
 | Skill                                                                       | Lines      | Complexity     | Status   | Performance  | Tags                 |
 | --------------------------------------------------------------------------- | ---------- | -------------- | -------- | ------------ | -------------------- |
 | [Devcontainer Cache Contract](./unity/devcontainer-cache-contract.md)       | [ok] 208   | [intermediate] | [stable] | [risk: high] | devcontainer, docker |
-| [Headless Unity Test Runner](./unity/headless-test-runner.md)               | [ok] 228   | [intermediate] | [stable] | [risk: none] | unity, testing       |
+| [Headless Unity Test Runner](./unity/headless-test-runner.md)               | [ok] 238   | [intermediate] | [stable] | [risk: none] | unity, testing       |
 | [MessageAwareComponent Base-Call Contract](./unity/base-call-contract.md)   | [warn] 267 | [intermediate] | [stable] | [risk: none] | unity, analyzer      |
 | [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 224   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
 | [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 220   | [intermediate] | [stable] | [risk: none] | unity, cli           |

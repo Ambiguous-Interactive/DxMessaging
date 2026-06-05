@@ -1,0 +1,64 @@
+name: Install pinned lychee
+description: Install a pinned lychee release binary with archive-layout diagnostics.
+
+inputs:
+  version:
+    description: Lychee release version to install.
+    required: true
+    default: v0.24.2
+
+runs:
+  using: composite
+  steps:
+    - name: Install lychee
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        version="${{ inputs.version }}"
+        arch="$(uname -m)"
+        case "${arch}" in
+          x86_64|amd64)
+            asset_arch="x86_64"
+            ;;
+          aarch64|arm64)
+            asset_arch="aarch64"
+            ;;
+          *)
+            echo "::error::Unsupported Linux architecture for lychee: ${arch}"
+            exit 1
+            ;;
+        esac
+
+        asset="lychee-${asset_arch}-unknown-linux-musl.tar.gz"
+        download_url="https://github.com/lycheeverse/lychee/releases/download/lychee-${version}/${asset}"
+        temp_dir="${RUNNER_TEMP:-/tmp}/lychee-download-${version}-${asset_arch}"
+        rm -rf "${temp_dir}"
+        mkdir -p "${temp_dir}" "${HOME}/.local/bin"
+
+        archive="${temp_dir}/${asset}"
+        echo "Downloading lychee ${version} from ${download_url}"
+        curl --fail --location --show-error --retry 3 --retry-delay 2 \
+          --output "${archive}" "${download_url}"
+
+        echo "Archive entries (first 40):"
+        tar -tzf "${archive}" | sed -n '1,40p'
+        tar -xzf "${archive}" -C "${temp_dir}"
+
+        mapfile -t candidates < <(find "${temp_dir}" -maxdepth 3 -type f -name lychee -print | sort)
+        if [ "${#candidates[@]}" -ne 1 ]; then
+          echo "::error::Expected exactly one lychee binary in ${asset}; found ${#candidates[@]}."
+          find "${temp_dir}" -maxdepth 3 -type f -print -exec ls -l {} \;
+          exit 1
+        fi
+
+        install -D -m 0755 "${candidates[0]}" "${HOME}/.local/bin/lychee"
+        echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+        installed_version="$("${HOME}/.local/bin/lychee" --version)"
+        echo "${installed_version}"
+        expected_version="${version#v}"
+        if [[ "${installed_version}" != *"${expected_version}"* ]]; then
+          echo "::error::Installed lychee version '${installed_version}' does not match ${version}."
+          exit 1
+        fi

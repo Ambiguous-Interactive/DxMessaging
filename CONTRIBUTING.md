@@ -51,7 +51,7 @@ What runs locally:
 - YAML formatting: Prettier (2-space indent) + yamllint
 - NPM package validation: ensures all Unity .meta files are properly included in npm package
 
-On pull requests, CI also checks all markdown links (including external URLs) with lychee.
+On pull requests, CI checks markdown links with lychee in two passes. An offline pass validates relative/local links and in-repo `#anchor` fragments against the working tree and blocks the PR on any broken one. A lenient external-liveness pass fails only on genuinely-dead links (404/410 or a DNS/connection failure); bot-detection and throttling responses (401/403/405/406/408/415/429/5xx) are accepted, so a `w3.org` 403 never reds a PR. The fix for a flaky external link is to widen `accept` in `.lychee.toml`, never to add a per-domain `exclude` or swap to a "more stable" URL. Deep external rot is caught by a scheduled advisory scan that opens a tracking issue instead of failing CI.
 
 Handy commands:
 

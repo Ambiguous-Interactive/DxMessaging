@@ -43,6 +43,14 @@ function noopRequire() {
   return {};
 }
 
+function noopProbeIntegrity() {
+  return { ok: true, missing: [] };
+}
+
+function noopProbeDependencyVersionParity() {
+  return { ok: true, checked: 0, drifted: [] };
+}
+
 describe("doctor.js status helpers", () => {
   test("statusRank orders fail > warn > ok", () => {
     expect(statusRank("fail")).toBeGreaterThan(statusRank("warn"));
@@ -105,8 +113,6 @@ describe("checkNodeModulesFreshness", () => {
   // scripts/lib/node-modules-integrity.js as the file-existence + size
   // layer. Tests inject a no-op `probeIntegrityFn` so the existing fake-fs
   // fixtures remain authoritative for the legacy `requiredFiles` path.
-  const noopProbeIntegrity = () => ({ ok: true, missing: [] });
-
   test("returns ok when every tool resolves, exists, and loads", () => {
     const toolSpecs = [
       {
@@ -135,6 +141,7 @@ describe("checkNodeModulesFreshness", () => {
 
     const section = checkNodeModulesFreshness({
       probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
       toolSpecs,
       existsSyncFn: () => true,
       requireResolveFn: () => "/repo/node_modules/jest-circus/build/runner.js",
@@ -164,6 +171,7 @@ describe("checkNodeModulesFreshness", () => {
 
     const section = checkNodeModulesFreshness({
       probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
       toolSpecs,
       existsSyncFn: (absPath) => !absPath.includes("missing-tool"),
       requireFn: noopRequire,
@@ -175,7 +183,7 @@ describe("checkNodeModulesFreshness", () => {
     const text = section.lines.join("\n");
     expect(text).toContain("FAIL  missing-tool");
     expect(text).toContain("missing required file");
-    expect(text).toContain("npm ci");
+    expect(text).toContain("npm run repair:node-tooling");
   });
 
   test("returns fail when require throws", () => {
@@ -190,6 +198,7 @@ describe("checkNodeModulesFreshness", () => {
 
     const section = checkNodeModulesFreshness({
       probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
       toolSpecs,
       existsSyncFn: () => true,
       requireFn: () => {
@@ -220,6 +229,7 @@ describe("checkNodeModulesFreshness", () => {
 
     const section = checkNodeModulesFreshness({
       probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
       toolSpecs,
       existsSyncFn: () => true,
       requireFn: noopRequire,
@@ -249,6 +259,7 @@ describe("checkNodeModulesFreshness", () => {
 
     const section = checkNodeModulesFreshness({
       probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
       toolSpecs,
       existsSyncFn: () => true,
       requireFn: noopRequire,
@@ -260,6 +271,151 @@ describe("checkNodeModulesFreshness", () => {
 
     expect(section.status).toBe("fail");
     expect(section.lines.join("\n")).toContain("Cannot find module");
+  });
+
+  test("parity probe throw is a hard fail with thrown detail", () => {
+    const section = checkNodeModulesFreshness({
+      probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: () => {
+        throw new Error("package.json read failed");
+      },
+      toolSpecs: [],
+      existsSyncFn: () => true,
+      requireFn: noopRequire,
+      requireResolveFn: () => "/unused",
+      repoRoot: "/repo"
+    });
+
+    expect(section.status).toBe("fail");
+    const text = section.lines.join("\n");
+    expect(text).toContain("FAIL  dependency version parity");
+    expect(text).toContain("parity probe threw: package.json read failed");
+    expect(text).toContain("npm run repair:node-tooling");
+    expect(text).toContain("npm install");
+    expect(text).not.toContain("probe skipped");
+    expect(text).not.toContain("npm ci");
+  });
+
+  test.each([
+    ["undefined", undefined],
+    ["object without ok", {}]
+  ])("malformed parity probe result (%s) is a hard fail", (_label, parityResult) => {
+    const section = checkNodeModulesFreshness({
+      probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: () => parityResult,
+      toolSpecs: [],
+      existsSyncFn: () => true,
+      requireFn: noopRequire,
+      requireResolveFn: () => "/unused",
+      repoRoot: "/repo"
+    });
+
+    expect(section.status).toBe("fail");
+    const text = section.lines.join("\n");
+    expect(text).toContain("FAIL  dependency version parity");
+    expect(text).toContain("parity probe returned invalid result");
+    expect(text).toContain("npm run repair:node-tooling");
+    expect(text).toContain("npm install");
+    expect(text).not.toContain("probe skipped");
+    expect(text).not.toContain("npm ci");
+  });
+
+  test("parity-only drift recommends repair or npm install, never standalone npm ci", () => {
+    const section = checkNodeModulesFreshness({
+      probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: () => ({
+        ok: false,
+        checked: 1,
+        drifted: [
+          {
+            name: "cspell-lib",
+            kind: "exact",
+            declared: "10.0.1",
+            installed: "10.0.0",
+            lockfile: "10.0.0",
+            reason: "installed-mismatch"
+          }
+        ]
+      }),
+      toolSpecs: [],
+      existsSyncFn: () => true,
+      requireFn: noopRequire,
+      requireResolveFn: () => "/unused",
+      repoRoot: "/repo"
+    });
+
+    expect(section.status).toBe("fail");
+    const text = section.lines.join("\n");
+    expect(text).toContain("FAIL  dependency version parity");
+    expect(text).toContain("cspell-lib: declared 10.0.1");
+    expect(text).toContain("npm run repair:node-tooling");
+    expect(text).toContain("npm install");
+    expect(text).not.toContain("npm ci");
+  });
+
+  test("integrity-only failure prefers repair and limits npm ci to integrity-corruption guidance", () => {
+    const section = checkNodeModulesFreshness({
+      probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
+      toolSpecs: [
+        {
+          name: "missing-tool",
+          requiredFiles: ["node_modules/missing-tool/bin.js"]
+        }
+      ],
+      existsSyncFn: () => false,
+      requireFn: noopRequire,
+      requireResolveFn: () => "/unused",
+      repoRoot: "/repo"
+    });
+
+    expect(section.status).toBe("fail");
+    const text = section.lines.join("\n");
+    expect(text).toContain("FAIL  missing-tool");
+    const repairIndex = text.indexOf("npm run repair:node-tooling");
+    const npmCiIndex = text.indexOf("npm ci --no-audit --no-fund");
+    expect(repairIndex).toBeGreaterThanOrEqual(0);
+    expect(npmCiIndex).toBeGreaterThan(repairIndex);
+    expect(text).toContain("integrity corruption");
+  });
+
+  test("combined integrity and parity failures guide repair or npm install first, then rerun doctor", () => {
+    const section = checkNodeModulesFreshness({
+      probeIntegrityFn: noopProbeIntegrity,
+      probeDependencyVersionParityFn: () => ({
+        ok: false,
+        checked: 1,
+        drifted: [
+          {
+            name: "cspell-lib",
+            kind: "exact",
+            declared: "10.0.1",
+            installed: "10.0.0",
+            lockfile: "10.0.0",
+            reason: "installed-mismatch"
+          }
+        ]
+      }),
+      toolSpecs: [
+        {
+          name: "missing-tool",
+          requiredFiles: ["node_modules/missing-tool/bin.js"]
+        }
+      ],
+      existsSyncFn: () => false,
+      requireFn: noopRequire,
+      requireResolveFn: () => "/unused",
+      repoRoot: "/repo"
+    });
+
+    expect(section.status).toBe("fail");
+    const text = section.lines.join("\n");
+    expect(text).toContain("FAIL  missing-tool");
+    expect(text).toContain("FAIL  dependency version parity");
+    expect(text).toContain("npm run repair:node-tooling");
+    expect(text).toContain("npm install");
+    expect(text).toContain("then re-run `npm run doctor`");
+    expect(text).not.toContain("npm ci");
   });
 });
 
@@ -1141,6 +1297,8 @@ describe("runDoctor aggregator", () => {
         existsSyncFn: () => false,
         requireFn: noopRequire,
         requireResolveFn: () => null,
+        probeIntegrityFn: noopProbeIntegrity,
+        probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
         repoRoot: "/repo"
       },
       checkIsolatedJestCache: {
@@ -1209,6 +1367,8 @@ describe("runDoctor aggregator", () => {
         existsSyncFn: () => true,
         requireFn: noopRequire,
         requireResolveFn: () => "/x",
+        probeIntegrityFn: noopProbeIntegrity,
+        probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
         repoRoot: "/repo"
       },
       checkIsolatedJestCache: {
@@ -1293,6 +1453,8 @@ describe("runDoctor aggregator", () => {
         existsSyncFn: () => true,
         requireFn: noopRequire,
         requireResolveFn: () => "/x",
+        probeIntegrityFn: noopProbeIntegrity,
+        probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
         repoRoot: "/repo"
       },
       checkIsolatedJestCache: {
@@ -1370,6 +1532,8 @@ describe("runDoctor aggregator", () => {
         existsSyncFn: () => true,
         requireFn: noopRequire,
         requireResolveFn: () => "/x",
+        probeIntegrityFn: noopProbeIntegrity,
+        probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
         repoRoot: "/repo"
       },
       checkIsolatedJestCache: {
@@ -1452,6 +1616,8 @@ describe("runDoctor aggregator", () => {
         existsSyncFn: () => true,
         requireFn: noopRequire,
         requireResolveFn: () => "/x",
+        probeIntegrityFn: noopProbeIntegrity,
+        probeDependencyVersionParityFn: noopProbeDependencyVersionParity,
         repoRoot: "/repo"
       },
       checkIsolatedJestCache: {

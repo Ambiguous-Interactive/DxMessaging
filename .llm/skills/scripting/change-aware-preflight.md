@@ -27,12 +27,12 @@ tags:
 
 complexity:
   level: "intermediate"
-  reasoning: "Requires understanding of pre-commit stage selection, the change-set definition, and the Claude Code hook lifecycle"
+  reasoning: "Requires understanding of pre-commit stage selection, the change-set definition, and the agent hook lifecycle"
 
 impact:
   performance:
     rating: "medium"
-    details: "Runs only what changed; the push guard has a direct changed-file cspell lane and defers heavy Jest suites to the native pre-push hook"
+    details: "Runs only what changed; the push guard has a direct changed-file cspell lane and defers heavy Jest suites to CI/manual pre-push parity"
   maintainability:
     rating: "high"
     details: "Collapses 22 per-file imperatives into one automated command and a dispatch table"
@@ -99,10 +99,18 @@ PostToolUse edit guard also runs file-scoped cspell for the same extensions as
 the native pre-push cspell hook (`.md`, `.markdown`, `.cs`, `.json`, `.yml`,
 `.yaml`, `.ps1`, `.js`) and runs changelog coverage when a likely user-visible
 path or `CHANGELOG.md` is edited, so spelling and missing-release-note failures
-surface while the file is being edited. The native git hook is the exhaustive,
-tool-agnostic backstop, not the first signal.
+surface while the file is being edited. Successful full-scope or explicit-range
+preflight with no caller-provided `SKIP` writes the exact-range pre-push
+validation stamp used by the native hook's sub-second repeated-push path. Native
+git hooks are fast and change-aware; exhaustive parity is the explicit CI/manual
+command, not the default local push path.
 
 For full parity on demand, run `npm run preflight:pre-push`.
+
+Provider-neutral rule: before declaring work done or invoking Git boundary
+commands, run `npm run preflight` from any agent or shell. The Claude Code
+settings are one adapter that runs the same checks automatically; Codex,
+manual shells, and script-generated edits should rely on the npm command.
 
 ## Solution
 
@@ -115,16 +123,19 @@ pre-commit / Python is unavailable it falls back to the already-maintained npm
 
 ### Flags
 
-| Flag                     | Meaning                                                                                                                                                                                              |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--profile=guard\|full`  | `guard` = fast subset (DEFERS the heavy Jest suites `script-parser-tests` / `script-tests` / `unity-contract-tests` to the native pre-push hook); `full` = everything change-scoped. Default `full`. |
-| `--scope=worktree\|full` | `worktree` = staged+unstaged+untracked only (SKIPS base resolution + the committed range; fast on a many-commit branch); `full` = committed range + working tree. Default `full`.                    |
-| `--stage=<name>`         | Restrict to one stage. Default: the agent-relevant `pre-commit` + `pre-push` stages present in the config.                                                                                           |
-| `--base=<ref>`           | Explicit integration base (CI passes the PR base).                                                                                                                                                   |
-| `--files=<a,b,...>`      | Explicit working-tree file list (comma-separated or repeated).                                                                                                                                       |
-| `--all`                  | Exhaustive `--all-files` parity per stage.                                                                                                                                                           |
-| `--json`                 | Emit a machine-readable status object instead of human output.                                                                                                                                       |
-| `--no-recover`           | Skip the `node_modules` / pre-commit auto-recovery (the guard passes this so recovery is not paid twice in a session).                                                                               |
+| Flag                     | Meaning                                                                                                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--profile=guard\|full`  | `guard` = fast subset (DEFERS the heavy Jest suites `script-parser-tests` / `script-tests` / `unity-contract-tests` to CI/manual `npm run preflight:pre-push`); `full` = everything change-scoped. Default `full`. |
+| `--scope=worktree\|full` | `worktree` = staged+unstaged+untracked only (SKIPS base resolution + the committed range; fast on a many-commit branch); `full` = committed range + working tree. Default `full`.                                  |
+| `--stage=<name>`         | Restrict to one stage. Default: the agent-relevant `pre-commit` + `pre-push` stages present in the config.                                                                                                         |
+| `--base=<ref>`           | Explicit integration base (CI passes the PR base).                                                                                                                                                                 |
+| `--range-from=<ref>`     | Explicit committed range start; skips integration-base discovery and uses this value as `--from-ref` for pre-commit.                                                                                               |
+| `--range-to=<ref>`       | Explicit committed range end; paired with `--range-from` and used as `--to-ref`.                                                                                                                                   |
+| `--no-worktree`          | Skip staged/unstaged/untracked scans. Used by native pre-push so local push validates only what is being pushed.                                                                                                   |
+| `--files=<a,b,...>`      | Explicit working-tree file list (comma-separated or repeated).                                                                                                                                                     |
+| `--all`                  | Exhaustive `--all-files` parity per stage.                                                                                                                                                                         |
+| `--json`                 | Emit a machine-readable status object instead of human output.                                                                                                                                                     |
+| `--no-recover`           | Skip the `node_modules` / pre-commit auto-recovery (the guard passes this so recovery is not paid twice in a session).                                                                                             |
 
 The `--json` status object: `{ status: { kind: "ok"|"checks-failed"|
 "infra-unavailable", failures[], policyFailures[], warnings[] }, scope, profile,
@@ -160,7 +171,7 @@ to its npm/node entrypoint (`NODE_DIRECT_MAP`) gated by the change-set. Policy /
 security hooks run regardless and never fail open. yamllint CANNOT run without
 Python, so when YAML changed preflight emits a LOUD top-level `WARNING` (in
 `--json.warnings[]` and on stderr) -- never a silent skip -- and CI plus the
-native pre-push hook enforce it on a Python-equipped machine. Any targeted hook
+manual exhaustive pre-push enforce it on a Python-equipped machine. Any targeted hook
 id with neither a map entry nor an explicit `NODE_DIRECT_EXEMPT` reason emits a
 visible warning rather than passing silently.
 
@@ -173,13 +184,14 @@ exist; otherwise it runs the single relevant pass. This never under-runs.
 
 ### Division of labor
 
-| Layer                         | Scope                      | When                         | Behavior                                                                                                                                                                                                                                                                                                                                                                |
-| ----------------------------- | -------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PreToolUse git-boundary guard | full (committed + working) | before `git commit` / `push` | BLOCKS on changed-file cspell failures before preflight; then blocks on `checks-failed` / any `policyFailures`; commit commands add `--stage=pre-commit`; allows on infra-unavailable with a warning.                                                                                                                                                                   |
-| Stop hook                     | worktree only              | end of turn                  | ADVISORY ONLY -- emits a `systemMessage`, NEVER `decision:block`, always exits 0. Covers "declared done without pushing".                                                                                                                                                                                                                                               |
-| PostToolUse edit guard        | one edited file + coverage | after file edits             | ADVISORY ONLY -- runs file-scoped cspell for cspell-covered extensions plus changelog coverage, packaging, and doc validators relevant to the edited file.                                                                                                                                                                                                              |
-| Native `pre-commit` hook      | pre-commit stage           | real commit boundary         | Last-resort backstop. Skips only when the PreToolUse commit guard wrote a matching validation stamp for HEAD, index tree, and changelog-relevant local content; otherwise runs the real hook stage.                                                                                                                                                                     |
-| Native `pre-push` hook        | `--all` parity             | real push boundary           | The exhaustive, tool-agnostic guarantee. Skips only when a successful full `npm run preflight:pre-push` or earlier native pre-push wrote a matching stamp for HEAD, Git index file hash, unstaged tracked worktree diff metadata plus changed tracked file bytes, and the empty untracked/unignored path set; otherwise delegates to `scripts/run-prepush-parallel.js`. |
+| Layer                         | Scope                      | When                         | Behavior                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------- | -------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PreToolUse git-boundary guard | full (committed + working) | before `git commit` / `push` | BLOCKS on changed-file cspell failures before preflight; then blocks on `checks-failed` / any `policyFailures`; commit commands add `--stage=pre-commit`; allows on infra-unavailable with a warning.                                                                                                                                          |
+| Stop hook                     | worktree only              | end of turn                  | ADVISORY ONLY -- emits a `systemMessage`, NEVER `decision:block`, always exits 0. Covers "declared done without pushing".                                                                                                                                                                                                                      |
+| PostToolUse edit guard        | one edited file + coverage | after file edits             | ADVISORY ONLY -- runs file-scoped cspell for cspell-covered extensions plus changelog coverage, packaging, and doc validators relevant to the edited file.                                                                                                                                                                                     |
+| Native `pre-commit` hook      | pre-commit stage           | real commit boundary         | Last-resort backstop. Skips only when the PreToolUse commit guard wrote a matching validation stamp for HEAD, index tree, and changelog-relevant local content; otherwise runs the real hook stage.                                                                                                                                            |
+| Native `pre-push` hook        | pushed refs only           | real push boundary           | Fast local gate. Reads Git pre-push stdin, skips deleted/no-op refs, validates existing refs with exact `remote_oid..local_oid` ranges, validates new refs from default-branch merge-base, strips caller `SKIP`, and falls back to exhaustive `npm run preflight:pre-push` only when no base exists. It must not run `--all-files` by default. |
+| CI/manual pre-push parity     | `--all` parity             | CI / explicit command        | Exhaustive `npm run preflight:pre-push` runs pre-commit preflight, full cspell, and every pre-push hook with `--all-files`.                                                                                                                                                                                                                    |
 
 Both hooks honor the `DXMSG_PREFLIGHT_ACTIVE=1` re-entrancy sentinel so a `git`
 call made inside preflight is not re-guarded.

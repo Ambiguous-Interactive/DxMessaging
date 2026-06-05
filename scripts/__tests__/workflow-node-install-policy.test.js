@@ -39,6 +39,7 @@
 "use strict";
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const YAML = require("yaml");
 const { collectTransitiveThirdParty } = require("../lib/node-require-scan");
@@ -158,16 +159,20 @@ function shellNodeNeeds(shell) {
 
 /** Resolve a `uses: ./.github/actions/<name>` ref to the union node-needs of its composite run: steps. */
 const compositeNeedsCache = new Map();
-function compositeActionNeeds(usesRef) {
-  if (compositeNeedsCache.has(usesRef)) {
-    return compositeNeedsCache.get(usesRef);
+function compositeActionNeeds(usesRef, options = {}) {
+  const actionsDir = options.actionsDir || ACTIONS_DIR;
+  const cache = options.cache || compositeNeedsCache;
+  const cacheKey = actionsDir === ACTIONS_DIR ? usesRef : `${actionsDir}\0${usesRef}`;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
   }
   const result = { needs: new Set(), missing: [] };
   // Seed the cache before scanning/recursing so a cyclic `uses:` graph
   // terminates (a composite reaching itself sees the in-progress result).
-  compositeNeedsCache.set(usesRef, result);
+  cache.set(cacheKey, result);
   const rel = usesRef.replace(/^\.\//, "");
-  const actionDir = path.join(REPO_ROOT, rel);
+  const actionName = rel.replace(/^\.github\/actions\//, "");
+  const actionDir = path.join(actionsDir, actionName);
   const actionFile = ["action.yml", "action.yaml"]
     .map((f) => path.join(actionDir, f))
     .find((f) => fs.existsSync(f));
@@ -187,7 +192,7 @@ function compositeActionNeeds(usesRef) {
       ) {
         // Nested composite: follow the same `uses:` vector recursively so the
         // class is closed at any depth, not just one level.
-        const nested = compositeActionNeeds(step.uses);
+        const nested = compositeActionNeeds(step.uses, { actionsDir, cache });
         nested.needs.forEach((p) => result.needs.add(p));
         nested.missing.forEach((m) => result.missing.push(m));
       }
@@ -356,11 +361,15 @@ describe("CI jobs install node_modules before running dependency-needing scripts
     // is consumed by 5 workflows. Neither nested composite runs node today, so
     // there is no live requirement -- prove the recursion is non-vacuous by
     // exercising the SHIPPED compositeActionNeeds against doctored composites
-    // written into the real action tree (where the resolver reads from), then
-    // removing them. A nested third-party need must surface in the parent's
-    // closure, and a self-referential `uses:` must terminate.
-    const childDir = path.join(ACTIONS_DIR, "__nested_child__");
-    const parentDir = path.join(ACTIONS_DIR, "__nested_parent__");
+    // under an isolated temp action root. This keeps Jest's parallel workers
+    // from observing transient directories under the real .github/actions tree.
+    // A nested third-party need must surface in the parent's closure, and a
+    // self-referential `uses:` must terminate.
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-nested-actions-"));
+    const tempActionsDir = path.join(tempRoot, ".github", "actions");
+    const childDir = path.join(tempActionsDir, "__nested_child__");
+    const parentDir = path.join(tempActionsDir, "__nested_parent__");
+    const cache = new Map();
     fs.mkdirSync(childDir, { recursive: true });
     fs.mkdirSync(parentDir, { recursive: true });
     try {
@@ -377,17 +386,14 @@ describe("CI jobs install node_modules before running dependency-needing scripts
           "    - uses: ./.github/actions/__nested_child__\n" +
           "    - uses: ./.github/actions/__nested_parent__\n"
       );
-      // Ensure the shared cache does not mask the fresh files.
-      compositeNeedsCache.delete("./.github/actions/__nested_parent__");
-      compositeNeedsCache.delete("./.github/actions/__nested_child__");
-      const got = compositeActionNeeds("./.github/actions/__nested_parent__");
+      const got = compositeActionNeeds("./.github/actions/__nested_parent__", {
+        actionsDir: tempActionsDir,
+        cache
+      });
       expect([...got.needs]).toEqual(["yaml"]);
       expect(got.missing).toEqual([]);
     } finally {
-      compositeNeedsCache.delete("./.github/actions/__nested_parent__");
-      compositeNeedsCache.delete("./.github/actions/__nested_child__");
-      fs.rmSync(childDir, { recursive: true, force: true });
-      fs.rmSync(parentDir, { recursive: true, force: true });
+      fs.rmSync(tempRoot, { recursive: true, force: true });
     }
 
     // Confirm the real nested composite in the repo resolves cleanly.
