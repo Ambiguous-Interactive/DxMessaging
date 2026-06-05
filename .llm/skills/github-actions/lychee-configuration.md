@@ -81,9 +81,8 @@ status: "stable"
 
 Lychee is a fast link checker used in CI to validate URLs across documentation and source
 files. Its configuration lives in `.lychee.toml`, but field names can change between major
-versions. Because `lycheeverse/lychee-action@v2` uses a **floating major version tag**,
-a new lychee release can ship at any time and silently break CI if the config contains
-deprecated fields.
+versions. The repository pins the lychee binary at install time so a new lychee release
+cannot silently change which config fields are valid.
 
 This skill documents the field deprecation patterns observed in lychee, the validation
 tooling built to catch these issues proactively, and best practices for maintaining
@@ -103,11 +102,14 @@ When lychee upgrades from one version to the next, configuration field names may
 Lychee treats unknown fields as hard errors, so any deprecated field causes an immediate
 CI failure with an unhelpful error message.
 
-### Floating Version Tags
+### Pinned Binary Installer
 
-The action tag stays on `@v2`, but the lychee binary itself must be pinned with
-`with.lycheeVersion: v0.24.2`. Without that input, a new lychee release can change
-which config fields are valid with no advance warning.
+Do not use `lycheeverse/lychee-action@v2` in active workflows. Its v0.24.2 Linux
+installer expected a flat archive path while the release asset extracted the binary under
+a platform directory, so the job failed before lychee ran. Active workflows must use
+`./.github/actions/install-pinned-lychee` with `version: v0.24.2`, then invoke the
+`lychee` CLI directly. The installer uses the musl archive, prints the archive entries,
+finds the nested binary, and verifies `lychee --version`.
 
 ### Known Deprecated Field Mappings (pre-v0.23.0 to v0.23.0)
 
@@ -190,8 +192,10 @@ validates it before lychee; the scheduled advisory scan does not run
   fails only on 404/410 or a DNS/connection error; the broad `accept` list absorbs
   bot-detection and transient codes.
 - **`markdown-link-validity.yml`** (scheduled advisory scan) runs daily on a cron plus
-  `workflow_dispatch`. It NEVER fails the run; it opens or updates one tracking issue,
-  pins the lychee binary, keeps `fail: false`, and does not run the config validator.
+  `workflow_dispatch`. It NEVER fails the run; it captures the lychee exit code, opens
+  or updates one tracking issue from `./lychee/out.md`, installs the pinned binary, and
+  does not run the config validator. Its lychee step writes Markdown to `./lychee/out.md`
+  so the issue sync step has a body file on dead-link runs.
 
 ```yaml
 - name: Validate lychee configuration
@@ -201,31 +205,29 @@ validates it before lychee; the scheduled advisory scan does not run
     git ls-files -z '*.md' '*.markdown' | tr '\0' '\n' \
       > "${RUNNER_TEMP}/doc-files.txt"
     echo "Checking $(wc -l < "${RUNNER_TEMP}/doc-files.txt") tracked doc(s)."
+- name: Install pinned lychee
+  uses: ./.github/actions/install-pinned-lychee
+  with:
+    version: v0.24.2
 
 # Gate 1: offline -- relative links and in-repo "#anchor" fragments (PR-blocking).
 - name: Check internal links and anchors (offline)
-  uses: lycheeverse/lychee-action@v2
-  with:
-    args: >-
-      -c .lychee.toml
-      --offline
-      --include-fragments
-      --files-from ${{ runner.temp }}/doc-files.txt
-    lycheeVersion: v0.24.2
-    fail: true
+  run: |
+    lychee \
+      -c .lychee.toml \
+      --offline \
+      --include-fragments \
+      --files-from "${RUNNER_TEMP}/doc-files.txt"
 
 # Gate 2: lenient external liveness -- only 404/410/DNS fail (accept list in config).
 - name: Check external links (lenient liveness)
-  uses: lycheeverse/lychee-action@v2
-  with:
-    args: >-
-      -c .lychee.toml
-      --scheme https
-      --scheme http
-      --accept-timeouts=true
-      --files-from ${{ runner.temp }}/doc-files.txt
-    lycheeVersion: v0.24.2
-    fail: true
+  run: |
+    lychee \
+      -c .lychee.toml \
+      --scheme https \
+      --scheme http \
+      --accept-timeouts=true \
+      --files-from "${RUNNER_TEMP}/doc-files.txt"
 ```
 
 In the blocking workflow, validation runs first, so invalid config fails fast with a

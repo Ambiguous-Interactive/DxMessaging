@@ -47,24 +47,42 @@ jobs:
           key: cache-lychee-${{ github.sha }}
           restore-keys: cache-lychee-
 
+      - name: Install pinned lychee
+        uses: ./.github/actions/install-pinned-lychee
+        with:
+          version: v0.24.2
+
       - name: Scan external links (advisory)
         id: lychee
-        uses: lycheeverse/lychee-action@v2
-        with:
-          args: >-
-            -c .lychee.toml
-            --scheme https
-            --scheme http
-            --cache
-            --max-cache-age 1d
-            --cache-exclude-status "429,500..=599"
-            --files-from ${{ runner.temp }}/doc-files.txt
-          lycheeVersion: v0.24.2
-          fail: false
-          failIfEmpty: false
-          jobSummary: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          mkdir -p ./lychee
+          lychee \
+            -c .lychee.toml \
+            --scheme https \
+            --scheme http \
+            --cache \
+            --max-cache-age 1d \
+            --cache-exclude-status "429,500..=599" \
+            --format markdown \
+            --output ./lychee/out.md \
+            --files-from "${RUNNER_TEMP}/doc-files.txt"
+          exit_code="${?}"
+          if [ "${exit_code}" != "0" ] && [ ! -s ./lychee/out.md ]; then
+            {
+              echo "# Scheduled external link scan failed"
+              echo
+              echo "lychee exited with code ${exit_code}, but did not produce a Markdown report."
+              echo
+              echo '```'
+              lychee --version || true
+              echo '```'
+            } > ./lychee/out.md
+          fi
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          exit 0
 
       - name: Save lychee cache
         if: always()

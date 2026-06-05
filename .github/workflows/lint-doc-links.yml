@@ -27,6 +27,7 @@ on:
       - ".lychee.toml"
       - "scripts/lint-doc-links.ps1"
       - "scripts/validate-lychee-config.js"
+      - ".github/actions/install-pinned-lychee/action.yml"
   pull_request:
     paths:
       - "**/*.md"
@@ -35,6 +36,7 @@ on:
       - ".lychee.toml"
       - "scripts/lint-doc-links.ps1"
       - "scripts/validate-lychee-config.js"
+      - ".github/actions/install-pinned-lychee/action.yml"
   workflow_dispatch:
 
 permissions:
@@ -70,37 +72,32 @@ jobs:
             > "${RUNNER_TEMP}/doc-files.txt"
           echo "Checking $(wc -l < "${RUNNER_TEMP}/doc-files.txt") tracked doc(s)."
 
+      - name: Install pinned lychee
+        uses: ./.github/actions/install-pinned-lychee
+        with:
+          version: v0.24.2
+
       # Gate 1 -- offline. Validates relative/local links and in-repo "#anchor"
       # fragments against files on disk. No network, so a failure is a real broken
       # local link or a missing heading anchor, never a flake.
       - name: Check internal links and anchors (offline)
-        uses: lycheeverse/lychee-action@v2
-        with:
-          args: >-
-            -c .lychee.toml
-            --offline
-            --include-fragments
-            --files-from ${{ runner.temp }}/doc-files.txt
-          lycheeVersion: v0.24.2
-          fail: true
-          failIfEmpty: false
-          jobSummary: true
+        run: |
+          lychee \
+            -c .lychee.toml \
+            --offline \
+            --include-fragments \
+            --files-from "${RUNNER_TEMP}/doc-files.txt"
 
       # Gate 2 -- external liveness. Timeout acceptance is command-line-only here:
       # the scheduled advisory scan should still report persistent slow hosts.
       - name: Probe external link liveness
-        uses: lycheeverse/lychee-action@v2
-        with:
-          args: >-
-            -c .lychee.toml
-            --scheme https
-            --scheme http
-            --accept-timeouts=true
-            --files-from ${{ runner.temp }}/doc-files.txt
-          lycheeVersion: v0.24.2
-          fail: true
-          failIfEmpty: false
-          jobSummary: true
+        run: |
+          lychee \
+            -c .lychee.toml \
+            --scheme https \
+            --scheme http \
+            --accept-timeouts=true \
+            --files-from "${RUNNER_TEMP}/doc-files.txt"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

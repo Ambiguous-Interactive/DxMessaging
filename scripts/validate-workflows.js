@@ -33,12 +33,13 @@
  * - .pre-commit-config.yaml lines that exceed the same yamllint line-length
  *   ceiling so hook-policy YAML drift is surfaced during preflight instead of
  *   only at hook-time.
- * - Active lycheeverse/lychee-action steps that do not pin the lychee binary
- *   with lycheeVersion: v0.24.2, and blocking doc-link workflow regressions
- *   back to fail:false JSON post-classification instead of native timeout
- *   acceptance. The scheduled advisory scan must not accept timeouts and must
- *   keep fail:false so timeout/dead-link findings flow through the tracking
- *   issue instead of failing the workflow.
+ * - Active lycheeverse/lychee-action steps, which are intentionally forbidden
+ *   after its v0.24.2 Linux installer expected a flat archive while the release
+ *   asset extracted lychee under a platform directory. Docs link workflows must
+ *   install lychee through the repo-owned pinned installer and invoke the CLI
+ *   directly. The blocking workflow must use native timeout acceptance, while
+ *   the scheduled advisory scan must report timeout/dead-link findings through
+ *   the tracking issue instead of failing the workflow.
  *
  * @usage
  *   node scripts/validate-workflows.js
@@ -93,6 +94,7 @@ const GAME_CI_UNITY_TEST_RUNNER_USES = "game-ci/unity-test-runner@";
 const REQUIRED_LYCHEE_VERSION = "v0.24.2";
 const BLOCKING_DOC_LINK_WORKFLOW = ".github/workflows/lint-doc-links.yml";
 const ADVISORY_DOC_LINK_WORKFLOW = ".github/workflows/markdown-link-validity.yml";
+const ADVISORY_LYCHEE_REPORT_PATH = "./lychee/out.md";
 const REQUIRED_ACTIVE_WORKFLOW_PATHS = Object.freeze([
   BLOCKING_DOC_LINK_WORKFLOW,
   ADVISORY_DOC_LINK_WORKFLOW
@@ -4001,6 +4003,48 @@ function isLycheeActionUses(usesValue) {
   return stringifyWorkflowScalar(usesValue).toLowerCase().startsWith("lycheeverse/lychee-action@");
 }
 
+function isInstallPinnedLycheeUses(usesValue) {
+  return stringifyWorkflowScalar(usesValue)
+    .replace(/^\.\//, "")
+    .toLowerCase()
+    .replace(/\/$/, "") === ".github/actions/install-pinned-lychee";
+}
+
+function stepRunsLycheeCli(step) {
+  const runText = stepRunText(step);
+  return /(?:^|\n)\s*lychee(?:[\s\\]|$)/.test(runText);
+}
+
+function workflowArgsContainLycheeConfig(args) {
+  const text = stringifyWorkflowScalar(args);
+  return (
+    workflowArgsContainOptionValue(text, "-c", [".lychee.toml"]) ||
+    workflowArgsContainOptionValue(text, "--config", [".lychee.toml"])
+  );
+}
+
+function workflowRunCapturesAdvisoryLycheeExitCode(runText) {
+  return (
+    /\bset\s+\+e\b/.test(runText) &&
+    /\bexit_code\b/.test(runText) &&
+    /\bGITHUB_OUTPUT\b/.test(runText) &&
+    /\bexit\s+0\b/.test(runText)
+  );
+}
+
+function workflowRunWritesAdvisoryLycheeReport(runText) {
+  const text = stringifyWorkflowScalar(runText);
+  return (
+    /\bmkdir\s+-p\s+["']?\.\/lychee["']?(?:\s|$)/.test(text) &&
+    workflowArgsContainOptionValue(text, "--format", ["markdown"]) &&
+    workflowArgsContainOptionValue(text, "--output", [ADVISORY_LYCHEE_REPORT_PATH])
+  );
+}
+
+function workflowRunUsesAdvisoryIssueBodyFile(runText) {
+  return workflowArgsContainOptionValue(runText, "--body-file", [ADVISORY_LYCHEE_REPORT_PATH]);
+}
+
 function workflowStepWithMap(step) {
   if (!step || typeof step !== "object" || !step.with || typeof step.with !== "object") {
     return {};
@@ -4023,10 +4067,13 @@ function stepUsesBlockingLycheeJsonClassifier(step) {
 }
 
 /**
- * Enforces this repo's lychee workflow contract with structural YAML parsing:
- * every active lychee-action step pins the lychee binary, and the blocking
- * docs link workflow uses native timeout acceptance instead of the retired
- * fail:false + JSON classifier pattern.
+ * Enforces this repo's lychee workflow contract with structural YAML parsing.
+ *
+ * The repo intentionally avoids lycheeverse/lychee-action because the v0.24.2
+ * Linux asset extracts the binary under a platform directory, while the action
+ * installer expected a flat path. Workflows install through the repo-owned
+ * composite action, then call the lychee CLI directly so archive-layout drift is
+ * diagnosed by our installer instead of failing before the link scan starts.
  */
 function findLycheeActionPolicyViolations(relativePath, content) {
   const violations = [];
@@ -4111,15 +4158,15 @@ function findLycheeActionPolicyViolations(relativePath, content) {
         new Violation(
           relativePath,
           0,
-          "lychee-action offline/internal step",
-          "Blocking docs link workflow must include at least one active lychee-action offline/internal step for local links and anchors.",
+          "lychee CLI offline/internal step",
+          "Blocking docs link workflow must include at least one active lychee CLI offline/internal step for local links and anchors.",
           "error"
         ),
         new Violation(
           relativePath,
           0,
-          "lychee-action external liveness step",
-          "Blocking docs link workflow must include at least one active lychee-action external liveness step.",
+          "lychee CLI external liveness step",
+          "Blocking docs link workflow must include at least one active lychee CLI external liveness step.",
           "error"
         )
       );
@@ -4129,8 +4176,8 @@ function findLycheeActionPolicyViolations(relativePath, content) {
         new Violation(
           relativePath,
           0,
-          "lychee-action advisory scan step",
-          "Scheduled advisory link workflow must include at least one active lychee-action advisory scan step.",
+          "lychee CLI advisory scan step",
+          "Scheduled advisory link workflow must include at least one active lychee CLI advisory scan step.",
           "error"
         )
       );
@@ -4143,6 +4190,7 @@ function findLycheeActionPolicyViolations(relativePath, content) {
   let hasBlockingOfflineLycheeStep = false;
   let hasBlockingExternalLycheeStep = false;
   let hasAdvisoryLycheeStep = false;
+  let hasAdvisoryIssueReportBodyFile = false;
 
   for (const [jobId, job] of Object.entries(jobs)) {
     if (!job || typeof job !== "object" || !Array.isArray(job.steps)) {
@@ -4154,6 +4202,7 @@ function findLycheeActionPolicyViolations(relativePath, content) {
         ? jobsNode.getIn([jobId, "steps"], true)
         : null;
     const stepNodes = stepsNode && Array.isArray(stepsNode.items) ? stepsNode.items : [];
+    let sawPinnedLycheeInstall = false;
 
     job.steps.forEach((step, index) => {
       if (!step || typeof step !== "object") {
@@ -4161,6 +4210,11 @@ function findLycheeActionPolicyViolations(relativePath, content) {
       }
 
       const stepLine = resolveNodeStartLine(content, stepNodes[index]);
+      const runText = stepRunText(step);
+
+      if (isAdvisoryDocsWorkflow && workflowRunUsesAdvisoryIssueBodyFile(runText)) {
+        hasAdvisoryIssueReportBodyFile = true;
+      }
 
       if (isBlockingDocsWorkflow && stepUsesBlockingLycheeJsonClassifier(step)) {
         violations.push(
@@ -4177,25 +4231,79 @@ function findLycheeActionPolicyViolations(relativePath, content) {
         );
       }
 
-      if (!isLycheeActionUses(step.uses)) {
-        return;
-      }
-
-      const withMap = workflowStepWithMap(step);
-      const lycheeVersion = stringifyWorkflowScalar(withMap.lycheeVersion);
-      if (lycheeVersion !== REQUIRED_LYCHEE_VERSION) {
+      if (isLycheeActionUses(step.uses)) {
         violations.push(
           new Violation(
             relativePath,
             stepLine,
-            `lycheeVersion: ${lycheeVersion || "<missing>"}`,
-            `Active lychee-action step in job '${jobId}' must pin lycheeVersion: ${REQUIRED_LYCHEE_VERSION}.`,
+            "lycheeverse/lychee-action",
+            "Active workflows must not use lycheeverse/lychee-action; its v0.24.2 Linux installer expected a flat archive path and failed before lychee ran. Use ./.github/actions/install-pinned-lychee and invoke the lychee CLI directly.",
+            "error"
+          )
+        );
+        return;
+      }
+
+      if (isInstallPinnedLycheeUses(step.uses)) {
+        const withMap = workflowStepWithMap(step);
+        const version = stringifyWorkflowScalar(withMap.version);
+        if (version !== REQUIRED_LYCHEE_VERSION) {
+          violations.push(
+            new Violation(
+              relativePath,
+              stepLine,
+              `version: ${version || "<missing>"}`,
+              `Job '${jobId}' must install lychee ${REQUIRED_LYCHEE_VERSION} through ./.github/actions/install-pinned-lychee before running lychee.`,
+              "error"
+            )
+          );
+        } else {
+          sawPinnedLycheeInstall = true;
+        }
+        return;
+      }
+
+      if (!stepRunsLycheeCli(step)) {
+        return;
+      }
+
+      const args = runText;
+      if (!sawPinnedLycheeInstall) {
+        violations.push(
+          new Violation(
+            relativePath,
+            stepLine,
+            "missing install-pinned-lychee",
+            `Job '${jobId}' runs lychee before installing ${REQUIRED_LYCHEE_VERSION} via ./.github/actions/install-pinned-lychee.`,
             "error"
           )
         );
       }
 
-      const args = stringifyWorkflowScalar(withMap.args);
+      if (!workflowArgsContainLycheeConfig(args)) {
+        violations.push(
+          new Violation(
+            relativePath,
+            stepLine,
+            "-c .lychee.toml",
+            "Lychee CLI steps must pass -c .lychee.toml so both blocking and advisory jobs share the validated repository policy.",
+            "error"
+          )
+        );
+      }
+
+      if (!workflowArgsContainToken(args, "--files-from")) {
+        violations.push(
+          new Violation(
+            relativePath,
+            stepLine,
+            "--files-from",
+            "Lychee CLI steps must use --files-from with the tracked docs list; lychee globs do not honor .gitignore.",
+            "error"
+          )
+        );
+      }
+
       if (isAdvisoryDocsWorkflow) {
         hasAdvisoryLycheeStep = true;
       }
@@ -4212,13 +4320,25 @@ function findLycheeActionPolicyViolations(relativePath, content) {
         );
       }
 
-      if (isAdvisoryDocsWorkflow && !workflowScalarIsFalse(withMap.fail)) {
+      if (isAdvisoryDocsWorkflow && !workflowRunCapturesAdvisoryLycheeExitCode(args)) {
         violations.push(
           new Violation(
             relativePath,
             stepLine,
-            `fail: ${stringifyWorkflowScalar(withMap.fail) || "<missing>"}`,
-            "Scheduled advisory link workflow lychee-action steps must keep fail: false so dead links and timeouts are reported through the tracking issue instead of failing the run.",
+            "advisory exit_code output",
+            "Scheduled advisory link workflow must capture lychee's exit_code to GITHUB_OUTPUT and exit 0 so dead links and timeouts are reported through the tracking issue instead of failing the run.",
+            "error"
+          )
+        );
+      }
+
+      if (isAdvisoryDocsWorkflow && !workflowRunWritesAdvisoryLycheeReport(args)) {
+        violations.push(
+          new Violation(
+            relativePath,
+            stepLine,
+            "advisory markdown report",
+            `Scheduled advisory link workflow must write a Markdown lychee report to ${ADVISORY_LYCHEE_REPORT_PATH}; the issue sync step uses that file as the tracking issue body.`,
             "error"
           )
         );
@@ -4252,13 +4372,13 @@ function findLycheeActionPolicyViolations(relativePath, content) {
       }
 
       if (hasOfflineMode && !hasExternalScheme) {
-        if (!workflowScalarIsTrue(withMap.fail)) {
+        if (!workflowArgsContainToken(args, "--include-fragments")) {
           violations.push(
             new Violation(
               relativePath,
               stepLine,
-              `fail: ${stringifyWorkflowScalar(withMap.fail) || "<missing>"}`,
-              "Blocking docs offline/internal lychee step must use fail: true so broken local links and anchors block the workflow.",
+              "--include-fragments",
+              "Blocking docs offline/internal lychee step must pass --include-fragments so in-repo heading anchors are validated.",
               "error"
             )
           );
@@ -4282,18 +4402,6 @@ function findLycheeActionPolicyViolations(relativePath, content) {
         );
       }
 
-      if (!workflowScalarIsTrue(withMap.fail)) {
-        violations.push(
-          new Violation(
-            relativePath,
-            stepLine,
-            `fail: ${stringifyWorkflowScalar(withMap.fail) || "<missing>"}`,
-            "Blocking docs external lychee step must use fail: true so lychee's native liveness result gates the workflow.",
-            "error"
-          )
-        );
-      }
-
       if (!workflowArgsContainToken(args, "--accept-timeouts=true")) {
         violations.push(
           new Violation(
@@ -4306,15 +4414,12 @@ function findLycheeActionPolicyViolations(relativePath, content) {
         );
       }
 
-      const hasJsonReportInputs =
-        Object.prototype.hasOwnProperty.call(withMap, "format") ||
-        Object.prototype.hasOwnProperty.call(withMap, "output");
-      if (workflowScalarIsFalse(withMap.fail) && hasJsonReportInputs) {
+      if (/\bexternal\.json\b/.test(args)) {
         violations.push(
           new Violation(
             relativePath,
             stepLine,
-            "fail:false JSON report",
+            "external.json report",
             "Blocking docs link workflow must not use fail:false plus format/output JSON report post-classification. Use fail: true with --accept-timeouts=true.",
             "error"
           )
@@ -4328,8 +4433,8 @@ function findLycheeActionPolicyViolations(relativePath, content) {
       new Violation(
         relativePath,
         workflowPolicyLine,
-        "lychee-action offline/internal step",
-        "Blocking docs link workflow must include at least one active lychee-action offline/internal step for local links and anchors.",
+        "lychee CLI offline/internal step",
+        "Blocking docs link workflow must include at least one active lychee CLI offline/internal step for local links and anchors.",
         "error"
       )
     );
@@ -4340,8 +4445,8 @@ function findLycheeActionPolicyViolations(relativePath, content) {
       new Violation(
         relativePath,
         workflowPolicyLine,
-        "lychee-action external liveness step",
-        "Blocking docs link workflow must include at least one active lychee-action external liveness step.",
+        "lychee CLI external liveness step",
+        "Blocking docs link workflow must include at least one active lychee CLI external liveness step.",
         "error"
       )
     );
@@ -4352,8 +4457,20 @@ function findLycheeActionPolicyViolations(relativePath, content) {
       new Violation(
         relativePath,
         workflowPolicyLine,
-        "lychee-action advisory scan step",
-        "Scheduled advisory link workflow must include at least one active lychee-action advisory scan step.",
+        "lychee CLI advisory scan step",
+        "Scheduled advisory link workflow must include at least one active lychee CLI advisory scan step.",
+        "error"
+      )
+    );
+  }
+
+  if (isAdvisoryDocsWorkflow && hasAdvisoryLycheeStep && !hasAdvisoryIssueReportBodyFile) {
+    violations.push(
+      new Violation(
+        relativePath,
+        workflowPolicyLine,
+        "advisory issue body file",
+        `Scheduled advisory link workflow must pass ${ADVISORY_LYCHEE_REPORT_PATH} to gh issue --body-file so dead-link findings are preserved in the tracking issue.`,
         "error"
       )
     );
@@ -5333,6 +5450,7 @@ if (typeof module !== "undefined" && module.exports) {
     findChangelogCoverageCheckoutViolations,
     NPM_SCRIPTS_REQUIRING_GIT_HISTORY,
     REQUIRED_LYCHEE_VERSION,
+    ADVISORY_LYCHEE_REPORT_PATH,
     extractStaticJobLabels,
     jobIsRunnerAccessPreflight,
     findSelfHostedRunnerPreflightViolations,

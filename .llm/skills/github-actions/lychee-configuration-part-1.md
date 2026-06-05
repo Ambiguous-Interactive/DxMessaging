@@ -29,9 +29,10 @@ Continuation extracted from `lychee-configuration.md` to keep files within the r
 | Using `exclude_mail = true`                 | Deprecated in v0.23.0                                      | Use `include_mail = false`                                         |
 | Using `retries = 3`                         | Renamed in v0.23.0                                         | Use `max_retries = 3`                                              |
 | Using `verbosity = 1`                       | Changed to string enum in v0.23.0                          | Use `verbose = "info"` (or "error", "warn", "debug", "trace")      |
-| Skipping validation in CI                   | Config errors surface as cryptic lychee failures           | Add validation step before lychee-action                           |
+| Skipping validation in CI                   | Config errors surface as cryptic lychee failures           | Add validation before the lychee CLI steps                         |
 | Not updating VALID_FIELDS after lychee bump | New valid fields flagged as errors                         | Sync the set with upstream example config                          |
-| Missing `lycheeVersion` in workflow steps   | New lychee binaries can break config silently              | Pin every active lychee-action step to `v0.24.2`                   |
+| Missing pinned installer in workflow steps  | New lychee binaries can break config silently              | Use `install-pinned-lychee` with `version: v0.24.2`                |
+| Dropping advisory `out.md` generation       | Tracking issue create/update fails on dead-link runs       | Keep `--format markdown --output ./lychee/out.md` in the scan step |
 | Ignoring TOML table headers in validators   | Invalid table-based config bypasses validation             | Parse `[table]` and `[[array]]` headers as top-level fields        |
 | Reading config files at test module scope   | Jest can fail during test collection with poor context     | Read files in `beforeAll` with an existence guard                  |
 | Per-domain `exclude` to silence a 403/429   | Fragile whack-a-mole; the next bot-blocked site repeats it | Widen `accept` instead; reserve `exclude` for unreachable hosts    |
@@ -60,7 +61,8 @@ After a lychee version upgrade:
 - [ ] Compare upstream example config for new/removed/renamed fields
 - [ ] Update `VALID_FIELDS` in `validate-lychee-config.js`
 - [ ] Update version comment in the script
-- [ ] Update every active lychee-action `lycheeVersion` pin
+- [ ] Update every active `install-pinned-lychee` `version` pin
+- [ ] Keep scheduled scan `--output ./lychee/out.md` aligned with `gh issue --body-file`
 - [ ] Run validation against existing `.lychee.toml`
 - [ ] Update unit tests if field list changed
 
