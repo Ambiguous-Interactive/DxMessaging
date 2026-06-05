@@ -195,11 +195,23 @@ function expectSameRepoAndProtectedBranchGuard(job) {
   expect(job.if).toContain("github.ref_protected");
 }
 
-function expectLicensedSecretsGuard(job) {
-  expect(job.if).toContain("secrets.UNITY_SERIAL != ''");
-  expect(job.if).toContain("secrets.UNITY_EMAIL != ''");
-  expect(job.if).toContain("secrets.UNITY_PASSWORD != ''");
-  expect(job.if).toContain("secrets.ORG_BUILD_LOCK_TOKEN != ''");
+function expectLicensedSecretsGuard(job, gateOutput) {
+  expect(job.if).toContain(gateOutput);
+}
+
+function expectLicensedSecretsOutput(job) {
+  expect(job.outputs).toBeDefined();
+  expect(job.outputs["has-required-secrets"]).toContain(
+    "steps.check-secrets.outputs.has-secrets"
+  );
+  expect(Array.isArray(job.steps)).toBe(true);
+  const checkSecretsStep = job.steps.find(
+    (step) => step && step.name === "Check for required Unity license secrets"
+  );
+  expect(checkSecretsStep).toBeDefined();
+  expect(checkSecretsStep.id).toBe("check-secrets");
+  expect(checkSecretsStep.run).toContain("has-secrets=true");
+  expect(checkSecretsStep.run).toContain("has-secrets=false");
 }
 
 describe("Unity workflows are active GitHub workflows", () => {
@@ -996,7 +1008,29 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
     "$workflow job '$jobId' requires licensed Unity and lock secrets",
     ({ workflow, jobId }) => {
       const parsed = loadWorkflowYaml(workflow);
-      expectLicensedSecretsGuard(parsed.jobs[jobId]);
+      expectLicensedSecretsGuard(
+        parsed.jobs[jobId],
+        "needs.matrix-config.outputs.has-required-secrets == 'true'"
+      );
+    }
+  );
+
+  test("perf-numbers.yml job 'perf-benchmarks' requires licensed Unity and lock secrets", () => {
+    const parsed = loadWorkflowYaml("perf-numbers.yml");
+    expectLicensedSecretsGuard(
+      parsed.jobs["perf-benchmarks"],
+      "needs.loop-guard.outputs.has-required-secrets == 'true'"
+    );
+  });
+
+  test.each([
+    { workflow: "unity-tests.yml", jobId: "matrix-config" },
+    { workflow: "perf-numbers.yml", jobId: "loop-guard" }
+  ])(
+    "$workflow job '$jobId' resolves required Unity/lock secrets into a needs output",
+    ({ workflow, jobId }) => {
+      const parsed = loadWorkflowYaml(workflow);
+      expectLicensedSecretsOutput(parsed.jobs[jobId]);
     }
   );
 });
@@ -1441,7 +1475,10 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       "github.event.pull_request.head.repo.full_name == github.repository"
     );
     expect(perfJob.if).toContain("github.event_name != 'pull_request'");
-    expectLicensedSecretsGuard(perfJob);
+    expectLicensedSecretsGuard(
+      perfJob,
+      "needs.loop-guard.outputs.has-required-secrets == 'true'"
+    );
   });
 
   test("a loop-guard reads the head commit for the perf-autoupdate sentinel and skips the expensive run", () => {
