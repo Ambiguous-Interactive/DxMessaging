@@ -80,7 +80,7 @@ function seedDoc() {
     "",
     BEGIN_MARKER,
     "",
-    "The dispatch throughput table populates after the first CI benchmark run on master.",
+    "The dispatch throughput table populates after the first default-branch CI benchmark run.",
     "",
     "| Scenario                       | Throughput / Wall clock | Allocated bytes |",
     "| ------------------------------ | ----------------------- | --------------- |",
@@ -237,7 +237,10 @@ describe("render-perf-doc blocksEquivalent (idempotence)", () => {
     // 25000000.125 -> 25.00 M; +1% jitter keeps the rounded display identical
     // and stays within the 2% tolerance.
     const jitter = unityLog(LATEST).replace("25000000.125", "25250000.0");
-    const jittered = buildBlock(selectRowsForVersion(extractRows(jitter), `Unity ${LATEST}`), LATEST);
+    const jittered = buildBlock(
+      selectRowsForVersion(extractRows(jitter), `Unity ${LATEST}`),
+      LATEST
+    );
     expect(blocksEquivalent(base, jittered, 0.02)).toBe(true);
   });
 

@@ -24,6 +24,9 @@ const {
   findWindowsBashPortabilityViolations,
   findForbiddenRunsOnGroupViolations,
   findChangelogCoverageCheckoutViolations,
+  findCheckoutCredentialPersistenceViolations,
+  findTokenizedGitRemoteCredentialViolations,
+  findPersistentGitExtraheaderCredentialViolations,
   runTextInvokesChangelogCoverage,
   NPM_SCRIPTS_REQUIRING_GIT_HISTORY,
   extractStaticJobLabels,
@@ -1508,7 +1511,7 @@ describe("findLycheeActionPolicyViolations", () => {
     expect(actionText).toContain("tar -tzf");
     expect(actionText).toContain('find "${temp_dir}" -maxdepth 3 -type f -name lychee');
     expect(actionText).toContain("Expected exactly one lychee binary");
-    expect(actionText).toContain("lychee\" --version");
+    expect(actionText).toContain('lychee" --version');
   });
 
   test("rejects advisory workflow lychee steps that would fail the workflow directly", () => {
@@ -1656,7 +1659,9 @@ describe("findLycheeActionPolicyViolations", () => {
     );
 
     expect(messages.some((message) => message.includes("--accept-timeouts=true"))).toBe(true);
-    expect(messages.some((message) => message.includes("fail:false plus format/output"))).toBe(true);
+    expect(messages.some((message) => message.includes("fail:false plus format/output"))).toBe(
+      true
+    );
     expect(messages.some((message) => message.includes("retired JSON post-classifier"))).toBe(true);
   });
 
@@ -2094,6 +2099,523 @@ describe("runTextInvokesChangelogCoverage + NPM_SCRIPTS_REQUIRING_GIT_HISTORY (B
     const violations = findChangelogCoverageCheckoutViolations("workflow.yml", lines);
     expect(violations).toHaveLength(1);
     expect(violations[0].message).toContain("fetch-depth: 0");
+  });
+});
+
+describe("findCheckoutCredentialPersistenceViolations", () => {
+  test("requires every checkout to declare persist-credentials explicitly", () => {
+    const lines = [
+      "jobs:",
+      "  check:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Checkout",
+      "        uses: actions/checkout@v6",
+      "      - run: npm test"
+    ];
+
+    const violations = findCheckoutCredentialPersistenceViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].line).toBe(5);
+    expect(violations[0].message).toContain("without an explicit persist-credentials value");
+  });
+
+  test("accepts checkout credential opt-out for read-only jobs", () => {
+    const lines = [
+      "jobs:",
+      "  check:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Checkout",
+      "        uses: actions/checkout@v6",
+      "        with:",
+      "          persist-credentials: false",
+      "      - run: npm test"
+    ];
+
+    const violations = findCheckoutCredentialPersistenceViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("rejects persisted checkout credentials even before a local auto-commit action", () => {
+    const lines = [
+      "jobs:",
+      "  autofix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Checkout",
+      "        uses: actions/checkout@v6",
+      "        with:",
+      "          persist-credentials: true",
+      "      - name: Commit fixes",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        uses: stefanzweifel/git-auto-commit-action@v7"
+    ];
+
+    const violations = findCheckoutCredentialPersistenceViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("persists checkout credentials");
+  });
+
+  test.each(["true", "${{ inputs.persist_credentials }}"])(
+    "rejects persist-credentials: %s without an allowed consumer",
+    (persistValue) => {
+      const lines = [
+        "jobs:",
+        "  check:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        with:",
+        `          persist-credentials: ${persistValue}`,
+        "      - run: npm test"
+      ];
+
+      const violations = findCheckoutCredentialPersistenceViolations("workflow.yml", lines);
+
+      expect(violations).toHaveLength(1);
+      expect(violations[0].message).toContain("persists checkout credentials");
+    }
+  );
+});
+
+describe("findTokenizedGitRemoteCredentialViolations", () => {
+  test("rejects tokenized remote setup that is not adjacent to a guarded auto-commit", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials too early",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+      "      - run: npm test",
+      "      - run: git push origin HEAD"
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("immediate origin cleanup");
+  });
+
+  test("rejects tokenized remote setup split across shell continuations", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials too early",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "        run: |",
+      "          git remote set-url origin \\",
+      '            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"'
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("manual clone/fetch/push steps");
+  });
+
+  test("accepts tokenized remote setup immediately before matching auto-commit action", () => {
+    const lines = [
+      "jobs:",
+      "  autofix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+      "      - name: Commit fixes",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        uses: stefanzweifel/git-auto-commit-action@v7",
+      "      - name: Clear push credentials",
+      "        if: ${{ always() && steps.changes.outputs.has_changes == 'true' }}",
+      '        run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"'
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("accepts tokenized auto-commit handoff split across shell continuations", () => {
+    const lines = [
+      "jobs:",
+      "  autofix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "        run: |",
+      "          git remote set-url origin \\",
+      '            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+      "      - name: Commit fixes",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        uses: stefanzweifel/git-auto-commit-action@v7",
+      "      - name: Clear push credentials",
+      "        if: ${{ always() && steps.changes.outputs.has_changes == 'true' }}",
+      "        run: |",
+      "          git remote set-url origin \\",
+      '            "https://github.com/${GITHUB_REPOSITORY}.git"'
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("rejects tokenized auto-commit handoff without immediate cleanup", () => {
+    const lines = [
+      "jobs:",
+      "  autofix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+      "      - name: Commit fixes",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        uses: stefanzweifel/git-auto-commit-action@v7",
+      "      - run: git fetch origin HEAD"
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("immediate origin cleanup");
+  });
+
+  test("rejects tokenized remote setup before auto-commit when guards differ", () => {
+    const lines = [
+      "jobs:",
+      "  autofix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials",
+      "        if: ${{ github.event_name == 'pull_request' }}",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+      "      - name: Commit fixes",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        uses: stefanzweifel/git-auto-commit-action@v7"
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("git-auto-commit-action handoff");
+  });
+
+  test("rejects tokenized remote setup before auto-commit when the handoff is unguarded", () => {
+    const lines = [
+      "jobs:",
+      "  autofix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+      "      - name: Commit fixes",
+      "        uses: stefanzweifel/git-auto-commit-action@v7"
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("single-command git-auto-commit-action handoff");
+  });
+
+  test("rejects auto-commit handoff blocks that also push manually", () => {
+    const lines = [
+      "jobs:",
+      "  autofix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "        run: |",
+      '          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+      "          git push origin HEAD",
+      "      - name: Commit fixes",
+      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+      "        uses: stefanzweifel/git-auto-commit-action@v7"
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("single-command git-auto-commit-action handoff");
+  });
+
+  test("rejects manual tokenized remote setup even when the same run block pushes", () => {
+    const lines = [
+      "jobs:",
+      "  fork_fix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Create bot branch and push",
+      "        if: steps.changes.outputs.has_changes == 'true'",
+      "        run: |",
+      '          git remote add upstream "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"',
+      "          git push upstream bot/fix --force"
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("manual clone/fetch/push steps");
+  });
+
+  test("rejects tokenized remote setup in folded run scalars", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Configure push credentials too early",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "        run: >",
+      "          git remote set-url origin",
+      '          "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"'
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+  });
+
+  test.each([
+    'git -C . remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+    'git -c core.askPass=true clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo',
+    'git fetch "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD',
+    'git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD'
+  ])("rejects tokenized git command form: %s", (command) => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Tokenized git command",
+      `        run: ${command}`
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+  });
+
+  test("accepts command-scoped extraheader credentials for manual pushes", () => {
+    const lines = [
+      "jobs:",
+      "  fork_fix:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Create bot branch and push",
+      "        if: steps.changes.outputs.has_changes == 'true'",
+      "        env:",
+      "          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "        run: |",
+      "          auth_header=\"$(printf 'x-access-token:%s' \"${GH_TOKEN}\" | base64 | tr -d '\\n')\"",
+      '          git remote add upstream "https://github.com/${GITHUB_REPOSITORY}.git"',
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push upstream bot/fix --force'
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("ignores documentation text that mentions tokenized remotes", () => {
+    const lines = [
+      "jobs:",
+      "  docs:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Explain remote policy",
+      "        run: |",
+      '          echo "Do not run git remote set-url origin https://x-access-token:TOKEN@example.invalid/repo.git"'
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("ignores quoted documentation text with shell separators", () => {
+    const lines = [
+      "jobs:",
+      "  docs:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Explain remote policy",
+      "        run: |",
+      '          echo "example; git remote set-url origin https://x-access-token:TOKEN@example.invalid/repo.git"'
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("ignores heredoc content that mentions tokenized remotes", () => {
+    const lines = [
+      "jobs:",
+      "  docs:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Write docs",
+      "        run: |",
+      "          cat <<'EOF' > notes.txt",
+      "          git remote set-url origin https://x-access-token:TOKEN@example.invalid/repo.git",
+      "          EOF"
+    ];
+
+    const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+});
+
+describe("findPersistentGitExtraheaderCredentialViolations", () => {
+  test("rejects persisted Git extraheader credentials", () => {
+    const lines = [
+      "jobs:",
+      "  push:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Persist auth header",
+      "        run: |",
+      '          git config http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
+      "          git push origin HEAD"
+    ];
+
+    const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("persists Git extraheader credentials");
+  });
+
+  test("rejects persisted Git extraheader credentials split across shell continuations", () => {
+    const lines = [
+      "jobs:",
+      "  push:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Persist auth header",
+      "        run: |",
+      "          git config \\",
+      '            http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
+      "          git push origin HEAD"
+    ];
+
+    const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("persists Git extraheader credentials");
+  });
+
+  test("rejects persisted Git extraheader credentials in folded run scalars", () => {
+    const lines = [
+      "jobs:",
+      "  push:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Persist auth header",
+      "        run: >",
+      "          git config",
+      '          http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
+      "          && git push origin HEAD"
+    ];
+
+    const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+  });
+
+  test("rejects persisted Git extraheader credentials split across PowerShell continuations", () => {
+    const lines = [
+      "jobs:",
+      "  push:",
+      "    runs-on: windows-latest",
+      "    steps:",
+      "      - name: Persist auth header",
+      "        shell: pwsh",
+      "        run: |",
+      "          git config `",
+      '            http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
+      "          git push origin HEAD"
+    ];
+
+    const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+  });
+
+  test("accepts command-scoped Git extraheader credentials", () => {
+    const lines = [
+      "jobs:",
+      "  push:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Push with command-scoped auth",
+      "        run: |",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin HEAD'
+    ];
+
+    const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("ignores documentation text that mentions persistent extraheaders", () => {
+    const lines = [
+      "jobs:",
+      "  docs:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Explain header policy",
+      "        run: |",
+      '          echo "Do not run git config http.https://github.com/.extraheader AUTHORIZATION"'
+    ];
+
+    const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("ignores quoted documentation text with separators that mentions extraheaders", () => {
+    const lines = [
+      "jobs:",
+      "  docs:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Explain header policy",
+      "        run: |",
+      '          echo "example; git config http.https://github.com/.extraheader AUTHORIZATION"'
+    ];
+
+    const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
   });
 });
 

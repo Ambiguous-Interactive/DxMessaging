@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       # Same tracked-files source of truth as the blocking job (lychee's glob
       # ignores .gitignore), so vendored/generated trees are never scanned.

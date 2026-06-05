@@ -163,7 +163,7 @@ jobs:
 | Missing `.github/workflows/**` in paths | Workflow won't run when its own file changes | Add to path filters                               |
 | Missing concurrency group               | Duplicate runs waste resources               | Add concurrency block                             |
 | Missing permissions block               | Implicit permissions are too broad           | Declare explicit minimal permissions              |
-| Missing `persist-credentials: false`    | Git credentials persist unnecessarily        | Add to checkout step                              |
+| Missing checkout credential policy      | Git credentials persist by default           | Add explicit `persist-credentials: false`         |
 | Missing `timeout-minutes`               | Jobs can run indefinitely                    | Add timeout to every job                          |
 | Single quotes for strings               | Inconsistent with Prettier                   | Use double quotes                                 |
 | Wrong property order                    | Hard to review, fails formatting             | Use: name > on > concurrency > permissions > jobs |
@@ -176,7 +176,8 @@ Before committing a workflow, verify:
 - [ ] Concurrency group defined with `cancel-in-progress: true`
 - [ ] Explicit `permissions` block with minimal required permissions
 - [ ] Every job has `timeout-minutes`
-- [ ] Checkout steps use `persist-credentials: false` (unless pushing)
+- [ ] Checkout steps declare `persist-credentials`; use `false`; auto-commit
+      handoffs clean up tokenized remotes immediately
 - [ ] Path filters include `.github/workflows/**` for self-referential checks
 - [ ] Double quotes used for strings
 - [ ] 2-space indentation throughout

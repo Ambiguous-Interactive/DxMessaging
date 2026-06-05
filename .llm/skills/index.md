@@ -68,8 +68,8 @@
 | ------------------------------------------------------------------------------------------------------ | ---------- | -------------- | -------- | -------------- | --------------------- |
 | [CI/CD Devcontainer Workflows](./github-actions/cicd-devcontainer-workflows.md)                        | [ok] 256   | [intermediate] | [stable] | [risk: high]   | github-actions, ci-cd |
 | [Git Renormalize Pattern Validation](./github-actions/git-renormalize-patterns.md)                     | [ok] 232   | [intermediate] | [stable] | [risk: low]    | github-actions, git   |
-| [GitHub Actions Workflow Consistency](./github-actions/workflow-consistency.md)                        | [ok] 183   | [intermediate] | [stable] | [risk: medium] | github-actions, ci-cd |
-| [GitHub Actions Workflow Consistency Part 1](./github-actions/workflow-consistency-part-1.md)          | [ok] 196   | [intermediate] | [stable] | [risk: low]    | migration, split      |
+| [GitHub Actions Workflow Consistency](./github-actions/workflow-consistency.md)                        | [ok] 196   | [intermediate] | [stable] | [risk: medium] | github-actions, ci-cd |
+| [GitHub Actions Workflow Consistency Part 1](./github-actions/workflow-consistency-part-1.md)          | [ok] 197   | [intermediate] | [stable] | [risk: low]    | migration, split      |
 | [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [warn] 299 | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
 | [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 81 | [intermediate] | [stable] | [risk: low]    | migration, split      |
 | [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 209   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
@@ -102,7 +102,7 @@
 | [Collection Pooling with RAII Pattern](./performance/collection-pooling.md)                                        | [draft] 119 | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
 | [Collection Pooling with RAII Pattern Part 1](./performance/collection-pooling-part-1.md)                          | [ok] 206    | [intermediate] | [stable] | [risk: low]      | migration, split      |
 | [Collection Pooling with RAII Pattern Part 2](./performance/collection-pooling-part-2.md)                          | [draft] 57  | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [ok] 218    | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path    |
+| [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [ok] 219    | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path    |
 | [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 198    | [advanced]     | [stable] | [risk: critical] | memory, reclamation   |
 | [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 186    | [advanced]     | [stable] | [risk: critical] | sweep, eviction       |
 | [Git Hook Performance Budget](./performance/git-hook-performance.md)                                               | [warn] 299  | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |

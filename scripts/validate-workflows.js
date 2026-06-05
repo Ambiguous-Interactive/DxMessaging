@@ -40,6 +40,11 @@
  *   directly. The blocking workflow must use native timeout acceptance, while
  *   the scheduled advisory scan must report timeout/dead-link findings through
  *   the tracking issue instead of failing the workflow.
+ * - Checkout credential persistence must be explicit and disabled on every
+ *   actions/checkout step. Tokenized Git remotes may only be configured
+ *   immediately before a matching guarded git-auto-commit-action step; manual
+ *   clone/fetch/push steps must use command-scoped credentials. Persistent
+ *   `git config http.*.extraheader` credentials are forbidden.
  *
  * @usage
  *   node scripts/validate-workflows.js
@@ -92,6 +97,7 @@ const ORGANIZATION_BUILD_LOCK_RELEASE_USES =
 // Lowercased `uses` ref for the game-ci test runner action.
 const GAME_CI_UNITY_TEST_RUNNER_USES = "game-ci/unity-test-runner@";
 const REQUIRED_LYCHEE_VERSION = "v0.24.2";
+const GIT_AUTO_COMMIT_USES = "stefanzweifel/git-auto-commit-action@";
 const BLOCKING_DOC_LINK_WORKFLOW = ".github/workflows/lint-doc-links.yml";
 const ADVISORY_DOC_LINK_WORKFLOW = ".github/workflows/markdown-link-validity.yml";
 const ADVISORY_LYCHEE_REPORT_PATH = "./lychee/out.md";
@@ -556,7 +562,7 @@ function extractRunBlocks(lines) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const blockRunMatch = /^(\s*)(?:-\s+)?run:\s*[>|][+-]?\s*$/.exec(line);
+    const blockRunMatch = /^(\s*)(?:-\s+)?run:\s*([>|])[+-]?\s*$/.exec(line);
 
     if (blockRunMatch) {
       const baseIndent = blockRunMatch[1].length;
@@ -974,7 +980,7 @@ function jobTargetsWindows(lines, job) {
 function extractStepRun(lines, stepStartIndex, stepEndIndex) {
   for (let i = stepStartIndex; i <= stepEndIndex; i++) {
     const line = lines[i];
-    const blockRunMatch = /^(\s*)(?:-\s+)?run:\s*[>|][+-]?\s*$/.exec(line);
+    const blockRunMatch = /^(\s*)(?:-\s+)?run:\s*([>|])[+-]?\s*$/.exec(line);
 
     if (blockRunMatch) {
       const baseIndent = blockRunMatch[1].length;
@@ -996,6 +1002,7 @@ function extractStepRun(lines, stepStartIndex, stepEndIndex) {
 
       return {
         line: i + 1,
+        style: blockRunMatch[2],
         text: blockLines.join("\n").trim()
       };
     }
@@ -1004,6 +1011,7 @@ function extractStepRun(lines, stepStartIndex, stepEndIndex) {
     if (inlineRunMatch) {
       return {
         line: i + 1,
+        style: null,
         text: inlineRunMatch[1].trim()
       };
     }
@@ -3973,6 +3981,327 @@ function workflowScalarIsFalse(value) {
   return value === false || stringifyWorkflowScalar(value).toLowerCase() === "false";
 }
 
+function checkoutPersistCredentialsValue(step) {
+  if (!step || !(step.with instanceof Map) || !step.with.has("persist-credentials")) {
+    return null;
+  }
+
+  return step.with.get("persist-credentials");
+}
+
+function findCheckoutCredentialPersistenceViolations(relativePath, lines) {
+  const violations = [];
+  const jobs = extractJobs(lines);
+
+  for (const job of jobs) {
+    const steps = extractJobSteps(lines, job);
+
+    for (const step of steps) {
+      if (typeof step.uses !== "string" || !step.uses.startsWith("actions/checkout@")) {
+        continue;
+      }
+
+      const persistCredentials = checkoutPersistCredentialsValue(step);
+      if (persistCredentials === null) {
+        violations.push(
+          new Violation(
+            relativePath,
+            step.startIndex + 1,
+            "actions/checkout persist-credentials",
+            `Workflow job '${job.id}' uses actions/checkout without an explicit persist-credentials value. Set persist-credentials: false and configure push credentials only in the guarded step that actually pushes.`,
+            "error"
+          )
+        );
+        continue;
+      }
+
+      if (workflowScalarIsFalse(persistCredentials)) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          step.startIndex + 1,
+          `persist-credentials: ${persistCredentials}`,
+          `Workflow job '${job.id}' persists checkout credentials. Use persist-credentials: false and configure push credentials only in the guarded step that actually pushes.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
+}
+
+function normalizeWorkflowIfExpression(expression) {
+  return stringifyWorkflowScalar(expression)
+    .replace(/^\$\{\{\s*/, "")
+    .replace(/\s*\}\}$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function workflowIfExpressionsMatch(left, right) {
+  return normalizeWorkflowIfExpression(left) === normalizeWorkflowIfExpression(right);
+}
+
+function stepUsesGitAutoCommitAction(step) {
+  return (
+    step &&
+    typeof step.uses === "string" &&
+    step.uses.toLowerCase().startsWith(GIT_AUTO_COMMIT_USES)
+  );
+}
+
+function stripWorkflowRunHeredocBodies(text) {
+  const lines = normalizeToLf(text).split("\n");
+  const kept = [];
+  let heredocTerminator = null;
+
+  for (const line of lines) {
+    if (heredocTerminator) {
+      if (line.trim() === heredocTerminator) {
+        heredocTerminator = null;
+      }
+      continue;
+    }
+
+    kept.push(line);
+    const heredocMatch = /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/.exec(line);
+    if (heredocMatch) {
+      heredocTerminator = heredocMatch[1];
+    }
+  }
+
+  return kept.join("\n");
+}
+
+function splitWorkflowRunCommandSegments(line) {
+  const segments = [];
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\" && !inSingleQuote) {
+      current += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      current += char;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      current += char;
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && (char === ";" || char === "|" || char === "&")) {
+      if (current.trim().length > 0) {
+        segments.push(current.trim());
+      }
+      current = "";
+
+      if ((char === "|" || char === "&") && line[i + 1] === char) {
+        i++;
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim().length > 0) {
+    segments.push(current.trim());
+  }
+
+  return segments;
+}
+
+function workflowRunExecutableCommands(runInput) {
+  const runText =
+    runInput && typeof runInput === "object" && "text" in runInput
+      ? stringifyWorkflowScalar(runInput.text)
+      : stringifyWorkflowScalar(runInput);
+  const runStyle = runInput && typeof runInput === "object" ? runInput.style : null;
+  const withoutHeredocs = stripWorkflowRunHeredocBodies(runText)
+    .replace(/\\\n[ \t]*/g, " ")
+    .replace(/`\n[ \t]*/g, " ");
+  const executableText = runStyle === ">" ? withoutHeredocs.replace(/\n+/g, " ") : withoutHeredocs;
+
+  return executableText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"))
+    .flatMap((line) => splitWorkflowRunCommandSegments(line))
+    .filter((segment) => segment.length > 0 && !segment.startsWith("#"));
+}
+
+function gitCommandContainsSubcommand(command, subcommandPattern) {
+  return new RegExp(
+    `^git\\b(?:(?!\\b(?:${subcommandPattern})\\b).)*\\b(?:${subcommandPattern})\\b`,
+    "i"
+  ).test(command);
+}
+
+function workflowCommandConfiguresTokenizedGitRemote(command) {
+  const gitRemoteSubcommands = "remote\\s+(?:add|set-url)|clone|fetch|push";
+  return (
+    gitCommandContainsSubcommand(command, gitRemoteSubcommands) &&
+    /\bx-access-token:/i.test(command)
+  );
+}
+
+function runTextConfiguresTokenizedGitRemote(runInput) {
+  return workflowRunExecutableCommands(runInput).some((command) =>
+    workflowCommandConfiguresTokenizedGitRemote(command)
+  );
+}
+
+function commandSetsTokenizedOriginRemote(command) {
+  return /^git\s+remote\s+set-url\s+origin\s+(?:"[^"]*\bx-access-token:[^"]*"|'[^']*\bx-access-token:[^']*'|[^\s;&|]*\bx-access-token:[^\s;&|]*)\s*$/i.test(
+    command
+  );
+}
+
+function runTextOnlyConfiguresTokenizedOriginRemote(runInput) {
+  const commands = workflowRunExecutableCommands(runInput);
+  return commands.length === 1 && commandSetsTokenizedOriginRemote(commands[0]);
+}
+
+function commandClearsOriginRemote(command) {
+  return /^git\s+remote\s+set-url\s+origin\s+(?:"https:\/\/github\.com\/[^"\s;&|]+\.git"|'https:\/\/github\.com\/[^'\s;&|]+\.git'|https:\/\/github\.com\/[^\s;&|]+\.git)\s*$/i.test(
+    command
+  );
+}
+
+function runTextOnlyClearsOriginRemote(runInput) {
+  const commands = workflowRunExecutableCommands(runInput);
+  return commands.length === 1 && commandClearsOriginRemote(commands[0]);
+}
+
+function normalizeWorkflowIfExpressionForCleanup(expression) {
+  return normalizeWorkflowIfExpression(expression)
+    .replace(/^always\(\)\s*&&\s*/, "")
+    .trim();
+}
+
+function cleanupIfExpressionMatchesHandoff(cleanupIf, handoffIf) {
+  return (
+    normalizeWorkflowIfExpressionForCleanup(cleanupIf) ===
+    normalizeWorkflowIfExpressionForCleanup(handoffIf)
+  );
+}
+
+function stepClearsTokenizedOriginRemoteAfterAutoCommit(steps, stepIndex) {
+  const handoffStep = steps[stepIndex];
+  const cleanupStep = steps[stepIndex + 2];
+
+  return (
+    cleanupStep &&
+    cleanupStep.run &&
+    cleanupIfExpressionMatchesHandoff(cleanupStep.if, handoffStep.if) &&
+    runTextOnlyClearsOriginRemote(cleanupStep.run)
+  );
+}
+
+function tokenizedGitRemoteFeedsGuardedAutoCommit(steps, stepIndex) {
+  const step = steps[stepIndex];
+  const nextStep = steps[stepIndex + 1];
+  const normalizedIf = normalizeWorkflowIfExpression(step.if);
+
+  return (
+    normalizedIf.length > 0 &&
+    stepUsesGitAutoCommitAction(nextStep) &&
+    workflowIfExpressionsMatch(step.if, nextStep.if) &&
+    step.run &&
+    runTextOnlyConfiguresTokenizedOriginRemote(step.run) &&
+    stepClearsTokenizedOriginRemoteAfterAutoCommit(steps, stepIndex)
+  );
+}
+
+function findTokenizedGitRemoteCredentialViolations(relativePath, lines) {
+  const violations = [];
+  const jobs = extractJobs(lines);
+
+  for (const job of jobs) {
+    const steps = extractJobSteps(lines, job);
+
+    for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+      const step = steps[stepIndex];
+      if (!step.run || !runTextConfiguresTokenizedGitRemote(step.run)) {
+        continue;
+      }
+
+      if (tokenizedGitRemoteFeedsGuardedAutoCommit(steps, stepIndex)) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          step.run.line,
+          "x-access-token Git remote",
+          `Workflow job '${job.id}' configures a tokenized Git remote outside a guarded single-command git-auto-commit-action handoff with immediate origin cleanup. Keep checkout credentials disabled; manual clone/fetch/push steps must use command-scoped git -c http.https://github.com/.extraheader credentials instead of storing tokens in remotes.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
+}
+
+function runTextConfiguresPersistentGitExtraheader(runText) {
+  return workflowRunExecutableCommands(runText).some(
+    (command) =>
+      gitCommandContainsSubcommand(command, "config") &&
+      /\bhttp\.[^\s;&|]+\.extraheader\b/i.test(command)
+  );
+}
+
+function findPersistentGitExtraheaderCredentialViolations(relativePath, lines) {
+  const violations = [];
+  const jobs = extractJobs(lines);
+
+  for (const job of jobs) {
+    const steps = extractJobSteps(lines, job);
+
+    for (const step of steps) {
+      if (!step.run || !runTextConfiguresPersistentGitExtraheader(step.run)) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          step.run.line,
+          "git config http.*.extraheader",
+          `Workflow job '${job.id}' persists Git extraheader credentials. Use command-scoped git -c http.https://github.com/.extraheader=... only on the clone/fetch/push command that needs authentication.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
+}
+
 function workflowArgsContainToken(args, token) {
   return new RegExp(`(?:^|\\s)${escapeRegExp(token)}(?:\\s|$)`).test(stringifyWorkflowScalar(args));
 }
@@ -4004,10 +4333,10 @@ function isLycheeActionUses(usesValue) {
 }
 
 function isInstallPinnedLycheeUses(usesValue) {
-  return stringifyWorkflowScalar(usesValue)
-    .replace(/^\.\//, "")
-    .toLowerCase()
-    .replace(/\/$/, "") === ".github/actions/install-pinned-lychee";
+  return (
+    stringifyWorkflowScalar(usesValue).replace(/^\.\//, "").toLowerCase().replace(/\/$/, "") ===
+    ".github/actions/install-pinned-lychee"
+  );
 }
 
 function stepRunsLycheeCli(step) {
@@ -5258,6 +5587,12 @@ function validateWorkflow(filePath, options = {}) {
 
     violations.push(...findChangelogCoverageCheckoutViolations(relativePath, lines));
 
+    violations.push(...findCheckoutCredentialPersistenceViolations(relativePath, lines));
+
+    violations.push(...findTokenizedGitRemoteCredentialViolations(relativePath, lines));
+
+    violations.push(...findPersistentGitExtraheaderCredentialViolations(relativePath, lines));
+
     violations.push(...findSelfHostedRunnerPreflightViolations(relativePath, lines));
 
     violations.push(...findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lines));
@@ -5448,6 +5783,9 @@ if (typeof module !== "undefined" && module.exports) {
     runTextInvokesChangelogCoverage,
     stepHasFullHistoryCheckout,
     findChangelogCoverageCheckoutViolations,
+    findCheckoutCredentialPersistenceViolations,
+    findTokenizedGitRemoteCredentialViolations,
+    findPersistentGitExtraheaderCredentialViolations,
     NPM_SCRIPTS_REQUIRING_GIT_HISTORY,
     REQUIRED_LYCHEE_VERSION,
     ADVISORY_LYCHEE_REPORT_PATH,

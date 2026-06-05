@@ -1,7 +1,7 @@
 # Deploy Documentation to GitHub Pages
 #
 # This workflow builds MkDocs documentation and deploys it to GitHub Pages.
-# It runs on pushes to master (for deployment) and on PRs (for validation only).
+# It runs on pushes to master/main (for deployment) and on PRs (for validation only).
 #
 # Badge URL: https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/deploy-docs.yml/badge.svg
 # Pages URL: https://ambiguous-interactive.github.io/DxMessaging/

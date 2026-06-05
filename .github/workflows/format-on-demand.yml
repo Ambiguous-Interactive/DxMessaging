@@ -50,6 +50,7 @@ jobs:
         with:
           ref: ${{ steps.meta.outputs.head_ref }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Checkout PR fork head
         if: ${{ steps.meta.outputs.same_repo != 'true' }}
         uses: actions/checkout@v6
@@ -98,6 +99,11 @@ jobs:
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Configure push credentials (same-repo)
+        if: ${{ steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
       - name: Commit changes to PR branch (same-repo)
         if: ${{ steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
         uses: stefanzweifel/git-auto-commit-action@v7
@@ -112,6 +118,9 @@ jobs:
             **/*.json
             **/*.asmdef
             **/*.yml
+      - name: Clear push credentials (same-repo)
+        if: ${{ always() && steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+        run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
       - name: Create bot branch and PR (fork)
         if: ${{ steps.meta.outputs.same_repo != 'true' && steps.changes.outputs.has_changes == 'true' }}
         shell: bash
@@ -134,9 +143,10 @@ jobs:
             fi
           done
           git commit -m "chore(format): apply requested formatting for PR #${{ steps.meta.outputs.pr }}"
-          git remote add upstream "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          git fetch upstream
-          git push upstream "$BRANCH" --force
+          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
+          git remote add upstream "https://github.com/${GH_REPO}.git"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" fetch upstream
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push upstream "$BRANCH" --force
       - name: Open/Update formatting PR (fork)
         if: ${{ steps.meta.outputs.same_repo != 'true' && steps.changes.outputs.has_changes == 'true' }}
         uses: actions/github-script@v9
@@ -200,6 +210,7 @@ jobs:
         with:
           ref: ${{ steps.meta.outputs.head_ref }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Checkout PR fork head
         if: ${{ steps.meta.outputs.same_repo != 'true' }}
         uses: actions/checkout@v6
@@ -248,6 +259,11 @@ jobs:
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Configure push credentials (same-repo)
+        if: ${{ steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
       - name: Commit changes to PR branch (same-repo)
         if: ${{ steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
         uses: stefanzweifel/git-auto-commit-action@v7
@@ -262,6 +278,9 @@ jobs:
             **/*.json
             **/*.asmdef
             **/*.yml
+      - name: Clear push credentials (same-repo)
+        if: ${{ always() && steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+        run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
       - name: Create bot branch and PR (fork)
         if: ${{ steps.meta.outputs.same_repo != 'true' && steps.changes.outputs.has_changes == 'true' }}
         shell: bash
@@ -284,9 +303,10 @@ jobs:
             fi
           done
           git commit -m "chore(format): apply requested formatting for PR #${{ steps.meta.outputs.pr }}"
-          git remote add upstream "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          git fetch upstream
-          git push upstream "$BRANCH" --force
+          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
+          git remote add upstream "https://github.com/${GH_REPO}.git"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" fetch upstream
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push upstream "$BRANCH" --force
       - name: Open/Update formatting PR (fork)
         if: ${{ steps.meta.outputs.same_repo != 'true' && steps.changes.outputs.has_changes == 'true' }}
         uses: actions/github-script@v9

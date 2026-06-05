@@ -8,10 +8,10 @@ name: Performance Numbers
 # as a non-blocking sticky PR comment. It does NOT push onto the contributor's
 # branch: a GITHUB_TOKEN push does not re-trigger the required pull_request checks
 # (and a doc-only commit path-filters the others out), so the new head would have
-# no successful required checks and merge would be blocked. On push to master
-# (after the PR merges) the same benchmarks run and, if the numbers moved, CI
-# opens or updates a bot PR with the refreshed doc because protected-branch rules
-# require PR-based writes to the default branch. The committed numbers are
+# no successful required checks and merge would be blocked. On push to master or
+# main (after the PR merges) the same benchmarks run and, if the numbers moved,
+# CI opens or updates a bot PR with the refreshed doc because protected-branch
+# rules require PR-based writes to the default branch. The committed numbers are
 # therefore owned by CI, not by committed state, manual runs, or PR-body text.
 on:
   pull_request:
@@ -27,9 +27,10 @@ on:
 
 # Top-level least-privilege. The PR-comment job (comment-perf-doc) gets only
 # pull-requests:write to post the sticky comment (it never pushes); the
-# master-refresh job (commit-perf-doc) gets contents:write + pull-requests:write
-# to open/update the generated perf-doc PR on the push-event path. Each grants
-# its scope on the job itself so the licensed Unity job never inherits write.
+# default-branch refresh job (commit-perf-doc) gets contents:write +
+# pull-requests:write to open/update the generated perf-doc PR on the push-event
+# path. Each grants its scope on the job itself so the licensed Unity job never
+# inherits write.
 permissions:
   contents: read
   checks: write
@@ -127,16 +128,15 @@ jobs:
 
   loop-guard:
     name: Resolve perf-autoupdate loop guard
-    # LOOP-GUARD: the commit-perf-doc job (push-to-master path) commits a perf-doc
-    # update to master, which fires the `push` event again. Without a guard that
-    # would re-run the expensive Unity benchmarks on every bot commit, looping
-    # forever. The bot commit carries a `[perf-autoupdate]` sentinel in its
-    # message; this cheap ubuntu job reads the head commit message (the pushed
-    # commit on `push`; the PR head commit on `pull_request`, which never carries
-    # the sentinel because the PR path only comments and never pushes) and, when
-    # the sentinel is present, sets should-run=false so the downstream benchmark
-    # run + commit are SKIPPED. We deliberately do NOT use `[skip ci]` on the bot
-    # commit: that would skip required status checks on master for that commit.
+    # LOOP-GUARD: the commit-perf-doc job opens a perf-doc refresh PR after a
+    # default-branch push. This cheap ubuntu job skips that bot PR's own
+    # pull_request open/sync events, and the eventual default-branch push after
+    # merge, only when verified PR metadata proves it is a github-actions[bot]
+    # perf-autoupdate PR carrying the `[perf-autoupdate]` sentinel. Pull requests
+    # are never skipped from commit-message text, so a normal same-repo PR cannot
+    # suppress perf feedback by adding the sentinel. We deliberately do NOT use
+    # `[skip ci]` on the bot commit: that would skip required status checks on
+    # the final, numbers-fresh commit.
     if: >-
       ${{
         github.event_name != 'pull_request' ||
@@ -144,6 +144,9 @@ jobs:
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       should-run: ${{ steps.guard.outputs.should-run }}
       latest-version: ${{ steps.versions.outputs.latest-version }}
@@ -154,13 +157,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           # Inspect the event's head commit message. On `push`, head.sha is empty
-          # so checkout falls back to the default ref (the pushed commit) -- exactly
-          # the bot's master commit we must detect. On `pull_request` we read the PR
-          # head commit (never carries the sentinel; the PR path only comments). On
+          # so checkout falls back to the default ref (the pushed commit). On
+          # `pull_request` we read the PR head commit. On
           # workflow_dispatch it falls back to the default branch. One logic, all
           # three events.
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
+          persist-credentials: false
       - name: Detect perf-autoupdate sentinel on the head commit
         id: guard
         env:
@@ -169,20 +172,82 @@ jobs:
           # surface. Keep in sync with commit-perf-doc's commit_message below
           # and the unity-workflow-shape contract test.
           PERF_AUTOUPDATE_SENTINEL: "[perf-autoupdate]"
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           message="$(git log -1 --pretty=%B)"
           echo "Head commit subject: $(git log -1 --pretty=%s)"
           if printf '%s' "${message}" | grep -qF -- "${PERF_AUTOUPDATE_SENTINEL}"; then
-            echo "Head commit carries ${PERF_AUTOUPDATE_SENTINEL}; skipping the"
-            echo "expensive Unity benchmark run + perf-doc commit to break the"
-            echo "synchronize loop."
-            echo "should-run=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "Head commit does not carry the perf-autoupdate sentinel; the"
-            echo "Unity benchmark run + perf-doc commit will proceed."
-            echo "should-run=true" >> "${GITHUB_OUTPUT}"
+            echo "Head commit carries ${PERF_AUTOUPDATE_SENTINEL}; this is only"
+            echo "actionable after bot PR metadata is verified."
           fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            if jq -e \
+                --arg repository "${GITHUB_REPOSITORY}" \
+                --arg sentinel "${PERF_AUTOUPDATE_SENTINEL}" \
+                '
+                  .pull_request
+                  | select((.head.repo.full_name // "") == $repository)
+                  | select(
+                      ((.head.ref // "") | startswith("perf-autoupdate/")) and
+                      ((.user.login // "") == "github-actions[bot]")
+                    )
+                  | select(
+                      ((.title // "") | contains($sentinel)) or
+                      ((.body // "") | contains($sentinel))
+                    )
+                ' "${GITHUB_EVENT_PATH}" >/dev/null; then
+              echo "This pull_request event is for a github-actions[bot]"
+              echo "perf-autoupdate PR; skipping the expensive Unity benchmark"
+              echo "run + perf-doc comment."
+              echo "should-run=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            echo "No verified perf-autoupdate bot PR metadata was found for"
+            echo "this pull_request event."
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            associated_prs_json="${RUNNER_TEMP}/perf-autoupdate-associated-prs.json"
+            if gh api \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+                > "${associated_prs_json}"; then
+              if jq -e \
+                --arg repository "${GITHUB_REPOSITORY}" \
+                --arg sentinel "${PERF_AUTOUPDATE_SENTINEL}" \
+                '
+                .[]
+                | select((.merged_at // "") != "")
+                | select((.head.repo.full_name // "") == $repository)
+                | select(
+                    ((.head.ref // "") | startswith("perf-autoupdate/")) and
+                    ((.user.login // "") == "github-actions[bot]")
+                  )
+                | select(
+                    ((.title // "") | contains($sentinel)) or
+                    ((.body // "") | contains($sentinel))
+                  )
+              ' "${associated_prs_json}" >/dev/null; then
+                echo "The pushed commit is associated with a merged"
+                echo "perf-autoupdate bot PR; skipping the expensive Unity"
+                echo "benchmark run + perf-doc commit to break the merge loop."
+                echo "should-run=false" >> "${GITHUB_OUTPUT}"
+                exit 0
+              fi
+              echo "No associated merged perf-autoupdate PR was found for"
+              echo "the pushed commit."
+            else
+              echo "::warning::Unable to query PRs associated with ${GITHUB_SHA};"
+              echo "::warning::continuing without the merged bot PR skip."
+            fi
+          fi
+
+          echo "No verified perf-autoupdate bot PR metadata was found; the"
+          echo "Unity benchmark run + perf-doc commit will proceed."
+          echo "should-run=true" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve Unity version from canonical source
         id: versions
@@ -223,7 +288,7 @@ jobs:
       - runner-preflight
       - loop-guard
     # Same-repo gate (forks cannot run licensed Unity or be pushed to) AND the
-    # loop guard (skip when the head commit is a bot perf-autoupdate commit).
+    # loop guard (skip when the event carries bot perf-autoupdate evidence).
     # Mirrors unity-tests.yml's same-repo expression.
     if: >-
       ${{
@@ -263,6 +328,7 @@ jobs:
           # back to the default ref.
           ref: ${{ github.event.pull_request.head.sha }}
           lfs: true
+          persist-credentials: false
 
       - name: Print runner diagnostics
         # Composite action runs PowerShell internally; `shell: bash` on this
@@ -423,8 +489,9 @@ jobs:
     # GITHUB_TOKEN push would not re-trigger the required pull_request checks (and a
     # doc-only commit path-filters the others out), leaving the new head with no
     # successful required checks and blocking merge. The committed doc is refreshed
-    # by the push-to-master job after the PR merges. Same-repo only (a fork PR
-    # cannot run the licensed benchmarks), loop guard allowed, BOTH legs succeeded.
+    # by the default-branch refresh job after the PR merges. Same-repo only (a
+    # fork PR cannot run the licensed benchmarks), loop guard allowed, BOTH legs
+    # succeeded.
     if: >-
       ${{
         github.event_name == 'pull_request' &&
@@ -449,6 +516,7 @@ jobs:
           # Render against the PR's code (head.sha), not the merge commit, so the
           # "changed vs committed" comparison reflects this branch.
           ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -539,7 +607,7 @@ jobs:
               ? `commit [\`${headSha.slice(0, 7)}\`](${repoUrl}/commit/${headSha})`
               : "this branch";
             const note = changed
-              ? "These numbers MOVED versus the committed doc; they are committed to master automatically when this PR merges."
+              ? "These numbers MOVED versus the committed doc; CI opens a default-branch refresh PR after this PR merges."
               : "These numbers are UNCHANGED versus the committed doc.";
             const body = [
               marker,
@@ -575,7 +643,7 @@ jobs:
             }
 
   commit-perf-doc:
-    name: Commit refreshed perf doc to master
+    name: Open refreshed perf doc PR
     needs:
       - loop-guard
       - perf-benchmarks
@@ -605,6 +673,8 @@ jobs:
     steps:
       - name: Checkout default branch
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -659,18 +729,21 @@ jobs:
 
       - name: Open perf doc refresh PR
         if: steps.render.outputs.changed == 'true'
-        # The commit-message carries the literal [perf-autoupdate] sentinel (kept in
-        # lockstep with the loop-guard job's PERF_AUTOUPDATE_SENTINEL) so the
-        # pull_request workflow skips the bot PR, and a later merge back to the
-        # default branch cannot loop forever.
+        # The commit message and PR metadata carry the literal [perf-autoupdate]
+        # sentinel (kept in lockstep with the loop-guard job's
+        # PERF_AUTOUPDATE_SENTINEL). The loop guard can then detect either the bot
+        # branch commit or the merged PR associated with a later default-branch
+        # push.
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           add-paths: docs/architecture/performance.md
           branch: perf-autoupdate/${{ github.ref_name }}
           base: ${{ github.ref_name }}
-          title: "docs(perf): auto-update dispatch throughput numbers"
+          title: "docs(perf): auto-update dispatch throughput numbers [perf-autoupdate]"
           body: |
+            <!-- [perf-autoupdate] -->
+
             Automated perf-doc refresh generated by workflow run ${{ github.run_id }}.
 
             Branch protection requires pull-request-based writes to `${{ github.ref_name }}`,

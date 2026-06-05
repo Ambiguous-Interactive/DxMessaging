@@ -232,6 +232,8 @@ jobs:
         # Shallow checkout: bootstrap only needs scripts/unity/* and a
         # composite action; no history depth required.
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Confirm runner identity (hard-fail on wrong target)
         # F15: Windows PowerShell 5.1, NOT pwsh -- this workflow's purpose
