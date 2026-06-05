@@ -1515,6 +1515,8 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(commitStep.with["commit-message"]).not.toContain("skip ci");
     expect(commitStep.with.branch).toBe("perf-autoupdate/${{ github.ref_name }}");
     expect(commitStep.with.base).toBe("${{ github.ref_name }}");
+    expect(commitStep.with.title).toBe("docs(perf): auto-update dispatch throughput numbers");
+    expect(commitStep.with.body).toContain("Branch protection requires pull-request-based writes");
   });
 
   test("the PR-comment job posts a NON-BLOCKING sticky comment and NEVER pushes to the PR branch", () => {

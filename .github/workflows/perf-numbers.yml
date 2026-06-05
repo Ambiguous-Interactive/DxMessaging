@@ -665,6 +665,7 @@ jobs:
         # default branch cannot loop forever.
         uses: peter-evans/create-pull-request@v7
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           add-paths: docs/architecture/performance.md
           branch: perf-autoupdate/${{ github.ref_name }}
           base: ${{ github.ref_name }}
