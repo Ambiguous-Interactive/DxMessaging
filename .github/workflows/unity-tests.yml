@@ -187,7 +187,11 @@ jobs:
       ${{
         (github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name == github.repository) &&
-        (github.event_name != 'push' || github.ref_protected)
+        (github.event_name != 'push' || github.ref_protected) &&
+        secrets.UNITY_SERIAL != '' &&
+        secrets.UNITY_EMAIL != '' &&
+        secrets.UNITY_PASSWORD != '' &&
+        secrets.ORG_BUILD_LOCK_TOKEN != ''
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
     timeout-minutes: 660

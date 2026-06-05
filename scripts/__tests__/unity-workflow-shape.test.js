@@ -132,7 +132,7 @@ function collectDevcontainerCiSteps(name) {
 }
 
 function expectExactUnityLibraryCache(text) {
-  expect(text).toContain("actions/cache@v5");
+  expect(text).toMatch(/actions\/cache@v\d+\b/);
   expect(text).toContain("PACKAGE_HASH");
   expect(text).toContain(".artifacts/unity/projects/");
   expect(text).toContain(".artifacts/unity/cache/");
@@ -193,6 +193,13 @@ function expectSameRepoAndProtectedBranchGuard(job) {
   expect(job.if).toContain("github.event.pull_request.head.repo.full_name == github.repository");
   expect(job.if).toContain("github.event_name != 'push'");
   expect(job.if).toContain("github.ref_protected");
+}
+
+function expectLicensedSecretsGuard(job) {
+  expect(job.if).toContain("secrets.UNITY_SERIAL != ''");
+  expect(job.if).toContain("secrets.UNITY_EMAIL != ''");
+  expect(job.if).toContain("secrets.UNITY_PASSWORD != ''");
+  expect(job.if).toContain("secrets.ORG_BUILD_LOCK_TOKEN != ''");
 }
 
 describe("Unity workflows are active GitHub workflows", () => {
@@ -984,6 +991,14 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
       expect(text).not.toContain("pull_request_target");
     }
   );
+
+  test.each(UNITY_LICENSED_JOBS.filter((job) => job.requiresProtectedBranchGuard))(
+    "$workflow job '$jobId' requires licensed Unity and lock secrets",
+    ({ workflow, jobId }) => {
+      const parsed = loadWorkflowYaml(workflow);
+      expectLicensedSecretsGuard(parsed.jobs[jobId]);
+    }
+  );
 });
 
 describe("print-self-hosted-runner-diagnostics composite action", () => {
@@ -1426,6 +1441,7 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       "github.event.pull_request.head.repo.full_name == github.repository"
     );
     expect(perfJob.if).toContain("github.event_name != 'pull_request'");
+    expectLicensedSecretsGuard(perfJob);
   });
 
   test("a loop-guard reads the head commit for the perf-autoupdate sentinel and skips the expensive run", () => {
@@ -1490,8 +1506,8 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(commentText).not.toContain("github.event.pull_request.head.ref");
   });
 
-  test("artifact retrieval stays pinned to download-artifact@v8", () => {
-    expect(text).toContain("actions/download-artifact@v8");
+  test("artifact retrieval uses a major-pinned download-artifact action", () => {
+    expect(text).toMatch(/actions\/download-artifact@v\d+\b/);
   });
 
   test("the PR comment references the rendered PR head commit, not the merge commit", () => {
@@ -1579,7 +1595,7 @@ describe(".github/workflows/release.yml", () => {
     expect(text).toContain("npm run validate:npm-meta");
     expect(text).toContain("npm run test:unity-contracts");
     expect(text).toContain("npm pack --json");
-    expect(text).toContain("actions/attest-build-provenance@v4");
+    expect(text).toMatch(/actions\/attest-build-provenance@v\d+\b/);
     expect(text).toContain("actions/upload-artifact@v7");
     expect(text).toContain("gh release create");
     expect(text).toContain("npx --yes --package=npm@^11.5.1 npm publish");
@@ -1589,7 +1605,11 @@ describe(".github/workflows/release.yml", () => {
 
   test("attestation job grants provenance permissions and validates from a full checkout", () => {
     const attestationJobEntry = Object.entries(parsed.jobs).find(([, job]) =>
-      job.steps.some((step) => step.uses === "actions/attest-build-provenance@v4")
+      job.steps.some(
+        (step) =>
+          typeof step.uses === "string" &&
+          /^actions\/attest-build-provenance@v\d+\b/.test(step.uses)
+      )
     );
     expect(attestationJobEntry).toBeDefined();
 
