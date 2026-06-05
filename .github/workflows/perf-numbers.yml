@@ -253,7 +253,7 @@ jobs:
           matrix-note: "perf (organization lock wraps the Unity section)"
 
       - name: Cache Unity Library and package caches
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         env:
           PACKAGE_HASH: >-
             ${{ hashFiles(
@@ -448,7 +448,7 @@ jobs:
           fi
 
       - name: Download perf benchmark artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: perf-${{ env.LATEST_VERSION }}-*
           path: .artifacts/perf-download
@@ -605,7 +605,7 @@ jobs:
           fi
 
       - name: Download perf benchmark artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: perf-${{ env.LATEST_VERSION }}-*
           path: .artifacts/perf-download
