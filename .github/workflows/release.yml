@@ -116,7 +116,7 @@ jobs:
           if-no-files-found: error
 
       - name: Attest release package
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: .artifacts/release/*.tgz
 
@@ -390,7 +390,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Download release package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: release-package
           path: .artifacts/release

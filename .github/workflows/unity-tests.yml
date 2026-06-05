@@ -41,6 +41,7 @@ jobs:
     outputs:
       unity-versions: ${{ steps.resolve.outputs.unity-versions }}
       test-modes: ${{ steps.resolve.outputs.test-modes }}
+      has-required-secrets: ${{ steps.check-secrets.outputs.has-secrets }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -65,6 +66,24 @@ jobs:
             echo "unity-versions=${versions}"
             echo "test-modes=${modes}"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Check for required Unity license secrets
+        id: check-secrets
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          ORG_BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${UNITY_SERIAL:-}" ] && \
+             [ -n "${UNITY_EMAIL:-}" ] && \
+             [ -n "${UNITY_PASSWORD:-}" ] && \
+             [ -n "${ORG_BUILD_LOCK_TOKEN:-}" ]; then
+            echo "has-secrets=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "has-secrets=false" >> "${GITHUB_OUTPUT}"
+          fi
 
   runner-preflight:
     name: Self-hosted runner access preflight
@@ -187,7 +206,8 @@ jobs:
       ${{
         (github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name == github.repository) &&
-        (github.event_name != 'push' || github.ref_protected)
+        (github.event_name != 'push' || github.ref_protected) &&
+        needs.matrix-config.outputs.has-required-secrets == 'true'
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
     timeout-minutes: 660
@@ -215,7 +235,7 @@ jobs:
           matrix-note: "default (organization lock wraps the Unity section)"
 
       - name: Cache Unity Library and package caches
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         env:
           PACKAGE_HASH: >-
             ${{ hashFiles(
