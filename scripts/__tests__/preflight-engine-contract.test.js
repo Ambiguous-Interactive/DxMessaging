@@ -169,8 +169,8 @@ describe("preflight delegation to pre-commit", () => {
         sources: { committed: ["a.cs"], staged: ["b.md"], unstaged: [], untracked: [] }
       },
       stages: ["pre-commit", "pre-push"],
-      runCommandFn: (command, args) => {
-        calls.push({ command, args });
+      runCommandFn: (command, args, options) => {
+        calls.push({ command, args, options });
         return { status: 0, stdout: "", stderr: "" };
       },
       logFn: () => {},
@@ -185,6 +185,8 @@ describe("preflight delegation to pre-commit", () => {
       expect(call.args[1]).toBe("run");
       expect(call.args[2]).toBe("--hook-stage");
       expect(AGENT_STAGES).toContain(call.args[3]);
+      expect(call.options.stdio).toEqual(["ignore", "pipe", "pipe"]);
+      expect(call.options.maxBuffer).toBeGreaterThanOrEqual(64 * 1024 * 1024);
     }
 
     // Per stage: one --from-ref/--to-ref pass and one --files pass.
@@ -329,6 +331,7 @@ describe("preflight delegation to pre-commit", () => {
 
     expect(exitCode).toBe(0);
     expect(report.scope).toBe("range");
+    expect(report.mergeBase).toBe("old");
     expect(captured).toEqual({
       baseOverride: undefined,
       scope: "full",
@@ -336,6 +339,74 @@ describe("preflight delegation to pre-commit", () => {
       rangeTo: "new",
       noWorktree: true
     });
+  });
+
+  test("successful provider-neutral full preflight writes a pre-push validation stamp", () => {
+    const writeHookValidationStampFn = jest.fn();
+    const { exitCode } = runPreflight(
+      {
+        profile: "guard",
+        scope: "full",
+        recover: false,
+        json: true,
+        all: false
+      },
+      {
+        computeChangeSetFn: () => ({
+          files: ["a.cs"],
+          base: "origin/HEAD",
+          mergeBase: "MB",
+          rangeTo: null,
+          scope: "full",
+          sources: { committed: ["a.cs"], staged: [], unstaged: [], untracked: [] }
+        }),
+        stagesInConfigFn: () => new Set(["pre-push"]),
+        repairNodeToolingFn: () => ({ status: 0 }),
+        ensurePreCommitFn: () => ({ ok: true }),
+        runCommandFn: () => ({ status: 0, stdout: "", stderr: "" }),
+        writeHookValidationStampFn,
+        logFn: () => {},
+        env: {}
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(writeHookValidationStampFn).toHaveBeenCalledWith(REPO_ROOT, "pre-push", {
+      validatedFrom: "MB"
+    });
+  });
+
+  test("caller-provided SKIP suppresses pre-push validation stamp writes", () => {
+    const writeHookValidationStampFn = jest.fn();
+    const { exitCode } = runPreflight(
+      {
+        profile: "guard",
+        scope: "full",
+        recover: false,
+        json: true,
+        all: false
+      },
+      {
+        computeChangeSetFn: () => ({
+          files: ["a.cs"],
+          base: "origin/HEAD",
+          mergeBase: "MB",
+          rangeTo: null,
+          scope: "full",
+          sources: { committed: ["a.cs"], staged: [], unstaged: [], untracked: [] }
+        }),
+        stagesInConfigFn: () => new Set(["pre-push"]),
+        repairNodeToolingFn: () => ({ status: 0 }),
+        ensurePreCommitFn: () => ({ ok: true }),
+        runCommandFn: () => ({ status: 0, stdout: "", stderr: "" }),
+        writeHookValidationStampFn,
+        logFn: () => {},
+        env: { SKIP: "cspell" }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(writeHookValidationStampFn).not.toHaveBeenCalled();
   });
 
   test("runPreflight rejects one-sided explicit ranges before computing changes", () => {
@@ -468,6 +539,30 @@ describe("preflight propagates the authoritative non-zero exit (anyFailed)", () 
     expect(report.status.failures).toContain(PRE_COMMIT_INTERNAL_ERROR_ID);
   });
 
+  test("human-mode captures, replays, and attributes parseable hook output", () => {
+    const stdoutFn = jest.fn();
+    const stderrFn = jest.fn();
+    const { report, exitCode } = runPreflight(
+      { profile: "guard", scope: "worktree", recover: true, json: false, all: false },
+      {
+        ...preCommitModeDeps(() => ({
+          status: 1,
+          stdout: "cspell..................Failed\n- hook id: cspell\n",
+          stderr: "details\n"
+        })),
+        stdoutFn,
+        stderrFn
+      }
+    );
+
+    expect(report.status.kind).toBe("checks-failed");
+    expect(exitCode).toBe(1);
+    expect(report.status.failures).toContain("cspell");
+    expect(report.status.failures).not.toContain(PRE_COMMIT_INTERNAL_ERROR_ID);
+    expect(stdoutFn).toHaveBeenCalledWith("cspell..................Failed\n- hook id: cspell\n");
+    expect(stderrFn).toHaveBeenCalledWith("details\n");
+  });
+
   test("a failing pass is NOT masked as infra-unavailable when a recovery reason is present", () => {
     const deps = preCommitModeDeps(() => ({ status: 1, stdout: "boom (no hook id)", stderr: "" }));
     deps.repairNodeToolingFn = () => ({
@@ -585,7 +680,10 @@ describe("preflight guard profile defers heavy Jest suites in pre-commit mode", 
   });
 
   test("a pre-existing SKIP env is preserved and merged (not clobbered)", () => {
-    const childEnv = captureChildEnv({ profile: "guard", all: false, json: true }, { SKIP: "yamllint" });
+    const childEnv = captureChildEnv(
+      { profile: "guard", all: false, json: true },
+      { SKIP: "yamllint" }
+    );
     const skipped = childEnv.SKIP.split(",").map((s) => s.trim());
     expect(skipped).toContain("yamllint");
     for (const id of GUARD_DEFERRED_HOOK_IDS) {

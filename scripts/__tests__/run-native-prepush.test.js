@@ -203,7 +203,12 @@ describe("native pre-push range planning", () => {
       }
     ]);
     expect(calls).toContainEqual(["merge-base", "refs/remotes/upstream/HEAD", LOCAL]);
-    expect(calls).not.toContainEqual(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"]);
+    expect(calls).not.toContainEqual([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      "refs/remotes/origin/HEAD"
+    ]);
     expect(calls).not.toContainEqual(["merge-base", "refs/remotes/origin/HEAD", LOCAL]);
     expect(calls).not.toContainEqual(["merge-base", "upstream/HEAD", LOCAL]);
   });
@@ -243,7 +248,6 @@ describe("native pre-push range planning", () => {
       expect(refs[0]).toBe("refs/remotes/origin/HEAD");
     }
   });
-
 
   test("new refs fall back to exhaustive preflight when no default branch base resolves", () => {
     const { runGitFn } = makeGit([
@@ -300,9 +304,11 @@ describe("native pre-push range planning", () => {
 describe("native pre-push validation execution", () => {
   test("range jobs call preflight with pre-push guard profile and no worktree scan", () => {
     const calls = [];
+    const hasValidHookValidationStampFn = jest.fn(() => ({ valid: false, reason: "missing" }));
     const status = nativePrePush.runJobs(
       [{ type: "range", rangeFrom: REMOTE, rangeTo: LOCAL, label: "range" }],
       {
+        hasValidHookValidationStampFn,
         spawnFn: (command, args, options) => {
           calls.push({ command, args, options });
           return { status: 0 };
@@ -313,6 +319,7 @@ describe("native pre-push validation execution", () => {
     );
 
     expect(status).toBe(0);
+    expect(hasValidHookValidationStampFn).not.toHaveBeenCalled();
     expect(calls).toHaveLength(1);
     expect(calls[0].command).toBe(process.execPath);
     expect(calls[0].args).toEqual([
@@ -329,19 +336,58 @@ describe("native pre-push validation execution", () => {
     expect(calls[0].options.env.skip).toBeUndefined();
   });
 
-  test("full fallback delegates to npm run preflight:pre-push with caller SKIP stripped", () => {
-    const calls = [];
+  test("range jobs skip repeated validation when the agent pre-push stamp covers the range", () => {
+    const spawnFn = jest.fn();
+    const logFn = jest.fn();
     const status = nativePrePush.runJobs(
-      [{ type: "full", label: "fallback" }],
+      [{ type: "range", rangeFrom: REMOTE, rangeTo: LOCAL, label: "range" }],
       {
+        hasValidHookValidationStampFn: () => ({ valid: true, reason: "match" }),
+        spawnFn,
+        logFn
+      }
+    );
+
+    expect(status).toBe(0);
+    expect(spawnFn).not.toHaveBeenCalled();
+    expect(logFn).toHaveBeenCalledWith(
+      "native pre-push: validation stamp is current for range; skipping."
+    );
+  });
+
+  test("range jobs ignore matching stamps when caller SKIP is set", () => {
+    const calls = [];
+    const hasValidHookValidationStampFn = jest.fn(() => ({ valid: true, reason: "match" }));
+    const status = nativePrePush.runJobs(
+      [{ type: "range", rangeFrom: REMOTE, rangeTo: LOCAL, label: "range" }],
+      {
+        hasValidHookValidationStampFn,
         spawnFn: (command, args, options) => {
           calls.push({ command, args, options });
           return { status: 0 };
         },
-        env: { SKIP: "script-tests", PATH: "test-path" },
+        env: { SKIP: "cspell", PATH: "test-path" },
         logFn: () => {}
       }
     );
+
+    expect(status).toBe(0);
+    expect(hasValidHookValidationStampFn).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].command).toBe(process.execPath);
+    expect(calls[0].options.env.SKIP).toBeUndefined();
+  });
+
+  test("full fallback delegates to npm run preflight:pre-push with caller SKIP stripped", () => {
+    const calls = [];
+    const status = nativePrePush.runJobs([{ type: "full", label: "fallback" }], {
+      spawnFn: (command, args, options) => {
+        calls.push({ command, args, options });
+        return { status: 0 };
+      },
+      env: { SKIP: "script-tests", PATH: "test-path" },
+      logFn: () => {}
+    });
 
     expect(status).toBe(0);
     expect(calls).toHaveLength(1);
@@ -406,6 +452,7 @@ describe("native pre-push validation execution", () => {
     const status = nativePrePush.main(["upstream", "git@example.com:repo.git"], {
       stdin: `refs/heads/new ${LOCAL} refs/heads/new ${ZERO}\n`,
       runGitFn,
+      hasValidHookValidationStampFn: () => ({ valid: false, reason: "missing" }),
       spawnFn: () => ({ status: 0 }),
       logFn
     });

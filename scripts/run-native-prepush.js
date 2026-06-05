@@ -6,6 +6,7 @@ const path = require("path");
 const childProcess = require("child_process");
 const { mergeSanitizedEnv, spawnPlatformCommandSync } = require("./lib/shell-command");
 const { isMissingGit } = require("./lib/changed-files");
+const { hasValidHookValidationStamp } = require("./lib/hook-validation-stamp");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const ZERO_OID_RE = /^0+$/;
@@ -281,8 +282,16 @@ function runFullFallback(deps = {}) {
   return runCommand("npm", ["run", "preflight:pre-push"], deps);
 }
 
+function hasCallerSkip(env = process.env) {
+  return String((env && env.SKIP) || "")
+    .split(",")
+    .some((entry) => entry.trim().length > 0);
+}
+
 function runJobs(jobs, deps = {}) {
   const logFn = deps.logFn || ((message) => process.stdout.write(`${message}\n`));
+  const hasValidStampFn = deps.hasValidHookValidationStampFn || hasValidHookValidationStamp;
+  const allowStampSkip = !hasCallerSkip(deps.env || process.env);
 
   if (jobs.length === 0) {
     logFn("native pre-push: no changed ref updates to validate.");
@@ -296,6 +305,17 @@ function runJobs(jobs, deps = {}) {
   }
 
   for (const job of jobs) {
+    if (allowStampSkip) {
+      const stamp = hasValidStampFn(REPO_ROOT, "pre-push", {
+        rangeFrom: job.rangeFrom,
+        rangeTo: job.rangeTo
+      });
+      if (stamp.valid) {
+        logFn(`native pre-push: validation stamp is current for ${job.label}; skipping.`);
+        continue;
+      }
+    }
+
     logFn(`native pre-push: validating ${job.label}.`);
     const status = runRangePreflight(job, deps);
     if (status !== 0) {
@@ -338,6 +358,7 @@ module.exports = {
   runCommand,
   runRangePreflight,
   runFullFallback,
+  hasCallerSkip,
   runJobs,
   main
 };

@@ -45,6 +45,9 @@ function stampSpawnFor(options) {
     if (joined === "rev-parse --git-path dxmsg-pre-commit-stamp.json") {
       return { status: 0, stdout: `${stampPath}\n`, stderr: "" };
     }
+    if (joined === "rev-parse --git-path dxmsg-pre-push-stamp.json") {
+      return { status: 0, stdout: `${stampPath}\n`, stderr: "" };
+    }
     if (joined === "rev-parse --verify HEAD") {
       return { status: 0, stdout: `${head}\n`, stderr: "" };
     }
@@ -71,6 +74,24 @@ function stampSpawnFor(options) {
     }
     if (joined === "diff-files --raw --abbrev=40 -z --") {
       return { status: 0, stdout: trackedWorktreeRawDiff, stderr: "" };
+    }
+    if (joined === "merge-base --is-ancestor base remote") {
+      return { status: 0, stdout: "", stderr: "" };
+    }
+    if (joined === "merge-base --is-ancestor base head") {
+      return { status: 0, stdout: "", stderr: "" };
+    }
+    if (joined === "merge-base --is-ancestor remote head") {
+      return { status: 0, stdout: "", stderr: "" };
+    }
+    if (joined === "merge-base --is-ancestor base diverged") {
+      return { status: 0, stdout: "", stderr: "" };
+    }
+    if (joined === "merge-base --is-ancestor diverged head") {
+      return { status: 1, stdout: "", stderr: "" };
+    }
+    if (joined === "merge-base --is-ancestor base unrelated") {
+      return { status: 1, stdout: "", stderr: "" };
     }
     return { status: 1, stdout: "", stderr: `unexpected git args: ${joined}` };
   });
@@ -127,7 +148,10 @@ describe("native Git hooks", () => {
   });
 
   test("native range runner is local-fast and keeps exhaustive parity explicit", () => {
-    const content = fs.readFileSync(path.join(REPO_ROOT, "scripts", "run-native-prepush.js"), "utf8");
+    const content = fs.readFileSync(
+      path.join(REPO_ROOT, "scripts", "run-native-prepush.js"),
+      "utf8"
+    );
 
     expect(content).toContain("parsePrePushInput");
     expect(content).toContain("--stage=pre-push");
@@ -135,11 +159,11 @@ describe("native Git hooks", () => {
     expect(content).toContain("--range-from");
     expect(content).toContain("--range-to");
     expect(content).toContain("--no-worktree");
-    expect(content).toContain("removeKeys: [\"SKIP\"]");
+    expect(content).toContain('removeKeys: ["SKIP"]');
     expect(content).toContain("preflight:pre-push");
+    expect(content).toContain("hasValidHookValidationStamp");
     expect(content).not.toContain("run-prepush-parallel.js");
     expect(content).not.toContain("writeHookValidationStamp");
-    expect(content).not.toContain("hasValidHookValidationStamp");
     expect(content).not.toContain("--all-files");
   });
 
@@ -150,9 +174,7 @@ describe("native Git hooks", () => {
       "run-prepush-parallel.js",
       "npm run doctor",
       "--all-files",
-      "dxmsg-pre-push-stamp",
-      "writeHookValidationStamp",
-      "hasValidHookValidationStamp"
+      "writeHookValidationStamp"
     ]) {
       expect(content).not.toContain(forbidden);
     }
@@ -262,14 +284,64 @@ describe("native Git hooks", () => {
     }
   });
 
-  test("hook validation stamps are pre-commit-only", () => {
+  test("pre-push stamp validates only the exact pushed range", () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-hook-prepush-stamp-"));
+    try {
+      const stampFile = path.join(temp, "stamp.json");
+      writeHookValidationStamp(temp, "pre-push", {
+        validatedFrom: "base",
+        validatedTo: "head",
+        spawnFn: stampSpawnFor({ stampPath: stampFile })
+      });
+
+      expect(
+        hasValidHookValidationStamp(temp, "pre-push", {
+          rangeFrom: "base",
+          rangeTo: "head",
+          spawnFn: stampSpawnFor({ stampPath: stampFile })
+        }).valid
+      ).toBe(true);
+      expect(
+        hasValidHookValidationStamp(temp, "pre-push", {
+          rangeFrom: "remote",
+          rangeTo: "head",
+          spawnFn: stampSpawnFor({ stampPath: stampFile })
+        }).valid
+      ).toBe(false);
+      expect(
+        hasValidHookValidationStamp(temp, "pre-push", {
+          rangeFrom: "diverged",
+          rangeTo: "head",
+          spawnFn: stampSpawnFor({ stampPath: stampFile })
+        }).valid
+      ).toBe(false);
+      expect(
+        hasValidHookValidationStamp(temp, "pre-push", {
+          rangeFrom: "unrelated",
+          rangeTo: "head",
+          spawnFn: stampSpawnFor({ stampPath: stampFile })
+        }).valid
+      ).toBe(false);
+      expect(
+        hasValidHookValidationStamp(temp, "pre-push", {
+          rangeFrom: "base",
+          rangeTo: "other-head",
+          spawnFn: stampSpawnFor({ stampPath: stampFile })
+        }).valid
+      ).toBe(false);
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  });
+
+  test("hook validation stamps reject unsupported hook names", () => {
     expect(
-      hasValidHookValidationStamp(REPO_ROOT, "pre-push", {
+      hasValidHookValidationStamp(REPO_ROOT, "post-checkout", {
         spawnFn: jest.fn()
       })
     ).toEqual({ valid: false, reason: "unsupported-hook", filePath: undefined });
     expect(() =>
-      writeHookValidationStamp(REPO_ROOT, "pre-push", {
+      writeHookValidationStamp(REPO_ROOT, "post-checkout", {
         spawnFn: jest.fn()
       })
     ).toThrow(/Unsupported hook validation stamp/);

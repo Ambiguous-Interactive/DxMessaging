@@ -136,7 +136,7 @@
 
 | Skill                                                                                                    | Lines       | Complexity     | Status   | Performance    | Tags                             |
 | -------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | -------------- | -------------------------------- |
-| [Change-Aware Preflight](./scripting/change-aware-preflight.md)                                          | [ok] 210    | [intermediate] | [stable] | [risk: medium] | pre-commit, pre-push             |
+| [Change-Aware Preflight](./scripting/change-aware-preflight.md)                                          | [ok] 217    | [intermediate] | [stable] | [risk: medium] | pre-commit, pre-push             |
 | [Cross-Platform Script Compatibility](./scripting/cross-platform-compatibility.md)                       | [warn] 298  | [intermediate] | [stable] | [risk: none]   | cross-platform, case-sensitivity |
 | [Cross-Toolchain Path Comparison](./scripting/cross-toolchain-path-comparison.md)                        | [ok] 229    | [intermediate] | [stable] | [risk: none]   | cross-platform, testing          |
 | [Dependency Version Parity](./scripting/dependency-version-parity.md)                                    | [ok] 194    | [intermediate] | [stable] | [risk: low]    | dependencies, lockfile           |

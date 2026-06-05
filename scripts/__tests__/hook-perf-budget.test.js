@@ -15,6 +15,7 @@ const {
   PER_HOOK_CEILING,
   formatReport
 } = require("../lib/precommit-perf-score");
+const { SCENARIOS } = require("../measure-hook-wallclock");
 const { findAllHookBlocks, extractStagesFromHookBlock } = require("../lib/precommit-yaml");
 const { normalizeToLf } = require("../lib/quote-parser");
 
@@ -127,5 +128,13 @@ describe("git hook performance budget", () => {
     expect(nativeText).toContain("--no-worktree");
     expect(nativeText).not.toContain("run-prepush-parallel.js");
     expect(nativeText).not.toContain("--all-files");
+  });
+
+  test("native pre-push hot-path wall-clock budgets stay sub-second", () => {
+    for (const id of ["native-prepush-noop", "native-prepush-stamped-one-file"]) {
+      const scenario = SCENARIOS.find((entry) => entry.id === id);
+      expect(scenario).toBeDefined();
+      expect(scenario.budgetMs).toBeLessThanOrEqual(1000);
+    }
   });
 });

@@ -47,6 +47,7 @@
  *     "profile": "guard" | "full",
  *     "mode": "pre-commit" | "node-direct",
  *     "base": "<ref>" | null,
+ *     "mergeBase": "<sha>" | null,
  *     "changedFileCount": <number>
  *   }
  *
@@ -90,6 +91,7 @@ const { stagesInConfig, hookIdsForStage } = require("./lib/precommit-stage-model
 const { repairNodeTooling } = require("./repair-node-tooling");
 const { ensurePreCommit } = require("./ensure-pre-commit");
 const { healRegenerableCaches } = require("./lib/regenerable-cache-registry");
+const { writeHookValidationStamp } = require("./lib/hook-validation-stamp");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -144,6 +146,7 @@ const GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS = Object.freeze(["validate-untracked
  */
 const PRE_COMMIT_INTERNAL_ERROR_ID = "pre-commit-internal-error";
 const PREFLIGHT_INVALID_OPTIONS_ID = "preflight-invalid-options";
+const CHILD_OUTPUT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 /**
  * Node-direct fallback mapping: hook id -> the npm script / node command(s)
@@ -521,17 +524,13 @@ Exit code is non-zero only when checks fail (status.kind === "checks-failed").`;
  * @returns {object} spawnSync result.
  */
 function runCommand(command, args, options = {}, spawnSyncImpl = childProcess.spawnSync) {
-  return spawnPlatformCommandSync(
-    command,
-    args,
-    {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      ...options
-    },
-    spawnSyncImpl
-  );
+  const defaultOptions = {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: CHILD_OUTPUT_MAX_BUFFER_BYTES
+  };
+  return spawnPlatformCommandSync(command, args, { ...defaultOptions, ...options }, spawnSyncImpl);
 }
 
 /**
@@ -665,7 +664,7 @@ function runRecovery(options, deps) {
  * @returns {{ failedHookIds: string[], anyFailed: boolean }}
  */
 function runPreCommitMode(ctx) {
-  const { options, changeSet, stages, runCommandFn, logFn, env } = ctx;
+  const { options, changeSet, stages, runCommandFn, logFn, stdoutFn, stderrFn, env } = ctx;
 
   const childEnv = { ...env };
   // Honor the guard profile in pre-commit mode (the common path): defer the
@@ -704,9 +703,18 @@ function runPreCommitMode(ctx) {
     const argv = ["run", "--hook-stage", stage, ...passArgs];
     logFn(`preflight: pre-commit ${stage} (${label})`);
     const result = runCommandFn("node", ["scripts/ensure-pre-commit.js", ...argv], {
-      stdio: options.json ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: CHILD_OUTPUT_MAX_BUFFER_BYTES,
       env: childEnv
     });
+    if (!options.json) {
+      if (result && result.stdout && stdoutFn) {
+        stdoutFn(String(result.stdout));
+      }
+      if (result && result.stderr && stderrFn) {
+        stderrFn(String(result.stderr));
+      }
+    }
     // ensure-pre-commit returns 1 when pre-commit itself is unavailable; the
     // caller has already classified that as infra, so a non-zero here in the
     // pre-commit path means a hook failed.
@@ -810,7 +818,10 @@ function runNodeDirectMode(ctx) {
   }
 
   for (const id of targetedIds) {
-    if (GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS.includes(id) && isGuardRangeWithoutWorktree(options)) {
+    if (
+      GUARD_RANGE_NO_WORKTREE_SKIP_HOOK_IDS.includes(id) &&
+      isGuardRangeWithoutWorktree(options)
+    ) {
       continue;
     }
     if (GUARD_DEFERRED_HOOK_IDS.includes(id) && options.profile === "guard") {
@@ -898,6 +909,45 @@ function buildStatus({ failures = [], policyFailures = [], warnings = [], infraR
   };
 }
 
+function hasCallerSkip(env) {
+  return String((env && env.SKIP) || "")
+    .split(",")
+    .some((entry) => entry.trim().length > 0);
+}
+
+function writePrePushValidationStamp({
+  status,
+  stages,
+  changeSet,
+  env,
+  writeHookValidationStampFn
+}) {
+  if (
+    !status ||
+    status.kind !== "ok" ||
+    !Array.isArray(stages) ||
+    !stages.includes("pre-push") ||
+    !changeSet ||
+    typeof changeSet.mergeBase !== "string" ||
+    changeSet.mergeBase.length === 0 ||
+    hasCallerSkip(env)
+  ) {
+    return;
+  }
+
+  const stampOptions = { validatedFrom: changeSet.mergeBase };
+  if (typeof changeSet.rangeTo === "string" && changeSet.rangeTo.length > 0) {
+    stampOptions.validatedTo = changeSet.rangeTo;
+  }
+
+  try {
+    writeHookValidationStampFn(REPO_ROOT, "pre-push", stampOptions);
+  } catch (_error) {
+    // Best-effort native-hook speed path only. A failed stamp write must not
+    // change preflight pass/fail semantics; native pre-push will validate.
+  }
+}
+
 function validateOptions(options) {
   const hasRangeFrom = typeof options.rangeFrom === "string" && options.rangeFrom.length > 0;
   const hasRangeTo = typeof options.rangeTo === "string" && options.rangeTo.length > 0;
@@ -945,6 +995,9 @@ function runPreflight(options = {}, deps = {}) {
     stagesInConfigFn = stagesInConfig,
     runCommandFn = runCommand,
     logFn = console.error,
+    stdoutFn = (text) => process.stdout.write(text),
+    stderrFn = (text) => process.stderr.write(text),
+    writeHookValidationStampFn = writeHookValidationStamp,
     env = process.env
   } = deps;
 
@@ -961,6 +1014,7 @@ function runPreflight(options = {}, deps = {}) {
         profile: options.profile || "full",
         mode: "invalid-options",
         base: null,
+        mergeBase: null,
         changedFileCount: 0
       },
       exitCode: 1
@@ -992,7 +1046,7 @@ function runPreflight(options = {}, deps = {}) {
   let policyFailures = [];
   let warnings = [];
 
-  const ctx = { options, changeSet, stages, runCommandFn, logFn, env };
+  const ctx = { options, changeSet, stages, runCommandFn, logFn, stdoutFn, stderrFn, env };
 
   if (recovery.preCommit.ok) {
     mode = "pre-commit";
@@ -1037,8 +1091,10 @@ function runPreflight(options = {}, deps = {}) {
     profile: options.profile,
     mode,
     base: changeSet.base,
+    mergeBase: changeSet.mergeBase,
     changedFileCount: changeSet.files.length
   };
+  writePrePushValidationStamp({ status, stages, changeSet, env, writeHookValidationStampFn });
 
   const exitCode = status.kind === "checks-failed" ? 1 : 0;
   return { report, exitCode };
@@ -1113,6 +1169,8 @@ module.exports = {
   nodeDirectCommandApplies,
   runNodeDirectMode,
   buildStatus,
+  hasCallerSkip,
+  writePrePushValidationStamp,
   validateOptions,
   hasExplicitRange,
   isGuardRangeWithoutWorktree,

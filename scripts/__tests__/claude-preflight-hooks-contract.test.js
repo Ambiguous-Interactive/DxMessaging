@@ -821,6 +821,87 @@ describe("change-aware preflight Claude hooks contract", () => {
     }
   });
 
+  test("the guard run() writes a pre-push stamp after a clean push preflight with a merge-base", () => {
+    const writes = [];
+    const original = process.stdout.write;
+    process.stdout.write = (chunk) => {
+      writes.push(String(chunk));
+      return true;
+    };
+    const spawnFn = jest.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({
+        status: { kind: "ok", failures: [], policyFailures: [], warnings: [] },
+        mergeBase: "base-sha"
+      }),
+      stderr: ""
+    }));
+    const writeHookValidationStampFn = jest.fn();
+    try {
+      const code = guard.run(
+        JSON.stringify({ tool_name: "Bash", tool_input: { command: "git push origin HEAD" } }),
+        {
+          env: {},
+          repoRoot: REPO_ROOT,
+          spawnFn,
+          computeChangeSetFn: () => ({ files: [] }),
+          writeHookValidationStampFn
+        }
+      );
+      expect(code).toBe(0);
+      const [, args, options] = spawnFn.mock.calls[0];
+      expect(args).toContain("--scope=full");
+      expect(args).toContain("--profile=guard");
+      expect(args).not.toContain("--stage=pre-commit");
+      expect(options.env.DXMSG_PREFLIGHT_ACTIVE).toBe("1");
+      const emitted = JSON.parse(writes.join(""));
+      expect(emitted.hookSpecificOutput.permissionDecision).toBe("allow");
+      expect(writeHookValidationStampFn).toHaveBeenCalledWith(REPO_ROOT, "pre-push", {
+        validatedFrom: "base-sha"
+      });
+    } finally {
+      process.stdout.write = original;
+    }
+  });
+
+  test("the guard run() does not write a pre-push stamp when caller SKIP is set", () => {
+    const writes = [];
+    const original = process.stdout.write;
+    process.stdout.write = (chunk) => {
+      writes.push(String(chunk));
+      return true;
+    };
+    const spawnFn = jest.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({
+        status: { kind: "ok", failures: [], policyFailures: [], warnings: [] },
+        mergeBase: "base-sha"
+      }),
+      stderr: ""
+    }));
+    const writeHookValidationStampFn = jest.fn();
+    try {
+      const code = guard.run(
+        JSON.stringify({ tool_name: "Bash", tool_input: { command: "git push origin HEAD" } }),
+        {
+          env: { SKIP: "cspell" },
+          repoRoot: REPO_ROOT,
+          spawnFn,
+          computeChangeSetFn: () => ({ files: [] }),
+          writeHookValidationStampFn
+        }
+      );
+      expect(code).toBe(0);
+      const [, , options] = spawnFn.mock.calls[0];
+      expect(options.env.SKIP).toBe("cspell");
+      const emitted = JSON.parse(writes.join(""));
+      expect(emitted.hookSpecificOutput.permissionDecision).toBe("allow");
+      expect(writeHookValidationStampFn).not.toHaveBeenCalled();
+    } finally {
+      process.stdout.write = original;
+    }
+  });
+
   test("the guard run() denies a push on changed-file cspell before spawning full preflight", () => {
     const writes = [];
     const original = process.stdout.write;

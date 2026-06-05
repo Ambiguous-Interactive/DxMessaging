@@ -27,7 +27,7 @@ tags:
 
 complexity:
   level: "intermediate"
-  reasoning: "Requires understanding of pre-commit stage selection, the change-set definition, and the Claude Code hook lifecycle"
+  reasoning: "Requires understanding of pre-commit stage selection, the change-set definition, and the agent hook lifecycle"
 
 impact:
   performance:
@@ -99,11 +99,18 @@ PostToolUse edit guard also runs file-scoped cspell for the same extensions as
 the native pre-push cspell hook (`.md`, `.markdown`, `.cs`, `.json`, `.yml`,
 `.yaml`, `.ps1`, `.js`) and runs changelog coverage when a likely user-visible
 path or `CHANGELOG.md` is edited, so spelling and missing-release-note failures
-surface while the file is being edited. Native git hooks are fast and
-change-aware; exhaustive parity is the explicit CI/manual command, not the
-default local push path.
+surface while the file is being edited. Successful full-scope or explicit-range
+preflight with no caller-provided `SKIP` writes the exact-range pre-push
+validation stamp used by the native hook's sub-second repeated-push path. Native
+git hooks are fast and change-aware; exhaustive parity is the explicit CI/manual
+command, not the default local push path.
 
 For full parity on demand, run `npm run preflight:pre-push`.
+
+Provider-neutral rule: before declaring work done or invoking Git boundary
+commands, run `npm run preflight` from any agent or shell. The Claude Code
+settings are one adapter that runs the same checks automatically; Codex,
+manual shells, and script-generated edits should rely on the npm command.
 
 ## Solution
 

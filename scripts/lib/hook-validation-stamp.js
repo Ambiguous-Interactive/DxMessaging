@@ -6,7 +6,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { spawnPlatformCommandSync } = require("./shell-command");
 
-const STAMP_VERSION = 7;
+const STAMP_VERSION = 8;
 const CHANGELOG_RELEVANT_PATHS = Object.freeze([
   "CHANGELOG.md",
   "package.json",
@@ -89,6 +89,14 @@ function resolveHead(repoRoot, deps = {}) {
   return "UNBORN";
 }
 
+function normalizeRequiredCommit(value, label) {
+  const normalized = String(value || "").trim();
+  if (normalized.length === 0) {
+    throw new Error(`${label} is required for pre-push validation stamps`);
+  }
+  return normalized;
+}
+
 function fingerprintPreCommitGitState(repoRoot, deps = {}) {
   const changelogUntrackedPaths = zeroSeparatedPaths(
     gitOutput(
@@ -113,15 +121,28 @@ function fingerprintGitState(repoRoot, deps = {}) {
   return fingerprintPreCommitGitState(repoRoot, deps);
 }
 
+function fingerprintPrePushGitState(repoRoot, deps = {}) {
+  return {
+    validatedFrom: normalizeRequiredCommit(deps.validatedFrom, "validatedFrom"),
+    validatedTo: normalizeRequiredCommit(
+      deps.validatedTo || resolveHead(repoRoot, deps),
+      "validatedTo"
+    )
+  };
+}
+
 function fingerprintHookGitState(repoRoot, hookName, deps = {}) {
-  if (hookName !== "pre-commit") {
-    throw new Error(`Unsupported hook validation stamp: ${hookName}`);
+  if (hookName === "pre-commit") {
+    return fingerprintPreCommitGitState(repoRoot, deps);
   }
-  return fingerprintPreCommitGitState(repoRoot, deps);
+  if (hookName === "pre-push") {
+    return fingerprintPrePushGitState(repoRoot, deps);
+  }
+  throw new Error(`Unsupported hook validation stamp: ${hookName}`);
 }
 
 function writeHookValidationStamp(repoRoot, hookName, deps = {}) {
-  if (hookName !== "pre-commit") {
+  if (hookName !== "pre-commit" && hookName !== "pre-push") {
     throw new Error(`Unsupported hook validation stamp: ${hookName}`);
   }
   const writeFileSyncFn = deps.writeFileSyncFn || fs.writeFileSync.bind(fs);
@@ -145,7 +166,7 @@ function hasValidHookValidationStamp(repoRoot, hookName, deps = {}) {
   const readFileSyncFn = deps.readFileSyncFn || fs.readFileSync.bind(fs);
   let filePath;
   try {
-    if (hookName !== "pre-commit") {
+    if (hookName !== "pre-commit" && hookName !== "pre-push") {
       return { valid: false, reason: "unsupported-hook", filePath: undefined };
     }
     filePath = stampPath(repoRoot, hookName, deps);
@@ -159,8 +180,21 @@ function hasValidHookValidationStamp(repoRoot, hookName, deps = {}) {
       return { valid: false, reason: "stamp-shape", filePath };
     }
 
-    const current = fingerprintHookGitState(repoRoot, hookName, deps);
     const stamped = parsed.fingerprint;
+    if (hookName === "pre-push") {
+      const rangeFrom = normalizeRequiredCommit(deps.rangeFrom, "rangeFrom");
+      const rangeTo = normalizeRequiredCommit(deps.rangeTo, "rangeTo");
+      const stampedFrom = normalizeRequiredCommit(stamped.validatedFrom, "stamped.validatedFrom");
+      const stampedTo = normalizeRequiredCommit(stamped.validatedTo, "stamped.validatedTo");
+      const valid = stampedFrom === rangeFrom && stampedTo === rangeTo;
+      return {
+        valid,
+        reason: valid ? "match" : "fingerprint-mismatch",
+        filePath
+      };
+    }
+
+    const current = fingerprintHookGitState(repoRoot, hookName, deps);
     const valid = Object.keys(current).every((key) => stamped[key] === current[key]);
     return {
       valid,
@@ -181,6 +215,7 @@ module.exports = {
   STAMP_VERSION,
   stampPath,
   fingerprintPreCommitGitState,
+  fingerprintPrePushGitState,
   fingerprintGitState,
   writeHookValidationStamp,
   hasValidHookValidationStamp

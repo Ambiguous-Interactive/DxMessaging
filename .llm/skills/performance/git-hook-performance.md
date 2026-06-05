@@ -74,8 +74,8 @@ status: "stable"
 
 ## Budget
 
-- native pre-push: no-op under 2 seconds and one-file pushed range under 8 seconds wall-clock on Linux.
-- pre-commit on a single-file commit: under 8 seconds wall-clock on Linux (proxy for Windows).
+- native pre-push: no-op/stamped range under 1 second; unstamped one-file pushed range under 18 seconds wall-clock on Linux.
+- pre-commit framework fallback on a single-file commit: under 10 seconds wall-clock on Linux (proxy for Windows); stamped native pre-commit remains the sub-second hot path.
 - Native pre-push validates pushed ranges via `scripts/run-native-prepush.js`; full `--all-files` parity is explicit CI/manual `npm run preflight:pre-push`.
 - The static scorer enforces TWO ceilings:
   - Total budget (10): cumulative anti-pattern score across all
@@ -251,11 +251,11 @@ commit and the next push), so the two-commit cost is deliberate.
 
 ### cspell moved to pre-push (round-3)
 
-cspell costs about 5.5 s per fire (about 3.6 s of dictionary loading)
-and was the biggest contributor to the single-file pre-commit budget.
-Moving it to pre-push removes that cost from every commit while keeping
-the gate at push time and in CI. Trade-off: a typo lands in the working
-tree until the developer pushes; CI catches it before merge.
+cspell costs about 5.5 s per fire (about 3.6 s of dictionary loading),
+the biggest contributor to the single-file pre-commit budget. Moving it
+to pre-push removes that commit-time cost while keeping the gate at push
+time and in CI. Edit-time cspell plus provider-neutral preflight catch
+typos before the native hook; pre-push remains the last-resort backstop.
 
 ### validate-llms-txt moved to CI (round-3)
 
