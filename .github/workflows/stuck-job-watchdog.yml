@@ -126,10 +126,13 @@ jobs:
           # ------------------------------------------------------------------
           work_dir="$(mktemp -d)"
           pushd "${work_dir}" > /dev/null
-          # Scope git identity to this checkout - keep runner-global git
-          # config pristine. We pass -c on each git invocation that creates
-          # objects (commit) below; clone itself does not need identity.
-          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" repo
+          # Scope credentials to the exact remote commands that need them; the
+          # cloned repo keeps a plain HTTPS origin with no tokenized remote.
+          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
+          git_auth() {
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" "$@"
+          }
+          git_auth clone --depth 1 "https://github.com/${REPO}.git" repo
           cd repo
           GIT_AUTHOR_ID=(-c "user.email=actions@github.com" -c "user.name=stuck-job-watchdog")
 
@@ -139,14 +142,14 @@ jobs:
           # failure - that would push-corrupt an existing branch by
           # rewriting it as a fresh orphan.
           state_branch_probe="$(mktemp)"
-          if ! git ls-remote --heads origin "${STATE_BRANCH}" > "${state_branch_probe}" 2>/dev/null; then
+          if ! git_auth ls-remote --heads origin "${STATE_BRANCH}" > "${state_branch_probe}" 2>/dev/null; then
             log_summary "WARN: 'git ls-remote --heads origin ${STATE_BRANCH}' failed (transient?); refusing to bootstrap. Skipping this cycle."
             popd > /dev/null
             flush_summary_and_exit 0
           fi
 
           if [[ -s "${state_branch_probe}" ]]; then
-            if ! git fetch origin "${STATE_BRANCH}"; then
+            if ! git_auth fetch origin "${STATE_BRANCH}"; then
               log_summary "WARN: state branch '${STATE_BRANCH}' exists per ls-remote but fetch failed; skipping this cycle."
               popd > /dev/null
               flush_summary_and_exit 0
@@ -161,7 +164,7 @@ jobs:
             touch "${STATE_DIR}/.gitkeep"
             git add "${STATE_DIR}/.gitkeep"
             git "${GIT_AUTHOR_ID[@]}" commit -m "Initialize watchdog state" || true
-            if ! git push origin "${STATE_BRANCH}"; then
+            if ! git_auth push origin "${STATE_BRANCH}"; then
               log_summary "WARN: bootstrap push failed; will retry on next run."
               popd > /dev/null
               flush_summary_and_exit 0
@@ -429,13 +432,13 @@ jobs:
           # ------------------------------------------------------------------
           if (( state_dirty == 1 )); then
             git "${GIT_AUTHOR_ID[@]}" commit -m "Watchdog: record cancels at $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || true
-            if git push origin "${STATE_BRANCH}"; then
+            if git_auth push origin "${STATE_BRANCH}"; then
               log_summary "State branch updated."
             else
               log_summary "WARN: state push failed; attempting fetch + rebase + retry."
-              if git fetch origin "${STATE_BRANCH}" \
+              if git_auth fetch origin "${STATE_BRANCH}" \
                   && git rebase "origin/${STATE_BRANCH}" \
-                  && git push origin "${STATE_BRANCH}"; then
+                  && git_auth push origin "${STATE_BRANCH}"; then
                 log_summary "State branch updated on second attempt (after rebase)."
               else
                 log_summary "WARN: state push failed twice; counters may double-count next run."

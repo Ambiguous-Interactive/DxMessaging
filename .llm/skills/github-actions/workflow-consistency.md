@@ -85,7 +85,9 @@ Apply these requirements to every workflow file:
 1. Always include a concurrency group with `cancel-in-progress: true`
 1. Declare explicit minimal permissions
 1. Set `timeout-minutes` on every job
-1. Use `persist-credentials: false` on checkout steps (unless pushing)
+1. Declare checkout `persist-credentials` explicitly; use `false` and configure
+   push credentials only in a guarded push step or an adjacent guarded
+   `git-auto-commit-action` handoff
 1. Include `.github/workflows/**` in path filters for self-referential workflows
 1. Use double quotes for strings (Prettier default)
 
@@ -166,7 +168,8 @@ Recommended timeouts:
 
 ### 4. Secure Checkout
 
-Use `persist-credentials: false` on checkout steps unless credentials are explicitly needed:
+Every `actions/checkout` step must declare `persist-credentials` explicitly.
+Use `false` by default:
 
 ```yaml
 - name: Checkout
@@ -175,7 +178,17 @@ Use `persist-credentials: false` on checkout steps unless credentials are explic
     persist-credentials: false
 ```
 
-Only omit this when the workflow needs to push commits (e.g., auto-fix workflows).
+For actions such as `peter-evans/create-pull-request` or manual push steps, keep
+checkout credentials disabled and pass the push token to that specific action or
+command-scoped Git invocation. For local `stefanzweifel/git-auto-commit-action`
+paths, prefer a guarded `git remote set-url` step immediately before the
+auto-commit step, followed immediately by a guarded cleanup step that restores
+`origin` to a plain `https://github.com/...` URL. `npm run validate:workflows`
+enforces explicit `persist-credentials: false` on every checkout and rejects
+tokenized Git remotes outside matching single-command `git-auto-commit-action`
+handoffs with cleanup. Manual clone/fetch/push steps should use command-scoped
+`git -c http.https://github.com/.extraheader=...` credentials, never a tokenized
+remote URL or persistent `git config http.*.extraheader`.
 
 ## See Also
 

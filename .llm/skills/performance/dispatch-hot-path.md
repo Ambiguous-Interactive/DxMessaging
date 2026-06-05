@@ -109,9 +109,9 @@ The dispatch hot path lives across:
 Any PR touching these files has its dispatch-throughput numbers regenerated
 automatically by the `perf-numbers.yml` workflow (it re-runs the benchmarks on
 ELI-MACHINE at the latest Unity version on every PR change and posts the refreshed
-numbers as a non-blocking PR comment; the committed
-`docs/architecture/performance.md` is refreshed by a commit to master after the PR
-merges). There is no manual `### Performance numbers` PR-body requirement.
+numbers as a non-blocking PR comment; after merge, CI opens or updates a
+default-branch refresh PR for the committed `docs/architecture/performance.md`
+table). There is no manual `### Performance numbers` PR-body requirement.
 
 ## Prohibited operations on the dispatch hot path
 
@@ -179,8 +179,9 @@ guarded devirtualization; sealing is load-bearing.
 <!-- to be measured by Week 1b T0.3 baseline runs and updated in Week 5 -->
 
 The current empirical budget on Mono Editor is captured in
-`progress/perf-baseline-2026-05-05.csv`. Any PR touching the hot-path file
-list above must paste before/after T0 numbers in the PR description.
+`progress/perf-baseline-2026-05-05.csv`. Any PR touching the hot-path file list
+above should rely on the Performance Numbers workflow output for before/after
+dispatch-throughput numbers.
 
 ## Enforcement
 
@@ -192,8 +193,8 @@ Category("PerfGate")]`; opt-in via `DX_PERF_GATE=1`. Median-of-5; fails
   editmode + playmode dispatch benchmarks on ELI-MACHINE (the `fast` runner) at
   the latest Unity version on every pull_request change and posts the regenerated
   dispatch-throughput numbers as a non-blocking PR comment; the committed
-  `docs/architecture/performance.md` is refreshed by a commit to master after the
-  PR merges. The numbers are owned by CI, not by PR-body text.
+  `docs/architecture/performance.md` is refreshed by a default-branch bot PR
+  after the PR merges. The numbers are owned by CI, not by PR-body text.
 
 ## Common pitfalls
 

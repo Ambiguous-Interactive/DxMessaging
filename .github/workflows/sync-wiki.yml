@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 2
+          persist-credentials: false
 
       - name: Check for documentation changes
         id: check
@@ -83,10 +84,15 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: main
+          persist-credentials: false
 
       - name: Clone wiki repository
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git clone "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git" wiki
+          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -113,6 +119,8 @@ jobs:
           echo "Content validation passed"
 
       - name: Commit and push to wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           cd wiki
           git config user.name "github-actions[bot]"
@@ -125,9 +133,10 @@ jobs:
 
           git add -A
           git commit -m "Sync wiki from docs/ - ${{ github.sha }}"
+          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
 
           for i in 1 2 3; do
-            if git push; then
+            if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push; then
               echo "Push successful"
               exit 0
             fi

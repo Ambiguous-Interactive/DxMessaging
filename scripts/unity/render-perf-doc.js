@@ -458,7 +458,7 @@ function main(argv = process.argv) {
       process.stderr.write(
         `Performance doc is out of date: ${path.relative(process.cwd(), options.doc)} ` +
           "would change. Re-run render-perf-doc.js without --check (or wait for the " +
-          "perf-numbers.yml commit to master) to refresh it.\n"
+          "perf-numbers.yml default-branch refresh PR) to refresh it.\n"
       );
       return 3;
     }

@@ -46,6 +46,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -86,6 +87,12 @@ jobs:
             fi
           done
 
+      - name: Configure push credentials
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'dependabot[bot]' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
       - name: Commit formatting changes to PR branch (Dependabot only)
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'dependabot[bot]' }}
         id: auto-commit
@@ -100,6 +107,10 @@ jobs:
             **/*.json
             **/*.asmdef
             **/*.yml
+
+      - name: Clear push credentials
+        if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'dependabot[bot]' }}
+        run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       - name: Refresh checkout after auto-commit
         if: ${{ steps.auto-commit.outputs.changes_detected == 'true' }}
@@ -211,9 +222,10 @@ jobs:
             fi
           done
           git commit -m "chore(format): apply Prettier/markdownlint fixes for PR #${{ github.event.pull_request.number }}"
-          git remote add upstream "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          git fetch upstream
-          git push upstream "$BRANCH" --force
+          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
+          git remote add upstream "https://github.com/${GH_REPO}.git"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" fetch upstream
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push upstream "$BRANCH" --force
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Open or update formatting PR in base repo
