@@ -132,7 +132,7 @@ function collectDevcontainerCiSteps(name) {
 }
 
 function expectExactUnityLibraryCache(text) {
-  expect(text).toContain("actions/cache@v4");
+  expect(text).toContain("actions/cache@v5");
   expect(text).toContain("PACKAGE_HASH");
   expect(text).toContain(".artifacts/unity/projects/");
   expect(text).toContain(".artifacts/unity/cache/");
@@ -1490,6 +1490,10 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(commentText).not.toContain("github.event.pull_request.head.ref");
   });
 
+  test("artifact retrieval stays pinned to download-artifact@v8", () => {
+    expect(text).toContain("actions/download-artifact@v8");
+  });
+
   test("the PR comment references the rendered PR head commit, not the merge commit", () => {
     // The numbers reflect the PR head commit the job checked out and rendered
     // against. The comment must link THAT commit so a reviewer can see exactly
@@ -1575,7 +1579,7 @@ describe(".github/workflows/release.yml", () => {
     expect(text).toContain("npm run validate:npm-meta");
     expect(text).toContain("npm run test:unity-contracts");
     expect(text).toContain("npm pack --json");
-    expect(text).toContain("actions/attest-build-provenance@v3");
+    expect(text).toContain("actions/attest-build-provenance@v4");
     expect(text).toContain("actions/upload-artifact@v7");
     expect(text).toContain("gh release create");
     expect(text).toContain("npx --yes --package=npm@^11.5.1 npm publish");
@@ -1585,7 +1589,7 @@ describe(".github/workflows/release.yml", () => {
 
   test("attestation job grants provenance permissions and validates from a full checkout", () => {
     const attestationJobEntry = Object.entries(parsed.jobs).find(([, job]) =>
-      job.steps.some((step) => step.uses === "actions/attest-build-provenance@v3")
+      job.steps.some((step) => step.uses === "actions/attest-build-provenance@v4")
     );
     expect(attestationJobEntry).toBeDefined();
 
