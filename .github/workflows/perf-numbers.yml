@@ -9,10 +9,10 @@ name: Performance Numbers
 # branch: a GITHUB_TOKEN push does not re-trigger the required pull_request checks
 # (and a doc-only commit path-filters the others out), so the new head would have
 # no successful required checks and merge would be blocked. On push to master
-# (after the PR merges) the same benchmarks run and the refreshed doc is COMMITTED
-# directly to master -- a bot push to the default branch blocks no PR -- so the
-# committed numbers track the merged code. The numbers are therefore owned by CI,
-# not by committed state, manual runs, or PR-body text.
+# (after the PR merges) the same benchmarks run and, if the numbers moved, CI
+# opens or updates a bot PR with the refreshed doc because protected-branch rules
+# require PR-based writes to the default branch. The committed numbers are
+# therefore owned by CI, not by committed state, manual runs, or PR-body text.
 on:
   pull_request:
     branches:
@@ -27,9 +27,9 @@ on:
 
 # Top-level least-privilege. The PR-comment job (comment-perf-doc) gets only
 # pull-requests:write to post the sticky comment (it never pushes); the
-# master-commit job (commit-perf-doc) gets only contents:write to commit the
-# rendered doc to master on the push-event path. Each grants its scope on the job
-# itself so the licensed Unity job never inherits write.
+# master-refresh job (commit-perf-doc) gets contents:write + pull-requests:write
+# to open/update the generated perf-doc PR on the push-event path. Each grants
+# its scope on the job itself so the licensed Unity job never inherits write.
 permissions:
   contents: read
   checks: write
@@ -579,13 +579,13 @@ jobs:
     needs:
       - loop-guard
       - perf-benchmarks
-    # PUSH-TO-MASTER path: after a PR merges, re-render the doc from the merged code
-    # and COMMIT it to master. A bot push to the default branch blocks no PR, so
-    # this is the safe place to mutate the committed doc. Gated on the loop guard
-    # (skip the bot's own [perf-autoupdate] commit) and a clean benchmark.
-    # NOTE: master must allow the github-actions bot to push (or supply a PAT). If
-    # master forbids direct bot pushes, this post-merge job fails RED on master
-    # (it never blocks a PR); the PR comment path is unaffected.
+    # PUSH-TO-DEFAULT-BRANCH path: after a PR merges, re-render the doc from the
+    # merged code and open/update a dedicated bot PR back into the pushed default
+    # branch. Direct pushes are blocked by branch protection ("changes must be
+    # made through a pull request"), so this keeps the doc-refresh path green while
+    # still routing the mutation through normal protected-branch policy. Gated on
+    # the loop guard (skip the bot's own [perf-autoupdate] commit/PR branch) and a
+    # clean benchmark.
     if: >-
       ${{
         github.event_name == 'push' &&
@@ -594,20 +594,17 @@ jobs:
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # contents:write is granted ONLY here so the licensed perf-benchmarks job never
-    # inherits push scope.
+    # contents:write + pull-requests:write are granted ONLY here so the licensed
+    # perf-benchmarks job never inherits branch/PR mutation scope.
     permissions:
       contents: write
+      pull-requests: write
     env:
       LATEST_VERSION: ${{ needs.loop-guard.outputs.latest-version }}
       PERF_DOC: docs/architecture/performance.md
     steps:
-      - name: Checkout master
+      - name: Checkout default branch
         uses: actions/checkout@v6
-        with:
-          # The pushed commit (github.sha on master) with push credentials so the
-          # rendered-doc commit can be pushed back to master.
-          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -660,17 +657,27 @@ jobs:
         # on the required markdown-json.yml prettier gate.
         run: node scripts/run-managed-prettier.js --check "${PERF_DOC}"
 
-      - name: Commit refreshed perf doc to master
+      - name: Open perf doc refresh PR
         if: steps.render.outputs.changed == 'true'
-        # The commit_message carries the literal [perf-autoupdate] sentinel (kept in
+        # The commit-message carries the literal [perf-autoupdate] sentinel (kept in
         # lockstep with the loop-guard job's PERF_AUTOUPDATE_SENTINEL) so the
-        # loop-guard skips the NEXT push-triggered run and the loop terminates.
-        uses: stefanzweifel/git-auto-commit-action@v7
+        # pull_request workflow skips the bot PR, and a later merge back to the
+        # default branch cannot loop forever.
+        uses: peter-evans/create-pull-request@v7
         with:
-          file_pattern: docs/architecture/performance.md
-          commit_message: |
+          add-paths: docs/architecture/performance.md
+          branch: perf-autoupdate/${{ github.ref_name }}
+          base: ${{ github.ref_name }}
+          delete-branch: true
+          title: "docs(perf): auto-update dispatch throughput numbers"
+          body: |
+            Automated perf-doc refresh generated by workflow run ${{ github.run_id }}.
+
+            Branch protection requires pull-request-based writes to `${{ github.ref_name }}`,
+            so this workflow opens or updates this PR instead of pushing directly.
+          commit-message: |
             docs(perf): auto-update dispatch throughput numbers [perf-autoupdate]
 
             From Unity ${{ env.LATEST_VERSION }} benchmark run ${{ github.run_id }}.
-          commit_user_name: github-actions[bot]
-          commit_user_email: github-actions[bot]@users.noreply.github.com
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>

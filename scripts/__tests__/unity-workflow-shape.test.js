@@ -1298,8 +1298,8 @@ describe(".github/workflows/unity-benchmarks.yml no longer maintains the perf do
 // only (the `fast` label), at the LATEST Unity version only, on every
 // pull_request change to master/main. On pull_request it posts a non-blocking
 // sticky PR comment (never pushing to the contributor branch -- that would block
-// merge); on push to master it commits the refreshed doc. These assertions parse
-// the YAML and check EFFECTIVE
+// merge); on push to master it opens/updates a bot PR with the refreshed doc.
+// These assertions parse the YAML and check EFFECTIVE
 // behavior (pinned `fast` label, latest-version-only matrix, license preflight,
 // org-lock acquire+release, if:always() return-license inside the lock window,
 // same-repo gate, loop-guard sentinel) rather than brittle string proxies.
@@ -1342,9 +1342,10 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // The licensed Unity job must NOT inherit or declare write scope.
     expect(perfJob.permissions).toBeUndefined();
     // The PR-comment job gets pull-requests:write only (it never pushes); the
-    // master-commit job gets contents:write only (it never comments).
+    // default-branch refresh job gets the minimal write scopes needed to push a
+    // bot branch and open/update its PR.
     expect(commentJob.permissions).toEqual({ contents: "read", "pull-requests": "write" });
-    expect(commitJob.permissions).toEqual({ contents: "write" });
+    expect(commitJob.permissions).toEqual({ contents: "write", "pull-requests": "write" });
   });
 
   test("a runner-preflight gates the self-hosted job and requires the fast (ELI-MACHINE) label set", () => {
@@ -1498,20 +1499,22 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(commitJob.if).toContain("needs.loop-guard.outputs.should-run == 'true'");
   });
 
-  test("the bot commit carries the sentinel and is NOT [skip ci]", () => {
+  test("the bot PR commit carries the sentinel and is NOT [skip ci]", () => {
     const commitStep = commitJob.steps.find(
       (step) =>
         typeof step.uses === "string" &&
-        step.uses.startsWith("stefanzweifel/git-auto-commit-action@")
+        step.uses.startsWith("peter-evans/create-pull-request@")
     );
     expect(commitStep).toBeDefined();
     // The commit message must carry the loop-breaking sentinel.
-    expect(commitStep.with.commit_message).toContain(PERF_AUTOUPDATE_SENTINEL);
+    expect(commitStep.with["commit-message"]).toContain(PERF_AUTOUPDATE_SENTINEL);
     // The commit message must NOT use [skip ci] (that would skip required checks
     // on the final, numbers-fresh commit). Scoped to the commit_message, not the
     // whole file, because the loop-guard comment legitimately MENTIONS [skip ci]
     // to explain why it is deliberately avoided.
-    expect(commitStep.with.commit_message).not.toContain("skip ci");
+    expect(commitStep.with["commit-message"]).not.toContain("skip ci");
+    expect(commitStep.with.branch).toBe("perf-autoupdate/${{ github.ref_name }}");
+    expect(commitStep.with.base).toBe("${{ github.ref_name }}");
   });
 
   test("the PR-comment job posts a NON-BLOCKING sticky comment and NEVER pushes to the PR branch", () => {
@@ -1567,9 +1570,9 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(comment.with.script).not.toContain("context.sha");
   });
 
-  test("the master-commit job commits the rendered doc to master ONLY on push, loop-guarded", () => {
-    // The committed doc is refreshed on push to master (post-merge): a bot push to
-    // the default branch blocks no PR.
+  test("the default-branch refresh job opens a bot PR ONLY on push, loop-guarded", () => {
+    // The committed doc is refreshed on push to master/main (post-merge), but
+    // protected-branch rules require the actual write to flow through a bot PR.
     expect(commitJob.if).toContain("github.event_name == 'push'");
     expect(commitJob.if).toContain("needs.perf-benchmarks.result == 'success'");
     expect(commitJob.if).toContain("needs.loop-guard.outputs.should-run == 'true'");
@@ -1577,7 +1580,7 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(commitJob.if).not.toContain("github.event_name == 'pull_request'");
 
     // Renders, prettier --write, computes changed from git diff, --check guards the
-    // required prettier gate, then git-auto-commit pushes to master.
+    // required prettier gate, then create-pull-request opens/updates the bot PR.
     const render = commitJob.steps.find((step) => step.id === "render");
     expect(render).toBeDefined();
     expect(render.run).toMatch(
@@ -1591,7 +1594,15 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       (step) => step.run && /npm ci/.test(step.run) && /package-lock\.json/.test(step.run)
     );
     expect(install).toBeDefined();
-    // It must NOT check out / push the PR head branch (that would block merge).
+    const createPr = commitJob.steps.find(
+      (step) =>
+        typeof step.uses === "string" &&
+        step.uses.startsWith("peter-evans/create-pull-request@")
+    );
+    expect(createPr).toBeDefined();
+    expect(createPr.with.branch).toBe("perf-autoupdate/${{ github.ref_name }}");
+    expect(createPr.with.base).toBe("${{ github.ref_name }}");
+    // It must NOT check out / push the contributor PR head branch (that would block merge).
     const checkout = commitJob.steps.find((step) => step.uses === "actions/checkout@v6");
     expect(checkout && checkout.with ? checkout.with.ref : undefined).not.toBe(
       "${{ github.event.pull_request.head.ref }}"
