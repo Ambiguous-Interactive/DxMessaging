@@ -323,19 +323,19 @@ async function validateTooling(options = {}) {
   // present) must equal the package.json pin; range pins must be satisfied.
   // This is the offline guard against the gitignored-lockfile drift class
   // (cspell-lib 10.0.0-vs-10.0.1) that file-presence/resolver probes miss.
-if (enforceVersionParity) {
-  try {
-    const parity = probeDependencyVersionParityFn({ repoRoot: REPO_ROOT });
-    if (parity && !parity.ok) {
-      for (const line of formatDriftLines(parity)) {
-        violations.push(`dependency-version-parity: ${line}`);
+  if (enforceVersionParity) {
+    try {
+      const parity = probeDependencyVersionParityFn({ repoRoot: REPO_ROOT });
+      if (parity && !parity.ok) {
+        for (const line of formatDriftLines(parity)) {
+          violations.push(`dependency-version-parity: ${line}`);
+        }
       }
+    } catch (error) {
+      const detail = error && error.message ? error.message : String(error);
+      violations.push(`dependency-version-parity: probe failed: ${detail}`);
     }
-  } catch (error) {
-    const detail = error && error.message ? error.message : String(error);
-    violations.push(`dependency-version-parity: probe failed: ${detail}`);
   }
-}
 
   if (enforceIntegrityProbe) {
     const integrity = probeIntegrityFn({
