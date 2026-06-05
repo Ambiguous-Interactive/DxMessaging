@@ -195,7 +195,7 @@ function expectSameRepoAndProtectedBranchGuard(job) {
   expect(job.if).toContain("github.ref_protected");
 }
 
-function expectLicensedSecretsGuard(job, gateOutput) {
+function expectSecretGateOutputGuard(job, gateOutput) {
   expect(job.if).toContain(gateOutput);
 }
 
@@ -1008,7 +1008,7 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
     "$workflow job '$jobId' requires licensed Unity and lock secrets",
     ({ workflow, jobId }) => {
       const parsed = loadWorkflowYaml(workflow);
-      expectLicensedSecretsGuard(
+      expectSecretGateOutputGuard(
         parsed.jobs[jobId],
         "needs.matrix-config.outputs.has-required-secrets == 'true'"
       );
@@ -1017,7 +1017,7 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
 
   test("perf-numbers.yml job 'perf-benchmarks' requires licensed Unity and lock secrets", () => {
     const parsed = loadWorkflowYaml("perf-numbers.yml");
-    expectLicensedSecretsGuard(
+    expectSecretGateOutputGuard(
       parsed.jobs["perf-benchmarks"],
       "needs.loop-guard.outputs.has-required-secrets == 'true'"
     );
@@ -1475,7 +1475,7 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       "github.event.pull_request.head.repo.full_name == github.repository"
     );
     expect(perfJob.if).toContain("github.event_name != 'pull_request'");
-    expectLicensedSecretsGuard(
+    expectSecretGateOutputGuard(
       perfJob,
       "needs.loop-guard.outputs.has-required-secrets == 'true'"
     );
