@@ -156,8 +156,8 @@ code literal.
 ## The perf-numbers.yml Fix
 
 `perf-numbers.yml` previously hardcoded the latest version in three places. The
-`loop-guard` job now resolves the latest version from the canonical file and
-exposes `latest-version` and `unity-versions` outputs. The `perf-benchmarks`
+`runner-preflight` job now resolves the latest version from the canonical file
+and exposes `latest-version` and `unity-versions` outputs. The `perf-benchmarks`
 matrix and both downstream `LATEST_VERSION` envs consume those outputs, so the
 newest version lives in exactly one place.
 

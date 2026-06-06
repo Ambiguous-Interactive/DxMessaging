@@ -9,10 +9,18 @@ name: Performance Numbers
 # branch: a GITHUB_TOKEN push does not re-trigger the required pull_request checks
 # (and a doc-only commit path-filters the others out), so the new head would have
 # no successful required checks and merge would be blocked. On push to master or
-# main (after the PR merges) the same benchmarks run and, if the numbers moved,
-# CI opens or updates a bot PR with the refreshed doc because protected-branch
-# rules require PR-based writes to the default branch. The committed numbers are
-# therefore owned by CI, not by committed state, manual runs, or PR-body text.
+# main (after the PR merges) the same benchmarks run and, if the numbers moved, CI
+# commits the refreshed doc DIRECTLY to the default branch via the default
+# GITHUB_TOKEN (mirroring update-llms-txt.yml). Commits pushed with GITHUB_TOKEN
+# do NOT re-trigger workflow runs, so the post-merge push cannot recurse into a
+# new benchmark run -- recursion is structurally impossible and needs no loop
+# guard. The committed numbers are therefore owned by CI, not by committed state,
+# manual runs, or PR-body text.
+#
+# PREREQUISITE: the direct push to master requires github-actions[bot] to be a
+# bypass actor on the master/main branch ruleset (otherwise the push is rejected
+# with GH006 / "changes must be made through a pull request"). See
+# docs/runbooks/perf-numbers-auto-commit.md for the exact settings click-paths.
 on:
   pull_request:
     branches:
@@ -25,12 +33,19 @@ on:
       - main
   workflow_dispatch:
 
+# Serialize merge-path runs on the same ref so two post-merge push jobs cannot
+# race into a non-fast-forward direct push when PRs land in quick succession. We
+# do NOT cancel in-progress runs -- that would abort an in-flight benchmark.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 # Top-level least-privilege. The PR-comment job (comment-perf-doc) gets only
 # pull-requests:write to post the sticky comment (it never pushes); the
-# default-branch refresh job (commit-perf-doc) gets contents:write +
-# pull-requests:write to open/update the generated perf-doc PR on the push-event
-# path. Each grants its scope on the job itself so the licensed Unity job never
-# inherits write.
+# default-branch refresh job (commit-perf-doc) gets contents:write only to push
+# the refreshed perf-doc straight to the default branch on the push-event path.
+# Each grants its scope on the job itself so the licensed Unity job never inherits
+# write.
 permissions:
   contents: read
   checks: write
@@ -41,6 +56,8 @@ jobs:
     # Mirrors unity-tests.yml's preflight. Runs on ubuntu-latest BEFORE the
     # self-hosted perf-benchmarks job tries to queue, converting a missing
     # ELI-MACHINE from a "queued forever" hang into a fast, explained failure.
+    # It also resolves the canonical Unity version and the licensed-secret
+    # presence so the expensive job and the doc jobs consume ONE cheap preflight.
     # CRITICAL CONTRACT: this preflight must NEVER make perf CI more broken than
     # the no-preflight baseline. If the token cannot list either the org-level
     # OR repo-level runner inventory (403/404 from both), it emits a
@@ -53,12 +70,27 @@ jobs:
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    # Job-level permissions REPLACE the default set entirely (any scope not listed
+    # becomes 'none'), so contents:read is required for the folded-in checkout step
+    # to read .github/unity-versions.json; actions:read is for the runner-inventory
+    # gh api probe.
     permissions:
       actions: read
+      contents: read
     concurrency:
       group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
       cancel-in-progress: true
+    outputs:
+      latest-version: ${{ steps.versions.outputs.latest-version }}
+      unity-versions: ${{ steps.versions.outputs.unity-versions }}
+      has-required-secrets: ${{ steps.check-secrets.outputs.has-secrets }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Probe self-hosted runner availability
         env:
           GH_TOKEN: ${{ secrets.RUNNER_AUDIT_PAT || secrets.GITHUB_TOKEN }}
@@ -126,129 +158,6 @@ jobs:
           fi
           echo "::endgroup::"
 
-  loop-guard:
-    name: Resolve perf-autoupdate loop guard
-    # LOOP-GUARD: the commit-perf-doc job opens a perf-doc refresh PR after a
-    # default-branch push. This cheap ubuntu job skips that bot PR's own
-    # pull_request open/sync events, and the eventual default-branch push after
-    # merge, only when verified PR metadata proves it is a github-actions[bot]
-    # perf-autoupdate PR carrying the `[perf-autoupdate]` sentinel. Pull requests
-    # are never skipped from commit-message text, so a normal same-repo PR cannot
-    # suppress perf feedback by adding the sentinel. We deliberately do NOT use
-    # `[skip ci]` on the bot commit: that would skip required status checks on
-    # the final, numbers-fresh commit.
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        github.event.pull_request.head.repo.full_name == github.repository
-      }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      should-run: ${{ steps.guard.outputs.should-run }}
-      latest-version: ${{ steps.versions.outputs.latest-version }}
-      unity-versions: ${{ steps.versions.outputs.unity-versions }}
-      has-required-secrets: ${{ steps.check-secrets.outputs.has-secrets }}
-    steps:
-      - name: Checkout PR head commit
-        uses: actions/checkout@v6
-        with:
-          # Inspect the event's head commit message. On `push`, head.sha is empty
-          # so checkout falls back to the default ref (the pushed commit). On
-          # `pull_request` we read the PR head commit. On
-          # workflow_dispatch it falls back to the default branch. One logic, all
-          # three events.
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Detect perf-autoupdate sentinel on the head commit
-        id: guard
-        env:
-          # The sentinel the bot commit carries. Kept in an env var so the
-          # comparison is a literal-string check, never an expression-injection
-          # surface. Keep in sync with commit-perf-doc's commit_message below
-          # and the unity-workflow-shape contract test.
-          PERF_AUTOUPDATE_SENTINEL: "[perf-autoupdate]"
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          message="$(git log -1 --pretty=%B)"
-          echo "Head commit subject: $(git log -1 --pretty=%s)"
-          if printf '%s' "${message}" | grep -qF -- "${PERF_AUTOUPDATE_SENTINEL}"; then
-            echo "Head commit carries ${PERF_AUTOUPDATE_SENTINEL}; this is only"
-            echo "actionable after bot PR metadata is verified."
-          fi
-
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            if jq -e \
-                --arg repository "${GITHUB_REPOSITORY}" \
-                --arg sentinel "${PERF_AUTOUPDATE_SENTINEL}" \
-                '
-                  .pull_request
-                  | select((.head.repo.full_name // "") == $repository)
-                  | select(
-                      ((.head.ref // "") | startswith("perf-autoupdate/")) and
-                      ((.user.login // "") == "github-actions[bot]")
-                    )
-                  | select(
-                      ((.title // "") | contains($sentinel)) or
-                      ((.body // "") | contains($sentinel))
-                    )
-                ' "${GITHUB_EVENT_PATH}" >/dev/null; then
-              echo "This pull_request event is for a github-actions[bot]"
-              echo "perf-autoupdate PR; skipping the expensive Unity benchmark"
-              echo "run + perf-doc comment."
-              echo "should-run=false" >> "${GITHUB_OUTPUT}"
-              exit 0
-            fi
-            echo "No verified perf-autoupdate bot PR metadata was found for"
-            echo "this pull_request event."
-          fi
-
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            associated_prs_json="${RUNNER_TEMP}/perf-autoupdate-associated-prs.json"
-            if gh api \
-                -H "Accept: application/vnd.github+json" \
-                -H "X-GitHub-Api-Version: 2022-11-28" \
-                "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-                > "${associated_prs_json}"; then
-              if jq -e \
-                --arg repository "${GITHUB_REPOSITORY}" \
-                --arg sentinel "${PERF_AUTOUPDATE_SENTINEL}" \
-                '
-                .[]
-                | select((.merged_at // "") != "")
-                | select((.head.repo.full_name // "") == $repository)
-                | select(
-                    ((.head.ref // "") | startswith("perf-autoupdate/")) and
-                    ((.user.login // "") == "github-actions[bot]")
-                  )
-                | select(
-                    ((.title // "") | contains($sentinel)) or
-                    ((.body // "") | contains($sentinel))
-                  )
-              ' "${associated_prs_json}" >/dev/null; then
-                echo "The pushed commit is associated with a merged"
-                echo "perf-autoupdate bot PR; skipping the expensive Unity"
-                echo "benchmark run + perf-doc commit to break the merge loop."
-                echo "should-run=false" >> "${GITHUB_OUTPUT}"
-                exit 0
-              fi
-              echo "No associated merged perf-autoupdate PR was found for"
-              echo "the pushed commit."
-            else
-              echo "::warning::Unable to query PRs associated with ${GITHUB_SHA};"
-              echo "::warning::continuing without the merged bot PR skip."
-            fi
-          fi
-
-          echo "No verified perf-autoupdate bot PR metadata was found; the"
-          echo "Unity benchmark run + perf-doc commit will proceed."
-          echo "should-run=true" >> "${GITHUB_OUTPUT}"
-
       - name: Resolve Unity version from canonical source
         id: versions
         # Single source of truth: .github/unity-versions.json. perf tracks the
@@ -286,16 +195,13 @@ jobs:
     name: Perf benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
     needs:
       - runner-preflight
-      - loop-guard
     # Same-repo gate (forks cannot run licensed Unity or be pushed to) AND the
-    # loop guard (skip when the event carries bot perf-autoupdate evidence).
-    # Mirrors unity-tests.yml's same-repo expression.
+    # licensed-secret gate. Mirrors unity-tests.yml's same-repo expression.
     if: >-
       ${{
         (github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name == github.repository) &&
-        needs.loop-guard.outputs.should-run == 'true' &&
-        needs.loop-guard.outputs.has-required-secrets == 'true'
+        needs.runner-preflight.outputs.has-required-secrets == 'true'
       }}
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
     # runner carrying it). Keep in sync with the preflight REQUIRED_LABELS.
@@ -310,11 +216,11 @@ jobs:
       matrix:
         # LATEST Unity version only -- the documented numbers track the newest
         # supported runtime. The single latest version is resolved from the
-        # canonical source (.github/unity-versions.json) via loop-guard, so the
-        # matrix leg, the artifact-download pattern, and render-perf-doc.js all
+        # canonical source (.github/unity-versions.json) via runner-preflight, so
+        # the matrix leg, the artifact-download pattern, and render-perf-doc.js all
         # consume ONE value and cannot drift. Single-entry matrix (not a bare
         # scalar) so the leg name still carries the version.
-        unity-version: ${{ fromJSON(needs.loop-guard.outputs.unity-versions) }}
+        unity-version: ${{ fromJSON(needs.runner-preflight.outputs.unity-versions) }}
         # render-perf-doc.js consumes BOTH editmode and playmode legs.
         test-mode:
           - editmode
@@ -482,21 +388,19 @@ jobs:
   comment-perf-doc:
     name: Comment refreshed perf numbers on the PR
     needs:
-      - loop-guard
+      - runner-preflight
       - perf-benchmarks
     # PULL_REQUEST path: render the numbers from this run and post them as a
     # NON-BLOCKING sticky PR comment. We do NOT push onto the PR branch -- a
     # GITHUB_TOKEN push would not re-trigger the required pull_request checks (and a
     # doc-only commit path-filters the others out), leaving the new head with no
     # successful required checks and blocking merge. The committed doc is refreshed
-    # by the default-branch refresh job after the PR merges. Same-repo only (a
-    # fork PR cannot run the licensed benchmarks), loop guard allowed, BOTH legs
-    # succeeded.
+    # directly on the default branch after the PR merges. Same-repo only (a fork PR
+    # cannot run the licensed benchmarks), BOTH legs succeeded.
     if: >-
       ${{
         github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
-        needs.loop-guard.outputs.should-run == 'true' &&
         needs.perf-benchmarks.result == 'success'
       }}
     runs-on: ubuntu-latest
@@ -507,7 +411,7 @@ jobs:
       contents: read
       pull-requests: write
     env:
-      LATEST_VERSION: ${{ needs.loop-guard.outputs.latest-version }}
+      LATEST_VERSION: ${{ needs.runner-preflight.outputs.latest-version }}
       PERF_DOC: docs/architecture/performance.md
     steps:
       - name: Checkout PR head
@@ -607,7 +511,7 @@ jobs:
               ? `commit [\`${headSha.slice(0, 7)}\`](${repoUrl}/commit/${headSha})`
               : "this branch";
             const note = changed
-              ? "These numbers MOVED versus the committed doc; CI opens a default-branch refresh PR after this PR merges."
+              ? "These numbers MOVED versus the committed doc; CI commits the refreshed doc directly to the default branch after this PR merges."
               : "These numbers are UNCHANGED versus the committed doc.";
             const body = [
               marker,
@@ -643,37 +547,37 @@ jobs:
             }
 
   commit-perf-doc:
-    name: Open refreshed perf doc PR
+    name: Commit refreshed perf doc to the default branch
     needs:
-      - loop-guard
+      - runner-preflight
       - perf-benchmarks
     # PUSH-TO-DEFAULT-BRANCH path: after a PR merges, re-render the doc from the
-    # merged code and open/update a dedicated bot PR back into the pushed default
-    # branch. Direct pushes are blocked by branch protection ("changes must be
-    # made through a pull request"), so this keeps the doc-refresh path green while
-    # still routing the mutation through normal protected-branch policy. Gated on
-    # the loop guard (skip the bot's own [perf-autoupdate] commit/PR branch) and a
-    # clean benchmark.
+    # merged code and, if the numbers moved, commit it DIRECTLY to the pushed
+    # default branch via the default GITHUB_TOKEN (mirrors update-llms-txt.yml).
+    # GITHUB_TOKEN pushes do not re-trigger workflows, so this push cannot recurse
+    # into a new benchmark run -- no loop guard needed. Requires github-actions[bot]
+    # to be a bypass actor on the branch ruleset (see
+    # docs/runbooks/perf-numbers-auto-commit.md). Gated on a clean benchmark.
     if: >-
       ${{
         github.event_name == 'push' &&
-        needs.loop-guard.outputs.should-run == 'true' &&
         needs.perf-benchmarks.result == 'success'
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # contents:write + pull-requests:write are granted ONLY here so the licensed
-    # perf-benchmarks job never inherits branch/PR mutation scope.
+    # contents:write is granted ONLY here so the licensed perf-benchmarks job
+    # never inherits branch-mutation scope. No pull-requests scope: this path
+    # pushes directly, it does not open a PR.
     permissions:
       contents: write
-      pull-requests: write
     env:
-      LATEST_VERSION: ${{ needs.loop-guard.outputs.latest-version }}
+      LATEST_VERSION: ${{ needs.runner-preflight.outputs.latest-version }}
       PERF_DOC: docs/architecture/performance.md
     steps:
       - name: Checkout default branch
         uses: actions/checkout@v6
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -723,32 +627,27 @@ jobs:
 
       - name: Verify rendered doc passes the required prettier gate
         if: steps.render.outputs.changed == 'true'
-        # Belt-and-suspenders: fail loudly here rather than commit a doc that is red
-        # on the required markdown-json.yml prettier gate.
+        # Belt-and-suspenders, now load-bearing: a GITHUB_TOKEN push does not
+        # trigger a fresh markdown-json.yml run on the committed doc, so fail
+        # loudly HERE rather than push a doc that is red on the required prettier
+        # gate.
         run: node scripts/run-managed-prettier.js --check "${PERF_DOC}"
 
-      - name: Open perf doc refresh PR
+      - name: Configure push credentials
         if: steps.render.outputs.changed == 'true'
-        # The commit message and PR metadata carry the literal [perf-autoupdate]
-        # sentinel (kept in lockstep with the loop-guard job's
-        # PERF_AUTOUPDATE_SENTINEL). The loop guard can then detect either the bot
-        # branch commit or the merged PR associated with a later default-branch
-        # push.
-        uses: peter-evans/create-pull-request@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+      - name: Commit and push refreshed perf doc
+        if: steps.render.outputs.changed == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          add-paths: docs/architecture/performance.md
-          branch: perf-autoupdate/${{ github.ref_name }}
-          base: ${{ github.ref_name }}
-          title: "docs(perf): auto-update dispatch throughput numbers [perf-autoupdate]"
-          body: |
-            <!-- [perf-autoupdate] -->
+          commit_message: "docs(perf): auto-update dispatch throughput numbers"
+          file_pattern: docs/architecture/performance.md
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
 
-            Automated perf-doc refresh generated by workflow run ${{ github.run_id }}.
-
-            Branch protection requires pull-request-based writes to `${{ github.ref_name }}`,
-            so this workflow opens or updates this PR instead of pushing directly.
-          commit-message: |
-            docs(perf): auto-update dispatch throughput numbers [perf-autoupdate]
-
-            From Unity ${{ env.LATEST_VERSION }} benchmark run ${{ github.run_id }}.
+      - name: Clear push credentials
+        if: ${{ always() && steps.render.outputs.changed == 'true' }}
+        run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"

@@ -17,8 +17,9 @@ on:
 # benchmark-failure notifications; they must NOT inherit write scope. The
 # documented dispatch-throughput numbers are owned entirely by the Performance
 # Numbers workflow (.github/workflows/perf-numbers.yml), which posts the refreshed
-# numbers as a non-blocking PR comment and opens or updates a default-branch
-# refresh PR after merge; this scheduled workflow keeps the per-version benchmark
+# numbers as a non-blocking PR comment and, after merge, commits the refreshed
+# default-branch doc directly via GITHUB_TOKEN; this scheduled workflow keeps the
+# per-version benchmark
 # test coverage and does not maintain the doc, so it needs no write scope.
 permissions:
   contents: read

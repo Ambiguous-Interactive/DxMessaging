@@ -220,5 +220,6 @@ nav:
       - Analyzers: reference/analyzers.md
       - Compatibility: reference/compatibility.md
   - Runbooks:
+      - Perf-Numbers Auto-Commit: runbooks/perf-numbers-auto-commit.md
       - Unity Runners After Transfer: runbooks/unity-runners-after-transfer.md
       - Windows Partial Extract: runbooks/windows-partial-extract.md

@@ -109,9 +109,12 @@ The dispatch hot path lives across:
 Any PR touching these files has its dispatch-throughput numbers regenerated
 automatically by the `perf-numbers.yml` workflow (it re-runs the benchmarks on
 ELI-MACHINE at the latest Unity version on every PR change and posts the refreshed
-numbers as a non-blocking PR comment; after merge, CI opens or updates a
-default-branch refresh PR for the committed `docs/architecture/performance.md`
-table). There is no manual `### Performance numbers` PR-body requirement.
+numbers as a non-blocking PR comment; after merge, CI commits the refreshed
+`docs/architecture/performance.md` table directly to the default branch via a
+GITHUB_TOKEN push (no PR); see
+[docs/runbooks/perf-numbers-auto-commit.md](../../../docs/runbooks/perf-numbers-auto-commit.md)
+for the bypass prerequisite). There is no manual `### Performance numbers` PR-body
+requirement.
 
 ## Prohibited operations on the dispatch hot path
 
