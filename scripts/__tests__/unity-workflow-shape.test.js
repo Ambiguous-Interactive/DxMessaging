@@ -1297,9 +1297,10 @@ describe(".github/workflows/unity-benchmarks.yml no longer maintains the perf do
 // pull_request change to master/main. On pull_request it posts a non-blocking
 // sticky PR comment (never pushing to the contributor branch -- that would block
 // merge); on push to master/main it commits the refreshed doc DIRECTLY to the
-// default branch via GITHUB_TOKEN (GITHUB_TOKEN pushes do not re-trigger
-// workflows, so recursion is structurally impossible -- no loop guard needed).
-// These assertions parse the YAML and check EFFECTIVE
+// default branch using a GitHub App installation token (the built-in GITHUB_TOKEN
+// cannot push to a protected branch). App-token pushes DO re-trigger workflows,
+// so recursion is broken by the push trigger's paths-ignore on the perf doc --
+// no loop guard needed. These assertions parse the YAML and check EFFECTIVE
 // behavior (pinned `fast` label, latest-version-only matrix, license preflight,
 // org-lock acquire+release, if:always() return-license inside the lock window,
 // same-repo gate, direct-push shape) rather than brittle string proxies.
@@ -1331,7 +1332,11 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // Each change to the PR re-runs the numbers: opened + synchronize + reopened.
     expect(onBlock.pull_request.types.sort()).toEqual(["opened", "reopened", "synchronize"]);
     expect(onBlock.push.branches.sort()).toEqual(["main", "master"]);
-    expect(onBlock.push).not.toHaveProperty("paths-ignore");
+    // Loop break: the post-merge App-token commit only touches the perf doc, so
+    // ignoring it on the push trigger stops that auto-commit re-running the
+    // benchmark. App-token pushes (unlike GITHUB_TOKEN) DO re-trigger workflows,
+    // so this paths-ignore is load-bearing, not cosmetic.
+    expect(onBlock.push["paths-ignore"]).toEqual(["docs/architecture/performance.md"]);
     expect(text).not.toContain("pull_request_target");
   });
 
@@ -1340,10 +1345,10 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // The licensed Unity job must NOT inherit or declare write scope.
     expect(perfJob.permissions).toBeUndefined();
     // The PR-comment job gets pull-requests:write only (it never pushes); the
-    // default-branch commit job gets contents:write only -- it pushes directly
-    // to the default branch and never opens a PR.
+    // default-branch commit job pushes with a GitHub App token, so its own
+    // GITHUB_TOKEN needs only contents:read and it never opens a PR.
     expect(commentJob.permissions).toEqual({ contents: "read", "pull-requests": "write" });
-    expect(commitJob.permissions).toEqual({ contents: "write" });
+    expect(commitJob.permissions).toEqual({ contents: "read" });
   });
 
   test("a runner-preflight gates the self-hosted job and requires the fast (ELI-MACHINE) label set", () => {
@@ -1492,10 +1497,11 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
   });
 
   test("the recursion-guard job and the autoupdate sentinel are gone (no loop guard needed)", () => {
-    // Direct-push design: GITHUB_TOKEN pushes do not re-trigger workflows, so the
-    // whole recursion-guard job + sentinel apparatus is structurally unnecessary
-    // and must not reappear. (The forbidden literals are assembled at runtime so
-    // the repo's sanity grep stays clean.)
+    // Direct-push design: the push trigger's paths-ignore on the perf doc stops
+    // the post-merge auto-commit re-running the benchmark, so the whole
+    // recursion-guard job + sentinel apparatus is unnecessary and must not
+    // reappear. (The forbidden literals are assembled at runtime so the repo's
+    // sanity grep stays clean.)
     const guardJobId = ["loop", "guard"].join("-");
     const sentinel = ["perf", "autoupdate"].join("-");
     expect(parsed.jobs[guardJobId]).toBeUndefined();
@@ -1563,9 +1569,10 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(comment.with.script).not.toContain("context.sha");
   });
 
-  test("the default-branch commit job pushes the doc DIRECTLY via GITHUB_TOKEN ONLY on push", () => {
+  test("the default-branch commit job pushes the doc DIRECTLY via a GitHub App token ONLY on push", () => {
     // The committed doc is refreshed on push to master/main (post-merge) and
-    // committed directly to the default branch with the default GITHUB_TOKEN -- no
+    // committed directly to the default branch with a GitHub App installation
+    // token (the built-in GITHUB_TOKEN cannot push to a protected branch) -- no
     // bot PR, no recursion. (Forbidden literals are assembled at runtime to keep
     // the repo's sanity grep clean.)
     const createPrAction = ["peter", "evans/create-pull-request@"].join("-");
@@ -1573,12 +1580,29 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
 
     expect(commitJob.if).toContain("github.event_name == 'push'");
     expect(commitJob.if).toContain("needs.perf-benchmarks.result == 'success'");
+    // Gated on the App credentials being present so an unprovisioned repo degrades
+    // to a no-op instead of a red push-build.
+    expect(commitJob.if).toContain(
+      "needs.runner-preflight.outputs.has-autocommit-app == 'true'"
+    );
     // It does NOT key off pull_request (that path comments, never commits).
     expect(commitJob.if).not.toContain("github.event_name == 'pull_request'");
 
+    // It mints a GitHub App installation token from the AUTO_COMMIT_APP_* secrets
+    // and uses THAT (not GITHUB_TOKEN) for the protected-branch push.
+    const appTokenStep = commitJob.steps.find(
+      (step) => typeof step.uses === "string" && step.uses.startsWith("actions/create-github-app-token@")
+    );
+    expect(appTokenStep).toBeDefined();
+    expect(appTokenStep.id).toBe("app-token");
+    expect(appTokenStep.with["app-id"]).toBe("${{ secrets.AUTO_COMMIT_APP_ID }}");
+    expect(appTokenStep.with["private-key"]).toBe(
+      "${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}"
+    );
+
     // Renders, prettier --write, computes changed from git diff, then --check
-    // guards the required prettier gate (now load-bearing: a GITHUB_TOKEN push
-    // does not trigger a fresh markdown gate on the committed doc).
+    // guards the required prettier gate (now load-bearing: the paths-ignore loop
+    // break means the committed doc gets no fresh markdown gate).
     const render = commitJob.steps.find((step) => step.id === "render");
     expect(render).toBeDefined();
     expect(render.run).toMatch(
@@ -1602,11 +1626,17 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       (step) =>
         typeof step.run === "string" &&
         /git remote set-url origin/.test(step.run) &&
-        /x-access-token:\$\{GITHUB_TOKEN\}/.test(step.run)
+        /x-access-token:\$\{GH_PUSH_TOKEN\}/.test(step.run)
     );
     expect(remoteIndex).toBeGreaterThanOrEqual(0);
     const remoteStep = steps[remoteIndex];
     expect(remoteStep.if).toBe("steps.render.outputs.changed == 'true'");
+    // The push credential MUST come from the App installation token (the whole
+    // reason for the pivot). Pin the env binding, not just the shell-variable
+    // interpolation, so a regression that rebinds GH_PUSH_TOKEN to GITHUB_TOKEN,
+    // the wrong secret, or nothing cannot pass green. Symmetric with the
+    // checkout-token assertion below.
+    expect(remoteStep.env.GH_PUSH_TOKEN).toBe("${{ steps.app-token.outputs.token }}");
 
     const commitStep = steps[remoteIndex + 1];
     expect(typeof commitStep.uses).toBe("string");
@@ -1630,11 +1660,11 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(commitJobText).not.toContain(createPrAction);
     expect(commitJobText).not.toContain(autoupdateBranch);
 
-    // The checkout uses the default GITHUB_TOKEN and does not persist credentials
-    // (the tokenized remote carries the push auth instead).
+    // The checkout uses the App installation token and does not persist
+    // credentials (the tokenized remote carries the push auth instead).
     const checkout = commitJob.steps.find((step) => step.uses === "actions/checkout@v6");
     expect(checkout.with["persist-credentials"]).toBe(false);
-    expect(checkout.with.token).toBe("${{ secrets.GITHUB_TOKEN }}");
+    expect(checkout.with.token).toBe("${{ steps.app-token.outputs.token }}");
   });
 });
 

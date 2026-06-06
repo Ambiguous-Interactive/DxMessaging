@@ -10,17 +10,22 @@ name: Performance Numbers
 # (and a doc-only commit path-filters the others out), so the new head would have
 # no successful required checks and merge would be blocked. On push to master or
 # main (after the PR merges) the same benchmarks run and, if the numbers moved, CI
-# commits the refreshed doc DIRECTLY to the default branch via the default
-# GITHUB_TOKEN (mirroring update-llms-txt.yml). Commits pushed with GITHUB_TOKEN
-# do NOT re-trigger workflow runs, so the post-merge push cannot recurse into a
-# new benchmark run -- recursion is structurally impossible and needs no loop
-# guard. The committed numbers are therefore owned by CI, not by committed state,
-# manual runs, or PR-body text.
+# commits the refreshed doc DIRECTLY to the default branch using a GitHub App
+# installation token. The built-in GITHUB_TOKEN cannot push to a protected branch
+# (github-actions[bot] is a system account and is not a selectable ruleset bypass
+# actor), so a dedicated App that IS on the bypass list does the push. App-token
+# pushes DO re-trigger workflows, so recursion is broken the simple way: the push
+# trigger ignores docs/architecture/performance.md below, so the doc-only
+# auto-commit cannot re-run the benchmark -- no loop guard needed. The committed
+# numbers are therefore owned by CI, not by committed state, manual runs, or
+# PR-body text.
 #
-# PREREQUISITE: the direct push to master requires github-actions[bot] to be a
-# bypass actor on the master/main branch ruleset (otherwise the push is rejected
-# with GH006 / "changes must be made through a pull request"). See
-# docs/runbooks/perf-numbers-auto-commit.md for the exact settings click-paths.
+# PREREQUISITE: a GitHub App (App ID in secrets.AUTO_COMMIT_APP_ID, private key in
+# secrets.AUTO_COMMIT_APP_PRIVATE_KEY) with Contents: read and write, installed on
+# this repo and added to the master/main branch-ruleset bypass list. Without it
+# the push is rejected with GH006 / "changes must be made through a pull request";
+# if the secrets are absent the commit job degrades to a logged no-op. See
+# docs/runbooks/perf-numbers-auto-commit.md for the exact setup + click-paths.
 on:
   pull_request:
     branches:
@@ -31,6 +36,12 @@ on:
     branches:
       - master
       - main
+    # Loop break: the commit-perf-doc job pushes a doc-only commit with a GitHub
+    # App token, which (unlike the built-in GITHUB_TOKEN) DOES re-trigger
+    # workflows. Ignoring the perf doc here means that auto-commit cannot re-run
+    # the benchmark. A normal code merge still touches non-ignored paths and runs.
+    paths-ignore:
+      - docs/architecture/performance.md
   workflow_dispatch:
 
 # Serialize merge-path runs on the same ref so two post-merge push jobs cannot
@@ -42,10 +53,9 @@ concurrency:
 
 # Top-level least-privilege. The PR-comment job (comment-perf-doc) gets only
 # pull-requests:write to post the sticky comment (it never pushes); the
-# default-branch refresh job (commit-perf-doc) gets contents:write only to push
-# the refreshed perf-doc straight to the default branch on the push-event path.
-# Each grants its scope on the job itself so the licensed Unity job never inherits
-# write.
+# default-branch refresh job (commit-perf-doc) pushes with a GitHub App token, so
+# its own GITHUB_TOKEN needs only contents:read. Each grants its scope on the job
+# itself so the licensed Unity job never inherits write.
 permissions:
   contents: read
   checks: write
@@ -84,6 +94,7 @@ jobs:
       latest-version: ${{ steps.versions.outputs.latest-version }}
       unity-versions: ${{ steps.versions.outputs.unity-versions }}
       has-required-secrets: ${{ steps.check-secrets.outputs.has-secrets }}
+      has-autocommit-app: ${{ steps.check-autocommit-app.outputs.has-app }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -189,6 +200,24 @@ jobs:
             echo "has-secrets=true" >> "${GITHUB_OUTPUT}"
           else
             echo "has-secrets=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Check for the auto-commit GitHub App credentials
+        id: check-autocommit-app
+        # Gates the post-merge commit job so a repo that has not yet provisioned
+        # the AUTO_COMMIT_APP_* GitHub App degrades to a logged no-op (the PR
+        # comment still posts) instead of a red push-build. See
+        # docs/runbooks/perf-numbers-auto-commit.md.
+        env:
+          AUTO_COMMIT_APP_ID: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          AUTO_COMMIT_APP_PRIVATE_KEY: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${AUTO_COMMIT_APP_ID:-}" ] && \
+             [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then
+            echo "has-app=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "has-app=false" >> "${GITHUB_OUTPUT}"
           fi
 
   perf-benchmarks:
@@ -553,31 +582,45 @@ jobs:
       - perf-benchmarks
     # PUSH-TO-DEFAULT-BRANCH path: after a PR merges, re-render the doc from the
     # merged code and, if the numbers moved, commit it DIRECTLY to the pushed
-    # default branch via the default GITHUB_TOKEN (mirrors update-llms-txt.yml).
-    # GITHUB_TOKEN pushes do not re-trigger workflows, so this push cannot recurse
-    # into a new benchmark run -- no loop guard needed. Requires github-actions[bot]
-    # to be a bypass actor on the branch ruleset (see
-    # docs/runbooks/perf-numbers-auto-commit.md). Gated on a clean benchmark.
+    # default branch using a GitHub App installation token. The built-in
+    # GITHUB_TOKEN cannot push to a protected branch, so a dedicated App that is on
+    # the branch-ruleset bypass list does the push. Recursion is broken by the push
+    # trigger's paths-ignore on the perf doc, not by token identity, so the
+    # doc-only auto-commit cannot re-run the benchmark -- no loop guard needed.
+    # Gated on a clean benchmark AND the App credentials being present (otherwise
+    # this job degrades to a logged no-op). See docs/runbooks/perf-numbers-auto-commit.md.
     if: >-
       ${{
         github.event_name == 'push' &&
-        needs.perf-benchmarks.result == 'success'
+        needs.perf-benchmarks.result == 'success' &&
+        needs.runner-preflight.outputs.has-autocommit-app == 'true'
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # contents:write is granted ONLY here so the licensed perf-benchmarks job
-    # never inherits branch-mutation scope. No pull-requests scope: this path
-    # pushes directly, it does not open a PR.
+    # The push is authenticated by the GitHub App installation token (minted
+    # below), NOT the job's GITHUB_TOKEN, so contents:read is all this job's own
+    # token needs (checkout fallback + artifact download). No pull-requests scope:
+    # this path pushes directly, it does not open a PR.
     permissions:
-      contents: write
+      contents: read
     env:
       LATEST_VERSION: ${{ needs.runner-preflight.outputs.latest-version }}
       PERF_DOC: docs/architecture/performance.md
     steps:
+      - name: Generate auto-commit GitHub App token
+        id: app-token
+        # The App must have Contents: read and write, be installed on this repo,
+        # and be on the master/main branch-ruleset bypass list. The job `if` above
+        # already proved both secrets are present.
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+
       - name: Checkout default branch
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -627,8 +670,8 @@ jobs:
 
       - name: Verify rendered doc passes the required prettier gate
         if: steps.render.outputs.changed == 'true'
-        # Belt-and-suspenders, now load-bearing: a GITHUB_TOKEN push does not
-        # trigger a fresh markdown-json.yml run on the committed doc, so fail
+        # Belt-and-suspenders, now load-bearing: the paths-ignore loop break means
+        # the committed doc does not get a fresh markdown-json.yml run, so fail
         # loudly HERE rather than push a doc that is red on the required prettier
         # gate.
         run: node scripts/run-managed-prettier.js --check "${PERF_DOC}"
@@ -636,8 +679,8 @@ jobs:
       - name: Configure push credentials
         if: steps.render.outputs.changed == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: git remote set-url origin "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
       - name: Commit and push refreshed perf doc
         if: steps.render.outputs.changed == 'true'
