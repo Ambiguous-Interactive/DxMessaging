@@ -40,7 +40,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const { combinedText } = require("../lib/pwsh-output");
+const { assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const RUN_CI_TESTS = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
@@ -113,23 +113,67 @@ function runNormalizer(input) {
 }
 
 const CASES = [
-  { label: "canonical host:port",                            input: "127.0.0.1:10080",                                  expect: { ok: "127.0.0.1:10080" } },
-  { label: "hostname:port",                                  input: "accelerator.example.com:10080",                    expect: { ok: "accelerator.example.com:10080" } },
-  { label: "http URL",                                       input: "http://accelerator.example.com:10080",             expect: { ok: "accelerator.example.com:10080" } },
-  { label: "https URL with trailing slash",                  input: "https://accelerator.example.com:10080/",           expect: { ok: "accelerator.example.com:10080" } },
-  { label: "arbitrary scheme + path + query + fragment",     input: "acc://accelerator.example.com:10080/p?x=1#f",      expect: { ok: "accelerator.example.com:10080" } },
-  { label: "URL with userinfo",                              input: "http://user:pw@accelerator.example.com:10080",     expect: { ok: "accelerator.example.com:10080" } },
-  { label: "IPv6 bare",                                      input: "[::1]:10080",                                      expect: { ok: "[::1]:10080" } },
-  { label: "IPv6 in URL",                                    input: "http://[::1]:10080/",                              expect: { ok: "[::1]:10080" } },
-  { label: "leading/trailing whitespace",                    input: "  127.0.0.1:10080  ",                              expect: { ok: "127.0.0.1:10080" } },
-  { label: "empty",                                          input: "",                                                  expect: { empty: true } },
-  { label: "whitespace only",                                input: "   ",                                               expect: { empty: true } },
-  { label: "URL missing explicit port (http default)",       input: "http://accelerator.example.com",                   expect: { throwsContains: "missing an explicit :port" } },
-  { label: "bare host no port",                              input: "accelerator.example.com",                          expect: { throwsContains: "expected host:port" } },
-  { label: "garbage",                                        input: "not a valid endpoint at all",                      expect: { throwsContains: "expected host:port" } },
-  { label: "port out of range high",                         input: "host:99999",                                        expect: { throwsContains: "port is out of range" } },
-  { label: "port zero",                                      input: "host:0",                                            expect: { throwsContains: "port is out of range" } },
-  { label: "non-numeric port",                               input: "host:abc",                                          expect: { throwsContains: "expected host:port" } },
+  { label: "canonical host:port", input: "127.0.0.1:10080", expect: { ok: "127.0.0.1:10080" } },
+  {
+    label: "hostname:port",
+    input: "accelerator.example.com:10080",
+    expect: { ok: "accelerator.example.com:10080" }
+  },
+  {
+    label: "http URL",
+    input: "http://accelerator.example.com:10080",
+    expect: { ok: "accelerator.example.com:10080" }
+  },
+  {
+    label: "https URL with trailing slash",
+    input: "https://accelerator.example.com:10080/",
+    expect: { ok: "accelerator.example.com:10080" }
+  },
+  {
+    label: "arbitrary scheme + path + query + fragment",
+    input: "acc://accelerator.example.com:10080/p?x=1#f",
+    expect: { ok: "accelerator.example.com:10080" }
+  },
+  {
+    label: "URL with userinfo",
+    input: "http://user:pw@accelerator.example.com:10080",
+    expect: { ok: "accelerator.example.com:10080" }
+  },
+  { label: "IPv6 bare", input: "[::1]:10080", expect: { ok: "[::1]:10080" } },
+  { label: "IPv6 in URL", input: "http://[::1]:10080/", expect: { ok: "[::1]:10080" } },
+  {
+    label: "leading/trailing whitespace",
+    input: "  127.0.0.1:10080  ",
+    expect: { ok: "127.0.0.1:10080" }
+  },
+  { label: "empty", input: "", expect: { empty: true } },
+  { label: "whitespace only", input: "   ", expect: { empty: true } },
+  {
+    label: "URL missing explicit port (http default)",
+    input: "http://accelerator.example.com",
+    expect: { throwsContains: "missing an explicit :port" }
+  },
+  {
+    label: "bare host no port",
+    input: "accelerator.example.com",
+    expect: { throwsContains: "expected host:port" }
+  },
+  {
+    label: "garbage",
+    input: "not a valid endpoint at all",
+    expect: { throwsContains: "expected host:port" }
+  },
+  {
+    label: "port out of range high",
+    input: "host:99999",
+    expect: { throwsContains: "port is out of range" }
+  },
+  { label: "port zero", input: "host:0", expect: { throwsContains: "port is out of range" } },
+  {
+    label: "non-numeric port",
+    input: "host:abc",
+    expect: { throwsContains: "expected host:port" }
+  },
   // NEGATIVE LEAK GUARDS: input value MUST NOT appear in any error output.
   // Each of the four throw paths in ConvertTo-NormalizedAcceleratorEndpoint
   // is exercised so a regression that interpolates `$Endpoint` into ANY
@@ -137,15 +181,31 @@ const CASES = [
   // is statically safe (no `$Endpoint` interpolation), and an inline comment
   // in run-ci-tests.ps1 documents that -- [System.Uri]::TryCreate is too
   // permissive to deterministically trigger this path from a Jest test.
-  { label: "leak guard (URL with token, missing port)",      input: "http://SECRET-LEAK-TOKEN.example.com",             expect: { throwsContains: "missing an explicit :port", mustNotContain: "SECRET-LEAK-TOKEN" } },
-  { label: "leak guard (bare malformed)",                    input: "SECRET-LEAK-B-no-port",                            expect: { throwsContains: "expected host:port", mustNotContain: "SECRET-LEAK-B" } },
-  { label: "leak guard (port out of range)",                 input: "SECRET-LEAK-C.example.com:99999",                  expect: { throwsContains: "port is out of range", mustNotContain: "SECRET-LEAK-C" } },
+  {
+    label: "leak guard (URL with token, missing port)",
+    input: "http://SECRET-LEAK-TOKEN.example.com",
+    expect: { throwsContains: "missing an explicit :port", mustNotContain: "SECRET-LEAK-TOKEN" }
+  },
+  {
+    label: "leak guard (bare malformed)",
+    input: "SECRET-LEAK-B-no-port",
+    expect: { throwsContains: "expected host:port", mustNotContain: "SECRET-LEAK-B" }
+  },
+  {
+    label: "leak guard (port out of range)",
+    input: "SECRET-LEAK-C.example.com:99999",
+    expect: { throwsContains: "port is out of range", mustNotContain: "SECRET-LEAK-C" }
+  },
   // NOTE: the bracket-content regex (`[0-9A-Fa-f:]+`) rejects non-hex letters,
   // so this input falls through to the bare-host throw, NOT the bracketed-IPv6
   // throw. The label reflects intent; the case still proves the form-only
   // invariant holds for malformed bracket-shaped input. The bracketed-IPv6
   // port-length guard is covered separately below by a HEX-ONLY case.
-  { label: "leak guard (bracketed-shape malformed)",         input: "[::SECRET-LEAK-D::]:99999",                        expect: { throwsContains: "expected host:port", mustNotContain: "SECRET-LEAK-D" } },
+  {
+    label: "leak guard (bracketed-shape malformed)",
+    input: "[::SECRET-LEAK-D::]:99999",
+    expect: { throwsContains: "expected host:port", mustNotContain: "SECRET-LEAK-D" }
+  },
   // LEAK GUARD (Int32 overflow): a 12-digit port would historically crash the
   // `[int]$matches[2]` cast with a .NET exception text that echoes the digits
   // verbatim ("Cannot convert value "99999999999" to type ..."), contradicting
@@ -156,15 +216,27 @@ const CASES = [
   // halves (port digits + host token) via two adjacent cases against the same
   // input. (Splitting into two cases is the minimally-invasive approach: the
   // alternative would change mustNotContain's semantics across the suite.)
-  { label: "leak guard (Int32-overflow port)",               input: "SECRET-LEAK-OVERFLOW.example.com:99999999999",     expect: { throwsContains: "port is out of range", mustNotContain: "99999999999" } },
-  { label: "leak guard (Int32-overflow port, host name leak)", input: "SECRET-LEAK-OVERFLOW.example.com:99999999999",   expect: { throwsContains: "port is out of range", mustNotContain: "SECRET-LEAK-OVERFLOW" } },
+  {
+    label: "leak guard (Int32-overflow port)",
+    input: "SECRET-LEAK-OVERFLOW.example.com:99999999999",
+    expect: { throwsContains: "port is out of range", mustNotContain: "99999999999" }
+  },
+  {
+    label: "leak guard (Int32-overflow port, host name leak)",
+    input: "SECRET-LEAK-OVERFLOW.example.com:99999999999",
+    expect: { throwsContains: "port is out of range", mustNotContain: "SECRET-LEAK-OVERFLOW" }
+  },
   // LEAK GUARD: the bracketed-IPv6 branch has its OWN port-length pre-validation
   // guard that is unreachable from the malformed-bracket case above. This
   // HEX-ONLY input matches the bracketed regex (`[0-9A-Fa-f:]+`) and exercises
   // the bracketed-branch length guard. Without it, `[::1]:99999999999` would
   // crash the `[int]$matches[2]` cast and leak the digits via the .NET
   // exception text.
-  { label: "leak guard (bracketed IPv6 Int32-overflow port)", input: "[::1]:99999999999",                               expect: { throwsContains: "port is out of range", mustNotContain: "99999999999" } }
+  {
+    label: "leak guard (bracketed IPv6 Int32-overflow port)",
+    input: "[::1]:99999999999",
+    expect: { throwsContains: "port is out of range", mustNotContain: "99999999999" }
+  }
 ];
 
 describe("ConvertTo-NormalizedAcceleratorEndpoint normalization", () => {
@@ -190,15 +262,15 @@ describe("ConvertTo-NormalizedAcceleratorEndpoint normalization", () => {
     const combined = combinedText(result);
 
     if (expected.ok !== undefined) {
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expect(combined).toContain(`OK:${expected.ok}`);
     } else if (expected.empty) {
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expect(combined).toContain("EMPTY");
     } else if (expected.throwsContains !== undefined) {
       // Throw cases EXIT 0 (the runner script catches and writes THROW:<msg>),
       // so status==0 is correct here.
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expect(combined).toContain("THROW:");
       expect(combined).toContain(expected.throwsContains);
       if (expected.mustNotContain !== undefined) {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import re
+import subprocess
 import sys
 import urllib.parse
 
@@ -166,8 +167,30 @@ def check_file_content(lines: list) -> list:
     return issues
 
 
+def is_excluded_path(path: str) -> bool:
+    """Return True when any path segment is an excluded directory name."""
+    return any(part in EXCLUDE_DIRS for part in os.path.normpath(path).split(os.sep))
+
+
+def is_explicit_markdown_input(path: str) -> bool:
+    """Return True when an input names a markdown file directly."""
+    return path.lower().endswith(".md")
+
+
+def is_markdown_file(path: str) -> bool:
+    """Return True for markdown files this checker owns."""
+    return os.path.isfile(path) and path.lower().endswith(".md")
+
+
 def iter_markdown_files(root: str):
-    """Yield markdown files under root in deterministic order."""
+    """Yield markdown files under a file or directory in deterministic order."""
+    if is_markdown_file(root):
+        yield root
+        return
+
+    if not os.path.isdir(root):
+        return
+
     for dirpath, dirnames, filenames in os.walk(root):
         # Prune excluded directories and sort for deterministic output across platforms.
         dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDE_DIRS)
@@ -176,13 +199,145 @@ def iter_markdown_files(root: str):
                 yield os.path.join(dirpath, filename)
 
 
-def main(root: str) -> int:
+def iter_markdown_inputs(paths: list):
+    """Yield unique markdown files from one or more file/directory inputs."""
+    seen = set()
+    for root in paths:
+        for path in iter_markdown_files(root):
+            normalized = os.path.normcase(os.path.abspath(path))
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            yield path
+
+
+def input_abs_candidates(root: str, repo_root: str = None) -> list:
+    """Return candidate absolute paths for a CLI input."""
+    if os.path.isabs(root):
+        return [os.path.abspath(root)]
+
+    candidates = [os.path.abspath(root)]
+    if repo_root:
+        repo_relative = os.path.abspath(os.path.join(repo_root, root))
+        if os.path.normcase(repo_relative) not in {
+            os.path.normcase(candidate) for candidate in candidates
+        }:
+            candidates.append(repo_relative)
+    return candidates
+
+
+def path_matches_input(path: str, root: str, repo_root: str = None) -> bool:
+    """Return True when path is the explicit input file or inside the input dir."""
+    path_abs = os.path.abspath(path)
+    root_candidates = input_abs_candidates(root, repo_root)
+    root_is_file = is_explicit_markdown_input(root) or any(
+        os.path.isfile(candidate) for candidate in root_candidates
+    )
+
+    if root_is_file:
+        return any(
+            os.path.normcase(path_abs) == os.path.normcase(candidate)
+            for candidate in root_candidates
+        )
+
+    for root_abs in root_candidates:
+        try:
+            if os.path.commonpath([path_abs, root_abs]) == root_abs:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def get_repo_root(start: str = ".") -> str:
+    """Return the repository root for tracked-file scans."""
+    result = subprocess.run(
+        ["git", "-C", start, "rev-parse", "--show-toplevel"],
+        check=False,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "git rev-parse failed while locating the repository root: "
+            + (result.stderr.strip() or f"exit {result.returncode}")
+        )
+    return os.path.abspath(result.stdout.strip())
+
+
+def should_include_tracked_path(rel_path: str, abs_path: str, roots: list, repo_root: str) -> bool:
+    """Return True when a tracked markdown path is selected by the inputs."""
+    matching_roots = [
+        root for root in roots if path_matches_input(abs_path, root, repo_root=repo_root)
+    ]
+    if not matching_roots:
+        return False
+
+    if not is_excluded_path(rel_path):
+        return True
+
+    return any(is_explicit_markdown_input(root) for root in matching_roots)
+
+
+def iter_tracked_markdown_inputs(paths: list, repo_root: str = None):
+    """Yield tracked markdown files matching the requested inputs."""
+    repo_root = repo_root or get_repo_root()
+    result = subprocess.run(
+        ["git", "-C", repo_root, "ls-files", "--full-name", "--", "*.md"],
+        check=False,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "git ls-files failed while collecting tracked markdown files: "
+            + (result.stderr.strip() or f"exit {result.returncode}")
+        )
+
+    roots = paths or ["."]
+    for rel_path in sorted(line for line in result.stdout.splitlines() if line.strip()):
+        abs_path = os.path.join(repo_root, rel_path)
+        if not should_include_tracked_path(rel_path, abs_path, roots, repo_root):
+            continue
+        yield abs_path
+
+
+def display_path(path: str, repo_root: str = None) -> str:
+    """Return a stable diagnostic path."""
+    if not repo_root:
+        return path
+
+    try:
+        rel_path = os.path.relpath(path, repo_root)
+    except ValueError:
+        return path
+    return rel_path if not rel_path.startswith("..") else path
+
+
+def describe_inputs(paths: list) -> str:
+    """Format scanned inputs for a concise diagnostic summary."""
+    if len(paths) == 1:
+        return f"'{paths[0]}'"
+    return f"{len(paths)} input path(s)"
+
+
+def main(paths: list, tracked_only: bool = False) -> int:
     issue_count = 0
     scanned_files = 0
     file_issue_counts = {}
+    roots = paths or ["."]
+    repo_root = get_repo_root() if tracked_only else None
 
-    for path in iter_markdown_files(root):
+    iterator = (
+        iter_tracked_markdown_inputs(roots, repo_root=repo_root)
+        if tracked_only
+        else iter_markdown_inputs(roots)
+    )
+    for path in iterator:
         scanned_files += 1
+        diagnostic_path = display_path(path, repo_root=repo_root)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
@@ -192,16 +347,16 @@ def main(root: str) -> int:
 
         file_issues = check_file_content(lines)
         if file_issues:
-            file_issue_counts[path] = len(file_issues)
+            file_issue_counts[diagnostic_path] = len(file_issues)
 
         for line_num, text, target in file_issues:
             issue_count += 1
-            msg = f"{path}:{line_num}: Link text '{text}' should be human-readable, not a raw file name or path (target: {target})"
+            msg = f"{diagnostic_path}:{line_num}: Link text '{text}' should be human-readable, not a raw file name or path (target: {target})"
             print(msg)
 
     if issue_count:
         print(
-            f"Scanned {scanned_files} markdown file(s) under '{root}'.",
+            f"Scanned {scanned_files} markdown file(s) under {describe_inputs(roots)}.",
             file=sys.stderr,
         )
         print("Issue count by file:", file=sys.stderr)
@@ -223,5 +378,11 @@ def main(root: str) -> int:
 
 
 if __name__ == "__main__":
-    root = sys.argv[1] if len(sys.argv) > 1 else "."
-    sys.exit(main(root))
+    tracked = False
+    inputs = []
+    for arg in sys.argv[1:]:
+        if arg == "--tracked":
+            tracked = True
+        else:
+            inputs.append(arg)
+    sys.exit(main(inputs, tracked_only=tracked))

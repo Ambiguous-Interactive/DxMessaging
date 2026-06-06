@@ -45,6 +45,10 @@
  *   immediately before a matching guarded git-auto-commit-action step; manual
  *   clone/fetch/push steps must use command-scoped credentials. Persistent
  *   `git config http.*.extraheader` credentials are forbidden.
+ * - GitHub App-token auto-commit workflows must emit a warning when the
+ *   AUTO_COMMIT_APP_* credential gate is false, must not use
+ *   git-auto-commit-action for protected default-branch pushes, and must fetch
+ *   and diagnose branch advancement before command-scoped push attempts.
  *
  * @usage
  *   node scripts/validate-workflows.js
@@ -1375,15 +1379,22 @@ function runTextInvokesChangelogCoverage(runText) {
 
   const npmAlternation = buildNpmRunRegexAlternation(NPM_SCRIPTS_REQUIRING_GIT_HISTORY);
   const npmRunRegex = new RegExp(`npm\\s+run\\s+(?:${npmAlternation})\\b`);
+  const invokesOriginHistoryCommand = workflowRunExecutableCommands(runText).some(
+    (command) =>
+      (gitCommandContainsSubcommand(command, "diff") ||
+        gitCommandContainsSubcommand(command, "merge-base")) &&
+      /\borigin\//.test(command)
+  );
 
   return (
     /validate-changelog\.js\b[\s\S]*--check-coverage/.test(runText) ||
     /pre-commit\s+run\b[\s\S]*\bvalidate-changelog-policy\b/.test(runText) ||
     npmRunRegex.test(runText) ||
-    // Bare `git diff origin/...` / `git merge-base origin/...` / `git log
-    // origin/...` style commands require origin/<base>; flag them too.
-    /\bgit\s+diff\s+[^|]*origin\//.test(runText) ||
-    /\bgit\s+merge-base\s+[^|]*origin\//.test(runText)
+    // Bare `git diff origin/...` / `git merge-base origin/...` style commands
+    // require origin/<base>; flag individual executable commands only so a
+    // later `git push origin ...` does not make an unrelated `git diff --cached`
+    // look history-aware.
+    invokesOriginHistoryCommand
   );
 }
 
@@ -4302,6 +4313,233 @@ function findPersistentGitExtraheaderCredentialViolations(relativePath, lines) {
   return violations;
 }
 
+function extractedWorkflowStepRunText(step) {
+  if (!step || !step.run) {
+    return "";
+  }
+  return stringifyWorkflowScalar(step.run.text);
+}
+
+function stepMapsAutoCommitAppSecrets(step) {
+  if (!step || !(step.env instanceof Map)) {
+    return false;
+  }
+
+  return (
+    stringifyWorkflowScalar(step.env.get("AUTO_COMMIT_APP_ID")).includes(
+      "secrets.AUTO_COMMIT_APP_ID"
+    ) &&
+    stringifyWorkflowScalar(step.env.get("AUTO_COMMIT_APP_PRIVATE_KEY")).includes(
+      "secrets.AUTO_COMMIT_APP_PRIVATE_KEY"
+    )
+  );
+}
+
+function stepChecksAutoCommitAppCredentials(step) {
+  const runText = extractedWorkflowStepRunText(step);
+  return (
+    stepMapsAutoCommitAppSecrets(step) &&
+    /\bAUTO_COMMIT_APP_ID\b/.test(runText) &&
+    /\bAUTO_COMMIT_APP_PRIVATE_KEY\b/.test(runText) &&
+    /has-app=false/.test(runText)
+  );
+}
+
+function findAutoCommitAppCredentialWarningViolations(relativePath, lines) {
+  const violations = [];
+  const jobs = extractJobs(lines);
+
+  for (const job of jobs) {
+    const steps = extractJobSteps(lines, job);
+    for (const step of steps) {
+      if (!stepChecksAutoCommitAppCredentials(step)) {
+        continue;
+      }
+
+      const runText = extractedWorkflowStepRunText(step);
+      if (/::warning::/.test(runText)) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          step.startIndex + 1,
+          "AUTO_COMMIT_APP_* missing-secret warning",
+          `Workflow job '${job.id}' checks AUTO_COMMIT_APP_* credentials and sets has-app=false without emitting a ::warning::. Missing auto-commit provisioning must be visible in the run logs.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
+}
+
+function stepCreatesGitHubAppToken(step) {
+  return (
+    step &&
+    typeof step.uses === "string" &&
+    step.uses.toLowerCase().startsWith("actions/create-github-app-token@")
+  );
+}
+
+function stripWorkflowGitCommandPrefix(command) {
+  let remaining = stringifyWorkflowScalar(command);
+  let previous = null;
+
+  while (remaining !== previous) {
+    previous = remaining;
+    remaining = remaining
+      .replace(/^(?:if|elif|then|do|while|until)\s+/, "")
+      .replace(/^!\s+/, "")
+      .replace(/^(?:\{|\()\s*/, "")
+      .replace(/^(?:builtin|command|env|nice|nohup|sudo|time)\s+/, "")
+      .replace(/^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S+)\s+/, "")
+      .replace(/\s*(?:\}|\))$/, "")
+      .trim();
+  }
+
+  return remaining;
+}
+
+function workflowCommandIsGitPush(command) {
+  const normalizedCommand = stripWorkflowGitCommandPrefix(command);
+  return gitCommandContainsSubcommand(normalizedCommand, "push");
+}
+
+function workflowCommandPushesCurrentHeadToCurrentRef(command) {
+  const normalizedCommand = stripWorkflowGitCommandPrefix(command);
+  if (!workflowCommandIsGitPush(normalizedCommand)) {
+    return false;
+  }
+
+  const currentOrDefaultBranchSource = String.raw`(?:HEAD|(?:refs/heads/)?(?:\$\{?GITHUB_REF_NAME\}?|\$\{\{\s*github\.ref_name\s*\}\}|\$\{?GITHUB_REF\}?|\$\{\{\s*github\.ref\s*\}\}|\$\{?default_branch\}?|\$\{?DEFAULT_BRANCH\}?|\$\{\{\s*github\.event\.repository\.default_branch\s*\}\}|main|master))`;
+  const currentOrDefaultBranchRefspec = new RegExp(
+    String.raw`(?:^|\s)["']?\+?${currentOrDefaultBranchSource}(?=["']?(?::|\s|$))`,
+    "i"
+  );
+
+  return currentOrDefaultBranchRefspec.test(normalizedCommand);
+}
+
+function workflowRunGitPushCommands(runInput) {
+  return workflowRunExecutableCommands(runInput).filter((command) =>
+    workflowCommandIsGitPush(command)
+  );
+}
+
+function workflowRunCommandsPushingCurrentHeadToCurrentRef(runInput) {
+  return workflowRunExecutableCommands(runInput).filter((command) =>
+    workflowCommandPushesCurrentHeadToCurrentRef(command)
+  );
+}
+
+function runTextPushesCurrentHeadToCurrentRef(runInput) {
+  return workflowRunCommandsPushingCurrentHeadToCurrentRef(runInput).length > 0;
+}
+
+function workflowCommandUsesCommandScopedGitHubExtraheader(command) {
+  const normalizedCommand = stripWorkflowGitCommandPrefix(command);
+  const pushMatch = /\bpush\b/i.exec(normalizedCommand);
+  if (!pushMatch) {
+    return false;
+  }
+
+  const beforePush = normalizedCommand.slice(0, pushMatch.index);
+  return (
+    /\bgit\b/.test(normalizedCommand) &&
+    /(?:^|\s)-c(?:\s|$)/.test(beforePush) &&
+    /http\.https:\/\/github\.com\/\.extraheader=AUTHORIZATION: basic/.test(beforePush)
+  );
+}
+
+function runTextHasBranchFreshnessDiagnostic(runInput) {
+  const runText = stringifyWorkflowScalar(
+    runInput && typeof runInput === "object" && "text" in runInput ? runInput.text : runInput
+  );
+  const remoteBranchSignal =
+    /refs\/remotes\/origin\/(?:\$\{GITHUB_REF_NAME\}|\$GITHUB_REF_NAME|\$\{default_branch\}|\$default_branch|\$\{DEFAULT_BRANCH\}|\$DEFAULT_BRANCH|\$\{\{\s*github\.event\.repository\.default_branch\s*\}\}|\$\{\{\s*github\.ref_name\s*\}\}|main|master)/;
+  return (
+    /\bgit\b[\s\S]*\bfetch\b/.test(runText) &&
+    remoteBranchSignal.test(runText) &&
+    /\bgit rev-parse\b/.test(runText) &&
+    /::warning::/.test(runText) &&
+    /\b(?:advanced|stale|regenerating)\b/i.test(runText)
+  );
+}
+
+function findGitHubAppAutoCommitRobustnessViolations(relativePath, lines) {
+  const violations = [];
+  const jobs = extractJobs(lines);
+
+  for (const job of jobs) {
+    const steps = extractJobSteps(lines, job);
+    if (!steps.some((step) => stepCreatesGitHubAppToken(step))) {
+      continue;
+    }
+
+    const gitAutoCommitStep = steps.find((step) => stepUsesGitAutoCommitAction(step));
+    const pushSteps = steps.filter(
+      (step) => step.run && workflowRunGitPushCommands(step.run).length > 0
+    );
+    const currentBranchPushSteps = steps.filter(
+      (step) => step.run && runTextPushesCurrentHeadToCurrentRef(step.run)
+    );
+    if (!gitAutoCommitStep && pushSteps.length === 0) {
+      continue;
+    }
+
+    if (gitAutoCommitStep) {
+      violations.push(
+        new Violation(
+          relativePath,
+          gitAutoCommitStep.startIndex + 1,
+          "GitHub App token git-auto-commit-action",
+          `Workflow job '${job.id}' pushes with a GitHub App token via git-auto-commit-action. Use explicit git fetch/commit plus command-scoped App-token push so branch-advancement races are diagnosed instead of failing non-fast-forward.`,
+          "error"
+        )
+      );
+    }
+
+    const hasFreshnessDiagnostic = steps.some(
+      (step) => step.run && runTextHasBranchFreshnessDiagnostic(step.run)
+    );
+    if ((gitAutoCommitStep || currentBranchPushSteps.length > 0) && !hasFreshnessDiagnostic) {
+      violations.push(
+        new Violation(
+          relativePath,
+          job.startLine,
+          "default-branch freshness diagnostic",
+          `Workflow job '${job.id}' pushes with a GitHub App token but lacks a fetch/rev-parse freshness diagnostic with a ::warning:: for branch advancement. Default-branch auto-commits must explain stale or retried pushes.`,
+          "error"
+        )
+      );
+    }
+
+    for (const pushStep of pushSteps) {
+      const pushCommands = workflowRunGitPushCommands(pushStep.run);
+      for (const pushCommand of pushCommands) {
+        if (workflowCommandUsesCommandScopedGitHubExtraheader(pushCommand)) {
+          continue;
+        }
+
+        violations.push(
+          new Violation(
+            relativePath,
+            pushStep.startIndex + 1,
+            "command-scoped App-token push",
+            `Workflow job '${job.id}' pushes with a GitHub App token without command-scoped GitHub extraheader credentials on the push command. Pass the App token on each fetch/push command that needs it; do not store it in origin or persistent git config.`,
+            "error"
+          )
+        );
+      }
+    }
+  }
+
+  return violations;
+}
+
 function workflowArgsContainToken(args, token) {
   return new RegExp(`(?:^|\\s)${escapeRegExp(token)}(?:\\s|$)`).test(stringifyWorkflowScalar(args));
 }
@@ -5593,6 +5831,10 @@ function validateWorkflow(filePath, options = {}) {
 
     violations.push(...findPersistentGitExtraheaderCredentialViolations(relativePath, lines));
 
+    violations.push(...findAutoCommitAppCredentialWarningViolations(relativePath, lines));
+
+    violations.push(...findGitHubAppAutoCommitRobustnessViolations(relativePath, lines));
+
     violations.push(...findSelfHostedRunnerPreflightViolations(relativePath, lines));
 
     violations.push(...findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lines));
@@ -5786,6 +6028,8 @@ if (typeof module !== "undefined" && module.exports) {
     findCheckoutCredentialPersistenceViolations,
     findTokenizedGitRemoteCredentialViolations,
     findPersistentGitExtraheaderCredentialViolations,
+    findAutoCommitAppCredentialWarningViolations,
+    findGitHubAppAutoCommitRobustnessViolations,
     NPM_SCRIPTS_REQUIRING_GIT_HISTORY,
     REQUIRED_LYCHEE_VERSION,
     ADVISORY_LYCHEE_REPORT_PATH,

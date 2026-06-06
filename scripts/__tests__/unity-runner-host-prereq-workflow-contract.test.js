@@ -175,7 +175,12 @@ describe(".github/workflows/runner-bootstrap.yml contract", () => {
         bootstrapIndent = indent;
         continue;
       }
-      if (inBootstrapJob && indent <= bootstrapIndent && trimmed.length > 0 && !trimmed.startsWith("#")) {
+      if (
+        inBootstrapJob &&
+        indent <= bootstrapIndent &&
+        trimmed.length > 0 &&
+        !trimmed.startsWith("#")
+      ) {
         if (/^[A-Za-z][\w-]*:\s*$/.test(trimmed)) {
           // Sibling top-level key -- left the bootstrap job.
           break;
@@ -367,9 +372,7 @@ describe(".github/actions/print-self-hosted-runner-diagnostics/action.yml contra
     // The diagnostics composite was extended to invoke the new
     // host-prereq assertion as its final step, so every Unity job that
     // already prints diagnostics now ALSO asserts the prereqs.
-    expect(content).toMatch(
-      /uses:\s+\.\/\.github\/actions\/assert-unity-host-prereqs\b/
-    );
+    expect(content).toMatch(/uses:\s+\.\/\.github\/actions\/assert-unity-host-prereqs\b/);
   });
 
   test("still has its own PS 5.1 preflight for pwsh availability (belt-and-suspenders)", () => {
@@ -380,6 +383,21 @@ describe(".github/actions/print-self-hosted-runner-diagnostics/action.yml contra
     // regresses a load-bearing failure-mode (pwsh missing on the runner).
     expect(content).toMatch(/shell:\s+powershell\b/);
     expect(content).toMatch(/pwsh/i);
+    expect(content).toContain("-CommandType Application");
+    expect(content).toContain("Test-Path $pwshCommand.Source -PathType Leaf");
+  });
+
+  test("repairs Git usr/bin PATH for actions/cache compression tools", () => {
+    // The self-hosted Windows runner logs showed actions/cache post-step
+    // failures from `/bin/sh: gzip: command not found`. Git Bash can be
+    // available while Git's usr/bin directory is still absent from the job
+    // PATH, so the diagnostics composite must export that directory before
+    // downstream cache steps run.
+    expect(content).toContain("Configure Git compression tools for Actions cache");
+    expect(content).toContain("Git\\usr\\bin");
+    expect(content).toContain("gzip.exe");
+    expect(content).toContain("tar.exe");
+    expect(content).toContain("$env:GITHUB_PATH");
   });
 });
 

@@ -69,6 +69,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { maskCommentsAndStrings } = require("../lib/source-stripping");
+const { assertSpawnStatus } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ENSURE_EDITOR = path.join(REPO_ROOT, "scripts", "unity", "ensure-editor.ps1");
@@ -530,9 +531,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
     const result = runHarness([
       "Write-Output ([bool](Test-IsNativeDllNotFound -ExitCode -1073741515))"
     ]);
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("True");
   });
 
@@ -546,9 +545,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       "Write-Output ([bool](Test-IsNativeDllNotFound -ExitCode 6))",
       "Write-Output ([bool](Test-IsNativeDllNotFound -ExitCode 53))"
     ]);
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const lines = (result.stdout || "").trim().split(/\r?\n/);
     expect(lines).toEqual(["False", "False", "False", "False"]);
   });
@@ -557,9 +554,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
     const result = runHarness([
       "Write-Output (Get-NativeExitCodeDescription -ExitCode -1073741515)"
     ]);
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = (result.stdout || "").trim();
     expect(out).toContain("0xC0000135");
     expect(out).toContain("STATUS_DLL_NOT_FOUND");
@@ -580,9 +575,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       ],
       { DXM_RUNNER_PREREQ_INSTALLED: "" }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     // Wrap-immune ::error title= annotation.
     expect(out).toMatch(/::error title=Unity 6000\.0\.32f1 host prerequisite missing::/);
@@ -610,9 +603,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       ],
       { DXM_RUNNER_PREREQ_INSTALLED: "1" }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     expect(out).toContain("Preflight ran successfully");
     expect(out).toContain("DIFFERENT missing DLL");
@@ -637,9 +628,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       ],
       { DXM_RUNNER_PREREQ_INSTALLED: "" }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     expect(out).toContain("managed reinstall already ran and did not help");
     expect(out).toContain("0xC0000135");
@@ -669,9 +658,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
         DXM_RUNNER_PREREQ_INSTALLED: ""
       }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     // The "MISSING DLL(s):" segment must name every forced-missing import
     // regardless of the host OS or installed redistributable packages.
@@ -713,9 +700,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       "Write-Output ('missing=' + (($res.missing) -join ','))",
       "Write-Output ('unityResolved=' + ([string[]]($res.unityResolved.Keys) -join ','))"
     ]);
-    if (baseline.status !== 0) {
-      throw new Error(combined(baseline));
-    }
+    assertSpawnStatus(baseline, 0, expect.getState().currentTestName || "pwsh harness");
     const baselineOut = (baseline.stdout || "").trim();
     expect(baselineOut).toContain("missing=beta.dll");
     expect(baselineOut).toContain("alpha.dll");
@@ -737,9 +722,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       ],
       { DXM_UNITY_FAKE_MISSING_IMPORTS: "alpha.dll,gamma.dll" }
     );
-    if (overridden.status !== 0) {
-      throw new Error(combined(overridden));
-    }
+    assertSpawnStatus(overridden, 0, expect.getState().currentTestName || "pwsh harness");
     const overriddenOut = (overridden.stdout || "").trim();
     expect(overriddenOut).toContain("alpha.dll");
     expect(overriddenOut).toContain("gamma.dll");
@@ -759,9 +742,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       "$res = Test-UnityImportResolution -EditorPath '/tmp/Unity.exe' -Imports @()",
       "Write-Output ('keys=' + (($res.Keys | Sort-Object) -join ','))"
     ]);
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = (result.stdout || "").trim();
     // Sorted alphabetically: knownDllsResolved, missing, pathResolved,
     // systemResolved, unityResolved, windowsResolved.
@@ -792,9 +773,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       "Write-Output ('b=' + $res2.missing.Count)",
       "Write-Output ('c=' + $res3.missing.Count)"
     ]);
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const lines = (result.stdout || "").trim().split(/\r?\n/);
     // Empty imports -> .missing is empty; bogus path + one import -> .missing
     // has the one entry (it doesn't resolve anywhere); empty path + one
@@ -821,9 +800,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
         DXM_RUNNER_PREREQ_INSTALLED: ""
       }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     // "MISSING DLL(s):" segment present with the Unity-shipped name.
     expect(out).toMatch(/MISSING DLL\(s\):/);
@@ -866,9 +843,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
         DXM_RUNNER_PREREQ_INSTALLED: ""
       }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     expect(out).toMatch(/All Unity\.exe imports resolve on the loader search path/);
     expect(out).toMatch(/transitive dependency/);
@@ -895,9 +870,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
         DXM_RUNNER_PREREQ_INSTALLED: ""
       }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     expect(out).toMatch(
       /Resolved:.*system.*editor.*Windows.*PATH.*KnownDLLs.*out of 3 total imports/
@@ -931,9 +904,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
       "Write-Output ('case6=' + (Test-VcRedistGeneration -MissingDlls @('KERNEL32.dll', 'CRYPT32.dll')))",
       "Write-Output ('case7=' + (Test-VcRedistGeneration -MissingDlls @()))"
     ]);
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const lines = (result.stdout || "").trim().split(/\r?\n/);
     expect(lines).toContain("case1=vc2010"); // MSVCP100.dll alone
     expect(lines).toContain("case2=vc2010"); // bare 'msvcr100' (case-insensitive, no .dll)
@@ -964,9 +935,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
         DXM_RUNNER_PREREQ_INSTALLED: ""
       }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     // The cause line MUST name VC++ 2010 Redistributable.
     expect(out).toContain("Visual C++ 2010 Redistributable");
@@ -1000,9 +969,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
         DXM_RUNNER_PREREQ_INSTALLED: ""
       }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     // Must surface BOTH generations explicitly.
     expect(out).toMatch(/BOTH 2010 AND 2015-2022/);
@@ -1031,9 +998,7 @@ describe("ensure-editor.ps1 0xC0000135 helpers (behavioral)", () => {
         DXM_RUNNER_PREREQ_INSTALLED: ""
       }
     );
-    if (result.status !== 0) {
-      throw new Error(combined(result));
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     // Keep the existing 2015-2022 wording exactly.
     expect(out).toContain("Visual C++ 2015-2022 Redistributable");

@@ -20,6 +20,7 @@ const SPAWNER_CALL_RE =
 const PWSH_COMMANDS = new Set(["pwsh", "pwsh.exe", "powershell", "powershell.exe"]);
 const PWSH_COMMAND_VARIABLES = new Set(["REAL_PWSH", "PWSH", "pwshPath", "PWSH_PATH"]);
 const NORMALIZING_HELPERS = new Set(["normalizePwshText", "combinedText", "stdoutText"]);
+const SPAWN_STATUS_LABEL = 'expect.getState().currentTestName || "pwsh harness"';
 const NON_METHOD_BLOCK_KEYWORDS = new Set([
   "catch",
   "for",
@@ -627,9 +628,7 @@ function topLevelTernary(mask, start, end) {
 
 function directPwshSpawnCallSpansExpression(source, mask, start, end) {
   const expression = mask.slice(start, end);
-  const call = new RegExp(String.raw`^(?:${IDENT}\s*\.\s*)?${SPAWNER_NAME}\s*\(`).exec(
-    expression
-  );
+  const call = new RegExp(String.raw`^(?:${IDENT}\s*\.\s*)?${SPAWNER_NAME}\s*\(`).exec(expression);
   if (!call) {
     return false;
   }
@@ -949,10 +948,43 @@ function returnExpressionStarts(mask, start, end) {
   return starts;
 }
 
+function bodyHasReturnedPwshBinding(source, mask, bodyOpen, returnStart, name) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const declarationRe = new RegExp(String.raw`\b(?:const|let|var)\s+${escapedName}\s*=`, "g");
+  declarationRe.lastIndex = bodyOpen + 1;
+
+  let match;
+  while ((match = declarationRe.exec(mask)) !== null) {
+    if (match.index >= returnStart) {
+      break;
+    }
+
+    let expressionStart = declarationRe.lastIndex;
+    while (expressionStart < mask.length && /\s/.test(mask[expressionStart])) {
+      expressionStart += 1;
+    }
+    const expressionEndIndex = declaratorInitializerEnd(mask, expressionStart).end;
+    if (expressionRangeIsPwshSpawnResult(source, mask, expressionStart, expressionEndIndex)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function bodyReturnsPwshSpawn(source, mask, bodyOpen, bodyClose) {
-  return returnExpressionStarts(mask, bodyOpen + 1, bodyClose).some((expressionStart) =>
-    expressionIsPwshSpawn(source, mask, expressionStart)
-  );
+  return returnExpressionStarts(mask, bodyOpen + 1, bodyClose).some((expressionStart) => {
+    if (expressionIsPwshSpawn(source, mask, expressionStart)) {
+      return true;
+    }
+
+    const { expr } = readExpressionInfo(mask, expressionStart);
+    const returnedName = new RegExp(String.raw`^(${IDENT})$`).exec(expr)?.[1] ?? null;
+    return (
+      returnedName !== null &&
+      bodyHasReturnedPwshBinding(source, mask, bodyOpen, expressionStart, returnedName)
+    );
+  });
 }
 
 function collectHelperBindings(source, mask = maskCommentsAndStrings(source)) {
@@ -1273,7 +1305,11 @@ function collectArrowRawMergeHelperDefinitions(source, mask) {
     if (mask[bodyStart] === "{") {
       const bodyClose = matchingCloseIndex(mask, bodyStart, "{", "}");
       if (bodyClose >= 0) {
-        pushRawMergeHelperDefinitions(definitions, base, returnExpressionInfos(mask, bodyStart, bodyClose));
+        pushRawMergeHelperDefinitions(
+          definitions,
+          base,
+          returnExpressionInfos(mask, bodyStart, bodyClose)
+        );
       }
       continue;
     }
@@ -1407,7 +1443,8 @@ function activeHelperDefinitionAt(definitions, name, index) {
     if (
       active === null ||
       definition.activeStart > active.activeStart ||
-      (definition.activeStart === active.activeStart && definition.bindingStart > active.bindingStart)
+      (definition.activeStart === active.activeStart &&
+        definition.bindingStart > active.bindingStart)
     ) {
       active = definition;
     }
@@ -1829,7 +1866,12 @@ function directRawReceiverReplacement(receiver, receiverStart, context, helpers)
 
   if (
     new RegExp(String.raw`^${IDENT}$`).test(trimmed) &&
-    isRawMergeVariableAt(context.variableBindings, context.rawMergeBindings, trimmed, expressionStart)
+    isRawMergeVariableAt(
+      context.variableBindings,
+      context.rawMergeBindings,
+      trimmed,
+      expressionStart
+    )
   ) {
     helpers.add("normalizePwshText");
     return `normalizePwshText(${trimmed})`;
@@ -1868,6 +1910,107 @@ function fixDirectRawExpectReceivers(source, context, phraseVars, helpers) {
     }
   }
   return applySpanReplacements(source, replacements);
+}
+
+function fixPwshStatusAssertions(source, context, helpers) {
+  const mask = maskCommentsAndStrings(source);
+  const replacements = [];
+  const statusExpectRe = new RegExp(
+    String.raw`\bexpect\s*\(\s*(${IDENT})\s*\.\s*status\s*\)\s*(\.not)?\s*\.\s*toBe\s*\(`,
+    "g"
+  );
+
+  let match;
+  while ((match = statusExpectRe.exec(mask)) !== null) {
+    const [, run, notClause] = match;
+    if (!isPwshResultAt(context.variableBindings, run, match.index)) {
+      continue;
+    }
+
+    const argsOpen = match.index + match[0].lastIndexOf("(");
+    const argsClose = matchingCloseIndex(mask, argsOpen, "(", ")");
+    if (argsClose < 0) {
+      continue;
+    }
+
+    const expectedStatus = source.slice(argsOpen + 1, argsClose).trim();
+    if (notClause) {
+      if (expectedStatus !== "0") {
+        continue;
+      }
+      helpers.add("assertSpawnNonZeroStatus");
+      replacements.push({
+        start: match.index,
+        end: argsClose + 1,
+        text: `assertSpawnNonZeroStatus(${run}, ${SPAWN_STATUS_LABEL})`
+      });
+      continue;
+    }
+
+    helpers.add("assertSpawnStatus");
+    replacements.push({
+      start: match.index,
+      end: argsClose + 1,
+      text: `assertSpawnStatus(${run}, ${expectedStatus}, ${SPAWN_STATUS_LABEL})`
+    });
+  }
+
+  return applySpanReplacements(source, replacements);
+}
+
+function fixPwshStatusFailureBranches(source, context, helpers) {
+  const mask = maskCommentsAndStrings(source);
+  const replacements = [];
+  const statusIfRe = new RegExp(
+    String.raw`\bif\s*\(\s*(${IDENT})\s*\.\s*status\s*!==?\s*0\s*\)\s*\{`,
+    "g"
+  );
+
+  let match;
+  while ((match = statusIfRe.exec(mask)) !== null) {
+    const [, run] = match;
+    if (!isPwshResultAt(context.variableBindings, run, match.index)) {
+      continue;
+    }
+
+    const blockOpen = match.index + match[0].lastIndexOf("{");
+    const blockClose = matchingCloseIndex(mask, blockOpen, "{", "}");
+    if (blockClose < 0) {
+      continue;
+    }
+
+    const body = mask.slice(blockOpen + 1, blockClose).trim();
+    if (!/^throw\s+new\s+Error\s*\([\s\S]*\)\s*;?$/.test(body)) {
+      continue;
+    }
+
+    helpers.add("assertSpawnStatus");
+    replacements.push({
+      start: match.index,
+      end: blockClose + 1,
+      text: `assertSpawnStatus(${run}, 0, ${SPAWN_STATUS_LABEL});`
+    });
+  }
+
+  return applySpanReplacements(source, replacements);
+}
+
+function removeConsecutiveDuplicateSpawnStatusAssertions(source) {
+  const lines = source.split("\n");
+  const out = [];
+  let previousTrimmed = "";
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isSpawnStatusAssertion = /^assertSpawn(?:NonZero)?Status\(.+\);$/.test(trimmed);
+    if (isSpawnStatusAssertion && trimmed === previousTrimmed) {
+      continue;
+    }
+    out.push(line);
+    previousTrimmed = trimmed;
+  }
+
+  return out.join("\n");
 }
 
 function fixSource(source, filePath) {
@@ -1981,6 +2124,14 @@ function fixSource(source, filePath) {
 
   context = buildContext(next);
   next = fixDirectRawExpectReceivers(next, context.outputContext, context.phraseVars, helpers);
+
+  context = buildContext(next);
+  next = fixPwshStatusAssertions(next, context, helpers);
+
+  context = buildContext(next);
+  next = fixPwshStatusFailureBranches(next, context, helpers);
+
+  next = removeConsecutiveDuplicateSpawnStatusAssertions(next);
 
   next = ensurePwshOutputImport(next, filePath, helpers);
   return { source: next, changed: next !== source };

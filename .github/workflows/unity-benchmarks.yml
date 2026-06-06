@@ -17,8 +17,9 @@ on:
 # benchmark-failure notifications; they must NOT inherit write scope. The
 # documented dispatch-throughput numbers are owned entirely by the Performance
 # Numbers workflow (.github/workflows/perf-numbers.yml), which posts the refreshed
-# numbers as a non-blocking PR comment and opens or updates a default-branch
-# refresh PR after merge; this scheduled workflow keeps the per-version benchmark
+# numbers as a non-blocking PR comment and, after merge, commits the refreshed
+# default-branch doc directly via a GitHub App installation token; this scheduled
+# workflow keeps the per-version benchmark
 # test coverage and does not maintain the doc, so it needs no write scope.
 permissions:
   contents: read
@@ -227,7 +228,7 @@ jobs:
       # Skip provisioning, the org lock, and the run when the compute step
       # resolved an empty assembly list, so an empty discovery never takes the
       # paid Unity seat / org lock only to fail late at verify. The verify step
-      # stays !cancelled() and is told via expected-empty. Mirrors
+      # runs only after compute succeeds and is told via expected-empty. Mirrors
       # unity-tests.yml. The benchmark list is structurally non-empty, so this
       # is defense-in-depth and uniformity with the required workflows.
       - name: Provision Unity Editor
@@ -267,6 +268,7 @@ jobs:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
       - name: Run Unity Test Runner
+        id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 120
         shell: pwsh
@@ -300,8 +302,8 @@ jobs:
 
       # CANCELLATION + TIMEOUT DIAGNOSTIC: when Unity 2022 hangs in csc the
       # runner step times out (or the operator cancels), and the verify
-      # step below (gated on `!cancelled()`) skips -- so its catastrophic-
-      # pattern scan never fires either. This step covers both
+      # step below skips -- so its catastrophic-pattern scan never fires
+      # either. This step covers both
       # failure() AND cancelled() so the operator has SOMETHING to look at
       # in the GitHub summary (the tail of unity.log + any catastrophic
       # patterns the partial log happened to surface). Best-effort: never
@@ -318,11 +320,19 @@ jobs:
       # composite fails unless a results XML exists AND reports total > 0.
       # Skip on cancellation so a user-cancelled run does not emit the
       # generic "tests did not run" annotation -- the cancellation itself
-      # is the explanation. The guard still runs on failure (to surface
-      # "tests did not run" / catastrophic-compile diagnostics) and on
-      # success (to confirm a real result XML exists).
+      # is the explanation. Also skip if setup/provisioning/lock work failed
+      # before the Unity run step attempted; that earlier failure is then the
+      # actionable signal. The guard still runs for intentional empty targets,
+      # after a Unity-run failure (to surface "tests did not run" /
+      # catastrophic-compile diagnostics), and on success (to confirm a real
+      # result XML exists).
       - name: Verify tests actually ran
-        if: ${{ !cancelled() }}
+        if: >-
+          ${{
+            !cancelled() &&
+            steps.compute.outcome == 'success' &&
+            (steps.compute.outputs.is-empty == 'true' || steps.run_tests.outcome != 'skipped')
+          }}
         uses: ./.github/actions/verify-unity-results
         with:
           results-dir: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}

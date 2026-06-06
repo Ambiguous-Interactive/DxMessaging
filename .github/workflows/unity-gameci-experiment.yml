@@ -216,7 +216,12 @@ jobs:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
       - name: Verify tests actually ran
-        if: steps.game_ci.outcome == 'success'
+        if: >-
+          ${{
+            !cancelled() &&
+            steps.compute.outcome == 'success' &&
+            (steps.compute.outputs.is-empty == 'true' || steps.game_ci.outcome != 'skipped')
+          }}
         uses: ./.github/actions/verify-unity-results
         with:
           results-dir: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}

@@ -134,15 +134,23 @@ jobs:
           git add -A
           git commit -m "Sync wiki from docs/ - ${{ github.sha }}"
           auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
+          wiki_branch="$(git branch --show-current)"
 
           for i in 1 2 3; do
             if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push; then
               echo "Push successful"
               exit 0
             fi
-            echo "Push attempt $i failed, retrying in 5s..."
+            if [ "$i" -eq 3 ]; then
+              echo "::error::Failed to push after 3 attempts"
+              exit 1
+            fi
+            echo "::warning::Wiki push attempt $i failed; fetching origin/${wiki_branch} before retry."
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+              fetch --no-tags origin "${wiki_branch}"
+            if ! git rebase "origin/${wiki_branch}"; then
+              echo "::error::Failed to rebase wiki sync commit onto origin/${wiki_branch}."
+              exit 1
+            fi
             sleep 5
           done
-
-          echo "::error::Failed to push after 3 attempts"
-          exit 1

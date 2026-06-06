@@ -147,6 +147,55 @@ describe("fix-pwsh-output-assertions", () => {
     expect(result.source).toBe(source);
   });
 
+  test("rewrites PowerShell spawn status assertions to diagnostic helpers", () => {
+    const source = [
+      '"use strict";',
+      "",
+      'const { spawnSync } = require("child_process");',
+      "",
+      PWSH_SPAWN,
+      "const expectedStatus = 125;",
+      "expect(result.status).toBe(0);",
+      "expect(result.status).not.toBe(0);",
+      "expect(result.status).toBe(expectedStatus);",
+      ""
+    ].join("\n");
+
+    const result = fixSource(source, TEST_FILE);
+
+    expect(result.changed).toBe(true);
+    expect(result.source).toContain(
+      'const { assertSpawnNonZeroStatus, assertSpawnStatus } = require("../lib/pwsh-output");'
+    );
+    expect(result.source).toContain(
+      'assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");'
+    );
+    expect(result.source).toContain(
+      'assertSpawnNonZeroStatus(result, expect.getState().currentTestName || "pwsh harness");'
+    );
+    expect(result.source).toContain(
+      'assertSpawnStatus(result, expectedStatus, expect.getState().currentTestName || "pwsh harness");'
+    );
+  });
+
+  test("does not rewrite non-PowerShell process status assertions", () => {
+    const source = [
+      '"use strict";',
+      "",
+      'const { spawnSync } = require("child_process");',
+      "",
+      'const available = spawnSync("pwsh", ["-Command", "exit 0"], { encoding: "utf8" }).status === 0;',
+      'const result = spawnSync("git", ["status"], { encoding: "utf8" });',
+      "expect(result.status).toBe(0);",
+      ""
+    ].join("\n");
+
+    const result = fixSource(source, TEST_FILE);
+
+    expect(result.changed).toBe(false);
+    expect(result.source).toBe(source);
+  });
+
   test("rewrites results from local helpers that return a PowerShell spawn", () => {
     const source = [
       '"use strict";',
@@ -169,6 +218,81 @@ describe("fix-pwsh-output-assertions", () => {
     expect(result.source).toContain(
       'expect(normalizePwshText(result.stderr || "")).toContain("outside the managed root");'
     );
+  });
+
+  test("rewrites status assertions from local helpers that return a PowerShell result variable", () => {
+    const source = [
+      '"use strict";',
+      "",
+      'const { spawnSync } = require("child_process");',
+      "",
+      "function runPwsh() {",
+      '  const result = spawnSync("pwsh", ["-File", script], { encoding: "utf8" });',
+      "  return result;",
+      "}",
+      "",
+      "const result = runPwsh();",
+      "expect(result.status).toBe(0);",
+      ""
+    ].join("\n");
+
+    const result = fixSource(source, TEST_FILE);
+
+    expect(result.changed).toBe(true);
+    expect(result.source).toContain('const { assertSpawnStatus } = require("../lib/pwsh-output");');
+    expect(result.source).toContain(
+      'assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");'
+    );
+  });
+
+  test("rewrites PowerShell spawn success-gate throw branches to diagnostic helpers", () => {
+    const source = [
+      '"use strict";',
+      "",
+      'const { spawnSync } = require("child_process");',
+      "",
+      PWSH_SPAWN,
+      "const combined = `${result.stdout}\\n${result.stderr}`;",
+      "if (result.status !== 0) {",
+      "  throw new Error(combined);",
+      "}",
+      'expect(combined).toContain("done");',
+      ""
+    ].join("\n");
+
+    const result = fixSource(source, TEST_FILE);
+
+    expect(result.changed).toBe(true);
+    expect(result.source).toContain('const { assertSpawnStatus } = require("../lib/pwsh-output");');
+    expect(result.source).toContain(
+      'assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");'
+    );
+    expect(result.source).not.toContain("if (result.status !== 0)");
+  });
+
+  test("coalesces overlapping success-gate branch and status assertion rewrites", () => {
+    const source = [
+      '"use strict";',
+      "",
+      'const { spawnSync } = require("child_process");',
+      "",
+      PWSH_SPAWN,
+      "const combined = `${result.stdout}\\n${result.stderr}`;",
+      "if (result.status !== 0) {",
+      "  throw new Error(combined);",
+      "}",
+      "expect(result.status).toBe(0);",
+      ""
+    ].join("\n");
+
+    const result = fixSource(source, TEST_FILE);
+
+    expect(result.changed).toBe(true);
+    const helperCall =
+      'assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");';
+    expect(
+      result.source.match(new RegExp(helperCall.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))
+    ).toHaveLength(1);
   });
 
   test("rewrites parenthesized PowerShell spawn result bindings", () => {
@@ -924,16 +1048,14 @@ describe("fix-pwsh-output-assertions", () => {
       "function merged(out) {",
       "  return `${out.stdout}\\n${out.stderr}`;",
       "}",
-      "expect(merged(result)).toContain(\"outside the managed root\");",
+      'expect(merged(result)).toContain("outside the managed root");',
       ""
     ].join("\n");
 
     const result = fixSource(source, TEST_FILE);
 
     expect(result.changed).toBe(true);
-    expect(result.source).toContain(
-      "return normalizePwshText(`${out.stdout}\\n${out.stderr}`);"
-    );
+    expect(result.source).toContain("return normalizePwshText(`${out.stdout}\\n${out.stderr}`);");
     expect(result.source).toContain('const { normalizePwshText } = require("../lib/pwsh-output");');
   });
 
@@ -947,16 +1069,14 @@ describe("fix-pwsh-output-assertions", () => {
       "const merged = (out) => {",
       "  return `${out.stdout}\\n${out.stderr}`;",
       "};",
-      "expect(merged(result)).toContain(\"outside the managed root\");",
+      'expect(merged(result)).toContain("outside the managed root");',
       ""
     ].join("\n");
 
     const result = fixSource(source, TEST_FILE);
 
     expect(result.changed).toBe(true);
-    expect(result.source).toContain(
-      "return normalizePwshText(`${out.stdout}\\n${out.stderr}`);"
-    );
+    expect(result.source).toContain("return normalizePwshText(`${out.stdout}\\n${out.stderr}`);");
   });
 
   test("normalizes raw merge object method helper definitions", () => {
@@ -971,16 +1091,14 @@ describe("fix-pwsh-output-assertions", () => {
       "    return `${out.stdout}\\n${out.stderr}`;",
       "  }",
       "};",
-      "expect(helper.merged(result)).toContain(\"outside the managed root\");",
+      'expect(helper.merged(result)).toContain("outside the managed root");',
       ""
     ].join("\n");
 
     const result = fixSource(source, TEST_FILE);
 
     expect(result.changed).toBe(true);
-    expect(result.source).toContain(
-      "return normalizePwshText(`${out.stdout}\\n${out.stderr}`);"
-    );
+    expect(result.source).toContain("return normalizePwshText(`${out.stdout}\\n${out.stderr}`);");
   });
 
   test("rewrites raw assertions when PowerShell is spawned through a known path variable", () => {
@@ -1119,25 +1237,27 @@ describe("fix-pwsh-output-assertions", () => {
     );
   });
 
-  test("leaves crafted source strings untouched", () => {
+  test("leaves crafted source strings untouched while rewriting real status assertions", () => {
+    const fixtureSource =
+      'const text = `${result.stdout}\\n${result.stderr}`; expect(text).toContain("outside the managed root");';
     const source = [
       '"use strict";',
       "",
       'const { spawnSync } = require("child_process");',
       "",
       PWSH_SPAWN,
-      "const fixture = " +
-        JSON.stringify(
-          'const text = `${result.stdout}\\n${result.stderr}`; expect(text).toContain("outside the managed root");'
-        ) +
-        ";",
+      "const fixture = " + JSON.stringify(fixtureSource) + ";",
       "expect(result.status).toBe(1);",
       ""
     ].join("\n");
 
     const result = fixSource(source, TEST_FILE);
 
-    expect(result.changed).toBe(false);
-    expect(result.source).toBe(source);
+    expect(result.changed).toBe(true);
+    expect(result.source).toContain("const fixture = " + JSON.stringify(fixtureSource) + ";");
+    expect(result.source).toContain('const { assertSpawnStatus } = require("../lib/pwsh-output");');
+    expect(result.source).toContain(
+      'assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");'
+    );
   });
 });

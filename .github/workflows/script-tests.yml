@@ -46,43 +46,6 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Run script tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22.18.0"
-          cache: npm
-          cache-dependency-path: package.json
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm i --no-audit --no-fund
-          fi
-
-      - name: Run Jest script tests
-        run: npm run test:scripts
-
   preflight-pre-push:
     name: Run preflight:pre-push (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

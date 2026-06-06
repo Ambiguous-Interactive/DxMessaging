@@ -4,7 +4,7 @@ id: "workflow-consistency"
 category: "github-actions"
 version: "1.0.0"
 created: "2026-01-28"
-updated: "2026-01-28"
+updated: "2026-06-06"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -189,6 +189,15 @@ tokenized Git remotes outside matching single-command `git-auto-commit-action`
 handoffs with cleanup. Manual clone/fetch/push steps should use command-scoped
 `git -c http.https://github.com/.extraheader=...` credentials, never a tokenized
 remote URL or persistent `git config http.*.extraheader`.
+
+For default-branch auto-commits authenticated by `actions/create-github-app-token`,
+prefer explicit shell steps over `git-auto-commit-action`: fetch the target ref
+with command-scoped App-token credentials, verify the checked-out commit is still
+current before staging generated output, commit only the intended files, and push
+with a command-scoped `git -c http.https://github.com/.extraheader=... push`.
+If the branch advances, regenerate safe derived files on the new head or warn and
+skip stale artifacts; do not let a non-fast-forward race become an unexplained
+red workflow.
 
 ## See Also
 

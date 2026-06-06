@@ -6,7 +6,7 @@ const os = require("os");
 const path = require("path");
 
 const { prependPathEnv } = require("../lib/spawn-env-sandbox");
-const { stdoutText } = require("../lib/pwsh-output");
+const { assertSpawnStatus, stdoutText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPT_PATH = path.join(REPO_ROOT, "scripts", "unity", "capture-perf-baseline.ps1");
@@ -214,7 +214,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
       const logPath = path.join(REPO_ROOT, ".artifacts", `perf-${commit}-unity-log.txt`);
       const marker = JSON.parse(fs.readFileSync(tools.pwshMarker, "utf8"));
 
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expect(marker.commit).toBe(commit);
       expectDockerRelativePath(marker.baseline, outputPath);
       expect(marker.mode).toBe("replace");
@@ -242,7 +242,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
       const result = runCapture(["-Commit", commit, "-Output", outputPath, "-Replace"], tools);
       const marker = JSON.parse(fs.readFileSync(tools.pwshMarker, "utf8"));
 
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expectDockerRelativePath(marker.baseline, ".artifacts/absolute-baseline.csv");
       expect(stdoutText(result)).toContain(outputPath);
     } finally {
@@ -260,7 +260,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
     const outputPath = path.join(tools.tempRoot, "outside-baseline.csv");
     const result = runCapture(["-Commit", "outside-output-test", "-Output", outputPath], tools);
 
-    expect(result.status).toBe(2);
+    assertSpawnStatus(result, 2, expect.getState().currentTestName || "pwsh harness");
     expect(stdoutText(result)).toContain(
       "-Output must be relative to the repo or under the repo root"
     );
@@ -278,7 +278,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
       tools
     );
 
-    expect(result.status).toBe(2);
+    assertSpawnStatus(result, 2, expect.getState().currentTestName || "pwsh harness");
     expect(stdoutText(result)).toContain(
       "-Output must be relative to the repo or under the repo root"
     );
@@ -296,7 +296,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
       tools
     );
 
-    expect(result.status).toBe(2);
+    assertSpawnStatus(result, 2, expect.getState().currentTestName || "pwsh harness");
     expect(stdoutText(result)).toContain(
       "-Output must be relative to the repo or under the repo root"
     );
@@ -317,7 +317,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
       const result = runCapture(["-Commit", commit, "-Output", outputPath, "-Replace"], tools);
       const marker = JSON.parse(fs.readFileSync(tools.pwshMarker, "utf8"));
 
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expectDockerRelativePath(marker.baseline, ".artifacts/windows-relative-baseline.csv");
     } finally {
       cleanupPerfArtifacts(commit);
@@ -339,7 +339,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
       const result = runCapture(["-Commit", commit, "-Replace"], tools);
       const marker = JSON.parse(fs.readFileSync(tools.pwshMarker, "utf8"));
 
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expectDockerRelativePath(marker.baseline, ".artifacts/perf-baseline.csv");
       expect(stdoutText(result)).toContain(path.join(REPO_ROOT, ".artifacts", "perf-baseline.csv"));
     } finally {
@@ -364,7 +364,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
         FAKE_PWSH_EXIT: "37"
       });
 
-      expect(result.status).toBe(37);
+      assertSpawnStatus(result, 37, expect.getState().currentTestName || "pwsh harness");
       expect(stdoutText(result)).toContain("Unity perf run failed with exit code 37");
       expect(fs.existsSync(tools.pwshMarker)).toBe(true);
       expect(fs.existsSync(tools.nodeMarker)).toBe(false);
@@ -388,7 +388,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
         FAKE_SKIP_BASELINE: "1"
       });
 
-      expect(result.status).toBe(1);
+      assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
       expect(stdoutText(result)).toContain("did not write baseline CSV");
       expect(fs.existsSync(tools.pwshMarker)).toBe(true);
       expect(fs.existsSync(tools.nodeMarker)).toBe(false);
@@ -421,7 +421,7 @@ describe("scripts/unity/capture-perf-baseline.ps1 contract", () => {
         FAKE_SKIP_BASELINE: "1"
       });
 
-      expect(result.status).toBe(1);
+      assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
       expect(stdoutText(result)).toContain("did not update baseline CSV");
       expect(fs.existsSync(tools.pwshMarker)).toBe(true);
       expect(fs.existsSync(tools.nodeMarker)).toBe(false);

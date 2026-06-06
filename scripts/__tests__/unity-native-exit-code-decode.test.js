@@ -40,7 +40,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const { combinedText } = require("../lib/pwsh-output");
+const { assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const RUN_CI_TESTS = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
@@ -109,27 +109,82 @@ function decode(code) {
 const CASES = [
   // THE BUG: 0xC0000005 surfaces as -1073741819. This is the exact configure-pass
   // crash exit code from CI run 72225120030.
-  { label: "0xC0000005 ACCESS_VIOLATION (the bug)", code: -1073741819, desc: "0xC0000005 / STATUS_ACCESS_VIOLATION", crash: true },
-  { label: "0xC000001D ILLEGAL_INSTRUCTION",        code: -1073741795, desc: "0xC000001D / STATUS_ILLEGAL_INSTRUCTION", crash: true },
-  { label: "0xC0000017 NO_MEMORY",                  code: -1073741801, desc: "0xC0000017 / STATUS_NO_MEMORY", crash: true },
-  { label: "0xC00000FD STACK_OVERFLOW",             code: -1073741571, desc: "0xC00000FD / STATUS_STACK_OVERFLOW", crash: true },
-  { label: "0xC0000135 DLL_NOT_FOUND",              code: -1073741515, desc: "0xC0000135 / STATUS_DLL_NOT_FOUND", crash: true },
-  { label: "0xC0000139 ENTRYPOINT_NOT_FOUND",       code: -1073741511, desc: "0xC0000139 / STATUS_ENTRYPOINT_NOT_FOUND", crash: true },
-  { label: "0xC0000374 HEAP_CORRUPTION",            code: -1073740940, desc: "0xC0000374 / STATUS_HEAP_CORRUPTION", crash: true },
-  { label: "0xC0000409 STACK_BUFFER_OVERRUN",       code: -1073740791, desc: "0xC0000409 / STATUS_STACK_BUFFER_OVERRUN", crash: true },
-  { label: "0xC0000420 ASSERTION_FAILURE",          code: -1073740768, desc: "0xC0000420 / STATUS_ASSERTION_FAILURE", crash: true },
+  {
+    label: "0xC0000005 ACCESS_VIOLATION (the bug)",
+    code: -1073741819,
+    desc: "0xC0000005 / STATUS_ACCESS_VIOLATION",
+    crash: true
+  },
+  {
+    label: "0xC000001D ILLEGAL_INSTRUCTION",
+    code: -1073741795,
+    desc: "0xC000001D / STATUS_ILLEGAL_INSTRUCTION",
+    crash: true
+  },
+  {
+    label: "0xC0000017 NO_MEMORY",
+    code: -1073741801,
+    desc: "0xC0000017 / STATUS_NO_MEMORY",
+    crash: true
+  },
+  {
+    label: "0xC00000FD STACK_OVERFLOW",
+    code: -1073741571,
+    desc: "0xC00000FD / STATUS_STACK_OVERFLOW",
+    crash: true
+  },
+  {
+    label: "0xC0000135 DLL_NOT_FOUND",
+    code: -1073741515,
+    desc: "0xC0000135 / STATUS_DLL_NOT_FOUND",
+    crash: true
+  },
+  {
+    label: "0xC0000139 ENTRYPOINT_NOT_FOUND",
+    code: -1073741511,
+    desc: "0xC0000139 / STATUS_ENTRYPOINT_NOT_FOUND",
+    crash: true
+  },
+  {
+    label: "0xC0000374 HEAP_CORRUPTION",
+    code: -1073740940,
+    desc: "0xC0000374 / STATUS_HEAP_CORRUPTION",
+    crash: true
+  },
+  {
+    label: "0xC0000409 STACK_BUFFER_OVERRUN",
+    code: -1073740791,
+    desc: "0xC0000409 / STATUS_STACK_BUFFER_OVERRUN",
+    crash: true
+  },
+  {
+    label: "0xC0000420 ASSERTION_FAILURE",
+    code: -1073740768,
+    desc: "0xC0000420 / STATUS_ASSERTION_FAILURE",
+    crash: true
+  },
   // A 0xC000xxxx status NOT in the table: decoded to bare hex, still classified a
   // crash (the 0xC000xxxx family => STATUS_SEVERITY_ERROR).
-  { label: "0xC0000022 (unlisted crash status)",    code: -1073741790, desc: "0xC0000022", crash: true },
+  {
+    label: "0xC0000022 (unlisted crash status)",
+    code: -1073741790,
+    desc: "0xC0000022",
+    crash: true
+  },
   // A NON-error-severity NTSTATUS (top nibble 4 => STATUS_SEVERITY_INFORMATIONAL):
   // decoded to bare hex and NOT classified a crash.
-  { label: "0x40000015 (informational status)",     code: 1073741845,  desc: "0x40000015", crash: false },
+  {
+    label: "0x40000015 (informational status)",
+    code: 1073741845,
+    desc: "0x40000015",
+    crash: false
+  },
   // Ordinary application exit codes (0..255): bare hex, NOT crash codes.
-  { label: "0 clean exit",                          code: 0,           desc: "0x00000000", crash: false },
-  { label: "1 generic failure",                     code: 1,           desc: "0x00000001", crash: false },
-  { label: "2 test-failure code",                   code: 2,           desc: "0x00000002", crash: false },
-  { label: "124 watchdog timeout sentinel",         code: 124,         desc: "0x0000007C", crash: false },
-  { label: "134 stub abort code",                   code: 134,         desc: "0x00000086", crash: false }
+  { label: "0 clean exit", code: 0, desc: "0x00000000", crash: false },
+  { label: "1 generic failure", code: 1, desc: "0x00000001", crash: false },
+  { label: "2 test-failure code", code: 2, desc: "0x00000002", crash: false },
+  { label: "124 watchdog timeout sentinel", code: 124, desc: "0x0000007C", crash: false },
+  { label: "134 stub abort code", code: 134, desc: "0x00000086", crash: false }
 ];
 
 describe("run-ci-tests.ps1 native exit-code decoder", () => {
@@ -155,7 +210,7 @@ describe("run-ci-tests.ps1 native exit-code decoder", () => {
   test.each(CASES)("$label -> $desc (crash=$crash)", ({ code, desc, crash }) => {
     const result = decode(code);
     const out = combinedText(result);
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect(out).toContain(`DESC:${desc};CRASH:${crash ? "True" : "False"}`);
   });
 });

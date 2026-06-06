@@ -655,15 +655,13 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
   );
 
   // Pin the gating condition shape on every "Verify tests actually ran" step
-  // across all workflows. A revert to `if: always()` would silently re-introduce
-  // the race against user-initiated cancellations -- the verify step would run
-  // even when the run was cancelled and emit a misleading "tests did not run"
-  // error annotation. We forbid `always()` on every "Verify tests" step and
-  // require the canonical `!cancelled()` shape on the REQUIRED Unity workflows
-  // (unity-tests.yml, unity-benchmarks.yml, release.yml). The non-required
-  // GameCI experiment uses a different `steps.<id>.outcome == 'success'` guard
-  // by design (it is the only "Verify tests" step that intentionally skips on
-  // an earlier step's failure), so we only require it not be `always()`.
+  // across all workflows. A revert to `if: always()` would silently
+  // re-introduce the race against user-initiated cancellations. A raw
+  // `!cancelled()` guard also obscures earlier setup failures by running the
+  // verifier when setup/provisioning/lock work prevented Unity from launching.
+  // Compute-driven verify steps must only run for intentional empty targets or
+  // after the Unity run step actually attempted; the verify-unity-results
+  // composite still owns the expected-empty behavior.
   function collectVerifyTestsSteps() {
     const records = [];
     for (const workflow of fs.readdirSync(WORKFLOWS_DIR).filter((name) => /\.ya?ml$/i.test(name))) {
@@ -679,9 +677,9 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
     return records;
   }
 
-  function isAlwaysCondition(ifValue) {
+  function normalizeActionsIfCondition(ifValue) {
     if (typeof ifValue !== "string") {
-      return false;
+      return "";
     }
     // Strip ${{ }} wrapper and ALL whitespace so we match `always()`,
     // `${{ always() }}`, `${{  always()  }}`, `${{ always () }}`, and any
@@ -689,22 +687,56 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
     // robustness tweak -- the production workflows write `always()` exactly,
     // but yamlfmt / prettier could re-flow whitespace without changing
     // semantics and we don't want that to silently flip a guard test.
-    const inner = ifValue
+    return ifValue
       .replace(/^\s*\$\{\{\s*/, "")
       .replace(/\s*\}\}\s*$/, "")
       .replace(/\s+/g, "");
-    return inner === "always()";
   }
 
-  function isCancelledGuard(ifValue) {
-    if (typeof ifValue !== "string") {
-      return false;
+  function isAlwaysCondition(ifValue) {
+    return normalizeActionsIfCondition(ifValue) === "always()";
+  }
+
+  function expectedAttemptedRunVerifyCondition(runStepId) {
+    return (
+      "!cancelled()&&" +
+      "steps.compute.outcome=='success'&&" +
+      `(steps.compute.outputs.is-empty=='true'||steps.${runStepId}.outcome!='skipped')`
+    );
+  }
+
+  function expectedRunStepIdForVerifyGuard(ifValue) {
+    const inner = normalizeActionsIfCondition(ifValue);
+    for (const runStepId of ["run_tests", "game_ci"]) {
+      if (inner === expectedAttemptedRunVerifyCondition(runStepId)) {
+        return runStepId;
+      }
     }
-    const inner = ifValue
-      .replace(/^\s*\$\{\{\s*/, "")
-      .replace(/\s*\}\}\s*$/, "")
-      .replace(/\s+/g, "");
-    return inner === "!cancelled()";
+    return null;
+  }
+
+  function isAttemptedRunVerifyGuard(ifValue) {
+    return expectedRunStepIdForVerifyGuard(ifValue) !== null;
+  }
+
+  function usesComputeExpectedEmpty(step) {
+    const expectedEmpty = step && step.with && step.with["expected-empty"];
+    return String(expectedEmpty || "")
+      .replace(/\s+/g, "")
+      .includes("steps.compute.outputs.is-empty");
+  }
+
+  function collectVerifyTestsStepsForWorkflow(workflow) {
+    const parsed = loadWorkflowYaml(workflow);
+    const verifySteps = [];
+    for (const [jobId, job] of Object.entries(parsed.jobs || {})) {
+      for (const step of job.steps || []) {
+        if (typeof step.name === "string" && /verify\s+tests/i.test(step.name)) {
+          verifySteps.push({ jobId, step });
+        }
+      }
+    }
+    return verifySteps;
   }
 
   test("every 'Verify tests' step exists and was located by the scanner", () => {
@@ -728,25 +760,46 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
   });
 
   test.each(UNITY_LICENSED_JOBS)(
-    "$workflow 'Verify tests actually ran' step uses if: !cancelled() (not always(), not raw on/off)",
+    "$workflow 'Verify tests actually ran' step waits for an attempted Unity run",
     ({ workflow }) => {
-      const parsed = loadWorkflowYaml(workflow);
-      const verifySteps = [];
-      for (const job of Object.values(parsed.jobs || {})) {
-        for (const step of job.steps || []) {
-          if (typeof step.name === "string" && /verify\s+tests/i.test(step.name)) {
-            verifySteps.push(step);
-          }
-        }
-      }
+      const verifySteps = collectVerifyTestsStepsForWorkflow(workflow).map(({ step }) => step);
       expect(verifySteps.length).toBeGreaterThan(0);
       for (const step of verifySteps) {
         expect(typeof step.if).toBe("string");
         expect(isAlwaysCondition(step.if)).toBe(false);
-        expect(isCancelledGuard(step.if)).toBe(true);
+        expect(isAttemptedRunVerifyGuard(step.if)).toBe(true);
       }
     }
   );
+
+  test("compute-driven verify steps only run for expected empty or attempted Unity runs", () => {
+    const offenders = collectVerifyTestsSteps()
+      .filter(({ step }) => usesComputeExpectedEmpty(step))
+      .filter(({ step }) => !isAttemptedRunVerifyGuard(step.if))
+      .map(({ workflow, jobId, step }) => `${workflow}:${jobId} -- if: ${step.if || "<missing>"}`);
+    expect(offenders).toEqual([]);
+  });
+
+  test("attempted-run verify guards reference an existing run step id", () => {
+    const offenders = [];
+    for (const { workflow, jobId, step } of collectVerifyTestsSteps().filter(({ step }) =>
+      usesComputeExpectedEmpty(step)
+    )) {
+      const runStepId = expectedRunStepIdForVerifyGuard(step.if);
+      if (runStepId === null) {
+        offenders.push(`${workflow}:${jobId} -- missing run-step outcome guard`);
+        continue;
+      }
+
+      const parsed = loadWorkflowYaml(workflow);
+      const job = parsed.jobs[jobId];
+      const hasRunStep = (job.steps || []).some((candidate) => candidate.id === runStepId);
+      if (!hasRunStep) {
+        offenders.push(`${workflow}:${jobId} -- no step id '${runStepId}'`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 
   // Canonical labels carried by both the verify-unity-results composite
   // action and scripts/unity/run-ci-tests.ps1's $script:CatastrophicPatterns
@@ -1017,13 +1070,13 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
     const parsed = loadWorkflowYaml("perf-numbers.yml");
     expectSecretGateOutputGuard(
       parsed.jobs["perf-benchmarks"],
-      "needs.loop-guard.outputs.has-required-secrets == 'true'"
+      "needs.runner-preflight.outputs.has-required-secrets == 'true'"
     );
   });
 
   test.each([
     { workflow: "unity-tests.yml", jobId: "matrix-config" },
-    { workflow: "perf-numbers.yml", jobId: "loop-guard" }
+    { workflow: "perf-numbers.yml", jobId: "runner-preflight" }
   ])(
     "$workflow job '$jobId' resolves required Unity/lock secrets into a needs output",
     ({ workflow, jobId }) => {
@@ -1066,6 +1119,8 @@ describe("print-self-hosted-runner-diagnostics composite action", () => {
     // is missing.
     expect(preflight.run).toContain("Get-Command");
     expect(preflight.run).toContain("pwsh");
+    expect(preflight.run).toContain("-CommandType Application");
+    expect(preflight.run).toContain("Test-Path");
     expect(preflight.run).toContain("exit 1");
   });
 
@@ -1074,6 +1129,22 @@ describe("print-self-hosted-runner-diagnostics composite action", () => {
     expect(diagnostics).toBeDefined();
     expect(diagnostics.name).toBe("Emit runner diagnostics");
     expect(String(diagnostics.shell).toLowerCase()).toBe("pwsh");
+  });
+
+  test("configures Git cache compression tools before host prereq assertion", () => {
+    const cacheToolIndex = steps.findIndex(
+      (step) => step.name === "Configure Git compression tools for Actions cache"
+    );
+    const assertIndex = steps.findIndex((step) => step.name === "Assert Unity host prerequisites");
+    expect(cacheToolIndex).toBeGreaterThan(1);
+    expect(assertIndex).toBeGreaterThan(cacheToolIndex);
+
+    const cacheTools = steps[cacheToolIndex];
+    expect(String(cacheTools.shell).toLowerCase()).toBe("pwsh");
+    expect(String(cacheTools.run)).toContain("Git\\usr\\bin");
+    expect(String(cacheTools.run)).toContain("GITHUB_PATH");
+    expect(String(cacheTools.run)).toContain("gzip.exe");
+    expect(String(cacheTools.run)).toContain("tar.exe");
   });
 });
 
@@ -1267,6 +1338,11 @@ describe(".github/workflows/unity-benchmarks.yml no longer maintains the perf do
     expect(fs.existsSync(path.join(WORKFLOWS_DIR, "perf-numbers.yml"))).toBe(true);
   });
 
+  test("documents the Performance Numbers GitHub App token path, not GITHUB_TOKEN", () => {
+    expect(text).not.toContain("default-branch doc directly via GITHUB_TOKEN");
+    expect(text).toContain("GitHub App installation token");
+  });
+
   test("top-level permissions stay least-privilege with no doc-PR write scope", () => {
     // With the docs-PR writer gone, the workflow keeps only the read +
     // annotation + benchmark-failure-issue scopes; nothing grants write.
@@ -1296,17 +1372,18 @@ describe(".github/workflows/unity-benchmarks.yml no longer maintains the perf do
 // only (the `fast` label), at the LATEST Unity version only, on every
 // pull_request change to master/main. On pull_request it posts a non-blocking
 // sticky PR comment (never pushing to the contributor branch -- that would block
-// merge); on push to master/main it opens/updates a bot PR with the refreshed doc.
-// These assertions parse the YAML and check EFFECTIVE
+// merge); on push to master/main it commits the refreshed doc DIRECTLY to the
+// default branch using a GitHub App installation token (the built-in GITHUB_TOKEN
+// cannot push to a protected branch). App-token pushes DO re-trigger workflows,
+// so recursion is broken by the push trigger's paths-ignore on the perf doc --
+// no loop guard needed. These assertions parse the YAML and check EFFECTIVE
 // behavior (pinned `fast` label, latest-version-only matrix, license preflight,
 // org-lock acquire+release, if:always() return-license inside the lock window,
-// same-repo gate, loop-guard sentinel) rather than brittle string proxies.
+// same-repo gate, direct-push shape) rather than brittle string proxies.
 describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput numbers", () => {
-  const PERF_AUTOUPDATE_SENTINEL = "[perf-autoupdate]";
   let text;
   let parsed;
   let preflightJob;
-  let loopGuardJob;
   let perfJob;
   let commentJob;
   let commitJob;
@@ -1316,7 +1393,6 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     text = readWorkflow("perf-numbers.yml");
     parsed = loadWorkflowYaml("perf-numbers.yml");
     preflightJob = parsed.jobs["runner-preflight"];
-    loopGuardJob = parsed.jobs["loop-guard"];
     perfJob = parsed.jobs["perf-benchmarks"];
     commentJob = parsed.jobs["comment-perf-doc"];
     commitJob = parsed.jobs["commit-perf-doc"];
@@ -1326,14 +1402,25 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
   test("triggers on pull_request (each change), push to master/main, plus dispatch", () => {
     const onBlock = getOnBlock(parsed);
     // PR events drive the non-blocking comment; push (post-merge) drives the
-    // default-branch doc refresh PR; dispatch for manual runs.
+    // direct default-branch doc commit; dispatch for manual runs.
     expect(Object.keys(onBlock).sort()).toEqual(["pull_request", "push", "workflow_dispatch"]);
     expect(onBlock.pull_request.branches.sort()).toEqual(["main", "master"]);
     // Each change to the PR re-runs the numbers: opened + synchronize + reopened.
     expect(onBlock.pull_request.types.sort()).toEqual(["opened", "reopened", "synchronize"]);
     expect(onBlock.push.branches.sort()).toEqual(["main", "master"]);
-    expect(onBlock.push).not.toHaveProperty("paths-ignore");
+    // Loop break: the post-merge App-token commit only touches the perf doc, so
+    // ignoring it on the push trigger stops that auto-commit re-running the
+    // benchmark. App-token pushes (unlike GITHUB_TOKEN) DO re-trigger workflows,
+    // so this paths-ignore is load-bearing, not cosmetic.
+    expect(onBlock.push["paths-ignore"]).toEqual(["docs/architecture/performance.md"]);
     expect(text).not.toContain("pull_request_target");
+  });
+
+  test("serializes default-branch runs without canceling in-flight benchmarks", () => {
+    // Merge-path benchmarks can run for hours. Keep one active + queued run per
+    // ref, but never cancel a run that may be holding Unity license state.
+    expect(parsed.concurrency.group).toBe("${{ github.workflow }}-${{ github.ref }}");
+    expect(parsed.concurrency["cancel-in-progress"]).toBe(false);
   });
 
   test("top-level permissions are least-privilege; write scopes are per-job and minimal", () => {
@@ -1341,10 +1428,10 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // The licensed Unity job must NOT inherit or declare write scope.
     expect(perfJob.permissions).toBeUndefined();
     // The PR-comment job gets pull-requests:write only (it never pushes); the
-    // default-branch refresh job gets the minimal write scopes needed to push a
-    // bot branch and open/update its PR.
+    // default-branch commit job pushes with a GitHub App token, so its own
+    // GITHUB_TOKEN needs only contents:read and it never opens a PR.
     expect(commentJob.permissions).toEqual({ contents: "read", "pull-requests": "write" });
-    expect(commitJob.permissions).toEqual({ contents: "write", "pull-requests": "write" });
+    expect(commitJob.permissions).toEqual({ contents: "read" });
   });
 
   test("a runner-preflight gates the self-hosted job and requires the fast (ELI-MACHINE) label set", () => {
@@ -1359,6 +1446,26 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // The self-hosted perf job depends on the preflight so a missing ELI-MACHINE
     // fails fast instead of queuing forever.
     expect(perfJob.needs).toEqual(expect.arrayContaining(["runner-preflight"]));
+    // Job-level permissions REPLACE the default set, so the folded-in checkout
+    // (which reads .github/unity-versions.json) requires contents:read; actions:read
+    // is for the gh api runner-inventory probe. Omitting contents:read would make
+    // the checkout run with contents:none and hard-fail every downstream job.
+    expect(preflightJob.permissions).toEqual({
+      actions: "read",
+      contents: "read"
+    });
+  });
+
+  test("runner-preflight warns when AUTO_COMMIT_APP_* credentials are missing", () => {
+    const checkApp = preflightJob.steps.find((step) => step.id === "check-autocommit-app");
+    expect(checkApp).toBeDefined();
+    expect(checkApp.env.AUTO_COMMIT_APP_ID).toBe("${{ secrets.AUTO_COMMIT_APP_ID }}");
+    expect(checkApp.env.AUTO_COMMIT_APP_PRIVATE_KEY).toBe(
+      "${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}"
+    );
+    expect(checkApp.run).toContain("has-app=false");
+    expect(checkApp.run).toContain("::warning::AUTO_COMMIT_APP_* secrets are not set");
+    expect(checkApp.run).toContain("docs/runbooks/perf-numbers-auto-commit.md");
   });
 
   test("the Unity run is pinned to ELI-MACHINE via the fast label", () => {
@@ -1370,24 +1477,25 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
   test("the matrix is LATEST-version only and runs BOTH editmode and playmode legs", () => {
     const matrix = perfJob.strategy.matrix;
     // The single latest version is resolved from the canonical source
-    // (.github/unity-versions.json) via loop-guard, so the matrix references the
-    // loop-guard output rather than a hardcoded literal (no version can drift).
+    // (.github/unity-versions.json) via runner-preflight, so the matrix
+    // references the preflight output rather than a hardcoded literal (no version
+    // can drift).
     expect(matrix["unity-version"]).toBe(
-      "${{ fromJSON(needs.loop-guard.outputs.unity-versions) }}"
+      "${{ fromJSON(needs.runner-preflight.outputs.unity-versions) }}"
     );
     // No historical version literals remain in the workflow text.
     expect(text).not.toContain("2021.3.45f1");
     expect(text).not.toContain("2022.3.45f1");
     expect(text).not.toContain("6000.3.16f1");
-    // loop-guard resolves the latest entry of `all` from the canonical file and
-    // emits both the scalar latest-version and the single-element matrix list.
-    expect(loopGuardJob.outputs["latest-version"]).toBe(
+    // runner-preflight resolves the latest entry of `all` from the canonical file
+    // and emits both the scalar latest-version and the single-element matrix list.
+    expect(preflightJob.outputs["latest-version"]).toBe(
       "${{ steps.versions.outputs.latest-version }}"
     );
-    expect(loopGuardJob.outputs["unity-versions"]).toBe(
+    expect(preflightJob.outputs["unity-versions"]).toBe(
       "${{ steps.versions.outputs.unity-versions }}"
     );
-    const versionsStep = loopGuardJob.steps.find((step) => step.id === "versions");
+    const versionsStep = preflightJob.steps.find((step) => step.id === "versions");
     expect(versionsStep).toBeDefined();
     expect(versionsStep.run).toContain("jq -r '.all[-1]' \"${file}\"");
     expect(versionsStep.run).toContain("jq -c '[.all[-1]]' \"${file}\"");
@@ -1475,74 +1583,31 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       "github.event.pull_request.head.repo.full_name == github.repository"
     );
     expect(perfJob.if).toContain("github.event_name != 'pull_request'");
-    expectSecretGateOutputGuard(perfJob, "needs.loop-guard.outputs.has-required-secrets == 'true'");
+    expectSecretGateOutputGuard(
+      perfJob,
+      "needs.runner-preflight.outputs.has-required-secrets == 'true'"
+    );
     const checkout = perfSteps.find((step) => step.uses === "actions/checkout@v6");
     expect(checkout.with["persist-credentials"]).toBe(false);
   });
 
-  test("a loop-guard reads the head commit and merged bot PR metadata before expensive work", () => {
-    // The loop-guard job logs the event head commit message, then on push checks
-    // any merged PR associated with the pushed commit. This covers squash and
-    // merge commits whose default-branch commit message does not preserve the
-    // original bot branch commit body without letting PR authors spoof a skip.
-    expect(loopGuardJob["runs-on"]).toBe("ubuntu-latest");
-    expect(loopGuardJob.permissions).toEqual({ contents: "read", "pull-requests": "read" });
-    expect(loopGuardJob.outputs["should-run"]).toContain("should-run");
-    const checkout = loopGuardJob.steps.find((step) => step.uses === "actions/checkout@v6");
-    expect(checkout.with["persist-credentials"]).toBe(false);
-    const guardStep = loopGuardJob.steps.find((step) => step.id === "guard");
-    expect(guardStep).toBeDefined();
-    // It reads the head commit message for diagnostics, but PR events are not
-    // skipped from commit-message text alone.
-    expect(guardStep.run).toContain("git log -1 --pretty=%B");
-    expect(guardStep.env.PERF_AUTOUPDATE_SENTINEL).toBe(PERF_AUTOUPDATE_SENTINEL);
-    // Bot PR open/sync events are skipped from PR metadata, not commit text, so
-    // normal PR authors cannot spoof the skip with a commit message.
-    expect(guardStep.env.GH_TOKEN).toBe("${{ github.token }}");
-    expect(guardStep.run).toContain('"${GITHUB_EVENT_NAME}" = "pull_request"');
-    expect(guardStep.run).toContain('"${GITHUB_EVENT_PATH}"');
-    expect(guardStep.run).toContain(".pull_request");
-    expect(guardStep.run).toContain(".head.repo.full_name");
-    expect(guardStep.run).toContain('startswith("perf-autoupdate/")');
-    expect(guardStep.run).toContain('"github-actions[bot]"');
-    expect(guardStep.run).toContain("contains($sentinel)");
-    // Post-merge push events also ask GitHub for PRs associated with the pushed
-    // commit and skip when a merged perf-autoupdate PR is found.
-    expect(guardStep.run).toContain("commits/${GITHUB_SHA}/pulls");
-    expect(guardStep.run).toContain('startswith("perf-autoupdate/")');
-    expect(guardStep.run).toContain('"github-actions[bot]"');
-    expect(guardStep.run).toContain("contains($sentinel)");
-    // The expensive Unity run is gated on should-run == 'true'.
-    expect(perfJob.needs).toEqual(expect.arrayContaining(["loop-guard"]));
-    expect(perfJob.if).toContain("needs.loop-guard.outputs.should-run == 'true'");
-    // The commit job is likewise gated on the loop guard.
-    expect(commitJob.if).toContain("needs.loop-guard.outputs.should-run == 'true'");
-  });
-
-  test("the bot PR commit and merge-stable PR metadata carry the sentinel and are NOT [skip ci]", () => {
-    const commitStep = commitJob.steps.find(
-      (step) =>
-        typeof step.uses === "string" && step.uses.startsWith("peter-evans/create-pull-request@")
-    );
-    expect(commitStep).toBeDefined();
-    // The commit message covers direct PR-head runs; title/body cover squash and
-    // merge commit messages that are derived from PR metadata.
-    expect(commitStep.with["commit-message"]).toContain(PERF_AUTOUPDATE_SENTINEL);
-    expect(commitStep.with.title).toContain(PERF_AUTOUPDATE_SENTINEL);
-    expect(commitStep.with.body).toContain(PERF_AUTOUPDATE_SENTINEL);
-    // The commit message must NOT use [skip ci] (that would skip required checks
-    // on the final, numbers-fresh commit). Scoped to the commit_message, not the
-    // whole file, because the loop-guard comment legitimately MENTIONS [skip ci]
-    // to explain why it is deliberately avoided.
-    expect(commitStep.with["commit-message"]).not.toContain("skip ci");
-    expect(commitStep.with.title).not.toContain("skip ci");
-    expect(commitStep.with.body).not.toContain("skip ci");
-    expect(commitStep.with.branch).toBe("perf-autoupdate/${{ github.ref_name }}");
-    expect(commitStep.with.base).toBe("${{ github.ref_name }}");
-    expect(commitStep.with.title).toBe(
-      "docs(perf): auto-update dispatch throughput numbers [perf-autoupdate]"
-    );
-    expect(commitStep.with.body).toContain("Branch protection requires pull-request-based writes");
+  test("the recursion-guard job and the autoupdate sentinel are gone (no loop guard needed)", () => {
+    // Direct-push design: the push trigger's paths-ignore on the perf doc stops
+    // the post-merge auto-commit re-running the benchmark, so the whole
+    // recursion-guard job + sentinel apparatus is unnecessary and must not
+    // reappear. (The forbidden literals are assembled at runtime so the repo's
+    // sanity grep stays clean.)
+    const guardJobId = ["loop", "guard"].join("-");
+    const sentinel = ["perf", "autoupdate"].join("-");
+    expect(parsed.jobs[guardJobId]).toBeUndefined();
+    expect(text).not.toContain(sentinel);
+    // No job references a recursion-guard output, and the expensive run/commit
+    // jobs are not gated on a removed should-run signal.
+    expect(text).not.toContain(`needs.${guardJobId}.outputs`);
+    expect(perfJob.needs).not.toContain(guardJobId);
+    expect(commitJob.needs).not.toContain(guardJobId);
+    expect(JSON.stringify(perfJob.if)).not.toContain("should-run");
+    expect(JSON.stringify(commitJob.if)).not.toContain("should-run");
   });
 
   test("the PR-comment job posts a NON-BLOCKING sticky comment and NEVER pushes to the PR branch", () => {
@@ -1566,8 +1631,13 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       (step) => typeof step.uses === "string" && step.uses.startsWith("actions/github-script@")
     );
     expect(comment).toBeDefined();
+    expect(comment.env.HAS_AUTOCOMMIT_APP).toBe(
+      "${{ needs.runner-preflight.outputs.has-autocommit-app }}"
+    );
     expect(comment.with.script).toContain("issues.createComment");
     expect(comment.with.script).toContain("issues.updateComment");
+    expect(comment.with.script).toContain("AUTO_COMMIT_APP_*");
+    expect(comment.with.script).toContain("post-merge doc commit");
     // It must NOT push to the PR branch (no git-auto-commit, no head.ref checkout).
     const commentText = JSON.stringify(commentJob);
     expect(commentText).not.toContain("git-auto-commit-action");
@@ -1599,17 +1669,37 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(comment.with.script).not.toContain("context.sha");
   });
 
-  test("the default-branch refresh job opens a bot PR ONLY on push, loop-guarded", () => {
-    // The committed doc is refreshed on push to master/main (post-merge), but
-    // protected-branch rules require the actual write to flow through a bot PR.
+  test("the default-branch commit job pushes the doc DIRECTLY via a GitHub App token ONLY on push", () => {
+    // The committed doc is refreshed on push to master/main (post-merge) and
+    // committed directly to the default branch with a GitHub App installation
+    // token (the built-in GITHUB_TOKEN cannot push to a protected branch) -- no
+    // bot PR, no recursion. (Forbidden literals are assembled at runtime to keep
+    // the repo's sanity grep clean.)
+    const createPrAction = ["peter", "evans/create-pull-request@"].join("-");
+    const autoupdateBranch = ["perf", "autoupdate/"].join("-");
+
     expect(commitJob.if).toContain("github.event_name == 'push'");
     expect(commitJob.if).toContain("needs.perf-benchmarks.result == 'success'");
-    expect(commitJob.if).toContain("needs.loop-guard.outputs.should-run == 'true'");
+    // Gated on the App credentials being present so an unprovisioned repo degrades
+    // to a no-op instead of a red push-build.
+    expect(commitJob.if).toContain("needs.runner-preflight.outputs.has-autocommit-app == 'true'");
     // It does NOT key off pull_request (that path comments, never commits).
     expect(commitJob.if).not.toContain("github.event_name == 'pull_request'");
 
-    // Renders, prettier --write, computes changed from git diff, --check guards the
-    // required prettier gate, then create-pull-request opens/updates the bot PR.
+    // It mints a GitHub App installation token from the AUTO_COMMIT_APP_* secrets
+    // and uses THAT (not GITHUB_TOKEN) for the protected-branch push.
+    const appTokenStep = commitJob.steps.find(
+      (step) =>
+        typeof step.uses === "string" && step.uses.startsWith("actions/create-github-app-token@")
+    );
+    expect(appTokenStep).toBeDefined();
+    expect(appTokenStep.id).toBe("app-token");
+    expect(appTokenStep.with["app-id"]).toBe("${{ secrets.AUTO_COMMIT_APP_ID }}");
+    expect(appTokenStep.with["private-key"]).toBe("${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}");
+
+    // Renders, prettier --write, computes changed from git diff, then --check
+    // guards the required prettier gate (now load-bearing: the paths-ignore loop
+    // break means the committed doc gets no fresh markdown gate).
     const render = commitJob.steps.find((step) => step.id === "render");
     expect(render).toBeDefined();
     expect(render.run).toMatch(
@@ -1619,23 +1709,65 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       (step) => step.run && /run-managed-prettier\.js --check/.test(step.run)
     );
     expect(verify).toBeDefined();
+    expect(verify.if).toBe(
+      "steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'"
+    );
     const install = commitJob.steps.find(
       (step) => step.run && /npm ci/.test(step.run) && /package-lock\.json/.test(step.run)
     );
     expect(install).toBeDefined();
-    const createPr = commitJob.steps.find(
-      (step) =>
-        typeof step.uses === "string" && step.uses.startsWith("peter-evans/create-pull-request@")
+
+    // Direct-push shape: explicit fetch/freshness diagnostics, manual commit,
+    // and command-scoped App-token push. Do not store the token in origin; doing
+    // the push in shell lets the workflow distinguish stale branch races from
+    // real branch-protection failures.
+    const steps = commitJob.steps;
+    const freshnessStep = steps.find((step) => step.id === "default-branch");
+    expect(freshnessStep).toBeDefined();
+    expect(freshnessStep.run).toContain("git -c");
+    expect(freshnessStep.run).toContain("fetch --no-tags --depth=1 origin");
+    expect(freshnessStep.run).toContain("refs/remotes/origin/${GITHUB_REF_NAME}");
+    expect(freshnessStep.run).toContain("GITHUB_SHA");
+    expect(freshnessStep.run).toContain("::warning::");
+    expect(freshnessStep.run).toContain("stale benchmark artifacts");
+
+    const setupNode = steps.find((step) => step.uses === "actions/setup-node@v6");
+    expect(setupNode.if).toBe("steps.default-branch.outputs.fresh == 'true'");
+    expect(render.if).toBe("steps.default-branch.outputs.fresh == 'true'");
+
+    const commitStep = steps.find((step) => step.name === "Commit and push refreshed perf doc");
+    expect(commitStep).toBeDefined();
+    expect(commitStep.if).toBe(
+      "steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'"
     );
-    expect(createPr).toBeDefined();
-    expect(createPr.with.branch).toBe("perf-autoupdate/${{ github.ref_name }}");
-    expect(createPr.with.base).toBe("${{ github.ref_name }}");
-    // It must NOT check out / push the contributor PR head branch (that would block merge).
+    expect(commitStep.env.GH_PUSH_TOKEN).toBe("${{ steps.app-token.outputs.token }}");
+    expect(commitStep.run).toContain('git config user.name "github-actions[bot]"');
+    expect(commitStep.run).toContain('git add -- "${PERF_DOC}"');
+    expect(commitStep.run).toContain(
+      'git commit -m "docs(perf): auto-update dispatch throughput numbers"'
+    );
+    expect(commitStep.run).toContain('push origin "HEAD:${GITHUB_REF_NAME}"');
+    expect(commitStep.run).toContain(
+      "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}"
+    );
+    expect(commitStep.run).toContain("::warning::");
+    expect(commitStep.run).toContain("during the perf doc push");
+    expect(commitStep.run).toContain("::error::Perf doc auto-commit push failed");
+    expect(commitStep.run).not.toContain("git remote set-url origin");
+
+    // No bot-PR machinery survives: no create-pull-request action, no autoupdate
+    // branch, no local auto-commit action.
+    const commitJobText = JSON.stringify(commitJob);
+    expect(commitJobText).not.toContain(createPrAction);
+    expect(commitJobText).not.toContain(autoupdateBranch);
+    expect(commitJobText).not.toContain("git-auto-commit-action");
+    expect(commitJobText).not.toContain("https://x-access-token");
+
+    // The checkout uses the App installation token and does not persist
+    // credentials (command-scoped fetch/push commands carry the auth instead).
     const checkout = commitJob.steps.find((step) => step.uses === "actions/checkout@v6");
     expect(checkout.with["persist-credentials"]).toBe(false);
-    expect(checkout && checkout.with ? checkout.with.ref : undefined).not.toBe(
-      "${{ github.event.pull_request.head.ref }}"
-    );
+    expect(checkout.with.token).toBe("${{ steps.app-token.outputs.token }}");
   });
 });
 

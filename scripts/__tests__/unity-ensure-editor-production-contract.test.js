@@ -59,7 +59,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const { normalizePwshText } = require("../lib/pwsh-output");
+const { assertSpawnStatus, normalizePwshText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ENSURE_EDITOR = path.join(REPO_ROOT, "scripts", "unity", "ensure-editor.ps1");
@@ -568,9 +568,7 @@ describe("ensure-editor.ps1 production contract", () => {
           maxBuffer: 16 * 1024 * 1024
         });
         const text = normalizePwshText(`${run.stdout || ""}\n${run.stderr || ""}`);
-        if (run.status !== 0) {
-          throw new Error(text);
-        }
+        assertSpawnStatus(run, 0, expect.getState().currentTestName || "pwsh harness");
         // Core ids: the four reliable-provisioning groups, in spec order.
         expect(text).toContain("CORE=windows-il2cpp,webgl,linux-mono,linux-il2cpp");
         // Android ids: the requested android-tier groups (android-open-jdk is
@@ -683,14 +681,11 @@ describe("ensure-editor.ps1 production contract", () => {
       // The sweep is invoked at least twice in the helper body: once up-front and
       // once inside the retry action (so a transient AV/installer/indexer handle
       // gets multiple shots to release as the move is re-attempted).
-      const sweepCalls =
-        quarantineBody.match(/Stop-StaleUnityProvisioningProcesses\b/g) || [];
+      const sweepCalls = quarantineBody.match(/Stop-StaleUnityProvisioningProcesses\b/g) || [];
       expect(sweepCalls.length).toBeGreaterThanOrEqual(2);
       // A persistent lock surfaces a wrap-immune ::error:: (Write-Host, not a bare
       // throw whose message ConciseView would word-wrap) before re-throwing.
-      expect(quarantineBody).toMatch(
-        /Write-Host\s+\([^\n]*::error::Could not quarantine Unity/
-      );
+      expect(quarantineBody).toMatch(/Write-Host\s+\([^\n]*::error::Could not quarantine Unity/);
     });
   });
 
@@ -811,9 +806,7 @@ describe("ensure-editor.ps1 production contract", () => {
       // (ConciseView-wrapped) error on the failure path, so route the output
       // through normalizePwshText for a width-independent assertion.
       const combined = normalizePwshText(`${run.stdout || ""}\n${run.stderr || ""}`);
-      if (run.status !== 0) {
-        throw new Error(combined);
-      }
+      assertSpawnStatus(run, 0, expect.getState().currentTestName || "pwsh harness");
       expect(combined).toContain("CONTRACT-OK");
     });
   }

@@ -1,6 +1,13 @@
 ---
 name: Update llms.txt
 
+# Regenerates llms.txt and, on the default branch, commits it back. The built-in
+# GITHUB_TOKEN cannot push to a protected branch (github-actions[bot] is a system
+# account, not a selectable branch-protection bypass actor), so the push is
+# authenticated by a GitHub App installation token (secrets.AUTO_COMMIT_APP_ID +
+# secrets.AUTO_COMMIT_APP_PRIVATE_KEY) whose App is allowed to bypass branch
+# protection. If those secrets are absent the commit degrades to a logged no-op (the
+# regeneration + validation still run). See docs/runbooks/perf-numbers-auto-commit.md.
 on:
   schedule:
     # Run weekly on Monday at 9:00 AM UTC
@@ -19,9 +26,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The push is authenticated by the GitHub App installation token, not the job's
+# GITHUB_TOKEN, so contents:read is all this job's own token needs (checkout).
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   update:
@@ -30,11 +38,49 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      - name: Check for the auto-commit GitHub App credentials
+        id: check-autocommit-app
+        # Degrade to a logged no-op when the App is not provisioned, instead of a
+        # red build. See docs/runbooks/perf-numbers-auto-commit.md.
+        env:
+          AUTO_COMMIT_APP_ID: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          AUTO_COMMIT_APP_PRIVATE_KEY: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${AUTO_COMMIT_APP_ID:-}" ] && \
+             [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then
+            echo "has-app=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::warning::AUTO_COMMIT_APP_* secrets are not set; skipping the llms.txt auto-commit. See docs/runbooks/perf-numbers-auto-commit.md."
+            echo "has-app=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Generate auto-commit GitHub App token
+        id: app-token
+        if: steps.check-autocommit-app.outputs.has-app == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
           persist-credentials: false
+
+      - name: Refresh branch before generating
+        if: steps.check-autocommit-app.outputs.has-app == 'true'
+        env:
+          GH_FETCH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth_header="$(printf 'x-access-token:%s' "${GH_FETCH_TOKEN}" | base64 | tr -d '\n')"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            fetch --no-tags --depth=1 origin \
+            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          git checkout -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
+          echo "Refreshed ${GITHUB_REF_NAME} to $(git rev-parse HEAD) before generating llms.txt."
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -62,21 +108,75 @@ jobs:
         run: |
           git diff --exit-code llms.txt || echo "changed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Configure push credentials
-        if: steps.git-check.outputs.changed == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-
       - name: Commit and push changes
-        if: steps.git-check.outputs.changed == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v7
-        with:
-          commit_message: "chore: update llms.txt"
-          file_pattern: llms.txt
-          commit_user_name: github-actions[bot]
-          commit_user_email: github-actions[bot]@users.noreply.github.com
+        if: steps.git-check.outputs.changed == 'true' && steps.check-autocommit-app.outputs.has-app == 'true'
+        env:
+          GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth_header="$(printf 'x-access-token:%s' "${GH_PUSH_TOKEN}" | base64 | tr -d '\n')"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Clear push credentials
-        if: ${{ always() && steps.git-check.outputs.changed == 'true' }}
-        run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          for attempt in 1 2 3; do
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+              fetch --no-tags --depth=1 origin \
+              "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+            latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
+            current_sha="$(git rev-parse HEAD)"
+            if [ "${latest_sha}" != "${current_sha}" ]; then
+              message="Default branch ${GITHUB_REF_NAME} advanced from ${current_sha} "
+              message+="to ${latest_sha}; regenerating llms.txt on the latest head "
+              message+="before pushing."
+              echo "::warning::${message}"
+              git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
+              npm run update:llms-txt
+              npm run validate:llms-txt
+            fi
+
+            if git diff --quiet -- llms.txt; then
+              echo "llms.txt is already current; nothing to commit."
+              exit 0
+            fi
+
+            base_sha="$(git rev-parse HEAD)"
+            git add -- llms.txt
+            if git diff --cached --quiet -- llms.txt; then
+              echo "No staged llms.txt changes remain; nothing to commit."
+              exit 0
+            fi
+            git commit -m "chore: update llms.txt"
+
+            set +e
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+              push origin "HEAD:${GITHUB_REF_NAME}"
+            push_status=$?
+            set -e
+            if [ "${push_status}" -eq 0 ]; then
+              exit 0
+            fi
+
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+              fetch --no-tags --depth=1 origin \
+              "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+            latest_after_push="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
+            if [ "${latest_after_push}" = "${base_sha}" ]; then
+              echo "::error::llms.txt auto-commit push failed while ${GITHUB_REF_NAME} still pointed at ${base_sha}."
+              exit "${push_status}"
+            fi
+
+            if [ "${attempt}" -eq 3 ]; then
+              message="Default branch ${GITHUB_REF_NAME} kept advancing during "
+              message+="the llms.txt auto-commit; skipping this stale attempt. "
+              message+="A newer run will regenerate from the latest head."
+              echo "::warning::${message}"
+              exit 0
+            fi
+
+            message="Default branch ${GITHUB_REF_NAME} advanced during the llms.txt "
+            message+="push; retrying from ${latest_after_push}."
+            echo "::warning::${message}"
+            git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
+            npm run update:llms-txt
+            npm run validate:llms-txt
+          done

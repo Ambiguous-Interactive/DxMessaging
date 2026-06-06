@@ -43,10 +43,23 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const { sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
-const { combinedText } = require("../lib/pwsh-output");
+const { assertSpawnNonZeroStatus, assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const RUN_CI_TESTS = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
+
+function currentTestLabel() {
+  const state = expect.getState();
+  return state.currentTestName || "pwsh harness";
+}
+
+function expectPwshStatus(run, expectedStatus) {
+  assertSpawnStatus(run, expectedStatus, currentTestLabel());
+}
+
+function expectPwshFailure(run) {
+  assertSpawnNonZeroStatus(run, currentTestLabel());
+}
 
 // Env vars whose presence would route the script DOWN a non-empty/divergent
 // path. We delete the accelerator endpoint so the empty-array branch (the one
@@ -476,7 +489,12 @@ function runScript(mode, ws, editorPath = ws.stubPath) {
 // watchdog windows are pinned SHORT (2s) so a hang scenario resolves quickly.
 function runStandaloneScript(
   ws,
-  { playerMode = "pass", buildSleepSeconds = 0, configureMode = "pass", buildCrashAfterOutput = false } = {}
+  {
+    playerMode = "pass",
+    buildSleepSeconds = 0,
+    configureMode = "pass",
+    buildCrashAfterOutput = false
+  } = {}
 ) {
   const env = cleanedEnv(path.join(ws.base, "host-env-sandbox"));
   env.DXM_SMOKE_RETURN_MARKER = ws.returnMarker;
@@ -590,7 +608,7 @@ describe("run-ci-tests.ps1 StrictMode collection-safety smoke test", () => {
       // The exact StrictMode failure string must NOT appear on any stream.
       expect(combined).not.toContain("cannot be found on this object");
       // The script must reach a clean exit.
-      expect(result.status).toBe(0);
+      expectPwshStatus(result, 0);
       // And it must have produced the NUnit results the stub wrote.
       expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
     }
@@ -612,7 +630,7 @@ describe("run-ci-tests.ps1 StrictMode collection-safety smoke test", () => {
       const combined = combinedText(result);
 
       // Must NOT silently succeed: a missing results.xml is a hard failure.
-      expect(result.status).not.toBe(0);
+      expectPwshFailure(result);
       // The runner must surface a results-missing diagnostic (Test-NUnitResults
       // emits both the "::error::No NUnit results XML" annotation and the thrown
       // "did not produce NUnit results" message).
@@ -638,7 +656,7 @@ describe("run-ci-tests.ps1 StrictMode collection-safety smoke test", () => {
 
       expect(combined).not.toContain("cannot be found on this object");
       // GREEN despite the non-zero editor exit, because the passing file exists.
-      expect(result.status).toBe(0);
+      expectPwshStatus(result, 0);
       expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
       // The shutdown crash was surfaced as a non-fatal warning.
       expect(combined).toMatch(/benign post-work shutdown crash/i);
@@ -714,7 +732,7 @@ describe("run-ci-tests.ps1 StrictMode collection-safety smoke test", () => {
     const combined = combinedText(result);
 
     expect(combined).not.toContain("cannot be found on this object");
-    expect(result.status).toBe(0);
+    expectPwshStatus(result, 0);
     expect(fs.existsSync(argsLogPath)).toBe(true);
 
     // Each line of the log is one -runTests invocation's pipe-joined args. The
@@ -742,7 +760,7 @@ describe("run-ci-tests.ps1 StrictMode collection-safety smoke test", () => {
     const result = runScript("editmode", ws, ws.failingCs8032StubPath);
     const combined = combinedText(result);
 
-    expect(result.status).not.toBe(0);
+    expectPwshFailure(result);
     expect(combined).toContain("Unity result failure diagnostics");
     expect(combined).toContain("Unity could not instantiate one or more DxMessaging");
     expect(combined).toContain(
@@ -801,7 +819,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     const builtExe = path.join(ws.project, "Build", "DxmTestPlayer", "DxmTestPlayer.exe");
     expect(fs.existsSync(builtExe)).toBe(true);
     // The PLAYER (not the editor build) wrote results.xml, and it parses green.
-    expect(result.status).toBe(0);
+    expectPwshStatus(result, 0);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
     // The player log (small, uploaded) was captured under artifacts, not unity.log.
     expect(fs.existsSync(path.join(ws.artifacts, "player.log"))).toBe(true);
@@ -817,7 +835,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     expect(combined).not.toContain("cannot be found on this object");
     // The failing file IS written (so the FILE is the source of truth), and
     // Test-NUnitResults turns failed>0 into a non-zero exit with "tests failed".
-    expect(result.status).not.toBe(0);
+    expectPwshFailure(result);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
     expect(combined).toMatch(/tests failed/);
   });
@@ -832,7 +850,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     expect(combined).not.toContain("cannot be found on this object");
     // The editor build DID produce the player exe (so the post-build assert
     // passes), but the player wrote no results, so Test-NUnitResults fails loudly.
-    expect(result.status).not.toBe(0);
+    expectPwshFailure(result);
     expect(combined).toMatch(/did not produce NUnit results|No NUnit results XML/);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(false);
   });
@@ -849,7 +867,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     const combined = combinedText(result);
 
     expect(combined).not.toContain("cannot be found on this object");
-    expect(result.status).not.toBe(0);
+    expectPwshFailure(result);
     // The run must NOT have waited the full 30s player sleep (proves the tree-kill
     // fired). A generous ceiling accounts for pwsh startup + the editor build stub.
     expect(elapsedMs).toBeLessThan(25000);
@@ -876,7 +894,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     // The tree-kill fired (did NOT wait the full 30s hang)...
     expect(elapsedMs).toBeLessThan(25000);
     // ...yet the run is GREEN because the player had already written a passing file.
-    expect(result.status).toBe(0);
+    expectPwshStatus(result, 0);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
     // The deferred quit was surfaced as a non-fatal warning, NOT a failure.
     expect(combined).toMatch(/honoring that results file/i);
@@ -900,7 +918,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     const combined = combinedText(result);
 
     expect(combined).not.toContain("cannot be found on this object");
-    expect(result.status).toBe(0);
+    expectPwshStatus(result, 0);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
     // The non-zero player exit was honored as a benign shutdown crash (one warning),
     // NOT a failure and NOT a watchdog-timeout notice.
@@ -921,7 +939,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     const combined = combinedText(result);
 
     expect(combined).not.toContain("cannot be found on this object");
-    expect(result.status).not.toBe(0);
+    expectPwshFailure(result);
     expect(elapsedMs).toBeLessThan(25000);
     expect(combined).toMatch(/build timed out|tree was killed/i);
     // The player was never built and never ran.
@@ -951,7 +969,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     expect(combined).not.toContain("cannot be found on this object");
     // GREEN: the configure marker proves Apply ran to completion, so the benign
     // shutdown crash does not fail the job; the player then produced passing results.
-    expect(result.status).toBe(0);
+    expectPwshStatus(result, 0);
     expect(fs.existsSync(path.join(ws.artifacts, "configure-complete.marker"))).toBe(true);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
     // The benign crash was surfaced as a non-fatal warning, NOT a failure.
@@ -969,9 +987,11 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
 
     expect(combined).not.toContain("cannot be found on this object");
     // RED: no marker means Apply did not complete -> the run fails before building.
-    expect(result.status).not.toBe(0);
+    expectPwshFailure(result);
     expect(fs.existsSync(path.join(ws.artifacts, "configure-complete.marker"))).toBe(false);
-    expect(combined).toMatch(/configure marker was not written|Configure standalone IL2CPP project failed/);
+    expect(combined).toMatch(
+      /configure marker was not written|Configure standalone IL2CPP project failed/
+    );
     // It must NOT have proceeded to build/run a player.
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(false);
   });
@@ -987,7 +1007,7 @@ describe("run-ci-tests.ps1 standalone split-build file-based results", () => {
     const combined = combinedText(result);
 
     expect(combined).not.toContain("cannot be found on this object");
-    expect(result.status).toBe(0);
+    expectPwshStatus(result, 0);
     const builtExe = path.join(ws.project, "Build", "DxmTestPlayer", "DxmTestPlayer.exe");
     expect(fs.existsSync(builtExe)).toBe(true);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
@@ -1033,7 +1053,7 @@ describe("run-ci-tests.ps1 serial seat is always returned (leak regression)", ()
     // (1) The run FAILS loudly: a failing editor must propagate a non-zero exit
     // (the finally returns the seat, then the failure re-throws). And StrictMode
     // must not have tripped.
-    expect(result.status).not.toBe(0);
+    expectPwshFailure(result);
     expect(combined).not.toContain("cannot be found on this object");
 
     // (2) THE leak regression: the seat was returned even though the editor
@@ -1056,7 +1076,7 @@ describe("run-ci-tests.ps1 serial seat is always returned (leak regression)", ()
 
     // The passing editor stub wrote results.xml, so the run succeeds...
     expect(combined).not.toContain("cannot be found on this object");
-    expect(result.status).toBe(0);
+    expectPwshStatus(result, 0);
     expect(fs.existsSync(path.join(ws.artifacts, "results.xml"))).toBe(true);
     // ...and the seat is STILL returned (return-at-start + the finally on the
     // clean path), so at least two return entries are recorded.

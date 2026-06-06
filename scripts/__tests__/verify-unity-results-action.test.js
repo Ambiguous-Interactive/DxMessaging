@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const yaml = require("yaml");
-const { combinedText } = require("../lib/pwsh-output");
+const { assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ACTION_PATH = path.join(
@@ -145,7 +145,7 @@ describe("verify-unity-results composite action", () => {
     const result = runActionScript(missingDir, "Unity 6000 standalone", workspace, {
       DXM_EXPECTED_EMPTY: "true"
     });
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combinedText(result);
     expect(out).toMatch(/No DxMessaging test assemblies were selected/i);
     expect(out).not.toMatch(/No artifacts directory/);
@@ -157,7 +157,7 @@ describe("verify-unity-results composite action", () => {
     const result = runActionScript(missingDir, "Unity action test", workspace, {
       DXM_EXPECTED_EMPTY: "false"
     });
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     expect(combinedText(result)).toMatch(/No artifacts directory/);
   });
 
@@ -180,7 +180,7 @@ describe("verify-unity-results composite action", () => {
       workspace
     );
 
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     const text = combinedText(result);
     expect(text).toContain("No artifacts directory");
     expect(text).toContain("Provisioning diagnostics files");
@@ -204,7 +204,7 @@ describe("verify-unity-results composite action", () => {
 
     const result = runActionScript(resultsDir, "No XML", workspace);
 
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     const text = combinedText(result);
     expect(text).toContain("No NUnit results.xml");
     expect(text).toContain("Provisioning summary:");
@@ -219,7 +219,7 @@ describe("verify-unity-results composite action", () => {
 
     const result = runActionScript(resultsDir, "Zero Tests", workspace);
 
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     expect(combinedText(result)).toContain("0 tests ran for Zero Tests");
   });
 
@@ -230,7 +230,7 @@ describe("verify-unity-results composite action", () => {
 
     const result = runActionScript(resultsDir, "Failed Tests", workspace);
 
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     expect(combinedText(result)).toContain("Failed Tests reported 1 failed test(s)");
   });
 
@@ -248,7 +248,7 @@ describe("verify-unity-results composite action", () => {
     const result = runActionScript(resultsDir, "PlayMode", workspace);
     const text = combinedText(result);
 
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     // The aggregate line is PRESERVED (existing behavior).
     expect(text).toContain("PlayMode reported 2 failed test(s)");
 
@@ -297,7 +297,7 @@ describe("verify-unity-results composite action", () => {
     const result = runActionScript(resultsDir, "NoName", workspace);
     const text = combinedText(result);
 
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     expect(text).toContain("::error::NoName failed test: OnlyHasName");
     expect(text).toContain("::group::Failed test: OnlyHasName");
     expect(text).toContain("boom");
@@ -334,7 +334,7 @@ describe("verify-unity-results composite action", () => {
     const result = runActionScript(resultsDir, "Inject", workspace);
     const text = combinedText(result);
 
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     // Extract the ACTUAL random token emitted after `::stop-commands::` and
     // assert the matching `::<that-token>::` close line exists. The token shape
     // is `dxm-stop-commands-<32-hex-guid>` (a GUID 'N' form).
@@ -388,7 +388,7 @@ describe("verify-unity-results composite action", () => {
     const result = runActionScript(resultsDir, "Both", workspace);
     const text = combinedText(result);
 
-    expect(result.status).toBe(1);
+    assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
     expect(text).toContain("::error::Both failed test: Ns.BothFix.ChildFail");
     expect(text).toContain("child assert failed");
     expect(text).toContain("::error::Both failed test: Ns.BothFix");
@@ -402,7 +402,7 @@ describe("verify-unity-results composite action", () => {
 
     const result = runActionScript(resultsDir, "Passed Tests", workspace);
 
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect(combinedText(result)).toContain("Passed Tests: total=3 passed=3 failed=0 skipped=0");
   });
 });

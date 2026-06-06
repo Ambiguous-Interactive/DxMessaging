@@ -31,6 +31,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { assertSpawnStatus } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const BOOTSTRAP_SCRIPT = path.join(REPO_ROOT, "scripts", "unity", "bootstrap-windows-runner.ps1");
@@ -89,11 +90,10 @@ function runHarness(body) {
     ].join("\n"),
     "utf8"
   );
-  return spawnSync(
-    "pwsh",
-    ["-NoProfile", "-NonInteractive", "-File", harness],
-    { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }
-  );
+  return spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", harness], {
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024
+  });
 }
 
 describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance", () => {
@@ -123,12 +123,12 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
       // On a real Windows host this MUST return $true; assert it positively
       // so the test still catches a regression that flipped the boolean.
       const result = runHarness("Write-Output ([bool](Test-IsWindowsHost))");
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expect((result.stdout || "").trim()).toBe("True");
       return;
     }
     const result = runHarness("Write-Output ([bool](Test-IsWindowsHost))");
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -138,10 +138,8 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
       // elevation; we cannot assert the value, only that it does NOT throw
       // and the exit code is 0. We still assert it returned a boolean so a
       // mutation that returned a non-bool is caught.
-      const result = runHarness(
-        "$r = Test-IsAdministrator; Write-Output ($r -is [bool])"
-      );
-      expect(result.status).toBe(0);
+      const result = runHarness("$r = Test-IsAdministrator; Write-Output ($r -is [bool])");
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       expect((result.stdout || "").trim()).toBe("True");
       return;
     }
@@ -149,7 +147,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     // is .NET Core safe but the WindowsBuiltInRole check requires the Windows
     // identity stack; an unguarded call throws PlatformNotSupportedException.
     const result = runHarness("Write-Output ([bool](Test-IsAdministrator))");
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -166,7 +164,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
         "Write-Output ([bool](Test-IsAccessDeniedException -ErrorRecord $er))"
       ].join("\n")
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -182,7 +180,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
         "Write-Output ([bool](Test-IsAccessDeniedException -ErrorRecord $er))"
       ].join("\n")
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("True");
   });
 
@@ -195,7 +193,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     const result = runHarness(
       "Write-Output ([bool](Test-DefenderExclusionPathAllowed -Path 'C:\\' -UnityInstallRoot 'C:\\Unity\\Editors'))"
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -203,7 +201,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     const result = runHarness(
       "Write-Output ([bool](Test-DefenderExclusionPathAllowed -Path 'C:' -UnityInstallRoot 'C:\\Unity\\Editors'))"
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -216,7 +214,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     const result = runHarness(
       "Write-Output ([bool](Test-DefenderExclusionPathAllowed -Path '   ' -UnityInstallRoot 'C:\\Unity\\Editors'))"
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -224,7 +222,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     const result = runHarness(
       "Write-Output ([bool](Test-DefenderExclusionPathAllowed -Path 'C:\\Unity\\Editors' -UnityInstallRoot 'C:\\Unity\\Editors'))"
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("True");
   });
 
@@ -232,7 +230,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     const result = runHarness(
       "Write-Output ([bool](Test-DefenderExclusionPathAllowed -Path 'D:\\actions-runner\\_work\\foo' -UnityInstallRoot 'C:\\Unity\\Editors'))"
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("True");
   });
 
@@ -240,7 +238,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     const result = runHarness(
       "Write-Output ([bool](Test-DefenderExclusionPathAllowed -Path 'C:\\WINDOWS' -UnityInstallRoot 'C:\\Unity\\Editors'))"
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -251,7 +249,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     const result = runHarness(
       "Write-Output ([bool](Test-DefenderExclusionPathAllowed -Path '\\\\server\\share' -UnityInstallRoot 'C:\\Unity\\Editors'))"
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -272,7 +270,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
         "Write-Output ('missing.count=' + ($r.missing.Count))"
       ].join("\n")
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = (result.stdout || "").trim();
     expect(out).toContain("present=True");
     expect(out).toContain("missing.count=0");
@@ -299,7 +297,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
         "Write-Output ('missing.count=' + ($r.missing.Count))"
       ].join("\n")
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = (result.stdout || "").trim();
     expect(out).toContain("present=True");
     expect(out).toContain("missing.count=0");
@@ -325,7 +323,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
         "Write-Output ('reason-nonempty=' + (-not [string]::IsNullOrWhiteSpace([string]$r.reason)))"
       ].join("\n")
     );
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = (result.stdout || "").trim();
     expect(out).toContain("installed=True");
     expect(out).toContain("reason-nonempty=True");
@@ -341,37 +339,26 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 helper mutation resistance"
     const harness = path.join(workspace, "harness.ps1");
     fs.writeFileSync(
       harness,
-      [
-        `. '${escapedScript}'`,
-        "Write-Output ([bool](Test-LongPathsEnabled))"
-      ].join("\n"),
+      [`. '${escapedScript}'`, "Write-Output ([bool](Test-LongPathsEnabled))"].join("\n"),
       "utf8"
     );
 
     // Override = '1' -> $true (regardless of OS).
-    const trueResult = spawnSync(
-      "pwsh",
-      ["-NoProfile", "-NonInteractive", "-File", harness],
-      {
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-        env: { ...process.env, DXM_UNITY_FAKE_LONGPATHS_ENABLED: "1" }
-      }
-    );
-    expect(trueResult.status).toBe(0);
+    const trueResult = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", harness], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, DXM_UNITY_FAKE_LONGPATHS_ENABLED: "1" }
+    });
+    assertSpawnStatus(trueResult, 0, expect.getState().currentTestName || "pwsh harness");
     expect((trueResult.stdout || "").trim()).toBe("True");
 
     // Override = '0' -> $false (regardless of OS).
-    const falseResult = spawnSync(
-      "pwsh",
-      ["-NoProfile", "-NonInteractive", "-File", harness],
-      {
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-        env: { ...process.env, DXM_UNITY_FAKE_LONGPATHS_ENABLED: "0" }
-      }
-    );
-    expect(falseResult.status).toBe(0);
+    const falseResult = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", harness], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, DXM_UNITY_FAKE_LONGPATHS_ENABLED: "0" }
+    });
+    assertSpawnStatus(falseResult, 0, expect.getState().currentTestName || "pwsh harness");
     expect((falseResult.stdout || "").trim()).toBe("False");
   });
 });
@@ -409,11 +396,10 @@ describe("bootstrap-windows-runner.ps1 best-effort tiering (Defender skip on non
     if (!PWSH_PRESENT) {
       return;
     }
-    const result = runHarnessWithEnv(
-      "Write-Output ([bool](Test-IsAdministrator))",
-      { DXM_RUNNER_FAKE_IS_ADMIN: "0" }
-    );
-    expect(result.status).toBe(0);
+    const result = runHarnessWithEnv("Write-Output ([bool](Test-IsAdministrator))", {
+      DXM_RUNNER_FAKE_IS_ADMIN: "0"
+    });
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("False");
   });
 
@@ -421,11 +407,10 @@ describe("bootstrap-windows-runner.ps1 best-effort tiering (Defender skip on non
     if (!PWSH_PRESENT) {
       return;
     }
-    const result = runHarnessWithEnv(
-      "Write-Output ([bool](Test-IsAdministrator))",
-      { DXM_RUNNER_FAKE_IS_ADMIN: "1" }
-    );
-    expect(result.status).toBe(0);
+    const result = runHarnessWithEnv("Write-Output ([bool](Test-IsAdministrator))", {
+      DXM_RUNNER_FAKE_IS_ADMIN: "1"
+    });
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect((result.stdout || "").trim()).toBe("True");
   });
 
@@ -442,12 +427,12 @@ describe("bootstrap-windows-runner.ps1 best-effort tiering (Defender skip on non
     }
     const body = [
       "$result = Invoke-DefenderBootstrap -Paths @('C:\\Unity\\Editors')",
-      "Write-Output \"name=$($result.name)\"",
-      "Write-Output \"finalState=$($result.finalState)\"",
-      "Write-Output \"critical=$($result.critical)\""
+      'Write-Output "name=$($result.name)"',
+      'Write-Output "finalState=$($result.finalState)"',
+      'Write-Output "critical=$($result.critical)"'
     ].join("\n");
     const result = runHarnessWithEnv(body, { DXM_RUNNER_FAKE_IS_ADMIN: "0" });
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const stdout = (result.stdout || "").trim();
     expect(stdout).toContain("name=defender-exclusion");
     expect(stdout).toContain("finalState=skipped-non-admin");
@@ -468,12 +453,12 @@ describe("bootstrap-windows-runner.ps1 best-effort tiering (Defender skip on non
       "$r1 = Invoke-BootstrapStep -Name 'fake-best-effort' -DetectFn { $true } -InstallFn { @{} } -Critical $false",
       "$r2 = Invoke-BootstrapStep -Name 'fake-critical-explicit' -DetectFn { $true } -InstallFn { @{} } -Critical $true",
       "$r3 = Invoke-BootstrapStep -Name 'fake-critical-default' -DetectFn { $true } -InstallFn { @{} }",
-      "Write-Output \"r1.critical=$($r1.critical)\"",
-      "Write-Output \"r2.critical=$($r2.critical)\"",
-      "Write-Output \"r3.critical=$($r3.critical)\""
+      'Write-Output "r1.critical=$($r1.critical)"',
+      'Write-Output "r2.critical=$($r2.critical)"',
+      'Write-Output "r3.critical=$($r3.critical)"'
     ].join("\n");
     const result = runHarnessWithEnv(body, {});
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const stdout = (result.stdout || "").trim();
     expect(stdout).toContain("r1.critical=False");
     expect(stdout).toContain("r2.critical=True");
@@ -497,7 +482,7 @@ describe("bootstrap-windows-runner.ps1 best-effort tiering (Defender skip on non
       "Format-BootstrapSummary -Results $mixed"
     ].join("\n");
     const result = runHarnessWithEnv(body, {});
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     const out = combined(result);
     // Critical entries have NO suffix; best-effort entries have '*'.
     expect(out).toMatch(/critical-ok=ok(?!\*)/);
