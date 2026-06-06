@@ -37,7 +37,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const { sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
-const { combinedText } = require("../lib/pwsh-output");
+const { assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const RUN_CI_TESTS = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
@@ -85,7 +85,7 @@ function stubEditorSource() {
     "  if ($i -ge 0 -and ($i + 1) -lt $Rest.Count) {",
     "    $out = $Rest[$i + 1]; $d = Split-Path -Parent $out",
     "    if ($d) { New-Item -ItemType Directory -Force -Path $d | Out-Null }",
-    "    '<?xml version=\"1.0\" encoding=\"utf-8\"?><test-run total=\"1\" passed=\"1\" failed=\"0\" skipped=\"0\" result=\"Passed\"></test-run>' | Set-Content -LiteralPath $out -Encoding UTF8",
+    '    \'<?xml version="1.0" encoding="utf-8"?><test-run total="1" passed="1" failed="0" skipped="0" result="Passed"></test-run>\' | Set-Content -LiteralPath $out -Encoding UTF8',
     "  }",
     "  exit 0",
     "}",
@@ -210,7 +210,7 @@ describe("run-ci-tests.ps1 Unity Accelerator endpoint masking", () => {
     });
     const combined = combinedText(result);
 
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     // Both forms must be masked: the raw trimmed env value AND the derived
     // canonical host:port form. Invoke-UnityEditor in run-ci-tests.ps1 echoes
     // the assembled argument array (which includes the normalized host:port),
@@ -240,7 +240,8 @@ describe("run-ci-tests.ps1 Unity Accelerator endpoint masking", () => {
     // wins in production GHA because add-mask scrubs subsequent occurrences),
     // but this count assertion surfaces the new echo locally so a leak path
     // cannot ship unnoticed.
-    const rawUrlOccurrences = (combined.match(/http:\/\/accelerator\.example\.com:10080/g) || []).length;
+    const rawUrlOccurrences = (combined.match(/http:\/\/accelerator\.example\.com:10080/g) || [])
+      .length;
     expect(rawUrlOccurrences).toBe(1);
   });
 
@@ -255,7 +256,7 @@ describe("run-ci-tests.ps1 Unity Accelerator endpoint masking", () => {
     });
     const combined = combinedText(result);
 
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect(combined).toContain("::add-mask::127.0.0.1:10080");
     expect(combined).toContain("-cacheServerEndpoint 127.0.0.1:10080");
     expect(combined).toContain("value masked");
@@ -270,7 +271,7 @@ describe("run-ci-tests.ps1 Unity Accelerator endpoint masking", () => {
     const result = runScript(ws);
     const combined = combinedText(result);
 
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect(combined).not.toContain("::add-mask::");
     expect(combined).toContain("Unity Accelerator disabled");
   });

@@ -102,6 +102,7 @@ const HOOK_COVERED_BY_FULL_JEST = new Set(["script-parser-tests", "unity-contrac
  */
 const PREFLIGHT_ONLY_EXTRAS = Object.freeze([
   { id: "validate-node-tooling", npm: "validate:node-tooling" },
+  { id: "validate-markdown-link-text", npm: "validate:markdown-link-text" },
   { id: "validate-changed-docs", npm: "validate:changed-docs" },
   { id: "validate-llm-markdown", npm: "validate:llm-markdown" },
   { id: "validate-workflows", npm: "validate:workflows" },

@@ -16,7 +16,11 @@ from check_markdown_links import (
     check_code_fence,
     check_line_for_issues,
     check_file_content,
+    get_repo_root,
     iter_markdown_files,
+    iter_markdown_inputs,
+    iter_tracked_markdown_inputs,
+    path_matches_input,
     LINK_RE,
 )
 
@@ -161,6 +165,85 @@ class TestIterMarkdownFiles(unittest.TestCase):
             ]
 
             self.assertEqual(discovered, ["a.md", "b.md", "docs/c.md"])
+
+    def test_iter_markdown_files_accepts_explicit_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = os.path.join(tmp_dir, "one.md")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("placeholder")
+
+            self.assertEqual(list(iter_markdown_files(path)), [path])
+
+    def test_iter_markdown_files_accepts_explicit_file_under_excluded_path(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_dir = os.path.join(tmp_dir, "Temp")
+            os.makedirs(temp_dir)
+            path = os.path.join(temp_dir, "one.md")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("placeholder")
+
+            self.assertEqual(list(iter_markdown_files(path)), [path])
+
+    def test_iter_markdown_inputs_deduplicates_file_and_directory_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = os.path.join(tmp_dir, "one.md")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("placeholder")
+
+            self.assertEqual(list(iter_markdown_inputs([tmp_dir, path])), [path])
+
+
+class TestPathMatchesInput(unittest.TestCase):
+    """Tests for tracked-file filtering by explicit input roots."""
+
+    def test_explicit_file_input_matches_only_that_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            one = os.path.join(tmp_dir, "one.md")
+            two = os.path.join(tmp_dir, "two.md")
+            for path in [one, two]:
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("placeholder")
+
+            self.assertTrue(path_matches_input(one, one))
+            self.assertFalse(path_matches_input(two, one))
+
+    def test_directory_input_matches_nested_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            nested = os.path.join(tmp_dir, "docs", "guide.md")
+            os.makedirs(os.path.dirname(nested))
+            with open(nested, "w", encoding="utf-8") as handle:
+                handle.write("placeholder")
+
+            self.assertTrue(path_matches_input(nested, tmp_dir))
+            self.assertFalse(path_matches_input(os.path.dirname(tmp_dir), tmp_dir))
+
+    def test_repo_relative_input_matches_when_cwd_is_subdirectory(self):
+        repo_root = get_repo_root()
+        rel_path = ".llm/skills/performance/dispatch-hot-path.md"
+        expected = os.path.join(repo_root, rel_path)
+        subdir = os.path.join(repo_root, ".github", "scripts")
+        previous_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            discovered = list(iter_tracked_markdown_inputs([rel_path]))
+        finally:
+            os.chdir(previous_cwd)
+
+        self.assertEqual(discovered, [expected])
+
+    def test_cwd_relative_input_matches_when_cwd_is_subdirectory(self):
+        repo_root = get_repo_root()
+        rel_path = ".llm/skills/performance/dispatch-hot-path.md"
+        expected = os.path.join(repo_root, rel_path)
+        subdir = os.path.join(repo_root, ".github", "scripts")
+        previous_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            discovered = list(iter_tracked_markdown_inputs([f"../../{rel_path}"]))
+        finally:
+            os.chdir(previous_cwd)
+
+        self.assertEqual(discovered, [expected])
 
 
 class TestRemoveInlineCode(unittest.TestCase):

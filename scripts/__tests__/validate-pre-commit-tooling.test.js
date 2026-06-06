@@ -66,6 +66,7 @@ const {
   REQUIRED_PRE_COMMIT_REPAIR_COMMAND,
   REQUIRED_NODE_TOOLING_COMMAND,
   REQUIRED_HOOK_MARKDOWN_COMMAND,
+  REQUIRED_MARKDOWN_LINK_TEXT_COMMAND,
   REQUIRED_CHANGED_DOCS_COMMAND,
   REQUIRED_LLM_MARKDOWN_COMMAND,
   REQUIRED_SKILLS_VALIDATION_COMMAND,
@@ -95,6 +96,7 @@ function requiredPreflightScript({ remove = [] } = {}) {
     REQUIRED_PRE_COMMIT_REPAIR_COMMAND,
     REQUIRED_NODE_TOOLING_COMMAND,
     REQUIRED_HOOK_MARKDOWN_COMMAND,
+    REQUIRED_MARKDOWN_LINK_TEXT_COMMAND,
     REQUIRED_CHANGED_DOCS_COMMAND,
     REQUIRED_LLM_POLICY_REPAIR_COMMAND,
     REQUIRED_LLM_POLICY_COMMAND,
@@ -1472,6 +1474,40 @@ describe("validate-pre-commit-tooling", () => {
     expect(violations[0].message).toContain(REQUIRED_HOOK_MARKDOWN_COMMAND);
   });
 
+  test("validatePreflightScriptPolicy reports missing markdown link-text validation command", () => {
+    const readFileSyncMock = jest.fn((filePath) => {
+      if (filePath === "/tmp/package.json") {
+        return JSON.stringify({
+          scripts: requiredPackageScripts({
+            preflightRemove: [REQUIRED_MARKDOWN_LINK_TEXT_COMMAND]
+          })
+        });
+      }
+
+      if (filePath === "/tmp/pre-commit.yaml") {
+        return [
+          "repos:",
+          "  - repo: local",
+          "    hooks:",
+          `      - id: ${REQUIRED_PARSER_SUITE_HOOK_ID}`,
+          "        entry: node scripts/run-managed-jest.js --runTestsByPath scripts/__tests__/generate-skills-index.test.js scripts/__tests__/fix-csharp-underscore-methods.test.js scripts/__tests__/check-conflict-markers.test.js scripts/__tests__/validate-changed-docs.test.js scripts/__tests__/validate-changelog.test.js scripts/__tests__/pre-commit-hook-stage-policy.test.js"
+        ].join("\n");
+      }
+
+      return "";
+    });
+
+    const violations = validatePreflightScriptPolicy(
+      readFileSyncMock,
+      "/tmp/package.json",
+      "/tmp/pre-commit.yaml"
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].hookId).toBe("preflight-script");
+    expect(violations[0].message).toContain(REQUIRED_MARKDOWN_LINK_TEXT_COMMAND);
+  });
+
   test("validatePreflightScriptPolicy reports missing pre-commit executable repair command", () => {
     const readFileSyncMock = jest.fn((filePath) => {
       if (filePath === "/tmp/package.json") {
@@ -1515,6 +1551,7 @@ describe("validate-pre-commit-tooling", () => {
               REQUIRED_NODE_REPAIR_COMMAND,
               REQUIRED_NODE_TOOLING_COMMAND,
               REQUIRED_HOOK_MARKDOWN_COMMAND,
+              REQUIRED_MARKDOWN_LINK_TEXT_COMMAND,
               REQUIRED_PRE_COMMIT_REPAIR_COMMAND,
               REQUIRED_CHANGED_DOCS_COMMAND,
               REQUIRED_LLM_POLICY_REPAIR_COMMAND,

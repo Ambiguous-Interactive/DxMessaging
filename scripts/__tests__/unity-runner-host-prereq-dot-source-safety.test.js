@@ -38,6 +38,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { assertSpawnStatus } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const BOOTSTRAP_SCRIPT = path.join(REPO_ROOT, "scripts", "unity", "bootstrap-windows-runner.ps1");
@@ -85,30 +86,18 @@ function makeWorkspace() {
 }
 
 function runPwshCommand(command) {
-  return spawnSync(
-    "pwsh",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      command
-    ],
-    { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }
-  );
+  return spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", command], {
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024
+  });
 }
 
 function runPwshFile(args, env = process.env) {
-  return spawnSync(
-    "pwsh",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-File",
-      BOOTSTRAP_SCRIPT,
-      ...args
-    ],
-    { env, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }
-  );
+  return spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", BOOTSTRAP_SCRIPT, ...args], {
+    env,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024
+  });
 }
 
 describe("scripts/unity/bootstrap-windows-runner.ps1 dot-source safety", () => {
@@ -139,7 +128,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 dot-source safety", () => {
       `. '${escapedScript}'`,
       "$after = $ErrorActionPreference",
       "if ($before -ne $after) {",
-      "  Write-Host \"FAIL: EAP leaked: before=$before after=$after\"",
+      '  Write-Host "FAIL: EAP leaked: before=$before after=$after"',
       "  exit 1",
       "}",
       "Write-Host 'OK'",
@@ -148,9 +137,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 dot-source safety", () => {
 
     const result = runPwshCommand(script);
     const combinedOut = combined(result);
-    if (result.status !== 0) {
-      throw new Error(`pwsh exited ${result.status}; output:\n${combinedOut}`);
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect(combinedOut).toContain("OK");
     expect(combinedOut).not.toContain("FAIL");
   });
@@ -177,14 +164,14 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 dot-source safety", () => {
         "$preLeak = $null",
         "try { $null = ($null).NoSuchProperty } catch { $preLeak = $_.Exception.Message }",
         "if ($null -ne $preLeak) {",
-        "  Write-Host \"FAIL_PRE: StrictMode was already on before dot-source: $preLeak\"",
+        '  Write-Host "FAIL_PRE: StrictMode was already on before dot-source: $preLeak"',
         "  exit 1",
         "}",
         `. '${escapedScript}'`,
         "$postLeak = $null",
         "try { $null = ($null).NoSuchProperty } catch { $postLeak = $_.Exception.Message }",
         "if ($null -ne $postLeak) {",
-        "  Write-Host \"FAIL_POST: StrictMode leaked from bootstrap dot-source: $postLeak\"",
+        '  Write-Host "FAIL_POST: StrictMode leaked from bootstrap dot-source: $postLeak"',
         "  exit 1",
         "}",
         "Write-Host 'OK'",
@@ -193,15 +180,12 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 dot-source safety", () => {
       "utf8"
     );
 
-    const result = spawnSync(
-      "pwsh",
-      ["-NoProfile", "-NonInteractive", "-File", harness],
-      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }
-    );
+    const result = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", harness], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024
+    });
     const combinedOut = combined(result);
-    if (result.status !== 0) {
-      throw new Error(`pwsh exited ${result.status}; output:\n${combinedOut}`);
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect(combinedOut).toContain("OK");
     expect(combinedOut).not.toContain("FAIL");
   });
@@ -233,15 +217,12 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 dot-source safety", () => {
       "utf8"
     );
 
-    const result = spawnSync(
-      "pwsh",
-      ["-NoProfile", "-NonInteractive", "-File", harness],
-      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }
-    );
+    const result = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", harness], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024
+    });
     const combinedOut = combined(result);
-    if (result.status !== 0) {
-      throw new Error(`pwsh exited ${result.status}; output:\n${combinedOut}`);
-    }
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     expect(combinedOut).toContain("OK");
     expect(combinedOut).not.toContain("FAIL");
   });
@@ -258,12 +239,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 dot-source safety", () => {
     test("-DetectOnly on non-Windows exits 0 + emits a 'skipping' / 'not Windows' notice", () => {
       const result = runPwshFile(["-DetectOnly"]);
       const combinedOut = combined(result);
-      if (result.status !== 0) {
-        throw new Error(
-          `bootstrap -DetectOnly on non-Windows expected exit 0; got ${result.status}.\n${combinedOut}`
-        );
-      }
-      expect(result.status).toBe(0);
+      assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
       // Either phrase is acceptable; the message must NAME the non-Windows
       // skip outcome so the operator (or composite) can grep on it.
       expect(combinedOut).toMatch(/::notice::/);
@@ -278,7 +254,7 @@ describe("scripts/unity/bootstrap-windows-runner.ps1 dot-source safety", () => {
       const combinedOut = combined(result);
       // The dispatcher hard-fails: not a Windows host AND not in DetectOnly
       // mode means a misrouted dispatch -- this MUST fail loudly.
-      expect(result.status).toBe(1);
+      assertSpawnStatus(result, 1, expect.getState().currentTestName || "pwsh harness");
       expect(combinedOut).toMatch(/::error::/);
       expect(combinedOut).toMatch(/Windows-only/);
     });

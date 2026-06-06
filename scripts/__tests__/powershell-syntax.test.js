@@ -29,6 +29,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const yaml = require("yaml");
+const { assertSpawnStatus } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -55,7 +56,10 @@ function listTrackedFiles(globArg) {
   if (result.status !== 0) {
     return [];
   }
-  return result.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 // Collect a pwsh `run:` block from a step if it declares `shell: pwsh`.
@@ -70,7 +74,9 @@ function collectPwshSteps(steps, sourceLabel, sink) {
       typeof step.shell === "string" &&
       step.shell.toLowerCase() === "pwsh"
     ) {
-      const name = step.name ? `${sourceLabel} :: ${step.name}` : `${sourceLabel} :: step[${index}]`;
+      const name = step.name
+        ? `${sourceLabel} :: ${step.name}`
+        : `${sourceLabel} :: step[${index}]`;
       sink.push({ name, src: stripGithubExpressions(step.run) });
     }
   });
@@ -130,9 +136,7 @@ function parseAll(snippets) {
     maxBuffer: 32 * 1024 * 1024
   });
 
-  if (run.status !== 0) {
-    throw new Error(`pwsh parse probe failed (status ${run.status}): ${run.stderr || run.stdout}`);
-  }
+  assertSpawnStatus(run, 0, expect.getState().currentTestName || "pwsh harness");
 
   const parsed = JSON.parse(run.stdout);
   const byName = new Map();
@@ -158,7 +162,9 @@ describe("PowerShell parse-time syntax guard", () => {
 
   if (!PWSH_PRESENT) {
     // eslint-disable-next-line no-console
-    console.warn("[powershell-syntax] pwsh not found on PATH; skipping parse assertions (CI runners have pwsh).");
+    console.warn(
+      "[powershell-syntax] pwsh not found on PATH; skipping parse assertions (CI runners have pwsh)."
+    );
     test.skip.each(snippets.map((s) => s.name))("%s parses without PowerShell errors", () => {});
     return;
   }

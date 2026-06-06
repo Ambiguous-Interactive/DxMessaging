@@ -10,6 +10,7 @@
  * - Mutating pre-commit hooks must use run-and-restage / run-and-stage.
  * - YAML comment auto-wrap hook must use run-and-restage + require_serial.
  * - Markdown auto-fix pipeline must use run-and-restage + require_serial.
+ * - preflight:pre-commit must run tracked markdown link-text validation.
  * - preflight:pre-commit must repair and validate .llm policy before hook parity.
  * - preflight:pre-commit must include YAML policy checks, including comment drift checks.
  * - preflight:pre-push must run all-file managed cspell before full hook parity.
@@ -37,6 +38,7 @@ const REQUIRED_NODE_REPAIR_COMMAND = "npm run repair:node-tooling";
 const REQUIRED_PRE_COMMIT_REPAIR_COMMAND = "npm run repair:pre-commit";
 const REQUIRED_NODE_TOOLING_COMMAND = "npm run validate:node-tooling";
 const REQUIRED_HOOK_MARKDOWN_COMMAND = "npm run validate:hook-markdown";
+const REQUIRED_MARKDOWN_LINK_TEXT_COMMAND = "npm run validate:markdown-link-text";
 const REQUIRED_CHANGED_DOCS_COMMAND = "npm run validate:changed-docs";
 const REQUIRED_LLM_MARKDOWN_COMMAND = "npm run validate:llm-markdown";
 const REQUIRED_SKILLS_VALIDATION_COMMAND = "npm run validate:skills";
@@ -261,6 +263,10 @@ function hasRequiredNodeToolingCommand(preflightScript) {
 
 function hasRequiredHookMarkdownCommand(preflightScript) {
   return hasRequiredPreflightCommand(preflightScript, REQUIRED_HOOK_MARKDOWN_COMMAND);
+}
+
+function hasRequiredMarkdownLinkTextCommand(preflightScript) {
+  return hasRequiredPreflightCommand(preflightScript, REQUIRED_MARKDOWN_LINK_TEXT_COMMAND);
 }
 
 function hasRequiredChangedDocsCommand(preflightScript) {
@@ -974,6 +980,17 @@ function validatePreflightScriptPolicy(
     );
   }
 
+  if (!hasRequiredMarkdownLinkTextCommand(preflightScript)) {
+    violations.push(
+      new Violation(
+        "preflight-script",
+        1,
+        `preflight:pre-commit must include '${REQUIRED_MARKDOWN_LINK_TEXT_COMMAND}' so tracked markdown link-text regressions are caught locally before CI.`,
+        preflightScript
+      )
+    );
+  }
+
   if (!hasRequiredChangedDocsCommand(preflightScript)) {
     violations.push(
       new Violation(
@@ -1391,6 +1408,7 @@ module.exports = {
   REQUIRED_PRE_COMMIT_REPAIR_COMMAND,
   REQUIRED_NODE_TOOLING_COMMAND,
   REQUIRED_HOOK_MARKDOWN_COMMAND,
+  REQUIRED_MARKDOWN_LINK_TEXT_COMMAND,
   REQUIRED_CHANGED_DOCS_COMMAND,
   REQUIRED_LLM_MARKDOWN_COMMAND,
   REQUIRED_SKILLS_VALIDATION_COMMAND,

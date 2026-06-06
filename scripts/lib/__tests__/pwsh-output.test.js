@@ -20,7 +20,10 @@
 const {
   normalizePwshText,
   describePwshNormalization,
-  assertPwshContains
+  assertPwshContains,
+  describeSpawnResult,
+  assertSpawnStatus,
+  assertSpawnNonZeroStatus
 } = require("../pwsh-output");
 
 // === REAL width-110 ConciseView wrap of the managed-root guard throw ===
@@ -286,5 +289,49 @@ describe("normalizePwshText", () => {
         /phrase not found in normalized pwsh/
       );
     });
+  });
+});
+
+describe("spawn result diagnostics", () => {
+  test("describeSpawnResult includes process fields and normalized stream previews", () => {
+    const message = describeSpawnResult(
+      {
+        status: null,
+        signal: "SIGTERM",
+        error: Object.assign(new Error("spawn failed"), {
+          code: "ENOENT",
+          syscall: "spawn"
+        }),
+        stdout: "before\r\n     | wrapped",
+        stderr: [String.fromCharCode(27), "[31m", "red", String.fromCharCode(27), "[0m"].join("")
+      },
+      "pwsh harness"
+    );
+
+    expect(message).toContain("pwsh harness spawn result:");
+    expect(message).toContain("status: (null)");
+    expect(message).toContain("signal: SIGTERM");
+    expect(message).toContain("code=ENOENT");
+    expect(message).toContain('"before wrapped"');
+    expect(message).toContain('"red"');
+  });
+
+  test.each([
+    ["success", assertSpawnStatus, { status: 0 }, [0, "pwsh"]],
+    ["expected failure", assertSpawnNonZeroStatus, { status: 6 }, ["pwsh"]]
+  ])("%s accepts the expected process exit shape", (_name, fn, result, args) => {
+    expect(() => fn(result, ...args)).not.toThrow();
+  });
+
+  test.each([
+    ["success status helper", assertSpawnStatus, { status: null, signal: "SIGTERM" }, [0, "pwsh"]],
+    [
+      "non-zero status helper",
+      assertSpawnNonZeroStatus,
+      { status: null, signal: "SIGKILL" },
+      ["pwsh"]
+    ]
+  ])("%s rejects status null with diagnostics", (_name, fn, result, args) => {
+    expect(() => fn(result, ...args)).toThrow(/spawn result:[\s\S]*status: \(null\)/);
   });
 });

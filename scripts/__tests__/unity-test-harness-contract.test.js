@@ -16,6 +16,7 @@ const { spawnSync } = require("child_process");
 
 const { sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
 const { getPropertyValue, hasElement, getElements } = require("../lib/msbuild-xml");
+const { assertSpawnStatus } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const CI_RUNNER = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
@@ -161,7 +162,7 @@ describe("generated Unity test harness contract", () => {
           }
         );
 
-        expect(run.status).toBe(0);
+        assertSpawnStatus(run, 0, expect.getState().currentTestName || "pwsh harness");
 
         // The harness pre-creates the SINGLE registration: the Assets/Plugins
         // copy, with the two analyzer DLLs RoslynAnalyzer-labeled. (SetupCscRsp

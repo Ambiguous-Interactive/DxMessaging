@@ -111,8 +111,8 @@ automatically by the `perf-numbers.yml` workflow (it re-runs the benchmarks on
 ELI-MACHINE at the latest Unity version on every PR change and posts the refreshed
 numbers as a non-blocking PR comment; after merge, CI commits the refreshed
 `docs/architecture/performance.md` table directly to the default branch via a
-GitHub App token push (no PR); see
-[docs/runbooks/perf-numbers-auto-commit.md](../../../docs/runbooks/perf-numbers-auto-commit.md)
+GitHub App token push (no PR); see the
+[performance numbers auto-commit runbook](../../../docs/runbooks/perf-numbers-auto-commit.md)
 for the App + bypass prerequisite). There is no manual `### Performance numbers`
 PR-body requirement.
 

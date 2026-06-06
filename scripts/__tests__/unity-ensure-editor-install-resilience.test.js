@@ -55,7 +55,12 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const { prependPathEnv, sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
-const { combinedText, normalizePwshText } = require("../lib/pwsh-output");
+const {
+  assertSpawnNonZeroStatus,
+  assertSpawnStatus,
+  combinedText,
+  normalizePwshText
+} = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ENSURE_EDITOR = path.join(REPO_ROOT, "scripts", "unity", "ensure-editor.ps1");
@@ -70,6 +75,19 @@ function pwshAvailable() {
 const PWSH_PRESENT = pwshAvailable();
 
 const workspaces = [];
+
+function currentTestLabel() {
+  const state = expect.getState();
+  return state.currentTestName || "pwsh harness";
+}
+
+function expectPwshStatus(run, expectedStatus) {
+  assertSpawnStatus(run, expectedStatus, currentTestLabel());
+}
+
+function expectPwshFailure(run) {
+  assertSpawnNonZeroStatus(run, currentTestLabel());
+}
 
 afterAll(() => {
   for (const ws of workspaces) {
@@ -268,7 +286,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
           "Write-Output ('<<<' + $result + '>>>')"
         ].join("\n")
       );
-      expect(out.status).toBe(0);
+      expectPwshStatus(out, 0);
       const m = /<<<([\s\S]*)>>>/.exec(out.stdout || "");
       expect(m).not.toBeNull();
       return m[1];
@@ -401,7 +419,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
       expect(elapsedMs).toBeLessThan(60000);
 
       // The run fails (the install never produced a usable editor)...
-      expect(out.status).not.toBe(0);
+      expectPwshFailure(out);
       // ...and the wrap-immune ::error:: timeout annotation is present, naming the
       // timeout, the env knob, and the last progress message seen before the kill.
       expect(combined).toContain("TIMED OUT after 2 second(s)");
@@ -467,7 +485,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
           "Write-Output ('NEGATIVE=' + (Get-EnsureEditorInstallTimeoutSeconds))"
         ].join("\n")
       );
-      expect(out.status).toBe(0);
+      expectPwshStatus(out, 0);
       const stdout = out.stdout || "";
       // Default rationale documented in the script: 2700s (45 min).
       expect(stdout).toContain("DEFAULT=2700");
@@ -496,7 +514,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
           "Write-Output ('INVALID=' + (Get-EnsureEditorInstallRetryAttempts))"
         ].join("\n")
       );
-      expect(out.status).toBe(0);
+      expectPwshStatus(out, 0);
       const stdout = out.stdout || "";
       // The default is intentionally UNCHANGED at 2.
       expect(stdout).toContain("DEFAULT=2");
@@ -530,7 +548,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
         ].join("\n")
       );
       const combined = combinedText(out);
-      expect(out.status).toBe(0);
+      expectPwshStatus(out, 0);
       expect(combined).toMatch(/EFFECTIVE=[1-5]\b/);
       expect(combined).toContain("EARLY=True");
       expect(combined).toContain("cannot fit 'large repair'");
@@ -559,7 +577,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
           "Write-Output ('INVALID=' + (Get-EnsureEditorAndroidInstallRetryAttempts))"
         ].join("\n")
       );
-      expect(out.status).toBe(0);
+      expectPwshStatus(out, 0);
       const stdout = out.stdout || "";
       const combined = combinedText(out);
       // The default is 3 (one more than the base-install default of 2).
@@ -615,9 +633,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
     );
 
     const combined = combinedText(out);
-    if (out.status !== 0) {
-      throw new Error(combined);
-    }
+    assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
     expect(out.stdout).toContain("EXIT=0");
     const capture = /^CAPTURE=(.*)$/m.exec(out.stdout || "");
     expect(capture).not.toBeNull();
@@ -649,12 +665,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
       const version = "6000.3.16f1";
       const versionDir = path.join(installRoot, version);
       const imageInVersionDir = path.join(versionDir, "Editor", "Unity.exe");
-      const unpackerInVersionDir = path.join(
-        versionDir,
-        "Editor",
-        "Data",
-        "unpacker.exe"
-      );
+      const unpackerInVersionDir = path.join(versionDir, "Editor", "Data", "unpacker.exe");
       const unityElsewhere = path.join(base, "elsewhere", "unity.exe");
       const avOutsideRoot = path.join(base, "Defender", "MsMpEng.exe");
       // HIGH-fix anchor: a DIFFERENT-version editor running concurrently UNDER THE
@@ -701,9 +712,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
       );
 
       const combined = combinedText(out);
-      if (out.status !== 0) {
-        throw new Error(combined);
-      }
+      assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
       const killedMatch = /^KILLED=(.*)$/m.exec(out.stdout || "");
       expect(killedMatch).not.toBeNull();
       const killed = killedMatch[1].length ? killedMatch[1].split(",") : [];
@@ -772,9 +781,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
       );
 
       const combined = combinedText(out);
-      if (out.status !== 0) {
-        throw new Error(combined);
-      }
+      assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
       const killedMatch = /^KILLED=(.*)$/m.exec(out.stdout || "");
       expect(killedMatch).not.toBeNull();
       const killed = killedMatch[1].length ? killedMatch[1].split(",") : [];
@@ -841,9 +848,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
     const stdout = out.stdout || "";
     const combined = combinedText(out);
 
-    if (out.status !== 0) {
-      throw new Error(combined);
-    }
+    assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
     // Resolution lands on the fabricated editor (structural read: last raw line).
     expect(stdout.trim().split(/\r?\n/).pop()).toBe(editorExe);
     // Full output streamed through the timeout runner (both the progress line and
@@ -905,9 +910,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
     const stdout = out.stdout || "";
     const combined = combinedText(out);
 
-    if (out.status !== 0) {
-      throw new Error(combined);
-    }
+    assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
     expect(stdout.trim().split(/\r?\n/).pop()).toBe(editorExe);
     expect(combined).toContain("editor-only install completed");
     expect(combined).toContain("requires the Unity editor only");
@@ -969,7 +972,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
     ]);
     const combined = combinedText(out);
 
-    expect(out.status).not.toBe(0);
+    expectPwshFailure(out);
     expect(combined).toContain("repair install completed at");
     const summary = JSON.parse(fs.readFileSync(diagnosticsPath, "utf8"));
     const textSummary = fs.readFileSync(
@@ -1016,7 +1019,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
     });
     const combined = combinedText(out);
 
-    expect(out.status).not.toBe(0);
+    expectPwshFailure(out);
     // The wrap-immune failure summary names the version, the outcome, the LAST
     // progress message parsed from the JSON, and the install-drive free space.
     expect(combined).toContain("Unity 6000.0.32f1 module install FAILED");
@@ -1044,7 +1047,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
         "Write-Output ('EMPTY=' + (Get-LastCliProgressMessage -Output @()))"
       ].join("\n")
     );
-    expect(out.status).toBe(0);
+    expectPwshStatus(out, 0);
     const stdout = out.stdout || "";
     expect(normalizePwshText(stdout)).toContain("JSON=Installing Android NDK...");
     expect(normalizePwshText(stdout)).toContain("PLAIN=plain two");
@@ -1076,7 +1079,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
         "Write-Output ('FALLBACK=' + (Get-LastCliProgressMessage -Output $b))"
       ].join("\n")
     );
-    expect(out.status).toBe(0);
+    expectPwshStatus(out, 0);
     const stdout = out.stdout || "";
     expect(normalizePwshText(stdout)).toContain("INSTALL=Installing Android NDK (93%)");
     expect(normalizePwshText(stdout)).toContain("FALLBACK=only download");
@@ -1122,7 +1125,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
         "Write-Output 'CLEARED'"
       ].join("\n")
     );
-    expect(out.status).toBe(0);
+    expectPwshStatus(out, 0);
     expect(combinedText(out)).toContain("Cleared partial Android module payload");
     // NDK + SDK heavy payload dirs are gone...
     expect(fs.existsSync(path.join(androidRoot, "NDK"))).toBe(false);
@@ -1211,7 +1214,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
       ].join("\n"),
       env
     );
-    expect(out.status).toBe(0);
+    expectPwshStatus(out, 0);
     const combined = combinedText(out);
     expect(combined).toContain("module install post-mortem");
     // Per-group MISSING lines (no module leaves were fabricated besides the NDK
@@ -1291,7 +1294,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
         ].join("\n"),
         env
       );
-      expect(out.status).toBe(0);
+      expectPwshStatus(out, 0);
       const combined = combinedText(out);
       // The forced long-paths-enabled state is reflected...
       expect(combined).toContain("Windows long-path support (LongPathsEnabled): True");
@@ -1317,7 +1320,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
         "Write-Output ('DEEPEMPTY=' + (Get-DeepestPathLengthUnder -Directory ''))"
       ].join("\n")
     );
-    expect(out.status).toBe(0);
+    expectPwshStatus(out, 0);
     const stdout = out.stdout || "";
     // On the Linux/macOS CI legs the long-path probe returns $null (-> True here);
     // on Windows it returns a bool. Either way it must not have thrown (status 0).

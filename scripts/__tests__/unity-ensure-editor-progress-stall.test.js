@@ -40,7 +40,12 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const { prependPathEnv, sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
-const { combinedText, normalizePwshText } = require("../lib/pwsh-output");
+const {
+  assertSpawnNonZeroStatus,
+  assertSpawnStatus,
+  combinedText,
+  normalizePwshText
+} = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ENSURE_EDITOR = path.join(REPO_ROOT, "scripts", "unity", "ensure-editor.ps1");
@@ -280,7 +285,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
         "Write-Output ('NEGATIVE=' + (Get-EnsureEditorProgressStallSeconds))"
       ].join("\n")
     );
-    expect(out.status).toBe(0);
+    assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
     const stdout = out.stdout || "";
     const combined = combinedText(out);
     // Profile-aware defaults documented in the script.
@@ -321,7 +326,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
         "Write-Output ('EMPTY=' + ($null -eq $null3))"
       ].join("\n")
     );
-    expect(out.status).toBe(0);
+    assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
     // Normalize via combinedText so a ConciseView word-wrap on a narrow CI
     // console cannot split the long PCT/PHASE/MSG line (enforced repo-wide by
     // pwsh-output-assertion-policy.test.js).
@@ -378,7 +383,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
     // wall-clock, proving the STALL detector did the kill (the wall would have
     // taken at least 60s per attempt). Two install retries (default) * (2s
     // stall + small overhead) is comfortably under 30s.
-    expect(out.status).not.toBe(0);
+    assertSpawnNonZeroStatus(out, expect.getState().currentTestName || "pwsh harness");
     expect(elapsedMs).toBeLessThan(45000);
 
     // The wrap-immune ::error:: from the poll loop names the stall, the env
@@ -491,9 +496,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
     const elapsedMs = Date.now() - startedAt;
     const combined = combinedText(out);
 
-    if (out.status !== 0) {
-      throw new Error(`expected clean exit, got ${out.status}:\n${combined}`);
-    }
+    assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
     // No stall annotation fired (the triple advanced fast enough).
     expect(combined).not.toContain("HEARTBEAT STALLED");
     expect(combined).not.toContain("sentinel exit 125");
@@ -538,7 +541,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
     });
     const combined = combinedText(out);
 
-    expect(out.status).not.toBe(0);
+    assertSpawnNonZeroStatus(out, expect.getState().currentTestName || "pwsh harness");
     expect(combined).toContain("TIMED OUT after 2 second(s)");
     expect(combined).toContain("sentinel exit 124");
     // The heartbeat path must NOT have fired (opt-out).
@@ -601,7 +604,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
     });
     const combined = combinedText(out);
 
-    expect(out.status).not.toBe(0);
+    assertSpawnNonZeroStatus(out, expect.getState().currentTestName || "pwsh harness");
     // The wrap-immune heartbeat ::notice:: must be present at least once with
     // the expected shape (the script emits "Unity CLI install heartbeat:" with
     // pct + phase + msg + elapsed + stallElapsed). Anchor on the prefix so any
@@ -646,7 +649,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
         "Write-Output ('NEGATIVE=' + (Get-EnsureEditorProgressNoticeIntervalSeconds))"
       ].join("\n")
     );
-    expect(out.status).toBe(0);
+    assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
     const stdout = out.stdout || "";
     const combined = combinedText(out);
     expect(stdout).toContain("DEFAULT=60");
@@ -722,7 +725,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
 
     const out = runPwshScript(harness);
     const combined = combinedText(out);
-    expect(out.status).toBe(0);
+    assertSpawnStatus(out, 0, expect.getState().currentTestName || "pwsh harness");
     const stdout = out.stdout || "";
     expect(stdout).toContain("EXIT=125");
     expect(stdout).toContain("STALL=False");
@@ -774,7 +777,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
     });
     const combined = combinedText(out);
 
-    expect(out.status).not.toBe(0);
+    assertSpawnNonZeroStatus(out, expect.getState().currentTestName || "pwsh harness");
     // The exact phrase from the no-triple branch of the periodic notice.
     expect(combined).toContain("Unity CLI install heartbeat: no progress line observed yet");
     expect(combined).toMatch(/no progress line observed yet elapsed=\d+s/);

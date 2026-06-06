@@ -32,7 +32,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const { combinedText } = require("../lib/pwsh-output");
+const { assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const RUN_CI_TESTS = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
@@ -126,8 +126,18 @@ function runMarker(scenario) {
 const CASES = [
   { label: "fresh marker (this run) -> success", scenario: "fresh", expectOk: true },
   { label: "marker mtime within 5s tolerance -> success", scenario: "boundary", expectOk: true },
-  { label: "missing marker -> 'was not written'", scenario: "missing", expectOk: false, contains: "was not written" },
-  { label: "stale marker (prior run) -> 'stale configure marker'", scenario: "stale", expectOk: false, contains: "stale configure marker" }
+  {
+    label: "missing marker -> 'was not written'",
+    scenario: "missing",
+    expectOk: false,
+    contains: "was not written"
+  },
+  {
+    label: "stale marker (prior run) -> 'stale configure marker'",
+    scenario: "stale",
+    expectOk: false,
+    contains: "stale configure marker"
+  }
 ];
 
 describe("run-ci-tests.ps1 Test-UnityConfigureMarker (configure source-of-truth gate)", () => {
@@ -150,7 +160,7 @@ describe("run-ci-tests.ps1 Test-UnityConfigureMarker (configure source-of-truth 
   test.each(CASES)("$label", ({ scenario, expectOk, contains }) => {
     const result = runMarker(scenario);
     const out = combinedText(result);
-    expect(result.status).toBe(0);
+    assertSpawnStatus(result, 0, expect.getState().currentTestName || "pwsh harness");
     if (expectOk) {
       expect(out).toContain("OK");
       expect(out).not.toContain("PROBLEM:");

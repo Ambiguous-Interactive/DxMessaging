@@ -186,6 +186,76 @@ function describePwshNormalization(raw) {
 // Cap the normalized-text preview in a failure message so a huge stream cannot
 // swamp the diagnostic; the recovered phrase is the part a developer needs.
 const PREVIEW_LIMIT = 600;
+const SPAWN_OUTPUT_PREVIEW_LIMIT = 1200;
+
+function preview(value, limit = SPAWN_OUTPUT_PREVIEW_LIMIT) {
+  const text = normalizePwshText(value || "");
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
+
+function formatSpawnError(error) {
+  if (!error) {
+    return "(none)";
+  }
+
+  const fields = [
+    error.name ? `name=${error.name}` : null,
+    error.code ? `code=${error.code}` : null,
+    error.errno ? `errno=${error.errno}` : null,
+    error.syscall ? `syscall=${error.syscall}` : null,
+    error.message ? `message=${error.message}` : null
+  ].filter(Boolean);
+  return fields.length > 0 ? fields.join(" ") : String(error);
+}
+
+/**
+ * Format process-level fields from a child_process.spawnSync result. Use this
+ * when a test expects a pwsh helper to exit 0 or non-zero: `status: null` means
+ * the child did not produce a normal exit code, and the useful evidence lives in
+ * `signal`, `error`, stdout, and stderr.
+ *
+ * @param {{status?: number|null, signal?: string|null, error?: Error|null,
+ *   stdout?: unknown, stderr?: unknown}} run - A spawnSync result.
+ * @param {string} label - Human-readable command/test label.
+ * @returns {string} Multi-line diagnostic text.
+ */
+function describeSpawnResult(run, label = "spawned process") {
+  const result = run || {};
+  return [
+    `${label} spawn result:`,
+    `  status: ${result.status === null || result.status === undefined ? "(null)" : result.status}`,
+    `  signal: ${result.signal || "(none)"}`,
+    `  error:  ${formatSpawnError(result.error)}`,
+    `  stdout: ${JSON.stringify(preview(result.stdout))}`,
+    `  stderr: ${JSON.stringify(preview(result.stderr))}`
+  ].join("\n");
+}
+
+function assertSpawnStatus(run, expectedStatus, label = "spawned process") {
+  if (run && run.status === expectedStatus) {
+    return;
+  }
+
+  const actual =
+    run && Object.prototype.hasOwnProperty.call(run, "status") ? run.status : undefined;
+  throw new Error(
+    `${label} exited with status ${actual}; expected ${expectedStatus}.\n` +
+      describeSpawnResult(run, label)
+  );
+}
+
+function assertSpawnNonZeroStatus(run, label = "spawned process") {
+  if (run && typeof run.status === "number" && run.status !== 0) {
+    return;
+  }
+
+  const actual =
+    run && Object.prototype.hasOwnProperty.call(run, "status") ? run.status : undefined;
+  throw new Error(
+    `${label} did not exit with a normal non-zero status; actual status was ${actual}.\n` +
+      describeSpawnResult(run, label)
+  );
+}
 
 /**
  * Select the RAW (un-normalized) stream text from a spawn result or string,
@@ -256,5 +326,8 @@ module.exports = {
   combinedText,
   stdoutText,
   describePwshNormalization,
-  assertPwshContains
+  assertPwshContains,
+  describeSpawnResult,
+  assertSpawnStatus,
+  assertSpawnNonZeroStatus
 };
