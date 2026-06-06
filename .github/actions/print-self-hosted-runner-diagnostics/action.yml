@@ -37,12 +37,15 @@ runs:
     - name: Verify PowerShell 7 (pwsh) is available
       shell: powershell
       run: |
-        if ($null -eq (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+        $pwshCommand = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue
+        if ($null -eq $pwshCommand -or
+            [string]::IsNullOrWhiteSpace($pwshCommand.Source) -or
+            -not (Test-Path $pwshCommand.Source -PathType Leaf)) {
             Write-Output ("::error title=pwsh missing on self-hosted runner::PowerShell 7 (pwsh) is not installed on runner '$env:RUNNER_NAME'. Install it before queueing Unity jobs -- see " +
             "docs/runbooks/unity-runners-after-transfer.md (PowerShell 7 prerequisite).")
             exit 1
         }
-        Write-Output "pwsh found at: $((Get-Command pwsh).Source)"
+        Write-Output "pwsh found at: $($pwshCommand.Source)"
     - name: Emit runner diagnostics
       shell: pwsh
       env:
@@ -124,6 +127,48 @@ runs:
             Write-Output ("  - " + $entry)
         }
         Write-Output "::endgroup::"
+    - name: Configure Git compression tools for Actions cache
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Continue'
+        $candidateDirs = New-Object System.Collections.Generic.List[string]
+        foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432)) {
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                continue
+            }
+            $dir = Join-Path $root 'Git\usr\bin'
+            if (-not $candidateDirs.Contains($dir)) {
+                [void]$candidateDirs.Add($dir)
+            }
+        }
+
+        $gitToolDir = $null
+        foreach ($dir in $candidateDirs) {
+            $gzipPath = Join-Path $dir 'gzip.exe'
+            $tarPath = Join-Path $dir 'tar.exe'
+            if ((Test-Path $gzipPath -PathType Leaf) -and (Test-Path $tarPath -PathType Leaf)) {
+                $gitToolDir = $dir
+                break
+            }
+        }
+
+        if ($null -ne $gitToolDir) {
+            $env:Path = "$gitToolDir;$env:Path"
+            if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_PATH)) {
+                Add-Content -Path $env:GITHUB_PATH -Value $gitToolDir -Encoding utf8
+            }
+            Write-Output "::notice::Prepended Git usr/bin for Actions cache compression tools"
+            Write-Output ("Git tool dir:          " + $gitToolDir)
+            Write-Output ("gzip:                  " + (Join-Path $gitToolDir 'gzip.exe'))
+            Write-Output ("tar:                   " + (Join-Path $gitToolDir 'tar.exe'))
+        } else {
+            Write-Output ("::warning::Git usr/bin with gzip.exe and tar.exe was not found; " +
+              "actions/cache may fail to restore/save compressed archives.")
+            Write-Output "Checked candidate Git usr/bin directories:"
+            foreach ($dir in $candidateDirs) {
+                Write-Output ("  - " + $dir)
+            }
+        }
     # Assert Unity host prerequisites (VC++ redist, long-paths, Defender
     # exclusions, pwsh, UCRT). Unity test jobs are detect-only: host/editor
     # repair belongs to scripts/unity/maintain-windows-runner.ps1 or the

@@ -38,11 +38,12 @@ name: Stuck Job Watchdog
 #     the PR, or escalate any other automatic action.
 #
 # Cancel attempts are capped at 2 per run-id per 24h via a small state file
-# on the `watchdog-state` orphan branch (commit-back pattern with a single
-# rebase+retry on push failure).
+# on the `watchdog-state` orphan branch. State is pushed immediately after each
+# successful cancel, with a single rebase+retry on push failure.
 #
-# Self-canceling workflow-level concurrency guarantees only one watchdog
-# instance ever runs.
+# Workflow-level concurrency guarantees only one watchdog instance ever runs;
+# newer schedules must not cancel an in-flight audit after it has cancelled a
+# stuck run but before it persists the state-branch counter.
 
 on:
   schedule:
@@ -51,7 +52,7 @@ on:
 
 concurrency:
   group: stuck-job-watchdog
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   actions: write
@@ -149,12 +150,12 @@ jobs:
           fi
 
           if [[ -s "${state_branch_probe}" ]]; then
-            if ! git_auth fetch origin "${STATE_BRANCH}"; then
+            if ! git_auth fetch origin "${STATE_BRANCH}:refs/remotes/origin/${STATE_BRANCH}"; then
               log_summary "WARN: state branch '${STATE_BRANCH}' exists per ls-remote but fetch failed; skipping this cycle."
               popd > /dev/null
               flush_summary_and_exit 0
             fi
-            git checkout "${STATE_BRANCH}"
+            git checkout -B "${STATE_BRANCH}" "refs/remotes/origin/${STATE_BRANCH}"
             log_summary "State branch '${STATE_BRANCH}' checked out."
           else
             log_summary "State branch '${STATE_BRANCH}' missing -- bootstrapping orphan branch."
@@ -171,6 +172,50 @@ jobs:
             fi
           fi
           mkdir -p "${STATE_DIR}"
+          state_dirty=0
+
+          persist_state_changes() {
+            local reason="${1:-state update}"
+            if (( state_dirty != 1 )); then
+              return 0
+            fi
+
+            git add "${STATE_DIR}"
+            if git diff-index --cached --quiet HEAD --; then
+              if git rev-parse --verify "refs/remotes/origin/${STATE_BRANCH}" > /dev/null 2>&1 \
+                  && [[ "$(git rev-parse HEAD)" == "$(git rev-parse "refs/remotes/origin/${STATE_BRANCH}")" ]]; then
+                state_dirty=0
+                return 0
+              fi
+            else
+              if ! git "${GIT_AUTHOR_ID[@]}" commit -m "Watchdog: ${reason} at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"; then
+                log_summary "WARN: state commit failed; counters may double-count next run."
+                return 1
+              fi
+            fi
+
+            if git_auth push origin "${STATE_BRANCH}"; then
+              log_summary "State branch updated (${reason})."
+              state_dirty=0
+              return 0
+            fi
+
+            log_summary "WARN: state push failed; attempting fetch + rebase + retry."
+            if git_auth fetch origin "${STATE_BRANCH}:refs/remotes/origin/${STATE_BRANCH}" \
+                && git rebase "refs/remotes/origin/${STATE_BRANCH}" \
+                && git_auth push origin "${STATE_BRANCH}"; then
+              log_summary "State branch updated on second attempt (${reason}, after rebase)."
+              state_dirty=0
+              return 0
+            fi
+
+            log_summary "WARN: state push failed twice; counters may double-count next run."
+            return 1
+          }
+
+          is_nonnegative_integer() {
+            [[ "${1:-}" =~ ^[0-9]+$ ]]
+          }
 
           # ------------------------------------------------------------------
           # 2. Enumerate queued runs older than MIN_QUEUE_AGE_SECONDS.
@@ -347,10 +392,17 @@ jobs:
                 parsed_last="$(jq -r '.last_cancel // .last_rerun // 0' <<< "${state_content}" 2>/dev/null)" || state_ok=0
               fi
               if [[ ${state_ok} -eq 1 ]]; then
-                cancels="${parsed_cancels}"
-                last_cancel="${parsed_last}"
-              else
+                if is_nonnegative_integer "${parsed_cancels}" && is_nonnegative_integer "${parsed_last}"; then
+                  cancels="${parsed_cancels}"
+                  last_cancel="${parsed_last}"
+                else
+                  state_ok=0
+                fi
+              fi
+              if [[ ${state_ok} -ne 1 ]]; then
                 log_summary "run ${run_id}: state file corrupt; resetting."
+              else
+                log_summary "run ${run_id}: loaded cancel state (cancels=${cancels}, last_cancel=${last_cancel})."
               fi
             fi
             # Reset counter if last action was >24h ago.
@@ -374,6 +426,7 @@ jobs:
             printf '{"cancels": %d, "last_cancel": %d}\n' "${cancels}" "${now_epoch}" > "${state_file}"
             git add "${state_file}"
             state_dirty=1
+            persist_state_changes "record cancel for run ${run_id}" || true
 
             # Decide redispatch path based on event + workflow_dispatch trigger.
             workflow_def="$(mktemp)"
@@ -430,21 +483,7 @@ jobs:
           # ------------------------------------------------------------------
           # 6. Commit + push state changes with a single rebase+retry.
           # ------------------------------------------------------------------
-          if (( state_dirty == 1 )); then
-            git "${GIT_AUTHOR_ID[@]}" commit -m "Watchdog: record cancels at $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || true
-            if git_auth push origin "${STATE_BRANCH}"; then
-              log_summary "State branch updated."
-            else
-              log_summary "WARN: state push failed; attempting fetch + rebase + retry."
-              if git_auth fetch origin "${STATE_BRANCH}" \
-                  && git rebase "origin/${STATE_BRANCH}" \
-                  && git_auth push origin "${STATE_BRANCH}"; then
-                log_summary "State branch updated on second attempt (after rebase)."
-              else
-                log_summary "WARN: state push failed twice; counters may double-count next run."
-              fi
-            fi
-          fi
+          persist_state_changes "final state sync" || true
 
           popd > /dev/null
 

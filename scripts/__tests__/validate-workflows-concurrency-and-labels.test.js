@@ -2857,4 +2857,46 @@ describe("stuck-job-watchdog.yml tightened thresholds", () => {
     expect(raw).toMatch(/MIN_QUEUE_AGE_SECONDS:\s*"300"/);
     expect(raw).not.toMatch(/MIN_QUEUE_AGE_SECONDS:\s*"600"/);
   });
+
+  test("does not self-cancel an in-flight watchdog audit", () => {
+    // A later scheduled watchdog run must not cancel the currently-running
+    // audit after it has cancelled a stuck run but before it has pushed the
+    // state-branch counter. GitHub concurrency still limits execution to one
+    // running audit while coalescing pending schedules.
+    expect(raw).toMatch(
+      /concurrency:[\s\S]*group:\s*stuck-job-watchdog[\s\S]*cancel-in-progress:\s*false/
+    );
+  });
+
+  test("state branch fetch creates a remote-tracking ref before checkout", () => {
+    // `git fetch origin watchdog-state` writes only FETCH_HEAD. The watchdog
+    // must fetch an explicit refspec and then checkout that remote-tracking
+    // ref, otherwise a cold runner fails with "pathspec 'watchdog-state' did
+    // not match any file(s) known to git" before it can audit anything.
+    expect(raw).toContain(
+      'git_auth fetch origin "${STATE_BRANCH}:refs/remotes/origin/${STATE_BRANCH}"'
+    );
+    expect(raw).toContain(
+      'git checkout -B "${STATE_BRANCH}" "refs/remotes/origin/${STATE_BRANCH}"'
+    );
+    expect(raw).not.toContain('git checkout "${STATE_BRANCH}"');
+  });
+
+  test("persists state immediately after each successful cancel", () => {
+    expect(raw).toContain("persist_state_changes()");
+    expect(raw).toContain('persist_state_changes "record cancel for run ${run_id}" || true');
+    expect(raw).toContain('persist_state_changes "final state sync" || true');
+    expect(raw).toContain("git diff-index --cached --quiet HEAD --");
+    expect(raw).toContain('git rebase "refs/remotes/origin/${STATE_BRANCH}"');
+  });
+
+  test("validates watchdog state counters before bash arithmetic", () => {
+    // Valid JSON can still be semantically corrupt, e.g.
+    // {"cancels":"x","last_cancel":"y"}. Those values must reset rather than
+    // flowing into `$(( ... ))` under `set -e`.
+    expect(raw).toContain("is_nonnegative_integer()");
+    expect(raw).toContain('is_nonnegative_integer "${parsed_cancels}"');
+    expect(raw).toContain('is_nonnegative_integer "${parsed_last}"');
+    expect(raw).toContain("state file corrupt; resetting");
+  });
 });

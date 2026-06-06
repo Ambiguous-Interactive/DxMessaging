@@ -194,6 +194,10 @@ describe("skip-on-empty CI contract", () => {
     }
 
     const verify = byName("Verify tests actually ran");
+    const verifyIf = String(verify.if).replace(/\s|\$\{\{|\}\}/g, "");
+    expect(verifyIf).toContain("steps.compute.outcome=='success'");
+    expect(verifyIf).toContain("steps.compute.outputs.is-empty=='true'");
+    expect(verifyIf).toContain("steps.run_tests.outcome!='skipped'");
     expect(String(verify.with["expected-empty"])).toContain("steps.compute.outputs.is-empty");
   });
 });
@@ -262,7 +266,20 @@ describe("analyzer DLLs are Editor-disabled (non-precompiled) and label-activate
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (["node_modules", ".artifacts", "Library", "Temp", "obj", "bin", ".git", "site", ".venv", "coverage"].includes(entry.name)) {
+        if (
+          [
+            "node_modules",
+            ".artifacts",
+            "Library",
+            "Temp",
+            "obj",
+            "bin",
+            ".git",
+            "site",
+            ".venv",
+            "coverage"
+          ].includes(entry.name)
+        ) {
           continue;
         }
         collectMetaFiles(full, acc);
@@ -327,9 +344,9 @@ describe("analyzer DLLs are Editor-disabled (non-precompiled) and label-activate
     const setup = read(SETUP_CSC_RSP);
     expect(setup).not.toContain("GetAnalyzerArguments");
     expect(setup).not.toContain('yield return $"-a:');
-    expect(setup).not.toContain('new( GetAnalyzerArguments');
+    expect(setup).not.toContain("new( GetAnalyzerArguments");
     expect(setup).toContain("foundStaleEntries = true");
-    expect(setup).toContain("StartsWith(\"-a:\"");
+    expect(setup).toContain('StartsWith("-a:"');
     expect(setup).toContain("RoslynAnalyzer-labeled");
   });
 });

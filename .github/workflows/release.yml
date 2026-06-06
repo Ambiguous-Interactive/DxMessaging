@@ -262,10 +262,10 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       # Skip provisioning, the org lock, and the run when no DxMessaging test
-      # assembly matched (compute resolved an empty list). The verify step
-      # stays !cancelled() but is told the run was an expected skip via
-      # expected-empty. Mirrors unity-tests.yml. For the current asmdef set
-      # this never triggers; it is the robustness path for an empty target.
+      # assembly matched (compute resolved an empty list). The verify step runs
+      # only after compute succeeds and is told the run was an expected skip via
+      # expected-empty. Mirrors unity-tests.yml. For the current asmdef set this
+      # never triggers; it is the robustness path for an empty target.
       - name: Provision Unity Editor
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 180
@@ -303,6 +303,7 @@ jobs:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
       - name: Run Unity Test Runner
+        id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 120
         shell: pwsh
@@ -337,8 +338,8 @@ jobs:
 
       # CANCELLATION + TIMEOUT DIAGNOSTIC: when Unity 2022 hangs in csc the
       # runner step times out (or the operator cancels), and the verify
-      # step below (gated on `!cancelled()`) skips -- so its catastrophic-
-      # pattern scan never fires either. This step covers both
+      # step below skips -- so its catastrophic-pattern scan never fires
+      # either. This step covers both
       # failure() AND cancelled() so the operator has SOMETHING to look at
       # in the GitHub summary; matches unity-tests.yml / unity-benchmarks.yml.
       - name: Dump Unity log tail on failure or cancellation
@@ -352,9 +353,16 @@ jobs:
       # composite fails unless a results XML exists AND reports total > 0.
       # Gated with !cancelled() (NOT always()) so a user-initiated cancel
       # does not race against this step and emit a misleading "tests did not
-      # run" annotation; matches unity-tests.yml and unity-benchmarks.yml.
+      # run" annotation. Also skips when setup/provisioning/lock work failed
+      # before the Unity run step attempted; that earlier failure remains the
+      # actionable signal. Matches unity-tests.yml and unity-benchmarks.yml.
       - name: Verify tests actually ran
-        if: ${{ !cancelled() }}
+        if: >-
+          ${{
+            !cancelled() &&
+            steps.compute.outcome == 'success' &&
+            (steps.compute.outputs.is-empty == 'true' || steps.run_tests.outcome != 'skipped')
+          }}
         uses: ./.github/actions/verify-unity-results
         with:
           results-dir: .artifacts/unity/release-editmode

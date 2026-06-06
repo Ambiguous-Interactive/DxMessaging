@@ -655,15 +655,13 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
   );
 
   // Pin the gating condition shape on every "Verify tests actually ran" step
-  // across all workflows. A revert to `if: always()` would silently re-introduce
-  // the race against user-initiated cancellations -- the verify step would run
-  // even when the run was cancelled and emit a misleading "tests did not run"
-  // error annotation. We forbid `always()` on every "Verify tests" step and
-  // require the canonical `!cancelled()` shape on the REQUIRED Unity workflows
-  // (unity-tests.yml, unity-benchmarks.yml, release.yml). The non-required
-  // GameCI experiment uses a different `steps.<id>.outcome == 'success'` guard
-  // by design (it is the only "Verify tests" step that intentionally skips on
-  // an earlier step's failure), so we only require it not be `always()`.
+  // across all workflows. A revert to `if: always()` would silently
+  // re-introduce the race against user-initiated cancellations. A raw
+  // `!cancelled()` guard also obscures earlier setup failures by running the
+  // verifier when setup/provisioning/lock work prevented Unity from launching.
+  // Compute-driven verify steps must only run for intentional empty targets or
+  // after the Unity run step actually attempted; the verify-unity-results
+  // composite still owns the expected-empty behavior.
   function collectVerifyTestsSteps() {
     const records = [];
     for (const workflow of fs.readdirSync(WORKFLOWS_DIR).filter((name) => /\.ya?ml$/i.test(name))) {
@@ -679,9 +677,9 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
     return records;
   }
 
-  function isAlwaysCondition(ifValue) {
+  function normalizeActionsIfCondition(ifValue) {
     if (typeof ifValue !== "string") {
-      return false;
+      return "";
     }
     // Strip ${{ }} wrapper and ALL whitespace so we match `always()`,
     // `${{ always() }}`, `${{  always()  }}`, `${{ always () }}`, and any
@@ -689,22 +687,56 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
     // robustness tweak -- the production workflows write `always()` exactly,
     // but yamlfmt / prettier could re-flow whitespace without changing
     // semantics and we don't want that to silently flip a guard test.
-    const inner = ifValue
+    return ifValue
       .replace(/^\s*\$\{\{\s*/, "")
       .replace(/\s*\}\}\s*$/, "")
       .replace(/\s+/g, "");
-    return inner === "always()";
   }
 
-  function isCancelledGuard(ifValue) {
-    if (typeof ifValue !== "string") {
-      return false;
+  function isAlwaysCondition(ifValue) {
+    return normalizeActionsIfCondition(ifValue) === "always()";
+  }
+
+  function expectedAttemptedRunVerifyCondition(runStepId) {
+    return (
+      "!cancelled()&&" +
+      "steps.compute.outcome=='success'&&" +
+      `(steps.compute.outputs.is-empty=='true'||steps.${runStepId}.outcome!='skipped')`
+    );
+  }
+
+  function expectedRunStepIdForVerifyGuard(ifValue) {
+    const inner = normalizeActionsIfCondition(ifValue);
+    for (const runStepId of ["run_tests", "game_ci"]) {
+      if (inner === expectedAttemptedRunVerifyCondition(runStepId)) {
+        return runStepId;
+      }
     }
-    const inner = ifValue
-      .replace(/^\s*\$\{\{\s*/, "")
-      .replace(/\s*\}\}\s*$/, "")
-      .replace(/\s+/g, "");
-    return inner === "!cancelled()";
+    return null;
+  }
+
+  function isAttemptedRunVerifyGuard(ifValue) {
+    return expectedRunStepIdForVerifyGuard(ifValue) !== null;
+  }
+
+  function usesComputeExpectedEmpty(step) {
+    const expectedEmpty = step && step.with && step.with["expected-empty"];
+    return String(expectedEmpty || "")
+      .replace(/\s+/g, "")
+      .includes("steps.compute.outputs.is-empty");
+  }
+
+  function collectVerifyTestsStepsForWorkflow(workflow) {
+    const parsed = loadWorkflowYaml(workflow);
+    const verifySteps = [];
+    for (const [jobId, job] of Object.entries(parsed.jobs || {})) {
+      for (const step of job.steps || []) {
+        if (typeof step.name === "string" && /verify\s+tests/i.test(step.name)) {
+          verifySteps.push({ jobId, step });
+        }
+      }
+    }
+    return verifySteps;
   }
 
   test("every 'Verify tests' step exists and was located by the scanner", () => {
@@ -728,25 +760,46 @@ describe("Unity-credential-using jobs share the same runner + concurrency contra
   });
 
   test.each(UNITY_LICENSED_JOBS)(
-    "$workflow 'Verify tests actually ran' step uses if: !cancelled() (not always(), not raw on/off)",
+    "$workflow 'Verify tests actually ran' step waits for an attempted Unity run",
     ({ workflow }) => {
-      const parsed = loadWorkflowYaml(workflow);
-      const verifySteps = [];
-      for (const job of Object.values(parsed.jobs || {})) {
-        for (const step of job.steps || []) {
-          if (typeof step.name === "string" && /verify\s+tests/i.test(step.name)) {
-            verifySteps.push(step);
-          }
-        }
-      }
+      const verifySteps = collectVerifyTestsStepsForWorkflow(workflow).map(({ step }) => step);
       expect(verifySteps.length).toBeGreaterThan(0);
       for (const step of verifySteps) {
         expect(typeof step.if).toBe("string");
         expect(isAlwaysCondition(step.if)).toBe(false);
-        expect(isCancelledGuard(step.if)).toBe(true);
+        expect(isAttemptedRunVerifyGuard(step.if)).toBe(true);
       }
     }
   );
+
+  test("compute-driven verify steps only run for expected empty or attempted Unity runs", () => {
+    const offenders = collectVerifyTestsSteps()
+      .filter(({ step }) => usesComputeExpectedEmpty(step))
+      .filter(({ step }) => !isAttemptedRunVerifyGuard(step.if))
+      .map(({ workflow, jobId, step }) => `${workflow}:${jobId} -- if: ${step.if || "<missing>"}`);
+    expect(offenders).toEqual([]);
+  });
+
+  test("attempted-run verify guards reference an existing run step id", () => {
+    const offenders = [];
+    for (const { workflow, jobId, step } of collectVerifyTestsSteps().filter(({ step }) =>
+      usesComputeExpectedEmpty(step)
+    )) {
+      const runStepId = expectedRunStepIdForVerifyGuard(step.if);
+      if (runStepId === null) {
+        offenders.push(`${workflow}:${jobId} -- missing run-step outcome guard`);
+        continue;
+      }
+
+      const parsed = loadWorkflowYaml(workflow);
+      const job = parsed.jobs[jobId];
+      const hasRunStep = (job.steps || []).some((candidate) => candidate.id === runStepId);
+      if (!hasRunStep) {
+        offenders.push(`${workflow}:${jobId} -- no step id '${runStepId}'`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 
   // Canonical labels carried by both the verify-unity-results composite
   // action and scripts/unity/run-ci-tests.ps1's $script:CatastrophicPatterns
@@ -1066,6 +1119,8 @@ describe("print-self-hosted-runner-diagnostics composite action", () => {
     // is missing.
     expect(preflight.run).toContain("Get-Command");
     expect(preflight.run).toContain("pwsh");
+    expect(preflight.run).toContain("-CommandType Application");
+    expect(preflight.run).toContain("Test-Path");
     expect(preflight.run).toContain("exit 1");
   });
 
@@ -1074,6 +1129,22 @@ describe("print-self-hosted-runner-diagnostics composite action", () => {
     expect(diagnostics).toBeDefined();
     expect(diagnostics.name).toBe("Emit runner diagnostics");
     expect(String(diagnostics.shell).toLowerCase()).toBe("pwsh");
+  });
+
+  test("configures Git cache compression tools before host prereq assertion", () => {
+    const cacheToolIndex = steps.findIndex(
+      (step) => step.name === "Configure Git compression tools for Actions cache"
+    );
+    const assertIndex = steps.findIndex((step) => step.name === "Assert Unity host prerequisites");
+    expect(cacheToolIndex).toBeGreaterThan(1);
+    expect(assertIndex).toBeGreaterThan(cacheToolIndex);
+
+    const cacheTools = steps[cacheToolIndex];
+    expect(String(cacheTools.shell).toLowerCase()).toBe("pwsh");
+    expect(String(cacheTools.run)).toContain("Git\\usr\\bin");
+    expect(String(cacheTools.run)).toContain("GITHUB_PATH");
+    expect(String(cacheTools.run)).toContain("gzip.exe");
+    expect(String(cacheTools.run)).toContain("tar.exe");
   });
 });
 
@@ -1582,23 +1653,20 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(commitJob.if).toContain("needs.perf-benchmarks.result == 'success'");
     // Gated on the App credentials being present so an unprovisioned repo degrades
     // to a no-op instead of a red push-build.
-    expect(commitJob.if).toContain(
-      "needs.runner-preflight.outputs.has-autocommit-app == 'true'"
-    );
+    expect(commitJob.if).toContain("needs.runner-preflight.outputs.has-autocommit-app == 'true'");
     // It does NOT key off pull_request (that path comments, never commits).
     expect(commitJob.if).not.toContain("github.event_name == 'pull_request'");
 
     // It mints a GitHub App installation token from the AUTO_COMMIT_APP_* secrets
     // and uses THAT (not GITHUB_TOKEN) for the protected-branch push.
     const appTokenStep = commitJob.steps.find(
-      (step) => typeof step.uses === "string" && step.uses.startsWith("actions/create-github-app-token@")
+      (step) =>
+        typeof step.uses === "string" && step.uses.startsWith("actions/create-github-app-token@")
     );
     expect(appTokenStep).toBeDefined();
     expect(appTokenStep.id).toBe("app-token");
     expect(appTokenStep.with["app-id"]).toBe("${{ secrets.AUTO_COMMIT_APP_ID }}");
-    expect(appTokenStep.with["private-key"]).toBe(
-      "${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}"
-    );
+    expect(appTokenStep.with["private-key"]).toBe("${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}");
 
     // Renders, prettier --write, computes changed from git diff, then --check
     // guards the required prettier gate (now load-bearing: the paths-ignore loop

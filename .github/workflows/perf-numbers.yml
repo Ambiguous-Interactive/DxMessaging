@@ -320,9 +320,10 @@ jobs:
       # a player toolchain. Skip provisioning, the org lock, and the run when the
       # compute step resolved an empty assembly list, so an empty discovery never
       # takes the paid Unity seat / org lock only to fail late at verify. The
-      # verify step stays !cancelled() and is told via expected-empty. Mirrors
-      # unity-tests.yml. The perf list is structurally non-empty, so this is
-      # defense-in-depth and uniformity with the required workflows.
+      # verify step runs only after compute succeeds and is told via
+      # expected-empty. Mirrors unity-tests.yml. The perf list is structurally
+      # non-empty, so this is defense-in-depth and uniformity with the required
+      # workflows.
       - name: Provision Unity Editor
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 180
@@ -360,6 +361,7 @@ jobs:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
       - name: Run Unity Test Runner
+        id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 120
         shell: pwsh
@@ -399,7 +401,12 @@ jobs:
           label: Perf ${{ matrix.unity-version }} ${{ matrix.test-mode }}
 
       - name: Verify tests actually ran
-        if: ${{ !cancelled() }}
+        if: >-
+          ${{
+            !cancelled() &&
+            steps.compute.outcome == 'success' &&
+            (steps.compute.outputs.is-empty == 'true' || steps.run_tests.outcome != 'skipped')
+          }}
         uses: ./.github/actions/verify-unity-results
         with:
           results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}

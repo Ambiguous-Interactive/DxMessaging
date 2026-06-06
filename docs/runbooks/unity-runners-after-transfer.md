@@ -153,6 +153,31 @@ time; until it is restarted it will keep reporting `pwsh: command not found`
 even though a fresh interactive shell can find `pwsh`. Re-run the queued
 Unity workflow once the agent is back online.
 
+## Git compression tools for Actions cache
+
+Self-hosted Windows Unity runners also need Git for Windows' Unix tools
+available to GitHub Actions cache steps. `actions/cache` restores and saves
+archives through `tar` and `gzip`; when the runner PATH exposes Git Bash but
+omits `C:\Program Files\Git\usr\bin`, cache post steps can warn with
+`gzip: command not found` and fail to save the Unity Library cache.
+
+The `print-self-hosted-runner-diagnostics` composite action now prepends Git's
+`usr\bin` directory to `$GITHUB_PATH` when it finds both `gzip.exe` and
+`tar.exe`, and emits a warning when that directory is absent. This makes the
+current job reliable and gives the operator an actionable host configuration
+signal for future runs.
+
+To verify locally on the runner:
+
+```powershell
+Get-Command gzip.exe
+Get-Command tar.exe
+```
+
+If either command is missing, install Git for Windows or add
+`C:\Program Files\Git\usr\bin` to the runner service PATH, then restart the
+runner agent so the updated environment is inherited.
+
 ## Windows host prerequisites (0xC0000135 / STATUS_DLL_NOT_FOUND)
 
 Unity Editor cannot launch on a self-hosted Windows runner unless the host has
