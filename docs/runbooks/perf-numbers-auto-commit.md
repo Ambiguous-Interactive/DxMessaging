@@ -16,9 +16,9 @@ it commits the refreshed doc **directly to the default branch**.
 
 The push is authenticated by a **GitHub App installation token**, not the
 built-in `GITHUB_TOKEN`. The built-in token cannot push to a protected branch:
-`github-actions[bot]` is a system account, so it is not selectable as a ruleset
-bypass actor and GitHub blocks the push by design. A dedicated GitHub App that
-**is** on the bypass list does the push instead.
+`github-actions[bot]` is a system account, so it is not selectable as a
+branch-protection bypass actor and GitHub blocks the push by design. A dedicated
+GitHub App that **is** allowed to bypass the protection does the push instead.
 
 App-token pushes **do** re-trigger workflows (only the built-in `GITHUB_TOKEN`
 suppresses that). Recursion is therefore broken at the trigger: the `push`
@@ -51,23 +51,43 @@ the App has not been provisioned yet.
 1. On the App's page choose **Install App** and install it on
    `Ambiguous-Interactive/DxMessaging` (only this repository is required).
 
-### Step 3 -- add the App to the default-branch bypass list
+### Step 3 -- let the App bypass the default-branch protection
 
 The default branch is protected, so a direct push is rejected with `GH006:
 Protected branch update failed` / `Changes must be made through a pull request`
-unless the pushing actor can bypass the rule.
+unless the pushing actor can bypass the rule. This repo uses a **classic branch
+protection rule** on `master`/`main`, so configure it there:
 
-1. Open **Settings -> Rules -> Rulesets**.
-1. Open the ruleset that targets `master` (and/or `main`) -- for this repo that is
-   the **Copilot review for default branch** ruleset.
-1. In the **Bypass list**, select **Add bypass**, then in the actor picker choose
-   the App you just created (it appears once installed). Save the ruleset.
-1. If the ruleset also requires status checks, confirm bypass actors may push
-   without them; otherwise the push is still rejected.
+1. Open **Settings -> Branches**.
+1. Edit the branch protection rule for `master` (and/or `main`).
+1. Under **Require a pull request before merging**, enable **Allow specified
+   actors to bypass required pull requests** and add the App you created (App
+   actors appear here only once the org owns them and the App is installed).
+1. If **Restrict who can push to matching branches** is enabled, also add the App
+   to that allowed-pushers list.
+1. Save the rule.
 
-If the default branch uses **classic branch protection** instead of a ruleset,
-edit the branch protection rule for `master`/`main`, enable **Allow specified
-actors to bypass required pull requests**, and add the App there.
+**Important caveat for classic branch protection.** The bypass above only waives
+the _pull-request_ requirement. Classic branch protection has **no** way to let a
+non-admin actor (including a GitHub App) bypass **required status checks** -- that
+option simply does not exist for classic rules. So:
+
+- If the rule does **not** check **Require status checks to pass before merging**,
+  the App bypass is sufficient and the direct push succeeds.
+- If the rule **does** require status checks, the App push is still rejected with
+  `GH006` (the pushed commit has not passed the required checks). In that case you
+  must either (a) **migrate this branch's protection to a repository ruleset** --
+  a ruleset's bypass list waives the _entire_ ruleset, status checks included --
+  and add the App to that ruleset's **Bypass list** (Settings -> Rules ->
+  Rulesets -> the ruleset -> Bypass list -> Add bypass -> the App); or (b) push
+  with a Personal Access Token belonging to a repository **admin**, since admins
+  bypass classic protections when **Do not allow bypassing the above settings**
+  is unchecked. Option (a) is recommended.
+
+Note: this repo also has a **Copilot review for default branch** _ruleset_. If
+that ruleset (not just the classic rule) is what blocks the push, add the App to
+its **Bypass list** as well -- both systems are enforced independently, so the
+pushing actor must satisfy every rule that targets the branch.
 
 ### Step 4 -- store the credentials as Actions secrets
 
@@ -78,8 +98,9 @@ Add these as repository (or organization) **Actions** secrets:
    including the `-----BEGIN...` and `-----END...` lines.
 
 The workflow reads both via `actions/create-github-app-token`. The same App and
-secrets can back any other auto-commit workflow (for example a future fix to
-`update-llms-txt.yml`, which has the same protected-branch limitation).
+secrets back every auto-commit workflow that pushes to the default branch -- both
+`perf-numbers.yml` and `update-llms-txt.yml` use them, so this one provisioning
+unblocks both at once.
 
 ## Context: the "create and approve pull requests" toggle
 
@@ -107,7 +128,9 @@ mode is understood; you do **not** need to enable it for this approach.
 1. Confirm that doc-only commit does **not** start a follow-up Performance
    Numbers run (this proves the `paths-ignore` loop break works).
 1. Confirm the run did **not** fail with `GH006` / protected-branch -- a failure
-   there means the App is missing from the bypass list (Step 3).
+   there means the App is not yet allowed to bypass the protection (Step 3); if
+   the branch requires status checks, see the classic-branch-protection caveat in
+   Step 3 (you likely need a ruleset bypass or an admin PAT).
 
 If the numbers did not move, the `commit-perf-doc` job renders, finds no diff,
 and pushes nothing. That is the expected no-op outcome. If the

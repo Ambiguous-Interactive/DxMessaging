@@ -3,10 +3,10 @@ name: Update llms.txt
 
 # Regenerates llms.txt and, on the default branch, commits it back. The built-in
 # GITHUB_TOKEN cannot push to a protected branch (github-actions[bot] is a system
-# account, not a selectable ruleset bypass actor), so the push is authenticated by
-# a GitHub App installation token (secrets.AUTO_COMMIT_APP_ID +
-# secrets.AUTO_COMMIT_APP_PRIVATE_KEY) whose App is on the branch-ruleset bypass
-# list. If those secrets are absent the commit degrades to a logged no-op (the
+# account, not a selectable branch-protection bypass actor), so the push is
+# authenticated by a GitHub App installation token (secrets.AUTO_COMMIT_APP_ID +
+# secrets.AUTO_COMMIT_APP_PRIVATE_KEY) whose App is allowed to bypass branch
+# protection. If those secrets are absent the commit degrades to a logged no-op (the
 # regeneration + validation still run). See docs/runbooks/perf-numbers-auto-commit.md.
 on:
   schedule:

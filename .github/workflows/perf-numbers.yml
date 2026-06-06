@@ -12,8 +12,9 @@ name: Performance Numbers
 # main (after the PR merges) the same benchmarks run and, if the numbers moved, CI
 # commits the refreshed doc DIRECTLY to the default branch using a GitHub App
 # installation token. The built-in GITHUB_TOKEN cannot push to a protected branch
-# (github-actions[bot] is a system account and is not a selectable ruleset bypass
-# actor), so a dedicated App that IS on the bypass list does the push. App-token
+# (github-actions[bot] is a system account and is not a selectable
+# branch-protection bypass actor), so a dedicated App that IS allowed to bypass
+# the protection does the push. App-token
 # pushes DO re-trigger workflows, so recursion is broken the simple way: the push
 # trigger ignores docs/architecture/performance.md below, so the doc-only
 # auto-commit cannot re-run the benchmark -- no loop guard needed. The committed
@@ -22,7 +23,7 @@ name: Performance Numbers
 #
 # PREREQUISITE: a GitHub App (App ID in secrets.AUTO_COMMIT_APP_ID, private key in
 # secrets.AUTO_COMMIT_APP_PRIVATE_KEY) with Contents: read and write, installed on
-# this repo and added to the master/main branch-ruleset bypass list. Without it
+# this repo and allowed to bypass the master/main branch protection. Without it
 # the push is rejected with GH006 / "changes must be made through a pull request";
 # if the secrets are absent the commit job degrades to a logged no-op. See
 # docs/runbooks/perf-numbers-auto-commit.md for the exact setup + click-paths.
@@ -583,8 +584,8 @@ jobs:
     # PUSH-TO-DEFAULT-BRANCH path: after a PR merges, re-render the doc from the
     # merged code and, if the numbers moved, commit it DIRECTLY to the pushed
     # default branch using a GitHub App installation token. The built-in
-    # GITHUB_TOKEN cannot push to a protected branch, so a dedicated App that is on
-    # the branch-ruleset bypass list does the push. Recursion is broken by the push
+    # GITHUB_TOKEN cannot push to a protected branch, so a dedicated App that is
+    # allowed to bypass branch protection does the push. Recursion is broken by the push
     # trigger's paths-ignore on the perf doc, not by token identity, so the
     # doc-only auto-commit cannot re-run the benchmark -- no loop guard needed.
     # Gated on a clean benchmark AND the App credentials being present (otherwise
@@ -610,8 +611,8 @@ jobs:
       - name: Generate auto-commit GitHub App token
         id: app-token
         # The App must have Contents: read and write, be installed on this repo,
-        # and be on the master/main branch-ruleset bypass list. The job `if` above
-        # already proved both secrets are present.
+        # and be allowed to bypass the master/main branch protection. The job `if`
+        # above already proved both secrets are present.
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
