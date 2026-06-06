@@ -9,17 +9,18 @@ name: Performance Numbers
 # branch: a GITHUB_TOKEN push does not re-trigger the required pull_request checks
 # (and a doc-only commit path-filters the others out), so the new head would have
 # no successful required checks and merge would be blocked. On push to master or
-# main (after the PR merges) the same benchmarks run and, if the numbers moved, CI
-# commits the refreshed doc DIRECTLY to the default branch using a GitHub App
-# installation token. The built-in GITHUB_TOKEN cannot push to a protected branch
-# (github-actions[bot] is a system account and is not a selectable
-# branch-protection bypass actor), so a dedicated App that IS allowed to bypass
-# the protection does the push. App-token
-# pushes DO re-trigger workflows, so recursion is broken the simple way: the push
-# trigger ignores docs/architecture/performance.md below, so the doc-only
-# auto-commit cannot re-run the benchmark -- no loop guard needed. The committed
-# numbers are therefore owned by CI, not by committed state, manual runs, or
-# PR-body text.
+# main (after the PR merges) the same benchmarks run and, if the numbers moved,
+# CI attempts to commit the refreshed doc DIRECTLY to the default branch using a
+# GitHub App installation token. The built-in GITHUB_TOKEN cannot push to a
+# protected branch (github-actions[bot] is a system account and is not a
+# selectable branch-protection bypass actor), so a dedicated App that IS allowed
+# to bypass the protection does the push. If the branch advances before this
+# long benchmark run reaches the push step, the job warns and skips the stale
+# artifacts. App-token pushes DO re-trigger workflows, so recursion is broken the
+# simple way: the push trigger ignores docs/architecture/performance.md below, so
+# the doc-only auto-commit cannot re-run the benchmark -- no loop guard needed.
+# The committed numbers are therefore owned by CI, not by committed state, manual
+# runs, or PR-body text.
 #
 # PREREQUISITE: a GitHub App (App ID in secrets.AUTO_COMMIT_APP_ID, private key in
 # secrets.AUTO_COMMIT_APP_PRIVATE_KEY) with Contents: read and write, installed on
@@ -45,9 +46,10 @@ on:
       - docs/architecture/performance.md
   workflow_dispatch:
 
-# Serialize merge-path runs on the same ref so two post-merge push jobs cannot
-# race into a non-fast-forward direct push when PRs land in quick succession. We
-# do NOT cancel in-progress runs -- that would abort an in-flight benchmark.
+# Serialize merge-path runs on the same ref so two post-merge push jobs from
+# this workflow do not race each other. A separate freshness check still guards
+# against unrelated default-branch pushes landing while the benchmarks run. We do
+# NOT cancel in-progress runs -- that would abort an in-flight benchmark.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -218,6 +220,9 @@ jobs:
              [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then
             echo "has-app=true" >> "${GITHUB_OUTPUT}"
           else
+            if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+              echo "::warning::AUTO_COMMIT_APP_* secrets are not set; skipping the perf doc auto-commit. See docs/runbooks/perf-numbers-auto-commit.md."
+            fi
             echo "has-app=false" >> "${GITHUB_OUTPUT}"
           fi
 
@@ -519,6 +524,7 @@ jobs:
           PERF_TABLE_FILE: ${{ steps.render.outputs.table-file }}
           PERF_CHANGED: ${{ steps.render.outputs.changed }}
           PERF_VERSION: ${{ env.LATEST_VERSION }}
+          HAS_AUTOCOMMIT_APP: ${{ needs.runner-preflight.outputs.has-autocommit-app }}
           # The PR head commit the numbers were rendered against (the checkout
           # ref above). NOT context.sha, which on pull_request events is the
           # transient merge commit that does not exist on the branch.
@@ -547,8 +553,12 @@ jobs:
             const commitRef = headSha
               ? `commit [\`${headSha.slice(0, 7)}\`](${repoUrl}/commit/${headSha})`
               : "this branch";
+            const autoCommitReady = process.env.HAS_AUTOCOMMIT_APP === "true";
+            const autoCommitNote = autoCommitReady
+              ? "CI commits the refreshed doc directly to the default branch after this PR merges."
+              : "AUTO_COMMIT_APP_* secrets are missing, so CI will warn and skip the post-merge doc commit.";
             const note = changed
-              ? "These numbers MOVED versus the committed doc; CI commits the refreshed doc directly to the default branch after this PR merges."
+              ? `These numbers MOVED versus the committed doc; ${autoCommitNote}`
               : "These numbers are UNCHANGED versus the committed doc.";
             const body = [
               marker,
@@ -592,11 +602,13 @@ jobs:
     # merged code and, if the numbers moved, commit it DIRECTLY to the pushed
     # default branch using a GitHub App installation token. The built-in
     # GITHUB_TOKEN cannot push to a protected branch, so a dedicated App that is
-    # allowed to bypass branch protection does the push. Recursion is broken by the push
-    # trigger's paths-ignore on the perf doc, not by token identity, so the
-    # doc-only auto-commit cannot re-run the benchmark -- no loop guard needed.
-    # Gated on a clean benchmark AND the App credentials being present (otherwise
-    # this job degrades to a logged no-op). See docs/runbooks/perf-numbers-auto-commit.md.
+    # allowed to bypass branch protection does the push. Recursion is broken by
+    # the push trigger's paths-ignore on the perf doc, not by token identity, so
+    # the doc-only auto-commit cannot re-run the benchmark -- no loop guard
+    # needed. Gated on a clean benchmark AND the App credentials being present
+    # (otherwise this job degrades to a logged no-op); stale benchmark artifacts
+    # also warn and skip if another merge advanced the branch first. See
+    # docs/runbooks/perf-numbers-auto-commit.md.
     if: >-
       ${{
         github.event_name == 'push' &&
@@ -631,7 +643,29 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
 
+      - name: Check default branch is still current
+        id: default-branch
+        env:
+          GH_FETCH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth_header="$(printf 'x-access-token:%s' "${GH_FETCH_TOKEN}" | base64 | tr -d '\n')"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            fetch --no-tags --depth=1 origin \
+            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
+          if [ "${latest_sha}" != "${GITHUB_SHA}" ]; then
+            message="Default branch ${GITHUB_REF_NAME} advanced from ${GITHUB_SHA} to ${latest_sha}; "
+            message+="skipping the perf doc auto-commit for stale benchmark artifacts. "
+            message+="A newer push run will publish current numbers."
+            echo "::warning::${message}"
+            echo "fresh=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "fresh=true" >> "${GITHUB_OUTPUT}"
+
       - name: Setup Node.js
+        if: steps.default-branch.outputs.fresh == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: "22.18.0"
@@ -639,6 +673,7 @@ jobs:
           cache-dependency-path: package.json
 
       - name: Install dependencies
+        if: steps.default-branch.outputs.fresh == 'true'
         run: |
           if [ -f package-lock.json ]; then
             npm ci
@@ -647,6 +682,7 @@ jobs:
           fi
 
       - name: Download perf benchmark artifacts
+        if: steps.default-branch.outputs.fresh == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: perf-${{ env.LATEST_VERSION }}-*
@@ -654,6 +690,7 @@ jobs:
 
       - name: Render dispatch-throughput table from this run
         id: render
+        if: steps.default-branch.outputs.fresh == 'true'
         run: |
           set -euo pipefail
           inputs=()
@@ -677,28 +714,61 @@ jobs:
           fi
 
       - name: Verify rendered doc passes the required prettier gate
-        if: steps.render.outputs.changed == 'true'
+        if: steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'
         # Belt-and-suspenders, now load-bearing: the paths-ignore loop break means
         # the committed doc does not get a fresh markdown-json.yml run, so fail
         # loudly HERE rather than push a doc that is red on the required prettier
         # gate.
         run: node scripts/run-managed-prettier.js --check "${PERF_DOC}"
 
-      - name: Configure push credentials
-        if: steps.render.outputs.changed == 'true'
+      - name: Commit and push refreshed perf doc
+        if: steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'
         env:
           GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: git remote set-url origin "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+        run: |
+          set -euo pipefail
+          auth_header="$(printf 'x-access-token:%s' "${GH_PUSH_TOKEN}" | base64 | tr -d '\n')"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            fetch --no-tags --depth=1 origin \
+            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
+          if [ "${latest_sha}" != "${GITHUB_SHA}" ]; then
+            message="Default branch ${GITHUB_REF_NAME} advanced from ${GITHUB_SHA} to ${latest_sha}; "
+            message+="skipping the perf doc auto-commit for stale benchmark artifacts. "
+            message+="A newer push run will publish current numbers."
+            echo "::warning::${message}"
+            exit 0
+          fi
 
-      - name: Commit and push refreshed perf doc
-        if: steps.render.outputs.changed == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v7
-        with:
-          commit_message: "docs(perf): auto-update dispatch throughput numbers"
-          file_pattern: docs/architecture/performance.md
-          commit_user_name: github-actions[bot]
-          commit_user_email: github-actions[bot]@users.noreply.github.com
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -- "${PERF_DOC}"
+          if git diff --cached --quiet -- "${PERF_DOC}"; then
+            echo "No staged perf doc changes remain; nothing to commit."
+            exit 0
+          fi
+          git commit -m "docs(perf): auto-update dispatch throughput numbers"
 
-      - name: Clear push credentials
-        if: ${{ always() && steps.render.outputs.changed == 'true' }}
-        run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          set +e
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            push origin "HEAD:${GITHUB_REF_NAME}"
+          push_status=$?
+          set -e
+          if [ "${push_status}" -eq 0 ]; then
+            exit 0
+          fi
+
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            fetch --no-tags --depth=1 origin \
+            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          latest_after_push="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
+          if [ "${latest_after_push}" != "${GITHUB_SHA}" ]; then
+            message="Default branch ${GITHUB_REF_NAME} advanced from ${GITHUB_SHA} "
+            message+="to ${latest_after_push} during the perf doc push; skipping stale "
+            message+="benchmark artifacts. A newer push run will publish current numbers."
+            echo "::warning::${message}"
+            exit 0
+          fi
+
+          echo "::error::Perf doc auto-commit push failed while ${GITHUB_REF_NAME} still pointed at ${GITHUB_SHA}."
+          exit "${push_status}"

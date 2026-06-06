@@ -4,7 +4,7 @@ id: "dispatch-hot-path"
 category: "performance"
 version: "1.0.0"
 created: "2026-05-05"
-updated: "2026-05-05"
+updated: "2026-06-06"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -111,7 +111,8 @@ automatically by the `perf-numbers.yml` workflow (it re-runs the benchmarks on
 ELI-MACHINE at the latest Unity version on every PR change and posts the refreshed
 numbers as a non-blocking PR comment; after merge, CI commits the refreshed
 `docs/architecture/performance.md` table directly to the default branch via a
-GitHub App token push (no PR); see the
+GitHub App token push when the App is provisioned and the measured commit is
+still the branch tip (no PR); see the
 [performance numbers auto-commit runbook](../../../docs/runbooks/perf-numbers-auto-commit.md)
 for the App + bypass prerequisite). There is no manual `### Performance numbers`
 PR-body requirement.
@@ -196,9 +197,10 @@ Category("PerfGate")]`; opt-in via `DX_PERF_GATE=1`. Median-of-5; fails
   editmode + playmode dispatch benchmarks on ELI-MACHINE (the `fast` runner) at
   the latest Unity version on every pull_request change and posts the regenerated
   dispatch-throughput numbers as a non-blocking PR comment; after the PR merges,
-  CI commits the refreshed `docs/architecture/performance.md` directly to the
-  default branch via a GitHub App token push (no PR). The numbers are owned by
-  CI, not by PR-body text.
+  CI attempts to commit the refreshed `docs/architecture/performance.md` directly
+  to the default branch via a GitHub App token push (no PR), skipping with a
+  warning if App credentials are missing or the branch advanced past the measured
+  commit. The numbers are owned by CI, not by PR-body text.
 
 ## Common pitfalls
 

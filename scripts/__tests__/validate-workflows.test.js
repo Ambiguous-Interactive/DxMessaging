@@ -27,6 +27,8 @@ const {
   findCheckoutCredentialPersistenceViolations,
   findTokenizedGitRemoteCredentialViolations,
   findPersistentGitExtraheaderCredentialViolations,
+  findAutoCommitAppCredentialWarningViolations,
+  findGitHubAppAutoCommitRobustnessViolations,
   runTextInvokesChangelogCoverage,
   NPM_SCRIPTS_REQUIRING_GIT_HISTORY,
   extractStaticJobLabels,
@@ -2619,6 +2621,416 @@ describe("findPersistentGitExtraheaderCredentialViolations", () => {
   });
 });
 
+describe("GitHub App auto-commit workflow policy", () => {
+  test("rejects AUTO_COMMIT_APP_* checks that silently set has-app=false", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Check for the auto-commit GitHub App credentials",
+      "        id: check-autocommit-app",
+      "        env:",
+      "          AUTO_COMMIT_APP_ID: ${{ secrets.AUTO_COMMIT_APP_ID }}",
+      "          AUTO_COMMIT_APP_PRIVATE_KEY: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}",
+      "        run: |",
+      '          if [ -n "${AUTO_COMMIT_APP_ID:-}" ] && [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then',
+      '            echo "has-app=true" >> "${GITHUB_OUTPUT}"',
+      "          else",
+      '            echo "has-app=false" >> "${GITHUB_OUTPUT}"',
+      "          fi"
+    ];
+
+    const violations = findAutoCommitAppCredentialWarningViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("without emitting a ::warning::");
+  });
+
+  test("accepts AUTO_COMMIT_APP_* checks that warn before setting has-app=false", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Check for the auto-commit GitHub App credentials",
+      "        id: check-autocommit-app",
+      "        env:",
+      "          AUTO_COMMIT_APP_ID: ${{ secrets.AUTO_COMMIT_APP_ID }}",
+      "          AUTO_COMMIT_APP_PRIVATE_KEY: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}",
+      "        run: |",
+      '          if [ -n "${AUTO_COMMIT_APP_ID:-}" ] && [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then',
+      '            echo "has-app=true" >> "${GITHUB_OUTPUT}"',
+      "          else",
+      '            echo "::warning::AUTO_COMMIT_APP_* secrets are not set; skipping auto-commit."',
+      '            echo "has-app=false" >> "${GITHUB_OUTPUT}"',
+      "          fi"
+    ];
+
+    const violations = findAutoCommitAppCredentialWarningViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("rejects GitHub App token pushes through git-auto-commit-action", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit generated file",
+      "        uses: stefanzweifel/git-auto-commit-action@v7"
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations.some((v) => v.message.includes("git-auto-commit-action"))).toBe(true);
+    expect(violations.some((v) => v.message.includes("freshness diagnostic"))).toBe(true);
+  });
+
+  test("rejects GitHub App token pushes without branch freshness diagnostics", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit and push",
+      "        run: |",
+      "          git commit -m generated",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin "HEAD:${GITHUB_REF_NAME}"'
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("freshness diagnostic");
+  });
+
+  test("rejects GitHub App token pushes that do not pass command-scoped credentials", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Check default branch is still current",
+      "        run: |",
+      '          git fetch origin "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+      '          echo "::warning::Default branch advanced to ${latest_sha}; skipping stale output."',
+      "      - name: Commit and push",
+      "        run: |",
+      "          git commit -m generated",
+      '          git push origin "HEAD:${GITHUB_REF_NAME}"'
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("command-scoped GitHub extraheader");
+  });
+
+  test("rejects unauthenticated pushes even when the same step has an authenticated fetch", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit and push",
+      "        run: |",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      "            fetch --no-tags --depth=1 origin \\",
+      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+      "          git commit -m generated",
+      '          git push origin "HEAD:${GITHUB_REF_NAME}"'
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("on the push command");
+  });
+
+  test("rejects extraheader -c arguments placed after the push subcommand", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit and push",
+      "        run: |",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      "            fetch --no-tags --depth=1 origin \\",
+      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+      "          git commit -m generated",
+      '          git push -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" origin "HEAD:${GITHUB_REF_NAME}"'
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("on the push command");
+  });
+
+  test.each([
+    ['if git push origin "HEAD:${GITHUB_REF_NAME}"; then'],
+    ['if { git push origin "HEAD:${default_branch}"; }; then'],
+    ['if (git push origin "HEAD:${default_branch}"); then']
+  ])("rejects shell-control-prefixed pushes without command-scoped credentials: %s", (pushLine) => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit and push",
+      "        run: |",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      "            fetch --no-tags --depth=1 origin \\",
+      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+      "          git commit -m generated",
+      `          ${pushLine}`,
+      "            exit 0",
+      "          fi"
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("on the push command");
+  });
+
+  test.each([
+    ['git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"'],
+    ['git push origin "+HEAD:${GITHUB_REF_NAME}"'],
+    ['git push origin "HEAD:${{ github.event.repository.default_branch }}"'],
+    ['git push origin "HEAD:refs/heads/${{ github.event.repository.default_branch }}"'],
+    ['git push origin "HEAD:${default_branch}"'],
+    ['git push origin "HEAD:$default_branch"'],
+    ['git push origin "${GITHUB_REF_NAME}:${GITHUB_REF_NAME}"'],
+    ["git push origin main"],
+    ["git push origin refs/heads/master:refs/heads/master"],
+    ["git push origin HEAD"]
+  ])(
+    "rejects equivalent current-head App-token pushes without command-scoped credentials: %s",
+    (pushCommand) => {
+      const lines = [
+        "jobs:",
+        "  update:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - name: Generate auto-commit GitHub App token",
+        "        id: app-token",
+        "        uses: actions/create-github-app-token@v2",
+        "      - name: Commit and push",
+        "        run: |",
+        '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+        "            fetch --no-tags --depth=1 origin \\",
+        '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+        '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+        '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+        "          git commit -m generated",
+        `          ${pushCommand}`
+      ];
+
+      const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+      expect(violations).toHaveLength(1);
+      expect(violations[0].message).toContain("on the push command");
+    }
+  );
+
+  test("rejects any GitHub App token git push without command-scoped credentials", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Push release tag",
+      "        run: |",
+      "          git push origin refs/tags/v1.2.3"
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("on the push command");
+  });
+
+  test("accepts command-scoped non-branch App-token pushes without freshness diagnostics", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Push release tag",
+      "        run: |",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      "            push origin refs/tags/v1.2.3"
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("accepts race-aware command-scoped GitHub App token pushes", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit and push",
+      "        run: |",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      "            fetch --no-tags --depth=1 origin \\",
+      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+      "          git commit -m generated",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      '            push origin "HEAD:${GITHUB_REF_NAME}"'
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("accepts shell-control-prefixed pushes with command-scoped credentials", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit and push",
+      "        run: |",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      "            fetch --no-tags --depth=1 origin \\",
+      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+      "          git commit -m generated",
+      '          if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      '            push origin "HEAD:${GITHUB_REF_NAME}"; then',
+      "            exit 0",
+      "          fi"
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test.each([
+    [
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"'
+    ],
+    [
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin "HEAD:${{ github.event.repository.default_branch }}"'
+    ],
+    [
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin "HEAD:${default_branch}"'
+    ],
+    [
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin "${GITHUB_REF_NAME}:${GITHUB_REF_NAME}"'
+    ],
+    [
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin main'
+    ],
+    [
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin refs/heads/master:refs/heads/master'
+    ],
+    [
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin HEAD'
+    ]
+  ])("accepts equivalent command-scoped current-head App-token pushes: %s", (pushCommand) => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit and push",
+      "        run: |",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      "            fetch --no-tags --depth=1 origin \\",
+      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+      "          git commit -m generated",
+      `          ${pushCommand}`
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("accepts default-branch variable freshness diagnostics", () => {
+    const lines = [
+      "jobs:",
+      "  update:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Generate auto-commit GitHub App token",
+      "        id: app-token",
+      "        uses: actions/create-github-app-token@v2",
+      "      - name: Commit and push",
+      "        run: |",
+      '          default_branch="${{ github.event.repository.default_branch }}"',
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      "            fetch --no-tags --depth=1 origin \\",
+      '            "refs/heads/${default_branch}:refs/remotes/origin/${default_branch}"',
+      '          latest_sha="$(git rev-parse "refs/remotes/origin/${default_branch}")"',
+      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+      "          git commit -m generated",
+      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+      '            push origin "HEAD:${default_branch}"'
+    ];
+
+    const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+});
+
 describe("findSelfHostedRunnerPreflightViolations (Bug 3)", () => {
   const runnerPreflightStep = [
     "      - name: Probe self-hosted runner availability",
@@ -3061,6 +3473,32 @@ describe("validateWorkflow policy integration", () => {
     expect(workflowContent).not.toContain(
       "node scripts/ensure-pre-commit.js run script-parser-tests --all-files"
     );
+  });
+
+  test("sync-wiki push retries refresh the wiki remote before retrying", () => {
+    const workflowPath = path.resolve(__dirname, "../../.github/workflows/sync-wiki.yml");
+    const workflowContent = fs.readFileSync(workflowPath, "utf8");
+
+    expect(workflowContent).toContain("Wiki push attempt $i failed");
+    expect(workflowContent).toContain('fetch --no-tags origin "${wiki_branch}"');
+    expect(workflowContent).toContain('git rebase "origin/${wiki_branch}"');
+  });
+
+  test("update-llms-txt regenerates before checking a retried branch tip", () => {
+    const workflowPath = path.resolve(__dirname, "../../.github/workflows/update-llms-txt.yml");
+    const workflowContent = fs.readFileSync(workflowPath, "utf8");
+    const retryIndex = workflowContent.indexOf("retrying from ${latest_after_push}");
+    const checkoutIndex = workflowContent.indexOf(
+      'git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"',
+      retryIndex
+    );
+    const updateIndex = workflowContent.indexOf("npm run update:llms-txt", checkoutIndex);
+    const validateIndex = workflowContent.indexOf("npm run validate:llms-txt", updateIndex);
+
+    expect(retryIndex).toBeGreaterThanOrEqual(0);
+    expect(checkoutIndex).toBeGreaterThan(retryIndex);
+    expect(updateIndex).toBeGreaterThan(checkoutIndex);
+    expect(validateIndex).toBeGreaterThan(updateIndex);
   });
 
   test("hook performance workflow provisions dotnet tools before measuring C# hooks", () => {

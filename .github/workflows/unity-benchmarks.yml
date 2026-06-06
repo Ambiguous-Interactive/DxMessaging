@@ -18,8 +18,8 @@ on:
 # documented dispatch-throughput numbers are owned entirely by the Performance
 # Numbers workflow (.github/workflows/perf-numbers.yml), which posts the refreshed
 # numbers as a non-blocking PR comment and, after merge, commits the refreshed
-# default-branch doc directly via GITHUB_TOKEN; this scheduled workflow keeps the
-# per-version benchmark
+# default-branch doc directly via a GitHub App installation token; this scheduled
+# workflow keeps the per-version benchmark
 # test coverage and does not maintain the doc, so it needs no write scope.
 permissions:
   contents: read

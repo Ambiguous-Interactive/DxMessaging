@@ -12,7 +12,7 @@ On a pull request the workflow re-runs the dispatch benchmarks and posts the
 numbers as a non-blocking sticky comment; it never pushes to the contributor
 branch. After the pull request merges, the `push` event runs the benchmarks
 again and the `commit-perf-doc` job re-renders the table. If the numbers moved,
-it commits the refreshed doc **directly to the default branch**.
+it attempts to commit the refreshed doc **directly to the default branch**.
 
 The push is authenticated by a **GitHub App installation token**, not the
 built-in `GITHUB_TOKEN`. The built-in token cannot push to a protected branch:
@@ -28,7 +28,10 @@ request.
 
 If the App credentials are absent, the `commit-perf-doc` job is skipped with a
 warning (the PR comment still posts), so the workflow is never red just because
-the App has not been provisioned yet.
+the App has not been provisioned yet. If the default branch advances while the
+long benchmark run is in progress, the job warns and skips that stale artifact
+instead of pushing older numbers over a newer merge; the newer push run owns the
+fresh table update.
 
 ## Prerequisite: provision the auto-commit GitHub App
 
@@ -134,4 +137,7 @@ mode is understood; you do **not** need to enable it for this approach.
 
 If the numbers did not move, the `commit-perf-doc` job renders, finds no diff,
 and pushes nothing. That is the expected no-op outcome. If the
-`AUTO_COMMIT_APP_*` secrets are not set, the job is skipped with a warning.
+`AUTO_COMMIT_APP_*` secrets are not set, the job is skipped with a warning. If
+another merge advances the default branch before the doc push, the job also
+warns and exits successfully because its benchmark artifacts no longer describe
+the branch tip.

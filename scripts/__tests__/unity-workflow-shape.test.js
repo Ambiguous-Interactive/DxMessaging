@@ -1338,6 +1338,11 @@ describe(".github/workflows/unity-benchmarks.yml no longer maintains the perf do
     expect(fs.existsSync(path.join(WORKFLOWS_DIR, "perf-numbers.yml"))).toBe(true);
   });
 
+  test("documents the Performance Numbers GitHub App token path, not GITHUB_TOKEN", () => {
+    expect(text).not.toContain("default-branch doc directly via GITHUB_TOKEN");
+    expect(text).toContain("GitHub App installation token");
+  });
+
   test("top-level permissions stay least-privilege with no doc-PR write scope", () => {
     // With the docs-PR writer gone, the workflow keeps only the read +
     // annotation + benchmark-failure-issue scopes; nothing grants write.
@@ -1411,6 +1416,13 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(text).not.toContain("pull_request_target");
   });
 
+  test("serializes default-branch runs without canceling in-flight benchmarks", () => {
+    // Merge-path benchmarks can run for hours. Keep one active + queued run per
+    // ref, but never cancel a run that may be holding Unity license state.
+    expect(parsed.concurrency.group).toBe("${{ github.workflow }}-${{ github.ref }}");
+    expect(parsed.concurrency["cancel-in-progress"]).toBe(false);
+  });
+
   test("top-level permissions are least-privilege; write scopes are per-job and minimal", () => {
     expect(parsed.permissions).toEqual({ contents: "read", checks: "write" });
     // The licensed Unity job must NOT inherit or declare write scope.
@@ -1442,6 +1454,18 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       actions: "read",
       contents: "read"
     });
+  });
+
+  test("runner-preflight warns when AUTO_COMMIT_APP_* credentials are missing", () => {
+    const checkApp = preflightJob.steps.find((step) => step.id === "check-autocommit-app");
+    expect(checkApp).toBeDefined();
+    expect(checkApp.env.AUTO_COMMIT_APP_ID).toBe("${{ secrets.AUTO_COMMIT_APP_ID }}");
+    expect(checkApp.env.AUTO_COMMIT_APP_PRIVATE_KEY).toBe(
+      "${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}"
+    );
+    expect(checkApp.run).toContain("has-app=false");
+    expect(checkApp.run).toContain("::warning::AUTO_COMMIT_APP_* secrets are not set");
+    expect(checkApp.run).toContain("docs/runbooks/perf-numbers-auto-commit.md");
   });
 
   test("the Unity run is pinned to ELI-MACHINE via the fast label", () => {
@@ -1607,8 +1631,13 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       (step) => typeof step.uses === "string" && step.uses.startsWith("actions/github-script@")
     );
     expect(comment).toBeDefined();
+    expect(comment.env.HAS_AUTOCOMMIT_APP).toBe(
+      "${{ needs.runner-preflight.outputs.has-autocommit-app }}"
+    );
     expect(comment.with.script).toContain("issues.createComment");
     expect(comment.with.script).toContain("issues.updateComment");
+    expect(comment.with.script).toContain("AUTO_COMMIT_APP_*");
+    expect(comment.with.script).toContain("post-merge doc commit");
     // It must NOT push to the PR branch (no git-auto-commit, no head.ref checkout).
     const commentText = JSON.stringify(commentJob);
     expect(commentText).not.toContain("git-auto-commit-action");
@@ -1680,56 +1709,62 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
       (step) => step.run && /run-managed-prettier\.js --check/.test(step.run)
     );
     expect(verify).toBeDefined();
-    expect(verify.if).toBe("steps.render.outputs.changed == 'true'");
+    expect(verify.if).toBe(
+      "steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'"
+    );
     const install = commitJob.steps.find(
       (step) => step.run && /npm ci/.test(step.run) && /package-lock\.json/.test(step.run)
     );
     expect(install).toBeDefined();
 
-    // Direct-push shape (mirrors update-llms-txt.yml): a tokenized git remote
-    // set-url step, immediately followed by stefanzweifel/git-auto-commit-action
-    // with a MATCHING if:, then an always()-cleanup step that resets origin.
+    // Direct-push shape: explicit fetch/freshness diagnostics, manual commit,
+    // and command-scoped App-token push. Do not store the token in origin; doing
+    // the push in shell lets the workflow distinguish stale branch races from
+    // real branch-protection failures.
     const steps = commitJob.steps;
-    const remoteIndex = steps.findIndex(
-      (step) =>
-        typeof step.run === "string" &&
-        /git remote set-url origin/.test(step.run) &&
-        /x-access-token:\$\{GH_PUSH_TOKEN\}/.test(step.run)
-    );
-    expect(remoteIndex).toBeGreaterThanOrEqual(0);
-    const remoteStep = steps[remoteIndex];
-    expect(remoteStep.if).toBe("steps.render.outputs.changed == 'true'");
-    // The push credential MUST come from the App installation token (the whole
-    // reason for the pivot). Pin the env binding, not just the shell-variable
-    // interpolation, so a regression that rebinds GH_PUSH_TOKEN to GITHUB_TOKEN,
-    // the wrong secret, or nothing cannot pass green. Symmetric with the
-    // checkout-token assertion below.
-    expect(remoteStep.env.GH_PUSH_TOKEN).toBe("${{ steps.app-token.outputs.token }}");
+    const freshnessStep = steps.find((step) => step.id === "default-branch");
+    expect(freshnessStep).toBeDefined();
+    expect(freshnessStep.run).toContain("git -c");
+    expect(freshnessStep.run).toContain("fetch --no-tags --depth=1 origin");
+    expect(freshnessStep.run).toContain("refs/remotes/origin/${GITHUB_REF_NAME}");
+    expect(freshnessStep.run).toContain("GITHUB_SHA");
+    expect(freshnessStep.run).toContain("::warning::");
+    expect(freshnessStep.run).toContain("stale benchmark artifacts");
 
-    const commitStep = steps[remoteIndex + 1];
-    expect(typeof commitStep.uses).toBe("string");
-    expect(commitStep.uses.startsWith("stefanzweifel/git-auto-commit-action@")).toBe(true);
-    expect(commitStep.if).toBe(remoteStep.if);
-    expect(commitStep.with.commit_message).toBe(
-      "docs(perf): auto-update dispatch throughput numbers"
-    );
-    expect(commitStep.with.file_pattern).toBe("docs/architecture/performance.md");
-    expect(commitStep.with.commit_user_name).toBe("github-actions[bot]");
+    const setupNode = steps.find((step) => step.uses === "actions/setup-node@v6");
+    expect(setupNode.if).toBe("steps.default-branch.outputs.fresh == 'true'");
+    expect(render.if).toBe("steps.default-branch.outputs.fresh == 'true'");
 
-    const cleanupStep = steps[remoteIndex + 2];
-    expect(typeof cleanupStep.run).toBe("string");
-    expect(/git remote set-url origin/.test(cleanupStep.run)).toBe(true);
-    expect(/x-access-token/.test(cleanupStep.run)).toBe(false);
-    expect(cleanupStep.if).toBe("${{ always() && steps.render.outputs.changed == 'true' }}");
+    const commitStep = steps.find((step) => step.name === "Commit and push refreshed perf doc");
+    expect(commitStep).toBeDefined();
+    expect(commitStep.if).toBe(
+      "steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'"
+    );
+    expect(commitStep.env.GH_PUSH_TOKEN).toBe("${{ steps.app-token.outputs.token }}");
+    expect(commitStep.run).toContain('git config user.name "github-actions[bot]"');
+    expect(commitStep.run).toContain('git add -- "${PERF_DOC}"');
+    expect(commitStep.run).toContain(
+      'git commit -m "docs(perf): auto-update dispatch throughput numbers"'
+    );
+    expect(commitStep.run).toContain('push origin "HEAD:${GITHUB_REF_NAME}"');
+    expect(commitStep.run).toContain(
+      "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}"
+    );
+    expect(commitStep.run).toContain("::warning::");
+    expect(commitStep.run).toContain("during the perf doc push");
+    expect(commitStep.run).toContain("::error::Perf doc auto-commit push failed");
+    expect(commitStep.run).not.toContain("git remote set-url origin");
 
     // No bot-PR machinery survives: no create-pull-request action, no autoupdate
-    // branch.
+    // branch, no local auto-commit action.
     const commitJobText = JSON.stringify(commitJob);
     expect(commitJobText).not.toContain(createPrAction);
     expect(commitJobText).not.toContain(autoupdateBranch);
+    expect(commitJobText).not.toContain("git-auto-commit-action");
+    expect(commitJobText).not.toContain("https://x-access-token");
 
     // The checkout uses the App installation token and does not persist
-    // credentials (the tokenized remote carries the push auth instead).
+    // credentials (command-scoped fetch/push commands carry the auth instead).
     const checkout = commitJob.steps.find((step) => step.uses === "actions/checkout@v6");
     expect(checkout.with["persist-credentials"]).toBe(false);
     expect(checkout.with.token).toBe("${{ steps.app-token.outputs.token }}");
