@@ -27,10 +27,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         public bool RequiresPlayMode => false;
 
-        public long ProgressMarker => _progress;
+        public long ProgressMarker => _fanOut?.Count ?? _progress;
 
         private ComparisonScenario _scenario;
         private long _progress;
+        private FanOut _fanOut;
 
         private DiContainer _container;
         private SignalBus _bus;
@@ -94,13 +95,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     _container.DeclareSignal<int>();
                     _container.ResolveRoots();
                     _bus = _container.Resolve<SignalBus>();
-                    for (int index = 0; index < ComparisonScenarios.FanOutSubscribers; index++)
+                    // SignalBus asserts each (signalType, callback) key is unique and throws on a
+                    // duplicate, so the fan-out must use genuinely-distinct subscribers (a distinct
+                    // delegate target each). See FanOut for why a loop of identical lambdas does not.
+                    _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
+                    foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
-                        // 16 DISTINCT delegates: SignalBus asserts each (signalType, callback)
-                        // key is unique and throws on a duplicate, so the same cached handler
-                        // cannot be subscribed 16 times. Each lambda increments the same
-                        // _progress counter, so the fan-out fires exactly 16 times per Fire.
-                        _bus.Subscribe<int>(_ => _progress++);
+                        _bus.Subscribe<int>(subscriber.Handle);
                     }
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
@@ -140,6 +141,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             _container = null;
             _bus = null;
             _churnHandler = null;
+            _fanOut = null;
         }
     }
 #endif

@@ -24,36 +24,15 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
         }
 
-        private static IEnumerable<TestCaseData> RosterCases()
-        {
-            foreach (
-                (
-                    string key,
-                    Func<IMessagingTechBridge> factory
-                ) in ZeroDependencyComparisonRoster.Bridges
-            )
-            {
-                yield return new TestCaseData(key, factory).SetName($"Bridge_{key}");
-            }
-        }
+        // Case generation lives in ComparisonBridgeContract so the zero-dependency roster and the
+        // gated External/UnityAtoms rosters all enumerate cases from ONE source of truth.
+        private static IEnumerable<TestCaseData> RosterCases() =>
+            ComparisonBridgeContract.IdentityCases(ZeroDependencyComparisonRoster.Bridges);
 
-        private static IEnumerable<TestCaseData> RosterScenarioCases()
-        {
-            foreach (
-                (
-                    string key,
-                    Func<IMessagingTechBridge> factory
-                ) in ZeroDependencyComparisonRoster.Bridges
-            )
-            {
-                foreach (ComparisonScenario scenario in ComparisonScenarios.All)
-                {
-                    yield return new TestCaseData(key, factory, scenario).SetName(
-                        $"Bridge_{key}_{scenario}"
-                    );
-                }
-            }
-        }
+        private static IEnumerable<TestCaseData> RosterScenarioCases() =>
+            ComparisonBridgeContract.EmitOnceAccountingCases(
+                ZeroDependencyComparisonRoster.Bridges
+            );
 
         [Test]
         [TestCaseSource(nameof(ComparisonScenarioCases))]
@@ -98,20 +77,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             Func<IMessagingTechBridge> factory
         )
         {
-            using IMessagingTechBridge bridge = factory();
-            Assert.IsNotEmpty(
-                bridge.TechKey,
-                $"Roster bridge '{rosterKey}' must declare a non-empty TechKey."
-            );
-            Assert.IsNotEmpty(
-                bridge.TechName,
-                $"Roster bridge '{rosterKey}' must declare a non-empty TechName."
-            );
-            Assert.AreEqual(
-                rosterKey,
-                bridge.TechKey,
-                $"Roster key '{rosterKey}' must match the bridge's own TechKey '{bridge.TechKey}'."
-            );
+            ComparisonBridgeContract.AssertTechIdentity(rosterKey, factory);
         }
 
         [Test]
@@ -167,31 +133,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             ComparisonScenario scenario
         )
         {
-            using IMessagingTechBridge bridge = factory();
-            if (bridge.RequiresPlayMode && !UnityEngine.Application.isPlaying)
-            {
-                Assert.Ignore($"{bridge.TechName} requires PlayMode; skipping in EditMode.");
-                return;
-            }
-            if (!bridge.Supports(scenario))
-            {
-                Assert.Ignore(
-                    $"{bridge.TechName} does not support '{ComparisonScenarios.DisplayName(scenario)}'."
-                );
-                return;
-            }
-
-            bridge.Prepare(scenario);
-            long before = bridge.ProgressMarker;
-            bridge.EmitOnce();
-
-            Assert.AreEqual(
-                before + bridge.InvocationsPerOperation(scenario),
-                bridge.ProgressMarker,
-                $"Bridge '{rosterKey}' supported '{scenario}' but one EmitOnce() did not advance "
-                    + "ProgressMarker by InvocationsPerOperation. This catches broken benchmark "
-                    + "bridges before the long performance measurement window floods CI logs."
-            );
+            ComparisonBridgeContract.AssertEmitOnceAccounting(rosterKey, factory, scenario);
         }
 
         [Test]

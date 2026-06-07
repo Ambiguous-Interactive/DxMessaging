@@ -29,12 +29,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         public bool RequiresPlayMode => false;
 
-        public long ProgressMarker => _progress;
+        public long ProgressMarker => _fanOut?.Count ?? _progress;
 
         private const int KeyedListenerCount = 16;
 
         private ComparisonScenario _scenario;
         private long _progress;
+        private FanOut _fanOut;
 
         private IServiceProvider _provider;
 
@@ -100,9 +101,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     BuildProvider(builder);
                     _publisher = GlobalMessagePipe.GetPublisher<int>();
                     _subscriber = GlobalMessagePipe.GetSubscriber<int>();
-                    for (int index = 0; index < ComparisonScenarios.FanOutSubscribers; index++)
+                    // Genuinely-distinct subscribers model 16 independent listeners; this keeps
+                    // every bridge's fan-out immune to value-equality dedup. See FanOut.
+                    _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
+                    foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
-                        _subscriptions.Add(_subscriber.Subscribe(Handle));
+                        _subscriptions.Add(_subscriber.Subscribe(subscriber.Handle));
                     }
                     return;
                 case ComparisonScenario.KeyedToOneOfMany:
@@ -186,6 +190,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             _structPublisher = null;
             _structSubscriber = null;
             _churnHandler = null;
+            _fanOut = null;
         }
 
         private void BuildProvider(BuiltinContainerBuilder builder)

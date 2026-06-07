@@ -27,10 +27,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         public bool RequiresPlayMode => false;
 
-        public long ProgressMarker => _progress;
+        public long ProgressMarker => _fanOut?.Count ?? _progress;
 
         private ComparisonScenario _scenario;
         private long _progress;
+        private FanOut _fanOut;
 
         private MessageBroker _broker;
         private readonly List<IDisposable> _subscriptions = new();
@@ -76,9 +77,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     _subscriptions.Add(_broker.Receive<int>().Subscribe(Handle));
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
-                    for (int index = 0; index < ComparisonScenarios.FanOutSubscribers; index++)
+                    // Genuinely-distinct subscribers model 16 independent listeners; this keeps
+                    // every bridge's fan-out immune to value-equality dedup. See FanOut.
+                    _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
+                    foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
-                        _subscriptions.Add(_broker.Receive<int>().Subscribe(Handle));
+                        _subscriptions.Add(_broker.Receive<int>().Subscribe(subscriber.Handle));
                     }
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
@@ -129,6 +133,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             _broker?.Dispose();
             _broker = null;
             _churnHandler = null;
+            _fanOut = null;
         }
     }
 #endif

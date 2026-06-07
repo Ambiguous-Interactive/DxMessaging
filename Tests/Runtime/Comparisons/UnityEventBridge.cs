@@ -23,12 +23,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public bool RequiresPlayMode => false;
 
-        public long ProgressMarker => _progress;
+        public long ProgressMarker => _fanOut?.Count ?? _progress;
 
         private const int KeyCount = 16;
 
         private ComparisonScenario _scenario;
         private long _progress;
+        private FanOut _fanOut;
 
         private readonly IntEvent _global = new();
         private readonly StructEvent _structGlobal = new();
@@ -72,9 +73,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _global.AddListener(Handle);
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
-                    for (int index = 0; index < ComparisonScenarios.FanOutSubscribers; index++)
+                    // Genuinely-distinct subscribers model 16 independent listeners; this keeps
+                    // every bridge's fan-out immune to value-equality dedup. See FanOut.
+                    _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
+                    foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
-                        _global.AddListener(Handle);
+                        _global.AddListener(subscriber.Handle);
                     }
                     return;
                 case ComparisonScenario.KeyedToOneOfMany:
@@ -132,6 +136,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
             _keyed.Clear();
             _churnHandler = null;
+            _fanOut = null;
         }
     }
 }

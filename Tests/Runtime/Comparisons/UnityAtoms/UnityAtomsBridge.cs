@@ -29,12 +29,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 
         public bool RequiresPlayMode => false;
 
-        public long ProgressMarker => _progress;
+        public long ProgressMarker => _fanOut?.Count ?? _progress;
 
         private const int KeyedListenerCount = 16;
 
         private ComparisonScenario _scenario;
         private long _progress;
+        private FanOut _fanOut;
 
         private IntEvent _event;
         private readonly List<IntEvent> _events = new();
@@ -83,11 +84,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
                     _event = CreateEvent();
-                    for (int index = 0; index < ComparisonScenarios.FanOutSubscribers; index++)
+                    // Genuinely-distinct subscribers so the fan-out is exactly 16 even if the Atoms
+                    // event store deduped equal delegates. See FanOut for why a loop of identical
+                    // lambdas would collapse to one subscriber under value-equality dedup.
+                    _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
+                    foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
-                        // 16 DISTINCT delegates so the fan-out is exactly 16 even if the
-                        // event store would dedup equal delegates.
-                        _event.Register(value => _progress++);
+                        _event.Register(subscriber.Handle);
                     }
                     return;
                 case ComparisonScenario.KeyedToOneOfMany:
@@ -135,6 +138,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
             _events.Clear();
             _event = null;
             _churnHandler = null;
+            _fanOut = null;
         }
 
         private IntEvent CreateEvent()
