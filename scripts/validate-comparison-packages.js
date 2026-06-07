@@ -7,13 +7,15 @@
  * CONTRACT
  * --------
  * `.github/comparison-packages.json` is the SINGLE SOURCE OF TRUTH for the
- * OpenUPM scoped registry and the PINNED versions of the third-party packages
- * the comparison benchmarks measure against (MessagePipe, UniTask, Zenject,
- * UniRx, Unity Atoms core + base atoms):
+ * OpenUPM scoped registry, the PINNED versions of the third-party packages the
+ * comparison benchmarks measure against (MessagePipe, UniTask, Zenject, UniRx,
+ * Unity Atoms core + base atoms), and the Unity built-in module packages those
+ * libraries need to compile:
  *
  *   {
  *     "registry": { "name": ..., "url": "https://...", "scopes": ["com.x", ...] },
  *     "packages": { "com.cysharp.messagepipe": "1.8.1", ... },        // x6
+ *     "unityBuiltInPackages": { "com.unity.ugui": "1.0.0", ... },
  *     "defines":  { "com.cysharp.messagepipe": "MESSAGEPIPE_PRESENT", ... },
  *     "minUnityForComparisons": "2021.3.0f1"
  *   }
@@ -23,8 +25,10 @@
  *      versionDefines map package id -> define, and their defineConstraints gate
  *      compilation on those defines).
  *   2. The committed local-parity manifest
- *      `.unity-test-project/Packages/manifest.json` (the scoped registry + the
- *      six pinned dependencies, so a local Unity open reproduces CI exactly).
+ *      `.unity-test-project/Packages/manifest.json` and
+ *      `.unity-test-project/Packages/packages-lock.json` (the scoped registry,
+ *      the pinned dependencies, and the required Unity built-ins, so a local
+ *      Unity open reproduces CI exactly).
  *   3. The ephemeral CI manifest generator scripts/unity/run-ci-tests.ps1 (which
  *      reads this JSON at runtime -- a light text guard keeps it wired).
  *
@@ -51,6 +55,7 @@ const REPO_ROOT = path.join(__dirname, "..");
 
 const SOURCE_RELATIVE_PATH = ".github/comparison-packages.json";
 const LOCAL_MANIFEST_RELATIVE_PATH = ".unity-test-project/Packages/manifest.json";
+const LOCAL_PACKAGE_LOCK_RELATIVE_PATH = ".unity-test-project/Packages/packages-lock.json";
 const COMPARISONS_RELATIVE_DIR = "Tests/Runtime/Comparisons";
 const GENERATOR_RELATIVE_PATH = "scripts/unity/run-ci-tests.ps1";
 
@@ -112,6 +117,8 @@ function scopeCoversId(id, scope) {
  *   - registry.url is a non-empty https:// string;
  *   - registry.scopes is a non-empty array of non-empty strings;
  *   - packages is a non-empty object of id -> non-empty version string;
+ *   - unityBuiltInPackages is a non-empty object of Unity package id -> "1.0.0";
+ *   - no Unity built-in package id is duplicated in packages;
  *   - defines has EXACTLY one entry per package id (no missing, no extras),
  *     each a non-empty string;
  *   - every package id is covered by some registry scope.
@@ -167,6 +174,37 @@ function validateSourceSchema(data) {
       if (typeof version !== "string" || version.length === 0) {
         errors.push(
           `${SOURCE_RELATIVE_PATH}: \`packages.${id}\` must be a non-empty version string.`
+        );
+      }
+    }
+  }
+
+  // --- Unity built-ins required by the comparison packages ---
+  const unityBuiltInPackages = data.unityBuiltInPackages;
+  if (!isPlainObject(unityBuiltInPackages)) {
+    errors.push(`${SOURCE_RELATIVE_PATH}: \`unityBuiltInPackages\` must be an object.`);
+  } else {
+    const builtInIds = Object.keys(unityBuiltInPackages);
+    if (builtInIds.length === 0) {
+      errors.push(`${SOURCE_RELATIVE_PATH}: \`unityBuiltInPackages\` must have at least one entry.`);
+    }
+    for (const id of builtInIds) {
+      const version = unityBuiltInPackages[id];
+      if (!id.startsWith("com.unity.")) {
+        errors.push(
+          `${SOURCE_RELATIVE_PATH}: Unity built-in package '${id}' must start with 'com.unity.'.`
+        );
+      }
+      if (version !== "1.0.0") {
+        errors.push(
+          `${SOURCE_RELATIVE_PATH}: \`unityBuiltInPackages.${id}\` must be the Unity built-in ` +
+            "package version '1.0.0'."
+        );
+      }
+      if (isPlainObject(packages) && Object.prototype.hasOwnProperty.call(packages, id)) {
+        errors.push(
+          `${SOURCE_RELATIVE_PATH}: Unity built-in package '${id}' must not also appear in ` +
+            "`packages`; OpenUPM-scoped comparison packages and Unity built-ins are separate."
         );
       }
     }
@@ -366,15 +404,18 @@ function checkAsmdefCrossReference({ packages, defines, gatedAsmdefs }) {
  *   - manifest.scopedRegistries must contain an entry whose url === registry.url
  *     and whose scopes is a SUPERSET of registry.scopes;
  *   - manifest.dependencies must contain EVERY package id with the EXACT
- *     version from `packages`.
+ *     version from `packages`;
+ *   - manifest.dependencies must contain EVERY Unity built-in package id with
+ *     the EXACT version from `unityBuiltInPackages`.
  *
  * @param {object} params Parameters.
  * @param {unknown} params.manifest Parsed local manifest.
  * @param {object} params.registry Single-source registry object.
  * @param {Record<string, string>} params.packages Single-source packages map.
+ * @param {Record<string, string>} params.unityBuiltInPackages Unity built-ins map.
  * @returns {string[]} Violation messages. Empty when consistent.
  */
-function checkLocalManifest({ manifest, registry, packages }) {
+function checkLocalManifest({ manifest, registry, packages, unityBuiltInPackages = {} }) {
   const violations = [];
 
   if (!isPlainObject(manifest)) {
@@ -416,17 +457,22 @@ function checkLocalManifest({ manifest, registry, packages }) {
   if (!dependencies) {
     violations.push(`${LOCAL_MANIFEST_RELATIVE_PATH}: \`dependencies\` must be an object.`);
   } else {
-    for (const id of Object.keys(packages)) {
-      if (!Object.prototype.hasOwnProperty.call(dependencies, id)) {
-        violations.push(
-          `${LOCAL_MANIFEST_RELATIVE_PATH}: \`dependencies\` is missing pinned comparison package ` +
-            `'${id}' (expected '${packages[id]}').`
-        );
-      } else if (dependencies[id] !== packages[id]) {
-        violations.push(
-          `${LOCAL_MANIFEST_RELATIVE_PATH}: \`dependencies.${id}\` is '${dependencies[id]}', but ` +
-            `the single source pins '${packages[id]}'.`
-        );
+    for (const [label, pins] of [
+      ["pinned comparison package", packages],
+      ["required Unity built-in package", unityBuiltInPackages]
+    ]) {
+      for (const id of Object.keys(pins)) {
+        if (!Object.prototype.hasOwnProperty.call(dependencies, id)) {
+          violations.push(
+            `${LOCAL_MANIFEST_RELATIVE_PATH}: \`dependencies\` is missing ${label} '${id}' ` +
+              `(expected '${pins[id]}').`
+          );
+        } else if (dependencies[id] !== pins[id]) {
+          violations.push(
+            `${LOCAL_MANIFEST_RELATIVE_PATH}: \`dependencies.${id}\` is '${dependencies[id]}', ` +
+              `but the single source pins '${pins[id]}'.`
+          );
+        }
       }
     }
   }
@@ -435,8 +481,108 @@ function checkLocalManifest({ manifest, registry, packages }) {
 }
 
 /**
- * Light text guard: the ephemeral CI manifest generator must still reference the
- * single-source filename, proving it stays wired to read it at runtime.
+ * Cross-checks the committed Unity packages lock against the single source.
+ *
+ *   - packages-lock.dependencies must contain EVERY external comparison package
+ *     as a direct OpenUPM registry dependency at the exact pinned version;
+ *   - packages-lock.dependencies must contain EVERY Unity built-in package as a
+ *     direct builtin dependency at the exact pinned version.
+ *
+ * @param {object} params Parameters.
+ * @param {unknown} params.packageLock Parsed Unity package lock.
+ * @param {object} params.registry Single-source registry object.
+ * @param {Record<string, string>} params.packages Single-source packages map.
+ * @param {Record<string, string>} params.unityBuiltInPackages Unity built-ins map.
+ * @returns {string[]} Violation messages. Empty when consistent.
+ */
+function checkLocalPackageLock({ packageLock, registry, packages, unityBuiltInPackages = {} }) {
+  const violations = [];
+
+  if (!isPlainObject(packageLock)) {
+    return [`${LOCAL_PACKAGE_LOCK_RELATIVE_PATH}: root must be a JSON object.`];
+  }
+
+  const dependencies = isPlainObject(packageLock.dependencies) ? packageLock.dependencies : null;
+  if (!dependencies) {
+    return [`${LOCAL_PACKAGE_LOCK_RELATIVE_PATH}: \`dependencies\` must be an object.`];
+  }
+
+  const checkEntry = ({ id, version, label, source, url }) => {
+    const entry = dependencies[id];
+    if (!isPlainObject(entry)) {
+      violations.push(
+        `${LOCAL_PACKAGE_LOCK_RELATIVE_PATH}: \`dependencies\` is missing ${label} '${id}' ` +
+          `(expected '${version}').`
+      );
+      return;
+    }
+    if (entry.version !== version) {
+      violations.push(
+        `${LOCAL_PACKAGE_LOCK_RELATIVE_PATH}: \`dependencies.${id}.version\` is ` +
+          `'${entry.version}', but the single source pins '${version}'.`
+      );
+    }
+    if (entry.depth !== 0) {
+      violations.push(
+        `${LOCAL_PACKAGE_LOCK_RELATIVE_PATH}: \`dependencies.${id}.depth\` is '${entry.depth}', ` +
+          "but comparison manifest dependencies must be direct depth 0 entries."
+      );
+    }
+    if (entry.source !== source) {
+      violations.push(
+        `${LOCAL_PACKAGE_LOCK_RELATIVE_PATH}: \`dependencies.${id}.source\` is ` +
+          `'${entry.source}', expected '${source}'.`
+      );
+    }
+    if (url && entry.url !== url) {
+      violations.push(
+        `${LOCAL_PACKAGE_LOCK_RELATIVE_PATH}: \`dependencies.${id}.url\` is '${entry.url}', ` +
+          `expected '${url}'.`
+      );
+    }
+  };
+
+  for (const [id, version] of Object.entries(packages)) {
+    checkEntry({
+      id,
+      version,
+      label: "pinned comparison package",
+      source: "registry",
+      url: registry.url
+    });
+  }
+
+  for (const [id, version] of Object.entries(unityBuiltInPackages)) {
+    checkEntry({
+      id,
+      version,
+      label: "required Unity built-in package",
+      source: "builtin"
+    });
+  }
+
+  return violations;
+}
+
+/**
+ * Strips PowerShell line comments from a script for lightweight text guards.
+ * Good enough for this generator script because the relevant contract markers
+ * are ordinary code lines; generated C# here-strings do not contain these tokens.
+ *
+ * @param {string} content PowerShell script text.
+ * @returns {string} Text without # comments outside simple quotes.
+ */
+function stripPowerShellLineComments(content) {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.replace(/#.*$/, ""))
+    .join("\n");
+}
+
+/**
+ * Light text guard: the ephemeral CI manifest generator must still read the
+ * single source and loop over both external packages and Unity built-ins while
+ * assigning `$dependencies[$pkg.Name] = $pkg.Value`.
  *
  * @param {string} repoRoot Repository root.
  * @returns {string[]} Violation messages. Empty when the reference is present.
@@ -451,13 +597,48 @@ function checkGeneratorWired(repoRoot) {
       `${GENERATOR_RELATIVE_PATH}: expected generator is missing or unreadable (${error.message}).`
     ];
   }
-  if (!content.includes("comparison-packages.json")) {
-    return [
+  const violations = [];
+  const uncommented = stripPowerShellLineComments(content);
+  if (!uncommented.includes("comparison-packages.json")) {
+    violations.push(
       `${GENERATOR_RELATIVE_PATH}: does not reference 'comparison-packages.json'; the ephemeral ` +
         "CI manifest generator must read the single source at runtime."
-    ];
+    );
   }
-  return [];
+  if (!/Get-ComparisonPackages\s+-Root\s+\$RepoRoot/.test(uncommented)) {
+    violations.push(
+      `${GENERATOR_RELATIVE_PATH}: does not call Get-ComparisonPackages -Root $RepoRoot; the ` +
+        "ephemeral CI manifest generator must read the single source at runtime."
+    );
+  }
+  if (!/\$comparisons\.packages\.PSObject\.Properties/.test(uncommented)) {
+    violations.push(
+      `${GENERATOR_RELATIVE_PATH}: does not loop over $comparisons.packages.PSObject.Properties; ` +
+        "the ephemeral CI manifest generator must inject the external comparison package pins."
+    );
+  }
+  if (!/unityBuiltInPackages/.test(uncommented)) {
+    violations.push(
+      `${GENERATOR_RELATIVE_PATH}: does not reference 'unityBuiltInPackages'; the ephemeral ` +
+        "CI manifest generator must inject the Unity built-in modules required by comparison packages."
+    );
+  }
+  if (!/\$builtInPackages\.Value\.PSObject\.Properties/.test(uncommented)) {
+    violations.push(
+      `${GENERATOR_RELATIVE_PATH}: does not loop over $builtInPackages.Value.PSObject.Properties; ` +
+        "the ephemeral CI manifest generator must inject the Unity built-in modules required by comparison packages."
+    );
+  }
+  const dependencyAssignments = uncommented.match(
+    /\$dependencies\s*\[\s*\$pkg\.Name\s*\]\s*=\s*\$pkg\.Value/g
+  );
+  if (!dependencyAssignments || dependencyAssignments.length < 2) {
+    violations.push(
+      `${GENERATOR_RELATIVE_PATH}: must assign both external package pins and Unity built-ins ` +
+        "into the manifest dependencies map."
+    );
+  }
+  return violations;
 }
 
 /**
@@ -497,6 +678,7 @@ function main(options = {}) {
 
   const registry = source.data.registry;
   const packages = source.data.packages;
+  const unityBuiltInPackages = source.data.unityBuiltInPackages;
   const defines = source.data.defines;
 
   const violations = [];
@@ -519,7 +701,26 @@ function main(options = {}) {
     errorLog(error.message);
     return 1;
   }
-  violations.push(...checkLocalManifest({ manifest: manifest.data, registry, packages }));
+  violations.push(
+    ...checkLocalManifest({ manifest: manifest.data, registry, packages, unityBuiltInPackages })
+  );
+
+  // --- committed local-parity package lock cross-check ---
+  let packageLock;
+  try {
+    packageLock = loadJsonFile(repoRoot, LOCAL_PACKAGE_LOCK_RELATIVE_PATH);
+  } catch (error) {
+    errorLog(error.message);
+    return 1;
+  }
+  violations.push(
+    ...checkLocalPackageLock({
+      packageLock: packageLock.data,
+      registry,
+      packages,
+      unityBuiltInPackages
+    })
+  );
 
   // --- generator wiring guard ---
   violations.push(...checkGeneratorWired(repoRoot));
@@ -537,12 +738,15 @@ function main(options = {}) {
   }
 
   const packageIds = Object.keys(packages);
+  const builtInPackageIds = Object.keys(unityBuiltInPackages);
   log("Comparison package single-source check passed.");
   log(`  single source: ${SOURCE_RELATIVE_PATH}`);
   log(`  registry:      ${registry.url} [${registry.scopes.join(", ")}]`);
   log(`  packages:      ${packageIds.length} pinned`);
+  log(`  Unity built-ins:${builtInPackageIds.length} required`);
   log(`  asmdefs:       ${gatedAsmdefs.length} gated comparison asmdef(s) cross-checked`);
   log(`  local manifest:${LOCAL_MANIFEST_RELATIVE_PATH} in parity`);
+  log(`  package lock:  ${LOCAL_PACKAGE_LOCK_RELATIVE_PATH} in parity`);
   return 0;
 }
 
@@ -555,10 +759,13 @@ module.exports = {
   collectGatedAsmdefs,
   checkAsmdefCrossReference,
   checkLocalManifest,
+  checkLocalPackageLock,
+  stripPowerShellLineComments,
   checkGeneratorWired,
   main,
   SOURCE_RELATIVE_PATH,
   LOCAL_MANIFEST_RELATIVE_PATH,
+  LOCAL_PACKAGE_LOCK_RELATIVE_PATH,
   COMPARISONS_RELATIVE_DIR,
   GENERATOR_RELATIVE_PATH
 };

@@ -26,6 +26,9 @@
  *   acquire/release actions and the local Unity license preflight action.
  * - Direct Unity test jobs that run scripts/unity/run-ci-tests.ps1 without
  *   first provisioning a CI-managed Unity editor before the organization lock.
+ * - Unity test/build jobs that omit Release-mode flags
+ *   (`-ReleaseCodeOptimization`, `-ReleasePlayerBuild`, or GameCI
+ *   `-releaseCodeOptimization`).
  * - Unsupported inputs on `game-ci/unity-test-runner@v4`.
  * - Workflow lines that exceed the yamllint line-length ceiling (loaded from
  *   .yamllint.yaml when available; defaults to 200). This provides earlier
@@ -2896,6 +2899,75 @@ function stepRunsUnityGenerateOnly(step) {
     return false;
   }
   return commandSegments.every(unityCiTestCommandSegmentIsGenerateOnly);
+}
+
+function runTextWiresPowerShellTrueArgument(runText, parameterName) {
+  const escaped = parameterName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const bareFlag = new RegExp(`-${escaped}\\b(?!\\s*:)`, "i");
+  const explicitTrueFlag = new RegExp(
+    String.raw`-${escaped}\b\s*:\s*(?:\$true|true|1)\b`,
+    "i"
+  );
+  const indexedTrueAssignment = new RegExp(
+    String.raw`\[\s*['"]${escaped}['"]\s*\]\s*=\s*\$true\b`,
+    "i"
+  );
+  const hashtableTrueEntry = new RegExp(String.raw`\b${escaped}\s*=\s*\$true\b`, "i");
+  return (
+    bareFlag.test(runText) ||
+    explicitTrueFlag.test(runText) ||
+    indexedTrueAssignment.test(runText) ||
+    hashtableTrueEntry.test(runText)
+  );
+}
+
+function findUnityReleaseModeViolations(relativePath, lines) {
+  const violations = [];
+  if (isDisabledWorkflowPath(relativePath)) {
+    return violations;
+  }
+
+  for (const job of extractJobs(lines)) {
+    for (const step of extractJobSteps(lines, job)) {
+      if (stepRunsUnityCiTestsDirectly(step)) {
+        const runText = stripPowerShellLineComments(step.run.text);
+        for (const parameterName of ["ReleaseCodeOptimization", "ReleasePlayerBuild"]) {
+          if (runTextWiresPowerShellTrueArgument(runText, parameterName)) {
+            continue;
+          }
+          violations.push(
+            new Violation(
+              relativePath,
+              step.startIndex + 1,
+              `run-ci-tests.ps1 -${parameterName}`,
+              `Job '${job.id}' runs run-ci-tests.ps1 without -${parameterName}. Unity tests and generated standalone players must run in Release mode; pass -${parameterName} directly or wire it through a true-valued hashtable splat.`,
+              "error"
+            )
+          );
+        }
+      }
+
+      if (typeof step.uses === "string" && step.uses.includes(GAME_CI_UNITY_TEST_RUNNER_USES)) {
+        const customParameters =
+          step.with && typeof step.with.get === "function"
+            ? step.with.get("customParameters") || ""
+            : "";
+        if (!/-releaseCodeOptimization\b/i.test(customParameters)) {
+          violations.push(
+            new Violation(
+              relativePath,
+              step.startIndex + 1,
+              "game-ci customParameters: -releaseCodeOptimization",
+              `Job '${job.id}' uses game-ci/unity-test-runner without -releaseCodeOptimization in customParameters. Unity tests must compile in Release mode.`,
+              "error"
+            )
+          );
+        }
+      }
+    }
+  }
+
+  return violations;
 }
 
 function stripPowerShellLineComments(text) {
@@ -5813,6 +5885,8 @@ function validateWorkflow(filePath, options = {}) {
 
     violations.push(...findUnityNativeProvisioningViolations(relativePath, lines));
 
+    violations.push(...findUnityReleaseModeViolations(relativePath, lines));
+
     violations.push(...findUnityLicenseReturnViolations(relativePath, lines));
 
     violations.push(...findForbiddenUnityLicenseSecretViolations(relativePath, lines));
@@ -5995,6 +6069,7 @@ if (typeof module !== "undefined" && module.exports) {
     findGameCiTestRunnerInputViolations,
     findUnityGameCiLockAndPreflightViolations,
     findUnityNativeProvisioningViolations,
+    findUnityReleaseModeViolations,
     findUnityLicenseReturnViolations,
     findForbiddenUnityLicenseSecretViolations,
     findRequiredUnityLicenseSecretViolations,

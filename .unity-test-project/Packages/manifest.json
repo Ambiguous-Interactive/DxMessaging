@@ -12,6 +12,11 @@
     "com.neuecc.unirx": "7.1.0",
     "com.unity-atoms.unity-atoms-core": "4.6.1",
     "com.unity-atoms.unity-atoms-base-atoms": "4.6.1",
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.ugui": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequestwww": "1.0.0",
+    "com.unity.modules.assetbundle": "1.0.0",
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.adaptiveperformance": "1.0.0",
     "com.unity.modules.vectorgraphics": "1.0.0"

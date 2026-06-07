@@ -1,5 +1,5 @@
 {
-  "_comment": "Canonical single source for the OpenUPM scoped registry + PINNED comparison-benchmark package versions. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons), the committed .unity-test-project/Packages/manifest.json (local parity), and scripts/validate-comparison-packages.js (drift gate vs the comparison asmdef versionDefines and both manifests). Bump versions HERE only; the validator fails if any consumer drifts. See .llm/skills/testing/comparison-parity-and-package-single-source.md.",
+  "_comment": "Canonical single source for the OpenUPM scoped registry, PINNED comparison-benchmark package versions, and required Unity built-in module packages. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons), the committed .unity-test-project/Packages/manifest.json (local parity), and scripts/validate-comparison-packages.js (drift gate vs the comparison asmdef versionDefines and both manifests). Bump versions/modules HERE only; the validator fails if any consumer drifts. See .llm/skills/testing/comparison-parity-and-package-single-source.md.",
   "registry": {
     "name": "package.openupm.com",
     "url": "https://package.openupm.com",
@@ -12,6 +12,13 @@
     "com.neuecc.unirx": "7.1.0",
     "com.unity-atoms.unity-atoms-core": "4.6.1",
     "com.unity-atoms.unity-atoms-base-atoms": "4.6.1"
+  },
+  "unityBuiltInPackages": {
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.ugui": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequestwww": "1.0.0",
+    "com.unity.modules.assetbundle": "1.0.0"
   },
   "defines": {
     "com.cysharp.messagepipe": "MESSAGEPIPE_PRESENT",

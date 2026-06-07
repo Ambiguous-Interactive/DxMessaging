@@ -438,16 +438,24 @@ function New-ManifestJson {
     }
 
     # ONLY the comparison legs (-IncludeComparisons) get the OpenUPM scoped
-    # registry + the pinned comparison packages, read from the single source
-    # .github/comparison-packages.json. Non-comparison legs MUST stay byte-for-byte
-    # identical to before (no scopedRegistries key at all) so their Library cache
-    # and reliability are unchanged.
+    # registry, pinned comparison packages, and comparison-package-required Unity
+    # built-in modules, read from the single source .github/comparison-packages.json.
+    # Non-comparison legs MUST stay byte-for-byte identical to before (no
+    # scopedRegistries key and no extra dependencies) so their Library cache and
+    # reliability are unchanged.
     if ($IncludeComparisons) {
         if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
             throw "New-ManifestJson -IncludeComparisons requires -RepoRoot (the comparison-packages.json single source)."
         }
         $comparisons = Get-ComparisonPackages -Root $RepoRoot
         foreach ($pkg in $comparisons.packages.PSObject.Properties) {
+            $dependencies[$pkg.Name] = $pkg.Value
+        }
+        $builtInPackages = $comparisons.PSObject.Properties['unityBuiltInPackages']
+        if (-not $builtInPackages) {
+            throw "comparison-packages.json is missing unityBuiltInPackages; cannot generate the comparison manifest."
+        }
+        foreach ($pkg in $builtInPackages.Value.PSObject.Properties) {
             $dependencies[$pkg.Name] = $pkg.Value
         }
         $reg = $comparisons.registry
@@ -488,8 +496,8 @@ public static class DxmCiTestConfigurator
 {
     public static void Apply()
     {
-        // Prove Release editor code optimization for the perf legs (harmless for
-        // non-perf legs). Set FIRST so the effective value is logged below.
+        // Prove Release editor code optimization for every Unity CI leg. Set FIRST
+        // so the effective value is logged below.
         UnityEditor.Compilation.CompilationPipeline.codeOptimization = UnityEditor.Compilation.CodeOptimization.Release;
 
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);
@@ -505,8 +513,8 @@ public static class DxmCiTestConfigurator
         // build; otherwise the stripper can drop the test code from the player.
         PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStrippingLevel.Disabled);
 
-        // Print the EFFECTIVE perf config so the artifact log PROVES Mono/IL2CPP +
-        // .NET Standard 2.1 + Release for this run.
+        // Print the EFFECTIVE Unity config so the artifact log PROVES Mono/IL2CPP
+        // + .NET Standard 2.1 + Release for this run.
         Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(BuildTargetGroup.Standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}");
 
         // Write a success marker as the FINAL action so the runner can treat the
@@ -550,11 +558,12 @@ public static class DxmCiTestConfigurator
 # so the editor idles forever. The PostBuildCleanup exit (run AFTER the build via
 # ExecutePostBuildCleanupMethods) is mandatory.
 function New-StandaloneBuildModifierSource {
-    param([bool]$DevelopmentBuild = $true)
+    param([bool]$DevelopmentBuild = $false)
 
-    # The Development BuildOptions flag is included ONLY for non-release perf builds.
-    # When $ReleasePlayerBuild is requested the caller passes -DevelopmentBuild $false
-    # and we omit it (a true Release player). Every OTHER option (clearing
+    # The Development BuildOptions flag is opt-in only. Unity CI defaults to a true
+    # Release/non-development player; the compatibility -ReleasePlayerBuild switch is
+    # retained at the script boundary but Release is the unconditional contract.
+    # Every OTHER option (clearing
     # AutoRunPlayer/ConnectToHost/ConnectWithProfiler, |= IncludeTestAssemblies, the
     # DXM_PLAYER_BUILD_PATH redirect, and the PostBuildCleanup exit) is REQUIRED for
     # the split-build test execution and is emitted unconditionally. This is a
@@ -989,7 +998,7 @@ function Initialize-EphemeralProject {
         [string]$Path,
         [switch]$IncludeComparisons,
         [string]$Backend = 'IL2CPP',
-        [bool]$DevelopmentBuild = $true,
+        [bool]$DevelopmentBuild = $false,
         [string]$RepoRoot
     )
 
@@ -2288,7 +2297,14 @@ New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
 
 Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion
 
-$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $ReleasePlayerBuild) -RepoRoot $RepoRoot
+# Release is now the repo-wide Unity CI contract. The historical switches remain
+# accepted for workflow/back-compat, but the effective mode is always Release:
+# editor/test compilations get -releaseCodeOptimization, and standalone generated
+# players omit BuildOptions.Development.
+$UseReleaseCodeOptimization = $true
+$UseReleasePlayerBuild = $true
+
+$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot
 $LibraryPath = Join-Path $ProjectPath 'Library'
 New-Item -ItemType Directory -Force -Path $LibraryPath | Out-Null
 
@@ -2299,8 +2315,8 @@ Write-Host "LibraryPath: $LibraryPath"
 Write-Host "ArtifactsPath: $ArtifactsPath"
 Write-Host "IncludeComparisons: $IncludeComparisons"
 Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"
-Write-Host "ReleasePlayerBuild: $ReleasePlayerBuild"
-Write-Host "ReleaseCodeOptimization: $ReleaseCodeOptimization"
+Write-Host "ReleasePlayerBuild: $UseReleasePlayerBuild"
+Write-Host "ReleaseCodeOptimization: $UseReleaseCodeOptimization"
 Write-Host "Manifest:"
 Get-Content -LiteralPath (Join-Path $ProjectPath 'Packages\manifest.json')
 Write-Host "Pre-created analyzer copy (Assets/Plugins/Editor/WallstopStudios.DxMessaging):"
@@ -2530,6 +2546,7 @@ try {
             '-testPlatform', 'StandaloneWindows64',
             '-testResults', $resultsPath,
             '-assemblyNames', $AssemblyNames,
+            '-releaseCodeOptimization',
             '-buildTarget', 'StandaloneWindows64',
             '-logFile', '-'
         ) + $categoryArgs + $acceleratorArgs
@@ -2641,16 +2658,9 @@ try {
             '-testPlatform', $testPlatform,
             '-testResults', $resultsPath,
             '-assemblyNames', $AssemblyNames,
+            '-releaseCodeOptimization',
             '-logFile', '-'
         )
-        # Editor-side Release code optimization for the editmode/playmode perf legs.
-        # MUST NOT be added to any array that also carries '-quit' (the standalone
-        # configure pass): -runTests + -quit is mutually exclusive per the Unity
-        # manual. The standalone leg sets Release code optimization via the
-        # configurator (DxmCiTestConfigurator.Apply) instead, so it needs no CLI flag.
-        if ($ReleaseCodeOptimization) {
-            $testArgs += '-releaseCodeOptimization'
-        }
         $testArgs = $testArgs + $categoryArgs + $acceleratorArgs
 
         # Delete any STALE results file first so the file validation below can only

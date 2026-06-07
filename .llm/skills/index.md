@@ -116,7 +116,7 @@
 | [Object Pooling for Zero-Allocation Messaging Part 2](./performance/object-pooling-part-2.md)                      | [draft] 70  | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Object Pooling Usage Examples](./performance/object-pooling-usage-examples.md)                                    | [draft] 115 | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
 | [Object Pooling Variations](./performance/object-pooling-variations.md)                                            | [ok] 148    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
-| [Perf Config: Mono, .NET Standard 2.1, Release](./performance/perf-config-mono-netstandard21-release.md)           | [ok] 170    | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
+| [Perf Config: Mono, .NET Standard 2.1, Release](./performance/perf-config-mono-netstandard21-release.md)           | [ok] 171    | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
 | [Readonly Struct Cached Hash Performance Notes](./performance/readonly-struct-cached-hash-performance-notes.md)    | [draft] 92  | [intermediate] | [stable] | [risk: high]     | performance, struct     |
 | [Readonly Struct with Cached Hash for Dictionary Keys](./performance/readonly-struct-cached-hash.md)               | [ok] 128    | [intermediate] | [stable] | [risk: high]     | performance, struct     |
 | [Readonly Struct with Cached Hash for Dictionary Keys Part 1](./performance/readonly-struct-cached-hash-part-1.md) | [ok] 171    | [intermediate] | [stable] | [risk: low]      | migration, split        |
@@ -188,7 +188,7 @@
 | ------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ---------------- | ---------------------------- |
 | [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 262  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
 | [Benchmarks Run in the Highest-Fidelity Scope](./testing/benchmarks-run-in-highest-fidelity-scope.md)   | [ok] 165    | [intermediate] | [stable] | [risk: medium]   | testing, benchmarks          |
-| [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [ok] 201    | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
+| [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [ok] 210    | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Data-Driven Coverage Patterns](./testing/test-coverage-data-driven.md)                                 | [ok] 173    | [intermediate] | [stable] | [risk: none]     | testing, data-driven         |
 | [Data-Driven Test Sources](./testing/data-driven-tests-sources.md)                                      | [ok] 256    | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Test Usage Patterns](./testing/data-driven-tests-usage.md)                                 | [draft] 108 | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |

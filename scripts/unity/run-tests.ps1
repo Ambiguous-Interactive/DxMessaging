@@ -360,7 +360,8 @@ Set UNITY_EDITOR_PATH to your Unity.exe path, for example:
         '-runTests',
         '-testPlatform', $Platform,
         '-testResults', $Results,
-        '-assemblyNames', $Assemblies
+        '-assemblyNames', $Assemblies,
+        '-releaseCodeOptimization'
     )
     if (-not [string]::IsNullOrWhiteSpace($Filter)) {
         $unityArgs += @('-testFilter', $Filter)
@@ -782,6 +783,7 @@ function Get-EditorCommandInner {
     [void]$sb.AppendLine("  -runTests -testPlatform $testPlatform \")
     [void]$sb.AppendLine("  -testResults $resultsQ \")
     [void]$sb.AppendLine("  -assemblyNames $assembliesQ \")
+    [void]$sb.AppendLine('  -releaseCodeOptimization \')
     if (-not [string]::IsNullOrWhiteSpace($Filter)) {
         $filterQ = ConvertTo-BashSingleQuotedString $Filter
         [void]$sb.AppendLine("  -testFilter $filterQ \")

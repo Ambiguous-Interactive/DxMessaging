@@ -387,14 +387,13 @@ jobs:
           # POSITIONALLY, so '-IncludeComparisons' would bind to $RepoRoot. A
           # hashtable binds by parameter name. See unity-runner-script-contract
           # test "perf-numbers run step uses a name-binding (hashtable) splat".
-          $extra = @{ IncludeComparisons = $true }
-          if ('${{ matrix.test-mode }}' -eq 'playmode') {
-              $extra['ReleaseCodeOptimization'] = $true
+          $extra = @{
+              IncludeComparisons = $true
+              ReleaseCodeOptimization = $true
+              ReleasePlayerBuild = $true
           }
           if ('${{ matrix.test-mode }}' -eq 'standalone') {
               $extra['StandaloneScriptingBackend'] = 'Mono2x'
-              $extra['ReleasePlayerBuild'] = $true
-              $extra['ReleaseCodeOptimization'] = $true
           }
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `

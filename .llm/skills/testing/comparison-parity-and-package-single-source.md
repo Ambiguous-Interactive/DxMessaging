@@ -10,6 +10,8 @@ source:
   repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: ".github/comparison-packages.json"
+    - path: ".unity-test-project/Packages/manifest.json"
+    - path: ".unity-test-project/Packages/packages-lock.json"
     - path: "Tests/Runtime/Comparisons/ComparisonHarness.cs"
     - path: "Tests/Runtime/Comparisons/IMessagingTechBridge.cs"
     - path: "Tests/Runtime/Comparisons/ZeroDependencyComparisonTests.cs"
@@ -25,7 +27,7 @@ tags:
 
 complexity:
   level: "advanced"
-  reasoning: "Spans apples-to-apples bridge design, N/A semantics, fan-out dedup guards, and a multi-consumer package single-source contract."
+  reasoning: "Spans apples-to-apples bridge design, N/A semantics, fan-out dedup guards, and a multi-consumer package/built-in single-source contract."
 
 impact:
   performance:
@@ -33,7 +35,7 @@ impact:
     details: "Idiomatic best-practice bridges keep each library's number representative rather than penalized by a foreign adapter."
   maintainability:
     rating: "high"
-    details: "One pinned registry file removes version drift across the asmdef and two manifests."
+    details: "One pinned registry file removes version and Unity built-in dependency drift across the asmdef and two manifests."
   testability:
     rating: "high"
     details: "A per-(tech,scenario) fan-out assertion plus a drift validator pin both parity and pins."
@@ -74,7 +76,7 @@ status: "stable"
 > **One-line summary**: Every library is exercised through its idiomatic
 > best-practice API per scenario, unsupported scenarios render `N/A` (never
 > faked), a per-(tech,scenario) fan-out assertion guards against silent dedup,
-> and the comparison registry plus PINNED versions live ONLY in
+> and the comparison registry, PINNED versions, and required Unity built-ins live ONLY in
 > `.github/comparison-packages.json` with a drift gate.
 
 ## Overview
@@ -82,8 +84,8 @@ status: "stable"
 Cross-library comparison benchmarks are only fair if each library is measured
 the way its own authors would write it. DxMessaging holds two rules to keep the
 table honest: parity in how bridges exercise each library, and a single source
-for the comparison package registry and pins so the asmdef and both manifests
-cannot drift apart.
+for the comparison package registry, pins, and required Unity built-ins so the
+asmdef and both manifests cannot drift apart.
 
 The harness in `Tests/Runtime/Comparisons/ComparisonHarness.cs` runs each
 bridge through the shared benchmark protocol, so a comparison cell and a
@@ -101,9 +103,11 @@ Comparison tables rot in predictable ways:
   number invents a capability the library does not have.
 - **Silent dedup.** If two (tech, scenario) results collapse to one row, the
   table quietly drops coverage and no test notices.
-- **Version drift.** A version pinned in the asmdef `versionDefines`, the
-  ephemeral CI manifest, and the committed local manifest will diverge unless
-  one file owns the value.
+- **Version / built-in drift.** A version pinned in the asmdef
+  `versionDefines`, the ephemeral CI manifest, and the committed local manifest
+  will diverge unless one file owns the value. The same is true for Unity
+  built-in packages such as `com.unity.ugui` and `com.unity.modules.animation`
+  that external comparison packages need to compile.
 
 ## Solution
 
@@ -147,8 +151,8 @@ are guarded behind their package defines and drop out cleanly when absent.
 ## The Package Single Source
 
 `.github/comparison-packages.json` is the only place the OpenUPM scoped
-registry and the PINNED comparison-benchmark versions live. Bump a version
-THERE and nowhere else:
+registry, the PINNED comparison-benchmark versions, and the required Unity
+built-in packages live. Bump a version or module THERE and nowhere else:
 
 ```json
 {
@@ -156,24 +160,29 @@ THERE and nowhere else:
     "com.cysharp.messagepipe": "1.8.1",
     "com.neuecc.unirx": "7.1.0",
     "com.svermeulen.extenject": "9.2.0-stcf3"
+  },
+  "unityBuiltInPackages": {
+    "com.unity.ugui": "1.0.0",
+    "com.unity.modules.animation": "1.0.0"
   }
 }
 ```
 
 Three consumers read this file and must agree:
 
-- `scripts/unity/run-ci-tests.ps1` injects the registry and pins into the
-  ephemeral comparison manifest (comparison legs only, via
-  `-IncludeComparisons`).
-- The committed `.unity-test-project/Packages/manifest.json` mirrors the pins
-  for local parity.
+- `scripts/unity/run-ci-tests.ps1` injects the registry, external pins, and
+  Unity built-ins into the ephemeral comparison manifest (comparison legs only,
+  via `-IncludeComparisons`).
+- The committed `.unity-test-project/Packages/manifest.json` and
+  `.unity-test-project/Packages/packages-lock.json` mirror the pins and
+  built-ins for local parity.
 - The gated comparison asmdef expresses each package as a `versionDefines`
   entry so the bridge compiles only when its package is present.
 
 `scripts/validate-comparison-packages.js` (npm `validate:comparison-packages`,
 part of `validate:all`) fails on any drift between the JSON, the asmdef
-`versionDefines`, and the committed manifest. The single-source file is the
-authority; the validator keeps the mirrors honest.
+`versionDefines`, the committed manifest, and the committed package lock. The
+single-source file is the authority; the validator keeps the mirrors honest.
 
 ## Common Pitfalls
 

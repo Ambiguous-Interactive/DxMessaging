@@ -114,6 +114,10 @@ describe("scripts/unity/run-tests.sh contract", () => {
     expect(content).not.toContain("personal-email");
   });
 
+  test("runs Unity tests with Release code optimization locally", () => {
+    expect(content).toContain("-releaseCodeOptimization");
+  });
+
   test("is serial-FIRST with the .ulf fallback retained", () => {
     // The repo removed the self-hosted Unity Licensing Server and switched to
     // classic SERIAL activation. The local script prefers UNITY_SERIAL +
@@ -277,6 +281,11 @@ describe("scripts/unity/run-tests.ps1 contract", () => {
     expect(content).toContain("UNITY_PASSWORD");
     expect(content).not.toContain('-serial ""');
     expect(content).not.toContain("personal-email");
+  });
+
+  test("runs Unity tests with Release code optimization locally", () => {
+    expect(content).toContain("'-releaseCodeOptimization'");
+    expect(content).toContain("  -releaseCodeOptimization \\");
   });
 
   test("is serial-FIRST with the .ulf fallback retained", () => {
@@ -1816,52 +1825,59 @@ describe("scripts/unity direct CI runner contract", () => {
       // StandaloneScriptingBackend is constrained to the two valid backends.
       expect(runCi).toMatch(/\[ValidateSet\(\s*'IL2CPP'\s*,\s*'Mono2x'\s*\)\]/);
       // The params are threaded into the ephemeral-project + run wiring (not dead):
-      // the backend + release-player flags flow into Initialize-EphemeralProject and
-      // the release code-optimization flag gates the CLI arg.
+      // the backend flows into Initialize-EphemeralProject, while Release player
+      // and Release code optimization are now the unconditional Unity CI contract.
       expect(runCi).toContain("-Backend $StandaloneScriptingBackend");
-      expect(runCi).toContain("-DevelopmentBuild:(-not $ReleasePlayerBuild)");
+      expect(runCi).toContain("$UseReleaseCodeOptimization = $true");
+      expect(runCi).toContain("$UseReleasePlayerBuild = $true");
+      expect(runCi).toContain("-DevelopmentBuild:(-not $UseReleasePlayerBuild)");
       expect(runCi).toContain("-IncludeComparisons:$IncludeComparisons");
-      expect(runCi).toContain("if ($ReleaseCodeOptimization)");
+      expect(runCi).not.toContain("if ($ReleaseCodeOptimization)");
     });
 
-    test("New-ManifestJson injects scopedRegistries ONLY under -IncludeComparisons", () => {
-      // The comparison legs add the OpenUPM scoped registry from the single source
+    test("New-ManifestJson injects comparison deps + scopedRegistries ONLY under -IncludeComparisons", () => {
+      // The comparison legs add the OpenUPM scoped registry, external package pins,
+      // and Unity built-in packages from the single source
       // .github/comparison-packages.json; non-comparison legs must stay byte-for-byte
-      // identical (no scopedRegistries key). Assert the scopedRegistries assignment
-      // lives inside the `if ($IncludeComparisons)` block of New-ManifestJson.
+      // identical (no scopedRegistries key and no comparison-only dependencies).
       const body = extractFunctionBody(runCi, "New-ManifestJson");
       expect(body).not.toBe("");
       const guardIdx = body.indexOf("if ($IncludeComparisons)");
       // Match the ASSIGNMENT (not the comment prose that also says
       // "scopedRegistries"): the manifest key is set only inside the guard block.
       const scopedIdx = body.indexOf("$manifest['scopedRegistries']");
+      const builtInIdx = body.indexOf("unityBuiltInPackages");
       expect(guardIdx).toBeGreaterThan(-1);
       expect(scopedIdx).toBeGreaterThan(guardIdx);
+      expect(builtInIdx).toBeGreaterThan(guardIdx);
       // The comparison source is read from the single-source JSON, not duplicated.
       expect(body).toContain("Get-ComparisonPackages");
     });
 
-    test("-releaseCodeOptimization is only added to a -runTests arg array that has NO -quit", () => {
+    test("-releaseCodeOptimization is only added to -runTests arg arrays that have NO -quit", () => {
       // -runTests + -quit is mutually exclusive per the Unity manual. The Release
-      // code-optimization CLI flag must therefore live in the editmode/playmode
-      // $testArgs array (which carries -runTests but NOT -quit), gated on
-      // $ReleaseCodeOptimization -- never in the standalone configure pass (-quit).
-      const guardIdx = runCi.indexOf("if ($ReleaseCodeOptimization)");
-      expect(guardIdx).toBeGreaterThan(-1);
-      const appendIdx = runCi.indexOf("$testArgs += '-releaseCodeOptimization'", guardIdx);
-      expect(appendIdx).toBeGreaterThan(guardIdx);
-      // The $testArgs array the flag is appended to declares -runTests and does NOT
-      // declare -quit. Bound the search to the $testArgs ARRAY LITERAL itself (from
-      // its `@(` to the matching `)` line) so the explanatory comment between the
-      // array and the guard -- which legitimately mentions '-quit' -- is excluded.
-      const arrayStart = runCi.lastIndexOf("$testArgs = @(", guardIdx);
-      expect(arrayStart).toBeGreaterThan(-1);
-      const arrayEnd = runCi.indexOf("\n        )", arrayStart);
-      expect(arrayEnd).toBeGreaterThan(arrayStart);
-      expect(arrayEnd).toBeLessThan(guardIdx);
-      const arrayRegion = runCi.slice(arrayStart, arrayEnd);
-      expect(arrayRegion).toContain("'-runTests'");
-      expect(arrayRegion).not.toContain("'-quit'");
+      // code-optimization CLI flag must therefore live in Unity invocations that
+      // carry -runTests but NOT in the standalone configure pass, which carries
+      // -quit. Bound checks to the array literals so explanatory comments cannot
+      // create false positives.
+      const arrayRegion = (variableName) => {
+        const arrayStart = runCi.indexOf(`${variableName} = @(`);
+        expect(arrayStart).toBeGreaterThan(-1);
+        const arrayEnd = runCi.indexOf("\n        )", arrayStart);
+        expect(arrayEnd).toBeGreaterThan(arrayStart);
+        return runCi.slice(arrayStart, arrayEnd);
+      };
+
+      for (const variableName of ["$buildArgs", "$testArgs"]) {
+        const region = arrayRegion(variableName);
+        expect(region).toContain("'-runTests'");
+        expect(region).toContain("'-releaseCodeOptimization'");
+        expect(region).not.toContain("'-quit'");
+      }
+
+      const configureRegion = arrayRegion("$configureArgs");
+      expect(configureRegion).toContain("'-quit'");
+      expect(configureRegion).not.toContain("'-releaseCodeOptimization'");
     });
 
     test("New-StandaloneBuildModifierSource emits the dual-attribute modifier + cleanup", () => {

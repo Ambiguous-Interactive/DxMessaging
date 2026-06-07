@@ -24,7 +24,7 @@ tags:
 
 complexity:
   level: "intermediate"
-  reasoning: "Requires understanding the per-leg build matrix and why functional legs must stay Debug while perf legs go Release."
+  reasoning: "Requires understanding the per-leg build matrix and why every Unity test/build leg now runs Release while perf standalone still pins Mono2x."
 
 impact:
   performance:
@@ -72,17 +72,19 @@ status: "stable"
 # Perf Config: Mono, .NET Standard 2.1, Release
 
 > **One-line summary**: Published perf numbers are produced under Mono +
-> .NET Standard 2.1 + Release. EditMode/PlayMode legs pass
-> `-releaseCodeOptimization`; the Standalone perf leg builds a `Mono2x`
-> non-development player with `ApiCompatibilityLevel.NET_Standard` and disabled
-> managed stripping. Functional (non-perf) test legs stay Debug.
+> .NET Standard 2.1 + Release. All Unity test legs pass
+> `-releaseCodeOptimization`; standalone generated players are
+> non-development Release players with disabled managed stripping. The
+> Standalone perf leg additionally builds with `Mono2x` and
+> `ApiCompatibilityLevel.NET_Standard`.
 
 ## Overview
 
 A throughput number is only reproducible if the build profile that produced it
-is fixed. DxMessaging pins one profile for every published benchmark and drives
-it from a single runner, `scripts/unity/run-ci-tests.ps1`. Each leg differs
-only by documented parameters, so the profile cannot drift between scopes.
+is fixed. DxMessaging pins Release mode for every Unity test/build and drives
+CI from a single runner, `scripts/unity/run-ci-tests.ps1`. Each perf leg differs
+only by documented backend parameters, so the profile cannot drift between
+scopes.
 
 The profile is Mono (not IL2CPP) with the .NET Standard 2.1 API surface and a
 Release code-optimization build. Mono is the scope CI publishes because it is
@@ -99,19 +101,17 @@ Two failure modes make perf numbers meaningless:
   which removes the benchmark assemblies and the `[Preserve]` standalone
   test-run callback, so the player runs nothing.
 
-Functional correctness tests have the opposite need: they should run Debug so
-assertions, debug code paths, and clearer stack traces stay intact.
-
 ## Solution
 
-`run-ci-tests.ps1` exposes the profile as parameters and the perf legs set them:
+`run-ci-tests.ps1` accepts the historical Release switches for compatibility,
+but Release is the unconditional effective mode:
 
 | Leg              | Profile flags                                                                     |
 | ---------------- | --------------------------------------------------------------------------------- |
-| EditMode perf    | `-ReleaseCodeOptimization`                                                        |
-| PlayMode perf    | `-ReleaseCodeOptimization`                                                        |
+| EditMode tests   | `-ReleaseCodeOptimization`                                                        |
+| PlayMode tests   | `-ReleaseCodeOptimization`                                                        |
 | Standalone perf  | `-StandaloneScriptingBackend Mono2x -ReleasePlayerBuild -ReleaseCodeOptimization` |
-| Functional (any) | none (Debug)                                                                      |
+| Standalone tests | `-ReleasePlayerBuild -ReleaseCodeOptimization`                                    |
 
 `-ReleaseCodeOptimization` adds the editor flag
 `-releaseCodeOptimization`, which sets
@@ -130,18 +130,18 @@ PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStri
 and the `[Preserve]` callback in the player so the standalone benchmark run can
 execute and write results.
 
-`-ReleasePlayerBuild` flips the build from a development player to a
-non-development (Release) player; the runner passes the inverse to the
-development-build option so the standalone player ships without
-`BuildOptions.Development`.
+`-ReleasePlayerBuild` is retained at the workflow call sites and the runner's
+effective standalone default is non-development Release. The generated build
+modifier omits `BuildOptions.Development` unless a future caller explicitly
+opts back into a development player in code.
 
 ## CI Wiring
 
 The Performance Numbers workflow (`.github/workflows/perf-numbers.yml`) runs the
 `playmode` and `standalone` legs, both with comparisons enabled. The standalone
 matrix entry sets `StandaloneScriptingBackend = 'Mono2x'`, `ReleasePlayerBuild`,
-and `ReleaseCodeOptimization`; the playmode entry sets `ReleaseCodeOptimization`
-only. The leg parameters are the only difference between scopes.
+and `ReleaseCodeOptimization`; the playmode entry also sets the Release flags.
+The backend parameter is the meaningful difference between scopes.
 
 ## Common Pitfalls
 
@@ -153,8 +153,9 @@ only. The leg parameters are the only difference between scopes.
 - "I will switch the perf leg to IL2CPP for realism." The published scope is
   Mono. IL2CPP is a separate concern; do not silently change the published
   profile.
-- "I will make functional tests Release to match." Functional legs stay Debug so
-  assertions and debug paths remain.
+- "I will leave a Unity workflow without Release flags because the runner
+  defaults Release." The runner default is the backstop; workflows still spell
+  out Release flags so `validate-workflows` catches YAML drift before Unity runs.
 
 ## See Also
 

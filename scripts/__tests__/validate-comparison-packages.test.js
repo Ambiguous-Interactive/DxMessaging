@@ -8,11 +8,12 @@
  * source, the comparison asmdefs, and the committed local-parity manifest are
  * mutually consistent.
  *
- * Negative cases build an ISOLATED fixture repo by deep-copying the four real
+ * Negative cases build an ISOLATED fixture repo by deep-copying the five real
  * inputs (single source, the gated asmdefs at their real relative paths, the
- * local manifest, the generator) into a gitignored `dxm-cmp-test-*` scratch dir
- * INSIDE the repo (repo policy forbids os.tmpdir() fixtures), mutate exactly one
- * thing, and assert the matching failure. The real tree is never mutated.
+ * local manifest, the package lock, the generator) into a gitignored
+ * `dxm-cmp-test-*` scratch dir INSIDE the repo (repo policy forbids os.tmpdir()
+ * fixtures), mutate exactly one thing, and assert the matching failure. The
+ * real tree is never mutated.
  */
 
 "use strict";
@@ -27,10 +28,12 @@ const {
   collectGatedAsmdefs,
   checkAsmdefCrossReference,
   checkLocalManifest,
+  checkLocalPackageLock,
   checkGeneratorWired,
   main,
   SOURCE_RELATIVE_PATH,
   LOCAL_MANIFEST_RELATIVE_PATH,
+  LOCAL_PACKAGE_LOCK_RELATIVE_PATH,
   COMPARISONS_RELATIVE_DIR,
   GENERATOR_RELATIVE_PATH
 } = require("../validate-comparison-packages.js");
@@ -51,6 +54,13 @@ const VALID_SOURCE = Object.freeze({
     "com.neuecc.unirx": "7.1.0",
     "com.unity-atoms.unity-atoms-core": "4.6.1",
     "com.unity-atoms.unity-atoms-base-atoms": "4.6.1"
+  },
+  unityBuiltInPackages: {
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.ugui": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequestwww": "1.0.0",
+    "com.unity.modules.assetbundle": "1.0.0"
   },
   defines: {
     "com.cysharp.messagepipe": "MESSAGEPIPE_PRESENT",
@@ -111,6 +121,48 @@ describe("validateSourceSchema", () => {
     const data = clone(VALID_SOURCE);
     data.packages["com.cysharp.unitask"] = "";
     expect(validateSourceSchema(data).join("\n")).toMatch(/must be a non-empty version string/);
+  });
+
+  test.each([
+    [
+      "missing unityBuiltInPackages",
+      (data) => {
+        delete data.unityBuiltInPackages;
+      },
+      /`unityBuiltInPackages` must be an object/
+    ],
+    [
+      "empty unityBuiltInPackages",
+      (data) => {
+        data.unityBuiltInPackages = {};
+      },
+      /`unityBuiltInPackages` must have at least one entry/
+    ],
+    [
+      "non-Unity built-in package id",
+      (data) => {
+        data.unityBuiltInPackages["com.example.notbuiltin"] = "1.0.0";
+      },
+      /must start with 'com\.unity\.'/
+    ],
+    [
+      "non-1.0.0 built-in package version",
+      (data) => {
+        data.unityBuiltInPackages["com.unity.ugui"] = "2.0.0";
+      },
+      /must be the Unity built-in package version '1\.0\.0'/
+    ],
+    [
+      "built-in duplicated in OpenUPM packages",
+      (data) => {
+        data.packages["com.unity.ugui"] = "1.0.0";
+      },
+      /must not also appear in `packages`/
+    ]
+  ])("rejects %s", (_name, mutate, expected) => {
+    const data = clone(VALID_SOURCE);
+    mutate(data);
+    expect(validateSourceSchema(data).join("\n")).toMatch(expected);
   });
 
   test("rejects a package with no defines entry", () => {
@@ -229,11 +281,14 @@ describe("checkAsmdefCrossReference", () => {
 describe("checkLocalManifest", () => {
   const registry = VALID_SOURCE.registry;
   const packages = VALID_SOURCE.packages;
+  const unityBuiltInPackages = VALID_SOURCE.unityBuiltInPackages;
 
   function goodManifest() {
     const dependencies = {};
-    for (const [id, version] of Object.entries(packages)) {
-      dependencies[id] = version;
+    for (const pins of [packages, unityBuiltInPackages]) {
+      for (const [id, version] of Object.entries(pins)) {
+        dependencies[id] = version;
+      }
     }
     return {
       dependencies,
@@ -250,41 +305,156 @@ describe("checkLocalManifest", () => {
   }
 
   test("passes when the manifest carries the registry superset + exact pins", () => {
-    expect(checkLocalManifest({ manifest: goodManifest(), registry, packages })).toEqual([]);
+    expect(
+      checkLocalManifest({ manifest: goodManifest(), registry, packages, unityBuiltInPackages })
+    ).toEqual([]);
   });
 
-  test("fails on a missing pinned dependency", () => {
+  test.each([
+    [
+      "pinned comparison package",
+      "com.neuecc.unirx",
+      /missing pinned comparison package 'com\.neuecc\.unirx'/
+    ],
+    [
+      "required Unity built-in package",
+      "com.unity.ugui",
+      /missing required Unity built-in package 'com\.unity\.ugui'/
+    ]
+  ])("fails on a missing %s", (_label, dependencyId, expected) => {
     const manifest = goodManifest();
-    delete manifest.dependencies["com.neuecc.unirx"];
-    const violations = checkLocalManifest({ manifest, registry, packages });
-    expect(violations.join("\n")).toMatch(/missing pinned comparison package 'com.neuecc.unirx'/);
+    delete manifest.dependencies[dependencyId];
+    const violations = checkLocalManifest({ manifest, registry, packages, unityBuiltInPackages });
+    expect(violations.join("\n")).toMatch(expected);
   });
 
-  test("fails on a version mismatch", () => {
+  test.each([
+    ["pinned comparison package", "com.cysharp.unitask", "2.0.0"],
+    ["required Unity built-in package", "com.unity.modules.animation", "2.0.0"]
+  ])("fails on a %s version mismatch", (_label, dependencyId, driftedVersion) => {
     const manifest = goodManifest();
-    manifest.dependencies["com.cysharp.unitask"] = "2.0.0";
-    const violations = checkLocalManifest({ manifest, registry, packages });
-    expect(violations.join("\n")).toMatch(/`dependencies.com.cysharp.unitask` is '2.0.0'/);
+    manifest.dependencies[dependencyId] = driftedVersion;
+    const violations = checkLocalManifest({ manifest, registry, packages, unityBuiltInPackages });
+    expect(violations.join("\n")).toContain(
+      `dependencies.${dependencyId}\` is '${driftedVersion}'`
+    );
   });
 
   test("fails on a scoped-registry url mismatch", () => {
     const manifest = goodManifest();
     manifest.scopedRegistries[0].url = "https://example.com";
-    const violations = checkLocalManifest({ manifest, registry, packages });
+    const violations = checkLocalManifest({ manifest, registry, packages, unityBuiltInPackages });
     expect(violations.join("\n")).toMatch(/no `scopedRegistries` entry has url/);
   });
 
   test("fails on a missing scope (not a superset)", () => {
     const manifest = goodManifest();
     manifest.scopedRegistries[0].scopes = ["com.cysharp"];
-    const violations = checkLocalManifest({ manifest, registry, packages });
+    const violations = checkLocalManifest({ manifest, registry, packages, unityBuiltInPackages });
     expect(violations.join("\n")).toMatch(/is missing scope 'com.svermeulen'/);
+  });
+});
+
+describe("checkLocalPackageLock", () => {
+  const registry = VALID_SOURCE.registry;
+  const packages = VALID_SOURCE.packages;
+  const unityBuiltInPackages = VALID_SOURCE.unityBuiltInPackages;
+
+  function goodPackageLock() {
+    const dependencies = {};
+    for (const [id, version] of Object.entries(packages)) {
+      dependencies[id] = {
+        version,
+        depth: 0,
+        source: "registry",
+        dependencies: {},
+        url: registry.url
+      };
+    }
+    for (const [id, version] of Object.entries(unityBuiltInPackages)) {
+      dependencies[id] = {
+        version,
+        depth: 0,
+        source: "builtin",
+        dependencies: {}
+      };
+    }
+    return { dependencies };
+  }
+
+  test("passes when the package lock carries exact direct pins", () => {
+    expect(
+      checkLocalPackageLock({
+        packageLock: goodPackageLock(),
+        registry,
+        packages,
+        unityBuiltInPackages
+      })
+    ).toEqual([]);
+  });
+
+  test.each([
+    [
+      "pinned comparison package",
+      "com.cysharp.messagepipe",
+      /missing pinned comparison package 'com\.cysharp\.messagepipe'/
+    ],
+    [
+      "required Unity built-in package",
+      "com.unity.ugui",
+      /missing required Unity built-in package 'com\.unity\.ugui'/
+    ]
+  ])("fails on a missing %s", (_label, dependencyId, expected) => {
+    const packageLock = goodPackageLock();
+    delete packageLock.dependencies[dependencyId];
+    const violations = checkLocalPackageLock({
+      packageLock,
+      registry,
+      packages,
+      unityBuiltInPackages
+    });
+    expect(violations.join("\n")).toMatch(expected);
+  });
+
+  test.each([
+    ["version", "com.cysharp.unitask", (entry) => (entry.version = "0.0.0")],
+    ["depth", "com.neuecc.unirx", (entry) => (entry.depth = 1)],
+    ["source", "com.unity.ugui", (entry) => (entry.source = "registry")],
+    ["registry url", "com.svermeulen.extenject", (entry) => (entry.url = "https://example.com")]
+  ])("fails on %s drift", (_name, dependencyId, mutate) => {
+    const packageLock = goodPackageLock();
+    mutate(packageLock.dependencies[dependencyId]);
+    const violations = checkLocalPackageLock({
+      packageLock,
+      registry,
+      packages,
+      unityBuiltInPackages
+    });
+    expect(violations.length).toBeGreaterThan(0);
   });
 });
 
 describe("checkGeneratorWired (real repo)", () => {
   test("the real generator references the single source", () => {
     expect(checkGeneratorWired(REPO_ROOT)).toEqual([]);
+  });
+
+  test("comments alone do not satisfy the generator wiring guard", () => {
+    const dir = fs.mkdtempSync(path.join(REPO_ROOT, "dxm-cmp-test-"));
+    try {
+      const generatorAbs = path.join(dir, GENERATOR_RELATIVE_PATH);
+      fs.mkdirSync(path.dirname(generatorAbs), { recursive: true });
+      fs.writeFileSync(
+        generatorAbs,
+        "# comparison-packages.json\n# unityBuiltInPackages\nfunction New-ManifestJson {}\n",
+        "utf8"
+      );
+      const violations = checkGeneratorWired(dir);
+      expect(violations.join("\n")).toMatch(/does not reference 'comparison-packages.json'/);
+      expect(violations.join("\n")).toMatch(/does not reference 'unityBuiltInPackages'/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -340,7 +510,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
   const createdDirs = [];
 
   /**
-   * Deep-copy the four real inputs into a fresh fixture repoRoot, then apply
+   * Deep-copy the five real inputs into a fresh fixture repoRoot, then apply
    * `mutate(paths)` to drift exactly one thing before running main().
    */
   function makeFixtureRepo(mutate) {
@@ -349,6 +519,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
 
     const sourceAbs = path.join(dir, SOURCE_RELATIVE_PATH);
     const manifestAbs = path.join(dir, LOCAL_MANIFEST_RELATIVE_PATH);
+    const packageLockAbs = path.join(dir, LOCAL_PACKAGE_LOCK_RELATIVE_PATH);
     const generatorAbs = path.join(dir, GENERATOR_RELATIVE_PATH);
 
     // Real gated asmdefs, copied at their real relative paths so the collector
@@ -365,6 +536,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
 
     copyReal(SOURCE_RELATIVE_PATH);
     copyReal(LOCAL_MANIFEST_RELATIVE_PATH);
+    copyReal(LOCAL_PACKAGE_LOCK_RELATIVE_PATH);
     copyReal(GENERATOR_RELATIVE_PATH);
     for (const relativePath of gatedRelatives) {
       copyReal(relativePath);
@@ -378,6 +550,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       dir,
       sourceAbs,
       manifestAbs,
+      packageLockAbs,
       generatorAbs,
       gatedAbs: gatedRelatives.map((relativePath) => path.join(dir, relativePath)),
       readJson,
@@ -424,6 +597,51 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       const { code, errorText } = runFixture(dir);
       expect(code).toBe(1);
       expect(errorText).toMatch(/missing pinned comparison package 'com.neuecc.unirx'/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("(b2) returns 1 when the local manifest is MISSING a Unity built-in dependency", () => {
+    const dir = makeFixtureRepo(({ manifestAbs, readJson, writeJson }) => {
+      const manifest = readJson(manifestAbs);
+      delete manifest.dependencies["com.unity.ugui"];
+      writeJson(manifestAbs, manifest);
+    });
+    try {
+      const { code, errorText } = runFixture(dir);
+      expect(code).toBe(1);
+      expect(errorText).toMatch(/missing required Unity built-in package 'com.unity.ugui'/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("(b3) returns 1 when the package lock is MISSING a Unity built-in dependency", () => {
+    const dir = makeFixtureRepo(({ packageLockAbs, readJson, writeJson }) => {
+      const packageLock = readJson(packageLockAbs);
+      delete packageLock.dependencies["com.unity.ugui"];
+      writeJson(packageLockAbs, packageLock);
+    });
+    try {
+      const { code, errorText } = runFixture(dir);
+      expect(code).toBe(1);
+      expect(errorText).toMatch(/missing required Unity built-in package 'com.unity.ugui'/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("(b4) returns 1 when the package lock has a comparison package version mismatch", () => {
+    const dir = makeFixtureRepo(({ packageLockAbs, readJson, writeJson }) => {
+      const packageLock = readJson(packageLockAbs);
+      packageLock.dependencies["com.cysharp.messagepipe"].version = "0.0.0-drift";
+      writeJson(packageLockAbs, packageLock);
+    });
+    try {
+      const { code, errorText } = runFixture(dir);
+      expect(code).toBe(1);
+      expect(errorText).toMatch(/dependencies\.com\.cysharp\.messagepipe\.version/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -561,12 +779,29 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("returns 1 when the generator no longer wires Unity built-in packages", () => {
+    const dir = makeFixtureRepo(({ generatorAbs }) => {
+      const content = fs.readFileSync(generatorAbs, "utf8");
+      fs.writeFileSync(generatorAbs, content.replace(/unityBuiltInPackages/g, "unityBuiltIns"), "utf8");
+    });
+    try {
+      const { code, errorText } = runFixture(dir);
+      expect(code).toBe(1);
+      expect(errorText).toMatch(/does not reference 'unityBuiltInPackages'/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("exported relative paths", () => {
   test("expose the documented consumer paths", () => {
     expect(SOURCE_RELATIVE_PATH).toBe(".github/comparison-packages.json");
     expect(LOCAL_MANIFEST_RELATIVE_PATH).toBe(".unity-test-project/Packages/manifest.json");
+    expect(LOCAL_PACKAGE_LOCK_RELATIVE_PATH).toBe(
+      ".unity-test-project/Packages/packages-lock.json"
+    );
     expect(COMPARISONS_RELATIVE_DIR).toBe("Tests/Runtime/Comparisons");
     expect(GENERATOR_RELATIVE_PATH).toBe("scripts/unity/run-ci-tests.ps1");
   });

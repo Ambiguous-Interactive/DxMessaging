@@ -207,6 +207,86 @@ describe("generated Unity test harness contract", () => {
       }
     });
 
+    test.each([
+      ["without comparisons", false],
+      ["with comparisons", true]
+    ])("GenerateOnly %s writes the expected comparison manifest shape", (_name, includeComparisons) => {
+      if (!pwshAvailable()) {
+        console.warn("[unity-harness-contract] pwsh not found; skipping GenerateOnly assertion.");
+        return;
+      }
+
+      const base = fs.mkdtempSync(path.join(require("os").tmpdir(), "dxm-manifest-generate-"));
+      const project = path.join(base, "project");
+      const artifacts = path.join(base, "artifacts");
+      try {
+        const hostEnvSandbox = path.join(base, "host-env-sandbox");
+        const args = [
+          "-NoProfile",
+          "-NonInteractive",
+          "-File",
+          CI_RUNNER,
+          "-UnityVersion",
+          "2021.3.45f1",
+          "-TestMode",
+          "playmode",
+          "-AssemblyNames",
+          "WallstopStudios.DxMessaging.Tests.Runtime",
+          "-ArtifactsPath",
+          artifacts,
+          "-RepoRoot",
+          REPO_ROOT,
+          "-ProjectPath",
+          project,
+          "-GenerateOnly"
+        ];
+        if (includeComparisons) {
+          args.splice(args.length - 1, 0, "-IncludeComparisons");
+        }
+        const run = spawnSync(
+          "pwsh",
+          args,
+          {
+            env: sandboxHostFolderEnv(process.env, hostEnvSandbox),
+            encoding: "utf8",
+            maxBuffer: 16 * 1024 * 1024
+          }
+        );
+
+        assertSpawnStatus(run, 0, expect.getState().currentTestName || "pwsh comparison harness");
+
+        const source = JSON.parse(
+          fs.readFileSync(path.join(REPO_ROOT, ".github", "comparison-packages.json"), "utf8")
+        );
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(project, "Packages", "manifest.json"), "utf8")
+        );
+        for (const pins of [source.packages, source.unityBuiltInPackages]) {
+          for (const [id, version] of Object.entries(pins)) {
+            if (includeComparisons) {
+              expect(manifest.dependencies[id]).toBe(version);
+            } else {
+              expect(manifest.dependencies).not.toHaveProperty(id);
+            }
+          }
+        }
+        if (includeComparisons) {
+          expect(manifest.scopedRegistries).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                url: source.registry.url,
+                scopes: expect.arrayContaining(source.registry.scopes)
+              })
+            ])
+          );
+        } else {
+          expect(manifest).not.toHaveProperty("scopedRegistries");
+        }
+      } finally {
+        fs.rmSync(base, { recursive: true, force: true });
+      }
+    });
+
     test("validates real NUnit output instead of trusting the Unity process exit code", () => {
       expect(content).toContain("Test-NUnitResults");
       expect(content).toContain("SelectSingleNode('//test-run')");

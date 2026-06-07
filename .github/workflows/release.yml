@@ -318,7 +318,9 @@ jobs:
             -UnityVersion '2022.3.45f1' `
             -TestMode 'editmode' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/release-editmode'
+            -ArtifactsPath '.artifacts/unity/release-editmode' `
+            -ReleaseCodeOptimization `
+            -ReleasePlayerBuild
 
       - name: Return Unity license
         if: always()

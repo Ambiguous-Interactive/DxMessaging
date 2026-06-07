@@ -209,7 +209,7 @@ within-scope regression exceeds the configured threshold. Enable it with:
 DX_PERF_GATE=1 \
 DX_PERF_BASELINE=<baseline.csv> \
 DX_PERF_BASELINE_COMMIT=<baseline-commit> \
-pwsh scripts/unity/run-ci-tests.ps1 -TestMode editmode -ReleaseCodeOptimization
+pwsh scripts/unity/run-ci-tests.ps1 -TestMode editmode -ReleaseCodeOptimization -ReleasePlayerBuild
 ```
 
 If the gate is enabled without `DX_PERF_BASELINE` or `DX_PERF_BASELINE_COMMIT`,
@@ -236,11 +236,14 @@ state or a manually pasted table.
 
 The single source of truth for the comparison packages is
 [`.github/comparison-packages.json`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/comparison-packages.json).
-It pins the OpenUPM scoped registry, the exact package versions, and the
-`versionDefines` symbols (for example `MESSAGEPIPE_PRESENT`, `UNIRX_PRESENT`,
-`ZENJECT_PRESENT`, `UNITY_ATOMS_PRESENT`). The comparison legs build an ephemeral
-manifest from this file; the committed
-`.unity-test-project/Packages/manifest.json` keeps local parity.
+It pins the OpenUPM scoped registry, the exact package versions, the required
+Unity built-in packages (for example `com.unity.ugui` and
+`com.unity.modules.animation`), and the `versionDefines` symbols (for example
+`MESSAGEPIPE_PRESENT`, `UNIRX_PRESENT`, `ZENJECT_PRESENT`,
+`UNITY_ATOMS_PRESENT`). The comparison legs build an ephemeral manifest from
+this file; the committed
+`.unity-test-project/Packages/manifest.json` and
+`.unity-test-project/Packages/packages-lock.json` keep local parity.
 
 The external and Unity Atoms comparison suites are package-gated and live under:
 
@@ -257,13 +260,15 @@ and need no package.
 To add or bump a comparison library:
 
 1. Edit `.github/comparison-packages.json`: add or change the registry scope,
-   the pinned package version(s), and the `defines` symbol(s).
+   the pinned package version(s), any required `unityBuiltInPackages`, and the
+   `defines` symbol(s).
 1. Update the matching `versionDefines` in the gated comparison asmdef(s) under
    `Tests/Runtime/Comparisons/External/` and/or
    `Tests/Runtime/Comparisons/UnityAtoms/` so the gated code compiles only when
    the package is present.
-1. Update the committed `.unity-test-project/Packages/manifest.json` to keep
-   local parity with the single source.
+1. Update the committed `.unity-test-project/Packages/manifest.json` and
+   `.unity-test-project/Packages/packages-lock.json` to keep local parity with
+   the single source.
 1. Run the drift validator (`npm run validate:comparison-packages`, added in a
    later slice) to confirm every consumer agrees with
    `.github/comparison-packages.json`.
