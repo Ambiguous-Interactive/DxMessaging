@@ -4,7 +4,7 @@ id: "dispatch-hot-path"
 category: "performance"
 version: "1.0.0"
 created: "2026-05-05"
-updated: "2026-06-06"
+updated: "2026-06-07"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -191,8 +191,10 @@ dispatch-throughput numbers.
 
 - `Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs` -- the harness.
 - `Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` -- `[Explicit,
-Category("PerfGate")]`; opt-in via `DX_PERF_GATE=1`. Median-of-5; fails
-  when within-platform regression vs. baseline CSV exceeds 1.5x.
+Category("PerfGate")]`; opt-in via `DX_PERF_GATE=1`. Calls
+  `DispatchThroughputBenchmarks.RunScenario`, a single continuous measurement
+  window via the shared `BenchmarkProtocol` (no median); fails when a
+  within-platform regression vs. baseline CSV exceeds 1.5x.
 - `.github/workflows/perf-numbers.yml` -- per-PR workflow that re-runs the
   editmode + playmode dispatch benchmarks on ELI-MACHINE (the `fast` runner) at
   the latest Unity version on every pull_request change and posts the regenerated

@@ -278,11 +278,18 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
         run: |
+          # Release (not Debug) code optimization for the editmode/playmode perf
+          # legs, mirroring perf-numbers.yml's "Release not Debug" principle so the
+          # weekly coverage run measures the same optimized hot path the docs do.
+          # This run keeps its editmode+playmode + no-comparisons coverage role;
+          # -ReleaseCodeOptimization only sets the editor-side compile optimization
+          # and adds no comparison rows.
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+            -ArtifactsPath '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -ReleaseCodeOptimization
 
       - name: Return Unity license
         if: always()

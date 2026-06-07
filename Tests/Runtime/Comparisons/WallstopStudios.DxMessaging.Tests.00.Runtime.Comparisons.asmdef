@@ -1,0 +1,20 @@
+{
+  "name": "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons",
+  "rootNamespace": "DxMessaging.Tests.Runtime.Comparisons",
+  "references": [
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner",
+    "WallstopStudios.DxMessaging",
+    "WallstopStudios.DxMessaging.Tests.Runtime",
+    "WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "autoReferenced": true,
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

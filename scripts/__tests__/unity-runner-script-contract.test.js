@@ -1737,30 +1737,131 @@ describe("scripts/unity direct CI runner contract", () => {
       expect(guardRegion).toMatch(/timed out after \$playerTimeoutSeconds/);
     });
 
-    test("the standalone configure step (New-ConfiguratorSource) configures IL2CPP and writes a success marker -- no waitForManagedDebugger / ConnectWithProfiler", () => {
+    test("the standalone configure step (New-ConfiguratorSource) parameterizes the backend + NET_Standard + Release codeOpt + stripping, then writes a success marker -- no waitForManagedDebugger / ConnectWithProfiler", () => {
       // All connection suppression lives in the generated build modifier; the
-      // configurator does exactly three PlayerSettings mutations (switch target +
-      // IL2CPP + NET_Standard) PLUS writes the success marker as its FINAL action.
-      // A profiler/debugger PlayerSetting here would be the rejected,
+      // configurator switches the build target, sets the PARAMETERIZED scripting
+      // backend (IL2CPP or Mono2x via -Backend), the non-deprecated
+      // ApiCompatibilityLevel.NET_Standard (NOT the deprecated _2_0 form), Release
+      // code optimization, and disables managed stripping so the test code survives
+      // a Release Mono player build, PLUS writes the success marker as its FINAL
+      // action. A profiler/debugger PlayerSetting here would be the rejected,
       // cross-version-fragile design.
       const body = extractFunctionBody(runCi, "New-ConfiguratorSource");
       expect(body).not.toBe("");
       expect(body).not.toContain("waitForManagedDebugger");
       expect(body).not.toContain("ConnectWithProfiler");
       expect(body).toContain("SwitchActiveBuildTarget");
-      expect(body).toContain("ScriptingImplementation.IL2CPP");
-      expect(body).toContain("ApiCompatibilityLevel.NET_Standard_2_0");
+      // PARAMETERIZED backend (not a pinned IL2CPP/Mono2x member).
+      expect(body).toContain("ScriptingImplementation.$Backend");
+      // The non-deprecated ApiCompatibilityLevel.NET_Standard (.NET Standard 2.1);
+      // the deprecated _2_0 form must be GONE from the configurator.
+      expect(body).toContain("ApiCompatibilityLevel.NET_Standard");
+      expect(body).not.toContain("ApiCompatibilityLevel.NET_Standard_2_0");
+      // The pinned-IL2CPP dead comment reference must be GONE (it existed only to
+      // satisfy the old contract); the live code is parameterized.
+      expect(body).not.toContain("ScriptingImplementation.IL2CPP");
+      // Release editor code optimization is proven for the perf legs.
+      expect(body).toContain("CompilationPipeline.codeOptimization");
+      expect(body).toContain("CodeOptimization.Release");
+      // Managed stripping is disabled so IncludeTestAssemblies + the [Preserve]
+      // standalone TestRunCallback survive a non-development (Release) Mono player.
+      expect(body).toContain("SetManagedStrippingLevel");
+      expect(body).toContain("ManagedStrippingLevel.Disabled");
       // SOURCE-OF-TRUTH MARKER: Apply writes the marker handed in via
       // DXM_CONFIGURE_MARKER_PATH as its final action, so a benign Unity shutdown
       // crash AFTER configuration cannot fail the job (the runner gates on the
       // marker, not the process exit code).
       expect(body).toContain("DXM_CONFIGURE_MARKER_PATH");
       expect(body).toContain("File.WriteAllText(markerPath");
-      // And the marker write must come AFTER the three PlayerSettings mutations
-      // (it proves Apply ran to COMPLETION).
+      // And the success-marker write must remain the FINAL action -- after every
+      // PlayerSettings mutation (it proves Apply ran to COMPLETION). Pin it against
+      // the LAST PlayerSettings call (managed stripping) so the ordering invariant
+      // survives the migration off the deprecated NET_Standard_2_0 anchor.
       expect(body.indexOf("File.WriteAllText(markerPath")).toBeGreaterThan(
-        body.indexOf("ApiCompatibilityLevel.NET_Standard_2_0")
+        body.indexOf("SetManagedStrippingLevel")
       );
+    });
+
+    test("New-ConfiguratorSource is the LAST configurator write, with the success marker as its final C# action", () => {
+      // The success-marker write must be the FINAL action of the generated Apply()
+      // (everything else -- target switch, backend, api level, code optimization,
+      // managed stripping, the proof Debug.Log -- precedes it). Pin it against EACH
+      // PlayerSettings mutation so a reordering that moved the marker earlier fails.
+      const body = extractFunctionBody(runCi, "New-ConfiguratorSource");
+      const markerIdx = body.indexOf("File.WriteAllText(markerPath");
+      expect(markerIdx).toBeGreaterThan(-1);
+      for (const earlier of [
+        "SwitchActiveBuildTarget",
+        "SetScriptingBackend",
+        "SetApiCompatibilityLevel",
+        "CompilationPipeline.codeOptimization",
+        "SetManagedStrippingLevel"
+      ]) {
+        const idx = body.indexOf(earlier);
+        expect(idx).toBeGreaterThan(-1);
+        expect(idx).toBeLessThan(markerIdx);
+      }
+    });
+
+    test("run-ci-tests declares the comparison/Release/backend perf params", () => {
+      // Slice 3b wires the comparison + Mono + Release perf legs through these new
+      // top-level script parameters; the perf-numbers workflow splats them. Pin the
+      // typed param DECLARATION for each (the [switch]/[string] form) so a renamed
+      // or dropped param fails loudly. The -Name caller form lives in the workflow
+      // that invokes the script, not in the script itself.
+      expect(runCi).toMatch(/\[switch\]\$IncludeComparisons\b/);
+      expect(runCi).toMatch(/\[switch\]\$ReleaseCodeOptimization\b/);
+      expect(runCi).toMatch(/\[string\]\$StandaloneScriptingBackend\b/);
+      expect(runCi).toMatch(/\[switch\]\$ReleasePlayerBuild\b/);
+      // StandaloneScriptingBackend is constrained to the two valid backends.
+      expect(runCi).toMatch(/\[ValidateSet\(\s*'IL2CPP'\s*,\s*'Mono2x'\s*\)\]/);
+      // The params are threaded into the ephemeral-project + run wiring (not dead):
+      // the backend + release-player flags flow into Initialize-EphemeralProject and
+      // the release code-optimization flag gates the CLI arg.
+      expect(runCi).toContain("-Backend $StandaloneScriptingBackend");
+      expect(runCi).toContain("-DevelopmentBuild:(-not $ReleasePlayerBuild)");
+      expect(runCi).toContain("-IncludeComparisons:$IncludeComparisons");
+      expect(runCi).toContain("if ($ReleaseCodeOptimization)");
+    });
+
+    test("New-ManifestJson injects scopedRegistries ONLY under -IncludeComparisons", () => {
+      // The comparison legs add the OpenUPM scoped registry from the single source
+      // .github/comparison-packages.json; non-comparison legs must stay byte-for-byte
+      // identical (no scopedRegistries key). Assert the scopedRegistries assignment
+      // lives inside the `if ($IncludeComparisons)` block of New-ManifestJson.
+      const body = extractFunctionBody(runCi, "New-ManifestJson");
+      expect(body).not.toBe("");
+      const guardIdx = body.indexOf("if ($IncludeComparisons)");
+      // Match the ASSIGNMENT (not the comment prose that also says
+      // "scopedRegistries"): the manifest key is set only inside the guard block.
+      const scopedIdx = body.indexOf("$manifest['scopedRegistries']");
+      expect(guardIdx).toBeGreaterThan(-1);
+      expect(scopedIdx).toBeGreaterThan(guardIdx);
+      // The comparison source is read from the single-source JSON, not duplicated.
+      expect(body).toContain("Get-ComparisonPackages");
+    });
+
+    test("-releaseCodeOptimization is only added to a -runTests arg array that has NO -quit", () => {
+      // -runTests + -quit is mutually exclusive per the Unity manual. The Release
+      // code-optimization CLI flag must therefore live in the editmode/playmode
+      // $testArgs array (which carries -runTests but NOT -quit), gated on
+      // $ReleaseCodeOptimization -- never in the standalone configure pass (-quit).
+      const guardIdx = runCi.indexOf("if ($ReleaseCodeOptimization)");
+      expect(guardIdx).toBeGreaterThan(-1);
+      const appendIdx = runCi.indexOf("$testArgs += '-releaseCodeOptimization'", guardIdx);
+      expect(appendIdx).toBeGreaterThan(guardIdx);
+      // The $testArgs array the flag is appended to declares -runTests and does NOT
+      // declare -quit. Bound the search to the $testArgs ARRAY LITERAL itself (from
+      // its `@(` to the matching `)` line) so the explanatory comment between the
+      // array and the guard -- which legitimately mentions '-quit' -- is excluded.
+      const arrayStart = runCi.lastIndexOf("$testArgs = @(", guardIdx);
+      expect(arrayStart).toBeGreaterThan(-1);
+      const arrayEnd = runCi.indexOf("\n        )", arrayStart);
+      expect(arrayEnd).toBeGreaterThan(arrayStart);
+      expect(arrayEnd).toBeLessThan(guardIdx);
+      const arrayRegion = runCi.slice(arrayStart, arrayEnd);
+      expect(arrayRegion).toContain("'-runTests'");
+      expect(arrayRegion).not.toContain("'-quit'");
     });
 
     test("New-StandaloneBuildModifierSource emits the dual-attribute modifier + cleanup", () => {

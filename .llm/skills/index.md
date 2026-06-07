@@ -1,6 +1,6 @@
 # Skills Index
 
-> **Auto-generated** on 2026-06-06. Do not edit manually.
+> **Auto-generated** on 2026-06-07. Do not edit manually.
 > Run `node scripts/generate-skills-index.js` to regenerate.
 
 ---
@@ -9,20 +9,20 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 170   |
+| Total Skills | 175   |
 | Categories   | 8     |
 
 ---
 
 ## Table of Contents
 
-- [Documentation](#documentation) (30)
+- [Documentation](#documentation) (31)
 - [GitHub Actions](#github-actions) (8)
 - [Packaging](#packaging) (2)
-- [Performance](#performance) (45)
+- [Performance](#performance) (47)
 - [Scripting](#scripting) (22)
 - [Solid](#solid) (15)
-- [Testing](#testing) (38)
+- [Testing](#testing) (40)
 - [Unity](#unity) (10)
 
 ---
@@ -60,6 +60,7 @@
 | [No PLAN Vocabulary in Shipping Content](./documentation/no-plan-vocabulary.md)                       | [ok] 154   | [basic]        | [stable] | [risk: none] | documentation, vocabulary         |
 | [Skill File Sizing Guidelines](./documentation/skill-file-sizing.md)                                  | [ok] 258   | [basic]        | [stable] | [risk: none] | documentation, skills             |
 | [Skill File Sizing Guidelines Part 1](./documentation/skill-file-sizing-part-1.md)                    | [draft] 34 | [intermediate] | [stable] | [risk: low]  | migration, split                  |
+| [User vs Dev Perf Doc Separation](./documentation/user-vs-dev-perf-doc-separation.md)                 | [ok] 169   | [basic]        | [stable] | [risk: none] | documentation, performance        |
 | [XML Documentation Standards](./documentation/documentation-xml-docs.md)                              | [ok] 191   | [basic]        | [stable] | [risk: none] | documentation, xml-docs           |
 
 ## GitHub Actions
@@ -84,53 +85,55 @@
 
 ## Performance
 
-| Skill                                                                                                              | Lines       | Complexity     | Status   | Performance      | Tags                  |
-| ------------------------------------------------------------------------------------------------------------------ | ----------- | -------------- | -------- | ---------------- | --------------------- |
-| [AggressiveInlining for Hot Path Optimization](./performance/aggressive-inlining.md)                               | [draft] 109 | [intermediate] | [stable] | [risk: medium]   | performance, inlining |
-| [AggressiveInlining for Hot Path Optimization Part 1](./performance/aggressive-inlining-part-1.md)                 | [ok] 171    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [AggressiveInlining for Hot Path Optimization Part 2](./performance/aggressive-inlining-part-2.md)                 | [ok] 131    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [AggressiveInlining Performance Notes](./performance/aggressive-inlining-performance-notes.md)                     | [draft] 95  | [intermediate] | [stable] | [risk: medium]   | performance, inlining |
-| [Array Pooling Usage Examples](./performance/array-pooling-usage-examples.md)                                      | [ok] 146    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
-| [Array Pooling with ArrayPool and Custom Pools](./performance/array-pooling.md)                                    | [ok] 121    | [intermediate] | [stable] | [risk: critical] | memory, allocation    |
-| [Array Pooling with ArrayPool and Custom Pools Part 1](./performance/array-pooling-part-1.md)                      | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 57  | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Auto-Load Singleton Attribute](./performance/singleton-autoload.md)                                               | [draft] 112 | [intermediate] | [stable] | [risk: low]      | unity, singleton      |
-| [Cache Builder Configuration](./performance/cache-eviction-builder.md)                                             | [ok] 204    | [intermediate] | [stable] | [risk: high]     | caching, builder      |
-| [Cache Eviction Implementation](./performance/cache-eviction-implementation.md)                                    | [draft] 91  | [advanced]     | [stable] | [risk: high]     | caching, eviction     |
-| [Cache Eviction Implementation Part 1](./performance/cache-eviction-implementation-part-1.md)                      | [ok] 245    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Cache Eviction Implementation Part 2](./performance/cache-eviction-implementation-part-2.md)                      | [draft] 43  | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Collection Pooling with RAII Pattern](./performance/collection-pooling.md)                                        | [draft] 119 | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
-| [Collection Pooling with RAII Pattern Part 1](./performance/collection-pooling-part-1.md)                          | [ok] 206    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Collection Pooling with RAII Pattern Part 2](./performance/collection-pooling-part-2.md)                          | [draft] 57  | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [ok] 225    | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path    |
-| [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 198    | [advanced]     | [stable] | [risk: critical] | memory, reclamation   |
-| [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 186    | [advanced]     | [stable] | [risk: critical] | sweep, eviction       |
-| [Git Hook Performance Budget](./performance/git-hook-performance.md)                                               | [warn] 299  | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |
-| [Git Hook Performance: Stages and Tooling](./performance/git-hook-performance-tooling.md)                          | [ok] 240    | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit |
-| [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 177    | [advanced]     | [stable] | [risk: high]     | caching, memory       |
-| [Object Pooling Anti-Patterns](./performance/object-pooling-anti-patterns.md)                                      | [ok] 145    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
-| [Object Pooling for Zero-Allocation Messaging](./performance/object-pooling.md)                                    | [ok] 124    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
-| [Object Pooling for Zero-Allocation Messaging Part 1](./performance/object-pooling-part-1.md)                      | [ok] 191    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Object Pooling for Zero-Allocation Messaging Part 2](./performance/object-pooling-part-2.md)                      | [draft] 70  | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Object Pooling Usage Examples](./performance/object-pooling-usage-examples.md)                                    | [draft] 115 | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
-| [Object Pooling Variations](./performance/object-pooling-variations.md)                                            | [ok] 148    | [intermediate] | [stable] | [risk: high]     | memory, allocation    |
-| [Readonly Struct Cached Hash Performance Notes](./performance/readonly-struct-cached-hash-performance-notes.md)    | [draft] 92  | [intermediate] | [stable] | [risk: high]     | performance, struct   |
-| [Readonly Struct with Cached Hash for Dictionary Keys](./performance/readonly-struct-cached-hash.md)               | [ok] 128    | [intermediate] | [stable] | [risk: high]     | performance, struct   |
-| [Readonly Struct with Cached Hash for Dictionary Keys Part 1](./performance/readonly-struct-cached-hash-part-1.md) | [ok] 171    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Readonly Struct with Cached Hash for Dictionary Keys Part 2](./performance/readonly-struct-cached-hash-part-2.md) | [draft] 107 | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Runtime Singleton Pattern](./performance/singleton-runtime.md)                                                    | [ok] 188    | [intermediate] | [stable] | [risk: low]      | unity, singleton      |
-| [RuntimeSingleton and ScriptableObject Singleton Patterns](./performance/singleton-patterns.md)                    | [ok] 166    | [intermediate] | [stable] | [risk: medium]   | unity, singleton      |
-| [ScriptableObject Singleton Pattern](./performance/singleton-scriptableobject.md)                                  | [ok] 178    | [intermediate] | [stable] | [risk: low]      | unity, singleton      |
-| [Serializable Dictionary for Unity Inspector](./performance/serializable-dictionary.md)                            | [ok] 241    | [intermediate] | [stable] | [risk: low]      | unity, serialization  |
-| [Serializable Dictionary for Unity Inspector Part 1](./performance/serializable-dictionary-part-1.md)              | [draft] 73  | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [Serializable Dictionary Property Drawer](./performance/serializable-dictionary-property-drawer.md)                | [ok] 148    | [intermediate] | [stable] | [risk: medium]   | unity, serialization  |
-| [Serializable Dictionary Usage Examples](./performance/serializable-dictionary-usage-examples.md)                  | [ok] 136    | [intermediate] | [stable] | [risk: medium]   | unity, serialization  |
-| [Singleton Usage Examples](./performance/singleton-usage-examples.md)                                              | [ok] 140    | [intermediate] | [stable] | [risk: low]      | unity, singleton      |
-| [StringBuilder Pooling for Zero-Allocation String Building](./performance/stringbuilder-pooling.md)                | [ok] 199    | [basic]        | [stable] | [risk: high]     | memory, allocation    |
-| [StringBuilder Pooling for Zero-Allocation String Building Part 1](./performance/stringbuilder-pooling-part-1.md)  | [ok] 152    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [WaitForSeconds and Yield Instruction Pooling](./performance/yield-instruction-pooling.md)                         | [draft] 104 | [basic]        | [stable] | [risk: high]     | performance, unity    |
-| [WaitForSeconds and Yield Instruction Pooling Part 1](./performance/yield-instruction-pooling-part-1.md)           | [ok] 164    | [intermediate] | [stable] | [risk: low]      | migration, split      |
-| [WaitForSeconds and Yield Instruction Pooling Part 2](./performance/yield-instruction-pooling-part-2.md)           | [ok] 148    | [intermediate] | [stable] | [risk: low]      | migration, split      |
+| Skill                                                                                                              | Lines       | Complexity     | Status   | Performance      | Tags                    |
+| ------------------------------------------------------------------------------------------------------------------ | ----------- | -------------- | -------- | ---------------- | ----------------------- |
+| [AggressiveInlining for Hot Path Optimization](./performance/aggressive-inlining.md)                               | [draft] 109 | [intermediate] | [stable] | [risk: medium]   | performance, inlining   |
+| [AggressiveInlining for Hot Path Optimization Part 1](./performance/aggressive-inlining-part-1.md)                 | [ok] 171    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [AggressiveInlining for Hot Path Optimization Part 2](./performance/aggressive-inlining-part-2.md)                 | [ok] 131    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [AggressiveInlining Performance Notes](./performance/aggressive-inlining-performance-notes.md)                     | [draft] 95  | [intermediate] | [stable] | [risk: medium]   | performance, inlining   |
+| [Array Pooling Usage Examples](./performance/array-pooling-usage-examples.md)                                      | [ok] 146    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
+| [Array Pooling with ArrayPool and Custom Pools](./performance/array-pooling.md)                                    | [ok] 121    | [intermediate] | [stable] | [risk: critical] | memory, allocation      |
+| [Array Pooling with ArrayPool and Custom Pools Part 1](./performance/array-pooling-part-1.md)                      | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 57  | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Auto-Load Singleton Attribute](./performance/singleton-autoload.md)                                               | [draft] 112 | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
+| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [ok] 198    | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
+| [Cache Builder Configuration](./performance/cache-eviction-builder.md)                                             | [ok] 204    | [intermediate] | [stable] | [risk: high]     | caching, builder        |
+| [Cache Eviction Implementation](./performance/cache-eviction-implementation.md)                                    | [draft] 91  | [advanced]     | [stable] | [risk: high]     | caching, eviction       |
+| [Cache Eviction Implementation Part 1](./performance/cache-eviction-implementation-part-1.md)                      | [ok] 245    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Cache Eviction Implementation Part 2](./performance/cache-eviction-implementation-part-2.md)                      | [draft] 43  | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Collection Pooling with RAII Pattern](./performance/collection-pooling.md)                                        | [draft] 119 | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
+| [Collection Pooling with RAII Pattern Part 1](./performance/collection-pooling-part-1.md)                          | [ok] 206    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Collection Pooling with RAII Pattern Part 2](./performance/collection-pooling-part-2.md)                          | [draft] 57  | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [ok] 227    | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path      |
+| [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 198    | [advanced]     | [stable] | [risk: critical] | memory, reclamation     |
+| [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 186    | [advanced]     | [stable] | [risk: critical] | sweep, eviction         |
+| [Git Hook Performance Budget](./performance/git-hook-performance.md)                                               | [warn] 299  | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit   |
+| [Git Hook Performance: Stages and Tooling](./performance/git-hook-performance-tooling.md)                          | [ok] 240    | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit   |
+| [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 177    | [advanced]     | [stable] | [risk: high]     | caching, memory         |
+| [Object Pooling Anti-Patterns](./performance/object-pooling-anti-patterns.md)                                      | [ok] 145    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
+| [Object Pooling for Zero-Allocation Messaging](./performance/object-pooling.md)                                    | [ok] 124    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
+| [Object Pooling for Zero-Allocation Messaging Part 1](./performance/object-pooling-part-1.md)                      | [ok] 191    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Object Pooling for Zero-Allocation Messaging Part 2](./performance/object-pooling-part-2.md)                      | [draft] 70  | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Object Pooling Usage Examples](./performance/object-pooling-usage-examples.md)                                    | [draft] 115 | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
+| [Object Pooling Variations](./performance/object-pooling-variations.md)                                            | [ok] 148    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
+| [Perf Config: Mono, .NET Standard 2.1, Release](./performance/perf-config-mono-netstandard21-release.md)           | [ok] 170    | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
+| [Readonly Struct Cached Hash Performance Notes](./performance/readonly-struct-cached-hash-performance-notes.md)    | [draft] 92  | [intermediate] | [stable] | [risk: high]     | performance, struct     |
+| [Readonly Struct with Cached Hash for Dictionary Keys](./performance/readonly-struct-cached-hash.md)               | [ok] 128    | [intermediate] | [stable] | [risk: high]     | performance, struct     |
+| [Readonly Struct with Cached Hash for Dictionary Keys Part 1](./performance/readonly-struct-cached-hash-part-1.md) | [ok] 171    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Readonly Struct with Cached Hash for Dictionary Keys Part 2](./performance/readonly-struct-cached-hash-part-2.md) | [draft] 107 | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Runtime Singleton Pattern](./performance/singleton-runtime.md)                                                    | [ok] 188    | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
+| [RuntimeSingleton and ScriptableObject Singleton Patterns](./performance/singleton-patterns.md)                    | [ok] 166    | [intermediate] | [stable] | [risk: medium]   | unity, singleton        |
+| [ScriptableObject Singleton Pattern](./performance/singleton-scriptableobject.md)                                  | [ok] 178    | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
+| [Serializable Dictionary for Unity Inspector](./performance/serializable-dictionary.md)                            | [ok] 241    | [intermediate] | [stable] | [risk: low]      | unity, serialization    |
+| [Serializable Dictionary for Unity Inspector Part 1](./performance/serializable-dictionary-part-1.md)              | [draft] 73  | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Serializable Dictionary Property Drawer](./performance/serializable-dictionary-property-drawer.md)                | [ok] 148    | [intermediate] | [stable] | [risk: medium]   | unity, serialization    |
+| [Serializable Dictionary Usage Examples](./performance/serializable-dictionary-usage-examples.md)                  | [ok] 136    | [intermediate] | [stable] | [risk: medium]   | unity, serialization    |
+| [Singleton Usage Examples](./performance/singleton-usage-examples.md)                                              | [ok] 140    | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
+| [StringBuilder Pooling for Zero-Allocation String Building](./performance/stringbuilder-pooling.md)                | [ok] 199    | [basic]        | [stable] | [risk: high]     | memory, allocation      |
+| [StringBuilder Pooling for Zero-Allocation String Building Part 1](./performance/stringbuilder-pooling-part-1.md)  | [ok] 152    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [WaitForSeconds and Yield Instruction Pooling](./performance/yield-instruction-pooling.md)                         | [draft] 104 | [basic]        | [stable] | [risk: high]     | performance, unity      |
+| [WaitForSeconds and Yield Instruction Pooling Part 1](./performance/yield-instruction-pooling-part-1.md)           | [ok] 164    | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [WaitForSeconds and Yield Instruction Pooling Part 2](./performance/yield-instruction-pooling-part-2.md)           | [ok] 148    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 
 ## Scripting
 
@@ -184,6 +187,8 @@
 | Skill                                                                                                   | Lines       | Complexity     | Status   | Performance      | Tags                         |
 | ------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ---------------- | ---------------------------- |
 | [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 262  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
+| [Benchmarks Run in the Highest-Fidelity Scope](./testing/benchmarks-run-in-highest-fidelity-scope.md)   | [ok] 165    | [intermediate] | [stable] | [risk: medium]   | testing, benchmarks          |
+| [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [ok] 201    | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Data-Driven Coverage Patterns](./testing/test-coverage-data-driven.md)                                 | [ok] 173    | [intermediate] | [stable] | [risk: none]     | testing, data-driven         |
 | [Data-Driven Test Sources](./testing/data-driven-tests-sources.md)                                      | [ok] 256    | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Test Usage Patterns](./testing/data-driven-tests-usage.md)                                 | [draft] 108 | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
@@ -233,7 +238,7 @@
 | [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 220   | [intermediate] | [stable] | [risk: none] | unity, cli           |
 | [Unity License Bootstrap](./unity/unity-license-bootstrap.md)               | [ok] 240   | [basic]        | [stable] | [risk: none] | unity, license       |
 | [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 290 | [intermediate] | [stable] | [risk: none] | unity, serial        |
-| [Unity Perf Test Isolation](./unity/unity-perf-test-isolation.md)           | [ok] 219   | [intermediate] | [stable] | [risk: high] | unity, performance   |
+| [Unity Perf Test Isolation](./unity/unity-perf-test-isolation.md)           | [ok] 223   | [intermediate] | [stable] | [risk: high] | unity, performance   |
 | [Unity Runner Host Prerequisites](./unity/unity-runner-host-prereqs.md)     | [ok] 259   | [intermediate] | [stable] | [risk: none] | unity, windows       |
 | [UPM Test Harness](./unity/upm-test-harness.md)                             | [ok] 193   | [basic]        | [stable] | [risk: none] | unity, upm           |
 

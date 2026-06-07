@@ -1474,7 +1474,7 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(perfJob["runs-on"]).toEqual(["self-hosted", "Windows", "RAM-64GB", "fast"]);
   });
 
-  test("the matrix is LATEST-version only and runs BOTH editmode and playmode legs", () => {
+  test("the matrix is LATEST-version only and runs BOTH the playmode and standalone legs", () => {
     const matrix = perfJob.strategy.matrix;
     // The single latest version is resolved from the canonical source
     // (.github/unity-versions.json) via runner-preflight, so the matrix
@@ -1499,8 +1499,9 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(versionsStep).toBeDefined();
     expect(versionsStep.run).toContain("jq -r '.all[-1]' \"${file}\"");
     expect(versionsStep.run).toContain("jq -c '[.all[-1]]' \"${file}\"");
-    // render-perf-doc.js consumes both legs, so both must run.
-    expect(matrix["test-mode"].sort()).toEqual(["editmode", "playmode"]);
+    // Slice 3b: the perf legs are the PlayMode (Mono) and Standalone (Mono)
+    // player-fidelity scopes; render-perf-doc.js consumes both, so both must run.
+    expect(matrix["test-mode"].sort()).toEqual(["playmode", "standalone"]);
     // One seat, serialized within the run.
     expect(perfJob.strategy["max-parallel"]).toBe(1);
   });
@@ -1516,7 +1517,10 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
         typeof step.run === "string" &&
         step.run.includes("./scripts/unity/ensure-editor.ps1") &&
         step.run.includes("-CiManagedOnly") &&
-        step.run.includes("-ProvisioningProfile EditorOnly")
+        // Slice 3b: the profile is computed per leg (EditorOnly for playmode,
+        // StandaloneWindowsIl2Cpp for the standalone Mono player build) and passed
+        // via the $provisioningProfile variable.
+        step.run.includes("-ProvisioningProfile $provisioningProfile")
     );
     const acquireIndex = perfSteps.findIndex(
       (step) =>
@@ -1565,6 +1569,9 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // Perf opts into the Benchmarks/Allocations assemblies, like unity-benchmarks.
     expect(text).toContain("uses: ./.github/actions/compute-unity-assemblies");
     expect(text).toContain('include-perf: "true"');
+    // Slice 3b: both perf legs also run the comparison suite, so the compute step
+    // opts into the comparison assemblies too.
+    expect(text).toContain('include-comparisons: "true"');
   });
 
   test("the Unity run uses pwsh and serial-activation secrets, never the retired server secret", () => {

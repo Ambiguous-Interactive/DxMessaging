@@ -51,10 +51,13 @@ describe("generated Unity test harness contract", () => {
       expect(content).toContain("testables = @($PackageName)");
     });
 
-    test("configures standalone Windows IL2CPP in the generated project", () => {
+    test("configures the standalone Windows player (parameterized backend) in the generated project", () => {
       expect(content).toContain("DxmCiTestConfigurator");
       expect(content).toContain("BuildTarget.StandaloneWindows64");
-      expect(content).toContain("ScriptingImplementation.IL2CPP");
+      // The scripting backend is parameterized via -Backend (IL2CPP default,
+      // Mono2x for the Mono perf leg), so the generated C# references the
+      // ScriptingImplementation enum without pinning a specific member.
+      expect(content).toContain("ScriptingImplementation.$Backend");
     });
 
     test("pre-creates the single Assets/Plugins analyzer copy before any Unity compile", () => {
@@ -275,13 +278,14 @@ describe("generated Unity test harness contract", () => {
     });
   });
 
-  describe("comparison benchmark asmdef", () => {
+  describe("external comparison benchmark asmdef", () => {
     const comparisonAsmdefPath = path.join(
       REPO_ROOT,
       "Tests",
-      "Editor",
+      "Runtime",
       "Comparisons",
-      "WallstopStudios.DxMessaging.Tests.00.Editor.Comparisons.asmdef"
+      "External",
+      "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons.External.asmdef"
     );
 
     test("requires external comparison package symbols before Unity compiles it", () => {
@@ -300,6 +304,7 @@ describe("generated Unity test harness contract", () => {
             name: "com.cysharp.messagepipe",
             define: "MESSAGEPIPE_PRESENT"
           }),
+          expect.objectContaining({ name: "com.neuecc.unirx", define: "UNIRX_PRESENT" }),
           expect.objectContaining({ name: "com.svermeulen.extenject", define: "ZENJECT_PRESENT" }),
           expect.objectContaining({ name: "com.cysharp.unitask", define: "UNITASK_PRESENT" })
         ])

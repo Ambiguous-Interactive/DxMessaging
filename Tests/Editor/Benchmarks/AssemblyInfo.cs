@@ -6,4 +6,3 @@ using System.Runtime.CompilerServices;
 )]
 [assembly: InternalsVisibleTo("WallstopStudios.DxMessaging.Tests.Editor")]
 [assembly: InternalsVisibleTo("WallstopStudios.DxMessaging.Tests.Editor.Allocations")]
-[assembly: InternalsVisibleTo("WallstopStudios.DxMessaging.Tests.00.Editor.Comparisons")]

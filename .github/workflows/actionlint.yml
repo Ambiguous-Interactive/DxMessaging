@@ -10,6 +10,11 @@ on:
       - "scripts/validate-unity-versions.js"
       - "scripts/unity/maintain-windows-runner.ps1"
       - "scripts/unity/install-runner-maintenance-task.ps1"
+      - ".github/comparison-packages.json"
+      - "scripts/validate-comparison-packages.js"
+      - "scripts/unity/run-ci-tests.ps1"
+      - ".unity-test-project/Packages/manifest.json"
+      - "Tests/Runtime/Comparisons/**"
   push:
     branches:
       - main
@@ -22,6 +27,11 @@ on:
       - "scripts/validate-unity-versions.js"
       - "scripts/unity/maintain-windows-runner.ps1"
       - "scripts/unity/install-runner-maintenance-task.ps1"
+      - ".github/comparison-packages.json"
+      - "scripts/validate-comparison-packages.js"
+      - "scripts/unity/run-ci-tests.ps1"
+      - ".unity-test-project/Packages/manifest.json"
+      - "Tests/Runtime/Comparisons/**"
   workflow_dispatch:
 
 concurrency:
@@ -75,3 +85,6 @@ jobs:
 
       - name: Validate Unity version single-source
         run: node scripts/validate-unity-versions.js
+
+      - name: Validate comparison package single-source
+        run: node scripts/validate-comparison-packages.js

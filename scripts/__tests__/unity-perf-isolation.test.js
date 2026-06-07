@@ -37,13 +37,14 @@ describe("unity perf-isolation contract", () => {
     entries = enumerateTestAsmdefs(REPO_ROOT);
   });
 
-  test("enumerateTestAsmdefs discovers exactly 9 asmdefs under Tests/", () => {
-    // 9 = 2 core (Editor, Runtime) + 3 perf (00.Editor.Benchmarks,
-    // 00.Runtime.Benchmarks, Editor.Allocations) + 1 comparison
-    // (00.Editor.Comparisons) + 3 integration (Reflex, VContainer, Zenject).
-    // If a new asmdef is intentionally added, update this number AND
+  test("enumerateTestAsmdefs discovers exactly 11 asmdefs under Tests/", () => {
+    // 11 = 2 core (Editor, Runtime) + 3 perf (00.Editor.Benchmarks,
+    // 00.Runtime.Benchmarks, Editor.Allocations) + 3 comparison
+    // (00.Runtime.Comparisons, 00.Runtime.Comparisons.External,
+    // 00.Runtime.Comparisons.UnityAtoms) + 3 integration (Reflex, VContainer,
+    // Zenject). If a new asmdef is intentionally added, update this number AND
     // add it to one of the buckets below.
-    expect(entries).toHaveLength(9);
+    expect(entries).toHaveLength(11);
   });
 
   test("every Benchmarks/Allocations asmdef is classified as `perf`", () => {
@@ -113,12 +114,22 @@ describe("unity perf-isolation contract", () => {
     }
   });
 
-  test("defaultIncludeAssemblies({ includeComparisons: true }) adds external comparison assembly", () => {
+  test("defaultIncludeAssemblies({ includeComparisons: true }) adds the 3 comparison assemblies (total 5)", () => {
     const included = defaultIncludeAssemblies(REPO_ROOT, {
       includeComparisons: true
     });
-    expect(included).toHaveLength(3);
-    expect(included).toContain("WallstopStudios.DxMessaging.Tests.00.Editor.Comparisons");
+    // 5 = 2 core + 3 comparison (zero-dependency, External package bridges,
+    // Unity Atoms bridge). The External and UnityAtoms assemblies are gated by
+    // their own defineConstraints, so they only compile when those packages are
+    // present in the harness, but they are still discovered/classified here.
+    expect(included).toHaveLength(5);
+    for (const expected of [
+      "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons",
+      "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons.External",
+      "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons.UnityAtoms"
+    ]) {
+      expect(included).toContain(expected);
+    }
   });
 
   test("defaultIncludeAssemblies({ includeIntegrations: true }) adds the 3 integration assemblies (total 5)", () => {

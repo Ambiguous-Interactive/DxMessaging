@@ -3,11 +3,14 @@ namespace DxMessaging.Tests.Editor.Allocations
 {
     using System;
     using System.Collections;
+    using System.Collections.Generic;
+    using System.Linq;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Editor.Benchmarks;
+    using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -353,6 +356,108 @@ namespace DxMessaging.Tests.Editor.Allocations
                         $"Unexpected child invocation count for {scenario}."
                     );
                 }
+            );
+        }
+
+        // Data-driven over EVERY DispatchBenchmarkScenario so adding an enum value without
+        // wiring up its metadata (Key/DisplayName) fails this suite automatically. These
+        // metadata cases are deliberately cheap (no measurement window) so they stay in the
+        // fast gate; the run-the-scenario lock below carries the heavy PerfBench category.
+        private static IEnumerable<TestCaseData> DispatchScenarioCases()
+        {
+            foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)
+            {
+                yield return new TestCaseData(scenario).SetName($"DispatchScenario_{scenario}");
+            }
+        }
+
+        [Test]
+        [TestCaseSource(nameof(DispatchScenarioCases))]
+        public void DispatchScenarioHasNonEmptyKeyAndDisplayName(DispatchBenchmarkScenario scenario)
+        {
+            Assert.IsNotEmpty(
+                DispatchBenchmarkScenarios.Key(scenario),
+                $"Dispatch scenario '{scenario}' must declare a non-empty stable Key."
+            );
+            Assert.IsNotEmpty(
+                DispatchBenchmarkScenarios.DisplayName(scenario),
+                $"Dispatch scenario '{scenario}' must declare a non-empty DisplayName."
+            );
+        }
+
+        [Test]
+        public void DispatchScenarioKeysAreUnique()
+        {
+            string[] keys = DispatchBenchmarkScenarios
+                .All.Select(DispatchBenchmarkScenarios.Key)
+                .ToArray();
+            CollectionAssert.AllItemsAreUnique(
+                keys,
+                "Dispatch scenario Keys must be unique; they are stable join keys for the baseline CSV and perf doc."
+            );
+        }
+
+        [Test]
+        public void DispatchScenarioDisplayNamesAreUnique()
+        {
+            string[] displayNames = DispatchBenchmarkScenarios
+                .All.Select(DispatchBenchmarkScenarios.DisplayName)
+                .ToArray();
+            CollectionAssert.AllItemsAreUnique(
+                displayNames,
+                "Dispatch scenario DisplayNames must be unique so rendered docs never collide two scenarios under one label."
+            );
+        }
+
+        [Test]
+        public void BenchmarkMethodologyConstantsAreLocked()
+        {
+            Assert.AreEqual(
+                5,
+                BenchmarkProtocol.MeasurementSeconds,
+                "The shared benchmark measurement window must remain 5 seconds."
+            );
+            Assert.AreEqual(
+                TimeSpan.FromSeconds(BenchmarkProtocol.MeasurementSeconds),
+                BenchmarkProtocol.MeasurementWindow,
+                "MeasurementWindow must equal MeasurementSeconds so the methodology stays consistent."
+            );
+            Assert.AreEqual(
+                BenchmarkProtocol.BatchSize,
+                NumInvocationsPerIteration,
+                "The editor benchmark harness must share the single batch-size constant with BenchmarkProtocol."
+            );
+        }
+
+        // The "every scenario captures allocation bytes + CSV stays 7 columns" lock. This runs
+        // the real 5s measurement window per scenario, so it carries the PerfBench category and
+        // stays out of the fast metadata gate above.
+        [Test, Category("PerfBench")]
+        [TestCaseSource(nameof(DispatchScenarioCases))]
+        public void DispatchScenarioRunEmitsSevenColumnCsvWithAllocationBytes(
+            DispatchBenchmarkScenario scenario
+        )
+        {
+            DispatchBenchmarkResult result = DispatchThroughputBenchmarks.RunScenario(
+                scenario,
+                logResult: false
+            );
+
+            string csvRow = result.ToCsvRow();
+            string[] fields = csvRow.Split(',');
+            Assert.AreEqual(
+                7,
+                fields.Length,
+                $"Scenario '{scenario}' CSV row must stay exactly 7 columns. Row: '{csvRow}'."
+            );
+            Assert.IsNotEmpty(
+                fields[5],
+                $"Scenario '{scenario}' must populate the allocated-bytes field (index 5). Row: '{csvRow}'."
+            );
+            Assert.GreaterOrEqual(
+                result.AllocatedBytesDelta,
+                0,
+                $"Scenario '{scenario}' must report a non-negative allocated-bytes delta."
             );
         }
 

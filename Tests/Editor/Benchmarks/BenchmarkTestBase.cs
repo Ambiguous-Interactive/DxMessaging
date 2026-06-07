@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
     using System;
     using System.Globalization;
     using DxMessaging.Core;
+    using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Core;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Unity;
@@ -12,7 +13,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 
     public abstract class BenchmarkTestBase : MessagingTestBase
     {
-        protected const int NumInvocationsPerIteration = 10_000;
+        protected const int NumInvocationsPerIteration = BenchmarkProtocol.BatchSize;
 
         private BenchmarkSession _session;
 

@@ -43,12 +43,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private const string PackageName = "com.wallstop-studios.dxmessaging";
         private const string BaselineCsvHeader =
             "scenario,platform,commit,runIndex,emitsPerSecond,allocatedBytesDelta,wallClockMs";
-        private const int WarmupEmits = 10_000;
-        private const int MedianRuns = 5;
-        private static readonly TimeSpan MeasurementWindow = TimeSpan.FromSeconds(1);
-        private static readonly long MeasurementWindowTicks = (long)(
-            Stopwatch.Frequency * MeasurementWindow.TotalSeconds
-        );
         private static readonly InstanceId Target = new(31001);
         private static readonly InstanceId Source = new(31002);
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
@@ -136,88 +130,56 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             bool logResult = true
         )
         {
-            DispatchBenchmarkResult[] runs = new DispatchBenchmarkResult[MedianRuns];
-            for (int runIndex = 0; runIndex < runs.Length; runIndex++)
-            {
-                runs[runIndex] =
-                    scenario == DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
-                        ? MeasureRegistrationFlood(runIndex)
-                        : MeasureEmitScenario(scenario, runIndex);
-            }
-
-            DispatchBenchmarkResult median = MedianByPrimaryMetric(runs);
+            DispatchBenchmarkResult result =
+                scenario == DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
+                    ? MeasureRegistrationFlood()
+                    : MeasureEmitScenario(scenario);
             if (logResult)
             {
-                Debug.Log(median.ToStructuredLog());
-                TestContext.Out.WriteLine(median.ToCsvRow());
+                Debug.Log(result.ToStructuredLog());
+                TestContext.Out.WriteLine(result.ToCsvRow());
             }
 
-            return median;
+            return result;
         }
 
         public static string GetScenarioName(DispatchBenchmarkScenario scenario)
         {
-            return scenario switch
-            {
-                DispatchBenchmarkScenario.UntargetedFloodOneHandler => "UntargetedFlood_OneHandler",
-                DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority =>
-                    "UntargetedFlood_FourHandlers_OnePriority",
-                DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities =>
-                    "UntargetedFlood_FourHandlers_FourPriorities",
-                DispatchBenchmarkScenario.TargetedFloodOneListener => "TargetedFlood_OneListener",
-                DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
-                    "TargetedFlood_SixteenListeners",
-                DispatchBenchmarkScenario.BroadcastFloodOneHandler => "BroadcastFlood_OneHandler",
-                DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors =>
-                    "InterceptorHeavy_FourInterceptors",
-                DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>
-                    "PostProcessingHeavy_FourPostProcessors",
-                DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
-                    "RegistrationFlood_1000Types_FromColdBus",
-                _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
-            };
+            return DispatchBenchmarkScenarios.Key(scenario);
         }
 
         private static DispatchBenchmarkResult MeasureEmitScenario(
-            DispatchBenchmarkScenario scenario,
-            int runIndex
+            DispatchBenchmarkScenario scenario
         )
         {
             using BenchmarkRegistrationScope scope = new();
             InvocationCounter handlerInvocations = new();
             ConfigureScenario(scope, scenario, handlerInvocations);
 
-            EmitMany(scope.Bus, scenario, WarmupEmits);
-
-            long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
-            long startTimestamp = Stopwatch.GetTimestamp();
-            long endTimestamp = startTimestamp;
-            long emits = 0;
-            do
-            {
-                EmitMany(scope.Bus, scenario, WarmupEmits);
-                emits += WarmupEmits;
-                endTimestamp = Stopwatch.GetTimestamp();
-            } while (endTimestamp - startTimestamp < MeasurementWindowTicks);
-            long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
+                () => EmitMany(scope.Bus, scenario, BenchmarkProtocol.WarmupEmits),
+                () =>
+                {
+                    EmitMany(scope.Bus, scenario, BenchmarkProtocol.BatchSize);
+                    return BenchmarkProtocol.BatchSize;
+                }
+            );
 
             Assert.Greater(
                 handlerInvocations.Count,
                 0,
                 "Benchmark scenario did not invoke handlers."
             );
-            double elapsedSeconds = TimestampDeltaToSeconds(startTimestamp, endTimestamp);
-            double emitsPerSecond = emits / Math.Max(elapsedSeconds, double.Epsilon);
             return DispatchBenchmarkResult.ForEmitScenario(
                 GetScenarioName(scenario),
-                runIndex,
-                emitsPerSecond,
-                afterAllocatedBytes - beforeAllocatedBytes,
-                elapsedSeconds * 1000d
+                runIndex: -1,
+                measurement.OperationsPerSecond,
+                measurement.AllocatedBytesDelta,
+                measurement.ElapsedSeconds * 1000d
             );
         }
 
-        private static DispatchBenchmarkResult MeasureRegistrationFlood(int runIndex)
+        private static DispatchBenchmarkResult MeasureRegistrationFlood()
         {
             Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
             long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
@@ -234,7 +196,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus),
-                runIndex,
+                runIndex: -1,
                 afterAllocatedBytes - beforeAllocatedBytes,
                 TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
             );
@@ -393,25 +355,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static bool AllowUntargeted(ref SimpleUntargetedMessage message)
         {
             return true;
-        }
-
-        private static DispatchBenchmarkResult MedianByPrimaryMetric(
-            DispatchBenchmarkResult[] results
-        )
-        {
-            DispatchBenchmarkResult[] sorted = (DispatchBenchmarkResult[])results.Clone();
-            Array.Sort(
-                sorted,
-                (left, right) =>
-                {
-                    int comparison = left.IsRegistrationScenario
-                        ? left.WallClockMs.CompareTo(right.WallClockMs)
-                        : right.EmitsPerSecond.CompareTo(left.EmitsPerSecond);
-                    return comparison != 0 ? comparison : left.RunIndex.CompareTo(right.RunIndex);
-                }
-            );
-
-            return sorted[sorted.Length / 2].AsMedian();
         }
 
         private static Action<MessageRegistrationToken>[] GetRegistrationFloodBuilders()
@@ -952,20 +895,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
-        public DispatchBenchmarkResult AsMedian()
-        {
-            return new DispatchBenchmarkResult(
-                Scenario,
-                Platform,
-                Commit,
-                runIndex: -1,
-                EmitsPerSecond,
-                AllocatedBytesDelta,
-                WallClockMs,
-                IsRegistrationScenario
-            );
-        }
-
         public string ToCsvRow()
         {
             return string.Join(
@@ -1001,7 +930,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static string ResolveExecutionTarget()
         {
 #if UNITY_EDITOR
-            return "Editor";
+            return UnityEngine.Application.isPlaying ? "Editor PlayMode" : "Editor EditMode";
 #elif UNITY_STANDALONE
             return "Standalone";
 #else
@@ -1029,7 +958,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static string ResolveBuildConfiguration()
         {
-            return Debug.isDebugBuild ? "Development" : "Release";
+#if UNITY_EDITOR
+            return
+                UnityEditor.Compilation.CompilationPipeline.codeOptimization
+                == UnityEditor.Compilation.CodeOptimization.Release
+                ? "Release"
+                : "Debug";
+#else
+            return Debug.isDebugBuild ? "Debug" : "Release";
+#endif
         }
 
         private static string ResolveCommit()

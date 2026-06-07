@@ -25,6 +25,15 @@ param(
 
     [string]$TestCategory = $(if ($env:DXM_UNITY_TEST_CATEGORY) { $env:DXM_UNITY_TEST_CATEGORY } else { '' }),
 
+    [switch]$IncludeComparisons,
+
+    [switch]$ReleaseCodeOptimization,
+
+    [ValidateSet('IL2CPP', 'Mono2x')]
+    [string]$StandaloneScriptingBackend = 'IL2CPP',
+
+    [switch]$ReleasePlayerBuild,
+
     [switch]$GenerateOnly
 )
 
@@ -400,35 +409,105 @@ function Initialize-UnityCacheEnvironment {
     Write-Host "::endgroup::"
 }
 
-function New-ManifestJson {
+function Get-ComparisonPackages {
     param([Parameter(Mandatory = $true)][string]$Root)
+    $path = Join-Path $Root '.github/comparison-packages.json'
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "Comparison packages single source not found: $path"
+    }
+    return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+}
+
+function New-ManifestJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [switch]$IncludeComparisons,
+        [string]$RepoRoot
+    )
 
     $packagePath = ConvertTo-UnityFileUriPath -Path $Root
+    $dependencies = [ordered]@{
+        'com.unity.test-framework' = $TestFrameworkVersion
+        'com.unity.test-framework.performance' = $PerformanceFrameworkVersion
+        $PackageName = "file:$packagePath"
+    }
+
     $manifest = [ordered]@{
-        dependencies = [ordered]@{
-            'com.unity.test-framework' = $TestFrameworkVersion
-            'com.unity.test-framework.performance' = $PerformanceFrameworkVersion
-            $PackageName = "file:$packagePath"
-        }
+        dependencies = $dependencies
         testables = @($PackageName)
+    }
+
+    # ONLY the comparison legs (-IncludeComparisons) get the OpenUPM scoped
+    # registry + the pinned comparison packages, read from the single source
+    # .github/comparison-packages.json. Non-comparison legs MUST stay byte-for-byte
+    # identical to before (no scopedRegistries key at all) so their Library cache
+    # and reliability are unchanged.
+    if ($IncludeComparisons) {
+        if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+            throw "New-ManifestJson -IncludeComparisons requires -RepoRoot (the comparison-packages.json single source)."
+        }
+        $comparisons = Get-ComparisonPackages -Root $RepoRoot
+        foreach ($pkg in $comparisons.packages.PSObject.Properties) {
+            $dependencies[$pkg.Name] = $pkg.Value
+        }
+        $reg = $comparisons.registry
+        # Ordered so ConvertTo-Json emits name/url/scopes deterministically (matches
+        # the committed local-parity manifest field order and keeps the CI-log diff
+        # of the generated manifest stable run-to-run).
+        $manifest['scopedRegistries'] = @(
+            [ordered]@{
+                name = $reg.name
+                url = $reg.url
+                scopes = @($reg.scopes)
+            }
+        )
     }
 
     return ($manifest | ConvertTo-Json -Depth 8)
 }
 
 function New-ConfiguratorSource {
-    @'
+    param([string]$Backend = 'IL2CPP')
+
+    # NOTE: this is a DOUBLE-quoted here-string so $Backend interpolates into the
+    # generated C#. Every LITERAL C# dollar sign (the Debug.Log interpolated
+    # string) is therefore backtick-escaped (`$). The LIVE code uses the
+    # parameterized scripting backend (ScriptingImplementation.<Backend>), the
+    # non-deprecated ApiCompatibilityLevel.NET_Standard (which targets .NET Standard
+    # 2.1), CompilationPipeline.codeOptimization = Release, and disables managed
+    # stripping so the test assemblies + [Preserve] callback survive a Release Mono
+    # player build. The contracts in
+    # scripts/__tests__/unity-runner-script-contract.test.js assert that NEW reality.
+    @"
 using System;
 using System.IO;
 using UnityEditor;
+using UnityEngine;
 
 public static class DxmCiTestConfigurator
 {
     public static void Apply()
     {
+        // Prove Release editor code optimization for the perf legs (harmless for
+        // non-perf legs). Set FIRST so the effective value is logged below.
+        UnityEditor.Compilation.CompilationPipeline.codeOptimization = UnityEditor.Compilation.CodeOptimization.Release;
+
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);
-        PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.IL2CPP);
-        PlayerSettings.SetApiCompatibilityLevel(BuildTargetGroup.Standalone, ApiCompatibilityLevel.NET_Standard_2_0);
+        // The scripting backend is parameterized: the runner passes the IL2CPP or
+        // the Mono backend for the Mono perf leg via -Backend.
+        PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.$Backend);
+        // Use the non-deprecated ApiCompatibilityLevel.NET_Standard (targets .NET
+        // Standard 2.1). The deprecated 2.0 form and the non-existent 2.1 enum
+        // member are intentionally NOT used.
+        PlayerSettings.SetApiCompatibilityLevel(BuildTargetGroup.Standalone, ApiCompatibilityLevel.NET_Standard);
+        // Disable managed code stripping so IncludeTestAssemblies + the [Preserve]
+        // standalone TestRunCallback survive a NON-development (Release) Mono player
+        // build; otherwise the stripper can drop the test code from the player.
+        PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStrippingLevel.Disabled);
+
+        // Print the EFFECTIVE perf config so the artifact log PROVES Mono/IL2CPP +
+        // .NET Standard 2.1 + Release for this run.
+        Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(BuildTargetGroup.Standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}");
 
         // Write a success marker as the FINAL action so the runner can treat the
         // CONFIGURED PROJECT -- not Unity's process exit code -- as the source of
@@ -452,7 +531,7 @@ public static class DxmCiTestConfigurator
         }
     }
 }
-'@
+"@
 }
 
 # STANDALONE ONLY. The Editor-side type that severs the test player's outbound
@@ -471,7 +550,18 @@ public static class DxmCiTestConfigurator
 # so the editor idles forever. The PostBuildCleanup exit (run AFTER the build via
 # ExecutePostBuildCleanupMethods) is mandatory.
 function New-StandaloneBuildModifierSource {
-    @'
+    param([bool]$DevelopmentBuild = $true)
+
+    # The Development BuildOptions flag is included ONLY for non-release perf builds.
+    # When $ReleasePlayerBuild is requested the caller passes -DevelopmentBuild $false
+    # and we omit it (a true Release player). Every OTHER option (clearing
+    # AutoRunPlayer/ConnectToHost/ConnectWithProfiler, |= IncludeTestAssemblies, the
+    # DXM_PLAYER_BUILD_PATH redirect, and the PostBuildCleanup exit) is REQUIRED for
+    # the split-build test execution and is emitted unconditionally. This is a
+    # DOUBLE-quoted here-string so $developmentOption interpolates; the generated C#
+    # contains no other dollar signs or backticks, so nothing else needs escaping.
+    $developmentOption = if ($DevelopmentBuild) { '        playerOptions.options |= BuildOptions.Development;' } else { '' }
+    @"
 using System;
 using System.IO;
 using System.Linq;
@@ -501,7 +591,7 @@ public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPo
         playerOptions.options &= ~BuildOptions.ConnectToHost;
         playerOptions.options &= ~BuildOptions.ConnectWithProfiler;
         playerOptions.options |= BuildOptions.IncludeTestAssemblies;
-        playerOptions.options |= BuildOptions.Development;
+$developmentOption
         string outPath = Environment.GetEnvironmentVariable("DXM_PLAYER_BUILD_PATH");
         if (!string.IsNullOrEmpty(outPath))
         {
@@ -528,7 +618,7 @@ public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPo
         }
     }
 }
-'@
+"@
 }
 
 # STANDALONE ONLY. The player-side [assembly:TestRunCallback] that REPLACES the
@@ -896,8 +986,19 @@ function Initialize-EphemeralProject {
         [Parameter(Mandatory = $true)][string]$Root,
         [Parameter(Mandatory = $true)][string]$Version,
         [Parameter(Mandatory = $true)][string]$Mode,
-        [string]$Path
+        [string]$Path,
+        [switch]$IncludeComparisons,
+        [string]$Backend = 'IL2CPP',
+        [bool]$DevelopmentBuild = $true,
+        [string]$RepoRoot
     )
+
+    # The comparison-packages single source lives at the repo root. Default to
+    # -Root when no explicit -RepoRoot is threaded (the package source root is the
+    # repo root in this harness), so New-ManifestJson -IncludeComparisons can read it.
+    if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+        $RepoRoot = $Root
+    }
 
     $project = if ($Path) {
         Resolve-FullPath -Path $Path
@@ -909,11 +1010,11 @@ function Initialize-EphemeralProject {
     New-Item -ItemType Directory -Force -Path (Join-Path $project 'ProjectSettings') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $project 'Assets\Editor') | Out-Null
 
-    New-ManifestJson -Root $Root |
+    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -RepoRoot $RepoRoot |
         Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
     "m_EditorVersion: $Version`n" |
         Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
-    New-ConfiguratorSource |
+    New-ConfiguratorSource -Backend $Backend |
         Set-Content -LiteralPath (Join-Path $project 'Assets\Editor\DxmCiTestConfigurator.cs') -Encoding UTF8
 
     # Pre-create the same Assets/Plugins analyzer copy SetupCscRsp makes for consumers
@@ -939,7 +1040,7 @@ function Initialize-EphemeralProject {
     # these files (the local single -runTests path is untouched).
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
-            @{ Path = (Join-Path $project 'Assets\Editor\DxmCiStandaloneBuildModifier.cs'); Content = (New-StandaloneBuildModifierSource) },
+            @{ Path = (Join-Path $project 'Assets\Editor\DxmCiStandaloneBuildModifier.cs'); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild) },
             @{ Path = (Join-Path $project 'Assets\DxmCiStandaloneTestCallback\DxmCiStandaloneTestCallback.cs'); Content = (New-StandaloneTestCallbackSource) },
             @{ Path = (Join-Path $project 'Assets\DxmCiStandaloneTestCallback\DxmCiStandaloneTestCallback.asmdef'); Content = (New-StandaloneTestCallbackAsmdef) }
         )
@@ -2187,7 +2288,7 @@ New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
 
 Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion
 
-$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath
+$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $ReleasePlayerBuild) -RepoRoot $RepoRoot
 $LibraryPath = Join-Path $ProjectPath 'Library'
 New-Item -ItemType Directory -Force -Path $LibraryPath | Out-Null
 
@@ -2196,6 +2297,10 @@ Write-Host "RepoRoot: $RepoRoot"
 Write-Host "ProjectPath: $ProjectPath"
 Write-Host "LibraryPath: $LibraryPath"
 Write-Host "ArtifactsPath: $ArtifactsPath"
+Write-Host "IncludeComparisons: $IncludeComparisons"
+Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"
+Write-Host "ReleasePlayerBuild: $ReleasePlayerBuild"
+Write-Host "ReleaseCodeOptimization: $ReleaseCodeOptimization"
 Write-Host "Manifest:"
 Get-Content -LiteralPath (Join-Path $ProjectPath 'Packages\manifest.json')
 Write-Host "Pre-created analyzer copy (Assets/Plugins/Editor/WallstopStudios.DxMessaging):"
@@ -2537,7 +2642,16 @@ try {
             '-testResults', $resultsPath,
             '-assemblyNames', $AssemblyNames,
             '-logFile', '-'
-        ) + $categoryArgs + $acceleratorArgs
+        )
+        # Editor-side Release code optimization for the editmode/playmode perf legs.
+        # MUST NOT be added to any array that also carries '-quit' (the standalone
+        # configure pass): -runTests + -quit is mutually exclusive per the Unity
+        # manual. The standalone leg sets Release code optimization via the
+        # configurator (DxmCiTestConfigurator.Apply) instead, so it needs no CLI flag.
+        if ($ReleaseCodeOptimization) {
+            $testArgs += '-releaseCodeOptimization'
+        }
+        $testArgs = $testArgs + $categoryArgs + $acceleratorArgs
 
         # Delete any STALE results file first so the file validation below can only
         # honor results THIS run wrote (defensive for local re-runs; CI checkout

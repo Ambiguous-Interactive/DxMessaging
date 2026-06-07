@@ -44,6 +44,39 @@ describe("extract-perf-baseline", () => {
     );
   });
 
+  test("keeps cross-library Comparison_* rows alongside dispatch rows", () => {
+    const content = [
+      "Noise before results",
+      // A dispatch row (must still survive, byte-identical behavior).
+      'UntargetedFlood_OneHandler,"Editor PlayMode Mono x64 Release (LinuxEditor; Unity 6000.3.16f1)",abc1234,-1,25000000.125,0,1000.000',
+      // A comparison row (NEW: must now be kept).
+      'Comparison_DxMessaging_GlobalToOne,"Editor PlayMode Mono x64 Release (LinuxEditor; Unity 6000.3.16f1)",abc1234,-1,16980000.000,0,1000.000',
+      // A structured-log comparison row (also kept).
+      '[TestRunner] {scenario:"Comparison_MessagePipe_Filtered", platform:"Standalone Mono x64 Release (LinuxEditor; Unity 6000.3.16f1)", commit:"abc1234", runIndex:-1, emitsPerSec:7000000.0, allocatedBytesDelta:0, wallClockMs:1000.0}',
+      // A non-benchmark row that must still be ignored.
+      "TotallyUnrelated_Row,whatever,deadbee,-1,1.0,0,1.0",
+      "Noise after results"
+    ].join("\n");
+
+    const rows = extractRows(content);
+
+    const scenarios = rows.map((row) => row.scenario);
+    expect(scenarios).toContain("UntargetedFlood_OneHandler");
+    expect(scenarios).toContain("Comparison_DxMessaging_GlobalToOne");
+    expect(scenarios).toContain("Comparison_MessagePipe_Filtered");
+    expect(scenarios).not.toContain("TotallyUnrelated_Row");
+    expect(rows).toHaveLength(3);
+
+    const comparison = rows.find((row) => row.scenario === "Comparison_DxMessaging_GlobalToOne");
+    expect(comparison).toMatchObject({
+      platform: "Editor PlayMode Mono x64 Release (LinuxEditor; Unity 6000.3.16f1)",
+      commit: "abc1234",
+      emitsPerSecond: "16980000.000",
+      allocatedBytesDelta: "0",
+      wallClockMs: "1000.000"
+    });
+  });
+
   test("appends rows to an existing baseline without duplicating the header", () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-perf-"));
     const inputPath = path.join(tempDir, "unity.log");

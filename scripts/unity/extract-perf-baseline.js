@@ -18,6 +18,21 @@ const SCENARIOS = new Set([
   "RegistrationFlood_1000Types_FromColdBus"
 ]);
 
+// Cross-library comparison rows share the exact CSV/log shape of the dispatch
+// rows but carry a synthetic scenario id of the form
+// "Comparison_<TechKey>_<ScenarioKey>" (e.g. "Comparison_DxMessaging_GlobalToOne").
+// They are NOT in SCENARIOS, so accept a row whose scenario is either a known
+// dispatch key OR begins with this prefix. The CSV schema (7 fields) and the
+// structured-log key names are unchanged; only the set of kept scenario ids grows.
+const COMPARISON_SCENARIO_PREFIX = "Comparison_";
+
+function isKeptScenario(scenario) {
+  return (
+    typeof scenario === "string" &&
+    (SCENARIOS.has(scenario) || scenario.startsWith(COMPARISON_SCENARIO_PREFIX))
+  );
+}
+
 function usage() {
   return `Usage: node scripts/unity/extract-perf-baseline.js --input <unity-log-or-results> [--input <path> ...] [--output <csv>] [--append|--replace]
 
@@ -122,7 +137,7 @@ function parseCsvRowFromLine(line) {
   }
 
   const fields = parseCsvFields(trimmed);
-  if (fields.length !== 7 || !SCENARIOS.has(fields[0])) {
+  if (fields.length !== 7 || !isKeptScenario(fields[0])) {
     return null;
   }
 
@@ -153,7 +168,7 @@ function parseStructuredLogFromLine(line) {
     wallClockMs: matchStructuredNumber(trimmed, "wallClockMs")
   };
 
-  if (!SCENARIOS.has(row.scenario)) {
+  if (!isKeptScenario(row.scenario)) {
     return null;
   }
 
@@ -176,7 +191,9 @@ function stripUnityPrefix(line) {
 
 function findScenarioIndex(line) {
   let bestIndex = -1;
-  for (const scenario of SCENARIOS) {
+  // Dispatch keys plus the comparison-row prefix; the earliest occurrence wins
+  // so a leading Unity log prefix (e.g. timestamp) is stripped off a CSV row.
+  for (const scenario of [...SCENARIOS, COMPARISON_SCENARIO_PREFIX]) {
     const index = line.indexOf(scenario);
     if (index >= 0 && (bestIndex < 0 || index < bestIndex)) {
       bestIndex = index;
@@ -340,6 +357,9 @@ if (require.main === module) {
 
 module.exports = {
   CSV_HEADER,
+  SCENARIOS,
+  COMPARISON_SCENARIO_PREFIX,
+  isKeptScenario,
   extractRows,
   buildCsv,
   parseArgs
