@@ -55,7 +55,7 @@ The published numbers are measured under **Mono + .NET Standard 2.1 + Release**.
 All legs are driven by
 [`scripts/unity/run-ci-tests.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/run-ci-tests.ps1):
 
-- **EditMode / PlayMode legs** pass `-releaseCodeOptimization`, which sets
+- **PlayMode perf leg** passes `-releaseCodeOptimization`, which sets
   `CompilationPipeline.codeOptimization = Release` so test assemblies compile
   without debug code paths.
 - **Standalone perf leg** builds a **Mono2x non-development (Release) player**
@@ -64,7 +64,8 @@ All legs are driven by
   test assemblies and the `[Preserve]` standalone test-run callback survive into
   the player.
 
-EditMode is exercised by the shared protocol but is **not published** (see
+The harness can exercise EditMode through the shared protocol, but
+`perf-numbers.yml` does **not run or publish** EditMode (see
 [Editor-vs-player rationale](#editor-vs-player-rationale)).
 
 ## Scenario taxonomy
@@ -269,9 +270,8 @@ To add or bump a comparison library:
 1. Update the committed `.unity-test-project/Packages/manifest.json` and
    `.unity-test-project/Packages/packages-lock.json` to keep local parity with
    the single source.
-1. Run the drift validator (`npm run validate:comparison-packages`, added in a
-   later slice) to confirm every consumer agrees with
-   `.github/comparison-packages.json`.
+1. Run the drift validator (`npm run validate:comparison-packages`) to confirm
+   every consumer agrees with `.github/comparison-packages.json`.
 
 ## History note
 

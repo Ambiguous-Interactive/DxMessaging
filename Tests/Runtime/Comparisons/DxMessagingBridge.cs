@@ -164,6 +164,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
             _tokens.Clear();
 
+            _churnHandler = null;
             _token = null;
             _bus = null;
         }

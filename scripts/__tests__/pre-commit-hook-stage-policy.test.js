@@ -222,6 +222,7 @@ describe("pre-commit hook stage policy", () => {
 
     const blockText = parserTestsBlock.lines.join("\n");
     expect(blockText).toContain("scripts/__tests__/validate-npm-meta.test.js");
+    expect(blockText).toContain("scripts/__tests__/validate-comparison-packages.test.js");
     expect(blockText).toContain("scripts/__tests__/run-managed-prettier.test.js");
     expect(blockText).toContain("scripts/__tests__/prettier-version.test.js");
     expect(blockText).toContain("scripts/__tests__/shell-command.test.js");

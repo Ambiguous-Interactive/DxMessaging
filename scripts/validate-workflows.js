@@ -54,6 +54,8 @@
  *   AUTO_COMMIT_APP_* credential gate is false, must not use
  *   git-auto-commit-action for protected default-branch pushes, and must fetch
  *   and diagnose branch advancement before command-scoped push attempts.
+ * - Workflows that run comparison-package drift validation with path filters
+ *   must trigger on every single-source and mirror file the validator checks.
  *
  * @usage
  *   node scripts/validate-workflows.js
@@ -81,6 +83,13 @@ const {
   extractTargetedStepRunBlock,
   extractListedTestPaths
 } = require("./lib/cross-platform-preflight-gate");
+const {
+  SOURCE_RELATIVE_PATH: COMPARISON_PACKAGES_SOURCE_PATH,
+  LOCAL_MANIFEST_RELATIVE_PATH: COMPARISON_PACKAGES_LOCAL_MANIFEST_PATH,
+  LOCAL_PACKAGE_LOCK_RELATIVE_PATH: COMPARISON_PACKAGES_LOCAL_PACKAGE_LOCK_PATH,
+  COMPARISONS_RELATIVE_DIR: COMPARISON_PACKAGES_COMPARISONS_DIR,
+  GENERATOR_RELATIVE_PATH: COMPARISON_PACKAGES_GENERATOR_PATH
+} = require("./validate-comparison-packages.js");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const WORKFLOWS_DIR = path.join(__dirname, "..", ".github", "workflows");
@@ -114,6 +123,17 @@ const REQUIRED_ACTIVE_WORKFLOW_PATHS = Object.freeze([
   BLOCKING_DOC_LINK_WORKFLOW,
   ADVISORY_DOC_LINK_WORKFLOW
 ]);
+const COMPARISON_PACKAGES_VALIDATOR_PATH = "scripts/validate-comparison-packages.js";
+const COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS = Object.freeze([
+  COMPARISON_PACKAGES_SOURCE_PATH,
+  COMPARISON_PACKAGES_VALIDATOR_PATH,
+  COMPARISON_PACKAGES_GENERATOR_PATH,
+  COMPARISON_PACKAGES_LOCAL_MANIFEST_PATH,
+  COMPARISON_PACKAGES_LOCAL_PACKAGE_LOCK_PATH,
+  `${COMPARISON_PACKAGES_COMPARISONS_DIR}/**`
+]);
+const COMPARISON_PACKAGE_VALIDATION_RUN_RE =
+  /(?:^|[\s;&|])(?:node\s+)?(?:\.\/)?scripts\/validate-comparison-packages\.js\b|(?:^|[\s;&|])npm\s+run\s+(?:validate:comparison-packages|validate:all)\b/;
 
 // The `yaml` package is used to parse workflows structurally (formatting-
 // invariant) for the compute-unity-assemblies gate check. It is not a declared
@@ -484,22 +504,46 @@ function isGitIgnoredPath(repoRoot, relativePath, execFileSyncImpl = execFileSyn
 }
 
 function extractWorkflowPathEntries(lines) {
-  const entries = [];
-  let inPathsBlock = false;
-  let pathsIndent = -1;
+  return extractWorkflowPathBlocks(lines).flatMap((block) => block.entries);
+}
+
+function extractWorkflowPathBlocks(lines) {
+  return extractWorkflowPathFilterBlocks(lines, "paths");
+}
+
+function extractWorkflowPathIgnoreBlocks(lines) {
+  return extractWorkflowPathFilterBlocks(lines, "paths-ignore");
+}
+
+function extractWorkflowPathFilterBlocks(lines, filterKey) {
+  const blocks = [];
+  let currentBlock = null;
+  const filterKeyPattern = new RegExp(`^\\s*${filterKey}:\\s*$`);
+
+  const startBlock = (lineNumber, indent) => {
+    currentBlock = {
+      line: lineNumber,
+      indent,
+      entries: []
+    };
+    blocks.push(currentBlock);
+  };
+
+  const stopBlock = () => {
+    currentBlock = null;
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
     const indent = getIndent(line);
 
-    if (!inPathsBlock && /^\s*paths:\s*$/.test(line)) {
-      inPathsBlock = true;
-      pathsIndent = indent;
+    if (!currentBlock && filterKeyPattern.test(line)) {
+      startBlock(i + 1, indent);
       continue;
     }
 
-    if (!inPathsBlock) {
+    if (!currentBlock) {
       continue;
     }
 
@@ -507,27 +551,155 @@ function extractWorkflowPathEntries(lines) {
       continue;
     }
 
-    if (indent <= pathsIndent && !/^\s*-\s+/.test(line)) {
-      inPathsBlock = false;
-      pathsIndent = -1;
+    if (indent <= currentBlock.indent && !/^\s*-\s+/.test(line)) {
+      stopBlock();
 
-      if (/^\s*paths:\s*$/.test(line)) {
-        inPathsBlock = true;
-        pathsIndent = indent;
+      if (filterKeyPattern.test(line)) {
+        startBlock(i + 1, indent);
       }
       continue;
     }
 
     const pathEntry = /^\s*-\s*["']?([^"'#]+)["']?\s*(?:#.*)?$/.exec(line);
     if (pathEntry) {
-      entries.push({
+      currentBlock.entries.push({
         line: i + 1,
         path: pathEntry[1].trim()
       });
     }
   }
 
-  return entries;
+  return blocks;
+}
+
+function normalizeWorkflowPathPattern(pathValue) {
+  return pathValue.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function escapeRegexChar(char) {
+  return /[\\^$+?.()|[\]{}]/.test(char) ? `\\${char}` : char;
+}
+
+function workflowPathGlobToRegex(pattern) {
+  let source = "";
+  const normalized = normalizeWorkflowPathPattern(pattern);
+
+  for (let index = 0; index < normalized.length; index++) {
+    const char = normalized[index];
+    if (char === "*") {
+      if (normalized[index + 1] === "*") {
+        source += ".*";
+        index++;
+      } else {
+        source += "[^/]*";
+      }
+      continue;
+    }
+    if (char === "?") {
+      source += "[^/]";
+      continue;
+    }
+    source += escapeRegexChar(char);
+  }
+
+  return new RegExp(`^${source}$`);
+}
+
+function workflowPathPatternMatchesRequiredPath(pattern, requiredPath) {
+  const normalizedPattern = normalizeWorkflowPathPattern(pattern);
+  const requiredCandidates = [];
+  const normalizedRequiredPath = normalizeWorkflowPathPattern(requiredPath);
+  if (normalizedRequiredPath.endsWith("/**")) {
+    requiredCandidates.push(`${normalizedRequiredPath.slice(0, -3)}/__required_trigger__`);
+  } else {
+    requiredCandidates.push(normalizedRequiredPath);
+  }
+
+  const patternRegex = workflowPathGlobToRegex(normalizedPattern);
+  return requiredCandidates.some((candidate) => patternRegex.test(candidate));
+}
+
+function workflowPathBlockCoversRequiredPath(block, requiredPath) {
+  let included = false;
+
+  for (const entry of block.entries) {
+    const normalizedPath = normalizeWorkflowPathPattern(entry.path);
+    const isExclusion = normalizedPath.startsWith("!");
+    const pattern = isExclusion ? normalizedPath.slice(1) : normalizedPath;
+    if (!workflowPathPatternMatchesRequiredPath(pattern, requiredPath)) {
+      continue;
+    }
+
+    included = !isExclusion;
+  }
+
+  return included;
+}
+
+function runTextInvokesComparisonPackageValidation(runText) {
+  return (
+    typeof runText === "string" &&
+    runText.trim().length > 0 &&
+    COMPARISON_PACKAGE_VALIDATION_RUN_RE.test(runText)
+  );
+}
+
+function workflowInvokesComparisonPackageValidation(lines) {
+  return extractRunBlocks(lines).some((block) => runTextInvokesComparisonPackageValidation(block.text));
+}
+
+function findComparisonPackageValidationTriggerViolations(relativePath, lines) {
+  const violations = [];
+  const pathBlocks = extractWorkflowPathBlocks(lines);
+  const pathIgnoreBlocks = extractWorkflowPathIgnoreBlocks(lines);
+
+  if (
+    (pathBlocks.length === 0 && pathIgnoreBlocks.length === 0) ||
+    !workflowInvokesComparisonPackageValidation(lines)
+  ) {
+    return violations;
+  }
+
+  for (const block of pathBlocks) {
+    for (const requiredPath of COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS) {
+      if (workflowPathBlockCoversRequiredPath(block, requiredPath)) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          block.line,
+          "validate-comparison-packages trigger paths",
+          `Workflow runs ${COMPARISON_PACKAGES_VALIDATOR_PATH} but this paths filter does not include '${requiredPath}'. Add it so every comparison package single-source and mirror edit runs the drift gate.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  for (const block of pathIgnoreBlocks) {
+    for (const requiredPath of COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS) {
+      const excludingEntry = block.entries.find((entry) =>
+        workflowPathPatternMatchesRequiredPath(entry.path, requiredPath)
+      );
+      if (!excludingEntry) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          excludingEntry.line,
+          "validate-comparison-packages paths-ignore",
+          `Workflow runs ${COMPARISON_PACKAGES_VALIDATOR_PATH} but paths-ignore entry '${excludingEntry.path}' excludes comparison package path '${requiredPath}'. Remove the exclusion so mirror-only edits still run the drift gate.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
 }
 
 function isLiteralPath(pathValue) {
@@ -5964,6 +6136,8 @@ function validateWorkflow(filePath, options = {}) {
   try {
     violations.push(...findIgnoredPathViolations(relativePath, lines, repoRoot, isIgnoredPathFn));
 
+    violations.push(...findComparisonPackageValidationTriggerViolations(relativePath, lines));
+
     const packageLockIgnored = isIgnoredPathFn(repoRoot, "package-lock.json");
     violations.push(...findLockfileInstallViolations(relativePath, lines, packageLockIgnored));
 
@@ -6153,7 +6327,11 @@ if (typeof module !== "undefined" && module.exports) {
     hasExistenceCheck,
     isGitIgnoredPath,
     extractWorkflowPathEntries,
+    extractWorkflowPathBlocks,
+    extractWorkflowPathIgnoreBlocks,
     findIgnoredPathViolations,
+    findComparisonPackageValidationTriggerViolations,
+    runTextInvokesComparisonPackageValidation,
     extractRunBlocks,
     findLockfileInstallViolations,
     findPreCommitInstallHookWriterViolations,
@@ -6210,6 +6388,8 @@ if (typeof module !== "undefined" && module.exports) {
     NPM_SCRIPTS_REQUIRING_GIT_HISTORY,
     REQUIRED_LYCHEE_VERSION,
     ADVISORY_LYCHEE_REPORT_PATH,
+    COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS,
+    COMPARISON_PACKAGES_VALIDATOR_PATH,
     extractStaticJobLabels,
     jobIsRunnerAccessPreflight,
     findSelfHostedRunnerPreflightViolations,

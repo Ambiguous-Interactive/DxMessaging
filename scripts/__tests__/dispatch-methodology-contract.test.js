@@ -135,6 +135,52 @@ function collectCsFiles(directory) {
   return files;
 }
 
+function toRepoPath(filePath) {
+  return path.relative(REPO_ROOT, filePath).replace(/\\/g, "/");
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractVoidMethodBody(source, methodName) {
+  const signature = new RegExp(
+    `\\b(?:public|private|protected|internal)\\s+void\\s+${methodName}\\s*\\(\\s*\\)\\s*\\{`
+  );
+  const match = signature.exec(source);
+  if (!match) {
+    return null;
+  }
+
+  let depth = 1;
+  let index = match.index + match[0].length;
+  for (; index < source.length && depth > 0; index++) {
+    const char = source[index];
+    if (char === "{") {
+      depth++;
+    } else if (char === "}") {
+      depth--;
+    }
+  }
+
+  return depth === 0 ? source.slice(match.index + match[0].length, index - 1) : null;
+}
+
+function findCachedChurnHandlerFields(source) {
+  const fields = [];
+  const fieldRegex =
+    /\bprivate\s+(?!readonly\b)(?:[A-Za-z_][A-Za-z0-9_.]*(?:\s*<[^;\r\n]+>)?)\s+(_[A-Za-z0-9_]*[Cc]hurnHandler[A-Za-z0-9_]*)\s*;/g;
+  let match;
+  while ((match = fieldRegex.exec(source)) !== null) {
+    fields.push(match[1]);
+  }
+  return fields;
+}
+
+function disposeClearsField(disposeBody, fieldName) {
+  return new RegExp(`\\b${escapeRegex(fieldName)}\\s*=\\s*null\\s*;`).test(disposeBody);
+}
+
 function setsEqual(actual, expected) {
   const actualSet = new Set(actual);
   const expectedSet = new Set(expected);
@@ -289,5 +335,36 @@ describe("dispatch + comparison methodology cross-language contract", () => {
       COMPARISON_TECH_LABELS,
       "C# bridge TechName vs render-perf-doc COMPARISON_TECH_LABELS"
     );
+  });
+
+  test("cached churn handler fields are cleared by Dispose", () => {
+    const checkedFields = [];
+    const violations = [];
+
+    for (const filePath of collectCsFiles(COMPARISONS_DIR)) {
+      const source = fs.readFileSync(filePath, "utf8");
+      const fields = findCachedChurnHandlerFields(source);
+      if (fields.length === 0) {
+        continue;
+      }
+
+      const repoPath = toRepoPath(filePath);
+      const disposeBody = extractVoidMethodBody(source, "Dispose");
+      for (const fieldName of fields) {
+        checkedFields.push(`${repoPath}:${fieldName}`);
+        if (!disposeBody) {
+          violations.push(`${repoPath}: missing Dispose() for ${fieldName}`);
+          continue;
+        }
+        if (!disposeClearsField(disposeBody, fieldName)) {
+          violations.push(`${repoPath}: Dispose() does not clear ${fieldName}`);
+        }
+      }
+    }
+
+    expect(checkedFields).toEqual(
+      expect.arrayContaining(["Tests/Runtime/Comparisons/DxMessagingBridge.cs:_churnHandler"])
+    );
+    expect(violations).toEqual([]);
   });
 });

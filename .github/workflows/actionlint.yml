@@ -14,6 +14,7 @@ on:
       - "scripts/validate-comparison-packages.js"
       - "scripts/unity/run-ci-tests.ps1"
       - ".unity-test-project/Packages/manifest.json"
+      - ".unity-test-project/Packages/packages-lock.json"
       - "Tests/Runtime/Comparisons/**"
   push:
     branches:
@@ -31,6 +32,7 @@ on:
       - "scripts/validate-comparison-packages.js"
       - "scripts/unity/run-ci-tests.ps1"
       - ".unity-test-project/Packages/manifest.json"
+      - ".unity-test-project/Packages/packages-lock.json"
       - "Tests/Runtime/Comparisons/**"
   workflow_dispatch:
 

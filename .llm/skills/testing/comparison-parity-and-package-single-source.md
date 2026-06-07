@@ -182,7 +182,12 @@ Three consumers read this file and must agree:
 `scripts/validate-comparison-packages.js` (npm `validate:comparison-packages`,
 part of `validate:all`) fails on any drift between the JSON, the asmdef
 `versionDefines`, the committed manifest, and the committed package lock. The
-single-source file is the authority; the validator keeps the mirrors honest.
+dedicated `validate-comparison-packages` pre-commit/pre-push hook runs that gate
+for source, mirror, asmdef, validator, and CI manifest-generator edits. Any
+path-filtered workflow that invokes the gate must include every source and
+mirror path; `validate:workflows` fails if a workflow can run the gate but skip
+a mirror-only edit. The single-source file is the authority; the validator keeps
+the mirrors honest.
 
 ## Common Pitfalls
 
@@ -190,6 +195,9 @@ single-source file is the authority; the validator keeps the mirrors honest.
   invent a capability.
 - "I will bump the pin in the manifest only." Bump
   `.github/comparison-packages.json`; the validator flags the rest.
+- "I will add the drift gate to a path-filtered workflow and include only the
+  source JSON." Include the manifest and package-lock mirrors too; workflow
+  trigger coverage is part of the drift gate.
 - "I will route every library through a DxMessaging-style wrapper." Use each
   library's own best-practice API per scenario.
 - "I will skip the fan-out assertion; the rows look complete." The assertion is

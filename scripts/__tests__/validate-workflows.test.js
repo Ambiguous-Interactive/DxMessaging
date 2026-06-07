@@ -16,7 +16,11 @@ const {
   hasExistenceCheck,
   isGitIgnoredPath,
   extractWorkflowPathEntries,
+  extractWorkflowPathBlocks,
+  extractWorkflowPathIgnoreBlocks,
   findIgnoredPathViolations,
+  findComparisonPackageValidationTriggerViolations,
+  runTextInvokesComparisonPackageValidation,
   extractRunBlocks,
   findLockfileInstallViolations,
   findPreCommitInstallHookWriterViolations,
@@ -48,6 +52,7 @@ const {
   findRequiredWorkflowFileViolations,
   REQUIRED_LYCHEE_VERSION,
   ADVISORY_LYCHEE_REPORT_PATH,
+  COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS,
   validateWorkflow
 } = require("../validate-workflows.js");
 
@@ -258,6 +263,247 @@ describe("extractWorkflowPathEntries", () => {
       { line: 4, path: "package.json" },
       { line: 5, path: "package-lock.json" }
     ]);
+  });
+
+  test("collects separate paths blocks with their starting lines", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths:",
+      "      - .github/comparison-packages.json",
+      "  push:",
+      "    paths:",
+      "      - .unity-test-project/Packages/packages-lock.json"
+    ];
+
+    const blocks = extractWorkflowPathBlocks(lines);
+    expect(blocks).toEqual([
+      {
+        line: 3,
+        indent: 4,
+        entries: [{ line: 4, path: ".github/comparison-packages.json" }]
+      },
+      {
+        line: 6,
+        indent: 4,
+        entries: [{ line: 7, path: ".unity-test-project/Packages/packages-lock.json" }]
+      }
+    ]);
+  });
+
+  test("collects paths-ignore blocks separately from paths blocks", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths-ignore:",
+      "      - docs/**",
+      "  push:",
+      "    paths:",
+      "      - scripts/**"
+    ];
+
+    expect(extractWorkflowPathBlocks(lines)).toEqual([
+      {
+        line: 6,
+        indent: 4,
+        entries: [{ line: 7, path: "scripts/**" }]
+      }
+    ]);
+    expect(extractWorkflowPathIgnoreBlocks(lines)).toEqual([
+      {
+        line: 3,
+        indent: 4,
+        entries: [{ line: 4, path: "docs/**" }]
+      }
+    ]);
+  });
+});
+
+describe("findComparisonPackageValidationTriggerViolations", () => {
+  const requiredPathLines = COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS.map((triggerPath) =>
+    `      - "${triggerPath}"`
+  );
+  const requiredWithoutLock = COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS.filter(
+    (triggerPath) => triggerPath !== ".unity-test-project/Packages/packages-lock.json"
+  ).map((triggerPath) => `      - "${triggerPath}"`);
+
+  test("requires every comparison-package source and mirror path in each paths block", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths:",
+      ...requiredWithoutLock,
+      "  push:",
+      "    paths:",
+      ...requiredWithoutLock,
+      "jobs:",
+      "  actionlint:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: node scripts/validate-comparison-packages.js"
+    ];
+
+    const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
+
+    expect(violations).toHaveLength(2);
+    expect(violations.map((violation) => violation.line)).toEqual([3, 10]);
+    expect(violations.every((violation) => violation.message.includes("packages-lock.json"))).toBe(
+      true
+    );
+  });
+
+  test("accepts complete exact path filters", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths:",
+      ...requiredPathLines,
+      "  push:",
+      "    paths:",
+      ...requiredPathLines,
+      "jobs:",
+      "  actionlint:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: node scripts/validate-comparison-packages.js"
+    ];
+
+    const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("accepts broader path filters that cover required mirrors", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths:",
+      "      - .github/comparison-packages.json",
+      "      - scripts/validate-comparison-packages.js",
+      "      - scripts/unity/run-ci-tests.ps1",
+      "      - .unity-test-project/Packages/**",
+      "      - Tests/Runtime/**",
+      "jobs:",
+      "  actionlint:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: npm run validate:comparison-packages"
+    ];
+
+    const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("reports order-sensitive paths exclusions that remove comparison-package mirrors", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths:",
+      "      - '**'",
+      "      - '!.unity-test-project/Packages/**'",
+      "jobs:",
+      "  actionlint:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: node scripts/validate-comparison-packages.js"
+    ];
+
+    const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
+
+    expect(violations).toHaveLength(2);
+    expect(violations.map((violation) => violation.message)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(".unity-test-project/Packages/manifest.json"),
+        expect.stringContaining(".unity-test-project/Packages/packages-lock.json")
+      ])
+    );
+  });
+
+  test("accepts paths exclusions when a later positive pattern re-includes the mirror", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths:",
+      "      - '**'",
+      "      - '!.unity-test-project/Packages/**'",
+      "      - '.unity-test-project/Packages/manifest.json'",
+      "      - '.unity-test-project/Packages/packages-lock.json'",
+      "jobs:",
+      "  actionlint:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: node scripts/validate-comparison-packages.js"
+    ];
+
+    const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("does not require path coverage when no paths filter is present", () => {
+    const lines = [
+      "jobs:",
+      "  release:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: npm run validate:all"
+    ];
+
+    const violations = findComparisonPackageValidationTriggerViolations("release.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("reports paths-ignore entries that exclude comparison-package mirrors", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths-ignore:",
+      "      - docs/**",
+      "      - .unity-test-project/Packages/**",
+      "jobs:",
+      "  actionlint:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: node scripts/validate-comparison-packages.js"
+    ];
+
+    const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
+
+    expect(violations).toHaveLength(2);
+    expect(violations.map((violation) => violation.line)).toEqual([5, 5]);
+    expect(violations.every((violation) => violation.message.includes("paths-ignore"))).toBe(true);
+  });
+
+  test("ignores workflows that do not run the comparison-package drift gate", () => {
+    const lines = [
+      "on:",
+      "  pull_request:",
+      "    paths:",
+      "      - docs/**",
+      "jobs:",
+      "  docs:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: npm run validate:docs"
+    ];
+
+    const violations = findComparisonPackageValidationTriggerViolations("docs.yml", lines);
+
+    expect(violations).toEqual([]);
+  });
+});
+
+describe("runTextInvokesComparisonPackageValidation", () => {
+  test.each([
+    ["direct node script", "node scripts/validate-comparison-packages.js", true],
+    ["direct relative node script", "node ./scripts/validate-comparison-packages.js", true],
+    ["npm comparison script", "npm run validate:comparison-packages", true],
+    ["npm full validation script", "npm run validate:all", true],
+    ["unrelated validation", "npm run validate:workflows", false]
+  ])("%s -> %s", (_name, runText, expected) => {
+    expect(runTextInvokesComparisonPackageValidation(runText)).toBe(expected);
   });
 });
 
