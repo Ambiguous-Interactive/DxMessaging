@@ -228,10 +228,18 @@ jobs:
     # `actions: read` and shadowed the workflow-level intent.
     timeout-minutes: 360
     steps:
+      - name: Enable Git long paths
+        shell: powershell
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
       - name: Checkout
         # Shallow checkout: bootstrap only needs scripts/unity/* and a
         # composite action; no history depth required.
         uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
           persist-credentials: false
 

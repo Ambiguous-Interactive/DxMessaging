@@ -17,6 +17,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     public sealed class UnitySendMessageBridge : IMessagingTechBridge
     {
         private const string MessageName = "OnPing";
+        private static readonly object PingPayload = 0;
 
         private sealed class PingReceiver : MonoBehaviour
         {
@@ -96,10 +97,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             switch (_scenario)
             {
                 case ComparisonScenario.KeyedToOneOfMany:
-                    _keyed[0].SendMessage(MessageName, 0);
+                    SendPing(_keyed[0]);
                     return;
                 default:
-                    _primary.SendMessage(MessageName, 0);
+                    SendPing(_primary);
                     return;
             }
         }
@@ -129,6 +130,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         private void Increment()
         {
             _progress++;
+        }
+
+        private static void SendPing(GameObject gameObject)
+        {
+            gameObject.SendMessage(MessageName, PingPayload);
         }
 
         private static void DestroyObject(GameObject gameObject)

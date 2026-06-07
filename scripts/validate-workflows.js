@@ -48,6 +48,8 @@
  *   immediately before a matching guarded git-auto-commit-action step; manual
  *   clone/fetch/push steps must use command-scoped credentials. Persistent
  *   `git config http.*.extraheader` credentials are forbidden.
+ * - Self-hosted Windows jobs must configure Git long paths before checkout so
+ *   actions/checkout cleanup can remove Unity PackageCache paths reliably.
  * - GitHub App-token auto-commit workflows must emit a warning when the
  *   AUTO_COMMIT_APP_* credential gate is false, must not use
  *   git-auto-commit-action for protected default-branch pushes, and must fetch
@@ -1125,10 +1127,11 @@ function extractStepWithMap(lines, stepStartIndex, stepEndIndex) {
 function extractStepEnvMap(lines, stepStartIndex, stepEndIndex) {
   const values = new Map();
   let envIndent = -1;
+  const stepPropertyIndent = getIndent(lines[stepStartIndex]) + 2;
 
   for (let i = stepStartIndex; i <= stepEndIndex; i++) {
     const line = lines[i];
-    if (/^\s*env:\s*(?:#.*)?$/i.test(line)) {
+    if (/^\s*env:\s*(?:#.*)?$/i.test(line) && getIndent(line) === stepPropertyIndent) {
       envIndent = getIndent(line);
       continue;
     }
@@ -2904,10 +2907,7 @@ function stepRunsUnityGenerateOnly(step) {
 function runTextWiresPowerShellTrueArgument(runText, parameterName) {
   const escaped = parameterName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const bareFlag = new RegExp(`-${escaped}\\b(?!\\s*:)`, "i");
-  const explicitTrueFlag = new RegExp(
-    String.raw`-${escaped}\b\s*:\s*(?:\$true|true|1)\b`,
-    "i"
-  );
+  const explicitTrueFlag = new RegExp(String.raw`-${escaped}\b\s*:\s*(?:\$true|true|1)\b`, "i");
   const indexedTrueAssignment = new RegExp(
     String.raw`\[\s*['"]${escaped}['"]\s*\]\s*=\s*\$true\b`,
     "i"
@@ -5509,6 +5509,106 @@ function findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lin
   return violations;
 }
 
+function stepConfiguresGitLongPaths(step) {
+  if (
+    !step ||
+    step.if ||
+    !step.run ||
+    typeof step.run.text !== "string" ||
+    !(step.env instanceof Map) ||
+    typeof step.env.get("GIT_CONFIG_GLOBAL") !== "string" ||
+    step.env.get("GIT_CONFIG_GLOBAL").trim().length === 0
+  ) {
+    return false;
+  }
+
+  const normalizedRunText = step.run.text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
+  return normalizedRunText === "git config --global core.longpaths true";
+}
+
+function findSelfHostedWindowsCheckoutLongPathViolations(relativePath, lines) {
+  const violations = [];
+  const jobs = extractJobs(lines);
+  const outputsMap = extractJobOutputsSourceMap(lines);
+
+  for (const job of jobs) {
+    const steps = extractJobSteps(lines, job);
+    const checkoutSteps = steps.filter(
+      (step) => typeof step.uses === "string" && step.uses.startsWith("actions/checkout@")
+    );
+    if (checkoutSteps.length === 0) {
+      continue;
+    }
+
+    const resolution = resolveJobLabelSetsForShellPolicy(lines, job, outputsMap);
+
+    if (resolution.kind === "none") {
+      continue;
+    }
+
+    if (resolution.kind === "dynamic-unresolved") {
+      const runsOn = extractJobRunsOn(lines, job);
+      violations.push(
+        new Violation(
+          relativePath,
+          runsOn ? runsOn.line : job.startLine,
+          runsOn ? `runs-on: ${runsOn.raw}` : `job: ${job.id}`,
+          `Job '${job.id}': dynamic runs-on cannot be statically resolved; checkout long-path policy for self-hosted Windows runners cannot be mechanically verified. If the resolved label set may include self-hosted Windows, audit that a 'git config --global core.longpaths true' step runs before checkout.`,
+          "warning"
+        )
+      );
+      continue;
+    }
+
+    const appliesToAtLeastOneBranch = resolution.labelSets.some((labels) =>
+      isSelfHostedWindowsLabelSet(labels)
+    );
+    if (!appliesToAtLeastOneBranch) {
+      continue;
+    }
+
+    let priorGitConfigGlobal = null;
+    for (const step of steps) {
+      if (stepConfiguresGitLongPaths(step)) {
+        priorGitConfigGlobal = step.env.get("GIT_CONFIG_GLOBAL").trim();
+        continue;
+      }
+
+      if (typeof step.uses !== "string" || !step.uses.startsWith("actions/checkout@")) {
+        continue;
+      }
+
+      const checkoutGitConfigGlobal =
+        step.env instanceof Map && typeof step.env.get("GIT_CONFIG_GLOBAL") === "string"
+          ? step.env.get("GIT_CONFIG_GLOBAL").trim()
+          : "";
+      if (
+        priorGitConfigGlobal &&
+        checkoutGitConfigGlobal &&
+        checkoutGitConfigGlobal === priorGitConfigGlobal
+      ) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          step.startIndex + 1,
+          step.uses,
+          `Job '${job.id}' checks out on a self-hosted Windows runner before enabling Git long paths through a job-local GIT_CONFIG_GLOBAL file. Add a preceding unconditional 'git config --global core.longpaths true' run step with GIT_CONFIG_GLOBAL set, and set the same GIT_CONFIG_GLOBAL value on the checkout step so actions/checkout cleanup can remove Unity PackageCache paths whose names exceed the legacy Windows path limit without mutating the runner user's persistent global Git config.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
+}
+
 // Lowercased, leading-`./`-stripped `uses` ref for the compute-unity-assemblies
 // composite action. The validator normalizes each step's `uses` the same way
 // before comparing.
@@ -5901,6 +6001,8 @@ function validateWorkflow(filePath, options = {}) {
 
     violations.push(...findCheckoutCredentialPersistenceViolations(relativePath, lines));
 
+    violations.push(...findSelfHostedWindowsCheckoutLongPathViolations(relativePath, lines));
+
     violations.push(...findTokenizedGitRemoteCredentialViolations(relativePath, lines));
 
     violations.push(...findPersistentGitExtraheaderCredentialViolations(relativePath, lines));
@@ -6114,6 +6216,8 @@ if (typeof module !== "undefined" && module.exports) {
     isSelfHostedWindowsLabelSet,
     isAllowedSelfHostedWindowsShell,
     findForbidPlainShellBashOnSelfHostedWindowsViolations,
+    stepConfiguresGitLongPaths,
+    findSelfHostedWindowsCheckoutLongPathViolations,
     resolveJobLabelSetsForShellPolicy,
     resolveWorkflowLineLengthPolicy,
     resolveWorkflowLineLengthMax,

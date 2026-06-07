@@ -38,6 +38,7 @@ const {
   isAllowedSelfHostedWindowsShell,
   findUnityNativeProvisioningViolations,
   findForbidPlainShellBashOnSelfHostedWindowsViolations,
+  findSelfHostedWindowsCheckoutLongPathViolations,
   resolveWorkflowLineLengthPolicy,
   resolveWorkflowLineLengthMax,
   findWorkflowLineLengthViolations,
@@ -3964,6 +3965,271 @@ describe("forbidPlainShellBashOnSelfHostedWindows", () => {
       }
       const content = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
       const violations = findForbidPlainShellBashOnSelfHostedWindowsViolations(file, content);
+      expect(violations).toEqual([]);
+    }
+  });
+});
+
+describe("findSelfHostedWindowsCheckoutLongPathViolations", () => {
+  test.each([
+    {
+      name: "flags checkout before Git long paths on self-hosted Windows",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    runs-on: [self-hosted, Windows, RAM-64GB]",
+        "    steps:",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 1
+    },
+    {
+      name: "allows Git long paths before checkout",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    runs-on: [self-hosted, Windows, RAM-64GB]",
+        "    steps:",
+        "      - name: Enable Git long paths",
+        "        shell: pwsh",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        run: git config --global core.longpaths true",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 0
+    },
+    {
+      name: "flags Git long paths after checkout because cleanup has already run",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    runs-on: [self-hosted, Windows, RAM-64GB]",
+        "    steps:",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        with:",
+        "          persist-credentials: false",
+        "      - name: Enable Git long paths",
+        "        shell: pwsh",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        run: git config --global core.longpaths true"
+      ],
+      expectedViolations: 1
+    },
+    {
+      name: "flags echoing the Git long paths command because it does not configure Git",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    runs-on: [self-hosted, Windows, RAM-64GB]",
+        "    steps:",
+        "      - name: Print intended command",
+        "        shell: pwsh",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        run: Write-Host 'git config --global core.longpaths true'",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 1
+    },
+    {
+      name: "flags conditional Git long paths setup because checkout can still run",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    runs-on: [self-hosted, Windows, RAM-64GB]",
+        "    steps:",
+        "      - name: Enable Git long paths",
+        "        if: false",
+        "        shell: pwsh",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        run: git config --global core.longpaths true",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 1
+    },
+    {
+      name: "flags command hidden inside a conditional run block",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    runs-on: [self-hosted, Windows, RAM-64GB]",
+        "    steps:",
+        "      - name: Enable Git long paths",
+        "        shell: pwsh",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        run: |",
+        "          if ($false) {",
+        "            git config --global core.longpaths true",
+        "          }",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 1
+    },
+    {
+      name: "flags env text inside the script body because it is not top-level step env",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    runs-on: [self-hosted, Windows, RAM-64GB]",
+        "    steps:",
+        "      - name: Enable Git long paths",
+        "        shell: pwsh",
+        "        run: |",
+        "          env:",
+        "            GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "          git config --global core.longpaths true",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 1
+    },
+    {
+      name: "flags checkout missing matching GIT_CONFIG_GLOBAL env",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    runs-on: [self-hosted, Windows, RAM-64GB]",
+        "    steps:",
+        "      - name: Enable Git long paths",
+        "        shell: pwsh",
+        "        env:",
+        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+        "        run: git config --global core.longpaths true",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 1
+    },
+    {
+      name: "allows hosted Windows without the self-hosted checkout guard",
+      lines: [
+        "jobs:",
+        "  hosted:",
+        "    runs-on: windows-latest",
+        "    steps:",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 0
+    },
+    {
+      name: "applies to dynamic runs-on resolving to self-hosted Windows",
+      lines: [
+        "jobs:",
+        "  matrix-config:",
+        "    runs-on: ubuntu-latest",
+        "    outputs:",
+        "      labels: ${{ steps.pick.outputs.labels }}",
+        "    steps:",
+        "      - name: Pick",
+        "        id: pick",
+        "        run: |",
+        '          echo \'labels=["self-hosted","Windows","RAM-64GB"]\' >> "$GITHUB_OUTPUT"',
+        "  unity:",
+        "    needs: matrix-config",
+        "    runs-on: ${{ fromJSON(needs.matrix-config.outputs.labels) }}",
+        "    steps:",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 1
+    },
+    {
+      name: "warns when dynamic runs-on cannot be resolved",
+      lines: [
+        "jobs:",
+        "  unity:",
+        "    needs: matrix-config",
+        "    runs-on: ${{ fromJSON(needs.matrix-config.outputs.labels) }}",
+        "    steps:",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        with:",
+        "          persist-credentials: false"
+      ],
+      expectedViolations: 1,
+      expectedSeverity: "warning"
+    },
+    {
+      name: "does not warn for unresolved dynamic runs-on jobs without checkout",
+      lines: [
+        "jobs:",
+        "  dynamic:",
+        "    needs: matrix-config",
+        "    runs-on: ${{ fromJSON(needs.matrix-config.outputs.labels) }}",
+        "    steps:",
+        "      - name: Diagnostics",
+        "        shell: pwsh",
+        "        run: Write-Output 'no checkout here'"
+      ],
+      expectedViolations: 0
+    }
+  ])("$name", ({ lines, expectedViolations, expectedSeverity }) => {
+    const violations = findSelfHostedWindowsCheckoutLongPathViolations("test.yml", lines);
+    expect(violations).toHaveLength(expectedViolations);
+    for (const violation of violations) {
+      expect(violation.severity).toBe(expectedSeverity || "error");
+      if (violation.severity === "error") {
+        expect(violation.message).toContain("core.longpaths true");
+        expect(violation.message).toContain("Unity PackageCache");
+      } else {
+        expect(violation.message).toContain("dynamic runs-on cannot be statically resolved");
+      }
+    }
+  });
+
+  test("real self-hosted Windows checkout workflows enable Git long paths first", () => {
+    const workflowDir = path.resolve(__dirname, "..", "..", ".github", "workflows");
+    const targets = [
+      "unity-tests.yml",
+      "unity-benchmarks.yml",
+      "perf-numbers.yml",
+      "unity-gameci-experiment.yml",
+      "runner-bootstrap.yml",
+      "release.yml"
+    ];
+    for (const file of targets) {
+      const filePath = path.join(workflowDir, file);
+      const content = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+      const violations = findSelfHostedWindowsCheckoutLongPathViolations(file, content);
       expect(violations).toEqual([]);
     }
   });

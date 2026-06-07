@@ -7,11 +7,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using NUnit.Framework;
 
     /// <summary>
-    /// Fast STATIC contract test that locks the cross-library comparison conventions in place
-    /// forever. It never runs a measurement window; it only inspects metadata
-    /// (Key/DisplayName/TechKey/TechName/Supports/InvocationsPerOperation) so it stays in the
-    /// quick gate. Adding a comparison scenario or zero-dependency bridge without correct
-    /// metadata fails this suite automatically.
+    /// Fast contract test that locks the cross-library comparison conventions in place
+    /// forever. It inspects metadata and runs one EmitOnce smoke check per supported
+    /// zero-dependency bridge/scenario, but never opens a benchmark measurement window.
+    /// Adding a comparison scenario or zero-dependency bridge without correct metadata or
+    /// dispatch accounting fails this suite automatically.
     /// </summary>
     [Category("Comparison")]
     public sealed class ComparisonContractTests
@@ -34,6 +34,24 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             )
             {
                 yield return new TestCaseData(key, factory).SetName($"Bridge_{key}");
+            }
+        }
+
+        private static IEnumerable<TestCaseData> RosterScenarioCases()
+        {
+            foreach (
+                (
+                    string key,
+                    Func<IMessagingTechBridge> factory
+                ) in ZeroDependencyComparisonRoster.Bridges
+            )
+            {
+                foreach (ComparisonScenario scenario in ComparisonScenarios.All)
+                {
+                    yield return new TestCaseData(key, factory, scenario).SetName(
+                        $"Bridge_{key}_{scenario}"
+                    );
+                }
             }
         }
 
@@ -139,6 +157,41 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                         + "(InvocationsPerOperation > 0)."
                 );
             }
+        }
+
+        [Test]
+        [TestCaseSource(nameof(RosterScenarioCases))]
+        public void SupportedScenarioEmitOnceAdvancesProgressByDeclaredFanOut(
+            string rosterKey,
+            Func<IMessagingTechBridge> factory,
+            ComparisonScenario scenario
+        )
+        {
+            using IMessagingTechBridge bridge = factory();
+            if (bridge.RequiresPlayMode && !UnityEngine.Application.isPlaying)
+            {
+                Assert.Ignore($"{bridge.TechName} requires PlayMode; skipping in EditMode.");
+                return;
+            }
+            if (!bridge.Supports(scenario))
+            {
+                Assert.Ignore(
+                    $"{bridge.TechName} does not support '{ComparisonScenarios.DisplayName(scenario)}'."
+                );
+                return;
+            }
+
+            bridge.Prepare(scenario);
+            long before = bridge.ProgressMarker;
+            bridge.EmitOnce();
+
+            Assert.AreEqual(
+                before + bridge.InvocationsPerOperation(scenario),
+                bridge.ProgressMarker,
+                $"Bridge '{rosterKey}' supported '{scenario}' but one EmitOnce() did not advance "
+                    + "ProgressMarker by InvocationsPerOperation. This catches broken benchmark "
+                    + "bridges before the long performance measurement window floods CI logs."
+            );
         }
 
         [Test]
