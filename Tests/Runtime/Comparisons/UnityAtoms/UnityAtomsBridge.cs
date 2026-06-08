@@ -104,8 +104,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                     {
                         IntEvent keyedEvent = CreateEvent();
                         keyedEvent.Register(Handle);
+                        if (index == 0)
+                        {
+                            _event = keyedEvent;
+                        }
                     }
-                    _event = _events[0];
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     _event = CreateEvent();
