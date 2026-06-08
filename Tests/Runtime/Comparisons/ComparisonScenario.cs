@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Runtime.Comparisons
 {
     using System;
+    using DxMessaging.Tests.Runtime.Benchmarks;
 
     /// <summary>
     /// Apples-to-apples scenarios used to compare messaging technologies. Each scenario
@@ -34,6 +35,15 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public static readonly ComparisonScenario[] All = (ComparisonScenario[])
             Enum.GetValues(typeof(ComparisonScenario));
+
+        /// <summary>
+        /// Per-scenario warm-up emit count. Every comparison scenario is a steady-state
+        /// dispatch shape (none is a cold-bus first-touch scenario), so they all keep the
+        /// shared <see cref="BenchmarkProtocol.WarmupEmits"/> default. This mirrors
+        /// <see cref="DispatchBenchmarkScenarios.WarmupEmits"/> so warm-up policy is
+        /// declared per scenario on both benchmark families.
+        /// </summary>
+        public static int WarmupEmits(ComparisonScenario scenario) => BenchmarkProtocol.WarmupEmits;
 
         // Stable MACHINE key used inside the row scenario id. Never change.
         public static string Key(ComparisonScenario s)

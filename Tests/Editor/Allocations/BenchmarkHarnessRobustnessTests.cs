@@ -429,6 +429,32 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        [Test]
+        public void WarmupEmitsSkipsFloodAndKeepsDefaultForEmitScenarios()
+        {
+            Assert.AreEqual(
+                0,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
+                ),
+                "The cold-bus registration flood must perform no warm-up flood so it measures first-touch registration cost."
+            );
+            Assert.AreEqual(
+                BenchmarkProtocol.WarmupEmits,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.UntargetedFloodOneHandler
+                ),
+                "Emit scenarios must keep the shared warm-up emit count."
+            );
+            Assert.AreEqual(
+                10_000,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.UntargetedFloodOneHandler
+                ),
+                "The shared warm-up emit count is locked at 10,000 for emit scenarios."
+            );
+        }
+
         // The "every scenario captures allocation bytes + CSV stays 7 columns" lock. This runs
         // the real 5s measurement window per scenario, so it carries the PerfBench category and
         // stays out of the fast metadata gate above.

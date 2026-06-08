@@ -137,6 +137,21 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         }
 
         [Test]
+        [TestCaseSource(nameof(RosterScenarioCases))]
+        public void StructScenarioDispatchesNonPrimitiveStructPayload(
+            string rosterKey,
+            Func<IMessagingTechBridge> factory,
+            ComparisonScenario scenario
+        )
+        {
+            ComparisonBridgeContract.AssertStructScenarioPayloadFidelity(
+                rosterKey,
+                factory,
+                scenario
+            );
+        }
+
+        [Test]
         public void DxMessagingSupportsEveryComparisonScenario()
         {
             using IMessagingTechBridge dxMessaging = new DxMessagingBridge();

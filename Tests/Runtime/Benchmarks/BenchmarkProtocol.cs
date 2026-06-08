@@ -101,6 +101,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public static readonly DispatchBenchmarkScenario[] All = (DispatchBenchmarkScenario[])
             Enum.GetValues(typeof(DispatchBenchmarkScenario));
 
+        /// <summary>
+        /// Per-scenario warm-up emit count. Every scenario keeps the shared
+        /// <see cref="BenchmarkProtocol.WarmupEmits"/> default except the cold-bus
+        /// registration flood, which must measure first-touch registration cost and so
+        /// performs no warm-up flood (0).
+        /// </summary>
+        public static int WarmupEmits(DispatchBenchmarkScenario scenario)
+        {
+            // The registration flood is a cold path that bypasses warm-up entirely via
+            // MeasureRegistrationFlood, so this 0 branch is defensive: it keeps the
+            // contract correct (no warm-up flood for first-touch registration) should a
+            // future caller route the flood through the shared warm-up helper.
+            return scenario == DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
+                ? 0
+                : BenchmarkProtocol.WarmupEmits;
+        }
+
         public static string Key(DispatchBenchmarkScenario scenario)
         {
             return scenario switch

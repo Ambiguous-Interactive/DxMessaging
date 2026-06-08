@@ -12,9 +12,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
     /// Bridges Unity Atoms using its idiomatic <see cref="IntEvent"/> ScriptableObject event
     /// asset. Global dispatch is <c>event.Register(Action&lt;int&gt;)</c> + <c>event.Raise(int)</c>
     /// on a single asset; keyed dispatch uses 16 distinct <see cref="IntEvent"/> assets and
-    /// raises exactly one. The struct scenario is Atoms' native <c>int</c>-carrying
-    /// <see cref="IntEvent"/> raise, so its per-raise allocation is measured honestly. All
-    /// created assets are destroyed in <see cref="Dispose"/>.
+    /// raises exactly one. All created assets are destroyed in <see cref="Dispose"/>.
+    ///
+    /// The boxing-free struct scenario is unsupported because Unity Atoms' idiomatic event
+    /// assets are concrete per-type ScriptableObjects (e.g. <see cref="IntEvent"/>) with no
+    /// idiomatic generic <c>ComparisonStructPayload</c>-carrying event, so faking it with an
+    /// <c>int</c> would be a non-apples-to-apples datapoint.
     ///
     /// Sixteen-subscriber fan-out registers 16 DISTINCT handler delegates (rather than the
     /// same delegate 16 times) so the fan-out count is exactly 16 regardless of whether the
@@ -52,7 +55,6 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                 case ComparisonScenario.GlobalToManySubscribers:
                 case ComparisonScenario.KeyedToOneOfMany:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                case ComparisonScenario.StructMessageZeroCopy:
                     return true;
                 default:
                     return false;
@@ -66,6 +68,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                 _ => 1,
             };
 
+        public Type DispatchedPayloadType(ComparisonScenario scenario)
+        {
+            return Supports(scenario) ? typeof(int) : null;
+        }
+
         public void Prepare(ComparisonScenario scenario)
         {
             _scenario = scenario;
@@ -78,7 +85,6 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
             switch (scenario)
             {
                 case ComparisonScenario.GlobalToOneSubscriber:
-                case ComparisonScenario.StructMessageZeroCopy:
                     _event = CreateEvent();
                     _event.Register(Handle);
                     return;

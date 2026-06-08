@@ -42,6 +42,18 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// ProgressMarker equals this times the total operations, catching any silent
         /// fan-out mismatch (e.g. a deduped registration).
         long InvocationsPerOperation(ComparisonScenario scenario);
+
+        /// <summary>
+        /// The payload TYPE this bridge's handler/dispatch is typed to for the given scenario, or
+        /// null if the scenario is unsupported. Pure metadata (a typeof literal); it must never
+        /// dispatch, allocate, or require Prepare. The fidelity contract asserts the
+        /// StructMessageZeroCopy payload is a non-primitive value type (never int/float), so a
+        /// bridge cannot mark the struct scenario Supported while secretly raising a boxed
+        /// primitive. Non-DxMessaging bridges that SUPPORT the struct scenario must return exactly
+        /// typeof(ComparisonStructPayload); scenarios they do not support return null. DxMessaging
+        /// returns its own IUntargetedMessage struct.
+        /// </summary>
+        Type DispatchedPayloadType(ComparisonScenario scenario);
     }
 
     /// <summary>

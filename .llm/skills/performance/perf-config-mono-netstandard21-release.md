@@ -2,7 +2,7 @@
 title: "Perf Config: Mono, .NET Standard 2.1, Release"
 id: "perf-config-mono-netstandard21-release"
 category: "performance"
-version: "1.0.0"
+version: "2.0.0"
 created: "2026-06-07"
 updated: "2026-06-07"
 
@@ -18,13 +18,14 @@ tags:
   - "performance"
   - "benchmarks"
   - "mono"
+  - "il2cpp"
   - "release"
   - "ci"
   - "standalone"
 
 complexity:
   level: "intermediate"
-  reasoning: "Requires understanding the per-leg build matrix and why every Unity test/build leg now runs Release while perf standalone still pins Mono2x."
+  reasoning: "Requires understanding the per-leg build matrix and why the headline leg runs Mono while a second leg runs Standalone IL2CPP for AOT coverage."
 
 impact:
   performance:
@@ -58,8 +59,8 @@ applies_to:
 
 aliases:
   - "Release perf profile"
-  - "Mono2x perf build"
-  - "Standalone perf leg"
+  - "PlayMode Mono headline"
+  - "Standalone IL2CPP perf leg"
 
 related:
   - "benchmark-methodology-total-over-window"
@@ -71,12 +72,11 @@ status: "stable"
 
 # Perf Config: Mono, .NET Standard 2.1, Release
 
-> **One-line summary**: Published perf numbers are produced under Mono +
-> .NET Standard 2.1 + Release. All Unity test legs pass
-> `-releaseCodeOptimization`; standalone generated players are
-> non-development Release players with disabled managed stripping. The
-> Standalone perf leg additionally builds with `Mono2x` and
-> `ApiCompatibilityLevel.NET_Standard`.
+> **One-line summary**: The headline numbers are produced in PlayMode under the
+> Mono + .NET Standard 2.1 + Release profile, the backend the library ships with.
+> Standalone IL2CPP is published alongside as the AOT leg. All Unity test legs
+> pass `-releaseCodeOptimization`; standalone generated players are
+> non-development Release players with disabled managed stripping.
 
 ## Overview
 
@@ -86,9 +86,12 @@ CI from a single runner, `scripts/unity/run-ci-tests.ps1`. Each perf leg differs
 only by documented backend parameters, so the profile cannot drift between
 scopes.
 
-The profile is Mono (not IL2CPP) with the .NET Standard 2.1 API surface and a
-Release code-optimization build. Mono is the scope CI publishes because it is
-the common deployment path and builds quickly enough to run on every change.
+Two legs are published. The headline leg is PlayMode under Mono with the
+.NET Standard 2.1 API surface and a Release code-optimization build, because the
+library ships mostly on Mono and the PlayMode Mono leg is the fastest scope to
+run on every change. The second leg is a Standalone player built under IL2CPP,
+which gives ahead-of-time (AOT) coverage of the same scenarios on the backend
+shipped titles often use for platforms that require it.
 
 ## Problem Statement
 
@@ -109,18 +112,19 @@ but Release is the unconditional effective mode:
 | Leg              | Profile flags                                                                     |
 | ---------------- | --------------------------------------------------------------------------------- |
 | EditMode tests   | `-ReleaseCodeOptimization`                                                        |
-| PlayMode tests   | `-ReleaseCodeOptimization`                                                        |
-| Standalone perf  | `-StandaloneScriptingBackend Mono2x -ReleasePlayerBuild -ReleaseCodeOptimization` |
+| PlayMode perf    | `-ReleaseCodeOptimization`                                                        |
+| Standalone perf  | `-StandaloneScriptingBackend IL2CPP -ReleasePlayerBuild -ReleaseCodeOptimization` |
 | Standalone tests | `-ReleasePlayerBuild -ReleaseCodeOptimization`                                    |
 
 `-ReleaseCodeOptimization` adds the editor flag
 `-releaseCodeOptimization`, which sets
 `CompilationPipeline.codeOptimization = Release` so test assemblies compile
 without debug code paths. The Standalone leg additionally configures the
-player:
+player from the parameterized backend (`ScriptingImplementation.IL2CPP` for the
+published AOT leg):
 
 ```text
-PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.Mono2x);
+PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.IL2CPP);
 PlayerSettings.SetApiCompatibilityLevel(BuildTargetGroup.Standalone, ApiCompatibilityLevel.NET_Standard);
 PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStrippingLevel.Disabled);
 ```
@@ -128,7 +132,9 @@ PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStri
 `ApiCompatibilityLevel.NET_Standard` is the non-deprecated profile that targets
 .NET Standard 2.1. `ManagedStrippingLevel.Disabled` keeps the test assemblies
 and the `[Preserve]` callback in the player so the standalone benchmark run can
-execute and write results.
+execute and write results. The runner's `StandaloneScriptingBackend` parameter
+defaults to `IL2CPP` and accepts `Mono2x`, so the same script can build either
+backend; the published AOT leg pins IL2CPP.
 
 `-ReleasePlayerBuild` is retained at the workflow call sites and the runner's
 effective standalone default is non-development Release. The generated build
@@ -138,10 +144,12 @@ opts back into a development player in code.
 ## CI Wiring
 
 The Performance Numbers workflow (`.github/workflows/perf-numbers.yml`) runs the
-`playmode` and `standalone` legs, both with comparisons enabled. The standalone
-matrix entry sets `StandaloneScriptingBackend = 'Mono2x'`, `ReleasePlayerBuild`,
-and `ReleaseCodeOptimization`; the playmode entry also sets the Release flags.
-The backend parameter is the meaningful difference between scopes.
+`playmode` and `standalone` legs, both with comparisons enabled. The playmode
+entry sets the Release flags; the standalone matrix entry adds
+`StandaloneScriptingBackend = 'IL2CPP'` on top of `ReleasePlayerBuild` and
+`ReleaseCodeOptimization`. The backend parameter is the meaningful difference
+between scopes: PlayMode runs the shipped Mono backend (the headline), and
+Standalone runs IL2CPP for AOT coverage.
 
 ## Common Pitfalls
 
@@ -150,9 +158,9 @@ The backend parameter is the meaningful difference between scopes.
 - "I will leave default stripping on the player." Default stripping deletes the
   benchmark assemblies; the player runs nothing. Keep stripping Disabled for the
   perf leg.
-- "I will switch the perf leg to IL2CPP for realism." The published scope is
-  Mono. IL2CPP is a separate concern; do not silently change the published
-  profile.
+- "PlayMode and Standalone should report the same throughput." They run
+  different backends (Mono vs IL2CPP) with different codegen, so the numbers
+  differ by design. Read each leg against its own backend, not against the other.
 - "I will leave a Unity workflow without Release flags because the runner
   defaults Release." The runner default is the backstop; workflows still spell
   out Release flags so `validate-workflows` catches YAML drift before Unity runs.

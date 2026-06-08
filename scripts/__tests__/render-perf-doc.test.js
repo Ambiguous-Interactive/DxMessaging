@@ -8,6 +8,9 @@ const childProcess = require("child_process");
 const {
   BEGIN_MARKER,
   END_MARKER,
+  SCOPE_ORDER,
+  SCOPE_BACKEND,
+  NEUTRAL_RUNNER_DESCRIPTION,
   deriveScope,
   parseComparisonScenario,
   selectRowsForVersion,
@@ -15,6 +18,10 @@ const {
   buildDispatchTable,
   buildBlock,
   formatBytesPerOp,
+  scopeLabel,
+  deriveBackendLabel,
+  readMachineSpecs,
+  formatMachineSpecs,
   blocksEquivalent,
   render
 } = require("../unity/render-perf-doc.js");
@@ -29,10 +36,13 @@ const OLDER = "2022.3.45f1";
 
 // The platform cell now encodes the execution SCOPE as its leading token(s):
 // "Editor EditMode ...", "Editor PlayMode ...", or "Standalone ..." (plus the
-// scripting backend, arch, build config, and "(...; Unity <version>)").
+// scripting backend, arch, build config, and "(...; Unity <version>)"). Standalone
+// runs the IL2CPP backend; PlayMode/EditMode run Mono -- the backend token is part
+// of the real platform string and the renderer must not key its SCOPE off it.
 function platform(version, scope = "PlayMode") {
   const target = scope === "Standalone" ? "Standalone" : `Editor ${scope}`;
-  return `${target} Mono x64 Release (LinuxEditor; Unity ${version})`;
+  const backend = scope === "Standalone" ? "IL2CPP" : "Mono";
+  return `${target} ${backend} x64 Release (LinuxEditor; Unity ${version})`;
 }
 
 // The nine dispatch scenarios (emits, alloc, ms). Registration reports wall-clock.
@@ -168,11 +178,202 @@ function seedDoc() {
 }
 
 describe("render-perf-doc deriveScope", () => {
-  test("maps the leading platform token to a scope, player-fidelity first", () => {
+  test("maps the platform string to a scope by substring, ignoring the backend token", () => {
+    // Standalone carries an IL2CPP backend token; deriveScope must key off the
+    // scope substring, not the backend word.
     expect(deriveScope(platform(LATEST, "Standalone"))).toBe("Standalone");
     expect(deriveScope(platform(LATEST, "PlayMode"))).toBe("PlayMode");
     expect(deriveScope(platform(LATEST, "EditMode"))).toBe("EditMode");
     expect(deriveScope("Something Unknown Mono x64")).toBeNull();
+  });
+});
+
+describe("render-perf-doc scope order + per-backend labels", () => {
+  test("SCOPE_ORDER is headline-first: PlayMode, then Standalone, then EditMode", () => {
+    expect(SCOPE_ORDER).toEqual(["PlayMode", "Standalone", "EditMode"]);
+  });
+
+  test("SCOPE_BACKEND maps Standalone to IL2CPP and PlayMode/EditMode to Mono", () => {
+    expect(SCOPE_BACKEND).toEqual({ Standalone: "IL2CPP", PlayMode: "Mono", EditMode: "Mono" });
+  });
+
+  test("scopeLabel applies the per-scope backend, with a (Mono) fallback", () => {
+    expect(scopeLabel("PlayMode")).toBe("PlayMode (Mono)");
+    expect(scopeLabel("Standalone")).toBe("Standalone (IL2CPP)");
+    expect(scopeLabel("EditMode")).toBe("EditMode (Mono)");
+    // Unknown scope falls back to (Mono) rather than throwing or printing undefined.
+    expect(scopeLabel("MysteryScope")).toBe("MysteryScope (Mono)");
+  });
+
+  test("scopeLabel DERIVES the backend from the supplied platform token, not the scope name", () => {
+    // The heading must follow the DATA: a Standalone row carrying a Mono backend
+    // token reads "Standalone (Mono)" even though SCOPE_BACKEND maps it to IL2CPP,
+    // so the heading never contradicts the Platform: line beneath it.
+    expect(scopeLabel("Standalone", "Standalone IL2CPP x64 Release (Unity 6000.3.16f1)")).toBe(
+      "Standalone (IL2CPP)"
+    );
+    expect(scopeLabel("Standalone", "Standalone Mono x64 Release (Unity 6000.3.16f1)")).toBe(
+      "Standalone (Mono)"
+    );
+    // PlayMode carrying an IL2CPP token would follow the data too.
+    expect(scopeLabel("PlayMode", "Editor PlayMode IL2CPP x64 Release")).toBe("PlayMode (IL2CPP)");
+    // A platform with no backend token falls back to the SCOPE_BACKEND map.
+    expect(scopeLabel("Standalone", "Standalone x64 Release")).toBe("Standalone (IL2CPP)");
+    expect(scopeLabel("PlayMode", "Editor PlayMode x64 Release")).toBe("PlayMode (Mono)");
+  });
+
+  test("deriveBackendLabel reads the IL2CPP/Mono token, else null", () => {
+    expect(deriveBackendLabel("Standalone IL2CPP x64")).toBe("IL2CPP");
+    expect(deriveBackendLabel("Editor PlayMode Mono x64")).toBe("Mono");
+    // Case-insensitive token match.
+    expect(deriveBackendLabel("standalone il2cpp x64")).toBe("IL2CPP");
+    // No backend token -> null so the caller can fall back to the SCOPE_BACKEND map.
+    expect(deriveBackendLabel("Standalone x64 Release")).toBeNull();
+    expect(deriveBackendLabel(undefined)).toBeNull();
+  });
+});
+
+describe("render-perf-doc machine specs (--machine-specs provenance)", () => {
+  let tempDir;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-render-specs-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const SAMPLE_SPECS = {
+    cpu: "AMD Ryzen 9 5950X",
+    physicalCores: 16,
+    logicalCores: 32,
+    clockMhz: 3400,
+    ramGb: 64,
+    ramSpeedMhz: 3600,
+    ramType: "DDR4",
+    gpu: "NVIDIA RTX 3080",
+    os: "Microsoft Windows 11 Pro (10.0.22631)"
+  };
+  const SAMPLE_SUMMARY =
+    "AMD Ryzen 9 5950X, 16C/32T @ 3400MHz; 64GB DDR4@3600; NVIDIA RTX 3080; " +
+    "Microsoft Windows 11 Pro (10.0.22631)";
+
+  test("formatMachineSpecs renders the one-line Runner summary in order", () => {
+    expect(formatMachineSpecs(SAMPLE_SPECS)).toBe(SAMPLE_SUMMARY);
+  });
+
+  test("formatMachineSpecs renders missing/blank fields as 'unknown', never 'undefined'", () => {
+    const partial = { cpu: "Some CPU", physicalCores: 8 };
+    const summary = formatMachineSpecs(partial);
+    expect(summary).toContain("Some CPU");
+    expect(summary).toContain("8C/unknownT");
+    expect(summary).toContain("unknownGB unknown@unknown");
+    expect(summary).not.toContain("undefined");
+    // A blank-string field also degrades to unknown.
+    expect(formatMachineSpecs({ cpu: "   " })).toContain("unknown, unknownC");
+  });
+
+  test("readMachineSpecs returns the neutral literal when no path is given", () => {
+    expect(readMachineSpecs("")).toBe(NEUTRAL_RUNNER_DESCRIPTION);
+    expect(NEUTRAL_RUNNER_DESCRIPTION).toBe("self-hosted Windows runner");
+  });
+
+  test("readMachineSpecs falls back to the neutral literal for a missing file (never throws)", () => {
+    const missing = path.join(tempDir, "nope.json");
+    expect(readMachineSpecs(missing)).toBe(NEUTRAL_RUNNER_DESCRIPTION);
+  });
+
+  test("readMachineSpecs falls back to the neutral literal for unparseable JSON", () => {
+    const badPath = path.join(tempDir, "bad.json");
+    fs.writeFileSync(badPath, "{ this is not json", "utf8");
+    expect(readMachineSpecs(badPath)).toBe(NEUTRAL_RUNNER_DESCRIPTION);
+  });
+
+  test("readMachineSpecs parses a valid specs file into the one-line summary", () => {
+    const goodPath = path.join(tempDir, "specs.json");
+    fs.writeFileSync(goodPath, JSON.stringify(SAMPLE_SPECS), "utf8");
+    expect(readMachineSpecs(goodPath)).toBe(SAMPLE_SUMMARY);
+  });
+
+  test("render embeds the Runner provenance line as a NON-table line (ignored by idempotence)", () => {
+    const docPath = path.join(tempDir, "performance.md");
+    const inputPath = path.join(tempDir, "unity.log");
+    const specsPath = path.join(tempDir, "specs.json");
+    fs.writeFileSync(docPath, seedDoc(), "utf8");
+    fs.writeFileSync(inputPath, fullLog(LATEST), "utf8");
+    fs.writeFileSync(specsPath, JSON.stringify(SAMPLE_SPECS), "utf8");
+
+    const result = render({
+      inputs: [inputPath],
+      doc: docPath,
+      unityVersion: LATEST,
+      platformSubstring: "",
+      tolerance: 0.02,
+      machineSpecs: specsPath
+    });
+    expect(result.changed).toBe(true);
+    expect(result.content).toContain(`Runner: ${SAMPLE_SUMMARY}`);
+    fs.writeFileSync(docPath, result.content, "utf8");
+
+    // A second render with DIFFERENT machine specs but identical numbers must be a
+    // no-op: the Runner line is not a table row, so it cannot trigger churn.
+    fs.writeFileSync(
+      specsPath,
+      JSON.stringify({ ...SAMPLE_SPECS, cpu: "Intel Core i9-13900K", ramType: "DDR5" }),
+      "utf8"
+    );
+    const second = render({
+      inputs: [inputPath],
+      doc: docPath,
+      unityVersion: LATEST,
+      platformSubstring: "",
+      tolerance: 0.02,
+      machineSpecs: specsPath
+    });
+    expect(second.changed).toBe(false);
+    expect(second.content).toBe(result.content);
+    // The first machine's Runner line is still present (block unchanged).
+    expect(second.content).toContain(`Runner: ${SAMPLE_SUMMARY}`);
+  });
+
+  test("render falls back to the neutral literal when --machine-specs is missing, never 'ELI-MACHINE'", () => {
+    const docPath = path.join(tempDir, "performance.md");
+    const inputPath = path.join(tempDir, "unity.log");
+    fs.writeFileSync(docPath, seedDoc(), "utf8");
+    fs.writeFileSync(inputPath, fullLog(LATEST), "utf8");
+
+    const result = render({
+      inputs: [inputPath],
+      doc: docPath,
+      unityVersion: LATEST,
+      platformSubstring: "",
+      tolerance: 0.02,
+      machineSpecs: path.join(tempDir, "does-not-exist.json")
+    });
+    expect(result.changed).toBe(true);
+    expect(result.content).toContain("Runner: self-hosted Windows runner");
+    expect(result.content).not.toContain("ELI-MACHINE");
+  });
+
+  test("render uses the neutral Runner literal when --machine-specs is not provided", () => {
+    const docPath = path.join(tempDir, "performance.md");
+    const inputPath = path.join(tempDir, "unity.log");
+    fs.writeFileSync(docPath, seedDoc(), "utf8");
+    fs.writeFileSync(inputPath, fullLog(LATEST), "utf8");
+
+    // The flag being ABSENT (options.machineSpecs undefined) still yields the
+    // neutral literal -- never a host name, never ELI-MACHINE.
+    const result = render({
+      inputs: [inputPath],
+      doc: docPath,
+      unityVersion: LATEST,
+      platformSubstring: "",
+      tolerance: 0.02
+    });
+    expect(result.changed).toBe(true);
+    expect(result.content).toContain("Runner: self-hosted Windows runner");
+    expect(result.content).not.toContain("ELI-MACHINE");
   });
 });
 
@@ -207,8 +408,9 @@ describe("render-perf-doc selectRowsForVersion", () => {
   });
 
   // Replaces the old "prefers the Editor platform" test: scopes are now kept
-  // SEPARATE and ordered by player fidelity (Standalone, PlayMode, EditMode).
-  test("keeps per-scope dispatch groups in player-fidelity order", () => {
+  // SEPARATE and ordered headline-first (PlayMode Mono is the shipped runtime, so
+  // it leads; then Standalone IL2CPP for AOT coverage; then EditMode).
+  test("keeps per-scope dispatch groups in headline order (PlayMode first)", () => {
     const rows = extractRows(
       [
         unityLog(LATEST, { scope: "EditMode" }),
@@ -217,7 +419,7 @@ describe("render-perf-doc selectRowsForVersion", () => {
       ].join("\n")
     );
     const selected = selectRowsForVersion(rows, `Unity ${LATEST}`);
-    expect(selected.scopesPresent).toEqual(["Standalone", "PlayMode", "EditMode"]);
+    expect(selected.scopesPresent).toEqual(["PlayMode", "Standalone", "EditMode"]);
   });
 });
 
@@ -303,17 +505,48 @@ describe("render-perf-doc buildBlock dispatch tables", () => {
     expect(lastIndex).toBeGreaterThan(firstIndex);
   });
 
-  test("renders one dispatch section per scope present, Standalone then PlayMode", () => {
+  test("renders one dispatch section per scope present, PlayMode (Mono) then Standalone (IL2CPP)", () => {
     const block = blockFor(LATEST, { scopes: ["PlayMode", "Standalone"] });
-    const standaloneLabel = "#### Dispatch throughput - Standalone (Mono)";
     const playModeLabel = "#### Dispatch throughput - PlayMode (Mono)";
-    expect(block).toContain(standaloneLabel);
+    const standaloneLabel = "#### Dispatch throughput - Standalone (IL2CPP)";
     expect(block).toContain(playModeLabel);
-    // Player-fidelity order: Standalone section precedes PlayMode section.
-    expect(block.indexOf(standaloneLabel)).toBeLessThan(block.indexOf(playModeLabel));
-    // Each dispatch section carries its own Platform line.
-    expect(block).toContain(`Platform: ${platform(LATEST, "Standalone")}.`);
+    expect(block).toContain(standaloneLabel);
+    // Headline order: PlayMode (shipped Mono runtime) precedes Standalone (IL2CPP).
+    expect(block.indexOf(playModeLabel)).toBeLessThan(block.indexOf(standaloneLabel));
+    // Each dispatch section carries its own Platform line (with its real backend).
     expect(block).toContain(`Platform: ${platform(LATEST, "PlayMode")}.`);
+    expect(block).toContain(`Platform: ${platform(LATEST, "Standalone")}.`);
+    // The Standalone platform string carries the IL2CPP backend token.
+    expect(block).toContain("Standalone IL2CPP x64 Release");
+  });
+
+  // Fix-3 GUARD: the per-scope heading backend follows the platform token in the
+  // scope's rows, NOT the scope name. A Standalone row carrying IL2CPP renders
+  // "Standalone (IL2CPP)"; the SAME scope carrying a Mono token renders
+  // "Standalone (Mono)" so the heading can never contradict the Platform: line.
+  test("a Standalone row carrying IL2CPP renders 'Standalone (IL2CPP)'", () => {
+    const block = blockFor(LATEST, { scopes: ["Standalone"] });
+    expect(block).toContain("#### Dispatch throughput - Standalone (IL2CPP)");
+    expect(block).toContain("Platform: Standalone IL2CPP x64 Release");
+    expect(block).not.toContain("#### Dispatch throughput - Standalone (Mono)");
+  });
+
+  test("a Standalone row carrying Mono renders 'Standalone (Mono)' (heading follows the data)", () => {
+    // Flip the backend token on the Standalone rows; the heading must follow it.
+    const monoStandalone = fullLog(LATEST, { scopes: ["Standalone"] }).replace(
+      /Standalone IL2CPP/g,
+      "Standalone Mono"
+    );
+    const block = buildBlock(
+      selectRowsForVersion(extractRows(monoStandalone), `Unity ${LATEST}`),
+      LATEST
+    );
+    expect(block).toContain("#### Dispatch throughput - Standalone (Mono)");
+    expect(block).toContain("Platform: Standalone Mono x64 Release");
+    expect(block).not.toContain("#### Dispatch throughput - Standalone (IL2CPP)");
+    // The comparison matrices for this (single) scope follow the data too.
+    expect(block).toContain("#### Library comparison - throughput (Standalone (Mono))");
+    expect(block).not.toContain("#### Library comparison - throughput (Standalone (IL2CPP))");
   });
 
   // ATTRIBUTION GUARD: the in-marker provenance comment must point at the
@@ -395,10 +628,10 @@ describe("render-perf-doc buildBlock comparison matrices", () => {
     expect(dxRow[globalToOneCol]).toBe("0");
   });
 
-  test("comparison matrices use the most player-faithful scope (Standalone over PlayMode)", () => {
+  test("comparison matrices use the headline scope (PlayMode over Standalone)", () => {
     const block = blockFor(LATEST, { scopes: ["PlayMode", "Standalone"] });
-    expect(block).toContain("#### Library comparison - throughput (Standalone (Mono))");
-    expect(block).not.toContain("#### Library comparison - throughput (PlayMode (Mono))");
+    expect(block).toContain("#### Library comparison - throughput (PlayMode (Mono))");
+    expect(block).not.toContain("#### Library comparison - throughput (Standalone (IL2CPP))");
   });
 
   test("omits the comparison matrices entirely when no comparison rows exist", () => {
@@ -573,8 +806,9 @@ describe("render-perf-doc render (doc rewrite)", () => {
     expect(result.content).toContain("## Trailing Section");
     expect(result.content).toContain("Trailing prose stays intact.");
     expect(result.content).toContain("25.00 M emits/sec");
-    expect(result.content).toContain("#### Dispatch throughput - Standalone (Mono)");
-    expect(result.content).toContain("#### Library comparison - throughput (Standalone (Mono))");
+    expect(result.content).toContain("#### Dispatch throughput - PlayMode (Mono)");
+    expect(result.content).toContain("#### Dispatch throughput - Standalone (IL2CPP)");
+    expect(result.content).toContain("#### Library comparison - throughput (PlayMode (Mono))");
     expect(result.content).not.toContain("Pending first CI benchmark run");
     expect(result.content.split(BEGIN_MARKER)).toHaveLength(2);
     expect(result.content.split(END_MARKER)).toHaveLength(2);

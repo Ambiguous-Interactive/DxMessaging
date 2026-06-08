@@ -2,7 +2,7 @@
 title: "Comparison Parity and Package Single Source"
 id: "comparison-parity-and-package-single-source"
 category: "testing"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-06-07"
 updated: "2026-06-07"
 
@@ -14,6 +14,7 @@ source:
     - path: ".unity-test-project/Packages/packages-lock.json"
     - path: "Tests/Runtime/Comparisons/ComparisonHarness.cs"
     - path: "Tests/Runtime/Comparisons/IMessagingTechBridge.cs"
+    - path: "Tests/Runtime/Comparisons/ComparisonBridgeContract.cs"
     - path: "Tests/Runtime/Comparisons/ZeroDependencyComparisonTests.cs"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
@@ -118,6 +119,20 @@ the library idiomatically supports. A scenario a library does not support is
 reported as `N/A`, not filled with a substitute. The renderer prints `N/A` in
 the matrix cell; it is a capability gap, never a failure and never faked.
 
+### Payload fidelity for the struct scenario
+
+The `StructMessageZeroCopy` scenario measures boxing-free struct dispatch, so a
+bridge cannot claim it Supported while secretly raising a primitive (an `int`
+through a fake event) or a boxed payload. `IMessagingTechBridge.DispatchedPayloadType(scenario)`
+declares what the bridge actually dispatches, and the contract test
+`StructScenarioDispatchesNonPrimitiveStructPayload`
+(`ComparisonBridgeContract.AssertStructScenarioPayloadFidelity`) enforces it: a
+bridge that does not support the scenario must return null, a bridge that does
+must return a non-primitive, non-enum value type, and every non-DxMessaging
+bridge must dispatch exactly `ComparisonStructPayload`. Unity Atoms has no
+idiomatic boxing-free struct event, so it marks the struct scenario unsupported
+(`N/A`) rather than dispatching an `int`.
+
 ### Per-(tech, scenario) fan-out assertion
 
 The harness asserts one result per (tech, scenario) pair so a dedup or a
@@ -193,6 +208,11 @@ the mirrors honest.
 
 - "I will fake the unsupported cell so the row is full." Render `N/A`; do not
   invent a capability.
+- "My library has no struct event, so I will dispatch an int for the struct
+  scenario." Mark it unsupported (`N/A`); never raise a primitive for
+  `StructMessageZeroCopy`. `DispatchedPayloadType` plus the
+  `StructScenarioDispatchesNonPrimitiveStructPayload` contract test fail any
+  bridge that claims the scenario while dispatching a primitive or boxed payload.
 - "I will bump the pin in the manifest only." Bump
   `.github/comparison-packages.json`; the validator flags the rest.
 - "I will add the drift gate to a path-filtered workflow and include only the
@@ -214,4 +234,5 @@ the mirrors honest.
 - Single source: `.github/comparison-packages.json`
 - Drift gate: `scripts/validate-comparison-packages.js`
 - Harness: `Tests/Runtime/Comparisons/ComparisonHarness.cs`
+- Payload-fidelity contract: `Tests/Runtime/Comparisons/ComparisonBridgeContract.cs`
 - Baselines: `Tests/Runtime/Comparisons/ZeroDependencyComparisonTests.cs`

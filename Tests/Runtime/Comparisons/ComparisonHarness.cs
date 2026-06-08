@@ -49,10 +49,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
 
             bridge.Prepare(scenario);
+            // Capture the warm-up count ONCE so the warm-up loop and the fan-out
+            // assertion below stay coupled: expectedInvocations adds warmupEmits, so if
+            // these two read different values the fan-out assertion breaks.
+            int warmupEmits = ComparisonScenarios.WarmupEmits(scenario);
             BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
                 () =>
                 {
-                    for (int i = 0; i < BenchmarkProtocol.WarmupEmits; i++)
+                    for (int i = 0; i < warmupEmits; i++)
                     {
                         bridge.EmitOnce();
                     }
@@ -68,7 +72,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
             long expectedInvocations =
                 bridge.InvocationsPerOperation(scenario)
-                * (BenchmarkProtocol.WarmupEmits + measurement.TotalOperations);
+                * (warmupEmits + measurement.TotalOperations);
             Assert.AreEqual(
                 expectedInvocations,
                 bridge.ProgressMarker,

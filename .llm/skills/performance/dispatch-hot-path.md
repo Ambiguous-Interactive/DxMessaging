@@ -2,7 +2,7 @@
 title: "DxMessaging Dispatch Hot Path"
 id: "dispatch-hot-path"
 category: "performance"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-05"
 updated: "2026-06-07"
 
@@ -36,7 +36,7 @@ impact:
     details: "Centralized rule set lets reviewers reject hot-path changes that violate the budget."
   testability:
     rating: "high"
-    details: "T0 benchmark harness, EmitGateClockReadIsRare, and AllocationMatrix tests pin compliance."
+    details: "The DispatchThroughputBenchmarks harness, EmitGateClockReadIsRare, and AllocationMatrix tests pin compliance."
 
 prerequisites:
   - "memory-reclamation"
@@ -107,15 +107,19 @@ The dispatch hot path lives across:
 - `Runtime/Core/Pooling/*.cs` -- anything called from those sites.
 
 Any PR touching these files has its dispatch-throughput numbers regenerated
-automatically by the `perf-numbers.yml` workflow (it re-runs the benchmarks on
-ELI-MACHINE at the latest Unity version on every PR change and posts the refreshed
-numbers as a non-blocking PR comment; after merge, CI commits the refreshed
-`docs/architecture/performance.md` table directly to the default branch via a
+automatically by the `perf-numbers.yml` workflow. It re-runs two legs at the
+latest Unity version on every PR change -- PlayMode under Mono (the headline,
+shipped-runtime scope) and a Standalone IL2CPP player (AOT coverage) -- and
+posts the refreshed numbers as a non-blocking sticky PR comment. The comment's
+provenance line carries privacy-safe machine specs (CPU, cores, clock, RAM, GPU,
+OS) gathered by `scripts/unity/collect-machine-specs.ps1`, never a hostname or
+runner name. After merge, the push run commits the refreshed
+`docs/architecture/performance.md` table AND the regenerated master baseline
+`docs/architecture/perf-baseline.csv` directly to the default branch via a
 GitHub App token push when the App is provisioned and the measured commit is
 still the branch tip (no PR); see the
 [performance numbers auto-commit runbook](../../../docs/runbooks/perf-numbers-auto-commit.md)
-for the App + bypass prerequisite). There is no manual `### Performance numbers`
-PR-body requirement.
+for the App + bypass prerequisite. There is no manual PR-body number requirement.
 
 ## Prohibited operations on the dispatch hot path
 
@@ -180,29 +184,58 @@ guarded devirtualization; sealing is load-bearing.
 
 ## Per-emit budget
 
-<!-- to be measured by Week 1b T0.3 baseline runs and updated in Week 5 -->
+The budget is interpreted in per-emit nanoseconds (convert throughput with
+`1e9 / emits_per_second`). The live numbers live in the rendered tables in
+`docs/architecture/performance.md` and the committed master baseline
+`docs/architecture/perf-baseline.csv`; rely on the workflow output and the PR
+delta comment for before/after numbers rather than a hand-captured table.
 
-The current empirical budget on Mono Editor is captured in
-`progress/perf-baseline-2026-05-05.csv`. Any PR touching the hot-path file list
-above should rely on the Performance Numbers workflow output for before/after
-dispatch-throughput numbers.
+### Regression analysis: the dispatch number moved, the code did not
+
+An earlier headline of roughly 15-19M emits/sec dropped to roughly 11M. That
+move is mostly the methodology change, not a core code regression: the old
+number was measured under IL2CPP/AOT, the headline is now PlayMode under Mono
+(JIT), and a machine change happened alongside. The Standalone IL2CPP leg
+restores a comparable AOT data point. The memory-reclamation per-emit additions
+(the idle-sweep gate, `TrySweepIdle`, the `Touch()` field write) are cheaply
+gated -- the clock is sampled at most once per `SweepGateMask + 1` emissions --
+so they do not account for the headline difference. When a number moves, confirm
+the backend and machine before treating it as a code regression.
+
+## Per-scenario warm-up
+
+`DispatchBenchmarkScenarios.WarmupEmits(scenario)` returns the per-scenario
+warm-up count: `BenchmarkProtocol.WarmupEmits` (10,000, the default) for every
+scenario except the cold registration flood, which returns 0 so it measures
+first-touch registration cost. `ComparisonScenarios.WarmupEmits(scenario)`
+mirrors that policy for the comparison bridges. The
+`BenchmarkProtocol.WarmupEmits = 10_000` constant remains the default.
 
 ## Enforcement
 
 - `Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs` -- the harness.
-- `Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` -- `[Explicit,
-Category("PerfGate")]`; opt-in via `DX_PERF_GATE=1`. Calls
-  `DispatchThroughputBenchmarks.RunScenario`, a single continuous measurement
-  window via the shared `BenchmarkProtocol` (no median); fails when a
-  within-platform regression vs. baseline CSV exceeds 1.5x.
-- `.github/workflows/perf-numbers.yml` -- per-PR workflow that re-runs the
-  editmode + playmode dispatch benchmarks on ELI-MACHINE (the `fast` runner) at
-  the latest Unity version on every pull_request change and posts the regenerated
-  dispatch-throughput numbers as a non-blocking PR comment; after the PR merges,
-  CI attempts to commit the refreshed `docs/architecture/performance.md` directly
-  to the default branch via a GitHub App token push (no PR), skipping with a
-  warning if App credentials are missing or the branch advanced past the measured
-  commit. The numbers are owned by CI, not by PR-body text.
+- `.github/workflows/perf-numbers.yml` plus
+  `scripts/unity/render-perf-deltas.js` -- the PERMANENT regression gate. The
+  workflow runs the PlayMode Mono + Standalone IL2CPP legs at the latest Unity
+  version on every pull_request change, posts the regenerated numbers as a
+  non-blocking sticky PR comment, then runs `render-perf-deltas.js` against the
+  committed master baseline. The script emits `regressed=true|false`; the PR job
+  posts a DxMessaging-only delta comment first, then fails after the comment when
+  a gated PlayMode scenario dropped throughput beyond the threshold (default
+  0.33) or increased allocation. A missing or header-only baseline skips the gate
+  gracefully on first rollout. After the PR merges, the push run commits the
+  refreshed `docs/architecture/performance.md` AND the regenerated
+  `docs/architecture/perf-baseline.csv` to the default branch via a GitHub App
+  token push (no PR), skipping with a warning if App credentials are missing or
+  the branch advanced past the measured commit.
+- `Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` -- a LOCAL tool only,
+  `[Explicit, Category("PerfGate")]`, opt-in via `DX_PERF_GATE=1`. It calls
+  `DispatchThroughputBenchmarks.RunScenario` (a single continuous
+  `BenchmarkProtocol` window, no median) and fails when a within-platform
+  regression vs. a captured baseline CSV exceeds 1.5x. Its commit matching was
+  relaxed: when `DX_PERF_BASELINE_COMMIT` is unset it matches on scenario +
+  platform only, and a no-row match now skips gracefully rather than failing, so
+  a contributor on a different Unity version or OS is not blocked.
 
 ## Common pitfalls
 

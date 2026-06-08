@@ -135,6 +135,64 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     + "performance measurement window floods CI logs."
             );
         }
+
+        /// <summary>
+        /// Locks the StructMessageZeroCopy payload-fidelity contract: a bridge may not mark the
+        /// struct scenario Supported while secretly dispatching a primitive (e.g. an int via a
+        /// fake event) or a boxed/different payload. No-ops for the seven non-struct scenarios,
+        /// so wiring it into a per-(bridge,scenario) case source effectively asserts once per
+        /// bridge. If the bridge does not support the struct scenario, its
+        /// <see cref="IMessagingTechBridge.DispatchedPayloadType"/> must be null; if it does,
+        /// the declared payload must be a non-primitive, non-enum value type, and every
+        /// non-DxMessaging bridge must declare exactly <see cref="ComparisonStructPayload"/>.
+        /// This is pure metadata, so it opens no benchmark window.
+        /// </summary>
+        public static void AssertStructScenarioPayloadFidelity(
+            string rosterKey,
+            Func<IMessagingTechBridge> factory,
+            ComparisonScenario scenario
+        )
+        {
+            if (factory == null)
+            {
+                throw new ArgumentNullException(nameof(factory));
+            }
+            if (scenario != ComparisonScenario.StructMessageZeroCopy)
+            {
+                return;
+            }
+
+            using IMessagingTechBridge bridge = factory();
+            if (!bridge.Supports(scenario))
+            {
+                Assert.IsNull(
+                    bridge.DispatchedPayloadType(scenario),
+                    $"Bridge '{rosterKey}' does not support the struct scenario, so DispatchedPayloadType must be null."
+                );
+                return;
+            }
+
+            Type payload = bridge.DispatchedPayloadType(scenario);
+            Assert.IsNotNull(
+                payload,
+                $"Bridge '{rosterKey}' supports the struct scenario; DispatchedPayloadType must be non-null."
+            );
+            Assert.IsTrue(
+                payload.IsValueType && !payload.IsPrimitive && !payload.IsEnum,
+                $"Bridge '{rosterKey}' marks the struct scenario Supported but dispatches '{payload.Name}', "
+                    + "which is not a boxing-free non-primitive struct. Dispatch ComparisonStructPayload (or, for "
+                    + "DxMessaging, an IUntargetedMessage struct) or mark the scenario unsupported."
+            );
+            if (!string.Equals(bridge.TechKey, "DxMessaging", StringComparison.Ordinal))
+            {
+                Assert.AreEqual(
+                    typeof(ComparisonStructPayload),
+                    payload,
+                    $"Bridge '{rosterKey}' must dispatch the canonical ComparisonStructPayload for the struct scenario; "
+                        + $"it declared '{payload.FullName}'."
+                );
+            }
+        }
     }
 }
 #endif

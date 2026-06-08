@@ -2,7 +2,7 @@
 title: "Benchmark Methodology: Total Over One Window"
 id: "benchmark-methodology-total-over-window"
 category: "performance"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-06-07"
 updated: "2026-06-07"
 
@@ -160,9 +160,17 @@ public const int BatchSize = 10_000;
 1. The GC counter is sampled immediately after the last batch, so the delta
    covers the same window as the elapsed time.
 
-Registration scenarios are the one documented exception: they report
-wall-clock milliseconds for one-time setup cost instead of steady-state
-emits per second.
+Warm-up is per scenario. `DispatchBenchmarkScenarios.WarmupEmits(scenario)`
+returns `WarmupEmits` (10,000) for every dispatch scenario except the cold
+registration flood, which returns 0 so it measures first-touch registration
+cost rather than steady state. `ComparisonScenarios.WarmupEmits(scenario)`
+applies the same policy to the comparison bridges. The
+`BenchmarkProtocol.WarmupEmits = 10_000` constant stays the default; the
+per-scenario function is the only place that count diverges.
+
+Registration scenarios are the one documented exception to the throughput
+report shape: they report wall-clock milliseconds for one-time setup cost
+instead of steady-state emits per second.
 
 ## Why It Holds
 

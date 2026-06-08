@@ -1,6 +1,7 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Comparisons
 {
+    using System;
     using System.Collections.Generic;
     using UnityEngine.Events;
 
@@ -57,6 +58,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 ComparisonScenario.GlobalToManySubscribers => ComparisonScenarios.FanOutSubscribers,
                 _ => 1,
             };
+
+        public Type DispatchedPayloadType(ComparisonScenario scenario)
+        {
+            if (!Supports(scenario))
+            {
+                return null;
+            }
+            return scenario == ComparisonScenario.StructMessageZeroCopy
+                ? typeof(ComparisonStructPayload)
+                : typeof(int);
+        }
 
         public void Prepare(ComparisonScenario scenario)
         {

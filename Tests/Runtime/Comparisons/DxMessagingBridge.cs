@@ -1,6 +1,7 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Comparisons
 {
+    using System;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
@@ -60,6 +61,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 ComparisonScenario.PriorityOrderedDispatch => 4,
                 _ => 1,
             };
+
+        public Type DispatchedPayloadType(ComparisonScenario scenario)
+        {
+            // The keyed scenario broadcasts SimpleTargetedMessage; every other scenario
+            // broadcasts (or registers a handler for) SimpleUntargetedMessage. Both are
+            // non-primitive IUntargetedMessage/ITargetedMessage value-type structs, so the
+            // StructMessageZeroCopy entry is boxing-free without faking a primitive payload.
+            return scenario == ComparisonScenario.KeyedToOneOfMany
+                ? typeof(SimpleTargetedMessage)
+                : typeof(SimpleUntargetedMessage);
+        }
 
         public void Prepare(ComparisonScenario scenario)
         {

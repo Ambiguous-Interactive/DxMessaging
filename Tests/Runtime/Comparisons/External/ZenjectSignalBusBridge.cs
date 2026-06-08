@@ -61,6 +61,20 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 _ => 1,
             };
 
+        public Type DispatchedPayloadType(ComparisonScenario scenario)
+        {
+            if (!Supports(scenario))
+            {
+                return null;
+            }
+            // The dispatched payload TYPE is the value-type ComparisonStructPayload; Zenject's
+            // internal object-typed routing boxes it on the dispatch path (its real cost), but
+            // the declared payload is still the canonical non-primitive struct.
+            return scenario == ComparisonScenario.StructMessageZeroCopy
+                ? typeof(ComparisonStructPayload)
+                : typeof(int);
+        }
+
         public void Prepare(ComparisonScenario scenario)
         {
             _scenario = scenario;

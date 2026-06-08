@@ -12,7 +12,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
     {
         private const string PerfGateEnvVar = "DX_PERF_GATE";
         private const string BaselinePathEnvVar = "DX_PERF_BASELINE";
-        private const string BaselineCommitEnvVar = "DX_PERF_BASELINE_COMMIT";
+        internal const string BaselineCommitEnvVar = "DX_PERF_BASELINE_COMMIT";
         private const double RegressionMultiplier = 1.5d;
 
         [Test, Explicit, Category("PerfGate")]
@@ -148,43 +148,60 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             return rows;
         }
 
-        private static BaselineRow FindBaseline(
+        internal static BaselineRow FindBaseline(
             IReadOnlyList<BaselineRow> rows,
             string scenario,
             string platform,
             string baselineCommit
         )
         {
+            // A null/empty baselineCommit means DX_PERF_BASELINE_COMMIT was unset, so the
+            // commit column is ignored and matching is on (scenario, platform) only. When
+            // a commit IS configured, it must match exactly (case-insensitive).
+            bool matchCommit = !string.IsNullOrWhiteSpace(baselineCommit);
             for (int index = 0; index < rows.Count; index++)
             {
                 BaselineRow row = rows[index];
                 if (
                     string.Equals(row.Scenario, scenario, StringComparison.Ordinal)
                     && string.Equals(row.Platform, platform, StringComparison.Ordinal)
-                    && string.Equals(row.Commit, baselineCommit, StringComparison.OrdinalIgnoreCase)
+                    && (
+                        !matchCommit
+                        || string.Equals(
+                            row.Commit,
+                            baselineCommit,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
                 )
                 {
                     return row;
                 }
             }
 
-            Assert.Fail(
-                $"No {baselineCommit} baseline row found for scenario {scenario} on platform {platform}."
+            // This is a LOCAL/manual tool. A contributor running on a different Unity
+            // version or OS than the captured baseline will have no matching row, which
+            // is expected rather than a failure, so skip gracefully. The commit-exact
+            // path (DX_PERF_BASELINE_COMMIT set) likewise skips when no row matches.
+            string commitQualifier = matchCommit ? $"{baselineCommit} " : string.Empty;
+            Assert.Ignore(
+                $"No {commitQualifier}baseline row found for scenario {scenario} on platform {platform}. "
+                    + "Capture a baseline on this Unity version and platform to enable the local perf smoke gate."
             );
             return default;
         }
 
-        private static string GetBaselineCommit()
+        internal static string GetBaselineCommit()
         {
+            // When DX_PERF_BASELINE_COMMIT is unset or empty, the gate matches the
+            // baseline row on (scenario, platform) only. A committed master baseline
+            // reflects one historical commit while CI runs at HEAD, so commit-exact
+            // matching would make a permanent gate impossible. Returning null here is
+            // the signal to FindBaseline to ignore the commit column. When the env var
+            // IS set, the original commit-exact path is preserved for local and
+            // historical workflows.
             string configuredCommit = Environment.GetEnvironmentVariable(BaselineCommitEnvVar);
-            if (string.IsNullOrWhiteSpace(configuredCommit))
-            {
-                Assert.Ignore(
-                    $"{BaselineCommitEnvVar}=<baseline-commit> is required to run the perf smoke gate."
-                );
-            }
-
-            return configuredCommit;
+            return string.IsNullOrWhiteSpace(configuredCommit) ? null : configuredCommit;
         }
 
         private static string ResolvePath(string configuredPath)
@@ -209,7 +226,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             return Path.Combine(Directory.GetCurrentDirectory(), configuredPath);
         }
 
-        private readonly struct BaselineRow
+        internal readonly struct BaselineRow
         {
             private BaselineRow(
                 string scenario,
@@ -239,6 +256,30 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             public long AllocatedBytesDelta { get; }
 
             public double WallClockMs { get; }
+
+            /// <summary>
+            /// Test-only factory that builds a row directly from field values, so the
+            /// gate's matching logic can be exercised in EditMode without going through
+            /// CSV text or running a measurement window.
+            /// </summary>
+            internal static BaselineRow ForTest(
+                string scenario,
+                string platform,
+                string commit,
+                double emitsPerSecond,
+                long allocatedBytesDelta,
+                double wallClockMs
+            )
+            {
+                return new BaselineRow(
+                    scenario,
+                    platform,
+                    commit,
+                    emitsPerSecond,
+                    allocatedBytesDelta,
+                    wallClockMs
+                );
+            }
 
             public static BaselineRow Parse(string line)
             {

@@ -368,7 +368,8 @@
     "gflags",
     "Dbgview",
     "Ldrp",
-    "tiledatamodelsvc"
+    "tiledatamodelsvc",
+    "Ryzen"
   ],
   "ignoreRegExpList": [
     "/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g",

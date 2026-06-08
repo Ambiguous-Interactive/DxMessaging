@@ -49,6 +49,21 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         {
             ComparisonBridgeContract.AssertEmitOnceAccounting(rosterKey, factory, scenario);
         }
+
+        [Test]
+        [TestCaseSource(nameof(BridgeScenarioCases))]
+        public void StructScenarioDispatchesNonPrimitiveStructPayload(
+            string rosterKey,
+            Func<IMessagingTechBridge> factory,
+            ComparisonScenario scenario
+        )
+        {
+            ComparisonBridgeContract.AssertStructScenarioPayloadFidelity(
+                rosterKey,
+                factory,
+                scenario
+            );
+        }
     }
 }
 #endif

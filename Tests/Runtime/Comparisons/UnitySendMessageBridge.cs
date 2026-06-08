@@ -66,6 +66,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 _ => 1,
             };
 
+        public Type DispatchedPayloadType(ComparisonScenario scenario)
+        {
+            return Supports(scenario) ? typeof(int) : null;
+        }
+
         public void Prepare(ComparisonScenario scenario)
         {
             _scenario = scenario;

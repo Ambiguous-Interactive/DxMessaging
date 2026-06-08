@@ -157,7 +157,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             ConfigureScenario(scope, scenario, handlerInvocations);
 
             BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
-                () => EmitMany(scope.Bus, scenario, BenchmarkProtocol.WarmupEmits),
+                () =>
+                    EmitMany(scope.Bus, scenario, DispatchBenchmarkScenarios.WarmupEmits(scenario)),
                 () =>
                 {
                     EmitMany(scope.Bus, scenario, BenchmarkProtocol.BatchSize);

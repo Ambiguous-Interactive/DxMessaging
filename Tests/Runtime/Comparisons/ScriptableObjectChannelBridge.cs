@@ -56,6 +56,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 _ => 1,
             };
 
+        public Type DispatchedPayloadType(ComparisonScenario scenario)
+        {
+            if (!Supports(scenario))
+            {
+                return null;
+            }
+            return scenario == ComparisonScenario.StructMessageZeroCopy
+                ? typeof(ComparisonStructPayload)
+                : typeof(int);
+        }
+
         public void Prepare(ComparisonScenario scenario)
         {
             _scenario = scenario;
