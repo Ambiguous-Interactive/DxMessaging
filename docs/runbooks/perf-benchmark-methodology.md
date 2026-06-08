@@ -364,8 +364,8 @@ It pins the OpenUPM scoped registry, the exact package versions, the required
 Unity built-in packages (for example `com.unity.ugui` and
 `com.unity.modules.animation`), and the `versionDefines` symbols (for example
 `MESSAGEPIPE_PRESENT`, `UNIRX_PRESENT`, `ZENJECT_PRESENT`,
-`UNITY_ATOMS_PRESENT`). The comparison legs build an ephemeral manifest from
-this file; the committed
+`UNITY_ATOMS_CORE_PRESENT`, and `UNITY_ATOMS_BASE_ATOMS_PRESENT`). The
+comparison legs build an ephemeral manifest from this file; the committed
 `.unity-test-project/Packages/manifest.json` and
 `.unity-test-project/Packages/packages-lock.json` keep local parity.
 

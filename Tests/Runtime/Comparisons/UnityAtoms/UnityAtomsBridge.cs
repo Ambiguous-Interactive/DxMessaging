@@ -1,7 +1,7 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 {
-#if UNITY_ATOMS_PRESENT
+#if UNITY_ATOMS_CORE_PRESENT && UNITY_ATOMS_BASE_ATOMS_PRESENT
     using System;
     using System.Collections.Generic;
     using DxMessaging.Tests.Runtime.Comparisons;

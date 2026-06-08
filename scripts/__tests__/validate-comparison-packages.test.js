@@ -67,8 +67,8 @@ const VALID_SOURCE = Object.freeze({
     "com.cysharp.unitask": "UNITASK_PRESENT",
     "com.svermeulen.extenject": "ZENJECT_PRESENT",
     "com.neuecc.unirx": "UNIRX_PRESENT",
-    "com.unity-atoms.unity-atoms-core": "UNITY_ATOMS_PRESENT",
-    "com.unity-atoms.unity-atoms-base-atoms": "UNITY_ATOMS_PRESENT"
+    "com.unity-atoms.unity-atoms-core": "UNITY_ATOMS_CORE_PRESENT",
+    "com.unity-atoms.unity-atoms-base-atoms": "UNITY_ATOMS_BASE_ATOMS_PRESENT"
   },
   minUnityForComparisons: "2021.3.0f1"
 });
@@ -181,6 +181,16 @@ describe("validateSourceSchema", () => {
     expect(errors.join("\n")).toMatch(/not a package in `packages` \(no extras allowed\)/);
   });
 
+  test("rejects duplicate package define mappings", () => {
+    const data = clone(VALID_SOURCE);
+    data.defines["com.unity-atoms.unity-atoms-base-atoms"] =
+      data.defines["com.unity-atoms.unity-atoms-core"];
+    const errors = validateSourceSchema(data);
+    expect(errors.join("\n")).toMatch(
+      /define 'UNITY_ATOMS_CORE_PRESENT' is assigned to multiple packages/
+    );
+  });
+
   test("rejects a package id not covered by any scope", () => {
     const data = clone(VALID_SOURCE);
     data.packages["com.uncovered.lib"] = "1.0.0";
@@ -231,10 +241,17 @@ describe("checkAsmdefCrossReference", () => {
     },
     {
       relativePath: `${COMPARISONS_RELATIVE_DIR}/UnityAtoms/UnityAtoms.asmdef`,
-      defineConstraints: ["UNITY_INCLUDE_TESTS", "UNITY_ATOMS_PRESENT"],
+      defineConstraints: [
+        "UNITY_INCLUDE_TESTS",
+        "UNITY_ATOMS_CORE_PRESENT",
+        "UNITY_ATOMS_BASE_ATOMS_PRESENT"
+      ],
       versionDefines: [
-        { name: "com.unity-atoms.unity-atoms-core", define: "UNITY_ATOMS_PRESENT" },
-        { name: "com.unity-atoms.unity-atoms-base-atoms", define: "UNITY_ATOMS_PRESENT" }
+        { name: "com.unity-atoms.unity-atoms-core", define: "UNITY_ATOMS_CORE_PRESENT" },
+        {
+          name: "com.unity-atoms.unity-atoms-base-atoms",
+          define: "UNITY_ATOMS_BASE_ATOMS_PRESENT"
+        }
       ]
     }
   ];
@@ -274,6 +291,35 @@ describe("checkAsmdefCrossReference", () => {
     const violations = checkAsmdefCrossReference({ packages, defines, gatedAsmdefs: gated });
     expect(violations.join("\n")).toMatch(
       /maps package 'com.cysharp.messagepipe' to define 'WRONG_DEFINE'/
+    );
+  });
+
+  test("fails when an asmdef produces a package define without constraining it locally", () => {
+    const gated = clone(goodGated);
+    gated[1].defineConstraints = gated[1].defineConstraints.filter(
+      (constraint) => constraint !== "UNITY_ATOMS_BASE_ATOMS_PRESENT"
+    );
+    const violations = checkAsmdefCrossReference({ packages, defines, gatedAsmdefs: gated });
+    expect(violations.join("\n")).toMatch(
+      /produces package define 'UNITY_ATOMS_BASE_ATOMS_PRESENT'.*does not require it/s
+    );
+  });
+
+  test("fails when an asmdef constrains a single-source define it does not produce", () => {
+    const gated = clone(goodGated);
+    gated[1].defineConstraints.push("UNITASK_PRESENT");
+    const violations = checkAsmdefCrossReference({ packages, defines, gatedAsmdefs: gated });
+    expect(violations.join("\n")).toMatch(
+      /requires single-source define 'UNITASK_PRESENT'.*does not produce it/s
+    );
+  });
+
+  test("fails when one asmdef declares the same versionDefines package twice", () => {
+    const gated = clone(goodGated);
+    gated[0].versionDefines.push({ ...gated[0].versionDefines[0] });
+    const violations = checkAsmdefCrossReference({ packages, defines, gatedAsmdefs: gated });
+    expect(violations.join("\n")).toMatch(
+      /declares package 'com\.cysharp\.messagepipe' multiple times/
     );
   });
 });
@@ -731,6 +777,22 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       const { code, errorText } = runFixture(dir);
       expect(code).toBe(1);
       expect(errorText).toMatch(/`defines` is missing an entry for package 'com.cysharp.unitask'/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("(f2) returns 1 when two packages map to the same define", () => {
+    const dir = makeFixtureRepo(({ sourceAbs, readJson, writeJson }) => {
+      const source = readJson(sourceAbs);
+      source.defines["com.unity-atoms.unity-atoms-base-atoms"] =
+        source.defines["com.unity-atoms.unity-atoms-core"];
+      writeJson(sourceAbs, source);
+    });
+    try {
+      const { code, errorText } = runFixture(dir);
+      expect(code).toBe(1);
+      expect(errorText).toMatch(/define 'UNITY_ATOMS_CORE_PRESENT' is assigned to multiple/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -31,6 +31,23 @@ describe("extract-perf-baseline", () => {
     });
   });
 
+  test("extracts Unity-prefixed CSV rows using the earliest scenario candidate", () => {
+    const content = [
+      '[TestRunner] 12:00:00 UntargetedFlood_OneHandler,"Editor PlayMode Mono x64 Release Comparison_DxMessaging_GlobalToOne BroadcastFlood_OneHandler",abc1234,-1,25000000.125,0,1000.000',
+      '[TestRunner] 12:00:01 Comparison_DxMessaging_GlobalToOne,"Standalone IL2CPP x64 Release UntargetedFlood_OneHandler",abc1234,-1,16980000.000,0,1000.000'
+    ].join("\n");
+
+    const rows = extractRows(content);
+
+    expect(rows.map((row) => row.scenario)).toEqual([
+      "UntargetedFlood_OneHandler",
+      "Comparison_DxMessaging_GlobalToOne"
+    ]);
+    expect(rows[0].platform).toContain("Comparison_DxMessaging_GlobalToOne");
+    expect(rows[0].platform).toContain("BroadcastFlood_OneHandler");
+    expect(rows[1].platform).toContain("UntargetedFlood_OneHandler");
+  });
+
   test("extracts structured Debug.Log rows from prefixed Unity log lines", () => {
     const content =
       '[TestRunner] {scenario:"BroadcastFlood_OneHandler", platform:"Editor Mono x64 Development (LinuxEditor; Unity 2022.3.45f1)", commit:"HEAD", runIndex:-1, emitsPerSec:17000000.5, allocatedBytesDelta:0, wallClockMs:1000.25}';
@@ -42,6 +59,21 @@ describe("extract-perf-baseline", () => {
         ""
       ].join("\n")
     );
+  });
+
+  test("finds scenario starts without allocating a combined candidate array", () => {
+    const source = fs.readFileSync(SCRIPT, "utf8");
+    const start = source.indexOf("function findScenarioIndex(line)");
+    const end = source.indexOf("function parseCsvFields(line)");
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+
+    const body = source.slice(start, end);
+    expect(body).toContain("for (const scenario of SCENARIOS)");
+    expect(body).toContain("line.indexOf(COMPARISON_SCENARIO_PREFIX)");
+    expect(body).not.toMatch(/\[\s*\.\.\.\s*SCENARIOS\b/);
+    expect(body).not.toMatch(/Array\.from\(\s*SCENARIOS\b/);
   });
 
   test("keeps cross-library Comparison_* rows alongside dispatch rows", () => {

@@ -17,17 +17,21 @@
   "overrideReferences": true,
   "precompiledReferences": ["nunit.framework.dll"],
   "autoReferenced": true,
-  "defineConstraints": ["UNITY_INCLUDE_TESTS", "UNITY_ATOMS_PRESENT"],
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS",
+    "UNITY_ATOMS_CORE_PRESENT",
+    "UNITY_ATOMS_BASE_ATOMS_PRESENT"
+  ],
   "versionDefines": [
     {
       "name": "com.unity-atoms.unity-atoms-core",
       "expression": "0.0.1",
-      "define": "UNITY_ATOMS_PRESENT"
+      "define": "UNITY_ATOMS_CORE_PRESENT"
     },
     {
       "name": "com.unity-atoms.unity-atoms-base-atoms",
       "expression": "0.0.1",
-      "define": "UNITY_ATOMS_PRESENT"
+      "define": "UNITY_ATOMS_BASE_ATOMS_PRESENT"
     }
   ],
   "noEngineReferences": false

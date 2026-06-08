@@ -2,9 +2,9 @@
 title: "Comparison Parity and Package Single Source"
 id: "comparison-parity-and-package-single-source"
 category: "testing"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-06-07"
-updated: "2026-06-07"
+updated: "2026-06-08"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -192,13 +192,22 @@ Three consumers read this file and must agree:
   `.unity-test-project/Packages/packages-lock.json` mirror the pins and
   built-ins for local parity.
 - The gated comparison asmdef expresses each package as a `versionDefines`
-  entry so the bridge compiles only when its package is present.
+  entry so the bridge compiles only when its package is present. Each package
+  define must be unique: sharing one define across multiple packages turns the
+  asmdef gate into OR semantics, so an assembly that references both packages
+  can compile when only one is installed. When one asmdef references multiple
+  package assemblies, put every package-specific define in that same asmdef's
+  `defineConstraints` so Unity must satisfy the full AND gate before compiling
+  the assembly.
 
 `scripts/validate-comparison-packages.js` (npm `validate:comparison-packages`,
 part of `validate:all`) fails on any drift between the JSON, the asmdef
-`versionDefines`, the committed manifest, and the committed package lock. The
-dedicated `validate-comparison-packages` pre-commit/pre-push hook runs that gate
-for source, mirror, asmdef, validator, and CI manifest-generator edits. Any
+`versionDefines`, same-asmdef `defineConstraints`, the committed manifest, and
+the committed package lock. It also rejects duplicate package define mappings,
+duplicate package entries inside one asmdef, and asmdefs that constrain a
+single-source package define they do not produce locally. The dedicated
+`validate-comparison-packages` pre-commit/pre-push hook runs that gate for
+source, mirror, asmdef, validator, and CI manifest-generator edits. Any
 path-filtered workflow that invokes the gate must include every source and
 mirror path; `validate:workflows` fails if a workflow can run the gate but skip
 a mirror-only edit. The single-source file is the authority; the validator keeps
@@ -215,6 +224,8 @@ the mirrors honest.
   bridge that claims the scenario while dispatching a primitive or boxed payload.
 - "I will bump the pin in the manifest only." Bump
   `.github/comparison-packages.json`; the validator flags the rest.
+- "Two companion packages can share one `_PRESENT` symbol." Use one define per
+  package and require every package-specific define in the consuming asmdef.
 - "I will add the drift gate to a path-filtered workflow and include only the
   source JSON." Include the manifest and package-lock mirrors too; workflow
   trigger coverage is part of the drift gate.

@@ -16,7 +16,7 @@
  *     "registry": { "name": ..., "url": "https://...", "scopes": ["com.x", ...] },
  *     "packages": { "com.cysharp.messagepipe": "1.8.1", ... },        // x6
  *     "unityBuiltInPackages": { "com.unity.ugui": "1.0.0", ... },
- *     "defines":  { "com.cysharp.messagepipe": "MESSAGEPIPE_PRESENT", ... },
+ *     "defines":  { "com.cysharp.messagepipe": "MESSAGEPIPE_PRESENT", ... }, // unique
  *     "minUnityForComparisons": "2021.3.0f1"
  *   }
  *
@@ -120,7 +120,8 @@ function scopeCoversId(id, scope) {
  *   - unityBuiltInPackages is a non-empty object of Unity package id -> "1.0.0";
  *   - no Unity built-in package id is duplicated in packages;
  *   - defines has EXACTLY one entry per package id (no missing, no extras),
- *     each a non-empty string;
+ *     each a non-empty string, and each define string maps to exactly one
+ *     package id;
  *   - every package id is covered by some registry scope.
  *
  * @param {unknown} data Parsed single-source object.
@@ -228,6 +229,27 @@ function validateSourceSchema(data) {
         );
       }
     }
+    const packageIdsByDefine = new Map();
+    for (const id of packageIds) {
+      const define = defines[id];
+      if (typeof define !== "string" || define.length === 0) {
+        continue;
+      }
+      if (!packageIdsByDefine.has(define)) {
+        packageIdsByDefine.set(define, []);
+      }
+      packageIdsByDefine.get(define).push(id);
+    }
+    for (const [define, ids] of packageIdsByDefine) {
+      if (ids.length <= 1) {
+        continue;
+      }
+      errors.push(
+        `${SOURCE_RELATIVE_PATH}: define '${define}' is assigned to multiple packages ` +
+          `[${ids.join(", ")}]. Package define mappings must be one-to-one so asmdef ` +
+          "defineConstraints can require every package independently."
+      );
+    }
     for (const id of defineIds) {
       if (!Object.prototype.hasOwnProperty.call(packages, id)) {
         errors.push(
@@ -318,12 +340,16 @@ function collectGatedAsmdefs(repoRoot) {
  * Cross-checks the single source's defines against the gated comparison
  * asmdefs in BOTH directions.
  *
- *   (a) every DISTINCT define value in `defines` must appear in at least one
+ *   (a) every define value in `defines` must appear in at least one
  *       gated asmdef's defineConstraints AND be produced by some versionDefines
  *       entry across the gated asmdefs;
  *   (b) every versionDefines entry across the gated asmdefs must have
  *       name === a package id present in `packages` AND
  *       define === that package's `defines` value.
+ *   (c) every package define produced by an asmdef's versionDefines must be
+ *       required by that same asmdef's defineConstraints, and every
+ *       single-source package define required by an asmdef must be produced by
+ *       that same asmdef.
  *
  * @param {object} params Parameters.
  * @param {Record<string, string>} params.packages Single-source packages map.
@@ -345,20 +371,81 @@ function checkAsmdefCrossReference({ packages, defines, gatedAsmdefs }) {
   // Aggregate what the asmdefs declare.
   const constraintsUnion = new Set();
   const producedDefines = new Set();
+  const sourceDefines = new Set(Object.values(defines));
   for (const asmdef of gatedAsmdefs) {
+    const localConstraints = new Set();
+    const localProducedDefines = new Set();
+    const localPackagesByName = new Map();
+    const localPackagesByDefine = new Map();
+
     for (const constraint of asmdef.defineConstraints) {
       constraintsUnion.add(constraint);
+      if (typeof constraint === "string") {
+        localConstraints.add(constraint);
+      }
     }
     for (const entry of asmdef.versionDefines) {
-      if (entry && typeof entry.define === "string") {
-        producedDefines.add(entry.define);
+      const name = entry && entry.name;
+      const define = entry && entry.define;
+      if (typeof name === "string") {
+        if (!localPackagesByName.has(name)) {
+          localPackagesByName.set(name, []);
+        }
+        localPackagesByName.get(name).push(define);
+      }
+      if (typeof define === "string") {
+        if (!localPackagesByDefine.has(define)) {
+          localPackagesByDefine.set(define, []);
+        }
+        localPackagesByDefine.get(define).push(name);
+        localProducedDefines.add(define);
+        producedDefines.add(define);
+      }
+    }
+
+    for (const [name, definesForName] of localPackagesByName) {
+      if (definesForName.length <= 1) {
+        continue;
+      }
+      violations.push(
+        `asmdef cross-check: ${asmdef.relativePath} declares package '${name}' multiple times ` +
+          "in versionDefines; each package gate must be declared once."
+      );
+    }
+
+    for (const [define, namesForDefine] of localPackagesByDefine) {
+      if (namesForDefine.length <= 1) {
+        continue;
+      }
+      violations.push(
+        `asmdef cross-check: ${asmdef.relativePath} maps define '${define}' to multiple ` +
+          `versionDefines packages [${namesForDefine.join(", ")}]; package gates must use ` +
+          "one define per package."
+      );
+    }
+
+    for (const define of localProducedDefines) {
+      if (!localConstraints.has(define)) {
+        violations.push(
+          `asmdef cross-check: ${asmdef.relativePath} produces package define '${define}' in ` +
+            "versionDefines but does not require it in defineConstraints."
+        );
+      }
+    }
+
+    for (const constraint of localConstraints) {
+      if (sourceDefines.has(constraint) && !localProducedDefines.has(constraint)) {
+        violations.push(
+          `asmdef cross-check: ${asmdef.relativePath} requires single-source define ` +
+            `'${constraint}' in defineConstraints but does not produce it in that asmdef's ` +
+            "versionDefines."
+        );
       }
     }
   }
 
-  // (a) every distinct single-source define is both constrained and produced.
-  const distinctDefines = [...new Set(Object.values(defines))];
-  for (const define of distinctDefines) {
+  // (a) every single-source define is both constrained and produced.
+  for (const define of sourceDefines) {
     if (!constraintsUnion.has(define)) {
       violations.push(
         `asmdef cross-check: single-source define '${define}' is not present in any gated ` +

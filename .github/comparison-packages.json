@@ -1,5 +1,5 @@
 {
-  "_comment": "Canonical single source for the OpenUPM scoped registry, PINNED comparison-benchmark package versions, and required Unity built-in module packages. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons), the committed .unity-test-project/Packages/manifest.json (local parity), and scripts/validate-comparison-packages.js (drift gate vs the comparison asmdef versionDefines and both manifests). Bump versions/modules HERE only; the validator fails if any consumer drifts. See .llm/skills/testing/comparison-parity-and-package-single-source.md.",
+  "_comment": "Canonical single source for the OpenUPM scoped registry, PINNED comparison-benchmark package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons), the committed .unity-test-project/Packages/manifest.json (local parity), and scripts/validate-comparison-packages.js (drift gate vs comparison asmdef versionDefines/defineConstraints and both manifests). Bump versions/modules/defines HERE only; the validator fails if any consumer drifts. See .llm/skills/testing/comparison-parity-and-package-single-source.md.",
   "registry": {
     "name": "package.openupm.com",
     "url": "https://package.openupm.com",
@@ -25,8 +25,8 @@
     "com.cysharp.unitask": "UNITASK_PRESENT",
     "com.svermeulen.extenject": "ZENJECT_PRESENT",
     "com.neuecc.unirx": "UNIRX_PRESENT",
-    "com.unity-atoms.unity-atoms-core": "UNITY_ATOMS_PRESENT",
-    "com.unity-atoms.unity-atoms-base-atoms": "UNITY_ATOMS_PRESENT"
+    "com.unity-atoms.unity-atoms-core": "UNITY_ATOMS_CORE_PRESENT",
+    "com.unity-atoms.unity-atoms-base-atoms": "UNITY_ATOMS_BASE_ATOMS_PRESENT"
   },
   "minUnityForComparisons": "2021.3.0f1"
 }
