@@ -28,6 +28,13 @@ const DISPATCH_BENCHMARK_PATH = path.join(
   "Benchmarks",
   "DispatchThroughputBenchmarks.cs"
 );
+const PERF_REGRESSION_SMOKE_PATH = path.join(
+  REPO_ROOT,
+  "Tests",
+  "Editor",
+  "Benchmarks",
+  "PerfRegressionSmokeTests.cs"
+);
 const COMPARISON_SCENARIO_PATH = path.join(
   REPO_ROOT,
   "Tests",
@@ -199,9 +206,21 @@ function expectSetsEqual(actual, expected, label) {
   }).toEqual({ label, missing: [], extra: [], equal: true });
 }
 
+function findParameterlessScenarioWrapperMethods(source, scenarioMembers) {
+  const memberAlternation = scenarioMembers.map(escapeRegex).join("|");
+  const methodRegex = new RegExp(`\\bpublic\\s+void\\s+(${memberAlternation})\\s*\\(\\s*\\)`, "g");
+  const methods = [];
+  let match;
+  while ((match = methodRegex.exec(source)) !== null) {
+    methods.push(match[1]);
+  }
+  return methods;
+}
+
 describe("dispatch + comparison methodology cross-language contract", () => {
   let benchmarkProtocol;
   let dispatchBenchmark;
+  let perfRegressionSmoke;
   let comparisonScenario;
   let dispatchKeyArms;
   let dispatchDisplayArms;
@@ -213,6 +232,7 @@ describe("dispatch + comparison methodology cross-language contract", () => {
   beforeAll(() => {
     benchmarkProtocol = readFile(BENCHMARK_PROTOCOL_PATH);
     dispatchBenchmark = readFile(DISPATCH_BENCHMARK_PATH);
+    perfRegressionSmoke = readFile(PERF_REGRESSION_SMOKE_PATH);
     comparisonScenario = readFile(COMPARISON_SCENARIO_PATH);
 
     dispatchKeyArms = parseSwitchArms(extractStringSwitchBody(benchmarkProtocol, "Key"));
@@ -254,6 +274,40 @@ describe("dispatch + comparison methodology cross-language contract", () => {
     expect(dispatchBenchmark).not.toContain("MedianByPrimaryMetric");
     expect(dispatchBenchmark).not.toContain("AsMedian");
     expect(dispatchBenchmark).toContain("BenchmarkProtocol.Measure");
+  });
+
+  test("benchmark execution fixtures are data-driven over DispatchBenchmarkScenarios.All", () => {
+    const scenarioMembers = dispatchKeyArms.map((arm) => arm.member);
+    expect(scenarioMembers).toHaveLength(13);
+
+    expect(dispatchBenchmark).toContain("[TestCaseSource(nameof(DispatchBenchmarkCases))]");
+    expect(dispatchBenchmark).toContain(
+      "public void DispatchBenchmark(DispatchBenchmarkScenario scenario)"
+    );
+    expect(dispatchBenchmark).toContain(
+      "foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)"
+    );
+    expect(dispatchBenchmark).toContain("SetName(scenario.ToString())");
+
+    expect(perfRegressionSmoke).toContain("[TestCaseSource(nameof(PerfGateCases))]");
+    expect(perfRegressionSmoke).toContain(
+      "public void PerfRegressionGate(DispatchBenchmarkScenario scenario)"
+    );
+    expect(perfRegressionSmoke).toContain(
+      "foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)"
+    );
+    expect(perfRegressionSmoke).toContain("SetName(scenario.ToString())");
+
+    expect({
+      dispatchBenchmark: findParameterlessScenarioWrapperMethods(
+        dispatchBenchmark,
+        scenarioMembers
+      ),
+      perfRegressionSmoke: findParameterlessScenarioWrapperMethods(
+        perfRegressionSmoke,
+        scenarioMembers
+      )
+    }).toEqual({ dispatchBenchmark: [], perfRegressionSmoke: [] });
   });
 
   test("dispatch Key literals match SCENARIOS and SCENARIO_ORDER (as sets)", () => {

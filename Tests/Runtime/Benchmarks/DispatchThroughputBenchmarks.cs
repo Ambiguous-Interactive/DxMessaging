@@ -52,81 +52,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
 
         [Test, Performance, Category("PerfBench")]
-        public void UntargetedFloodOneHandler()
+        [TestCaseSource(nameof(DispatchBenchmarkCases))]
+        public void DispatchBenchmark(DispatchBenchmarkScenario scenario)
         {
-            _ = RunScenario(DispatchBenchmarkScenario.UntargetedFloodOneHandler);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void UntargetedFloodFourHandlersOnePriority()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void UntargetedFloodFourHandlersFourPriorities()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void TargetedFloodOneListener()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.TargetedFloodOneListener);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void TargetedFloodSixteenListeners()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.TargetedFloodSixteenListeners);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void BroadcastFloodOneHandler()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.BroadcastFloodOneHandler);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void InterceptorHeavyFourInterceptors()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void PostProcessingHeavyFourPostProcessors()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void RegistrationFlood1000TypesFromColdBus()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void RegistrationFlood1000TypesWarmJit()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void UntargetedFirstDispatchCold()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.UntargetedFirstDispatchCold);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void TargetedFirstDispatchCold()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.TargetedFirstDispatchCold);
-        }
-
-        [Test, Performance, Category("PerfBench")]
-        public void BroadcastFirstDispatchCold()
-        {
-            _ = RunScenario(DispatchBenchmarkScenario.BroadcastFirstDispatchCold);
+            _ = RunScenario(scenario);
         }
 
         [Test, Explicit, Performance, Category("PerfBaseline")]
@@ -140,11 +69,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
 
             List<DispatchBenchmarkResult> results = new();
-            foreach (
-                DispatchBenchmarkScenario scenario in Enum.GetValues(
-                    typeof(DispatchBenchmarkScenario)
-                )
-            )
+            foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)
             {
                 results.Add(RunScenario(scenario));
             }
@@ -192,6 +117,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public static string GetScenarioName(DispatchBenchmarkScenario scenario)
         {
             return DispatchBenchmarkScenarios.Key(scenario);
+        }
+
+        private static IEnumerable<TestCaseData> DispatchBenchmarkCases()
+        {
+            foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)
+            {
+                yield return new TestCaseData(scenario).SetName(scenario.ToString());
+            }
         }
 
         private static DispatchBenchmarkResult MeasureEmitScenario(

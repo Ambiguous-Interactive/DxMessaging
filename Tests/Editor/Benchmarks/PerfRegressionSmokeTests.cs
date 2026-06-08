@@ -16,81 +16,18 @@ namespace DxMessaging.Tests.Editor.Benchmarks
         private const double RegressionMultiplier = 1.5d;
 
         [Test, Explicit, Category("PerfGate")]
-        public void UntargetedFloodOneHandler()
+        [TestCaseSource(nameof(PerfGateCases))]
+        public void PerfRegressionGate(DispatchBenchmarkScenario scenario)
         {
-            RunGate(DispatchBenchmarkScenario.UntargetedFloodOneHandler);
+            RunGate(scenario);
         }
 
-        [Test, Explicit, Category("PerfGate")]
-        public void UntargetedFloodFourHandlersOnePriority()
+        private static IEnumerable<TestCaseData> PerfGateCases()
         {
-            RunGate(DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void UntargetedFloodFourHandlersFourPriorities()
-        {
-            RunGate(DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void TargetedFloodOneListener()
-        {
-            RunGate(DispatchBenchmarkScenario.TargetedFloodOneListener);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void TargetedFloodSixteenListeners()
-        {
-            RunGate(DispatchBenchmarkScenario.TargetedFloodSixteenListeners);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void BroadcastFloodOneHandler()
-        {
-            RunGate(DispatchBenchmarkScenario.BroadcastFloodOneHandler);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void InterceptorHeavyFourInterceptors()
-        {
-            RunGate(DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void PostProcessingHeavyFourPostProcessors()
-        {
-            RunGate(DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void RegistrationFlood1000TypesFromColdBus()
-        {
-            RunGate(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void RegistrationFlood1000TypesWarmJit()
-        {
-            RunGate(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void UntargetedFirstDispatchCold()
-        {
-            RunGate(DispatchBenchmarkScenario.UntargetedFirstDispatchCold);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void TargetedFirstDispatchCold()
-        {
-            RunGate(DispatchBenchmarkScenario.TargetedFirstDispatchCold);
-        }
-
-        [Test, Explicit, Category("PerfGate")]
-        public void BroadcastFirstDispatchCold()
-        {
-            RunGate(DispatchBenchmarkScenario.BroadcastFirstDispatchCold);
+            foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)
+            {
+                yield return new TestCaseData(scenario).SetName(scenario.ToString());
+            }
         }
 
         private static void RunGate(DispatchBenchmarkScenario scenario)
