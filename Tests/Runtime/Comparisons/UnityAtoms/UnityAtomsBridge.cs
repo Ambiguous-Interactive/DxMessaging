@@ -34,6 +34,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 
         public long ProgressMarker => _fanOut?.Count ?? _progress;
 
+        private const int DispatchKey = 0;
         private const int KeyedListenerCount = 16;
 
         private ComparisonScenario _scenario;
@@ -104,7 +105,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                     {
                         IntEvent keyedEvent = CreateEvent();
                         keyedEvent.Register(Handle);
-                        if (index == 0)
+                        if (index == DispatchKey)
                         {
                             _event = keyedEvent;
                         }
@@ -129,7 +130,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                     _progress++;
                     return;
                 default:
-                    _event.Raise(0);
+                    _event.Raise(DispatchKey);
                     return;
             }
         }

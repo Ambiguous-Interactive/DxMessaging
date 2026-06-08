@@ -38,6 +38,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public long ProgressMarker => _progress;
 
+        private const int DispatchKey = 0;
         private const int KeyCount = 16;
 
         private ComparisonScenario _scenario;
@@ -45,6 +46,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         private GameObject _primary;
         private readonly List<GameObject> _keyed = new();
+        private GameObject _dispatchTarget;
 
         public bool Supports(ComparisonScenario scenario)
         {
@@ -89,7 +91,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 case ComparisonScenario.KeyedToOneOfMany:
                     for (int key = 0; key < KeyCount; key++)
                     {
-                        _keyed.Add(CreateReceiverObject($"SendMessageReceiver{key}", 1));
+                        GameObject receiver = CreateReceiverObject($"SendMessageReceiver{key}", 1);
+                        _keyed.Add(receiver);
+                        if (key == DispatchKey)
+                        {
+                            _dispatchTarget = receiver;
+                        }
                     }
                     return;
                 default:
@@ -102,7 +109,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             switch (_scenario)
             {
                 case ComparisonScenario.KeyedToOneOfMany:
-                    SendPing(_keyed[0]);
+                    SendPing(_dispatchTarget);
                     return;
                 default:
                     SendPing(_primary);
@@ -119,6 +126,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 DestroyObject(_keyed[index]);
             }
             _keyed.Clear();
+            _dispatchTarget = null;
         }
 
         private GameObject CreateReceiverObject(string name, int receiverCount)

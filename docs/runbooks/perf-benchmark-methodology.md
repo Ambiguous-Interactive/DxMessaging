@@ -207,7 +207,8 @@ falls back to a neutral description.
 On a pull request the refreshed numbers post as a non-blocking sticky comment
 (marker `<!-- dxm-perf-autonumbers -->`); the workflow never pushes to the
 contributor branch. A second sticky comment (marker `<!-- dxm-perf-deltas -->`)
-posts the DxMessaging-only deltas against the committed master baseline -- see
+posts the DxMessaging-only deltas against the committed master baseline when a
+metric moves beyond tolerance or the regression gate will fail -- see
 [Permanent regression gate](#permanent-regression-gate). After the pull request
 merges, the push run re-renders and, if the doc OR the baseline moved, commits
 both `docs/architecture/performance.md` and the regenerated
@@ -300,11 +301,12 @@ run, the PR job calls
 [`scripts/unity/render-perf-deltas.js`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/render-perf-deltas.js),
 which compares this PR's PlayMode DxMessaging numbers against the committed
 master baseline and prints two lines: `changed=true|false` (whether any metric
-moved beyond `--tolerance`, which drives the delta comment) and
-`regressed=true|false` (the gate signal). The job posts the DxMessaging-only
-delta comment FIRST, then fails when `regressed=true` -- so reviewers always see
-the numbers even when the gate trips. The script always exits 0 itself; the
-workflow decides whether to fail from the `regressed=` line.
+moved beyond `--tolerance`) and `regressed=true|false` (the gate signal). The
+job posts the DxMessaging-only delta comment when `changed=true` OR
+`regressed=true`, then fails when `regressed=true` -- so reviewers always see the
+numbers even when a strict gate failure did not exceed the comment tolerance.
+The script always exits 0 itself; the workflow decides whether to fail from the
+`regressed=` line.
 
 A scenario regresses when its throughput drops by more than the regression
 threshold (default `0.33`, looser than the comment tolerance) OR its allocation
@@ -313,8 +315,8 @@ rows (the cold/warm-JIT registration floods and the cold first-dispatch scenario
 all zero throughput) never trip the gate. The comparison is DxMessaging-only: the
 delta comment keeps the dispatch scenarios plus the DxMessaging comparison rows
 and drops every other library's rows. A
-missing or header-only baseline yields `regressed=` empty, which skips the gate
-step for a graceful first-rollout pass.
+missing or header-only baseline yields `changed=false` and `regressed=false`,
+which skips both the delta comment and gate for a graceful first-rollout pass.
 
 ## Local-only C# smoke gate
 

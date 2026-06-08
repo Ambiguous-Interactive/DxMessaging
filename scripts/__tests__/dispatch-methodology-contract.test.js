@@ -397,6 +397,32 @@ describe("dispatch + comparison methodology cross-language contract", () => {
     );
   });
 
+  test("keyed comparison bridges do not dispatch through literal first-list assumptions", () => {
+    const violations = [];
+    const forbidden = [
+      {
+        regex: /\b_(?:keyed|events)\s*\[\s*0\s*\]/,
+        detail: "dispatch target is coupled to first keyed/disposal-list element"
+      },
+      {
+        regex: /\bPublish\s*\(\s*0\s*,\s*0\s*\)/,
+        detail: "keyed publish uses literal key 0 instead of the named dispatch key"
+      }
+    ];
+
+    for (const filePath of collectCsFiles(COMPARISONS_DIR)) {
+      const source = fs.readFileSync(filePath, "utf8");
+      const repoPath = toRepoPath(filePath);
+      for (const { regex, detail } of forbidden) {
+        if (regex.test(source)) {
+          violations.push(`${repoPath}: ${detail}`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
   test("cached churn handler fields are cleared by Dispose", () => {
     const checkedFields = [];
     const violations = [];

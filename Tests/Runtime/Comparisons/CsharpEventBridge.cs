@@ -20,6 +20,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public long ProgressMarker => _fanOut?.Count ?? _progress;
 
+        private const int DispatchKey = 0;
         private const int KeyCount = 16;
 
         private ComparisonScenario _scenario;
@@ -116,7 +117,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             switch (_scenario)
             {
                 case ComparisonScenario.KeyedToOneOfMany:
-                    _keyed[0](0);
+                    _keyed[DispatchKey](DispatchKey);
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     Global += _churnHandler;

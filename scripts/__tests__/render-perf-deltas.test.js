@@ -73,13 +73,24 @@ const BASELINE = [
   ["Comparison_UniRx_GlobalToOne", 7000000, 0, 1000]
 ];
 
-function baselineCsv({ scope = "PlayMode" } = {}) {
+function baselineCsv({ scope = "PlayMode", mutate = {} } = {}) {
   const platformString = platform(scope);
   return [
     CSV_HEADER,
-    ...BASELINE.map(([scenario, emits, alloc, ms]) =>
-      csvLine(scenario, platformString, "base123", emits.toFixed(3), String(alloc), ms.toFixed(3))
-    )
+    ...BASELINE.map(([scenario, emits, alloc, ms]) => {
+      const override = mutate[scenario] || {};
+      const finalEmits = override.emits !== undefined ? override.emits : emits;
+      const finalAlloc = override.alloc !== undefined ? override.alloc : alloc;
+      const finalMs = override.ms !== undefined ? override.ms : ms;
+      return csvLine(
+        scenario,
+        platformString,
+        "base123",
+        finalEmits.toFixed(3),
+        String(finalAlloc),
+        finalMs.toFixed(3)
+      );
+    })
   ].join("\n");
 }
 
@@ -356,6 +367,18 @@ describe("render-perf-deltas regression gate (isRegression / computeRegressed)",
     const { current, baseline } = indexes({
       current: { Comparison_DxMessaging_GlobalToOne: { alloc: 48 } } // baseline 0 -> 48
     });
+    expect(computeRegressed(current, baseline, DEFAULT_REGRESSION_THRESHOLD)).toBe(true);
+  });
+
+  test("a tiny allocation increase can be changed=false but still regressed=true", () => {
+    const { current, baseline } = indexes({
+      baseline: { Comparison_DxMessaging_GlobalToOne: { alloc: 1000 } },
+      current: { Comparison_DxMessaging_GlobalToOne: { alloc: 1001 } }
+    });
+
+    const table = buildDeltaTable(current, baseline, DEFAULT_TOLERANCE, "PlayMode");
+    expect(table.changed).toBe(false);
+    expect(rowFor(table.markdown, "Global -> 1 subscriber")[3]).toContain("+1 B");
     expect(computeRegressed(current, baseline, DEFAULT_REGRESSION_THRESHOLD)).toBe(true);
   });
 
@@ -771,6 +794,37 @@ describe("render-perf-deltas CLI", () => {
     ]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("regressed=true");
+  });
+
+  test("prints changed=false + regressed=true for a tiny allocation increase, exit 0", () => {
+    const inputPath = path.join(tempDir, "current.log");
+    const baselinePath = path.join(tempDir, "baseline.csv");
+    const outputPath = path.join(tempDir, "delta.md");
+    fs.writeFileSync(
+      inputPath,
+      currentLog({ mutate: { Comparison_DxMessaging_GlobalToOne: { alloc: 1001 } } }),
+      "utf8"
+    );
+    fs.writeFileSync(
+      baselinePath,
+      baselineCsv({ mutate: { Comparison_DxMessaging_GlobalToOne: { alloc: 1000 } } }),
+      "utf8"
+    );
+
+    const result = run([
+      "--input",
+      inputPath,
+      "--baseline-csv",
+      baselinePath,
+      "--unity-version",
+      LATEST,
+      "--output",
+      outputPath
+    ]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("changed=false");
+    expect(result.stdout).toContain("regressed=true");
+    expect(fs.readFileSync(outputPath, "utf8")).toContain("+1 B");
   });
 
   test("missing baseline CSV writes the note, prints changed=false + regressed=false, exits 0", () => {

@@ -33,6 +33,9 @@
  * - Workflow lines that exceed the yamllint line-length ceiling (loaded from
  *   .yamllint.yaml when available; defaults to 200). This provides earlier
  *   feedback in `npm run validate:workflows` before git-hook execution.
+ * - The Performance Numbers regression gate must not fail while the
+ *   DxMessaging delta comment is skipped: the perf-deltas comment step must run
+ *   for either `changed=true` or `regressed=true`, and the gate must run after it.
  * - .pre-commit-config.yaml lines that exceed the same yamllint line-length
  *   ceiling so hook-policy YAML drift is surfaced during preflight instead of
  *   only at hook-time.
@@ -119,6 +122,7 @@ const GIT_AUTO_COMMIT_USES = "stefanzweifel/git-auto-commit-action@";
 const BLOCKING_DOC_LINK_WORKFLOW = ".github/workflows/lint-doc-links.yml";
 const ADVISORY_DOC_LINK_WORKFLOW = ".github/workflows/markdown-link-validity.yml";
 const ADVISORY_LYCHEE_REPORT_PATH = "./lychee/out.md";
+const PERF_NUMBERS_WORKFLOW = ".github/workflows/perf-numbers.yml";
 const REQUIRED_ACTIVE_WORKFLOW_PATHS = Object.freeze([
   BLOCKING_DOC_LINK_WORKFLOW,
   ADVISORY_DOC_LINK_WORKFLOW
@@ -645,7 +649,9 @@ function runTextInvokesComparisonPackageValidation(runText) {
 }
 
 function workflowInvokesComparisonPackageValidation(lines) {
-  return extractRunBlocks(lines).some((block) => runTextInvokesComparisonPackageValidation(block.text));
+  return extractRunBlocks(lines).some((block) =>
+    runTextInvokesComparisonPackageValidation(block.text)
+  );
 }
 
 function findComparisonPackageValidationTriggerViolations(relativePath, lines) {
@@ -3136,6 +3142,94 @@ function findUnityReleaseModeViolations(relativePath, lines) {
           );
         }
       }
+    }
+  }
+
+  return violations;
+}
+
+function stepSourceText(lines, step) {
+  if (!step) {
+    return "";
+  }
+  return lines.slice(step.startIndex, step.endIndex + 1).join("\n");
+}
+
+function findPerfDeltasCommentGateViolations(relativePath, lines) {
+  const normalizedPath = String(relativePath || "").replace(/\\/g, "/");
+  if (normalizedPath !== PERF_NUMBERS_WORKFLOW) {
+    return [];
+  }
+
+  const violations = [];
+  for (const job of extractJobs(lines)) {
+    const steps = extractJobSteps(lines, job);
+    const commentStep = steps.find((step) => step.name === "Upsert the perf-deltas PR comment");
+    const gateStep = steps.find((step) => step.name === "Enforce DxMessaging perf regression gate");
+
+    if (!commentStep && !gateStep) {
+      continue;
+    }
+
+    if (!commentStep) {
+      violations.push(
+        new Violation(
+          relativePath,
+          gateStep.startIndex + 1,
+          "perf-deltas comment",
+          `Job '${job.id}' enforces the perf regression gate without a prior perf-deltas comment step. Add the sticky delta comment before the gate so reviewers see the numbers on failure.`,
+          "error"
+        )
+      );
+      continue;
+    }
+
+    const commentSource = stepSourceText(lines, commentStep);
+    const commentsOnChanged = /steps\.deltas\.outputs\.changed\s*==\s*'true'/.test(commentSource);
+    const commentsOnRegressed = /steps\.deltas\.outputs\.regressed\s*==\s*'true'/.test(
+      commentSource
+    );
+    const commentsOnEitherSignal =
+      commentsOnChanged && commentsOnRegressed && /\|\|/.test(commentSource);
+    if (!commentsOnEitherSignal) {
+      violations.push(
+        new Violation(
+          relativePath,
+          commentStep.startIndex + 1,
+          "perf-deltas comment if:",
+          `Job '${job.id}' perf-deltas comment must run when changed=true OR regressed=true. Allocation regressions can be changed=false/regressed=true, and the gate error points reviewers at this comment.`,
+          "error"
+        )
+      );
+    }
+
+    if (!gateStep) {
+      continue;
+    }
+
+    const gateSource = stepSourceText(lines, gateStep);
+    if (!/steps\.deltas\.outputs\.regressed\s*==\s*'true'/.test(gateSource)) {
+      violations.push(
+        new Violation(
+          relativePath,
+          gateStep.startIndex + 1,
+          "perf regression gate if:",
+          `Job '${job.id}' perf regression gate must be driven by steps.deltas.outputs.regressed == 'true'.`,
+          "error"
+        )
+      );
+    }
+
+    if (gateStep.startIndex <= commentStep.startIndex) {
+      violations.push(
+        new Violation(
+          relativePath,
+          gateStep.startIndex + 1,
+          "perf regression gate order",
+          `Job '${job.id}' perf regression gate must run after the perf-deltas comment step so failure diagnostics are posted first.`,
+          "error"
+        )
+      );
     }
   }
 
@@ -6161,6 +6255,8 @@ function validateWorkflow(filePath, options = {}) {
 
     violations.push(...findUnityReleaseModeViolations(relativePath, lines));
 
+    violations.push(...findPerfDeltasCommentGateViolations(relativePath, lines));
+
     violations.push(...findUnityLicenseReturnViolations(relativePath, lines));
 
     violations.push(...findForbiddenUnityLicenseSecretViolations(relativePath, lines));
@@ -6350,6 +6446,7 @@ if (typeof module !== "undefined" && module.exports) {
     findUnityGameCiLockAndPreflightViolations,
     findUnityNativeProvisioningViolations,
     findUnityReleaseModeViolations,
+    findPerfDeltasCommentGateViolations,
     findUnityLicenseReturnViolations,
     findForbiddenUnityLicenseSecretViolations,
     findRequiredUnityLicenseSecretViolations,

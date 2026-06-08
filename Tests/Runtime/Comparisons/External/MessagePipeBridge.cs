@@ -31,6 +31,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         public long ProgressMarker => _fanOut?.Count ?? _progress;
 
+        private const int DispatchKey = 0;
         private const int KeyedListenerCount = 16;
 
         private ComparisonScenario _scenario;
@@ -166,7 +167,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             switch (_scenario)
             {
                 case ComparisonScenario.KeyedToOneOfMany:
-                    _keyedPublisher.Publish(0, 0);
+                    _keyedPublisher.Publish(DispatchKey, DispatchKey);
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     IDisposable subscription = _subscriber.Subscribe(_churnHandler);

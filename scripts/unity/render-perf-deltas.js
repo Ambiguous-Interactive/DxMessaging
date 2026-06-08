@@ -2,16 +2,16 @@
 
 const fs = require("fs");
 
-const { extractRows, COMPARISON_SCENARIO_PREFIX } = require("./extract-perf-baseline.js");
+const { extractRows } = require("./extract-perf-baseline.js");
 const {
   SCENARIO_ORDER,
   DISPATCH_DISPLAY_NAMES,
   COMPARISON_SCENARIO_ORDER,
   COMPARISON_SCENARIO_LABELS,
-  deriveScope,
-  parseComparisonScenario,
-  alignTable
-} = require("./render-perf-doc.js");
+  buildComparisonScenarioId,
+  parseComparisonScenario
+} = require("./perf-scenarios.js");
+const { deriveScope, alignTable } = require("./render-perf-doc.js");
 
 // Wall-clock (latency) scenarios report wall-clock milliseconds (lower is better)
 // and a zero throughput, so their delta is measured on wall clock, not emits/sec.
@@ -164,11 +164,8 @@ function isDxMessagingRow(scenario) {
   if (SCENARIO_ORDER.includes(scenario)) {
     return true;
   }
-  if (typeof scenario === "string" && scenario.startsWith(COMPARISON_SCENARIO_PREFIX)) {
-    const parsed = parseComparisonScenario(scenario);
-    return parsed !== null && parsed.techKey === DXMESSAGING_TECH_KEY;
-  }
-  return false;
+  const parsed = parseComparisonScenario(scenario);
+  return parsed !== null && parsed.techKey === DXMESSAGING_TECH_KEY;
 }
 
 // Build a Map keyed by scenario id (the raw key) -> row, for rows whose derived
@@ -203,9 +200,7 @@ function indexDxMessagingRows(rows, scope, platformSubstring = "") {
 function deltaScenarioOrder() {
   return [
     ...SCENARIO_ORDER,
-    ...COMPARISON_SCENARIO_ORDER.map(
-      (key) => `${COMPARISON_SCENARIO_PREFIX}${DXMESSAGING_TECH_KEY}_${key}`
-    )
+    ...COMPARISON_SCENARIO_ORDER.map((key) => buildComparisonScenarioId(DXMESSAGING_TECH_KEY, key))
   ];
 }
 

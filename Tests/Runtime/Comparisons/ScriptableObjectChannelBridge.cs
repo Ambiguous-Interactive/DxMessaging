@@ -23,6 +23,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public long ProgressMarker => _fanOut?.Count ?? _progress;
 
+        private const int DispatchKey = 0;
         private const int KeyCount = 16;
 
         private ComparisonScenario _scenario;
@@ -32,6 +33,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         private ScriptableObjectEventChannel _global;
         private ScriptableObjectStructEventChannel _structGlobal;
         private readonly List<ScriptableObjectEventChannel> _keyed = new();
+        private ScriptableObjectEventChannel _dispatchChannel;
         private Action<int> _churnHandler;
 
         public bool Supports(ComparisonScenario scenario)
@@ -99,6 +101,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                             ScriptableObject.CreateInstance<ScriptableObjectEventChannel>();
                         channel.Register(Handle);
                         _keyed.Add(channel);
+                        if (key == DispatchKey)
+                        {
+                            _dispatchChannel = channel;
+                        }
                     }
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
@@ -125,7 +131,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             switch (_scenario)
             {
                 case ComparisonScenario.KeyedToOneOfMany:
-                    _keyed[0].Raise(0);
+                    _dispatchChannel.Raise(DispatchKey);
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     _global.Register(_churnHandler);
@@ -161,6 +167,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 }
             }
             _keyed.Clear();
+            _dispatchChannel = null;
             _churnHandler = null;
             _fanOut = null;
         }

@@ -41,6 +41,7 @@ const {
   findUnityGameCiLockAndPreflightViolations,
   findUnityNativeProvisioningViolations,
   findUnityReleaseModeViolations,
+  findPerfDeltasCommentGateViolations,
   findUnityLicenseReturnViolations,
   findForbiddenUnityLicenseSecretViolations,
   findRequiredUnityLicenseSecretViolations,
@@ -633,9 +634,90 @@ jobs:
     steps:
       - run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
 `);
-    expect(findUnityReleaseModeViolations(".github/workflows-disabled/unity-tests.yml", lines)).toEqual(
-      []
+    expect(
+      findUnityReleaseModeViolations(".github/workflows-disabled/unity-tests.yml", lines)
+    ).toEqual([]);
+  });
+});
+
+describe("findPerfDeltasCommentGateViolations", () => {
+  test("accepts perf-deltas comment condition that posts for changed or regressed", () => {
+    const lines = asLines(`
+jobs:
+  comment:
+    steps:
+      - name: Upsert the perf-deltas PR comment
+        if: >-
+          \${{
+            steps.deltas.outputs.changed == 'true' ||
+            steps.deltas.outputs.regressed == 'true'
+          }}
+        uses: actions/github-script@v9
+      - name: Enforce DxMessaging perf regression gate
+        if: steps.deltas.outputs.regressed == 'true'
+        run: exit 1
+`);
+
+    expect(
+      findPerfDeltasCommentGateViolations(".github/workflows/perf-numbers.yml", lines)
+    ).toEqual([]);
+  });
+
+  test("flags changed-only perf-deltas comment condition before a regressed gate", () => {
+    const lines = asLines(`
+jobs:
+  comment:
+    steps:
+      - name: Upsert the perf-deltas PR comment
+        if: steps.deltas.outputs.changed == 'true'
+        uses: actions/github-script@v9
+      - name: Enforce DxMessaging perf regression gate
+        if: steps.deltas.outputs.regressed == 'true'
+        run: exit 1
+`);
+
+    const violations = findPerfDeltasCommentGateViolations(
+      ".github/workflows/perf-numbers.yml",
+      lines
     );
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("changed=true OR regressed=true");
+  });
+
+  test("flags a regression gate that runs before the delta comment", () => {
+    const lines = asLines(`
+jobs:
+  comment:
+    steps:
+      - name: Enforce DxMessaging perf regression gate
+        if: steps.deltas.outputs.regressed == 'true'
+        run: exit 1
+      - name: Upsert the perf-deltas PR comment
+        if: >-
+          \${{
+            steps.deltas.outputs.changed == 'true' ||
+            steps.deltas.outputs.regressed == 'true'
+          }}
+        uses: actions/github-script@v9
+`);
+
+    const violations = findPerfDeltasCommentGateViolations(
+      ".github/workflows/perf-numbers.yml",
+      lines
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("must run after the perf-deltas comment");
+  });
+
+  test("ignores other workflows", () => {
+    const lines = asLines(`
+jobs:
+  comment:
+    steps:
+      - name: Upsert the perf-deltas PR comment
+        if: steps.deltas.outputs.changed == 'true'
+`);
+    expect(findPerfDeltasCommentGateViolations(".github/workflows/other.yml", lines)).toEqual([]);
   });
 });
 

@@ -393,6 +393,8 @@ describe("render-perf-doc parseComparisonScenario", () => {
       techKey: "MessagePipe",
       scenarioKey: "Filtered"
     });
+    // Unknown tech and scenario keys are rejected before extraction/rendering.
+    expect(parseComparisonScenario("Comparison_Garbage_GlobalToOne")).toBeNull();
     // Unknown scenario key is rejected.
     expect(parseComparisonScenario("Comparison_DxMessaging_NotAScenario")).toBeNull();
     // Dispatch rows are not comparison rows.

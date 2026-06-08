@@ -4,7 +4,7 @@ id: "dispatch-hot-path"
 category: "performance"
 version: "1.1.0"
 created: "2026-05-05"
-updated: "2026-06-07"
+updated: "2026-06-08"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -219,14 +219,14 @@ mirrors that policy for the comparison bridges. The
   workflow runs the PlayMode Mono + Standalone IL2CPP legs at the latest Unity
   version on every pull_request change, posts the regenerated numbers as a
   non-blocking sticky PR comment, then runs `render-perf-deltas.js` against the
-  committed master baseline. The script emits `regressed=true|false`; the PR job
-  posts a DxMessaging-only delta comment first, then fails after the comment when
-  a gated PlayMode scenario dropped throughput beyond the threshold (default
-  0.33) or increased allocation. A missing or header-only baseline skips the gate
-  gracefully on first rollout. After the PR merges, the push run commits the
-  refreshed `docs/architecture/performance.md` AND the regenerated
-  `docs/architecture/perf-baseline.csv` to the default branch via a GitHub App
-  token push (no PR), skipping with a warning if App credentials are missing or
+  committed master baseline. The script emits `changed=true|false` and
+  `regressed=true|false`; the PR job posts a DxMessaging-only delta comment when
+  either signal is true, then fails after the comment when a gated PlayMode
+  scenario dropped throughput beyond the threshold (default 0.33) or increased
+  allocation. A missing or header-only baseline prints both signals false,
+  skipping the comment/gate gracefully on first rollout. After the PR merges, the
+  push run commits `performance.md` AND `perf-baseline.csv` to the default branch
+  via GitHub App, skipping with a warning if App credentials are missing or
   the branch advanced past the measured commit.
 - `Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` -- a LOCAL tool only,
   `[Explicit, Category("PerfGate")]`, opt-in via `DX_PERF_GATE=1`. It calls

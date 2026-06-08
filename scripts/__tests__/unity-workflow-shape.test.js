@@ -1578,6 +1578,17 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(text).toContain('include-comparisons: "true"');
   });
 
+  test("the perf Unity run pins Release mode and standalone IL2CPP", () => {
+    const runStep = perfSteps.find((step) => step.name === "Run Unity Test Runner");
+    expect(runStep).toBeDefined();
+    expect(runStep.shell).toBe("pwsh");
+    expect(runStep.run).toContain("ReleaseCodeOptimization = $true");
+    expect(runStep.run).toContain("ReleasePlayerBuild = $true");
+    expect(runStep.run).toContain("if ('${{ matrix.test-mode }}' -eq 'standalone')");
+    expect(runStep.run).toContain("$extra['StandaloneScriptingBackend'] = 'IL2CPP'");
+    expect(runStep.run).toContain("@extra");
+  });
+
   test("the Unity run uses pwsh and serial-activation secrets, never the retired server secret", () => {
     const runStep = perfSteps.find((step) => step.name === "Run Unity Test Runner");
     expect(runStep.shell).toBe("pwsh");
@@ -1659,8 +1670,8 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // render-perf-deltas.js prints TWO stable stdout lines (changed=... then
     // regressed=...). The step must parse the SPECIFIC lines, not test
     // whole-stdout equality (which the second line would break), and surface BOTH
-    // as step outputs: `changed` drives the delta comment, `regressed` drives the
-    // gate below.
+    // as step outputs: `changed` and `regressed` both drive the delta comment,
+    // while `regressed` also drives the gate below.
     const deltas = commentJob.steps.find((step) => step.id === "deltas");
     expect(deltas).toBeDefined();
     expect(deltas.run).toContain("node scripts/unity/render-perf-deltas.js");
@@ -1674,6 +1685,21 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(deltas.run).toContain('echo "changed=${changed}"');
     expect(deltas.run).toContain('echo "regressed=${regressed}"');
     expect(deltas.run).toContain('>> "${GITHUB_OUTPUT}"');
+  });
+
+  test("the perf-deltas comment posts for either changed metrics or gate regressions", () => {
+    const comment = commentJob.steps.find(
+      (step) => step.name === "Upsert the perf-deltas PR comment"
+    );
+    expect(comment).toBeDefined();
+    expect(comment.if).toContain("steps.deltas.outputs.changed == 'true'");
+    expect(comment.if).toContain("steps.deltas.outputs.regressed == 'true'");
+    expect(comment.if).toContain("||");
+    expect(comment.env.PERF_CHANGED).toBe("${{ steps.deltas.outputs.changed }}");
+    expect(comment.env.PERF_REGRESSED).toBe("${{ steps.deltas.outputs.regressed }}");
+    expect(comment.with.script).toContain('process.env.PERF_CHANGED === "true"');
+    expect(comment.with.script).toContain('process.env.PERF_REGRESSED === "true"');
+    expect(comment.with.script).toContain("Regression gate:");
   });
 
   test("the regression gate is a JS step in the PR job ONLY, runs after the delta comment, and is not the broken C# editmode gate", () => {
