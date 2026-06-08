@@ -21,6 +21,7 @@ const {
   CSPELL_EXTENSIONS,
   isPackagingRelevant,
   isDocQualityRelevant,
+  isDocsOutOfTreeLinkRelevant,
   isChangelogCoverageRelevant,
   isSpellcheckRelevant,
   isXmlBuildContractRelevant,
@@ -89,6 +90,16 @@ describe("path classification", () => {
   });
 
   test.each([
+    ["docs/guide.md", true],
+    ["docs/reference/runtime-settings.md", true],
+    ["README.md", false],
+    ["docs/guide.markdown", true],
+    ["scripts/guide.md", false]
+  ])("isDocsOutOfTreeLinkRelevant(%s) === %s", (rel, expected) => {
+    expect(isDocsOutOfTreeLinkRelevant(rel)).toBe(expected);
+  });
+
+  test.each([
     ["Runtime/Foo.cs", true],
     ["Editor/SetupCscRsp.cs", true],
     ["SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/MessageBusGenerator.cs", true],
@@ -148,13 +159,14 @@ describe("path classification", () => {
 });
 
 describe("dispatch table", () => {
-  test("has npm-packaging, doc-quality, changelog, and spelling entries with required shape", () => {
+  test("has npm-packaging, doc-quality, docs-out-of-tree-links, changelog, and spelling entries with required shape", () => {
     const table = buildDispatchTable();
     const ids = table.map((e) => e.id);
     expect(ids).toEqual(
       expect.arrayContaining([
         "npm-packaging",
         "doc-quality",
+        "docs-out-of-tree-links",
         "changelog-coverage",
         "spelling",
         "xml-build-contract"
@@ -192,6 +204,20 @@ describe("dispatch table", () => {
       expect.arrayContaining(["docs-ascii", "docs-code-patterns", "docs-prose"])
     );
     expect(doc.validators[0].args("/abs/x.md")[1]).toBe("/abs/x.md");
+  });
+
+  test("docs-out-of-tree-links validator is docs/*.md scoped and file-targeted", () => {
+    const table = buildDispatchTable();
+    const links = table.find((e) => e.id === "docs-out-of-tree-links");
+    expect(links.matches("docs/guides/mcp-local-setup.md")).toBe(true);
+    expect(links.matches("docs/guides/mcp-local-setup.markdown")).toBe(true);
+    expect(links.matches("README.md")).toBe(false);
+    expect(links.validators).toHaveLength(1);
+    expect(links.validators[0].label).toBe("docs-out-of-tree-links");
+    expect(links.validators[0].args("/abs/docs/guides/mcp-local-setup.md")).toEqual([
+      "scripts/validate-docs-out-of-tree-links.js",
+      "/abs/docs/guides/mcp-local-setup.md"
+    ]);
   });
 
   test("changelog coverage validator invokes the global coverage check", () => {

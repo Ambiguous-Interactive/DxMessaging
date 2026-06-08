@@ -107,7 +107,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { stripJsCommentsAndStrings } = require("../lib/source-stripping");
-const { normalizeToLf } = require("../lib/quote-parser");
+const { readUtf8, lineNumberAt, toRepoRelative } = require("../lib/repo-files");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPTS_ROOT = path.join(REPO_ROOT, "scripts");
@@ -147,14 +147,6 @@ const PRODUCTION_ALLOW_LIST = new Set([path.join("scripts", "lib", "shell-comman
 const TEST_ALLOW_LIST = new Set([
   path.join("scripts", "__tests__", "spawn-invocation-policy.test.js")
 ]);
-
-function toRepoRelative(absolutePath) {
-  return path.relative(REPO_ROOT, absolutePath).split(path.sep).join("/");
-}
-
-function readUtf8(absolutePath) {
-  return normalizeToLf(fs.readFileSync(absolutePath, "utf8"));
-}
 
 function listFilesRecursive(absoluteDir, predicate) {
   const out = [];
@@ -206,10 +198,6 @@ function listProductionScriptFiles() {
     const relParts = path.relative(SCRIPTS_ROOT, abs).split(path.sep);
     return !relParts.includes("__tests__");
   });
-}
-
-function lineNumberAt(text, index) {
-  return text.slice(0, index).split("\n").length;
 }
 
 /**
@@ -712,7 +700,7 @@ describe("spawn-invocation-policy (repo-wide)", () => {
       if (TEST_ALLOW_LIST.has(path.relative(REPO_ROOT, abs))) {
         continue;
       }
-      const raw = readUtf8(abs);
+      const raw = readUtf8(abs, { stripBom: false });
       const stripped = stripJsCommentsAndStrings(raw);
       const aliases = collectToShellCommandAliasesFromRaw(raw);
 
@@ -761,7 +749,7 @@ describe("spawn-invocation-policy (repo-wide)", () => {
       if (PRODUCTION_ALLOW_LIST.has(path.relative(REPO_ROOT, abs))) {
         continue;
       }
-      const raw = readUtf8(abs);
+      const raw = readUtf8(abs, { stripBom: false });
       const stripped = stripJsCommentsAndStrings(raw);
       const hits = findDirectNpmSpawn(raw, stripped);
       for (const hit of hits) {

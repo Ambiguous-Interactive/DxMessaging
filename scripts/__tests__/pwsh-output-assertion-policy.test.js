@@ -169,7 +169,7 @@ const {
   isPwshResultAt,
   isRawMergeVariableAt
 } = require("../fix-pwsh-output-assertions");
-const { normalizeToLf } = require("../lib/quote-parser");
+const { readUtf8, lineNumberAt, toRepoRelative } = require("../lib/repo-files");
 const { stripJsCommentsAndStrings, maskCommentsAndStrings } = require("../lib/source-stripping");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -191,14 +191,6 @@ const NORMALIZING_HELPERS = new Set(["normalizePwshText", "combinedText", "stdou
 // assertions. The normalizer's own unit test references the helper by name in
 // prose/imports but performs no pwsh spawn.
 const SELF = path.join("scripts", "__tests__", "pwsh-output-assertion-policy.test.js");
-
-function toRepoRelative(absolutePath) {
-  return path.relative(REPO_ROOT, absolutePath).split(path.sep).join("/");
-}
-
-function readUtf8(absolutePath) {
-  return normalizeToLf(fs.readFileSync(absolutePath, "utf8"));
-}
 
 function listTestFiles() {
   const out = [];
@@ -324,10 +316,6 @@ function matchBracket(source, openIndex, openChar, closeChar) {
     }
   }
   return -1;
-}
-
-function lineNumberAt(source, index) {
-  return source.slice(0, index).split("\n").length;
 }
 
 // A receiver is a RAW pwsh-output member access if it contains a `.stdout` or
@@ -596,8 +584,7 @@ function collectTaintedRawPwshBindings(masked, context) {
   const raw = [];
   for (const binding of collectDeclaratorBindings(masked)) {
     if (
-      (isRawMergeExpression(binding.initializer) ||
-        isBareRawOutputMember(binding.initializer)) &&
+      (isRawMergeExpression(binding.initializer) || isBareRawOutputMember(binding.initializer)) &&
       expressionHasRawPwshMember(binding.initializer, binding.initializerStart, context)
     ) {
       const active = activeOutputBindingAt(
@@ -1253,7 +1240,7 @@ describe("pwsh-output-assertion-policy (repo-wide)", () => {
       if (relative === SELF) {
         continue;
       }
-      const source = readUtf8(abs);
+      const source = readUtf8(abs, { stripBom: false });
       for (const hit of findRawPwshPhraseAssertions(source)) {
         offenders.push({ file: toRepoRelative(abs), ...hit });
       }
@@ -1289,7 +1276,7 @@ describe("pwsh-output-assertion-policy (repo-wide)", () => {
       if (relative === SELF) {
         continue;
       }
-      const source = readUtf8(abs);
+      const source = readUtf8(abs, { stripBom: false });
       for (const hit of findRenamedMergeHelpers(source)) {
         offenders.push({ file: toRepoRelative(abs), ...hit });
       }

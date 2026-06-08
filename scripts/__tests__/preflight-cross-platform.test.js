@@ -308,12 +308,13 @@ describe("preflight cross-platform spawn policy + node-direct fallback", () => {
     }
   });
 
-  test("a markdown change routes to the read-only doc validators (ASCII / code-patterns / prose)", () => {
+  test("a markdown change routes to the read-only doc validators (ASCII / code-patterns / prose / out-of-tree-links)", () => {
     const { calls } = runNodeDirect({ files: ["docs/x.md"], profile: "full" });
     const ran = (name) => calls.some((c) => c.args.some((a) => String(a).includes(name)));
     expect(ran("validate-docs-ascii.js")).toBe(true);
     expect(ran("validate-doc-code-patterns.js")).toBe(true);
     expect(ran("validate-docs-prose.js")).toBe(true);
+    expect(ran("validate-docs-out-of-tree-links.js")).toBe(true);
   });
 
   test("any prettier --check invocation is read-only (carries --check, never --write/--fix)", () => {
@@ -354,6 +355,7 @@ describe("preflight cross-platform spawn policy + node-direct fallback", () => {
 
     // The doc validators only receive the markdown file.
     expect(filesFor("validate-docs-prose.js")).toEqual(["docs/x.md"]);
+    expect(filesFor("validate-docs-out-of-tree-links.js")).toEqual(["docs/x.md"]);
 
     // No prettier invocation anywhere carries the .cs path.
     const anyPrettierWithCs = calls.some(

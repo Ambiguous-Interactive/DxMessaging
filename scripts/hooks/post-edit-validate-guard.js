@@ -148,6 +148,17 @@ function isDocQualityRelevant(rel) {
 }
 
 /**
+ * True when the path is a docs-site markdown file where out-of-tree relative
+ * links are forbidden.
+ *
+ * @param {string} rel Repo-relative POSIX path.
+ * @returns {boolean} True when docs out-of-tree link validation is relevant.
+ */
+function isDocsOutOfTreeLinkRelevant(rel) {
+  return /^docs\/.*\.(md|markdown)$/i.test(rel);
+}
+
+/**
  * True when an edit can affect changelog coverage. Coverage is intentionally a
  * change-set invariant, so the validator reads the current git state instead of
  * receiving a single edited path.
@@ -371,6 +382,21 @@ function buildDispatchTable() {
           args: (abs) => ["scripts/validate-doc-code-patterns.js", abs]
         },
         { label: "docs-prose", args: (abs) => ["scripts/validate-docs-prose.js", abs] }
+      ]
+    },
+    {
+      id: "docs-out-of-tree-links",
+      matches: isDocsOutOfTreeLinkRelevant,
+      remediation:
+        `Links from docs/ to repo files outside docs/ must use absolute ` +
+        `https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/... ` +
+        `URLs (not ../../ paths) so mkdocs strict mode and docs-site links stay ` +
+        `valid.`,
+      validators: [
+        {
+          label: "docs-out-of-tree-links",
+          args: (abs) => ["scripts/validate-docs-out-of-tree-links.js", abs]
+        }
       ]
     },
     {
@@ -700,6 +726,7 @@ module.exports = {
   importCspell,
   isPackagingRelevant,
   isDocQualityRelevant,
+  isDocsOutOfTreeLinkRelevant,
   isChangelogCoverageRelevant,
   isSpellcheckRelevant,
   isXmlBuildContractRelevant,

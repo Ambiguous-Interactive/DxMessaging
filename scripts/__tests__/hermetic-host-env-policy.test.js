@@ -119,6 +119,7 @@ const path = require("path");
 const { stripJsCommentsAndStrings } = require("../lib/source-stripping");
 const { normalizeToLf } = require("../lib/quote-parser");
 const { HOST_FOLDER_DENYLIST } = require("../lib/spawn-env-sandbox");
+const { readUtf8, lineNumberAt, toRepoRelative } = require("../lib/repo-files");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPTS_ROOT = path.join(REPO_ROOT, "scripts");
@@ -141,12 +142,6 @@ const ALLOW_LIST = new Set([
   path.join("scripts", "lib", "__tests__", "spawn-env-sandbox.test.js"),
   path.join("scripts", "lib", "spawn-env-sandbox.js")
 ]);
-
-function readUtf8(absolutePath) {
-  // Strip a leading UTF-8 BOM (normalizeToLf only handles CR/CRLF) so a
-  // BOM-prefixed file's first token is still anchored correctly.
-  return normalizeToLf(fs.readFileSync(absolutePath, "utf8")).replace(/^\uFEFF/, "");
-}
 
 function listFilesRecursive(absoluteDir, predicate) {
   const out = [];
@@ -188,10 +183,6 @@ function listTestFiles() {
     }
     return path.relative(SCRIPTS_ROOT, abs).split(path.sep).includes("__tests__");
   });
-}
-
-function lineNumberAt(text, index) {
-  return text.slice(0, index).split("\n").length;
 }
 
 // `delete <ident>.<VarName>` -- dot member access. The var name is captured for a
@@ -685,10 +676,6 @@ function findHostFolderDelete(rawSource, strippedSource) {
     seen.add(key);
     return true;
   });
-}
-
-function toRepoRelative(absolutePath) {
-  return path.relative(REPO_ROOT, absolutePath).split(path.sep).join("/");
 }
 
 describe("hermetic-host-env-policy (repo-wide)", () => {

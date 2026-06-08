@@ -74,6 +74,12 @@ const FIXTURES = [
     expectedViolations: 1
   },
   {
+    name: "FAILS for ../../scripts/... escape in .markdown docs file",
+    relativePath: "docs/guides/foo.markdown",
+    content: "See [helper](../../scripts/doctor.js) for diagnostics.",
+    expectedViolations: 1
+  },
+  {
     name: "FAILS for ../../../Runtime/... escape from nested docs subdir",
     relativePath: "docs/reference/sub/foo.md",
     content: "Look at [code](../../../Runtime/Core/MessageBus.cs).",
@@ -481,9 +487,61 @@ describe("validate-docs-out-of-tree-links scanContent", () => {
   });
 });
 
+describe("validate-docs-out-of-tree-links auto-fix", () => {
+  test("outOfTreeRelativeLinkToBlobUrl rewrites docs-relative escapes to blob URLs", () => {
+    const file = path.join(validator.DOCS_ROOT, "guides", "mcp-local-setup.md");
+    const rewritten = validator.outOfTreeRelativeLinkToBlobUrl(file, "../../scripts/mcp/README.md");
+    expect(rewritten).toBe(
+      "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/mcp/README.md"
+    );
+  });
+
+  test("fixOutOfTreeRelativeLinks rewrites inline and reference URLs outside code blocks", () => {
+    const file = path.join(validator.DOCS_ROOT, "runbooks", "fix-fixture.md");
+    const source = [
+      "# Fix fixture",
+      "",
+      "Inline [bad](../../scripts/doctor.js)",
+      "",
+      "[bad-ref]: ../../scripts/doctor.js",
+      "",
+      "```text",
+      "[ignored](../../scripts/doctor.js)",
+      "```",
+      ""
+    ].join("\n");
+
+    const fixed = validator.fixOutOfTreeRelativeLinks(file, source);
+    expect(fixed.changed).toBe(true);
+    expect(fixed.fixes).toHaveLength(2);
+    expect(fixed.content).toContain(
+      "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/doctor.js"
+    );
+    expect(fixed.content).toContain("[ignored](../../scripts/doctor.js)");
+  });
+
+  test("parseArgs accepts --fix and leaves file args intact", () => {
+    expect(validator.parseArgs(["--fix", "docs/index.md"])).toEqual({
+      help: false,
+      fix: true,
+      files: ["docs/index.md"]
+    });
+    expect(validator.parseArgs(["--help"])).toEqual({
+      help: true,
+      fix: false,
+      files: []
+    });
+  });
+});
+
 describe("validate-docs-out-of-tree-links isDocsMarkdown", () => {
   test("docs markdown is recognized", () => {
     expect(validator.isDocsMarkdown(path.join(validator.DOCS_ROOT, "runbooks", "x.md"))).toBe(true);
+  });
+  test("docs .markdown is recognized", () => {
+    expect(validator.isDocsMarkdown(path.join(validator.DOCS_ROOT, "runbooks", "x.markdown"))).toBe(
+      true
+    );
   });
   test("non-docs markdown is rejected", () => {
     expect(validator.isDocsMarkdown(path.join(validator.REPO_ROOT, "README.md"))).toBe(false);

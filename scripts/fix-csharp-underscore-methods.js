@@ -11,6 +11,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { parseArgs: parseCliArgs } = require("./lib/cli-options");
 
 const METHOD_DECLARATION_PATTERN =
   /^\s*(?:(?:\[[^\]\r\n]+\]\s*)*)(?:(?:public|private|protected|internal)\s+)?(?:(?:static|virtual|override|abstract|sealed|async|new|extern|partial|unsafe|readonly)\s+)*(?:[\w<>\[\],.?]+\s+)+(?<name>[A-Za-z_]\w*_[A-Za-z0-9_]+)\s*(?:<[^>\r\n]+>\s*)?\(/gm;
@@ -133,25 +134,21 @@ function getGitRepoRoot() {
 }
 
 function parseArgs(argv) {
-  const fileArgs = [];
-  let checkOnly = false;
-  let allFiles = false;
-
-  for (const arg of argv) {
-    if (arg === "--check") {
-      checkOnly = true;
-      continue;
-    }
-
-    if (arg === "--all") {
-      allFiles = true;
-      continue;
-    }
-
-    fileArgs.push(arg);
-  }
-
-  return { checkOnly, allFiles, fileArgs };
+  // Only `--check` and `--all` are flags; every other token -- bare paths, a
+  // lone `-`, `--`, `=`-forms, and unrecognized `--opt` -- was pushed verbatim
+  // onto fileArgs by the original loop, in argv order. Disabling the `--`
+  // separator and `=` splitting and collecting unknown options as positionals
+  // reproduces that exactly.
+  const { values, positionals } = parseCliArgs(argv, {
+    options: {
+      checkOnly: { type: "boolean", aliases: ["--check"] },
+      allFiles: { type: "boolean", aliases: ["--all"] }
+    },
+    allowEquals: false,
+    endOfOptions: false,
+    unknownOption: "collect"
+  });
+  return { checkOnly: values.checkOnly, allFiles: values.allFiles, fileArgs: positionals };
 }
 
 function isExcludedPath(fullPath) {

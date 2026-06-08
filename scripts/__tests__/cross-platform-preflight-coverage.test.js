@@ -68,6 +68,7 @@ const fs = require("fs");
 const path = require("path");
 const { normalizeToLf } = require("../lib/quote-parser");
 const { extractCommentsOnly } = require("../lib/source-stripping");
+const { readUtf8 } = require("../lib/repo-files");
 const {
   TARGETED_STEP_NAME,
   extractTargetedStepRunBlock,
@@ -99,12 +100,6 @@ const ALLOW_LIST = new Set([
   "scripts/__tests__/cross-platform-preflight-coverage.test.js",
   "scripts/__tests__/cross-toolchain-path-comparison-policy.test.js"
 ]);
-
-function readUtf8(absolutePath) {
-  // normalizeToLf collapses CR/CRLF; strip a leading UTF-8 BOM too so the first
-  // token is anchored correctly.
-  return normalizeToLf(fs.readFileSync(absolutePath, "utf8")).replace(/^﻿/, "");
-}
 
 function toRepoPosixRelative(absolutePath) {
   return path.relative(REPO_ROOT, absolutePath).split(path.sep).join("/");

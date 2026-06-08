@@ -9,10 +9,11 @@
  *   1. normalize-docs-ascii (in-process)
  *   2. fix-md036-headings (in-process via processMarkdownContent)
  *   3. fix-md029-md051    (in-process)
- *   4. prettier --write   (in-process via the prettier programmatic API)
- *   5. markdownlint-cli2 --fix (in-process via dynamic import of the
+ *   4. validate-docs-out-of-tree-links --fix (in-process)
+ *   5. prettier --write   (in-process via the prettier programmatic API)
+ *   6. markdownlint-cli2 --fix (in-process via dynamic import of the
  *      markdownlint-cli2 ESM module)
- *   6. The three doc validators (validate-docs-ascii,
+ *   7. The three doc validators (validate-docs-ascii,
  *      validate-doc-code-patterns, validate-docs-prose) -- each already
  *      exposes a programmatic scanContent API.
  *
@@ -188,6 +189,11 @@ function applyInProcessFixers(absPath, content, modifiedSet) {
   if (md029Md051.changed) {
     const before = next;
     next = writeIfChanged(absPath, before, md029Md051.content, modifiedSet);
+  }
+  const outOfTreeFixed = outOfTreeLinks.fixOutOfTreeRelativeLinks(absPath, next);
+  if (outOfTreeFixed.changed) {
+    const before = next;
+    next = writeIfChanged(absPath, before, outOfTreeFixed.content, modifiedSet);
   }
   return next;
 }
@@ -446,10 +452,11 @@ async function runStagedMdPipeline(filePaths, options = {}) {
     if (original === null) continue;
     present.push(absPath);
 
-    // Stage 1-3: in-process ASCII and structural fixers.
+    // Stage 1-4: in-process ASCII/markdown structure and docs out-of-tree
+    // link fixers.
     let working = applyInProcessFixers(absPath, original, modifiedSet);
 
-    // Stage 4: prettier in-process.
+    // Stage 5: prettier in-process.
     if (!skipPrettier) {
       try {
         working = await runPrettierInProcess(absPath, working, modifiedSet);
@@ -463,7 +470,7 @@ async function runStagedMdPipeline(filePaths, options = {}) {
     }
   }
 
-  // Stage 4: markdownlint --fix across all present files at once.
+  // Stage 6: markdownlint --fix across all present files at once.
   // Skipping any file the per-file loop couldn't read keeps markdownlint
   // from crashing on a missing path (ENOENT in fs.statSync).
   if (!skipMarkdownlint && present.length > 0) {
@@ -471,7 +478,7 @@ async function runStagedMdPipeline(filePaths, options = {}) {
     markdownlintErrors = lintResult.errors || 0;
   }
 
-  // Stage 5: validators read the final post-fixer, post-prettier,
+  // Stage 7: validators read the final post-fixer, post-prettier,
   // post-markdownlint content. This keeps hook results aligned with the
   // actual file snapshot pre-commit will ask the user to re-stage.
   for (const absPath of present) {

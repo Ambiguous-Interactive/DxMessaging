@@ -157,7 +157,7 @@ describe("run-staged-md-pipeline", () => {
       }
     });
 
-    test("pipeline surfaces out-of-tree link validator violations for docs/ markdown that escapes docs/", async () => {
+    test("pipeline auto-fixes out-of-tree links for docs/ markdown files", async () => {
       // Mirror the failure mode that originally took down
       // `Validate Documentation Build / Build documentation (strict mode)`:
       // a docs/runbooks/<file>.md that links UP into .github/workflows/...
@@ -170,15 +170,15 @@ describe("run-staged-md-pipeline", () => {
       // dir is removed in the finally block.
       const dir = fs.mkdtempSync(path.join(docsRunbooks, "out-of-tree-pipeline-"));
       const target = path.join(dir, "fixture.md");
-      // Inline backticks and fenced blocks must NOT be flagged (covered by
-      // the unit tests). The bare inline link IS flagged.
+      // Inline backticks and fenced blocks must NOT be rewritten (covered by
+      // unit tests). The bare inline link is auto-rewritten.
       const fixture = [
         "# Out-of-tree fixture",
         "",
-        "See [bad](../../../.github/workflows/foo.yml) for context.",
+        "See [bad](../../../.github/workflows/stuck-job-watchdog.yml) for context.",
         "",
         "```text",
-        "[ignored](../../../.github/workflows/should-not-be-flagged.yml)",
+        "[ignored](../../../.github/workflows/stuck-job-watchdog.yml)",
         "```",
         ""
       ].join("\n");
@@ -191,10 +191,14 @@ describe("run-staged-md-pipeline", () => {
           skipPrettier: true
         });
         expect(result.applicable).toEqual([target]);
-        expect(result.violations.outOfTreeLinks.violations).toHaveLength(1);
-        expect(result.violations.outOfTreeLinks.violations[0].url).toMatch(
-          /\.github\/workflows\/foo\.yml/
+        expect(result.modified).toContain(target);
+        expect(result.violations.outOfTreeLinks.violations).toHaveLength(0);
+
+        const written = fs.readFileSync(target, "utf8");
+        expect(written).toContain(
+          "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/stuck-job-watchdog.yml"
         );
+        expect(written).toContain("[ignored](../../../.github/workflows/stuck-job-watchdog.yml)");
       } finally {
         writeSpy.mockRestore();
         stdoutSpy.mockRestore();

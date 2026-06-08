@@ -50,6 +50,8 @@
 const fs = require("fs");
 const path = require("path");
 
+const { lineNumberAt } = require("../lib/repo-files");
+
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const MESSAGING_TEST_BASE = path.join(
   REPO_ROOT,
@@ -224,19 +226,6 @@ function listTestCsFiles() {
   }
   out.sort();
   return out;
-}
-
-/**
- * Return the 1-based line number for a character offset into `text`.
- */
-function lineNumberAt(text, offset) {
-  let line = 1;
-  for (let i = 0; i < offset && i < text.length; i++) {
-    if (text[i] === "\n") {
-      line++;
-    }
-  }
-  return line;
 }
 
 /**

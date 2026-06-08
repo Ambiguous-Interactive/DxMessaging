@@ -28,6 +28,7 @@
 const fs = require("fs");
 const path = require("path");
 const { listTrackedFiles } = require("./lib/repo-files");
+const { parseArgs: parseCliArgs } = require("./lib/cli-options");
 const { normalizeToLf } = require("./lib/quote-parser");
 const {
   resolveYamlLineLengthPolicy,
@@ -51,27 +52,20 @@ function getAllTrackedYamlFiles(repoRoot) {
 }
 
 function parseArgs(argv) {
-  const options = {
-    check: false,
-    allFiles: false,
-    files: []
-  };
-
-  for (const arg of argv) {
-    if (arg === "--check") {
-      options.check = true;
-      continue;
-    }
-
-    if (arg === "--all-files") {
-      options.allFiles = true;
-      continue;
-    }
-
-    options.files.push(arg);
-  }
-
-  return options;
+  // Only `--check` and `--all-files` are flags; every other token (including a
+  // lone `-`, `--`, `=`-forms, and unrecognized `--opt`) was pushed verbatim
+  // onto files by the original loop, in argv order. Disabling `--` and `=`
+  // handling and collecting unknown options as positionals reproduces that.
+  const { values, positionals } = parseCliArgs(argv, {
+    options: {
+      check: { type: "boolean", aliases: ["--check"] },
+      allFiles: { type: "boolean", aliases: ["--all-files"] }
+    },
+    allowEquals: false,
+    endOfOptions: false,
+    unknownOption: "collect"
+  });
+  return { check: values.check, allFiles: values.allFiles, files: positionals };
 }
 
 function uniqueExistingYamlFiles(files) {

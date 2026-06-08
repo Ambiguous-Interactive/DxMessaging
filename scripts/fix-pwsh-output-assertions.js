@@ -36,10 +36,6 @@ function toPosixPath(value) {
   return value.split(path.sep).join("/");
 }
 
-function toRepoRelative(absolutePath) {
-  return toPosixPath(path.relative(REPO_ROOT, absolutePath));
-}
-
 function usage() {
   return [
     "Usage: node scripts/fix-pwsh-output-assertions.js [--check] [--] [files...]",
@@ -2183,7 +2179,9 @@ function runCli(argv = process.argv.slice(2), io = process) {
   }
 
   if (changed.length > 0) {
-    const relative = changed.map(toRepoRelative).join("\n  ");
+    const relative = changed
+      .map((file) => toPosixPath(path.relative(REPO_ROOT, file)))
+      .join("\n  ");
     if (parsed.check) {
       io.stderr.write(
         `PowerShell output assertion normalization is needed in:\n  ${relative}\n` +

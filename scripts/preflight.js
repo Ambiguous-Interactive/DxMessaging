@@ -175,8 +175,9 @@ const NODE_DIRECT_MAP = Object.freeze({
   // rationale depends on that invariant, and a Node-direct run scopes to the
   // FULL change-set (committed range included), so a fixer would silently
   // rewrite committed markdown. We therefore route to the CHECK-ONLY
-  // equivalents the fixer pipeline subsumes: the three doc validators (ASCII /
-  // code-patterns / prose, all read-only by default) plus a prettier --check.
+  // equivalents the fixer pipeline subsumes: docs validators (ASCII /
+  // code-patterns / prose / out-of-tree-links, all read-only by default)
+  // plus a prettier --check.
   // Markdownlint --fix has no read-only Node-direct entrypoint here; its
   // formatting parity is owned by the native pre-push hook + CI (which run the
   // real pipeline). None of these write to disk.
@@ -199,6 +200,13 @@ const NODE_DIRECT_MAP = Object.freeze({
       command: "node",
       args: ["scripts/validate-docs-prose.js"],
       label: "validate-docs-prose",
+      gate: /\.(md|markdown)$/i,
+      passFiles: true
+    },
+    {
+      command: "node",
+      args: ["scripts/validate-docs-out-of-tree-links.js"],
+      label: "validate-docs-out-of-tree-links",
       gate: /\.(md|markdown)$/i,
       passFiles: true
     },

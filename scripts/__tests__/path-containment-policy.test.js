@@ -77,7 +77,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { stripJsCommentsAndStrings } = require("../lib/source-stripping");
-const { normalizeToLf } = require("../lib/quote-parser");
+const { readUtf8, lineNumberAt } = require("../lib/repo-files");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPTS_ROOT = path.join(REPO_ROOT, "scripts");
@@ -117,10 +117,6 @@ const CATEGORY_B_ALLOW_LIST = new Map([
     "THIS guard: embeds crafted check-eol/fix-eol spawn source strings as self-test fixtures."
   ]
 ]);
-
-function readUtf8(absolutePath) {
-  return normalizeToLf(fs.readFileSync(absolutePath, "utf8")).replace(/^﻿/, "");
-}
 
 function toRepoRelativeKey(absolutePath) {
   return path.relative(REPO_ROOT, absolutePath);
@@ -167,10 +163,6 @@ function listScriptAndTestFiles() {
   // Every scripts/**/*.js (production + tests). CATEGORY A scans all of them;
   // CATEGORY B only the *.test.js files (filtered by the caller).
   return listFilesRecursive(SCRIPTS_ROOT, (abs) => abs.endsWith(".js"));
-}
-
-function lineNumberAt(text, index) {
-  return text.slice(0, index).split("\n").length;
 }
 
 // ---------------------------------------------------------------------------

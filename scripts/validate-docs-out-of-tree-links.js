@@ -24,13 +24,13 @@
  *    the working tree is the source of truth.
  *
  * @usage
- *   node scripts/validate-docs-out-of-tree-links.js [<file>...]
+ *   node scripts/validate-docs-out-of-tree-links.js [--fix] [<file>...]
  *
  * With no arguments, scans every Markdown file under docs/. With one or
  * more arguments, only scans those (used by the pre-commit hook entry).
  *
  * @exitcodes
- *   0 - All checked files are clean.
+ *   0 - All checked files are clean (or were auto-fixed when --fix is set).
  *   1 - At least one out-of-tree relative link or missing self-repo blob
  *       target was found.
  */
@@ -44,6 +44,8 @@ const { walkFiles, toRepoRelative } = require("./lib/repo-files");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const DOCS_ROOT = path.join(REPO_ROOT, "docs");
+const SELF_REPO_BLOB_URL_PREFIX =
+  "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/";
 
 // CommonMark link syntaxes the validator must recognize:
 //   - Inline:                `[text](url "title")`
@@ -77,9 +79,17 @@ const INLINE_CODE_SPAN_RE = /`[^`\n]+`/g;
 // scripts/__tests__/docs-out-of-tree-link-guard.test.js).
 const INDENTED_CODE_LINE_RE = /^(?: {4}|\t)/;
 
+/**
+ * True when the path/name ends in one of the markdown extensions this repo
+ * accepts for docs content (`.md` or `.markdown`).
+ */
+function isMarkdownFile(filePath) {
+  return /\.(md|markdown)$/i.test(filePath);
+}
+
 function listAllDocsFiles() {
   return walkFiles(DOCS_ROOT, {
-    match: (full, dirent) => dirent.name.toLowerCase().endsWith(".md")
+    match: (full, dirent) => isMarkdownFile(dirent.name)
   });
 }
 
@@ -153,6 +163,52 @@ function escapesDocsTree(fromFile, linkTarget) {
     return true;
   }
   return false;
+}
+
+function splitLinkTargetAndSuffix(linkTarget) {
+  const match = /^([^?#]*)(.*)$/.exec(linkTarget);
+  if (!match) {
+    return { targetPath: linkTarget, suffix: "" };
+  }
+  return { targetPath: match[1], suffix: match[2] || "" };
+}
+
+function isRepoRelativePath(relPath) {
+  return relPath.length > 0 && !relPath.startsWith("..") && !path.isAbsolute(relPath);
+}
+
+function encodeRepoPathForBlobUrl(repoRelPath) {
+  return repoRelPath
+    .split(/[\\/]/)
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function outOfTreeRelativeLinkToBlobUrl(fromFile, linkTarget) {
+  if (isExternalUrl(linkTarget) || isMailtoOrAnchor(linkTarget)) {
+    return null;
+  }
+  if (!escapesDocsTree(fromFile, linkTarget)) {
+    return null;
+  }
+
+  const { targetPath, suffix } = splitLinkTargetAndSuffix(linkTarget);
+  if (!targetPath) {
+    return null;
+  }
+
+  const resolved = path.resolve(path.dirname(fromFile), targetPath);
+  const repoRel = path.relative(REPO_ROOT, resolved);
+  if (!isRepoRelativePath(repoRel)) {
+    return null;
+  }
+
+  const encodedPath = encodeRepoPathForBlobUrl(repoRel);
+  if (!encodedPath) {
+    return null;
+  }
+  return `${SELF_REPO_BLOB_URL_PREFIX}${encodedPath}${suffix}`;
 }
 
 // Self-repo blob/tree URL shape: `.../blob/<ref>/<path>` (file links) and
@@ -245,8 +301,7 @@ function lineNumberOf(text, charIndex) {
   return n;
 }
 
-function scanContent(filePath, content) {
-  const violations = [];
+function strippedMarkdownForLinkPasses(content) {
   // Strip code regions in this order: fenced blocks first (so their content
   // is fully blanked before inline-tick detection), then inline backtick
   // spans, then 4-space-indented blocks. Each pass replaces forbidden
@@ -255,6 +310,115 @@ function scanContent(filePath, content) {
   let stripped = stripFencedBlocks(content);
   stripped = stripInlineCodeSpans(stripped);
   stripped = stripIndentedCodeBlocks(stripped);
+  return stripped;
+}
+
+function collectOutOfTreeRelativeLinkFixes(filePath, content) {
+  if (!isDocsMarkdown(filePath)) {
+    return [];
+  }
+
+  const stripped = strippedMarkdownForLinkPasses(content);
+  const fixes = [];
+
+  const collect = (match, baseIndex) => {
+    const url = match[2];
+    if (!url) {
+      return;
+    }
+    const replacement = outOfTreeRelativeLinkToBlobUrl(filePath, url);
+    if (!replacement || replacement === url) {
+      return;
+    }
+    const urlOffset = match[0].indexOf(url);
+    if (urlOffset < 0) {
+      return;
+    }
+    const start = baseIndex + urlOffset;
+    fixes.push({
+      start,
+      end: start + url.length,
+      before: url,
+      after: replacement
+    });
+  };
+
+  MARKDOWN_LINK_RE.lastIndex = 0;
+  let match;
+  while ((match = MARKDOWN_LINK_RE.exec(stripped)) !== null) {
+    collect(match, match.index);
+  }
+
+  REFERENCE_DEFINITION_RE.lastIndex = 0;
+  while ((match = REFERENCE_DEFINITION_RE.exec(stripped)) !== null) {
+    collect(match, match.index);
+  }
+
+  fixes.sort((a, b) => a.start - b.start || a.end - b.end);
+  const deduped = [];
+  let previous = null;
+  for (const fix of fixes) {
+    if (previous && fix.start === previous.start && fix.end === previous.end) {
+      if (fix.after === previous.after) {
+        continue;
+      }
+      // Conflicting replacement at the same region: keep the first one.
+      continue;
+    }
+    if (previous && fix.start < previous.end) {
+      // Overlapping fix regions are unexpected; skip the later one.
+      continue;
+    }
+    deduped.push(fix);
+    previous = fix;
+  }
+  return deduped;
+}
+
+function applyTextFixes(content, fixes) {
+  if (fixes.length === 0) {
+    return content;
+  }
+  let out = content;
+  for (let i = fixes.length - 1; i >= 0; i--) {
+    const fix = fixes[i];
+    out = `${out.slice(0, fix.start)}${fix.after}${out.slice(fix.end)}`;
+  }
+  return out;
+}
+
+function fixOutOfTreeRelativeLinks(filePath, content) {
+  const fixes = collectOutOfTreeRelativeLinkFixes(filePath, content);
+  if (fixes.length === 0) {
+    return { content, changed: false, fixes: [] };
+  }
+  return {
+    content: applyTextFixes(content, fixes),
+    changed: true,
+    fixes
+  };
+}
+
+function fixFile(filePath) {
+  let content;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    return { changed: false, fixes: [], error };
+  }
+
+  const result = fixOutOfTreeRelativeLinks(filePath, content);
+  if (!result.changed) {
+    return { changed: false, fixes: [] };
+  }
+
+  fs.writeFileSync(filePath, result.content);
+  return { changed: true, fixes: result.fixes };
+}
+
+function scanContent(filePath, content) {
+  const violations = [];
+  const stripped = strippedMarkdownForLinkPasses(content);
 
   const checkUrl = (url, charIndex) => {
     // CONCERN 3 (ephemeral CI-run URLs) runs FIRST: any markdown link whose
@@ -350,26 +514,88 @@ function scanFile(filePath) {
 
 function isDocsMarkdown(filePath) {
   const abs = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
-  if (!abs.toLowerCase().endsWith(".md")) {
+  if (!isMarkdownFile(abs)) {
     return false;
   }
   const rel = path.relative(DOCS_ROOT, abs);
   return !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
+function printHelp() {
+  process.stdout.write(
+    [
+      "Usage: node scripts/validate-docs-out-of-tree-links.js [--fix] [<file>...]",
+      "",
+      "Checks docs/*.md and docs/*.markdown links for out-of-tree relative",
+      "paths and stale self-repo",
+      "blob/tree targets. With --fix, rewrites out-of-tree relative links to",
+      "absolute GitHub blob URLs before validating.",
+      ""
+    ].join("\n")
+  );
+}
+
+function parseArgs(argv) {
+  let fix = false;
+  const files = [];
+  for (const arg of argv) {
+    if (arg === "--fix") {
+      fix = true;
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      return { help: true, fix: false, files: [] };
+    }
+    files.push(arg);
+  }
+  return { help: false, fix, files };
+}
+
 function main(argv) {
+  const parsed = parseArgs(argv);
+  if (parsed.help) {
+    printHelp();
+    return 0;
+  }
+
   let files;
-  if (argv.length === 0) {
+  if (parsed.files.length === 0) {
     files = listAllDocsFiles();
   } else {
-    files = argv
+    files = parsed.files
       .map((file) => (path.isAbsolute(file) ? file : path.resolve(process.cwd(), file)))
       .filter((file) => isDocsMarkdown(file));
   }
 
   if (files.length === 0) {
-    process.stdout.write("validate-docs-out-of-tree-links: no docs/*.md files to inspect.\n");
+    process.stdout.write(
+      "validate-docs-out-of-tree-links: no docs/*.md or docs/*.markdown files to inspect.\n"
+    );
     return 0;
+  }
+
+  let fixedFiles = 0;
+  let fixedLinks = 0;
+  if (parsed.fix) {
+    for (const file of files) {
+      try {
+        const result = fixFile(file);
+        if (result.changed) {
+          fixedFiles++;
+          fixedLinks += result.fixes.length;
+        }
+      } catch (error) {
+        process.stderr.write(
+          `${toRepoRelative(file)}:0: out-of-tree link "" -- failed to auto-fix: ${error.message}\n`
+        );
+      }
+    }
+
+    if (fixedLinks > 0) {
+      process.stdout.write(
+        `validate-docs-out-of-tree-links: auto-fixed ${fixedLinks} link(s) across ${fixedFiles} file(s).\n`
+      );
+    }
   }
 
   const allViolations = [];
@@ -398,9 +624,16 @@ function main(argv) {
 module.exports = {
   DOCS_ROOT,
   REPO_ROOT,
+  SELF_REPO_BLOB_URL_PREFIX,
   scanContent,
   scanFile,
   escapesDocsTree,
+  splitLinkTargetAndSuffix,
+  encodeRepoPathForBlobUrl,
+  outOfTreeRelativeLinkToBlobUrl,
+  collectOutOfTreeRelativeLinkFixes,
+  fixOutOfTreeRelativeLinks,
+  fixFile,
   // Names kept as `*BlobTarget*` for stability (tests import them), but they
   // cover BOTH self-repo `blob/` (file) and `tree/` (directory) links.
   selfRepoBlobTarget,
@@ -411,6 +644,7 @@ module.exports = {
   stripFencedBlocks,
   stripInlineCodeSpans,
   stripIndentedCodeBlocks,
+  parseArgs,
   main
 };
 
