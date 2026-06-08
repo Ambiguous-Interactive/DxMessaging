@@ -1,19 +1,19 @@
 {
-  "name": "WallstopStudios.DxMessaging.Tests.00.Editor.Comparisons",
-  "rootNamespace": "DxMessaging.Tests.Editor.Comparisons",
+  "name": "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons.External",
+  "rootNamespace": "DxMessaging.Tests.Runtime.Comparisons.External",
   "references": [
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner",
     "WallstopStudios.DxMessaging",
     "WallstopStudios.DxMessaging.Tests.Runtime",
-    "Unity.PerformanceTesting",
+    "WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks",
+    "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons",
     "Zenject",
     "MessagePipe",
     "UniRx",
-    "UniTask",
-    "WallstopStudios.DxMessaging.Tests.00.Editor.Benchmarks"
+    "UniTask"
   ],
-  "includePlatforms": ["Editor"],
+  "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
   "overrideReferences": true,
@@ -34,11 +34,6 @@
     },
     {
       "name": "com.neuecc.unirx",
-      "expression": "0.0.1",
-      "define": "UNIRX_PRESENT"
-    },
-    {
-      "name": "com.cysharp.unirx",
       "expression": "0.0.1",
       "define": "UNIRX_PRESENT"
     },

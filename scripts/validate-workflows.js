@@ -26,10 +26,16 @@
  *   acquire/release actions and the local Unity license preflight action.
  * - Direct Unity test jobs that run scripts/unity/run-ci-tests.ps1 without
  *   first provisioning a CI-managed Unity editor before the organization lock.
+ * - Unity test/build jobs that omit Release-mode flags
+ *   (`-ReleaseCodeOptimization`, `-ReleasePlayerBuild`, or GameCI
+ *   `-releaseCodeOptimization`).
  * - Unsupported inputs on `game-ci/unity-test-runner@v4`.
  * - Workflow lines that exceed the yamllint line-length ceiling (loaded from
  *   .yamllint.yaml when available; defaults to 200). This provides earlier
  *   feedback in `npm run validate:workflows` before git-hook execution.
+ * - The Performance Numbers regression gate must not fail while the
+ *   DxMessaging delta comment is skipped: the perf-deltas comment step must run
+ *   for either `changed=true` or `regressed=true`, and the gate must run after it.
  * - .pre-commit-config.yaml lines that exceed the same yamllint line-length
  *   ceiling so hook-policy YAML drift is surfaced during preflight instead of
  *   only at hook-time.
@@ -45,10 +51,14 @@
  *   immediately before a matching guarded git-auto-commit-action step; manual
  *   clone/fetch/push steps must use command-scoped credentials. Persistent
  *   `git config http.*.extraheader` credentials are forbidden.
+ * - Self-hosted Windows jobs must configure Git long paths before checkout so
+ *   actions/checkout cleanup can remove Unity PackageCache paths reliably.
  * - GitHub App-token auto-commit workflows must emit a warning when the
  *   AUTO_COMMIT_APP_* credential gate is false, must not use
  *   git-auto-commit-action for protected default-branch pushes, and must fetch
  *   and diagnose branch advancement before command-scoped push attempts.
+ * - Workflows that run comparison-package drift validation with path filters
+ *   must trigger on every single-source and mirror file the validator checks.
  *
  * @usage
  *   node scripts/validate-workflows.js
@@ -76,6 +86,13 @@ const {
   extractTargetedStepRunBlock,
   extractListedTestPaths
 } = require("./lib/cross-platform-preflight-gate");
+const {
+  SOURCE_RELATIVE_PATH: COMPARISON_PACKAGES_SOURCE_PATH,
+  LOCAL_MANIFEST_RELATIVE_PATH: COMPARISON_PACKAGES_LOCAL_MANIFEST_PATH,
+  LOCAL_PACKAGE_LOCK_RELATIVE_PATH: COMPARISON_PACKAGES_LOCAL_PACKAGE_LOCK_PATH,
+  COMPARISONS_RELATIVE_DIR: COMPARISON_PACKAGES_COMPARISONS_DIR,
+  GENERATOR_RELATIVE_PATH: COMPARISON_PACKAGES_GENERATOR_PATH
+} = require("./validate-comparison-packages.js");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const WORKFLOWS_DIR = path.join(__dirname, "..", ".github", "workflows");
@@ -105,10 +122,22 @@ const GIT_AUTO_COMMIT_USES = "stefanzweifel/git-auto-commit-action@";
 const BLOCKING_DOC_LINK_WORKFLOW = ".github/workflows/lint-doc-links.yml";
 const ADVISORY_DOC_LINK_WORKFLOW = ".github/workflows/markdown-link-validity.yml";
 const ADVISORY_LYCHEE_REPORT_PATH = "./lychee/out.md";
+const PERF_NUMBERS_WORKFLOW = ".github/workflows/perf-numbers.yml";
 const REQUIRED_ACTIVE_WORKFLOW_PATHS = Object.freeze([
   BLOCKING_DOC_LINK_WORKFLOW,
   ADVISORY_DOC_LINK_WORKFLOW
 ]);
+const COMPARISON_PACKAGES_VALIDATOR_PATH = "scripts/validate-comparison-packages.js";
+const COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS = Object.freeze([
+  COMPARISON_PACKAGES_SOURCE_PATH,
+  COMPARISON_PACKAGES_VALIDATOR_PATH,
+  COMPARISON_PACKAGES_GENERATOR_PATH,
+  COMPARISON_PACKAGES_LOCAL_MANIFEST_PATH,
+  COMPARISON_PACKAGES_LOCAL_PACKAGE_LOCK_PATH,
+  `${COMPARISON_PACKAGES_COMPARISONS_DIR}/**`
+]);
+const COMPARISON_PACKAGE_VALIDATION_RUN_RE =
+  /(?:^|[\s;&|])(?:node\s+)?(?:\.\/)?scripts\/validate-comparison-packages\.js\b|(?:^|[\s;&|])npm\s+run\s+(?:validate:comparison-packages|validate:all)\b/;
 
 // The `yaml` package is used to parse workflows structurally (formatting-
 // invariant) for the compute-unity-assemblies gate check. It is not a declared
@@ -479,22 +508,46 @@ function isGitIgnoredPath(repoRoot, relativePath, execFileSyncImpl = execFileSyn
 }
 
 function extractWorkflowPathEntries(lines) {
-  const entries = [];
-  let inPathsBlock = false;
-  let pathsIndent = -1;
+  return extractWorkflowPathBlocks(lines).flatMap((block) => block.entries);
+}
+
+function extractWorkflowPathBlocks(lines) {
+  return extractWorkflowPathFilterBlocks(lines, "paths");
+}
+
+function extractWorkflowPathIgnoreBlocks(lines) {
+  return extractWorkflowPathFilterBlocks(lines, "paths-ignore");
+}
+
+function extractWorkflowPathFilterBlocks(lines, filterKey) {
+  const blocks = [];
+  let currentBlock = null;
+  const filterKeyPattern = new RegExp(`^\\s*${filterKey}:\\s*$`);
+
+  const startBlock = (lineNumber, indent) => {
+    currentBlock = {
+      line: lineNumber,
+      indent,
+      entries: []
+    };
+    blocks.push(currentBlock);
+  };
+
+  const stopBlock = () => {
+    currentBlock = null;
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
     const indent = getIndent(line);
 
-    if (!inPathsBlock && /^\s*paths:\s*$/.test(line)) {
-      inPathsBlock = true;
-      pathsIndent = indent;
+    if (!currentBlock && filterKeyPattern.test(line)) {
+      startBlock(i + 1, indent);
       continue;
     }
 
-    if (!inPathsBlock) {
+    if (!currentBlock) {
       continue;
     }
 
@@ -502,27 +555,157 @@ function extractWorkflowPathEntries(lines) {
       continue;
     }
 
-    if (indent <= pathsIndent && !/^\s*-\s+/.test(line)) {
-      inPathsBlock = false;
-      pathsIndent = -1;
+    if (indent <= currentBlock.indent && !/^\s*-\s+/.test(line)) {
+      stopBlock();
 
-      if (/^\s*paths:\s*$/.test(line)) {
-        inPathsBlock = true;
-        pathsIndent = indent;
+      if (filterKeyPattern.test(line)) {
+        startBlock(i + 1, indent);
       }
       continue;
     }
 
     const pathEntry = /^\s*-\s*["']?([^"'#]+)["']?\s*(?:#.*)?$/.exec(line);
     if (pathEntry) {
-      entries.push({
+      currentBlock.entries.push({
         line: i + 1,
         path: pathEntry[1].trim()
       });
     }
   }
 
-  return entries;
+  return blocks;
+}
+
+function normalizeWorkflowPathPattern(pathValue) {
+  return pathValue.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function escapeRegexChar(char) {
+  return /[\\^$+?.()|[\]{}]/.test(char) ? `\\${char}` : char;
+}
+
+function workflowPathGlobToRegex(pattern) {
+  let source = "";
+  const normalized = normalizeWorkflowPathPattern(pattern);
+
+  for (let index = 0; index < normalized.length; index++) {
+    const char = normalized[index];
+    if (char === "*") {
+      if (normalized[index + 1] === "*") {
+        source += ".*";
+        index++;
+      } else {
+        source += "[^/]*";
+      }
+      continue;
+    }
+    if (char === "?") {
+      source += "[^/]";
+      continue;
+    }
+    source += escapeRegexChar(char);
+  }
+
+  return new RegExp(`^${source}$`);
+}
+
+function workflowPathPatternMatchesRequiredPath(pattern, requiredPath) {
+  const normalizedPattern = normalizeWorkflowPathPattern(pattern);
+  const requiredCandidates = [];
+  const normalizedRequiredPath = normalizeWorkflowPathPattern(requiredPath);
+  if (normalizedRequiredPath.endsWith("/**")) {
+    requiredCandidates.push(`${normalizedRequiredPath.slice(0, -3)}/__required_trigger__`);
+  } else {
+    requiredCandidates.push(normalizedRequiredPath);
+  }
+
+  const patternRegex = workflowPathGlobToRegex(normalizedPattern);
+  return requiredCandidates.some((candidate) => patternRegex.test(candidate));
+}
+
+function workflowPathBlockCoversRequiredPath(block, requiredPath) {
+  let included = false;
+
+  for (const entry of block.entries) {
+    const normalizedPath = normalizeWorkflowPathPattern(entry.path);
+    const isExclusion = normalizedPath.startsWith("!");
+    const pattern = isExclusion ? normalizedPath.slice(1) : normalizedPath;
+    if (!workflowPathPatternMatchesRequiredPath(pattern, requiredPath)) {
+      continue;
+    }
+
+    included = !isExclusion;
+  }
+
+  return included;
+}
+
+function runTextInvokesComparisonPackageValidation(runText) {
+  return (
+    typeof runText === "string" &&
+    runText.trim().length > 0 &&
+    COMPARISON_PACKAGE_VALIDATION_RUN_RE.test(runText)
+  );
+}
+
+function workflowInvokesComparisonPackageValidation(lines) {
+  return extractRunBlocks(lines).some((block) =>
+    runTextInvokesComparisonPackageValidation(block.text)
+  );
+}
+
+function findComparisonPackageValidationTriggerViolations(relativePath, lines) {
+  const violations = [];
+  const pathBlocks = extractWorkflowPathBlocks(lines);
+  const pathIgnoreBlocks = extractWorkflowPathIgnoreBlocks(lines);
+
+  if (
+    (pathBlocks.length === 0 && pathIgnoreBlocks.length === 0) ||
+    !workflowInvokesComparisonPackageValidation(lines)
+  ) {
+    return violations;
+  }
+
+  for (const block of pathBlocks) {
+    for (const requiredPath of COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS) {
+      if (workflowPathBlockCoversRequiredPath(block, requiredPath)) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          block.line,
+          "validate-comparison-packages trigger paths",
+          `Workflow runs ${COMPARISON_PACKAGES_VALIDATOR_PATH} but this paths filter does not include '${requiredPath}'. Add it so every comparison package single-source and mirror edit runs the drift gate.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  for (const block of pathIgnoreBlocks) {
+    for (const requiredPath of COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS) {
+      const excludingEntry = block.entries.find((entry) =>
+        workflowPathPatternMatchesRequiredPath(entry.path, requiredPath)
+      );
+      if (!excludingEntry) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          excludingEntry.line,
+          "validate-comparison-packages paths-ignore",
+          `Workflow runs ${COMPARISON_PACKAGES_VALIDATOR_PATH} but paths-ignore entry '${excludingEntry.path}' excludes comparison package path '${requiredPath}'. Remove the exclusion so mirror-only edits still run the drift gate.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
 }
 
 function isLiteralPath(pathValue) {
@@ -1122,10 +1305,11 @@ function extractStepWithMap(lines, stepStartIndex, stepEndIndex) {
 function extractStepEnvMap(lines, stepStartIndex, stepEndIndex) {
   const values = new Map();
   let envIndent = -1;
+  const stepPropertyIndent = getIndent(lines[stepStartIndex]) + 2;
 
   for (let i = stepStartIndex; i <= stepEndIndex; i++) {
     const line = lines[i];
-    if (/^\s*env:\s*(?:#.*)?$/i.test(line)) {
+    if (/^\s*env:\s*(?:#.*)?$/i.test(line) && getIndent(line) === stepPropertyIndent) {
       envIndent = getIndent(line);
       continue;
     }
@@ -2896,6 +3080,160 @@ function stepRunsUnityGenerateOnly(step) {
     return false;
   }
   return commandSegments.every(unityCiTestCommandSegmentIsGenerateOnly);
+}
+
+function runTextWiresPowerShellTrueArgument(runText, parameterName) {
+  const escaped = parameterName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const bareFlag = new RegExp(`-${escaped}\\b(?!\\s*:)`, "i");
+  const explicitTrueFlag = new RegExp(String.raw`-${escaped}\b\s*:\s*(?:\$true|true|1)\b`, "i");
+  const indexedTrueAssignment = new RegExp(
+    String.raw`\[\s*['"]${escaped}['"]\s*\]\s*=\s*\$true\b`,
+    "i"
+  );
+  const hashtableTrueEntry = new RegExp(String.raw`\b${escaped}\s*=\s*\$true\b`, "i");
+  return (
+    bareFlag.test(runText) ||
+    explicitTrueFlag.test(runText) ||
+    indexedTrueAssignment.test(runText) ||
+    hashtableTrueEntry.test(runText)
+  );
+}
+
+function findUnityReleaseModeViolations(relativePath, lines) {
+  const violations = [];
+  if (isDisabledWorkflowPath(relativePath)) {
+    return violations;
+  }
+
+  for (const job of extractJobs(lines)) {
+    for (const step of extractJobSteps(lines, job)) {
+      if (stepRunsUnityCiTestsDirectly(step)) {
+        const runText = stripPowerShellLineComments(step.run.text);
+        for (const parameterName of ["ReleaseCodeOptimization", "ReleasePlayerBuild"]) {
+          if (runTextWiresPowerShellTrueArgument(runText, parameterName)) {
+            continue;
+          }
+          violations.push(
+            new Violation(
+              relativePath,
+              step.startIndex + 1,
+              `run-ci-tests.ps1 -${parameterName}`,
+              `Job '${job.id}' runs run-ci-tests.ps1 without -${parameterName}. Unity tests and generated standalone players must run in Release mode; pass -${parameterName} directly or wire it through a true-valued hashtable splat.`,
+              "error"
+            )
+          );
+        }
+      }
+
+      if (typeof step.uses === "string" && step.uses.includes(GAME_CI_UNITY_TEST_RUNNER_USES)) {
+        const customParameters =
+          step.with && typeof step.with.get === "function"
+            ? step.with.get("customParameters") || ""
+            : "";
+        if (!/-releaseCodeOptimization\b/i.test(customParameters)) {
+          violations.push(
+            new Violation(
+              relativePath,
+              step.startIndex + 1,
+              "game-ci customParameters: -releaseCodeOptimization",
+              `Job '${job.id}' uses game-ci/unity-test-runner without -releaseCodeOptimization in customParameters. Unity tests must compile in Release mode.`,
+              "error"
+            )
+          );
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
+function stepSourceText(lines, step) {
+  if (!step) {
+    return "";
+  }
+  return lines.slice(step.startIndex, step.endIndex + 1).join("\n");
+}
+
+function findPerfDeltasCommentGateViolations(relativePath, lines) {
+  const normalizedPath = String(relativePath || "").replace(/\\/g, "/");
+  if (normalizedPath !== PERF_NUMBERS_WORKFLOW) {
+    return [];
+  }
+
+  const violations = [];
+  for (const job of extractJobs(lines)) {
+    const steps = extractJobSteps(lines, job);
+    const commentStep = steps.find((step) => step.name === "Upsert the perf-deltas PR comment");
+    const gateStep = steps.find((step) => step.name === "Enforce DxMessaging perf regression gate");
+
+    if (!commentStep && !gateStep) {
+      continue;
+    }
+
+    if (!commentStep) {
+      violations.push(
+        new Violation(
+          relativePath,
+          gateStep.startIndex + 1,
+          "perf-deltas comment",
+          `Job '${job.id}' enforces the perf regression gate without a prior perf-deltas comment step. Add the sticky delta comment before the gate so reviewers see the numbers on failure.`,
+          "error"
+        )
+      );
+      continue;
+    }
+
+    const commentSource = stepSourceText(lines, commentStep);
+    const commentsOnChanged = /steps\.deltas\.outputs\.changed\s*==\s*'true'/.test(commentSource);
+    const commentsOnRegressed = /steps\.deltas\.outputs\.regressed\s*==\s*'true'/.test(
+      commentSource
+    );
+    const commentsOnEitherSignal =
+      commentsOnChanged && commentsOnRegressed && /\|\|/.test(commentSource);
+    if (!commentsOnEitherSignal) {
+      violations.push(
+        new Violation(
+          relativePath,
+          commentStep.startIndex + 1,
+          "perf-deltas comment if:",
+          `Job '${job.id}' perf-deltas comment must run when changed=true OR regressed=true. Allocation regressions can be changed=false/regressed=true, and the gate error points reviewers at this comment.`,
+          "error"
+        )
+      );
+    }
+
+    if (!gateStep) {
+      continue;
+    }
+
+    const gateSource = stepSourceText(lines, gateStep);
+    if (!/steps\.deltas\.outputs\.regressed\s*==\s*'true'/.test(gateSource)) {
+      violations.push(
+        new Violation(
+          relativePath,
+          gateStep.startIndex + 1,
+          "perf regression gate if:",
+          `Job '${job.id}' perf regression gate must be driven by steps.deltas.outputs.regressed == 'true'.`,
+          "error"
+        )
+      );
+    }
+
+    if (gateStep.startIndex <= commentStep.startIndex) {
+      violations.push(
+        new Violation(
+          relativePath,
+          gateStep.startIndex + 1,
+          "perf regression gate order",
+          `Job '${job.id}' perf regression gate must run after the perf-deltas comment step so failure diagnostics are posted first.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
 }
 
 function stripPowerShellLineComments(text) {
@@ -5437,6 +5775,106 @@ function findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lin
   return violations;
 }
 
+function stepConfiguresGitLongPaths(step) {
+  if (
+    !step ||
+    step.if ||
+    !step.run ||
+    typeof step.run.text !== "string" ||
+    !(step.env instanceof Map) ||
+    typeof step.env.get("GIT_CONFIG_GLOBAL") !== "string" ||
+    step.env.get("GIT_CONFIG_GLOBAL").trim().length === 0
+  ) {
+    return false;
+  }
+
+  const normalizedRunText = step.run.text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
+  return normalizedRunText === "git config --global core.longpaths true";
+}
+
+function findSelfHostedWindowsCheckoutLongPathViolations(relativePath, lines) {
+  const violations = [];
+  const jobs = extractJobs(lines);
+  const outputsMap = extractJobOutputsSourceMap(lines);
+
+  for (const job of jobs) {
+    const steps = extractJobSteps(lines, job);
+    const checkoutSteps = steps.filter(
+      (step) => typeof step.uses === "string" && step.uses.startsWith("actions/checkout@")
+    );
+    if (checkoutSteps.length === 0) {
+      continue;
+    }
+
+    const resolution = resolveJobLabelSetsForShellPolicy(lines, job, outputsMap);
+
+    if (resolution.kind === "none") {
+      continue;
+    }
+
+    if (resolution.kind === "dynamic-unresolved") {
+      const runsOn = extractJobRunsOn(lines, job);
+      violations.push(
+        new Violation(
+          relativePath,
+          runsOn ? runsOn.line : job.startLine,
+          runsOn ? `runs-on: ${runsOn.raw}` : `job: ${job.id}`,
+          `Job '${job.id}': dynamic runs-on cannot be statically resolved; checkout long-path policy for self-hosted Windows runners cannot be mechanically verified. If the resolved label set may include self-hosted Windows, audit that a 'git config --global core.longpaths true' step runs before checkout.`,
+          "warning"
+        )
+      );
+      continue;
+    }
+
+    const appliesToAtLeastOneBranch = resolution.labelSets.some((labels) =>
+      isSelfHostedWindowsLabelSet(labels)
+    );
+    if (!appliesToAtLeastOneBranch) {
+      continue;
+    }
+
+    let priorGitConfigGlobal = null;
+    for (const step of steps) {
+      if (stepConfiguresGitLongPaths(step)) {
+        priorGitConfigGlobal = step.env.get("GIT_CONFIG_GLOBAL").trim();
+        continue;
+      }
+
+      if (typeof step.uses !== "string" || !step.uses.startsWith("actions/checkout@")) {
+        continue;
+      }
+
+      const checkoutGitConfigGlobal =
+        step.env instanceof Map && typeof step.env.get("GIT_CONFIG_GLOBAL") === "string"
+          ? step.env.get("GIT_CONFIG_GLOBAL").trim()
+          : "";
+      if (
+        priorGitConfigGlobal &&
+        checkoutGitConfigGlobal &&
+        checkoutGitConfigGlobal === priorGitConfigGlobal
+      ) {
+        continue;
+      }
+
+      violations.push(
+        new Violation(
+          relativePath,
+          step.startIndex + 1,
+          step.uses,
+          `Job '${job.id}' checks out on a self-hosted Windows runner before enabling Git long paths through a job-local GIT_CONFIG_GLOBAL file. Add a preceding unconditional 'git config --global core.longpaths true' run step with GIT_CONFIG_GLOBAL set, and set the same GIT_CONFIG_GLOBAL value on the checkout step so actions/checkout cleanup can remove Unity PackageCache paths whose names exceed the legacy Windows path limit without mutating the runner user's persistent global Git config.`,
+          "error"
+        )
+      );
+    }
+  }
+
+  return violations;
+}
+
 // Lowercased, leading-`./`-stripped `uses` ref for the compute-unity-assemblies
 // composite action. The validator normalizes each step's `uses` the same way
 // before comparing.
@@ -5792,6 +6230,8 @@ function validateWorkflow(filePath, options = {}) {
   try {
     violations.push(...findIgnoredPathViolations(relativePath, lines, repoRoot, isIgnoredPathFn));
 
+    violations.push(...findComparisonPackageValidationTriggerViolations(relativePath, lines));
+
     const packageLockIgnored = isIgnoredPathFn(repoRoot, "package-lock.json");
     violations.push(...findLockfileInstallViolations(relativePath, lines, packageLockIgnored));
 
@@ -5813,6 +6253,10 @@ function validateWorkflow(filePath, options = {}) {
 
     violations.push(...findUnityNativeProvisioningViolations(relativePath, lines));
 
+    violations.push(...findUnityReleaseModeViolations(relativePath, lines));
+
+    violations.push(...findPerfDeltasCommentGateViolations(relativePath, lines));
+
     violations.push(...findUnityLicenseReturnViolations(relativePath, lines));
 
     violations.push(...findForbiddenUnityLicenseSecretViolations(relativePath, lines));
@@ -5826,6 +6270,8 @@ function validateWorkflow(filePath, options = {}) {
     violations.push(...findChangelogCoverageCheckoutViolations(relativePath, lines));
 
     violations.push(...findCheckoutCredentialPersistenceViolations(relativePath, lines));
+
+    violations.push(...findSelfHostedWindowsCheckoutLongPathViolations(relativePath, lines));
 
     violations.push(...findTokenizedGitRemoteCredentialViolations(relativePath, lines));
 
@@ -5977,7 +6423,11 @@ if (typeof module !== "undefined" && module.exports) {
     hasExistenceCheck,
     isGitIgnoredPath,
     extractWorkflowPathEntries,
+    extractWorkflowPathBlocks,
+    extractWorkflowPathIgnoreBlocks,
     findIgnoredPathViolations,
+    findComparisonPackageValidationTriggerViolations,
+    runTextInvokesComparisonPackageValidation,
     extractRunBlocks,
     findLockfileInstallViolations,
     findPreCommitInstallHookWriterViolations,
@@ -5995,6 +6445,8 @@ if (typeof module !== "undefined" && module.exports) {
     findGameCiTestRunnerInputViolations,
     findUnityGameCiLockAndPreflightViolations,
     findUnityNativeProvisioningViolations,
+    findUnityReleaseModeViolations,
+    findPerfDeltasCommentGateViolations,
     findUnityLicenseReturnViolations,
     findForbiddenUnityLicenseSecretViolations,
     findRequiredUnityLicenseSecretViolations,
@@ -6033,12 +6485,16 @@ if (typeof module !== "undefined" && module.exports) {
     NPM_SCRIPTS_REQUIRING_GIT_HISTORY,
     REQUIRED_LYCHEE_VERSION,
     ADVISORY_LYCHEE_REPORT_PATH,
+    COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS,
+    COMPARISON_PACKAGES_VALIDATOR_PATH,
     extractStaticJobLabels,
     jobIsRunnerAccessPreflight,
     findSelfHostedRunnerPreflightViolations,
     isSelfHostedWindowsLabelSet,
     isAllowedSelfHostedWindowsShell,
     findForbidPlainShellBashOnSelfHostedWindowsViolations,
+    stepConfiguresGitLongPaths,
+    findSelfHostedWindowsCheckoutLongPathViolations,
     resolveJobLabelSetsForShellPolicy,
     resolveWorkflowLineLengthPolicy,
     resolveWorkflowLineLengthMax,

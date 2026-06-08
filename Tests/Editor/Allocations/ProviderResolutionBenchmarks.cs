@@ -37,7 +37,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         public void ProviderResolutionPerformance()
         {
             string section = BenchmarkDocumentation.GetOperatingSystemSection();
-            BenchmarkSession session = new(section, "### ", Array.Empty<Func<string>>());
+            BenchmarkSession session = new(section, "### ");
 
             RunWithSession(
                 session,

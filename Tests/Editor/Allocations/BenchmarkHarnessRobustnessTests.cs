@@ -3,11 +3,14 @@ namespace DxMessaging.Tests.Editor.Allocations
 {
     using System;
     using System.Collections;
+    using System.Collections.Generic;
+    using System.Linq;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Editor.Benchmarks;
+    using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -353,6 +356,351 @@ namespace DxMessaging.Tests.Editor.Allocations
                         $"Unexpected child invocation count for {scenario}."
                     );
                 }
+            );
+        }
+
+        // Data-driven over EVERY DispatchBenchmarkScenario so adding an enum value without
+        // wiring up its metadata (Key/DisplayName) fails this suite automatically. These
+        // metadata cases are deliberately cheap (no measurement window) so they stay in the
+        // fast gate; the run-the-scenario lock below carries the heavy PerfBench category.
+        private static IEnumerable<TestCaseData> DispatchScenarioCases()
+        {
+            foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)
+            {
+                yield return new TestCaseData(scenario).SetName($"DispatchScenario_{scenario}");
+            }
+        }
+
+        [Test]
+        [TestCaseSource(nameof(DispatchScenarioCases))]
+        public void DispatchScenarioHasNonEmptyKeyAndDisplayName(DispatchBenchmarkScenario scenario)
+        {
+            Assert.IsNotEmpty(
+                DispatchBenchmarkScenarios.Key(scenario),
+                $"Dispatch scenario '{scenario}' must declare a non-empty stable Key."
+            );
+            Assert.IsNotEmpty(
+                DispatchBenchmarkScenarios.DisplayName(scenario),
+                $"Dispatch scenario '{scenario}' must declare a non-empty DisplayName."
+            );
+        }
+
+        [Test]
+        public void DispatchScenarioKeysAreUnique()
+        {
+            string[] keys = DispatchBenchmarkScenarios
+                .All.Select(DispatchBenchmarkScenarios.Key)
+                .ToArray();
+            CollectionAssert.AllItemsAreUnique(
+                keys,
+                "Dispatch scenario Keys must be unique; they are stable join keys for the baseline CSV and perf doc."
+            );
+        }
+
+        [Test]
+        public void DispatchScenarioDisplayNamesAreUnique()
+        {
+            string[] displayNames = DispatchBenchmarkScenarios
+                .All.Select(DispatchBenchmarkScenarios.DisplayName)
+                .ToArray();
+            CollectionAssert.AllItemsAreUnique(
+                displayNames,
+                "Dispatch scenario DisplayNames must be unique so rendered docs never collide two scenarios under one label."
+            );
+        }
+
+        [Test]
+        public void BenchmarkMethodologyConstantsAreLocked()
+        {
+            Assert.AreEqual(
+                5,
+                BenchmarkProtocol.MeasurementSeconds,
+                "The shared benchmark measurement window must remain 5 seconds."
+            );
+            Assert.AreEqual(
+                TimeSpan.FromSeconds(BenchmarkProtocol.MeasurementSeconds),
+                BenchmarkProtocol.MeasurementWindow,
+                "MeasurementWindow must equal MeasurementSeconds so the methodology stays consistent."
+            );
+            Assert.AreEqual(
+                BenchmarkProtocol.BatchSize,
+                NumInvocationsPerIteration,
+                "The editor benchmark harness must share the single batch-size constant with BenchmarkProtocol."
+            );
+        }
+
+        [Test]
+        public void WarmupEmitsSkipsFloodAndKeepsDefaultForEmitScenarios()
+        {
+            Assert.AreEqual(
+                0,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
+                ),
+                "The cold-bus registration flood must perform no warm-up flood so it measures first-touch registration cost."
+            );
+            Assert.AreEqual(
+                BenchmarkProtocol.WarmupEmits,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.UntargetedFloodOneHandler
+                ),
+                "Emit scenarios must keep the shared warm-up emit count."
+            );
+            Assert.AreEqual(
+                10_000,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.UntargetedFloodOneHandler
+                ),
+                "The shared warm-up emit count is locked at 10,000 for emit scenarios."
+            );
+        }
+
+        [Test]
+        public void MedianDoubleOfOddCountReturnsMiddleElement()
+        {
+            double[] samples = { 5d, 1d, 3d };
+            Assert.AreEqual(3d, BenchmarkProtocol.Median(samples), 1e-9);
+        }
+
+        [Test]
+        public void MedianDoubleOfEvenCountAveragesTwoMiddleElements()
+        {
+            double[] samples = { 1d, 2d, 3d, 4d };
+            Assert.AreEqual(2.5d, BenchmarkProtocol.Median(samples), 1e-9);
+        }
+
+        [Test]
+        public void MedianDoubleOfSingleElementReturnsThatElement()
+        {
+            double[] samples = { 42d };
+            Assert.AreEqual(42d, BenchmarkProtocol.Median(samples), 1e-9);
+        }
+
+        [Test]
+        public void MedianDoubleDoesNotMutateCallerArray()
+        {
+            double[] samples = { 5d, 1d, 3d, 2d };
+            double[] expected = { 5d, 1d, 3d, 2d };
+            _ = BenchmarkProtocol.Median(samples);
+            CollectionAssert.AreEqual(
+                expected,
+                samples,
+                "Median(double[]) must not mutate (sort) the caller's array."
+            );
+        }
+
+        [Test]
+        public void MedianLongOfOddCountReturnsMiddleElement()
+        {
+            long[] samples = { 50L, 10L, 30L };
+            Assert.AreEqual(30L, BenchmarkProtocol.Median(samples));
+        }
+
+        [Test]
+        public void MedianLongOfEvenCountAveragesTwoMiddleElements()
+        {
+            long[] samples = { 10L, 20L, 30L, 40L };
+            Assert.AreEqual(25L, BenchmarkProtocol.Median(samples));
+        }
+
+        [Test]
+        public void MedianLongOfSingleElementReturnsThatElement()
+        {
+            long[] samples = { 7L };
+            Assert.AreEqual(7L, BenchmarkProtocol.Median(samples));
+        }
+
+        [Test]
+        public void MedianLongDoesNotMutateCallerArray()
+        {
+            long[] samples = { 50L, 10L, 30L, 20L };
+            long[] expected = { 50L, 10L, 30L, 20L };
+            _ = BenchmarkProtocol.Median(samples);
+            CollectionAssert.AreEqual(
+                expected,
+                samples,
+                "Median(long[]) must not mutate (sort) the caller's array."
+            );
+        }
+
+        [Test]
+        public void MedianLongEvenAverageOfTwoLargeValuesDoesNotOverflow()
+        {
+            // Two equal large values whose naive (a + b) sum overflows long: the overflow-safe
+            // integer midpoint must land on the true value, never a wrapped or double-rounded one.
+            long[] samples = { long.MaxValue - 1L, long.MaxValue - 1L };
+            Assert.AreEqual(long.MaxValue - 1L, BenchmarkProtocol.Median(samples));
+        }
+
+        [Test]
+        public void MeasureColdLatencyRunsSetUpTimedAndTearDownPerTrialAndReportsTrials()
+        {
+            const int trials = 4;
+            int setUpCount = 0;
+            int timedCount = 0;
+            int tearDownCount = 0;
+
+            ColdLatencyMeasurement measurement = BenchmarkProtocol.MeasureColdLatency(
+                trials,
+                trialIndex =>
+                {
+                    setUpCount++;
+                    return trialIndex;
+                },
+                _ => timedCount++,
+                _ => tearDownCount++
+            );
+
+            Assert.AreEqual(trials, setUpCount, "setUpTrial must run once per trial.");
+            Assert.AreEqual(trials, timedCount, "timedOperation must run once per trial.");
+            Assert.AreEqual(trials, tearDownCount, "tearDownTrial must run once per trial.");
+            Assert.AreEqual(
+                trials,
+                measurement.Trials,
+                "MeasureColdLatency must report the trial count it ran."
+            );
+            Assert.GreaterOrEqual(
+                measurement.MedianWallClockMs,
+                0d,
+                "MeasureColdLatency must report a non-negative median wall clock."
+            );
+        }
+
+        [Test]
+        public void MeasureColdLatencyTearsDownEvenWhenTimedOperationThrows()
+        {
+            int tearDownCount = 0;
+
+            Assert.Throws<InvalidOperationException>(() =>
+                BenchmarkProtocol.MeasureColdLatency<int>(
+                    1,
+                    _ => 0,
+                    _ => throw new InvalidOperationException("Intentional timed-op failure."),
+                    _ => tearDownCount++
+                )
+            );
+
+            Assert.AreEqual(
+                1,
+                tearDownCount,
+                "MeasureColdLatency must dispose trial state even when the timed operation throws."
+            );
+        }
+
+        // Data-driven over the four cold/warm-JIT latency scenarios. Each is a wall-clock
+        // (latency) row, so its result must report zero throughput and IsWallClockScenario.
+        private static IEnumerable<TestCaseData> WallClockScenarioCases()
+        {
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
+            ).SetName("WallClock_RegistrationFloodColdBus");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit
+            ).SetName("WallClock_RegistrationFloodWarmJit");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFirstDispatchCold
+            ).SetName("WallClock_UntargetedFirstDispatchCold");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedFirstDispatchCold
+            ).SetName("WallClock_TargetedFirstDispatchCold");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastFirstDispatchCold
+            ).SetName("WallClock_BroadcastFirstDispatchCold");
+        }
+
+        // Result-shape lock: every cold/warm-JIT latency scenario reports zero throughput
+        // (the time lives in WallClockMs) and is flagged as a wall-clock scenario. The
+        // emitsPerSecond=0 property is exactly what auto-excludes these rows from the JS
+        // regression gate, so this guards the contract the CI gate relies on. Runs a real
+        // measurement, so it carries the PerfBench category.
+        [Test, Category("PerfBench")]
+        [TestCaseSource(nameof(WallClockScenarioCases))]
+        public void WallClockScenarioResultReportsZeroThroughputAndIsWallClock(
+            DispatchBenchmarkScenario scenario
+        )
+        {
+            DispatchBenchmarkResult result = DispatchThroughputBenchmarks.RunScenario(
+                scenario,
+                logResult: false
+            );
+
+            Assert.AreEqual(
+                0d,
+                result.EmitsPerSecond,
+                $"Wall-clock scenario '{scenario}' must report zero throughput (the time lives in WallClockMs)."
+            );
+            Assert.IsTrue(
+                result.IsWallClockScenario,
+                $"Wall-clock scenario '{scenario}' must be flagged IsWallClockScenario so renderers/gate treat it as a wall-clock row."
+            );
+            Assert.GreaterOrEqual(
+                result.WallClockMs,
+                0d,
+                $"Wall-clock scenario '{scenario}' must report a non-negative wall-clock measurement."
+            );
+        }
+
+        // Direction sanity: the warm-JIT registration flood pre-pays the Mono JIT bill on a
+        // throwaway bus, so its timed pass must not exceed the cold flood (which times JIT +
+        // registration together). Under IL2CPP/AOT the generics are precompiled so the two
+        // are ~equal; this asserts DIRECTION only, with generous slack, never strict <. The
+        // cold flood runs FIRST so the shared closed generics are JIT-warm for both timed
+        // passes, keeping the comparison stable in EditMode under Mono.
+        [Test, Category("PerfBench")]
+        public void WarmJitRegistrationFloodDoesNotExceedColdFloodWithSlack()
+        {
+            DispatchBenchmarkResult cold = DispatchThroughputBenchmarks.RunScenario(
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus,
+                logResult: false
+            );
+            DispatchBenchmarkResult warmJit = DispatchThroughputBenchmarks.RunScenario(
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit,
+                logResult: false
+            );
+
+            // Generous slack absorbs run-to-run jitter on the small wall-clock numbers; the
+            // contract under test is only that warm JIT is not categorically SLOWER than
+            // cold. A tiny absolute floor avoids a near-zero cold measurement making the
+            // bound impossibly tight.
+            const double Slack = 5d;
+            const double FloorMs = 1d;
+            double allowedMs = Math.Max(cold.WallClockMs, FloorMs) * Slack;
+            Assert.LessOrEqual(
+                warmJit.WallClockMs,
+                allowedMs,
+                $"Warm-JIT registration flood ({warmJit.WallClockMs:F3} ms) must not exceed the cold flood ({cold.WallClockMs:F3} ms) beyond {Slack:0}x slack."
+            );
+        }
+
+        // The "every scenario captures allocation bytes + CSV stays 7 columns" lock. This runs
+        // the real 5s measurement window per scenario, so it carries the PerfBench category and
+        // stays out of the fast metadata gate above.
+        [Test, Category("PerfBench")]
+        [TestCaseSource(nameof(DispatchScenarioCases))]
+        public void DispatchScenarioRunEmitsSevenColumnCsvWithAllocationBytes(
+            DispatchBenchmarkScenario scenario
+        )
+        {
+            DispatchBenchmarkResult result = DispatchThroughputBenchmarks.RunScenario(
+                scenario,
+                logResult: false
+            );
+
+            string csvRow = result.ToCsvRow();
+            string[] fields = csvRow.Split(',');
+            Assert.AreEqual(
+                7,
+                fields.Length,
+                $"Scenario '{scenario}' CSV row must stay exactly 7 columns. Row: '{csvRow}'."
+            );
+            Assert.IsNotEmpty(
+                fields[5],
+                $"Scenario '{scenario}' must populate the allocated-bytes field (index 5). Row: '{csvRow}'."
+            );
+            Assert.GreaterOrEqual(
+                result.AllocatedBytesDelta,
+                0,
+                $"Scenario '{scenario}' must report a non-negative allocated-bytes delta."
             );
         }
 

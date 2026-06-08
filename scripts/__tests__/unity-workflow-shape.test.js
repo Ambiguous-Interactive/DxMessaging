@@ -1408,11 +1408,15 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // Each change to the PR re-runs the numbers: opened + synchronize + reopened.
     expect(onBlock.pull_request.types.sort()).toEqual(["opened", "reopened", "synchronize"]);
     expect(onBlock.push.branches.sort()).toEqual(["main", "master"]);
-    // Loop break: the post-merge App-token commit only touches the perf doc, so
-    // ignoring it on the push trigger stops that auto-commit re-running the
-    // benchmark. App-token pushes (unlike GITHUB_TOKEN) DO re-trigger workflows,
-    // so this paths-ignore is load-bearing, not cosmetic.
-    expect(onBlock.push["paths-ignore"]).toEqual(["docs/architecture/performance.md"]);
+    // Loop break: the post-merge App-token commit touches the perf doc AND the
+    // regenerated master baseline CSV, so ignoring BOTH on the push trigger stops
+    // that auto-commit re-running the benchmark. App-token pushes (unlike
+    // GITHUB_TOKEN) DO re-trigger workflows, so this paths-ignore is load-bearing,
+    // not cosmetic.
+    expect(onBlock.push["paths-ignore"].sort()).toEqual([
+      "docs/architecture/perf-baseline.csv",
+      "docs/architecture/performance.md"
+    ]);
     expect(text).not.toContain("pull_request_target");
   });
 
@@ -1474,7 +1478,7 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(perfJob["runs-on"]).toEqual(["self-hosted", "Windows", "RAM-64GB", "fast"]);
   });
 
-  test("the matrix is LATEST-version only and runs BOTH editmode and playmode legs", () => {
+  test("the matrix is LATEST-version only and runs BOTH the playmode and standalone legs", () => {
     const matrix = perfJob.strategy.matrix;
     // The single latest version is resolved from the canonical source
     // (.github/unity-versions.json) via runner-preflight, so the matrix
@@ -1499,8 +1503,9 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     expect(versionsStep).toBeDefined();
     expect(versionsStep.run).toContain("jq -r '.all[-1]' \"${file}\"");
     expect(versionsStep.run).toContain("jq -c '[.all[-1]]' \"${file}\"");
-    // render-perf-doc.js consumes both legs, so both must run.
-    expect(matrix["test-mode"].sort()).toEqual(["editmode", "playmode"]);
+    // The perf legs are the PlayMode (in-editor Mono) and Standalone (IL2CPP)
+    // player-fidelity scopes; render-perf-doc.js consumes both, so both must run.
+    expect(matrix["test-mode"].sort()).toEqual(["playmode", "standalone"]);
     // One seat, serialized within the run.
     expect(perfJob.strategy["max-parallel"]).toBe(1);
   });
@@ -1516,7 +1521,10 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
         typeof step.run === "string" &&
         step.run.includes("./scripts/unity/ensure-editor.ps1") &&
         step.run.includes("-CiManagedOnly") &&
-        step.run.includes("-ProvisioningProfile EditorOnly")
+        // The profile is computed per leg (EditorOnly for playmode,
+        // StandaloneWindowsIl2Cpp for the standalone IL2CPP player build) and
+        // passed via the $provisioningProfile variable.
+        step.run.includes("-ProvisioningProfile $provisioningProfile")
     );
     const acquireIndex = perfSteps.findIndex(
       (step) =>
@@ -1565,6 +1573,20 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     // Perf opts into the Benchmarks/Allocations assemblies, like unity-benchmarks.
     expect(text).toContain("uses: ./.github/actions/compute-unity-assemblies");
     expect(text).toContain('include-perf: "true"');
+    // Slice 3b: both perf legs also run the comparison suite, so the compute step
+    // opts into the comparison assemblies too.
+    expect(text).toContain('include-comparisons: "true"');
+  });
+
+  test("the perf Unity run pins Release mode and standalone IL2CPP", () => {
+    const runStep = perfSteps.find((step) => step.name === "Run Unity Test Runner");
+    expect(runStep).toBeDefined();
+    expect(runStep.shell).toBe("pwsh");
+    expect(runStep.run).toContain("ReleaseCodeOptimization = $true");
+    expect(runStep.run).toContain("ReleasePlayerBuild = $true");
+    expect(runStep.run).toContain("if ('${{ matrix.test-mode }}' -eq 'standalone')");
+    expect(runStep.run).toContain("$extra['StandaloneScriptingBackend'] = 'IL2CPP'");
+    expect(runStep.run).toContain("@extra");
   });
 
   test("the Unity run uses pwsh and serial-activation secrets, never the retired server secret", () => {
@@ -1642,6 +1664,84 @@ describe(".github/workflows/perf-numbers.yml CI-owned dispatch-throughput number
     const commentText = JSON.stringify(commentJob);
     expect(commentText).not.toContain("git-auto-commit-action");
     expect(commentText).not.toContain("github.event.pull_request.head.ref");
+  });
+
+  test("the delta step parses BOTH render-perf-deltas stdout lines into changed + regressed outputs", () => {
+    // render-perf-deltas.js prints TWO stable stdout lines (changed=... then
+    // regressed=...). The step must parse the SPECIFIC lines, not test
+    // whole-stdout equality (which the second line would break), and surface BOTH
+    // as step outputs: `changed` and `regressed` both drive the delta comment,
+    // while `regressed` also drives the gate below.
+    const deltas = commentJob.steps.find((step) => step.id === "deltas");
+    expect(deltas).toBeDefined();
+    expect(deltas.run).toContain("node scripts/unity/render-perf-deltas.js");
+    expect(deltas.run).toContain("--scope PlayMode");
+    // Per-line parse (sed -n 's/^changed=//p' / 's/^regressed=//p'), NOT the old
+    // `[ "${changed_line}" = "changed=true" ]` whole-stdout equality.
+    expect(deltas.run).toContain("sed -n 's/^changed=//p'");
+    expect(deltas.run).toContain("sed -n 's/^regressed=//p'");
+    expect(deltas.run).not.toContain('"changed=true" ]');
+    // Both signals are written to GITHUB_OUTPUT.
+    expect(deltas.run).toContain('echo "changed=${changed}"');
+    expect(deltas.run).toContain('echo "regressed=${regressed}"');
+    expect(deltas.run).toContain('>> "${GITHUB_OUTPUT}"');
+  });
+
+  test("the perf-deltas comment posts for either changed metrics or gate regressions", () => {
+    const comment = commentJob.steps.find(
+      (step) => step.name === "Upsert the perf-deltas PR comment"
+    );
+    expect(comment).toBeDefined();
+    expect(comment.if).toContain("steps.deltas.outputs.changed == 'true'");
+    expect(comment.if).toContain("steps.deltas.outputs.regressed == 'true'");
+    expect(comment.if).toContain("||");
+    expect(comment.env.PERF_CHANGED).toBe("${{ steps.deltas.outputs.changed }}");
+    expect(comment.env.PERF_REGRESSED).toBe("${{ steps.deltas.outputs.regressed }}");
+    expect(comment.with.script).toContain('process.env.PERF_CHANGED === "true"');
+    expect(comment.with.script).toContain('process.env.PERF_REGRESSED === "true"');
+    expect(comment.with.script).toContain("Regression gate:");
+  });
+
+  test("the regression gate is a JS step in the PR job ONLY, runs after the delta comment, and is not the broken C# editmode gate", () => {
+    // The gate moved from a C# EditMode run (which emitted an 'Editor EditMode'
+    // platform that never matched the PlayMode baseline) to a JS step driven by
+    // render-perf-deltas.js's `regressed` signal. The old C# gate steps + their
+    // env/artifacts must be GONE from the perf-benchmarks leg.
+    expect(text).not.toContain("Compute perf-gate assembly list");
+    expect(text).not.toContain("Run perf regression gate");
+    expect(text).not.toContain("DX_PERF_GATE");
+    expect(text).not.toContain("DX_PERF_BASELINE");
+    expect(text).not.toContain("perf-gate-");
+    expect(text).not.toContain("-TestCategory 'PerfGate'");
+    const playmodeRun = perfSteps.find((step) => step.name === "Run Unity Test Runner");
+    expect(playmodeRun.env).not.toHaveProperty("DX_PERF_GATE");
+    expect(playmodeRun.env).not.toHaveProperty("DX_PERF_BASELINE");
+
+    // The gate is a FINAL step of the PR (comment) job, gated on regressed.
+    const gate = commentJob.steps.find(
+      (step) => step.name === "Enforce DxMessaging perf regression gate"
+    );
+    expect(gate).toBeDefined();
+    expect(gate.if).toBe("steps.deltas.outputs.regressed == 'true'");
+    expect(gate.run).toContain("exit 1");
+    expect(gate.run).toContain("::error::");
+    // It must NOT swallow the failure -- a real regression fails the job.
+    expect(gate["continue-on-error"]).toBeUndefined();
+
+    // It must come AFTER the delta-comment step so reviewers see the numbers even
+    // when the gate fails.
+    const commentIndex = commentJob.steps.findIndex(
+      (step) => step.name === "Upsert the perf-deltas PR comment"
+    );
+    const gateIndex = commentJob.steps.indexOf(gate);
+    expect(commentIndex).toBeGreaterThanOrEqual(0);
+    expect(gateIndex).toBeGreaterThan(commentIndex);
+
+    // The gate lives in the PR job only -- the self-hosted benchmark leg never
+    // carries it.
+    expect(perfSteps.some((step) => step.name === "Enforce DxMessaging perf regression gate")).toBe(
+      false
+    );
   });
 
   test("artifact retrieval uses a major-pinned download-artifact action", () => {

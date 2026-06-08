@@ -407,6 +407,7 @@ failed-tests.txt*
 dxm-eol-closure-*
 dxm-cspell-fixture-*
 dxm-uv-test-*
+dxm-cmp-test-*
 
 PERF-PLAN.md*
 OLD-PLAN.md*

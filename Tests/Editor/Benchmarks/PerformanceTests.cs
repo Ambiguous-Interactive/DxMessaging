@@ -22,15 +22,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
         public void Benchmark()
         {
             string operatingSystemSection = BenchmarkDocumentation.GetOperatingSystemSection();
-            BenchmarkSession session = new(
-                operatingSystemSection,
-                "## ",
-                new Func<string>[]
-                {
-                    BenchmarkDocumentation.TryFindPerformanceDocPath,
-                    BenchmarkDocumentation.TryFindReadmePath,
-                }
-            );
+            BenchmarkSession session = new(operatingSystemSection, "## ");
 
             RunWithSession(
                 session,

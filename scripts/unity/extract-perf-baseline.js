@@ -3,20 +3,29 @@
 const fs = require("fs");
 const path = require("path");
 
+const {
+  COMPARISON_SCENARIO_IDS,
+  COMPARISON_SCENARIO_PREFIX,
+  SCENARIOS,
+  isComparisonScenario
+} = require("./perf-scenarios.js");
+
 const CSV_HEADER =
   "scenario,platform,commit,runIndex,emitsPerSecond,allocatedBytesDelta,wallClockMs";
 
-const SCENARIOS = new Set([
-  "UntargetedFlood_OneHandler",
-  "UntargetedFlood_FourHandlers_OnePriority",
-  "UntargetedFlood_FourHandlers_FourPriorities",
-  "TargetedFlood_OneListener",
-  "TargetedFlood_SixteenListeners",
-  "BroadcastFlood_OneHandler",
-  "InterceptorHeavy_FourInterceptors",
-  "PostProcessingHeavy_FourPostProcessors",
-  "RegistrationFlood_1000Types_FromColdBus"
-]);
+// Cross-library comparison rows share the exact CSV/log shape of the dispatch
+// rows but carry a synthetic scenario id of the form
+// "Comparison_<TechKey>_<ScenarioKey>" (e.g. "Comparison_DxMessaging_GlobalToOne").
+// They are NOT in SCENARIOS, so accept a row whose scenario is either a known
+// dispatch key OR a known comparison tech/scenario pair. The CSV schema (7 fields)
+// and the structured-log key names are unchanged; only the set of kept scenario
+// ids grows.
+
+function isKeptScenario(scenario) {
+  return (
+    typeof scenario === "string" && (SCENARIOS.has(scenario) || isComparisonScenario(scenario))
+  );
+}
 
 function usage() {
   return `Usage: node scripts/unity/extract-perf-baseline.js --input <unity-log-or-results> [--input <path> ...] [--output <csv>] [--append|--replace]
@@ -122,7 +131,7 @@ function parseCsvRowFromLine(line) {
   }
 
   const fields = parseCsvFields(trimmed);
-  if (fields.length !== 7 || !SCENARIOS.has(fields[0])) {
+  if (fields.length !== 7 || !isKeptScenario(fields[0])) {
     return null;
   }
 
@@ -153,7 +162,7 @@ function parseStructuredLogFromLine(line) {
     wallClockMs: matchStructuredNumber(trimmed, "wallClockMs")
   };
 
-  if (!SCENARIOS.has(row.scenario)) {
+  if (!isKeptScenario(row.scenario)) {
     return null;
   }
 
@@ -176,10 +185,44 @@ function stripUnityPrefix(line) {
 
 function findScenarioIndex(line) {
   let bestIndex = -1;
+  // Dispatch keys plus strict comparison-row scenario ids; the earliest CSV
+  // scenario field wins so a leading Unity log prefix (e.g. timestamp) is
+  // stripped off a CSV row without treating arbitrary log text as a row start.
   for (const scenario of SCENARIOS) {
-    const index = line.indexOf(scenario);
-    if (index >= 0 && (bestIndex < 0 || index < bestIndex)) {
-      bestIndex = index;
+    let searchFrom = 0;
+    while (searchFrom < line.length) {
+      const index = line.indexOf(scenario, searchFrom);
+      if (index < 0) {
+        break;
+      }
+
+      if (line[index + scenario.length] === "," && (bestIndex < 0 || index < bestIndex)) {
+        bestIndex = index;
+        if (bestIndex === 0) {
+          return bestIndex;
+        }
+      }
+
+      searchFrom = index + 1;
+    }
+  }
+
+  for (const scenario of COMPARISON_SCENARIO_IDS) {
+    let searchFrom = 0;
+    while (searchFrom < line.length) {
+      const index = line.indexOf(scenario, searchFrom);
+      if (index < 0) {
+        break;
+      }
+
+      if (line[index + scenario.length] === "," && (bestIndex < 0 || index < bestIndex)) {
+        bestIndex = index;
+        if (bestIndex === 0) {
+          return bestIndex;
+        }
+      }
+
+      searchFrom = index + 1;
     }
   }
 
@@ -340,6 +383,10 @@ if (require.main === module) {
 
 module.exports = {
   CSV_HEADER,
+  SCENARIOS,
+  COMPARISON_SCENARIO_PREFIX,
+  isComparisonScenario,
+  isKeptScenario,
   extractRows,
   buildCsv,
   parseArgs

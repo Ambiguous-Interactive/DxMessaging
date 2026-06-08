@@ -506,6 +506,8 @@ build_editor_cmd_inner() {
 "
     cmd+="  -assemblyNames ${assemblies_q} \\
 "
+    cmd+="  -releaseCodeOptimization \\
+"
     if [[ -n "${TEST_FILTER}" ]]; then
         filter_q="$(printf '%q' "${TEST_FILTER}")"
         cmd+="  -testFilter ${filter_q} \\

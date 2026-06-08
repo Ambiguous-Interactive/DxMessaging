@@ -220,8 +220,16 @@ jobs:
         unity-version: ${{ fromJSON(needs.matrix-config.outputs.unity-versions) }}
         test-mode: ${{ fromJSON(needs.matrix-config.outputs.test-modes) }}
     steps:
+      - name: Enable Git long paths
+        shell: pwsh
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
           lfs: true
           persist-credentials: false
@@ -344,7 +352,9 @@ jobs:
             -UnityVersion '${{ matrix.unity-version }}' `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+            -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -ReleaseCodeOptimization `
+            -ReleasePlayerBuild
 
       - name: Return Unity license
         if: always()

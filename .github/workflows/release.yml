@@ -220,8 +220,16 @@ jobs:
       checks: write
     timeout-minutes: 660
     steps:
+      - name: Enable Git long paths
+        shell: pwsh
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
           lfs: true
           persist-credentials: false
@@ -318,7 +326,9 @@ jobs:
             -UnityVersion '2022.3.45f1' `
             -TestMode 'editmode' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/release-editmode'
+            -ArtifactsPath '.artifacts/unity/release-editmode' `
+            -ReleaseCodeOptimization `
+            -ReleasePlayerBuild
 
       - name: Return Unity license
         if: always()

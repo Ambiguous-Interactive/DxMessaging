@@ -114,6 +114,10 @@ describe("scripts/unity/run-tests.sh contract", () => {
     expect(content).not.toContain("personal-email");
   });
 
+  test("runs Unity tests with Release code optimization locally", () => {
+    expect(content).toContain("-releaseCodeOptimization");
+  });
+
   test("is serial-FIRST with the .ulf fallback retained", () => {
     // The repo removed the self-hosted Unity Licensing Server and switched to
     // classic SERIAL activation. The local script prefers UNITY_SERIAL +
@@ -277,6 +281,11 @@ describe("scripts/unity/run-tests.ps1 contract", () => {
     expect(content).toContain("UNITY_PASSWORD");
     expect(content).not.toContain('-serial ""');
     expect(content).not.toContain("personal-email");
+  });
+
+  test("runs Unity tests with Release code optimization locally", () => {
+    expect(content).toContain("'-releaseCodeOptimization'");
+    expect(content).toContain("  -releaseCodeOptimization \\");
   });
 
   test("is serial-FIRST with the .ulf fallback retained", () => {
@@ -1737,30 +1746,138 @@ describe("scripts/unity direct CI runner contract", () => {
       expect(guardRegion).toMatch(/timed out after \$playerTimeoutSeconds/);
     });
 
-    test("the standalone configure step (New-ConfiguratorSource) configures IL2CPP and writes a success marker -- no waitForManagedDebugger / ConnectWithProfiler", () => {
+    test("the standalone configure step (New-ConfiguratorSource) parameterizes the backend + NET_Standard + Release codeOpt + stripping, then writes a success marker -- no waitForManagedDebugger / ConnectWithProfiler", () => {
       // All connection suppression lives in the generated build modifier; the
-      // configurator does exactly three PlayerSettings mutations (switch target +
-      // IL2CPP + NET_Standard) PLUS writes the success marker as its FINAL action.
-      // A profiler/debugger PlayerSetting here would be the rejected,
+      // configurator switches the build target, sets the PARAMETERIZED scripting
+      // backend (IL2CPP or Mono2x via -Backend), the non-deprecated
+      // ApiCompatibilityLevel.NET_Standard (NOT the deprecated _2_0 form), Release
+      // code optimization, and disables managed stripping so the test code survives
+      // a Release Mono player build, PLUS writes the success marker as its FINAL
+      // action. A profiler/debugger PlayerSetting here would be the rejected,
       // cross-version-fragile design.
       const body = extractFunctionBody(runCi, "New-ConfiguratorSource");
       expect(body).not.toBe("");
       expect(body).not.toContain("waitForManagedDebugger");
       expect(body).not.toContain("ConnectWithProfiler");
       expect(body).toContain("SwitchActiveBuildTarget");
-      expect(body).toContain("ScriptingImplementation.IL2CPP");
-      expect(body).toContain("ApiCompatibilityLevel.NET_Standard_2_0");
+      // PARAMETERIZED backend (not a pinned IL2CPP/Mono2x member).
+      expect(body).toContain("ScriptingImplementation.$Backend");
+      // The non-deprecated ApiCompatibilityLevel.NET_Standard (.NET Standard 2.1);
+      // the deprecated _2_0 form must be GONE from the configurator.
+      expect(body).toContain("ApiCompatibilityLevel.NET_Standard");
+      expect(body).not.toContain("ApiCompatibilityLevel.NET_Standard_2_0");
+      // The pinned-IL2CPP dead comment reference must be GONE (it existed only to
+      // satisfy the old contract); the live code is parameterized.
+      expect(body).not.toContain("ScriptingImplementation.IL2CPP");
+      // Release editor code optimization is proven for the perf legs.
+      expect(body).toContain("CompilationPipeline.codeOptimization");
+      expect(body).toContain("CodeOptimization.Release");
+      // Managed stripping is disabled so IncludeTestAssemblies + the [Preserve]
+      // standalone TestRunCallback survive a non-development (Release) Mono player.
+      expect(body).toContain("SetManagedStrippingLevel");
+      expect(body).toContain("ManagedStrippingLevel.Disabled");
       // SOURCE-OF-TRUTH MARKER: Apply writes the marker handed in via
       // DXM_CONFIGURE_MARKER_PATH as its final action, so a benign Unity shutdown
       // crash AFTER configuration cannot fail the job (the runner gates on the
       // marker, not the process exit code).
       expect(body).toContain("DXM_CONFIGURE_MARKER_PATH");
       expect(body).toContain("File.WriteAllText(markerPath");
-      // And the marker write must come AFTER the three PlayerSettings mutations
-      // (it proves Apply ran to COMPLETION).
+      // And the success-marker write must remain the FINAL action -- after every
+      // PlayerSettings mutation (it proves Apply ran to COMPLETION). Pin it against
+      // the LAST PlayerSettings call (managed stripping) so the ordering invariant
+      // survives the migration off the deprecated NET_Standard_2_0 anchor.
       expect(body.indexOf("File.WriteAllText(markerPath")).toBeGreaterThan(
-        body.indexOf("ApiCompatibilityLevel.NET_Standard_2_0")
+        body.indexOf("SetManagedStrippingLevel")
       );
+    });
+
+    test("New-ConfiguratorSource is the LAST configurator write, with the success marker as its final C# action", () => {
+      // The success-marker write must be the FINAL action of the generated Apply()
+      // (everything else -- target switch, backend, api level, code optimization,
+      // managed stripping, the proof Debug.Log -- precedes it). Pin it against EACH
+      // PlayerSettings mutation so a reordering that moved the marker earlier fails.
+      const body = extractFunctionBody(runCi, "New-ConfiguratorSource");
+      const markerIdx = body.indexOf("File.WriteAllText(markerPath");
+      expect(markerIdx).toBeGreaterThan(-1);
+      for (const earlier of [
+        "SwitchActiveBuildTarget",
+        "SetScriptingBackend",
+        "SetApiCompatibilityLevel",
+        "CompilationPipeline.codeOptimization",
+        "SetManagedStrippingLevel"
+      ]) {
+        const idx = body.indexOf(earlier);
+        expect(idx).toBeGreaterThan(-1);
+        expect(idx).toBeLessThan(markerIdx);
+      }
+    });
+
+    test("run-ci-tests declares the comparison/Release/backend perf params", () => {
+      // Slice 3b wires the comparison + Mono + Release perf legs through these new
+      // top-level script parameters; the perf-numbers workflow splats them. Pin the
+      // typed param DECLARATION for each (the [switch]/[string] form) so a renamed
+      // or dropped param fails loudly. The -Name caller form lives in the workflow
+      // that invokes the script, not in the script itself.
+      expect(runCi).toMatch(/\[switch\]\$IncludeComparisons\b/);
+      expect(runCi).toMatch(/\[switch\]\$ReleaseCodeOptimization\b/);
+      expect(runCi).toMatch(/\[string\]\$StandaloneScriptingBackend\b/);
+      expect(runCi).toMatch(/\[switch\]\$ReleasePlayerBuild\b/);
+      // StandaloneScriptingBackend is constrained to the two valid backends.
+      expect(runCi).toMatch(/\[ValidateSet\(\s*'IL2CPP'\s*,\s*'Mono2x'\s*\)\]/);
+      // The params are threaded into the ephemeral-project + run wiring (not dead):
+      // the backend flows into Initialize-EphemeralProject, while Release player
+      // and Release code optimization are now the unconditional Unity CI contract.
+      expect(runCi).toContain("-Backend $StandaloneScriptingBackend");
+      expect(runCi).toContain("$UseReleaseCodeOptimization = $true");
+      expect(runCi).toContain("$UseReleasePlayerBuild = $true");
+      expect(runCi).toContain("-DevelopmentBuild:(-not $UseReleasePlayerBuild)");
+      expect(runCi).toContain("-IncludeComparisons:$IncludeComparisons");
+      expect(runCi).not.toContain("if ($ReleaseCodeOptimization)");
+    });
+
+    test("New-ManifestJson injects comparison deps + scopedRegistries ONLY under -IncludeComparisons", () => {
+      // The comparison legs add the OpenUPM scoped registry, external package pins,
+      // and Unity built-in packages from the single source
+      // .github/comparison-packages.json; non-comparison legs must stay byte-for-byte
+      // identical (no scopedRegistries key and no comparison-only dependencies).
+      const body = extractFunctionBody(runCi, "New-ManifestJson");
+      expect(body).not.toBe("");
+      const guardIdx = body.indexOf("if ($IncludeComparisons)");
+      // Match the ASSIGNMENT (not the comment prose that also says
+      // "scopedRegistries"): the manifest key is set only inside the guard block.
+      const scopedIdx = body.indexOf("$manifest['scopedRegistries']");
+      const builtInIdx = body.indexOf("unityBuiltInPackages");
+      expect(guardIdx).toBeGreaterThan(-1);
+      expect(scopedIdx).toBeGreaterThan(guardIdx);
+      expect(builtInIdx).toBeGreaterThan(guardIdx);
+      // The comparison source is read from the single-source JSON, not duplicated.
+      expect(body).toContain("Get-ComparisonPackages");
+    });
+
+    test("-releaseCodeOptimization is only added to -runTests arg arrays that have NO -quit", () => {
+      // -runTests + -quit is mutually exclusive per the Unity manual. The Release
+      // code-optimization CLI flag must therefore live in Unity invocations that
+      // carry -runTests but NOT in the standalone configure pass, which carries
+      // -quit. Bound checks to the array literals so explanatory comments cannot
+      // create false positives.
+      const arrayRegion = (variableName) => {
+        const arrayStart = runCi.indexOf(`${variableName} = @(`);
+        expect(arrayStart).toBeGreaterThan(-1);
+        const arrayEnd = runCi.indexOf("\n        )", arrayStart);
+        expect(arrayEnd).toBeGreaterThan(arrayStart);
+        return runCi.slice(arrayStart, arrayEnd);
+      };
+
+      for (const variableName of ["$buildArgs", "$testArgs"]) {
+        const region = arrayRegion(variableName);
+        expect(region).toContain("'-runTests'");
+        expect(region).toContain("'-releaseCodeOptimization'");
+        expect(region).not.toContain("'-quit'");
+      }
+
+      const configureRegion = arrayRegion("$configureArgs");
+      expect(configureRegion).toContain("'-quit'");
+      expect(configureRegion).not.toContain("'-releaseCodeOptimization'");
     });
 
     test("New-StandaloneBuildModifierSource emits the dual-attribute modifier + cleanup", () => {

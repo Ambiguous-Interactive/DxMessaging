@@ -1,0 +1,163 @@
+#if UNITY_2021_3_OR_NEWER
+namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
+{
+#if UNITY_ATOMS_CORE_PRESENT && UNITY_ATOMS_BASE_ATOMS_PRESENT
+    using System;
+    using System.Collections.Generic;
+    using DxMessaging.Tests.Runtime.Comparisons;
+    using global::UnityAtoms.BaseAtoms;
+    using UnityEngine;
+
+    /// <summary>
+    /// Bridges Unity Atoms using its idiomatic <see cref="IntEvent"/> ScriptableObject event
+    /// asset. Global dispatch is <c>event.Register(Action&lt;int&gt;)</c> + <c>event.Raise(int)</c>
+    /// on a single asset; keyed dispatch uses 16 distinct <see cref="IntEvent"/> assets and
+    /// raises exactly one. All created assets are destroyed in <see cref="Dispose"/>.
+    ///
+    /// The boxing-free struct scenario is unsupported because Unity Atoms' idiomatic event
+    /// assets are concrete per-type ScriptableObjects (e.g. <see cref="IntEvent"/>) with no
+    /// idiomatic generic <c>ComparisonStructPayload</c>-carrying event, so faking it with an
+    /// <c>int</c> would be a non-apples-to-apples datapoint.
+    ///
+    /// Sixteen-subscriber fan-out registers 16 DISTINCT handler delegates (rather than the
+    /// same delegate 16 times) so the fan-out count is exactly 16 regardless of whether the
+    /// Atoms event store dedups equal delegates. Priority, filtering, and post-processing
+    /// have no idiomatic Atoms hook, so those scenarios are declared unsupported.
+    /// </summary>
+    public sealed class UnityAtomsBridge : IMessagingTechBridge
+    {
+        public string TechName => "Unity Atoms";
+
+        public string TechKey => "UnityAtoms";
+
+        public bool RequiresPlayMode => false;
+
+        public long ProgressMarker => _fanOut?.Count ?? _progress;
+
+        private const int DispatchKey = 0;
+        private const int KeyedListenerCount = 16;
+
+        private ComparisonScenario _scenario;
+        private long _progress;
+        private FanOut _fanOut;
+
+        private IntEvent _event;
+        private readonly List<IntEvent> _events = new();
+
+        // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
+        // event register/unregister cost rather than per-cycle delegate allocation.
+        private Action<int> _churnHandler;
+
+        public bool Supports(ComparisonScenario scenario)
+        {
+            switch (scenario)
+            {
+                case ComparisonScenario.GlobalToOneSubscriber:
+                case ComparisonScenario.GlobalToManySubscribers:
+                case ComparisonScenario.KeyedToOneOfMany:
+                case ComparisonScenario.SubscribeUnsubscribeChurn:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        public long InvocationsPerOperation(ComparisonScenario scenario) =>
+            scenario switch
+            {
+                ComparisonScenario.GlobalToManySubscribers => ComparisonScenarios.FanOutSubscribers,
+                _ => 1,
+            };
+
+        public Type DispatchedPayloadType(ComparisonScenario scenario)
+        {
+            return Supports(scenario) ? typeof(int) : null;
+        }
+
+        public void Prepare(ComparisonScenario scenario)
+        {
+            _scenario = scenario;
+
+            void Handle(int value)
+            {
+                _progress++;
+            }
+
+            switch (scenario)
+            {
+                case ComparisonScenario.GlobalToOneSubscriber:
+                    _event = CreateEvent();
+                    _event.Register(Handle);
+                    return;
+                case ComparisonScenario.GlobalToManySubscribers:
+                    _event = CreateEvent();
+                    // Genuinely-distinct subscribers so the fan-out is exactly 16 even if the Atoms
+                    // event store deduped equal delegates. See FanOut for why a loop of identical
+                    // lambdas would collapse to one subscriber under value-equality dedup.
+                    _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
+                    foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
+                    {
+                        _event.Register(subscriber.Handle);
+                    }
+                    return;
+                case ComparisonScenario.KeyedToOneOfMany:
+                    for (int index = 0; index < KeyedListenerCount; index++)
+                    {
+                        IntEvent keyedEvent = CreateEvent();
+                        keyedEvent.Register(Handle);
+                        if (index == DispatchKey)
+                        {
+                            _event = keyedEvent;
+                        }
+                    }
+                    return;
+                case ComparisonScenario.SubscribeUnsubscribeChurn:
+                    _event = CreateEvent();
+                    _churnHandler = Handle;
+                    return;
+                default:
+                    return;
+            }
+        }
+
+        public void EmitOnce()
+        {
+            switch (_scenario)
+            {
+                case ComparisonScenario.SubscribeUnsubscribeChurn:
+                    _event.Register(_churnHandler);
+                    _event.Unregister(_churnHandler);
+                    _progress++;
+                    return;
+                default:
+                    _event.Raise(DispatchKey);
+                    return;
+            }
+        }
+
+        public void Dispose()
+        {
+            for (int index = _events.Count - 1; index >= 0; index--)
+            {
+                IntEvent created = _events[index];
+                if (created != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(created);
+                }
+            }
+            _events.Clear();
+            _event = null;
+            _churnHandler = null;
+            _fanOut = null;
+        }
+
+        private IntEvent CreateEvent()
+        {
+            IntEvent created = ScriptableObject.CreateInstance<IntEvent>();
+            _events.Add(created);
+            return created;
+        }
+    }
+#endif
+}
+#endif

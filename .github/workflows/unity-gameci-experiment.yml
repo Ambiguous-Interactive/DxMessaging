@@ -78,8 +78,16 @@ jobs:
     timeout-minutes: 660
     continue-on-error: true
     steps:
+      - name: Enable Git long paths
+        shell: pwsh
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
           lfs: true
           persist-credentials: false
@@ -147,6 +155,8 @@ jobs:
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}' `
             -ProjectPath '.artifacts/unity/game-ci-projects/${{ inputs.unity-version }}-${{ inputs.test-mode }}' `
+            -ReleaseCodeOptimization `
+            -ReleasePlayerBuild `
             -GenerateOnly
 
       - name: Validate Unity license secrets
@@ -183,7 +193,7 @@ jobs:
           projectPath: .artifacts/unity/game-ci-projects/${{ inputs.unity-version }}-${{ inputs.test-mode }}
           unityVersion: ${{ inputs.unity-version }}
           testMode: ${{ inputs.test-mode }}
-          customParameters: -nographics -assemblyNames "${{ env.DXM_TEST_ASSEMBLIES }}"
+          customParameters: -nographics -releaseCodeOptimization -assemblyNames "${{ env.DXM_TEST_ASSEMBLIES }}"
           artifactsPath: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}
           checkName: GameCI experiment ${{ inputs.unity-version }} ${{ inputs.test-mode }}
           githubToken: ${{ secrets.GITHUB_TOKEN }}

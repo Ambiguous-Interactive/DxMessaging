@@ -40,6 +40,8 @@ const {
   findGameCiTestRunnerInputViolations,
   findUnityGameCiLockAndPreflightViolations,
   findUnityNativeProvisioningViolations,
+  findUnityReleaseModeViolations,
+  findPerfDeltasCommentGateViolations,
   findUnityLicenseReturnViolations,
   findForbiddenUnityLicenseSecretViolations,
   findRequiredUnityLicenseSecretViolations,
@@ -421,6 +423,301 @@ jobs:
     expect(messages).toContain("after acquiring the organization lock");
     expect(messages).toContain("acquire step must pass BUILD_LOCK_TOKEN");
     expect(messages).toContain("release holder-id-suffix must match");
+  });
+});
+
+describe("findUnityReleaseModeViolations", () => {
+  test.each([
+    [
+      "direct literal flags",
+      `
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: |
+          ./scripts/unity/run-ci-tests.ps1 -TestMode editmode -ReleaseCodeOptimization -ReleasePlayerBuild
+`,
+      []
+    ],
+    [
+      "direct explicit true flags",
+      `
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: |
+          ./scripts/unity/run-ci-tests.ps1 -TestMode editmode -ReleaseCodeOptimization:$true -ReleasePlayerBuild:1
+`,
+      []
+    ],
+    [
+      "hashtable splat flags",
+      `
+jobs:
+  perf:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: |
+          $extra = @{
+              ReleaseCodeOptimization = $true
+              ReleasePlayerBuild = $true
+          }
+          ./scripts/unity/run-ci-tests.ps1 -TestMode '\${{ matrix.test-mode }}' @extra
+`,
+      []
+    ],
+    [
+      "indexed hashtable splat flags",
+      `
+jobs:
+  perf:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: |
+          $extra = @{}
+          $extra['ReleaseCodeOptimization'] = $true
+          $extra['ReleasePlayerBuild'] = $true
+          ./scripts/unity/run-ci-tests.ps1 -TestMode editmode @extra
+`,
+      []
+    ],
+    [
+      "game-ci custom parameter",
+      `
+jobs:
+  experiment:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run GameCI
+        uses: game-ci/unity-test-runner@v4
+        with:
+          customParameters: -nographics -releaseCodeOptimization
+`,
+      []
+    ]
+  ])("accepts %s", (_name, fixture, expected) => {
+    expect(findUnityReleaseModeViolations("test.yml", asLines(fixture))).toEqual(expected);
+  });
+
+  test.each([
+    [
+      "direct run missing both Release flags",
+      `
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
+`,
+      ["-ReleaseCodeOptimization", "-ReleasePlayerBuild"]
+    ],
+    [
+      "direct run explicitly disables both Release flags",
+      `
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode -ReleaseCodeOptimization:$false -ReleasePlayerBuild:0
+`,
+      ["-ReleaseCodeOptimization", "-ReleasePlayerBuild"]
+    ],
+    [
+      "hashtable splat explicitly disables both Release flags",
+      `
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: |
+          $extra = @{
+              ReleaseCodeOptimization = $false
+              ReleasePlayerBuild = $false
+          }
+          ./scripts/unity/run-ci-tests.ps1 -TestMode editmode @extra
+`,
+      ["-ReleaseCodeOptimization", "-ReleasePlayerBuild"]
+    ],
+    [
+      "indexed hashtable splat explicitly disables both Release flags",
+      `
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: |
+          $extra = @{}
+          $extra['ReleaseCodeOptimization'] = $false
+          $extra["ReleasePlayerBuild"] = $false
+          ./scripts/unity/run-ci-tests.ps1 -TestMode editmode @extra
+`,
+      ["-ReleaseCodeOptimization", "-ReleasePlayerBuild"]
+    ],
+    [
+      "hashtable splat uses nonliteral values",
+      `
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: |
+          $enabled = $env:UNITY_RELEASE_MODE
+          $extra = @{
+              ReleaseCodeOptimization = $enabled
+              ReleasePlayerBuild = $enabled
+          }
+          ./scripts/unity/run-ci-tests.ps1 -TestMode editmode @extra
+`,
+      ["-ReleaseCodeOptimization", "-ReleasePlayerBuild"]
+    ],
+    [
+      "direct run missing ReleasePlayerBuild",
+      `
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run Unity Test Runner
+        shell: pwsh
+        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode -ReleaseCodeOptimization
+`,
+      ["-ReleasePlayerBuild"]
+    ],
+    [
+      "game-ci missing custom release optimization",
+      `
+jobs:
+  experiment:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - name: Run GameCI
+        uses: game-ci/unity-test-runner@v4
+        with:
+          customParameters: -nographics
+`,
+      ["-releaseCodeOptimization"]
+    ]
+  ])("flags %s", (_name, fixture, expectedSnippets) => {
+    const messages = findUnityReleaseModeViolations("test.yml", asLines(fixture))
+      .map((violation) => violation.message)
+      .join("\n");
+    for (const snippet of expectedSnippets) {
+      expect(messages).toContain(snippet);
+    }
+  });
+
+  test("skips disabled workflow archives", () => {
+    const lines = asLines(`
+jobs:
+  unity:
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    steps:
+      - run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
+`);
+    expect(
+      findUnityReleaseModeViolations(".github/workflows-disabled/unity-tests.yml", lines)
+    ).toEqual([]);
+  });
+});
+
+describe("findPerfDeltasCommentGateViolations", () => {
+  test("accepts perf-deltas comment condition that posts for changed or regressed", () => {
+    const lines = asLines(`
+jobs:
+  comment:
+    steps:
+      - name: Upsert the perf-deltas PR comment
+        if: >-
+          \${{
+            steps.deltas.outputs.changed == 'true' ||
+            steps.deltas.outputs.regressed == 'true'
+          }}
+        uses: actions/github-script@v9
+      - name: Enforce DxMessaging perf regression gate
+        if: steps.deltas.outputs.regressed == 'true'
+        run: exit 1
+`);
+
+    expect(
+      findPerfDeltasCommentGateViolations(".github/workflows/perf-numbers.yml", lines)
+    ).toEqual([]);
+  });
+
+  test("flags changed-only perf-deltas comment condition before a regressed gate", () => {
+    const lines = asLines(`
+jobs:
+  comment:
+    steps:
+      - name: Upsert the perf-deltas PR comment
+        if: steps.deltas.outputs.changed == 'true'
+        uses: actions/github-script@v9
+      - name: Enforce DxMessaging perf regression gate
+        if: steps.deltas.outputs.regressed == 'true'
+        run: exit 1
+`);
+
+    const violations = findPerfDeltasCommentGateViolations(
+      ".github/workflows/perf-numbers.yml",
+      lines
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("changed=true OR regressed=true");
+  });
+
+  test("flags a regression gate that runs before the delta comment", () => {
+    const lines = asLines(`
+jobs:
+  comment:
+    steps:
+      - name: Enforce DxMessaging perf regression gate
+        if: steps.deltas.outputs.regressed == 'true'
+        run: exit 1
+      - name: Upsert the perf-deltas PR comment
+        if: >-
+          \${{
+            steps.deltas.outputs.changed == 'true' ||
+            steps.deltas.outputs.regressed == 'true'
+          }}
+        uses: actions/github-script@v9
+`);
+
+    const violations = findPerfDeltasCommentGateViolations(
+      ".github/workflows/perf-numbers.yml",
+      lines
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("must run after the perf-deltas comment");
+  });
+
+  test("ignores other workflows", () => {
+    const lines = asLines(`
+jobs:
+  comment:
+    steps:
+      - name: Upsert the perf-deltas PR comment
+        if: steps.deltas.outputs.changed == 'true'
+`);
+    expect(findPerfDeltasCommentGateViolations(".github/workflows/other.yml", lines)).toEqual([]);
   });
 });
 

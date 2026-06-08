@@ -228,6 +228,13 @@ const NODE_DIRECT_MAP = Object.freeze({
       label: "validate-changelog-policy"
     }
   ],
+  "validate-comparison-packages": [
+    {
+      command: "node",
+      args: ["scripts/validate-comparison-packages.js"],
+      label: "validate-comparison-packages"
+    }
+  ],
   // npm meta.
   "validate-npm-meta": [
     {

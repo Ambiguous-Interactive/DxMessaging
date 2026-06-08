@@ -6,10 +6,27 @@
     "com.unity.test-framework": "1.6.0",
     "com.unity.test-framework.performance": "3.4.2",
     "com.wallstop-studios.dxmessaging": "file:../..",
+    "com.cysharp.messagepipe": "1.8.1",
+    "com.cysharp.unitask": "2.5.11",
+    "com.svermeulen.extenject": "9.2.0-stcf3",
+    "com.neuecc.unirx": "7.1.0",
+    "com.unity-atoms.unity-atoms-core": "4.6.1",
+    "com.unity-atoms.unity-atoms-base-atoms": "4.6.1",
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.ugui": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequestwww": "1.0.0",
+    "com.unity.modules.assetbundle": "1.0.0",
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.adaptiveperformance": "1.0.0",
     "com.unity.modules.vectorgraphics": "1.0.0"
   },
-  "scopedRegistries": [],
+  "scopedRegistries": [
+    {
+      "name": "package.openupm.com",
+      "url": "https://package.openupm.com",
+      "scopes": ["com.cysharp", "com.svermeulen", "com.neuecc", "com.unity-atoms"]
+    }
+  ],
   "testables": ["com.wallstop-studios.dxmessaging"]
 }

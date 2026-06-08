@@ -28,7 +28,7 @@
 
 ## Performance Benchmarks
 
-These sections are auto-updated by the PlayMode comparison benchmarks in the [Comparison Performance PlayMode tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Editor/Comparisons/ComparisonPerformanceTests.cs). Run the suite locally to refresh the tables.
+The live cross-library comparison matrix is now CI-generated into [Performance Benchmarks](./performance.md) on every push (PlayMode Mono and Standalone IL2CPP); see the [comparison suite source](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) for the scenario bridges. The static tables below are kept for historical context.
 
 ### Comparisons (Windows)
 
@@ -317,7 +317,7 @@ public class AchievementSystem
 
 #### What Problems It Solves
 
-- [x] **Performance:** Zero allocations with struct-based messages (see [benchmarks](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Editor/Comparisons) for comparison data)
+- [x] **Performance:** Zero allocations with struct-based messages (see [benchmarks](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) for comparison data)
 - [x] **DI integration:** First-class support for dependency injection
 - [x] **Async messaging:** Native async/await without blocking
 - [x] **Leak detection:** Analyzer catches forgotten subscriptions at compile-time
