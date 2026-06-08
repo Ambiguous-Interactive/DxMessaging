@@ -29,11 +29,12 @@ const SCENARIOS = new Set([
 // dispatch key OR begins with this prefix. The CSV schema (7 fields) and the
 // structured-log key names are unchanged; only the set of kept scenario ids grows.
 const COMPARISON_SCENARIO_PREFIX = "Comparison_";
+const COMPARISON_SCENARIO_REGEX = /^Comparison_[^_]+_[^_]+$/;
 
 function isKeptScenario(scenario) {
   return (
     typeof scenario === "string" &&
-    (SCENARIOS.has(scenario) || scenario.startsWith(COMPARISON_SCENARIO_PREFIX))
+    (SCENARIOS.has(scenario) || COMPARISON_SCENARIO_REGEX.test(scenario))
   );
 }
 
