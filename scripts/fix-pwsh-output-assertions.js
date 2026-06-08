@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { maskCommentsAndStrings } = require("./lib/source-stripping");
+const { lineNumberAt } = require("./lib/repo-files");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const TEST_ROOTS = [
@@ -1206,10 +1207,6 @@ function collectObjectMethodHelpers(source, mask, bindings) {
     }
   }
   return helpers;
-}
-
-function lineNumberAt(source, index) {
-  return source.slice(0, index).split("\n").length;
 }
 
 function pushRawMergeHelperDefinitions(definitions, base, expressionInfos) {

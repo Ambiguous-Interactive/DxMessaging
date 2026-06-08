@@ -34,6 +34,8 @@
 const fs = require("fs");
 const path = require("path");
 
+const { walkFiles } = require("../../lib/repo-files");
+
 /**
  * Names matching this pattern are perf/benchmark/allocation assemblies and must
  * be excluded from default Unity Test Runner runs.
@@ -88,37 +90,6 @@ const STANDALONE_PLATFORM_NAMES = new Set([
  */
 function isDxMessagingOwnedAssembly(name) {
   return typeof name === "string" && name.startsWith(DXMESSAGING_ASSEMBLY_PREFIX);
-}
-
-/**
- * Recursively enumerate every file path under `dir` whose basename matches
- * `predicate`. Sync. Returns POSIX-style relative paths joined to `dir`.
- *
- * @param {string} dir - Absolute directory to walk
- * @param {(basename: string) => boolean} predicate - File-name filter
- * @returns {string[]} Absolute file paths
- */
-function walkSync(dir, predicate) {
-  const results = [];
-  if (!fs.existsSync(dir)) {
-    return results;
-  }
-
-  /** @type {fs.Dirent[]} */
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const childPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...walkSync(childPath, predicate));
-      continue;
-    }
-
-    if (entry.isFile() && predicate(entry.name)) {
-      results.push(childPath);
-    }
-  }
-
-  return results;
 }
 
 /**
@@ -271,7 +242,9 @@ function enumerateTestAsmdefs(repoRoot) {
   }
 
   const testsDir = path.join(repoRoot, "Tests");
-  const asmdefPaths = walkSync(testsDir, (n) => n.endsWith(".asmdef"));
+  const asmdefPaths = walkFiles(testsDir, {
+    match: (full, dirent) => dirent.name.endsWith(".asmdef")
+  });
 
   /** @type {AsmdefEntry[]} */
   const entries = asmdefPaths.map((asmdefPath) => {
@@ -340,13 +313,7 @@ function defaultIncludeAssemblies(repoRoot, options) {
       if (entry.isForeign) {
         return false;
       }
-      if (
-        !isAsmdefCompatibleWithTarget(
-          entry.includePlatforms,
-          entry.excludePlatforms,
-          target
-        )
-      ) {
+      if (!isAsmdefCompatibleWithTarget(entry.includePlatforms, entry.excludePlatforms, target)) {
         return false;
       }
       if (entry.isPerf) {
@@ -387,13 +354,7 @@ function defaultExcludeAssemblies(repoRoot, options) {
       if (entry.isForeign) {
         return true;
       }
-      if (
-        !isAsmdefCompatibleWithTarget(
-          entry.includePlatforms,
-          entry.excludePlatforms,
-          target
-        )
-      ) {
+      if (!isAsmdefCompatibleWithTarget(entry.includePlatforms, entry.excludePlatforms, target)) {
         return true;
       }
       if (entry.isPerf) {

@@ -38,6 +38,8 @@
 const fs = require("fs");
 const path = require("path");
 
+const { walkFiles, toRepoRelative } = require("./lib/repo-files");
+
 const REPO_ROOT = path.resolve(__dirname, "..");
 const DEVCONTAINER_ROOT = path.join(REPO_ROOT, ".devcontainer");
 
@@ -57,26 +59,9 @@ const TOOL_USE_RE = new RegExp(
 const OVERRIDE_MARKER = "devcontainer-jsonc-ok:";
 
 function listShellFiles(dir) {
-  const out = [];
-  walk(dir, out);
-  return out;
-}
-
-function walk(dir, out) {
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(full, out);
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".sh")) {
-      out.push(full);
-    }
-  }
+  return walkFiles(dir, {
+    match: (full, dirent) => dirent.name.toLowerCase().endsWith(".sh")
+  });
 }
 
 function scanContent(filePath, content) {
@@ -173,11 +158,6 @@ function scanFile(filePath) {
 
 function listDevcontainerShellFiles() {
   return listShellFiles(DEVCONTAINER_ROOT);
-}
-
-function toRepoRelative(absPath) {
-  const rel = path.relative(REPO_ROOT, absPath);
-  return rel.split(path.sep).join("/");
 }
 
 function main() {

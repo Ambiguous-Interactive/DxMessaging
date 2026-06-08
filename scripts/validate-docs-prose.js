@@ -76,6 +76,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { walkFiles } = require("./lib/repo-files");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 
@@ -496,31 +497,23 @@ const RULE_INDEX = new Map(RULES.map((r) => [r.id, r]));
 
 // --- File enumeration -------------------------------------------------------
 
-function walk(dir, predicate, out) {
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch (error) {
-    return;
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (EXCLUDE_DIRS.has(entry.name)) continue;
-      walk(full, predicate, out);
-    } else if (entry.isFile()) {
-      if (predicate(full)) out.push(full);
-    }
-  }
-}
-
 function defaultFileSet() {
   const out = [];
-  walk(ROOT_DIR, (p) => p.endsWith(".md"), out);
+  out.push(
+    ...walkFiles(ROOT_DIR, {
+      match: (p) => p.endsWith(".md"),
+      excludeDir: (full, dirent) => EXCLUDE_DIRS.has(dirent.name)
+    })
+  );
   for (const root of CS_SCAN_ROOTS) {
     const abs = path.join(ROOT_DIR, root);
     if (!fs.existsSync(abs)) continue;
-    walk(abs, (p) => p.endsWith(".cs"), out);
+    out.push(
+      ...walkFiles(abs, {
+        match: (p) => p.endsWith(".cs"),
+        excludeDir: (full, dirent) => EXCLUDE_DIRS.has(dirent.name)
+      })
+    );
   }
   for (const extra of EXTRA_FILES) {
     if (fs.existsSync(extra)) out.push(extra);
@@ -1035,7 +1028,12 @@ function resolveFileList(args) {
       if (stat.isDirectory()) {
         // When --paths targets a directory, walk both .md and .cs
         // files unconditionally -- the user explicitly opted in.
-        walk(abs, (p) => p.endsWith(".md") || p.endsWith(".cs"), out);
+        out.push(
+          ...walkFiles(abs, {
+            match: (p) => p.endsWith(".md") || p.endsWith(".cs"),
+            excludeDir: (full, dirent) => EXCLUDE_DIRS.has(dirent.name)
+          })
+        );
       } else if (stat.isFile()) {
         out.push(abs);
       }

@@ -29,7 +29,7 @@ const ascii = require("./validate-docs-ascii");
 const codePatterns = require("./validate-doc-code-patterns");
 const prose = require("./validate-docs-prose");
 const sharedFormatters = require("./lib/staged-doc-formatters");
-const { isOutsideRelative } = require("./lib/path-classifier");
+const { toRepoRelative } = require("./lib/repo-files");
 
 // Mirror the YAML-level files: '\.(md|cs)$' filter.
 const ALLOWED_EXTS = new Set([".md", ".markdown", ".cs"]);
@@ -40,21 +40,6 @@ const ALLOWED_EXTS = new Set([".md", ".markdown", ".cs"]);
 // repo-relative path level (forward slashes only).
 const EXCLUDE_PREFIXES = ["Library/", "Temp/", "node_modules/", "obj/", "bin/"];
 const EXCLUDE_SEGMENT_RE = /(?:^|\/)(?:bin|obj)\//;
-
-function toRepoRelative(absOrRelPath) {
-  const abs = path.isAbsolute(absOrRelPath)
-    ? absOrRelPath
-    : path.resolve(process.cwd(), absOrRelPath);
-  const rel = path.relative(ROOT_DIR, abs);
-  // Cross-drive-safe (see scripts/lib/path-classifier.js): `isOutsideRelative`
-  // also catches the absolute target `path.relative` yields on Windows when
-  // `abs` is on a different drive than ROOT_DIR.
-  if (isOutsideRelative(rel)) {
-    // Outside the repo; fall back to the raw input so the user sees it.
-    return absOrRelPath.split(path.sep).join("/");
-  }
-  return rel.split(path.sep).join("/");
-}
 
 function isExcluded(repoRelPath) {
   for (const prefix of EXCLUDE_PREFIXES) {

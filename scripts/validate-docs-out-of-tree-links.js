@@ -40,6 +40,8 @@
 const fs = require("fs");
 const path = require("path");
 
+const { walkFiles, toRepoRelative } = require("./lib/repo-files");
+
 const REPO_ROOT = path.resolve(__dirname, "..");
 const DOCS_ROOT = path.join(REPO_ROOT, "docs");
 
@@ -76,26 +78,9 @@ const INLINE_CODE_SPAN_RE = /`[^`\n]+`/g;
 const INDENTED_CODE_LINE_RE = /^(?: {4}|\t)/;
 
 function listAllDocsFiles() {
-  const out = [];
-  walk(DOCS_ROOT, out);
-  return out;
-}
-
-function walk(dir, out) {
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(full, out);
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-      out.push(full);
-    }
-  }
+  return walkFiles(DOCS_ROOT, {
+    match: (full, dirent) => dirent.name.toLowerCase().endsWith(".md")
+  });
 }
 
 function stripFencedBlocks(text) {
@@ -361,11 +346,6 @@ function scanFile(filePath) {
     ];
   }
   return scanContent(filePath, content);
-}
-
-function toRepoRelative(absPath) {
-  const rel = path.relative(REPO_ROOT, absPath);
-  return rel.split(path.sep).join("/");
 }
 
 function isDocsMarkdown(filePath) {

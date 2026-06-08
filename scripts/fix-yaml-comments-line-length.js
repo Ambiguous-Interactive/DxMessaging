@@ -3,7 +3,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const { listTrackedFiles } = require("./lib/repo-files");
 // Single source of truth for the YAML line-length policy, parser, AND the
 // comment-wrap functions. Hoisted into scripts/lib/yaml-line-length.js so this
 // commit-time fixer and the agentic PostToolUse guard cannot silently diverge.
@@ -29,16 +29,9 @@ function resolveRepoRoot(cwd = process.cwd()) {
 }
 
 function getAllTrackedYamlFiles(repoRoot) {
-  const output = execFileSync("git", ["ls-files", "--", "*.yml", "*.yaml"], {
-    cwd: repoRoot,
-    encoding: "utf8"
-  });
-
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => path.resolve(repoRoot, line));
+  return listTrackedFiles(["*.yml", "*.yaml"], { repoRoot, cwd: repoRoot }).map((line) =>
+    path.resolve(repoRoot, line)
+  );
 }
 
 function parseArgs(argv) {

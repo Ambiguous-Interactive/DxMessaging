@@ -36,6 +36,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { parseArgs: parseCliArgs } = require("./lib/cli-options");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const DEFAULT_SOURCE_PATH = path.join(
@@ -942,23 +943,27 @@ function reportResult(result, options = {}) {
  * @returns {{check: boolean, listProperties: boolean, help: boolean, errors: string[]}}
  */
 function parseArgs(argv) {
-  const result = { check: false, listProperties: false, help: false, errors: [] };
-  for (const arg of argv) {
-    if (arg === "--check") {
-      result.check = true;
-      continue;
-    }
-    if (arg === "--list-properties") {
-      result.listProperties = true;
-      continue;
-    }
-    if (arg === "--help" || arg === "-h") {
-      result.help = true;
-      continue;
-    }
-    result.errors.push(`Unknown argument: ${arg}`);
-  }
-  return result;
+  // Flags only; every other token (a bare word, a lone `-`, or `--`) was an
+  // unknown argument in the original loop, in argv order. Collecting all non-flag
+  // tokens as positionals (separator and `=` form disabled) and mapping them to
+  // that same error in order reproduces it exactly.
+  const { values, positionals } = parseCliArgs(argv, {
+    options: {
+      check: { type: "boolean", aliases: ["--check"] },
+      listProperties: { type: "boolean", aliases: ["--list-properties"] },
+      help: { type: "boolean", aliases: ["--help", "-h"] }
+    },
+    allowEquals: false,
+    endOfOptions: false,
+    unknownOption: "collect"
+  });
+  const errors = positionals.map((extra) => `Unknown argument: ${extra}`);
+  return {
+    check: values.check,
+    listProperties: values.listProperties,
+    help: values.help,
+    errors
+  };
 }
 
 function main() {

@@ -56,6 +56,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnPlatformCommandSync } = require("./lib/shell-command");
+const { parseArgs: parseCliArgs } = require("./lib/cli-options");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -527,19 +528,21 @@ function reportResult(result, options = {}) {
  * @returns {{listFiles: boolean, help: boolean, errors: string[]}}
  */
 function parseArgs(argv) {
-  const result = { listFiles: false, help: false, errors: [] };
-  for (const arg of argv) {
-    if (arg === "--list-files") {
-      result.listFiles = true;
-      continue;
-    }
-    if (arg === "--help" || arg === "-h") {
-      result.help = true;
-      continue;
-    }
-    result.errors.push(`Unknown argument: ${arg}`);
-  }
-  return result;
+  // This parser accepts only flags; every other token (a bare word, a lone `-`,
+  // or `--`) was reported as an unknown argument by the original loop, in argv
+  // order. Collecting all non-flag tokens as positionals (separator and `=` form
+  // disabled) and mapping them to that same error in order reproduces it exactly.
+  const { values, positionals } = parseCliArgs(argv, {
+    options: {
+      listFiles: { type: "boolean", aliases: ["--list-files"] },
+      help: { type: "boolean", aliases: ["--help", "-h"] }
+    },
+    allowEquals: false,
+    endOfOptions: false,
+    unknownOption: "collect"
+  });
+  const errors = positionals.map((extra) => `Unknown argument: ${extra}`);
+  return { listFiles: values.listFiles, help: values.help, errors };
 }
 
 function main() {

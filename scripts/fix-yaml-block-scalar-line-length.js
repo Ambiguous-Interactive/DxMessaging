@@ -27,7 +27,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const { listTrackedFiles } = require("./lib/repo-files");
 const { normalizeToLf } = require("./lib/quote-parser");
 const {
   resolveYamlLineLengthPolicy,
@@ -45,16 +45,9 @@ function resolveRepoRoot(cwd = process.cwd()) {
 }
 
 function getAllTrackedYamlFiles(repoRoot) {
-  const output = execFileSync("git", ["ls-files", "--", "*.yml", "*.yaml"], {
-    cwd: repoRoot,
-    encoding: "utf8"
-  });
-
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => path.resolve(repoRoot, line));
+  return listTrackedFiles(["*.yml", "*.yaml"], { repoRoot, cwd: repoRoot }).map((line) =>
+    path.resolve(repoRoot, line)
+  );
 }
 
 function parseArgs(argv) {
