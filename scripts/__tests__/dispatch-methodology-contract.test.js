@@ -243,7 +243,13 @@ describe("dispatch + comparison methodology cross-language contract", () => {
     techKeys = [...techNameByKey.keys()];
   });
 
-  test("DispatchThroughputBenchmarks uses the shared protocol with no median resampling", () => {
+  // The warm/hot scenarios must never median-resample sub-windows; they measure one
+  // continuous window via BenchmarkProtocol.Measure. The dispatch file does legitimately
+  // use the median, but ONLY inside BenchmarkProtocol.MeasureColdLatency for the cold
+  // single-shot reducer (median over distinct closed types) -- never for warm/hot
+  // resampling. These assertions ban the old median-of-runs resampling helpers by
+  // name and require the shared Measure entry point.
+  test("DispatchThroughputBenchmarks uses the shared protocol with no warm/hot median resampling", () => {
     expect(dispatchBenchmark).not.toContain("MedianRuns");
     expect(dispatchBenchmark).not.toContain("MedianByPrimaryMetric");
     expect(dispatchBenchmark).not.toContain("AsMedian");
@@ -252,11 +258,11 @@ describe("dispatch + comparison methodology cross-language contract", () => {
 
   test("dispatch Key literals match SCENARIOS and SCENARIO_ORDER (as sets)", () => {
     const cSharpKeys = literalsOf(dispatchKeyArms);
-    expect(cSharpKeys).toHaveLength(9);
+    expect(cSharpKeys).toHaveLength(13);
 
     expectSetsEqual(cSharpKeys, [...SCENARIOS], "dispatch Key vs extract-perf-baseline SCENARIOS");
     expectSetsEqual(cSharpKeys, SCENARIO_ORDER, "dispatch Key vs render-perf-doc SCENARIO_ORDER");
-    expect(SCENARIO_ORDER).toHaveLength(9);
+    expect(SCENARIO_ORDER).toHaveLength(13);
   });
 
   test("dispatch DisplayName enum arms cover exactly the Key enum arms", () => {

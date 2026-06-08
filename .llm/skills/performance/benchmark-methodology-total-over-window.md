@@ -2,9 +2,9 @@
 title: "Benchmark Methodology: Total Over One Window"
 id: "benchmark-methodology-total-over-window"
 category: "performance"
-version: "1.1.0"
+version: "1.3.0"
 created: "2026-06-07"
-updated: "2026-06-07"
+updated: "2026-06-08"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -171,6 +171,37 @@ per-scenario function is the only place that count diverges.
 Registration scenarios are the one documented exception to the throughput
 report shape: they report wall-clock milliseconds for one-time setup cost
 instead of steady-state emits per second.
+
+## Cold Counterpart: MeasureColdLatency
+
+The window protocol above applies only to warm/hot throughput. Cold (JIT-inclusive
+first-touch) scenarios use `BenchmarkProtocol.MeasureColdLatency`, the cold
+counterpart to `Measure`. Where `Measure` warms up and then sums batches over one
+continuous window, `MeasureColdLatency` runs K trials with NO warm-up and NO
+window. Each trial i builds FRESH state via `setUpTrial(i)` (UNTIMED; the index
+lets the caller pick a DISTINCT closed generic type per trial), times EXACTLY ONE
+`timedOperation` on that state, then disposes it via `tearDownTrial` (UNTIMED). It
+reports the MEDIAN wall clock and median allocation across the K trials, not the
+mean -- cold latency is right-skewed, so one GC or scheduler blip must not move the
+headline.
+
+```csharp
+ColdLatencyMeasurement cold = BenchmarkProtocol.MeasureColdLatency(
+    trials: 32,
+    setUpTrial: index => /* fresh state for trial index (UNTIMED) */ CreateState(index),
+    timedOperation: state => state.EmitOnce(),
+    tearDownTrial: state => state.Dispose());
+double medianMs = cold.MedianWallClockMs;
+long medianBytes = cold.MedianAllocatedBytesDelta;
+```
+
+Cold/latency results carry `emitsPerSecond=0` (the time lives in `wallClockMs`),
+which is what auto-excludes them from the regression gate. The three cold dispatch
+scenarios are the callers: each trial registers a BY-REF (`FastHandler<T>`) no-op
+handler on a fresh bus, then times one emit of a distinct closed generic type, so
+it JIT-compiles and measures the SAME fast dispatch path (`RunFastHandlers`) the
+warm/hot scenarios use; the median over the distinct types stabilizes the JIT
+noise. See the methodology runbook.
 
 ## Why It Holds
 

@@ -13,11 +13,19 @@ const {
   alignTable
 } = require("./render-perf-doc.js");
 
-// Registration scenarios report wall-clock milliseconds (lower is better) and a
-// zero throughput, so their delta is measured on wall clock, not emits/sec.
-// MIRRORS REGISTRATION_SCENARIOS in render-perf-doc.js (kept local because that
-// set is not exported).
-const REGISTRATION_SCENARIOS = new Set(["RegistrationFlood_1000Types_FromColdBus"]);
+// Wall-clock (latency) scenarios report wall-clock milliseconds (lower is better)
+// and a zero throughput, so their delta is measured on wall clock, not emits/sec.
+// This covers both registration floods (cold + warm-JIT) and the three cold
+// first-dispatch scenarios. MIRRORS REGISTRATION_SCENARIOS in render-perf-doc.js
+// (kept local because that set is not exported). isRegression needs no change: a
+// baseline emitsPerSecond<=0 already auto-excludes every one of these from the gate.
+const REGISTRATION_SCENARIOS = new Set([
+  "RegistrationFlood_1000Types_FromColdBus",
+  "RegistrationFlood_1000Types_WarmJit",
+  "UntargetedFirstDispatch_Cold",
+  "TargetedFirstDispatch_Cold",
+  "BroadcastFirstDispatch_Cold"
+]);
 
 // The DxMessaging comparison tech key. The delta comment is DxMessaging-only:
 // dispatch rows are all DxMessaging, but among comparison rows we keep ONLY
@@ -149,7 +157,7 @@ function readInputs(inputs) {
 }
 
 // Is this row a DxMessaging row we should compare? A row is kept when its
-// scenario is one of the 9 dispatch keys OR a Comparison_DxMessaging_* row.
+// scenario is one of the dispatch keys OR a Comparison_DxMessaging_* row.
 // Every other Comparison_<tech>_* row (MessagePipe, UniRx, ...) is dropped so the
 // PR delta comment is strictly about DxMessaging's own numbers.
 function isDxMessagingRow(scenario) {
@@ -189,7 +197,7 @@ function indexDxMessagingRows(rows, scope, platformSubstring = "") {
   return byScenario;
 }
 
-// Stable scenario order for the delta table: the 9 dispatch scenarios first (in
+// Stable scenario order for the delta table: the dispatch scenarios first (in
 // SCENARIO_ORDER), then the DxMessaging comparison scenarios (in
 // COMPARISON_SCENARIO_ORDER), each as its synthetic Comparison_DxMessaging_<key>.
 function deltaScenarioOrder() {

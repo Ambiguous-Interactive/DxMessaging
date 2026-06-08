@@ -45,17 +45,23 @@ function platform(version, scope = "PlayMode") {
   return `${target} ${backend} x64 Release (LinuxEditor; Unity ${version})`;
 }
 
-// The nine dispatch scenarios (emits, alloc, ms). Registration reports wall-clock.
+// The thirteen dispatch scenarios (emits, alloc, ms). The registration floods (cold +
+// warm-JIT) and the three cold first-dispatch scenarios are wall-clock (latency) rows:
+// emits=0 and the time lives in wallClockMs, so they render as ms, not throughput.
 const DISPATCH_SCENARIOS = [
   ["UntargetedFlood_OneHandler", 25000000.125, 0, 1000.0],
   ["UntargetedFlood_FourHandlers_OnePriority", 12000000.5, 0, 1000.0],
   ["UntargetedFlood_FourHandlers_FourPriorities", 8000000.25, 0, 1000.0],
+  ["UntargetedFirstDispatch_Cold", 0, 128, 0.25],
   ["TargetedFlood_OneListener", 18000000.0, 0, 1000.0],
   ["TargetedFlood_SixteenListeners", 4000000.0, 0, 1000.0],
+  ["TargetedFirstDispatch_Cold", 0, 96, 0.3],
   ["BroadcastFlood_OneHandler", 17000000.5, 0, 1000.0],
+  ["BroadcastFirstDispatch_Cold", 0, 64, 0.2],
   ["InterceptorHeavy_FourInterceptors", 7000000.0, 0, 1000.0],
   ["PostProcessingHeavy_FourPostProcessors", 6000000.0, 0, 1000.0],
-  ["RegistrationFlood_1000Types_FromColdBus", 0, 4096, 12.345]
+  ["RegistrationFlood_1000Types_FromColdBus", 0, 4096, 12.345],
+  ["RegistrationFlood_1000Types_WarmJit", 0, 4096, 8.5]
 ];
 
 function structuredLine(scenario, platformString, commit, emits, alloc, ms) {
@@ -66,7 +72,7 @@ function structuredLine(scenario, platformString, commit, emits, alloc, ms) {
   );
 }
 
-// A full set of nine dispatch rows for one Unity version + scope.
+// A full set of dispatch rows for one Unity version + scope.
 function unityLog(version, { commit = "abc1234", scope = "PlayMode" } = {}) {
   const platformString = platform(version, scope);
   return DISPATCH_SCENARIOS.map(([scenario, emits, alloc, ms]) =>
@@ -400,7 +406,7 @@ describe("render-perf-doc selectRowsForVersion", () => {
     const selected = selectRowsForVersion(rows, `Unity ${LATEST}`);
     expect(selected.scopesPresent).toEqual(["PlayMode"]);
     const playMode = selected.dispatchByScope.get("PlayMode");
-    expect(playMode.size).toBe(9);
+    expect(playMode.size).toBe(13);
     for (const row of playMode.values()) {
       expect(row.platform).toContain(LATEST);
       expect(row.platform).not.toContain(OLDER);
@@ -503,6 +509,33 @@ describe("render-perf-doc buildBlock dispatch tables", () => {
     const lastIndex = block.indexOf("Registration Flood (1000 Types, Cold Bus)");
     expect(firstIndex).toBeGreaterThan(0);
     expect(lastIndex).toBeGreaterThan(firstIndex);
+  });
+
+  test("renders the four cold/warm-JIT latency rows as wall-clock ms, not throughput", () => {
+    const block = blockFor(LATEST);
+
+    const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    // The display names appear, with their wall-clock ms values (never an emits/sec value).
+    const coldRows = [
+      ["Untargeted First Dispatch (Cold, Distinct Types)", "0.250 ms"],
+      ["Targeted First Dispatch (Cold, Distinct Types)", "0.300 ms"],
+      ["Broadcast First Dispatch (Cold, Distinct Types)", "0.200 ms"],
+      ["Registration Flood (1000 Types, Warm JIT)", "8.500 ms"]
+    ];
+    for (const [label, ms] of coldRows) {
+      // Match the rendered table row by its trimmed display-name cell and assert the
+      // primary cell is the wall-clock ms value (alignment padding is incidental).
+      const rowPattern = new RegExp(
+        `\\|\\s*${escapeRegex(label)}\\s*\\|\\s*${escapeRegex(ms)}\\s*\\|`
+      );
+      expect(block).toMatch(rowPattern);
+      // No throughput unit is attached to these latency rows.
+      const throughputLeak = new RegExp(
+        `\\|\\s*${escapeRegex(label)}\\s*\\|\\s*[\\d.]+ M emits/sec`
+      );
+      expect(block).not.toMatch(throughputLeak);
+    }
   });
 
   test("renders one dispatch section per scope present, PlayMode (Mono) then Standalone (IL2CPP)", () => {

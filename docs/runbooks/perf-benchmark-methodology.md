@@ -39,6 +39,50 @@ distinct closed generic forces a one-time JIT compile, so the flood measures JIT
 cost, not the registration algorithm; under IL2CPP/AOT those generics are
 precompiled, so the same flood is on the order of 100x cheaper.
 
+### Cold vs warm/hot modes
+
+Both registration and dispatch are covered in two modes. "Cold" is the
+JIT-inclusive first execution -- the genuine first-touch hitch under Mono. "Warm"
+or "hot" is steady state. The mode is encoded as a suffix on the scenario key; the
+7-column baseline CSV is unchanged. Every cold/warm-JIT scenario is a wall-clock
+(latency) row: it sets `emitsPerSecond=0` and puts the time in `wallClockMs`. That
+zero throughput is also what AUTO-EXCLUDES these rows from the CI regression gate
+(`render-perf-deltas.js` treats a baseline `emitsPerSecond<=0` as non-gating), so
+they are report-only -- rendered as wall clock, never gated.
+
+- **Cold = JIT-inclusive first-touch, stabilized via distinct types, median.** A
+  single first emit of one message type is pure JIT noise: it is dominated by the
+  one-time compile of that type's dispatch path. The three
+  `*FirstDispatch_Cold` scenarios instead route through
+  `BenchmarkProtocol.MeasureColdLatency` over 32 trials, one per distinct closed
+  generic message type. Each trial spins up a FRESH bus, registers a no-op handler
+  via the BY-REF (`FastHandler<T>`) overload (untimed), then times EXACTLY ONE emit
+  of that type. The by-ref handler is deliberate: it makes the timed emit
+  JIT-compile and exercise `RunFastHandlers` -- the SAME fast dispatch path the
+  warm/hot scenarios measure -- rather than the slower by-value default path. Each
+  first emit JIT-compiles that closed type's fast dispatch path, and the reported
+  number is the MEDIAN of the 32 per-emit samples. The median rejects the single
+  outlier the very first trial carries (the one-time compile of the shared
+  dispatch infrastructure), giving a stable JIT-inclusive cold first-dispatch
+  number -- symmetric with the registration flood.
+- **Warm-JIT registration flood.** `RegistrationFlood_1000Types_WarmJit` is the
+  JIT-pre-warmed complement to the cold flood. It registers all 1000 cached flood
+  builders once on a THROWAWAY bus (disposed -- only the JIT-compiled code
+  survives), then times a fresh-bus registration of the same 1000 builders. The
+  cold flood times both the Mono JIT compile and the registration data-structure
+  work; the warm-JIT flood isolates the data-structure cost by paying the JIT bill
+  first. Under IL2CPP/AOT the generics are precompiled, so cold and warm-JIT are
+  approximately equal.
+
+The cold counterpart to `BenchmarkProtocol.Measure` is
+`BenchmarkProtocol.MeasureColdLatency`. It runs K trials; each trial builds fresh
+state (untimed, indexed so the caller picks a distinct closed type per trial),
+times EXACTLY ONE operation on it, then tears the state down (untimed). It reports
+the median wall clock and median allocation across the trials (cold latency is
+right-skewed, so the median is the headline). The three cold dispatch scenarios are
+its callers; the continuous-window protocol applies only to the warm/hot throughput
+scenarios.
+
 ### Budget interpretation
 
 Dispatch budgets are interpreted in per-emit terms. Convert throughput to
@@ -89,20 +133,26 @@ apples-to-apples set every library bridge implements (or declares unsupported).
 
 ### Dispatch scenarios (DxMessaging only)
 
-The nine dispatch-throughput scenarios are defined in
-[`DispatchThroughputBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs):
+The thirteen dispatch-throughput scenarios are defined in
+[`DispatchThroughputBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs).
+The first eight are warm/hot throughput; the last five are cold or warm-JIT latency
+(see [Cold vs warm/hot modes](#cold-vs-warmhot-modes)):
 
-| Scenario key                                  | What it measures                                         |
-| --------------------------------------------- | -------------------------------------------------------- |
-| `UntargetedFlood_OneHandler`                  | One untargeted handler on one message type.              |
-| `UntargetedFlood_FourHandlers_OnePriority`    | Four untargeted handlers sharing priority 0.             |
-| `UntargetedFlood_FourHandlers_FourPriorities` | Four untargeted handlers across priorities 0-3.          |
-| `TargetedFlood_OneListener`                   | One targeted listener on one target.                     |
-| `TargetedFlood_SixteenListeners`              | Sixteen targeted listeners on one target.                |
-| `BroadcastFlood_OneHandler`                   | One broadcast handler.                                   |
-| `InterceptorHeavy_FourInterceptors`           | Four interceptors plus one handler.                      |
-| `PostProcessingHeavy_FourPostProcessors`      | Four post-processors plus one handler.                   |
-| `RegistrationFlood_1000Types_FromColdBus`     | Registering 1000 distinct message types from a cold bus. |
+| Scenario key                                  | What it measures                                                       |
+| --------------------------------------------- | ---------------------------------------------------------------------- |
+| `UntargetedFlood_OneHandler`                  | One untargeted handler on one message type.                            |
+| `UntargetedFlood_FourHandlers_OnePriority`    | Four untargeted handlers sharing priority 0.                           |
+| `UntargetedFlood_FourHandlers_FourPriorities` | Four untargeted handlers across priorities 0-3.                        |
+| `TargetedFlood_OneListener`                   | One targeted listener on one target.                                   |
+| `TargetedFlood_SixteenListeners`              | Sixteen targeted listeners on one target.                              |
+| `BroadcastFlood_OneHandler`                   | One broadcast handler.                                                 |
+| `InterceptorHeavy_FourInterceptors`           | Four interceptors plus one handler.                                    |
+| `PostProcessingHeavy_FourPostProcessors`      | Four post-processors plus one handler.                                 |
+| `RegistrationFlood_1000Types_FromColdBus`     | Registering 1000 distinct message types from a cold bus (cold flood).  |
+| `RegistrationFlood_1000Types_WarmJit`         | Registering the same 1000 types after a JIT pre-warm (warm-JIT flood). |
+| `UntargetedFirstDispatch_Cold`                | First untargeted dispatch per type, JIT-inclusive, median of 32 types. |
+| `TargetedFirstDispatch_Cold`                  | First targeted dispatch per type, JIT-inclusive, median of 32 types.   |
+| `BroadcastFirstDispatch_Cold`                 | First broadcast dispatch per type, JIT-inclusive, median of 32 types.  |
 
 ### Comparison scenarios (cross-library)
 
@@ -258,10 +308,11 @@ workflow decides whether to fail from the `regressed=` line.
 
 A scenario regresses when its throughput drops by more than the regression
 threshold (default `0.33`, looser than the comment tolerance) OR its allocation
-exceeds the baseline. Only throughput scenarios participate, so the cold
-registration flood (wall-clock, zero throughput) never trips the gate. The
-comparison is DxMessaging-only: the delta comment keeps the 9 dispatch scenarios
-plus the DxMessaging comparison rows and drops every other library's rows. A
+exceeds the baseline. Only throughput scenarios participate, so the wall-clock
+rows (the cold/warm-JIT registration floods and the cold first-dispatch scenarios,
+all zero throughput) never trip the gate. The comparison is DxMessaging-only: the
+delta comment keeps the dispatch scenarios plus the DxMessaging comparison rows
+and drops every other library's rows. A
 missing or header-only baseline yields `regressed=` empty, which skips the gate
 step for a graceful first-rollout pass.
 

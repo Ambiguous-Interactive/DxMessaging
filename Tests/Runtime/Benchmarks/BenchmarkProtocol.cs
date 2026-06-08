@@ -62,6 +62,150 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 endAllocated - startAllocated
             );
         }
+
+        /// <summary>
+        /// The COLD counterpart to <see cref="Measure"/>. Where <see cref="Measure"/>
+        /// reports steady-state throughput over one warmed window, this runs
+        /// <paramref name="trials"/> single-shot trials and reports the MEDIAN wall-clock
+        /// and median allocation across them. Each trial is a single first-touch
+        /// execution (JIT-inclusive under Mono), so there is no warm-up and no window:
+        /// the timed operation runs exactly once per trial and is timed end to end. The
+        /// median (not the mean) is the headline because cold latency is right-skewed --
+        /// one GC or scheduler blip must not move the reported number.
+        ///
+        /// Each trial i prepares FRESH state via <paramref name="setUpTrial"/> (UNTIMED;
+        /// the <c>i</c> argument lets the caller pick a DISTINCT closed generic type per
+        /// trial so every trial JIT-compiles its own first-touch path), then times
+        /// EXACTLY ONE <paramref name="timedOperation"/> on that state, then disposes the
+        /// state via <paramref name="tearDownTrial"/> (UNTIMED). Both the wall clock and
+        /// the allocation delta are sampled around only the timed operation here, so the
+        /// caller cannot accidentally fold setup or teardown into the cold sample.
+        /// </summary>
+        /// <typeparam name="TState">Per-trial state produced by setup and consumed by the timed op + teardown.</typeparam>
+        /// <param name="trials">Number of single-shot trials; the headline is the median across them.</param>
+        /// <param name="setUpTrial">Builds fresh state for trial <c>i</c> (UNTIMED). Use <c>i</c> to pick a distinct closed type.</param>
+        /// <param name="timedOperation">The ONE operation timed per trial.</param>
+        /// <param name="tearDownTrial">Disposes the trial's state (UNTIMED).</param>
+        public static ColdLatencyMeasurement MeasureColdLatency<TState>(
+            int trials,
+            Func<int, TState> setUpTrial,
+            Action<TState> timedOperation,
+            Action<TState> tearDownTrial
+        )
+        {
+            if (trials <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(trials),
+                    trials,
+                    "Cold-latency trial count must be positive."
+                );
+            }
+
+            if (setUpTrial == null)
+            {
+                throw new ArgumentNullException(nameof(setUpTrial));
+            }
+
+            if (timedOperation == null)
+            {
+                throw new ArgumentNullException(nameof(timedOperation));
+            }
+
+            if (tearDownTrial == null)
+            {
+                throw new ArgumentNullException(nameof(tearDownTrial));
+            }
+
+            double[] wallClockSamples = new double[trials];
+            long[] allocatedSamples = new long[trials];
+            for (int index = 0; index < trials; index++)
+            {
+                TState state = setUpTrial(index);
+                try
+                {
+                    long startAllocated = GC.GetAllocatedBytesForCurrentThread();
+                    long startTimestamp = Stopwatch.GetTimestamp();
+                    timedOperation(state);
+                    long endTimestamp = Stopwatch.GetTimestamp();
+                    long endAllocated = GC.GetAllocatedBytesForCurrentThread();
+                    wallClockSamples[index] =
+                        (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency * 1000d;
+                    allocatedSamples[index] = endAllocated - startAllocated;
+                }
+                finally
+                {
+                    tearDownTrial(state);
+                }
+            }
+
+            return new ColdLatencyMeasurement(
+                Median(wallClockSamples),
+                Median(allocatedSamples),
+                trials
+            );
+        }
+
+        /// <summary>
+        /// Median of a non-empty wall-clock sample set. For an even count it averages the
+        /// two middle elements so a two-trial set still rejects neither sample outright.
+        /// The input is copied before sorting so the caller's array is left untouched.
+        /// </summary>
+        public static double Median(double[] samples)
+        {
+            if (samples == null)
+            {
+                throw new ArgumentNullException(nameof(samples));
+            }
+
+            if (samples.Length == 0)
+            {
+                throw new ArgumentException("Cannot take the median of an empty set.");
+            }
+
+            double[] sorted = (double[])samples.Clone();
+            Array.Sort(sorted);
+            int middle = sorted.Length / 2;
+            if (sorted.Length % 2 == 1)
+            {
+                return sorted[middle];
+            }
+
+            return (sorted[middle - 1] + sorted[middle]) / 2d;
+        }
+
+        /// <summary>
+        /// Median of a non-empty allocation sample set. For an even count it returns the
+        /// overflow-safe integer midpoint of the two middle elements (lower + (upper - lower)
+        /// / 2) so the reported allocation stays integral. The input is copied before sorting.
+        /// </summary>
+        public static long Median(long[] samples)
+        {
+            if (samples == null)
+            {
+                throw new ArgumentNullException(nameof(samples));
+            }
+
+            if (samples.Length == 0)
+            {
+                throw new ArgumentException("Cannot take the median of an empty set.");
+            }
+
+            long[] sorted = (long[])samples.Clone();
+            Array.Sort(sorted);
+            int middle = sorted.Length / 2;
+            if (sorted.Length % 2 == 1)
+            {
+                return sorted[middle];
+            }
+
+            // Overflow-safe integer midpoint of the two middle samples. Allocation deltas are
+            // non-negative and sorted ascending, so (upper - lower) cannot overflow and the
+            // midpoint is exact without converting through double (which rounds large longs up).
+            long lower = sorted[middle - 1];
+            long upper = sorted[middle];
+            return lower + ((upper - lower) / 2);
+        }
     }
 
     /// <summary>Result of a single <see cref="BenchmarkProtocol.Measure"/> window.</summary>
@@ -90,6 +234,32 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     }
 
     /// <summary>
+    /// Result of a <see cref="BenchmarkProtocol.MeasureColdLatency"/> run: the MEDIAN
+    /// wall-clock milliseconds and median allocation delta across <see cref="Trials"/>
+    /// single-shot cold trials. Cold latency is right-skewed, so the median is the
+    /// reported headline rather than the mean.
+    /// </summary>
+    public readonly struct ColdLatencyMeasurement
+    {
+        public ColdLatencyMeasurement(
+            double medianWallClockMs,
+            long medianAllocatedBytesDelta,
+            int trials
+        )
+        {
+            MedianWallClockMs = medianWallClockMs;
+            MedianAllocatedBytesDelta = medianAllocatedBytesDelta;
+            Trials = trials;
+        }
+
+        public double MedianWallClockMs { get; }
+
+        public long MedianAllocatedBytesDelta { get; }
+
+        public int Trials { get; }
+    }
+
+    /// <summary>
     /// Metadata for the dispatch-throughput scenarios. <see cref="Key"/> returns the
     /// STABLE machine identifier used by the baseline CSV, the perf-doc renderer, and
     /// the regression gate; it must never change. <see cref="DisplayName"/> returns the
@@ -104,18 +274,29 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// <summary>
         /// Per-scenario warm-up emit count. Every scenario keeps the shared
         /// <see cref="BenchmarkProtocol.WarmupEmits"/> default except the cold-bus
-        /// registration flood, which must measure first-touch registration cost and so
-        /// performs no warm-up flood (0).
+        /// registration flood and the four cold/warm-JIT latency scenarios, which measure
+        /// one-time or first-touch cost and so perform no warm-up flood (0).
         /// </summary>
         public static int WarmupEmits(DispatchBenchmarkScenario scenario)
         {
-            // The registration flood is a cold path that bypasses warm-up entirely via
-            // MeasureRegistrationFlood, so this 0 branch is defensive: it keeps the
-            // contract correct (no warm-up flood for first-touch registration) should a
-            // future caller route the flood through the shared warm-up helper.
-            return scenario == DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
-                ? 0
-                : BenchmarkProtocol.WarmupEmits;
+            // The registration floods and cold-dispatch scenarios are cold/latency paths
+            // measured outside the shared warm-up helper (MeasureRegistrationFlood,
+            // MeasureRegistrationFloodWarmJit, MeasureColdFirstDispatch). The 0 branches
+            // are defensive: they keep the contract correct (no warm-up flood for
+            // first-touch / one-time cost) should a future caller route any of them
+            // through the shared warm-up helper. The warm-JIT flood pre-warms the JIT by
+            // registering on a throwaway bus, not by flooding emits, so it is 0 too.
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus:
+                case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
+                case DispatchBenchmarkScenario.UntargetedFirstDispatchCold:
+                case DispatchBenchmarkScenario.TargetedFirstDispatchCold:
+                case DispatchBenchmarkScenario.BroadcastFirstDispatchCold:
+                    return 0;
+                default:
+                    return BenchmarkProtocol.WarmupEmits;
+            }
         }
 
         public static string Key(DispatchBenchmarkScenario scenario)
@@ -137,6 +318,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "PostProcessingHeavy_FourPostProcessors",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
                     "RegistrationFlood_1000Types_FromColdBus",
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>
+                    "RegistrationFlood_1000Types_WarmJit",
+                DispatchBenchmarkScenario.UntargetedFirstDispatchCold =>
+                    "UntargetedFirstDispatch_Cold",
+                DispatchBenchmarkScenario.TargetedFirstDispatchCold => "TargetedFirstDispatch_Cold",
+                DispatchBenchmarkScenario.BroadcastFirstDispatchCold =>
+                    "BroadcastFirstDispatch_Cold",
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
             };
         }
@@ -163,6 +351,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "Post-Processing Heavy (Four Post-Processors)",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
                     "Registration Flood (1000 Types, Cold Bus)",
+                DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>
+                    "Registration Flood (1000 Types, Warm JIT)",
+                DispatchBenchmarkScenario.UntargetedFirstDispatchCold =>
+                    "Untargeted First Dispatch (Cold, Distinct Types)",
+                DispatchBenchmarkScenario.TargetedFirstDispatchCold =>
+                    "Targeted First Dispatch (Cold, Distinct Types)",
+                DispatchBenchmarkScenario.BroadcastFirstDispatchCold =>
+                    "Broadcast First Dispatch (Cold, Distinct Types)",
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
             };
         }

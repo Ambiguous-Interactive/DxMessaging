@@ -15,7 +15,11 @@ const SCENARIOS = new Set([
   "BroadcastFlood_OneHandler",
   "InterceptorHeavy_FourInterceptors",
   "PostProcessingHeavy_FourPostProcessors",
-  "RegistrationFlood_1000Types_FromColdBus"
+  "RegistrationFlood_1000Types_FromColdBus",
+  "RegistrationFlood_1000Types_WarmJit",
+  "UntargetedFirstDispatch_Cold",
+  "TargetedFirstDispatch_Cold",
+  "BroadcastFirstDispatch_Cold"
 ]);
 
 // Cross-library comparison rows share the exact CSV/log shape of the dispatch

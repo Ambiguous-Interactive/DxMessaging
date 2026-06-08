@@ -69,11 +69,49 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             RunGate(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus);
         }
 
+        [Test, Explicit, Category("PerfGate")]
+        public void RegistrationFlood1000TypesWarmJit()
+        {
+            RunGate(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit);
+        }
+
+        [Test, Explicit, Category("PerfGate")]
+        public void UntargetedFirstDispatchCold()
+        {
+            RunGate(DispatchBenchmarkScenario.UntargetedFirstDispatchCold);
+        }
+
+        [Test, Explicit, Category("PerfGate")]
+        public void TargetedFirstDispatchCold()
+        {
+            RunGate(DispatchBenchmarkScenario.TargetedFirstDispatchCold);
+        }
+
+        [Test, Explicit, Category("PerfGate")]
+        public void BroadcastFirstDispatchCold()
+        {
+            RunGate(DispatchBenchmarkScenario.BroadcastFirstDispatchCold);
+        }
+
         private static void RunGate(DispatchBenchmarkScenario scenario)
         {
             if (Environment.GetEnvironmentVariable(PerfGateEnvVar) != "1")
             {
                 Assert.Ignore($"{PerfGateEnvVar}=1 is required to run the perf smoke gate.");
+            }
+
+            // The cold first-dispatch scenarios are JIT-inclusive first-touch latency and
+            // are far too JIT-noisy to gate, even locally -- they are report-only. Skip them
+            // before measuring so this local gate never trips on cold-dispatch jitter. The
+            // warm-JIT registration flood, by contrast, is stable enough to gate and falls
+            // through to the registration wall-clock branch below (it is a registration
+            // scenario). A JS-side test asserts the cold-dispatch rows are auto-excluded
+            // from the CI gate via emitsPerSecond=0.
+            if (IsReportOnlyColdDispatch(scenario))
+            {
+                Assert.Ignore(
+                    $"{DispatchThroughputBenchmarks.GetScenarioName(scenario)} is a cold first-dispatch latency scenario; it is report-only and excluded from the perf gate (too JIT-noisy to gate)."
+                );
             }
 
             DispatchBenchmarkResult current = DispatchThroughputBenchmarks.RunScenario(scenario);
@@ -110,6 +148,26 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 allocationBudgetBytes,
                 $"{scenarioName} allocated {current.AllocatedBytesDelta.ToString(CultureInfo.InvariantCulture)} bytes, exceeding the baseline allocation budget of {allocationBudgetBytes.ToString(CultureInfo.InvariantCulture)} bytes."
             );
+        }
+
+        /// <summary>
+        /// The three cold first-dispatch scenarios are JIT-inclusive first-touch latency
+        /// measurements: even with the distinct-type median they are too JIT-noisy to gate
+        /// reliably, so the local smoke gate treats them as report-only and skips them. The
+        /// warm-JIT registration flood is NOT report-only -- it is stable enough to gate and
+        /// flows through the registration wall-clock branch.
+        /// </summary>
+        internal static bool IsReportOnlyColdDispatch(DispatchBenchmarkScenario scenario)
+        {
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.UntargetedFirstDispatchCold:
+                case DispatchBenchmarkScenario.TargetedFirstDispatchCold:
+                case DispatchBenchmarkScenario.BroadcastFirstDispatchCold:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private static IReadOnlyList<BaselineRow> LoadBaselines()

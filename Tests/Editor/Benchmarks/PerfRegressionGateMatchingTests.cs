@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 {
     using System;
     using System.Collections.Generic;
+    using DxMessaging.Tests.Runtime.Benchmarks;
     using NUnit.Framework;
     using BaselineRow = PerfRegressionSmokeTests.BaselineRow;
 
@@ -237,6 +238,52 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                     original
                 );
             }
+        }
+
+        [Test]
+        public void ColdFirstDispatchScenariosAreReportOnlyAndSkippedByTheGate()
+        {
+            // The three cold first-dispatch scenarios are JIT-inclusive first-touch latency
+            // and are excluded from the gate (report-only); the local smoke gate skips them
+            // via IsReportOnlyColdDispatch before running any measurement window.
+            Assert.IsTrue(
+                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
+                    DispatchBenchmarkScenario.UntargetedFirstDispatchCold
+                )
+            );
+            Assert.IsTrue(
+                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
+                    DispatchBenchmarkScenario.TargetedFirstDispatchCold
+                )
+            );
+            Assert.IsTrue(
+                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
+                    DispatchBenchmarkScenario.BroadcastFirstDispatchCold
+                )
+            );
+        }
+
+        [Test]
+        public void WarmJitFloodAndThroughputScenariosAreNotReportOnlyColdDispatch()
+        {
+            // The warm-JIT registration flood is stable enough to gate (registration
+            // wall-clock branch), so it is NOT report-only. Neither is any throughput
+            // scenario nor the cold registration flood.
+            Assert.IsFalse(
+                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
+                    DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit
+                )
+            );
+            Assert.IsFalse(
+                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
+                    DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
+                )
+            );
+            Assert.IsFalse(
+                PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
+                    DispatchBenchmarkScenario.UntargetedFloodOneHandler
+                )
+            );
         }
 
         [Test]

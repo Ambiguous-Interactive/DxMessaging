@@ -77,6 +77,33 @@ describe("extract-perf-baseline", () => {
     });
   });
 
+  test("keeps the cold first-dispatch and warm-JIT flood rows in the keep-set", () => {
+    const content = [
+      "Noise before results",
+      // A cold first-dispatch row (latency: emits=0, time in wallClockMs).
+      'UntargetedFirstDispatch_Cold,"Editor PlayMode Mono x64 Release (LinuxEditor; Unity 6000.3.16f1)",abc1234,-1,0.000,128,0.250',
+      // The warm-JIT registration flood row (latency).
+      'RegistrationFlood_1000Types_WarmJit,"Editor PlayMode Mono x64 Release (LinuxEditor; Unity 6000.3.16f1)",abc1234,-1,0.000,4096,8.500',
+      // A structured-log cold targeted row (also kept).
+      '[TestRunner] {scenario:"TargetedFirstDispatch_Cold", platform:"Standalone IL2CPP x64 Release (LinuxEditor; Unity 6000.3.16f1)", commit:"abc1234", runIndex:-1, emitsPerSec:0.0, allocatedBytesDelta:64, wallClockMs:0.01}',
+      "Noise after results"
+    ].join("\n");
+
+    const rows = extractRows(content);
+    const scenarios = rows.map((row) => row.scenario);
+    expect(scenarios).toContain("UntargetedFirstDispatch_Cold");
+    expect(scenarios).toContain("RegistrationFlood_1000Types_WarmJit");
+    expect(scenarios).toContain("TargetedFirstDispatch_Cold");
+    expect(rows).toHaveLength(3);
+
+    const cold = rows.find((row) => row.scenario === "UntargetedFirstDispatch_Cold");
+    expect(cold).toMatchObject({
+      emitsPerSecond: "0.000",
+      allocatedBytesDelta: "128",
+      wallClockMs: "0.250"
+    });
+  });
+
   test("appends rows to an existing baseline without duplicating the header", () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-perf-"));
     const inputPath = path.join(tempDir, "unity.log");

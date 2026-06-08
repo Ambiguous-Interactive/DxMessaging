@@ -47,19 +47,25 @@ function csvLine(scenario, platformString, commit, emits, alloc, ms) {
 const CSV_HEADER =
   "scenario,platform,commit,runIndex,emitsPerSecond,allocatedBytesDelta,wallClockMs";
 
-// A baseline value table. [scenario, emits, alloc, ms]. Includes the 9 dispatch
-// scenarios (registration carries 0 emits + wall clock), DxMessaging comparison
-// rows, AND a couple of NON-DxMessaging comparison rows that must be ignored.
+// A baseline value table. [scenario, emits, alloc, ms]. Includes the 13 dispatch
+// scenarios (the registration floods and the three cold first-dispatch scenarios carry
+// 0 emits + wall clock), DxMessaging comparison rows, AND a couple of NON-DxMessaging
+// comparison rows that must be ignored. 13 dispatch + 2 DxMessaging comparison = 15
+// DxMessaging rows that survive indexDxMessagingRows.
 const BASELINE = [
   ["UntargetedFlood_OneHandler", 25000000, 0, 1000],
   ["UntargetedFlood_FourHandlers_OnePriority", 12000000, 0, 1000],
   ["UntargetedFlood_FourHandlers_FourPriorities", 8000000, 0, 1000],
+  ["UntargetedFirstDispatch_Cold", 0, 128, 0.25],
   ["TargetedFlood_OneListener", 18000000, 0, 1000],
   ["TargetedFlood_SixteenListeners", 4000000, 0, 1000],
+  ["TargetedFirstDispatch_Cold", 0, 96, 0.3],
   ["BroadcastFlood_OneHandler", 17000000, 0, 1000],
+  ["BroadcastFirstDispatch_Cold", 0, 64, 0.2],
   ["InterceptorHeavy_FourInterceptors", 7000000, 0, 1000],
   ["PostProcessingHeavy_FourPostProcessors", 6000000, 0, 1000],
   ["RegistrationFlood_1000Types_FromColdBus", 0, 4096, 12.345],
+  ["RegistrationFlood_1000Types_WarmJit", 0, 4096, 8.5],
   ["Comparison_DxMessaging_GlobalToOne", 16980000, 0, 1000],
   ["Comparison_DxMessaging_StructNoBox", 20000000, 0, 1000],
   // Non-DxMessaging comparison rows -- must be excluded from the delta table.
@@ -121,7 +127,7 @@ function rowFor(markdown, scenarioLabelText) {
 }
 
 describe("render-perf-deltas isDxMessagingRow (DxMessaging-only filter)", () => {
-  test("keeps the 9 dispatch scenarios", () => {
+  test("keeps the dispatch scenarios", () => {
     expect(isDxMessagingRow("UntargetedFlood_OneHandler")).toBe(true);
     expect(isDxMessagingRow("RegistrationFlood_1000Types_FromColdBus")).toBe(true);
   });
@@ -150,8 +156,8 @@ describe("render-perf-deltas indexDxMessagingRows (scope matching)", () => {
       [currentLog({ scope: "PlayMode" }), currentLog({ scope: "Standalone" })].join("\n")
     );
     const playMode = indexDxMessagingRows(rows, "PlayMode");
-    // 9 dispatch + 2 DxMessaging comparison rows; the 2 non-DxMessaging rows are dropped.
-    expect(playMode.size).toBe(11);
+    // 13 dispatch + 2 DxMessaging comparison rows; the 2 non-DxMessaging rows are dropped.
+    expect(playMode.size).toBe(15);
     expect(playMode.has("Comparison_MessagePipe_GlobalToOne")).toBe(false);
     for (const row of playMode.values()) {
       // The platform carries "Mono" (PlayMode) -- scope still matched on PlayMode.
@@ -159,7 +165,7 @@ describe("render-perf-deltas indexDxMessagingRows (scope matching)", () => {
     }
 
     const standalone = indexDxMessagingRows(rows, "Standalone");
-    expect(standalone.size).toBe(11);
+    expect(standalone.size).toBe(15);
     for (const row of standalone.values()) {
       // Standalone rows carry the IL2CPP backend token; matching is by scope only.
       expect(row.platform).toContain("Standalone IL2CPP");
@@ -184,18 +190,24 @@ describe("render-perf-deltas indexDxMessagingRows (scope matching)", () => {
 });
 
 describe("render-perf-deltas deltaScenarioOrder + scenarioLabel", () => {
-  test("orders the 9 dispatch scenarios first, then DxMessaging comparison scenarios", () => {
+  test("orders the 13 dispatch scenarios first, then DxMessaging comparison scenarios", () => {
     const order = deltaScenarioOrder();
-    expect(order.slice(0, 9)).toEqual([
+    // The 13 dispatch scenarios in SCENARIO_ORDER: each cold first-dispatch key sits
+    // beside its warm sibling kind-group, and the warm-JIT flood beside the cold flood.
+    expect(order.slice(0, 13)).toEqual([
       "UntargetedFlood_OneHandler",
       "UntargetedFlood_FourHandlers_OnePriority",
       "UntargetedFlood_FourHandlers_FourPriorities",
+      "UntargetedFirstDispatch_Cold",
       "TargetedFlood_OneListener",
       "TargetedFlood_SixteenListeners",
+      "TargetedFirstDispatch_Cold",
       "BroadcastFlood_OneHandler",
+      "BroadcastFirstDispatch_Cold",
       "InterceptorHeavy_FourInterceptors",
       "PostProcessingHeavy_FourPostProcessors",
-      "RegistrationFlood_1000Types_FromColdBus"
+      "RegistrationFlood_1000Types_FromColdBus",
+      "RegistrationFlood_1000Types_WarmJit"
     ]);
     expect(order).toContain("Comparison_DxMessaging_GlobalToOne");
     expect(order.every((key) => !key.startsWith("Comparison_MessagePipe"))).toBe(true);
@@ -221,9 +233,9 @@ describe("render-perf-deltas buildDeltaTable (table + changed signal)", () => {
     const result = buildDeltaTable(current, baseline, DEFAULT_TOLERANCE, "PlayMode");
     expect(result.changed).toBe(false);
     const rows = tableRows(result.markdown);
-    // Header + 11 DxMessaging rows.
+    // Header + 15 DxMessaging rows.
     expect(rows[0]).toEqual(["Scenario", "Baseline", "Current", "Delta"]);
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(16);
     // Non-DxMessaging rows never appear.
     expect(result.markdown).not.toContain("MessagePipe");
     expect(result.markdown).not.toContain("UniRx");
@@ -376,6 +388,40 @@ describe("render-perf-deltas regression gate (isRegression / computeRegressed)",
     const table = buildDeltaTable(current, baseline, DEFAULT_TOLERANCE, "PlayMode");
     expect(table.changed).toBe(true);
     expect(computeRegressed(current, baseline, DEFAULT_REGRESSION_THRESHOLD)).toBe(false);
+  });
+
+  // The cold first-dispatch scenarios and the warm-JIT flood are wall-clock (latency)
+  // rows with zero baseline throughput, so they are auto-excluded from the gate exactly
+  // like the cold registration flood -- even a large wall-clock slowdown or an allocation
+  // jump must not trip regressed. Mirrors the flood-exclusion test above.
+  test("the cold first-dispatch and warm-JIT latency rows are EXCLUDED from the regression gate", () => {
+    const { current, baseline } = indexes({
+      current: {
+        UntargetedFirstDispatch_Cold: { ms: 50.0, alloc: 999999 },
+        TargetedFirstDispatch_Cold: { ms: 50.0, alloc: 999999 },
+        BroadcastFirstDispatch_Cold: { ms: 50.0, alloc: 999999 },
+        RegistrationFlood_1000Types_WarmJit: { ms: 100.0, alloc: 8192 }
+      }
+    });
+    // The delta comment still reports the movement (changed=true)...
+    const table = buildDeltaTable(current, baseline, DEFAULT_TOLERANCE, "PlayMode");
+    expect(table.changed).toBe(true);
+    // ...but the GATE ignores every one of these zero-throughput latency rows.
+    expect(computeRegressed(current, baseline, DEFAULT_REGRESSION_THRESHOLD)).toBe(false);
+  });
+
+  test("a cold first-dispatch row renders as wall-clock percent in the delta table", () => {
+    const { current, baseline } = indexes({
+      current: { UntargetedFirstDispatch_Cold: { ms: 0.5 } } // 0.25 -> 0.5 ms, +100%
+    });
+    const table = buildDeltaTable(current, baseline, DEFAULT_TOLERANCE, "PlayMode");
+    const row = rowFor(table.markdown, "Untargeted First Dispatch (Cold, Distinct Types)");
+    expect(row).toBeDefined();
+    expect(row[1]).toContain("0.250 ms");
+    expect(row[2]).toContain("0.500 ms");
+    // Wall-clock percent move, sign present (never a throughput unit on a latency row).
+    expect(row[3]).toMatch(/^\+\d/);
+    expect(row[1]).not.toContain("M emits/sec");
   });
 
   test("a zero-throughput overlapping scenario never regresses, even on an allocation jump", () => {

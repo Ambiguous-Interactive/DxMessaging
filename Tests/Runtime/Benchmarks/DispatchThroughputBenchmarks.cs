@@ -34,6 +34,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         InterceptorHeavyFourInterceptors,
         PostProcessingHeavyFourPostProcessors,
         RegistrationFlood1000TypesFromColdBus,
+        RegistrationFlood1000TypesWarmJit,
+        UntargetedFirstDispatchCold,
+        TargetedFirstDispatchCold,
+        BroadcastFirstDispatchCold,
     }
 
     public sealed class DispatchThroughputBenchmarks
@@ -101,6 +105,30 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             _ = RunScenario(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus);
         }
 
+        [Test, Performance, Category("PerfBench")]
+        public void RegistrationFlood1000TypesWarmJit()
+        {
+            _ = RunScenario(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit);
+        }
+
+        [Test, Performance, Category("PerfBench")]
+        public void UntargetedFirstDispatchCold()
+        {
+            _ = RunScenario(DispatchBenchmarkScenario.UntargetedFirstDispatchCold);
+        }
+
+        [Test, Performance, Category("PerfBench")]
+        public void TargetedFirstDispatchCold()
+        {
+            _ = RunScenario(DispatchBenchmarkScenario.TargetedFirstDispatchCold);
+        }
+
+        [Test, Performance, Category("PerfBench")]
+        public void BroadcastFirstDispatchCold()
+        {
+            _ = RunScenario(DispatchBenchmarkScenario.BroadcastFirstDispatchCold);
+        }
+
         [Test, Explicit, Performance, Category("PerfBaseline")]
         public void UpdateDispatchThroughputBaseline()
         {
@@ -130,10 +158,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             bool logResult = true
         )
         {
-            DispatchBenchmarkResult result =
-                scenario == DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
-                    ? MeasureRegistrationFlood()
-                    : MeasureEmitScenario(scenario);
+            DispatchBenchmarkResult result = MeasureScenario(scenario);
             if (logResult)
             {
                 Debug.Log(result.ToStructuredLog());
@@ -141,6 +166,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
 
             return result;
+        }
+
+        // Route each scenario to its measurement methodology. Most scenarios are warm/hot
+        // throughput windows (MeasureEmitScenario). The cold registration flood and its
+        // warm-JIT complement, plus the three cold first-dispatch scenarios, are latency
+        // measurements handled by dedicated helpers.
+        private static DispatchBenchmarkResult MeasureScenario(DispatchBenchmarkScenario scenario)
+        {
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus:
+                    return MeasureRegistrationFlood();
+                case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
+                    return MeasureRegistrationFloodWarmJit();
+                case DispatchBenchmarkScenario.UntargetedFirstDispatchCold:
+                case DispatchBenchmarkScenario.TargetedFirstDispatchCold:
+                case DispatchBenchmarkScenario.BroadcastFirstDispatchCold:
+                    return MeasureColdFirstDispatch(scenario);
+                default:
+                    return MeasureEmitScenario(scenario);
+            }
         }
 
         public static string GetScenarioName(DispatchBenchmarkScenario scenario)
@@ -201,6 +247,159 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 afterAllocatedBytes - beforeAllocatedBytes,
                 TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
             );
+        }
+
+        // The JIT-pre-warmed complement to MeasureRegistrationFlood. The cold flood times
+        // BOTH the Mono JIT compile of each closed generic AND the registration
+        // data-structure work; this scenario isolates the data-structure cost by paying
+        // the JIT bill FIRST on a throwaway bus, then timing a fresh-bus registration of
+        // the same 1000 builders. Only the JIT-compiled code survives the throwaway scope;
+        // the registration state is torn down, so the timed pass registers from a genuinely
+        // empty bus -- same shape as MeasureRegistrationFlood, just warm. Under IL2CPP/AOT
+        // the generics are precompiled so warm and cold are ~equal; under Mono the warm
+        // number is the registration cost with the JIT hitch removed.
+        private static DispatchBenchmarkResult MeasureRegistrationFloodWarmJit()
+        {
+            Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
+
+            // JIT pre-warm: register all 1000 builders once on a throwaway bus so the
+            // per-closed-generic Mono JIT compile happens here, OUTSIDE the timed region.
+            // Dispose tears the registrations down; only the compiled code persists.
+            using (BenchmarkRegistrationScope warmupScope = new())
+            {
+                for (int index = 0; index < builders.Length; index++)
+                {
+                    builders[index](warmupScope.PrimaryToken);
+                }
+            }
+
+            long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            long startTimestamp = Stopwatch.GetTimestamp();
+            using (BenchmarkRegistrationScope scope = new())
+            {
+                for (int index = 0; index < builders.Length; index++)
+                {
+                    builders[index](scope.PrimaryToken);
+                }
+            }
+            long endTimestamp = Stopwatch.GetTimestamp();
+            long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+
+            return DispatchBenchmarkResult.ForRegistrationScenario(
+                GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit),
+                runIndex: -1,
+                afterAllocatedBytes - beforeAllocatedBytes,
+                TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+            );
+        }
+
+        // The cold dispatch flood: the JIT-inclusive first-touch dispatch hitch, stabilized
+        // via distinct types. A SINGLE first emit of one message type is pure JIT noise -- it
+        // is dominated by the one-time compile of that type's dispatch path and the shared
+        // dispatch infrastructure, and a single sample cannot be trusted. So, symmetric with
+        // the registration flood, this routes through BenchmarkProtocol.MeasureColdLatency
+        // (the cold counterpart to Measure) over 32 trials, one per RegistrationFloodMarkerTypes
+        // marker. Each trial spins up a FRESH bus, registers a BY-REF (FastHandler<T>) no-op
+        // handler for a DISTINCT closed generic message type (UNTIMED), then times EXACTLY ONE
+        // emit of that type -- which JIT-compiles that closed type's fast dispatch path
+        // (RunFastHandlers), the SAME path the warm/hot scenarios measure. The MEDIAN of the
+        // 32 per-emit samples rejects the single outlier the very first trial carries (the
+        // one-time compile of the SHARED dispatch infrastructure lands on whichever type runs
+        // first). Registration and scope teardown are untimed: only the first dispatch counts.
+        private static DispatchBenchmarkResult MeasureColdFirstDispatch(
+            DispatchBenchmarkScenario scenario
+        )
+        {
+            ColdDispatchKind kind = ColdDispatchKindFor(scenario);
+            Type[] markerTypes = RegistrationFloodMarkerTypes.All;
+
+            // Build the per-type set-up + single-emit closures BEFORE the trial loop so the
+            // reflection (MakeGenericMethod + CreateDelegate) and the delegate allocation
+            // never count against any cold sample. Each marker yields a distinct closed
+            // generic whose fast dispatch path JIT-compiles on its first emit. This mirrors
+            // the GetRegistrationFloodBuilders reflection pattern.
+            Func<ColdTrialState>[] setUpActions = new Func<ColdTrialState>[markerTypes.Length];
+            BuildColdDispatchClosures(kind, markerTypes, setUpActions);
+
+            ColdLatencyMeasurement measurement = BenchmarkProtocol.MeasureColdLatency(
+                markerTypes.Length,
+                trialIndex => setUpActions[trialIndex](),
+                state => state.Emit(),
+                state => state.Dispose()
+            );
+
+            return DispatchBenchmarkResult.ForColdLatencyScenario(
+                GetScenarioName(scenario),
+                runIndex: -1,
+                measurement.MedianAllocatedBytesDelta,
+                measurement.MedianWallClockMs
+            );
+        }
+
+        // Build, per closed message type, an UNTIMED set-up delegate that creates a fresh
+        // scope, registers a by-ref no-op handler for that closed type, and returns a
+        // ColdTrialState whose Emit performs EXACTLY ONE first dispatch. The helper is
+        // generic over the closed message type, so each marker yields a distinct closed
+        // generic whose fast dispatch path JIT-compiles on its first emit.
+        private static void BuildColdDispatchClosures(
+            ColdDispatchKind kind,
+            Type[] markerTypes,
+            Func<ColdTrialState>[] setUpActions
+        )
+        {
+            string setUpHelperName;
+            switch (kind)
+            {
+                case ColdDispatchKind.Untargeted:
+                    setUpHelperName = nameof(SetUpColdUntargetedTrial);
+                    break;
+                case ColdDispatchKind.Targeted:
+                    setUpHelperName = nameof(SetUpColdTargetedTrial);
+                    break;
+                case ColdDispatchKind.Broadcast:
+                    setUpHelperName = nameof(SetUpColdBroadcastTrial);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
+            }
+
+            MethodInfo setUpHelper = GetColdDispatchHelper(setUpHelperName);
+            for (int index = 0; index < markerTypes.Length; index++)
+            {
+                MethodInfo closedSetUp = setUpHelper.MakeGenericMethod(markerTypes[index]);
+                setUpActions[index] =
+                    (Func<ColdTrialState>)
+                        Delegate.CreateDelegate(typeof(Func<ColdTrialState>), closedSetUp);
+            }
+        }
+
+        private static MethodInfo GetColdDispatchHelper(string methodName)
+        {
+            MethodInfo method = typeof(DispatchThroughputBenchmarks).GetMethod(
+                methodName,
+                BindingFlags.NonPublic | BindingFlags.Static
+            );
+            if (method == null)
+            {
+                throw new MissingMethodException(methodName);
+            }
+
+            return method;
+        }
+
+        private static ColdDispatchKind ColdDispatchKindFor(DispatchBenchmarkScenario scenario)
+        {
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.UntargetedFirstDispatchCold:
+                    return ColdDispatchKind.Untargeted;
+                case DispatchBenchmarkScenario.TargetedFirstDispatchCold:
+                    return ColdDispatchKind.Targeted;
+                case DispatchBenchmarkScenario.BroadcastFirstDispatchCold:
+                    return ColdDispatchKind.Broadcast;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+            }
         }
 
         private static double TimestampDeltaToSeconds(long startTimestamp, long endTimestamp)
@@ -668,6 +867,114 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private readonly struct RegistrationFloodMessage<TMarker>
             : DxMessaging.Core.Messages.IUntargetedMessage { }
 
+        // Per-kind cold first-dispatch set-up helpers. Each is generic over the closed
+        // message type, so reflection (MakeGenericMethod over a marker) yields a distinct
+        // closed generic whose fast dispatch path JIT-compiles on its first emit. The
+        // helper (UNTIMED) creates a fresh bus, registers a BY-REF (FastHandler<T>) no-op
+        // handler -- the (ref ...) lambda binds the FastHandler<T> overload, so the timed
+        // emit JIT-compiles RunFastHandlers, the SAME path the warm/hot scenarios measure --
+        // and returns a ColdTrialState whose Emit performs EXACTLY ONE emit (the single
+        // timed cold sample). The static Target/Source are read here, OUTSIDE the timed
+        // emit, so only the dispatch is measured (parallel to how warm EmitMany hoists them
+        // out of the loop). The message structs are nested PRIVATE generics (like
+        // RegistrationFloodMessage) so they can never leak into the comparison roster.
+        private enum ColdDispatchKind
+        {
+            Untargeted,
+            Targeted,
+            Broadcast,
+        }
+
+        // Carries one cold trial's fresh scope plus the single-emit delegate the timed
+        // operation invokes. Disposing tears the scope (and its registrations) down, untimed.
+        private sealed class ColdTrialState : IDisposable
+        {
+            private readonly BenchmarkRegistrationScope _scope;
+            private readonly Action _emit;
+
+            public ColdTrialState(BenchmarkRegistrationScope scope, Action emit)
+            {
+                _scope = scope;
+                _emit = emit;
+            }
+
+            public void Emit()
+            {
+                _emit();
+            }
+
+            public void Dispose()
+            {
+                _scope.Dispose();
+            }
+        }
+
+        private static ColdTrialState SetUpColdUntargetedTrial<TMarker>()
+        {
+            BenchmarkRegistrationScope scope = new();
+            _ = scope.PrimaryToken.RegisterUntargeted<ColdDispatchUntargetedMessage<TMarker>>(
+                (ref ColdDispatchUntargetedMessage<TMarker> message) => { }
+            );
+            MessageBus bus = scope.Bus;
+            return new ColdTrialState(
+                scope,
+                () =>
+                {
+                    ColdDispatchUntargetedMessage<TMarker> message = new();
+                    bus.UntargetedBroadcast(ref message);
+                }
+            );
+        }
+
+        private static ColdTrialState SetUpColdTargetedTrial<TMarker>()
+        {
+            BenchmarkRegistrationScope scope = new();
+            InstanceId target = Target;
+            _ = scope.PrimaryToken.RegisterTargeted<ColdDispatchTargetedMessage<TMarker>>(
+                target,
+                (ref ColdDispatchTargetedMessage<TMarker> message) => { }
+            );
+            MessageBus bus = scope.Bus;
+            return new ColdTrialState(
+                scope,
+                () =>
+                {
+                    ColdDispatchTargetedMessage<TMarker> message = new();
+                    InstanceId localTarget = target;
+                    bus.TargetedBroadcast(ref localTarget, ref message);
+                }
+            );
+        }
+
+        private static ColdTrialState SetUpColdBroadcastTrial<TMarker>()
+        {
+            BenchmarkRegistrationScope scope = new();
+            InstanceId source = Source;
+            _ = scope.PrimaryToken.RegisterBroadcast<ColdDispatchBroadcastMessage<TMarker>>(
+                source,
+                (ref ColdDispatchBroadcastMessage<TMarker> message) => { }
+            );
+            MessageBus bus = scope.Bus;
+            return new ColdTrialState(
+                scope,
+                () =>
+                {
+                    ColdDispatchBroadcastMessage<TMarker> message = new();
+                    InstanceId localSource = source;
+                    bus.SourcedBroadcast(ref localSource, ref message);
+                }
+            );
+        }
+
+        private readonly struct ColdDispatchUntargetedMessage<TMarker>
+            : DxMessaging.Core.Messages.IUntargetedMessage { }
+
+        private readonly struct ColdDispatchTargetedMessage<TMarker>
+            : DxMessaging.Core.Messages.ITargetedMessage { }
+
+        private readonly struct ColdDispatchBroadcastMessage<TMarker>
+            : DxMessaging.Core.Messages.IBroadcastMessage { }
+
         private readonly struct RegistrationFloodMarker<TOuter, TInner> { }
 
         private static class RegistrationFloodMarkerTypes
@@ -857,6 +1164,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public bool IsRegistrationScenario { get; }
 
+        /// <summary>
+        /// True when this result carries a wall-clock (latency) metric rather than a
+        /// throughput metric -- that is, whenever <see cref="EmitsPerSecond"/> is 0. This
+        /// is the unifying predicate renderers and the regression gate use to identify
+        /// wall-clock rows (the cold/warm registration floods AND the cold first-dispatch
+        /// scenarios). <see cref="IsRegistrationScenario"/> is the narrower flag retained
+        /// for the registration floods specifically; every registration scenario is a
+        /// wall-clock scenario, but not every wall-clock scenario is a registration one.
+        /// </summary>
+        public bool IsWallClockScenario => EmitsPerSecond == 0;
+
         public static DispatchBenchmarkResult ForEmitScenario(
             string scenario,
             int runIndex,
@@ -893,6 +1211,34 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 allocatedBytesDelta,
                 wallClockMs,
                 isRegistrationScenario: true
+            );
+        }
+
+        /// <summary>
+        /// Builds a cold-latency result: a wall-clock (median) measurement with no
+        /// throughput, used by the cold first-dispatch scenarios. Like the registration
+        /// scenarios it sets <c>emitsPerSecond = 0</c>, so it is a wall-clock row
+        /// (<see cref="IsWallClockScenario"/>) that the JS regression gate auto-excludes
+        /// (<c>render-perf-deltas.js</c> treats <c>baselineEmits &lt;= 0</c> as non-gating).
+        /// It is NOT a registration scenario, so <see cref="IsRegistrationScenario"/> stays
+        /// false.
+        /// </summary>
+        public static DispatchBenchmarkResult ForColdLatencyScenario(
+            string scenario,
+            int runIndex,
+            long medianAllocatedBytes,
+            double medianWallClockMs
+        )
+        {
+            return new DispatchBenchmarkResult(
+                scenario,
+                ResolvePlatform(),
+                ResolveCommit(),
+                runIndex,
+                emitsPerSecond: 0,
+                medianAllocatedBytes,
+                medianWallClockMs,
+                isRegistrationScenario: false
             );
         }
 

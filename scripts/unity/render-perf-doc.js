@@ -20,12 +20,16 @@ const SCENARIO_ORDER = [
   "UntargetedFlood_OneHandler",
   "UntargetedFlood_FourHandlers_OnePriority",
   "UntargetedFlood_FourHandlers_FourPriorities",
+  "UntargetedFirstDispatch_Cold",
   "TargetedFlood_OneListener",
   "TargetedFlood_SixteenListeners",
+  "TargetedFirstDispatch_Cold",
   "BroadcastFlood_OneHandler",
+  "BroadcastFirstDispatch_Cold",
   "InterceptorHeavy_FourInterceptors",
   "PostProcessingHeavy_FourPostProcessors",
-  "RegistrationFlood_1000Types_FromColdBus"
+  "RegistrationFlood_1000Types_FromColdBus",
+  "RegistrationFlood_1000Types_WarmJit"
 ];
 
 // Human-readable dispatch scenario labels shown in the Scenario column. These
@@ -37,16 +41,28 @@ const DISPATCH_DISPLAY_NAMES = {
   UntargetedFlood_OneHandler: "Untargeted Flood (One Handler)",
   UntargetedFlood_FourHandlers_OnePriority: "Untargeted Flood (Four Handlers, One Priority)",
   UntargetedFlood_FourHandlers_FourPriorities: "Untargeted Flood (Four Handlers, Four Priorities)",
+  UntargetedFirstDispatch_Cold: "Untargeted First Dispatch (Cold, Distinct Types)",
   TargetedFlood_OneListener: "Targeted Flood (One Listener)",
   TargetedFlood_SixteenListeners: "Targeted Flood (Sixteen Listeners)",
+  TargetedFirstDispatch_Cold: "Targeted First Dispatch (Cold, Distinct Types)",
   BroadcastFlood_OneHandler: "Broadcast Flood (One Handler)",
+  BroadcastFirstDispatch_Cold: "Broadcast First Dispatch (Cold, Distinct Types)",
   InterceptorHeavy_FourInterceptors: "Interceptor Heavy (Four Interceptors)",
   PostProcessingHeavy_FourPostProcessors: "Post-Processing Heavy (Four Post-Processors)",
-  RegistrationFlood_1000Types_FromColdBus: "Registration Flood (1000 Types, Cold Bus)"
+  RegistrationFlood_1000Types_FromColdBus: "Registration Flood (1000 Types, Cold Bus)",
+  RegistrationFlood_1000Types_WarmJit: "Registration Flood (1000 Types, Warm JIT)"
 };
 
-// Registration scenarios report wall-clock milliseconds, not emits/sec.
-const REGISTRATION_SCENARIOS = new Set(["RegistrationFlood_1000Types_FromColdBus"]);
+// Wall-clock (latency) scenarios report wall-clock milliseconds, not emits/sec. This
+// covers both registration floods (cold + warm-JIT) and the three cold first-dispatch
+// scenarios. All carry emitsPerSecond=0 in the CSV; the renderer shows their wallClockMs.
+const REGISTRATION_SCENARIOS = new Set([
+  "RegistrationFlood_1000Types_FromColdBus",
+  "RegistrationFlood_1000Types_WarmJit",
+  "UntargetedFirstDispatch_Cold",
+  "TargetedFirstDispatch_Cold",
+  "BroadcastFirstDispatch_Cold"
+]);
 
 // Fixed column order for the comparison matrices. Mirrors the ComparisonScenario
 // enum order in Tests/Runtime/Comparisons/ComparisonScenario.cs.

@@ -1,6 +1,6 @@
 # Skills Index
 
-> **Auto-generated** on 2026-06-07. Do not edit manually.
+> **Auto-generated** on 2026-06-08. Do not edit manually.
 > Run `node scripts/generate-skills-index.js` to regenerate.
 
 ---
@@ -96,7 +96,7 @@
 | [Array Pooling with ArrayPool and Custom Pools Part 1](./performance/array-pooling-part-1.md)                      | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 57  | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Auto-Load Singleton Attribute](./performance/singleton-autoload.md)                                               | [draft] 112 | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
-| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [ok] 206    | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
+| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [ok] 237    | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
 | [Cache Builder Configuration](./performance/cache-eviction-builder.md)                                             | [ok] 204    | [intermediate] | [stable] | [risk: high]     | caching, builder        |
 | [Cache Eviction Implementation](./performance/cache-eviction-implementation.md)                                    | [draft] 91  | [advanced]     | [stable] | [risk: high]     | caching, eviction       |
 | [Cache Eviction Implementation Part 1](./performance/cache-eviction-implementation-part-1.md)                      | [ok] 245    | [intermediate] | [stable] | [risk: low]      | migration, split        |
