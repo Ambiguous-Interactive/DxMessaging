@@ -33,6 +33,8 @@ const fs = require("fs");
 const path = require("path");
 const yaml = require("yaml");
 
+const { asLines } = require("../lib/workflow-fixtures");
+
 const {
   findForbiddenSharedConcurrencyViolations,
   findConcurrencyQueueViolations,
@@ -78,12 +80,6 @@ function getOnBlock(doc) {
     return doc.on;
   }
   return undefined;
-}
-
-function asLines(text) {
-  // Strip a single leading blank line so test fixtures can start with `\n`.
-  const trimmed = text.replace(/^\n/, "");
-  return trimmed.split("\n");
 }
 
 describe("findForbiddenSharedConcurrencyViolations", () => {

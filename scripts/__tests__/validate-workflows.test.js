@@ -11,6 +11,11 @@ const fs = require("fs");
 const path = require("path");
 
 const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
+const {
+  singleJobLines,
+  singleJobWorkflow,
+  writeWorkflowFile
+} = require("../lib/workflow-fixtures");
 
 const {
   isForbiddenRenormalizePattern,
@@ -321,8 +326,8 @@ describe("extractWorkflowPathEntries", () => {
 });
 
 describe("findComparisonPackageValidationTriggerViolations", () => {
-  const requiredPathLines = COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS.map((triggerPath) =>
-    `      - "${triggerPath}"`
+  const requiredPathLines = COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS.map(
+    (triggerPath) => `      - "${triggerPath}"`
   );
   const requiredWithoutLock = COMPARISON_PACKAGE_TRIGGER_REQUIRED_PATHS.filter(
     (triggerPath) => triggerPath !== ".unity-test-project/Packages/packages-lock.json"
