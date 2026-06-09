@@ -10,16 +10,16 @@
  * - compileGlob: simple `*`, recursive `**`, and dotted-allowlist patterns.
  * - Real-repo integration: the project's working tree should be clean.
  *
- * Temp-dir tests use `child_process.spawnSync('git', ...)` directly to set up
- * fixture repositories; the validator itself uses the project's
- * `spawnPlatformCommandSync` helper internally.
+ * Fixture repos are created via `tempDirTracker`/`makeGitRepo` from
+ * scripts/lib/jest-fixtures.js; individual tests still call `git add`/`git
+ * commit` directly via `child_process.spawnSync`. The validator itself uses
+ * the project's `spawnPlatformCommandSync` helper internally.
  */
 
 "use strict";
 
 const childProcess = require("child_process");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const {
@@ -35,27 +35,16 @@ const {
   validate,
   reportResult
 } = require("../validate-untracked-policy.js");
+const { tempDirTracker } = require("../lib/jest-fixtures");
 
-let tempRepos = [];
+const repos = tempDirTracker({ prefix: "dx-" });
 
 function makeTempRepo() {
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "dx-untracked-"));
-  tempRepos.push(repo);
-
-  const initResult = childProcess.spawnSync("git", ["init", "-q"], {
-    cwd: repo,
-    encoding: "utf8"
+  // The local identity lets any future commit calls inside tests succeed
+  // without a user.email/user.name lookup in bare CI environments.
+  return repos.makeGitRepo("untracked", {
+    user: { email: "test@example.com", name: "Test User" }
   });
-  if (initResult.status !== 0) {
-    throw new Error(
-      `git init failed: status=${initResult.status} stderr=${initResult.stderr || ""}`
-    );
-  }
-  // Configure a local identity so any future commit calls inside tests do
-  // not fail on user.email/user.name lookups in CI environments.
-  childProcess.spawnSync("git", ["config", "user.email", "test@example.com"], { cwd: repo });
-  childProcess.spawnSync("git", ["config", "user.name", "Test User"], { cwd: repo });
-  return repo;
 }
 
 function writeFile(repo, relativePath, contents) {
@@ -66,12 +55,7 @@ function writeFile(repo, relativePath, contents) {
 }
 
 afterEach(() => {
-  for (const repo of tempRepos) {
-    if (fs.existsSync(repo)) {
-      fs.rmSync(repo, { recursive: true, force: true });
-    }
-  }
-  tempRepos = [];
+  repos.cleanup();
 });
 
 describe("validate-untracked-policy", () => {
@@ -289,8 +273,7 @@ describe("validate-untracked-policy", () => {
     });
 
     test("returns not-a-git-repository when cwd is not a repo", () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dx-untracked-not-git-"));
-      tempRepos.push(tempDir);
+      const tempDir = repos.make("untracked-not-git");
       const result = listUntrackedFiles({ cwd: tempDir });
       expect(result.ok).toBe(false);
       expect(result.type).toBe("not-a-git-repository");
@@ -358,8 +341,7 @@ describe("validate-untracked-policy", () => {
     });
 
     test("not-a-git-repository surfaces as a hard error", () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dx-untracked-not-git-2-"));
-      tempRepos.push(tempDir);
+      const tempDir = repos.make("untracked-not-git-2");
       const result = validate({ cwd: tempDir });
       expect(result.valid).toBe(false);
       expect(result.errors[0].type).toBe("not-a-git-repository");

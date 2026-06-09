@@ -1,7 +1,6 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
 
@@ -18,6 +17,7 @@ const {
   collectMethodRenames,
   applyMethodRenames
 } = require("../fix-csharp-underscore-methods.js");
+const { makeTempDir, makeTempGitRepo, cleanupDir } = require("../lib/jest-fixtures");
 
 const FIXER_SCRIPT_PATH = path.resolve(__dirname, "../fix-csharp-underscore-methods.js");
 const OUTSIDE_REPO_EXCLUDED_SEGMENTS = [
@@ -31,17 +31,6 @@ const OUTSIDE_REPO_EXCLUDED_SEGMENTS = [
   ".artifacts",
   "site"
 ];
-
-function makeTempGitRepo(label) {
-  const tempRepo = fs.mkdtempSync(path.join(os.tmpdir(), `dxmsg-csharp-underscore-${label}-`));
-  const initResult = childProcess.spawnSync("git", ["init", "-q"], {
-    cwd: tempRepo,
-    encoding: "utf8"
-  });
-
-  expectSpawnStatus(initResult, 0);
-  return tempRepo;
-}
 
 function expectSpawnStatus(result, expectedStatus) {
   if (result.status !== expectedStatus) {
@@ -275,7 +264,7 @@ describe("fix-csharp-underscore-methods", () => {
   });
 
   test("--check exits non-zero when a fix is required", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-csharp-underscore-check-"));
+    const tempDir = makeTempDir("csharp-underscore-check");
     const filePath = path.join(tempDir, "NeedsFix.cs");
 
     try {
@@ -300,12 +289,12 @@ describe("fix-csharp-underscore-methods", () => {
       expect(result.stderr).toContain("Found C# methods with underscores");
       expect(result.stderr).toContain("NeedsFix.cs");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("CLI rewrites file content in place", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-csharp-underscore-fix-"));
+    const tempDir = makeTempDir("csharp-underscore-fix");
     const filePath = path.join(tempDir, "FixMe.cs");
 
     try {
@@ -326,14 +315,12 @@ describe("fix-csharp-underscore-methods", () => {
       expect(updated).toContain("ParseLineBare");
       expect(updated).not.toContain("Parse_Line_Bare");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("--check handles explicit file args that include trailing carriage returns", () => {
-    const tempDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "dxmsg-csharp-underscore-carriage-return-arguments-")
-    );
+    const tempDir = makeTempDir("csharp-underscore-carriage-return-arguments");
     const filePath = path.join(tempDir, "NeedsFix.cs");
 
     try {
@@ -357,12 +344,12 @@ describe("fix-csharp-underscore-methods", () => {
       expectSpawnStatus(result, 1);
       expect(result.stderr).toContain("NeedsFix.cs");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("CLI rewrites uppercase .CS files", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-csharp-underscore-upper-ext-"));
+    const tempDir = makeTempDir("csharp-underscore-upper-ext");
     const filePath = path.join(tempDir, "FixMe.CS");
 
     try {
@@ -382,12 +369,12 @@ describe("fix-csharp-underscore-methods", () => {
       expect(updated).toContain("ParseLineBare");
       expect(updated).not.toContain("Parse_Line_Bare");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("CLI rewrites CRLF content without losing line ending style", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-csharp-underscore-crlf-"));
+    const tempDir = makeTempDir("csharp-underscore-crlf");
     const filePath = path.join(tempDir, "CrlfFix.cs");
 
     try {
@@ -411,16 +398,14 @@ describe("fix-csharp-underscore-methods", () => {
       expect(updated).toContain("\r\n");
       expect(updated).not.toContain("Parse_Line_Bare");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test.each(OUTSIDE_REPO_EXCLUDED_SEGMENTS)(
     "--check processes explicitly passed files in outside-repo %s segment",
     (excludedSegment) => {
-      const tempDir = fs.mkdtempSync(
-        path.join(os.tmpdir(), "dxmsg-csharp-underscore-outside-temp-check-")
-      );
+      const tempDir = makeTempDir("csharp-underscore-outside-temp-check");
       const outsideSegmentDir = path.join(tempDir, excludedSegment);
       const filePath = path.join(outsideSegmentDir, "OutsideSegmentNeedsFix.cs");
 
@@ -450,7 +435,7 @@ describe("fix-csharp-underscore-methods", () => {
         expect(result.stderr).toContain("Found C# methods with underscores");
         expect(result.stderr).toContain("OutsideSegmentNeedsFix.cs");
       } finally {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+        cleanupDir(tempDir);
       }
     }
   );
@@ -458,9 +443,7 @@ describe("fix-csharp-underscore-methods", () => {
   test.each(OUTSIDE_REPO_EXCLUDED_SEGMENTS)(
     "CLI rewrites explicitly passed files in outside-repo %s segment",
     (excludedSegment) => {
-      const tempDir = fs.mkdtempSync(
-        path.join(os.tmpdir(), "dxmsg-csharp-underscore-outside-temp-rewrite-")
-      );
+      const tempDir = makeTempDir("csharp-underscore-outside-temp-rewrite");
       const outsideSegmentDir = path.join(tempDir, excludedSegment);
       const filePath = path.join(outsideSegmentDir, "OutsideSegmentRewrite.cs");
 
@@ -488,15 +471,13 @@ describe("fix-csharp-underscore-methods", () => {
         expect(updated).toContain("ParseLineBare");
         expect(updated).not.toContain("Parse_Line_Bare");
       } finally {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+        cleanupDir(tempDir);
       }
     }
   );
 
   test("--check processes explicitly passed relative paths outside the repo", () => {
-    const tempDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "dxmsg-csharp-underscore-outside-relative-check-")
-    );
+    const tempDir = makeTempDir("csharp-underscore-outside-relative-check");
     const filePath = path.join(tempDir, "OutsideRelativeNeedsFix.cs");
 
     try {
@@ -526,14 +507,14 @@ describe("fix-csharp-underscore-methods", () => {
       expect(result.stderr).toContain("Found C# methods with underscores");
       expect(result.stderr).toContain("OutsideRelativeNeedsFix.cs");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test.each(OUTSIDE_REPO_EXCLUDED_SEGMENTS)(
     "explicitly passed files in repo-internal %s segment remain skipped",
     (excludedSegment) => {
-      const repoRoot = makeTempGitRepo("repo-excluded");
+      const repoRoot = makeTempGitRepo("csharp-underscore-repo-excluded");
       const repoInternalExcludedRoot = path.join(
         repoRoot,
         "Tests",
@@ -586,7 +567,7 @@ describe("fix-csharp-underscore-methods", () => {
         expect(contentAfterRewrite).toContain("Parse_Line_Bare");
         expect(contentAfterRewrite).not.toContain("ParseLineBare");
       } finally {
-        fs.rmSync(repoRoot, { recursive: true, force: true });
+        cleanupDir(repoRoot);
       }
     }
   );

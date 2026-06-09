@@ -12,6 +12,7 @@
 
 const childProcess = require("child_process");
 const { buildSpawnInvocation } = require("../lib/shell-command");
+const { withPlatform } = require("../lib/jest-fixtures");
 
 // Canonical npm pack invocation that production (getPackageFiles) hands to
 // spawnPlatformCommandSync. Derive expectations from buildSpawnInvocation so
@@ -27,20 +28,6 @@ const REQUIRED_ANALYZER_FILES = [
   "Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll",
   "Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll.meta"
 ];
-
-function withPlatform(platform, fn) {
-  const original = Object.getOwnPropertyDescriptor(process, "platform");
-  Object.defineProperty(process, "platform", { value: platform, configurable: true });
-  try {
-    return fn();
-  } finally {
-    if (original) {
-      Object.defineProperty(process, "platform", original);
-    } else {
-      delete process.platform;
-    }
-  }
-}
 
 const {
   getPackageFiles,

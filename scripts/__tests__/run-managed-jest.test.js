@@ -13,22 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
 const { buildSpawnInvocation } = require("../lib/shell-command");
-
-// Override process.platform for the duration of fn, then restore. Lets the
-// win32 spawn branch be exercised on a Linux/macOS host (and vice versa).
-function withPlatform(platform, fn) {
-  const original = Object.getOwnPropertyDescriptor(process, "platform");
-  Object.defineProperty(process, "platform", { value: platform, configurable: true });
-  try {
-    return fn();
-  } finally {
-    if (original) {
-      Object.defineProperty(process, "platform", original);
-    } else {
-      delete process.platform;
-    }
-  }
-}
+const { withPlatform } = require("../lib/jest-fixtures");
 const {
   REPO_ROOT,
   LOCAL_JEST_BIN,

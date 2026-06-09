@@ -25,23 +25,9 @@ const path = require("path");
 const childProcess = require("child_process");
 
 const doctor = require("../doctor");
+const { withPlatform } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-
-// Override process.platform for the duration of fn, then restore.
-function withPlatform(platform, fn) {
-  const original = Object.getOwnPropertyDescriptor(process, "platform");
-  Object.defineProperty(process, "platform", { value: platform, configurable: true });
-  try {
-    return fn();
-  } finally {
-    if (original) {
-      Object.defineProperty(process, "platform", original);
-    } else {
-      delete process.platform;
-    }
-  }
-}
 
 /**
  * Plant the EXACT partial install that pre-push.txt reproduced: a jest_30.3.0

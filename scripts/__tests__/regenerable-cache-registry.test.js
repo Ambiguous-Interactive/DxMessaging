@@ -25,21 +25,7 @@ const {
   removeFileIfIsKnownCacheRoot
 } = require("../lib/regenerable-cache-registry");
 const { removeDirIfStrictDescendant, ISOLATED_JEST_CACHE_ROOT } = require("../run-managed-jest");
-
-// Override process.platform for the duration of fn, then restore.
-function withPlatform(platform, fn) {
-  const original = Object.getOwnPropertyDescriptor(process, "platform");
-  Object.defineProperty(process, "platform", { value: platform, configurable: true });
-  try {
-    return fn();
-  } finally {
-    if (original) {
-      Object.defineProperty(process, "platform", original);
-    } else {
-      delete process.platform;
-    }
-  }
-}
+const { withPlatform } = require("../lib/jest-fixtures");
 
 // A runWithRepairLock fake that records the lockName and executes the callback
 // (lock acquired). Mirrors the real return contract closely enough for the

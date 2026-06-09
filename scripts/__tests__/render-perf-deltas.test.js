@@ -2,7 +2,6 @@
 
 const childProcess = require("child_process");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const {
@@ -19,6 +18,7 @@ const {
   render
 } = require("../unity/render-perf-deltas.js");
 const { extractRows } = require("../unity/extract-perf-baseline.js");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const SCRIPT = path.resolve(__dirname, "..", "unity", "render-perf-deltas.js");
 const LATEST = "6000.3.16f1";
@@ -105,10 +105,6 @@ function currentLog({ scope = "PlayMode", commit = "cur999", mutate = {} } = {})
     const finalMs = override.ms !== undefined ? override.ms : ms;
     return structuredLine(scenario, platformString, commit, finalEmits, finalAlloc, finalMs);
   }).join("\n");
-}
-
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "dxm-render-deltas-"));
 }
 
 // Parse the markdown table the script writes into trimmed-cell rows, skipping the
@@ -505,11 +501,11 @@ describe("render-perf-deltas render (graceful missing baseline)", () => {
   let tempDir;
 
   beforeEach(() => {
-    tempDir = makeTempDir();
+    tempDir = makeTempDir("render-deltas");
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   test("writes a 'no baseline on master yet' note and changed=false when the baseline CSV is absent", () => {
@@ -675,11 +671,11 @@ describe("render-perf-deltas CLI", () => {
   let tempDir;
 
   beforeEach(() => {
-    tempDir = makeTempDir();
+    tempDir = makeTempDir("render-deltas");
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   function run(args) {
