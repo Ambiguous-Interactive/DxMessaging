@@ -41,6 +41,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { walkFiles, toRepoRelative } = require("./lib/repo-files");
+const { parseArgs: parseCliArgs } = require("./lib/cli-options");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const DOCS_ROOT = path.join(REPO_ROOT, "docs");
@@ -536,19 +537,21 @@ function printHelp() {
 }
 
 function parseArgs(argv) {
-  let fix = false;
-  const files = [];
-  for (const arg of argv) {
-    if (arg === "--fix") {
-      fix = true;
-      continue;
-    }
-    if (arg === "--help" || arg === "-h") {
-      return { help: true, fix: false, files: [] };
-    }
-    files.push(arg);
+  const { values, positionals } = parseCliArgs(argv, {
+    options: {
+      fix: { type: "boolean", aliases: ["--fix"] },
+      help: { type: "boolean", aliases: ["--help", "-h"] }
+    },
+    unknownOption: "collect",
+    allowEquals: false,
+    endOfOptions: false
+  });
+  // `--help`/`-h` short-circuits the original loop, discarding any `--fix` or
+  // files seen before it; reproduce that here rather than threading them out.
+  if (values.help) {
+    return { help: true, fix: false, files: [] };
   }
-  return { help: false, fix, files };
+  return { help: false, fix: Boolean(values.fix), files: positionals };
 }
 
 function main(argv) {

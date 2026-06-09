@@ -126,6 +126,10 @@ const ALLOWLIST = {
     helpers: ["parseArgs"],
     reason: "thin wrapper delegating to cli-options.parseArgs"
   },
+  "scripts/validate-docs-out-of-tree-links.js": {
+    helpers: ["parseArgs"],
+    reason: "thin wrapper delegating to cli-options.parseArgs"
+  },
 
   // --- parseArgs: genuinely bespoke parsers whose semantics the declarative
   // shared parser cannot reproduce byte-exact (greedy/option-like-value
