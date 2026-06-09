@@ -33,7 +33,7 @@ const fs = require("fs");
 const path = require("path");
 const yaml = require("yaml");
 
-const { asLines } = require("../lib/workflow-fixtures");
+const { asLines, singleJobLines } = require("../lib/workflow-fixtures");
 
 const {
   findForbiddenSharedConcurrencyViolations,
@@ -80,6 +80,14 @@ function getOnBlock(doc) {
     return doc.on;
   }
   return undefined;
+}
+
+// Parse a fixture and hand back its lines plus the first extracted job; shared
+// by the extractJobMatrixMaxParallel / extractJobTimeoutMinutes describes.
+function jobOf(text) {
+  const lines = asLines(text);
+  const jobs = extractJobs(lines);
+  return { lines, job: jobs[0] };
 }
 
 describe("findForbiddenSharedConcurrencyViolations", () => {
@@ -951,60 +959,57 @@ jobs:
 });
 
 describe("findUnityNativeProvisioningViolations", () => {
-  test("direct run-ci-tests job with pre-lock CiManagedOnly provisioning -> []", () => {
-    const lines = asLines(`
+  // Most fixtures share this scaffold: one `unity` job whose steps are
+  // [provision?, acquire lock, run tests], where only the provisioning step
+  // chunk and the run step's -TestMode value vary. `provisionStep` is
+  // interpolated verbatim immediately after `    steps:` -- start it with a
+  // newline, or pass "" to omit the provisioning step entirely. Fixtures that
+  // reorder the trailing steps or add job keys (strategy matrices, other job
+  // ids) stay literal below.
+  function provisioningJob({ provisionStep, testMode }) {
+    return asLines(`
 jobs:
   unity:
     runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
-      - name: Provision Unity Editor
-        shell: pwsh
-        run: |
-          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+    steps:${provisionStep}
       - name: Acquire organization Unity lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
       - name: Run Unity Test Runner
         shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
+        run: ./scripts/unity/run-ci-tests.ps1 -TestMode ${testMode}
 `);
+  }
+
+  test("direct run-ci-tests job with pre-lock CiManagedOnly provisioning -> []", () => {
+    const lines = provisioningJob({
+      provisionStep: `
+      - name: Provision Unity Editor
+        shell: pwsh
+        run: |
+          $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append`,
+      testMode: "editmode"
+    });
 
     expect(findUnityNativeProvisioningViolations("test.yml", lines)).toEqual([]);
   });
 
   test("case-varied provisioning command is accepted", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
         run: |
           $Editor = ./scripts/unity/ENSURE-EDITOR.ps1 -UnityVersion '2022.3.45f1' -CIManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
-          "unity_editor_path=$Editor" | Out-File -FilePath $env:github_env -Append
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
-`);
+          "unity_editor_path=$Editor" | Out-File -FilePath $env:github_env -Append`,
+      testMode: "editmode"
+    });
 
     expect(findUnityNativeProvisioningViolations("test.yml", lines)).toEqual([]);
   });
 
   test("direct run-ci-tests job without provisioning -> violation", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
-`);
+    const lines = provisioningJob({ provisionStep: "", testMode: "editmode" });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations).toHaveLength(1);
@@ -1012,22 +1017,15 @@ jobs:
   });
 
   test("CiManagedOnly provisioning without an explicit profile -> violation", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
         run: |
           $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
-`);
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append`,
+      testMode: "editmode"
+    });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations.map((v) => v.message).join("\n")).toContain(
@@ -1052,24 +1050,17 @@ jobs:
   });
 
   test("commented provisioning profile argument does not satisfy explicit profile contract", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
         run: |
           # TODO: pass -ProvisioningProfile EditorOnly once scoped provisioning lands.
           Write-Host '-ProvisioningProfile EditorOnly is still pending'
           $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
-`);
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append`,
+      testMode: "editmode"
+    });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations.map((v) => v.message).join("\n")).toContain(
@@ -1078,22 +1069,15 @@ jobs:
   });
 
   test("same-line loose profile text does not satisfy explicit profile contract", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
         run: |
           Write-Host '-ProvisioningProfile EditorOnly is still pending'; $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
-`);
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append`,
+      testMode: "editmode"
+    });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations.map((v) => v.message).join("\n")).toContain(
@@ -1102,23 +1086,16 @@ jobs:
   });
 
   test("each CiManagedOnly ensure-editor invocation must pass its own profile", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
         run: |
           ./scripts/unity/ensure-editor.ps1 -UnityVersion '2021.3.45f1' -CiManagedOnly
           $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
-`);
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append`,
+      testMode: "editmode"
+    });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations.map((v) => v.message).join("\n")).toContain(
@@ -1127,11 +1104,8 @@ jobs:
   });
 
   test("comment after backtick prevents profile line from joining ensure-editor invocation", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
         run: |
@@ -1139,13 +1113,9 @@ jobs:
             -UnityVersion '2022.3.45f1' \`
             -CiManagedOnly \` # this is not a PowerShell line continuation
             -ProvisioningProfile EditorOnly
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
-`);
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append`,
+      testMode: "editmode"
+    });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations.map((v) => v.message).join("\n")).toContain(
@@ -1154,22 +1124,15 @@ jobs:
   });
 
   test("standalone run without StandaloneWindowsIl2Cpp profile -> violation", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
         run: |
           $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode standalone
-`);
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append`,
+      testMode: "standalone"
+    });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations.map((v) => v.message).join("\n")).toContain(
@@ -1178,22 +1141,15 @@ jobs:
   });
 
   test("dynamic test-mode provisioning must provide standalone when matrix values are unknown", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
         run: |
           $editor = ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1' -CiManagedOnly -RequireHealthyExisting -ProvisioningProfile EditorOnly
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode '\${{ matrix.test-mode }}'
-`);
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append`,
+      testMode: `'\${{ matrix.test-mode }}'`
+    });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations.map((v) => v.message).join("\n")).toContain(
@@ -1540,20 +1496,13 @@ jobs:
   });
 
   test("provisioning without CiManagedOnly or UNITY_EDITOR_PATH export -> violation", () => {
-    const lines = asLines(`
-jobs:
-  unity:
-    runs-on: [self-hosted, Windows, RAM-64GB]
-    steps:
+    const lines = provisioningJob({
+      provisionStep: `
       - name: Provision Unity Editor
         shell: pwsh
-        run: ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1'
-      - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
-      - name: Run Unity Test Runner
-        shell: pwsh
-        run: ./scripts/unity/run-ci-tests.ps1 -TestMode editmode
-`);
+        run: ./scripts/unity/ensure-editor.ps1 -UnityVersion '2022.3.45f1'`,
+      testMode: "editmode"
+    });
 
     const violations = findUnityNativeProvisioningViolations("test.yml", lines);
     expect(violations).toHaveLength(1);
@@ -1768,12 +1717,6 @@ jobs:
 });
 
 describe("extractJobMatrixMaxParallel", () => {
-  function jobOf(text) {
-    const lines = asLines(text);
-    const jobs = extractJobs(lines);
-    return { lines, job: jobs[0] };
-  }
-
   test("returns the integer value for `max-parallel: 1`", () => {
     const { lines, job } = jobOf(`
 jobs:
@@ -1885,12 +1828,6 @@ jobs:
 });
 
 describe("extractJobTimeoutMinutes", () => {
-  function jobOf(text) {
-    const lines = asLines(text);
-    const jobs = extractJobs(lines);
-    return { lines, job: jobs[0] };
-  }
-
   test("returns the integer value for a bare `timeout-minutes: 90`", () => {
     const { lines, job } = jobOf(`
 jobs:
@@ -2529,19 +2466,11 @@ describe("extractEmittedLabelSetsFromBash", () => {
 });
 
 describe("scalar shorthand concurrency form (extractJobConcurrencyGroup)", () => {
-  function singleJobLines(concurrencyLine) {
-    return [
-      "jobs:",
-      "  unity-tests:",
-      "    runs-on: [self-hosted, Windows, RAM-64GB]",
-      `    ${concurrencyLine}`,
-      "    steps:",
-      "      - run: echo hi"
-    ];
-  }
-
   test("recognizes bare scalar concurrency: wallstop-organization-builds", () => {
-    const lines = singleJobLines("concurrency: wallstop-organization-builds");
+    const lines = singleJobLines("unity-tests", ["      - run: echo hi"], {
+      runsOn: "[self-hosted, Windows, RAM-64GB]",
+      jobKeys: ["    concurrency: wallstop-organization-builds"]
+    });
     const jobs = extractJobs(lines);
     const result = extractJobConcurrencyGroup(lines, jobs[0]);
     expect(result).not.toBeNull();
@@ -2550,7 +2479,10 @@ describe("scalar shorthand concurrency form (extractJobConcurrencyGroup)", () =>
   });
 
   test('recognizes double-quoted scalar concurrency: "wallstop-organization-builds"', () => {
-    const lines = singleJobLines('concurrency: "wallstop-organization-builds"');
+    const lines = singleJobLines("unity-tests", ["      - run: echo hi"], {
+      runsOn: "[self-hosted, Windows, RAM-64GB]",
+      jobKeys: ['    concurrency: "wallstop-organization-builds"']
+    });
     const jobs = extractJobs(lines);
     const result = extractJobConcurrencyGroup(lines, jobs[0]);
     expect(result).not.toBeNull();
@@ -2558,7 +2490,10 @@ describe("scalar shorthand concurrency form (extractJobConcurrencyGroup)", () =>
   });
 
   test("recognizes single-quoted scalar concurrency: 'wallstop-organization-builds'", () => {
-    const lines = singleJobLines("concurrency: 'wallstop-organization-builds'");
+    const lines = singleJobLines("unity-tests", ["      - run: echo hi"], {
+      runsOn: "[self-hosted, Windows, RAM-64GB]",
+      jobKeys: ["    concurrency: 'wallstop-organization-builds'"]
+    });
     const jobs = extractJobs(lines);
     const result = extractJobConcurrencyGroup(lines, jobs[0]);
     expect(result).not.toBeNull();
@@ -2566,7 +2501,10 @@ describe("scalar shorthand concurrency form (extractJobConcurrencyGroup)", () =>
   });
 
   test("returns null for `concurrency: ~` (YAML null) and bare empty value", () => {
-    const linesNull = singleJobLines("concurrency: ~");
+    const linesNull = singleJobLines("unity-tests", ["      - run: echo hi"], {
+      runsOn: "[self-hosted, Windows, RAM-64GB]",
+      jobKeys: ["    concurrency: ~"]
+    });
     const linesEmpty = [
       "jobs:",
       "  unity-tests:",
