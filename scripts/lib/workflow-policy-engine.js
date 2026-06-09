@@ -702,6 +702,42 @@ function extractJobSteps(lines, job) {
 }
 
 /**
+ * Invokes `callback(job, steps)` for each top-level job, in declaration order,
+ * with `steps` parsed via {@link extractJobSteps}. Use this when a policy needs
+ * the whole step array per job (cross-step ordering, find/filter over the
+ * array, per-job state); use {@link forEachJobStep} when each step is checked
+ * independently. Callback return values are ignored; there is no early-exit
+ * protocol.
+ *
+ * @param {string[]} lines - Workflow file content split into lines
+ * @param {(job: object, steps: object[]) => void} callback - Invoked once per job
+ * @returns {void}
+ */
+function forEachJob(lines, callback) {
+  for (const job of extractJobs(lines)) {
+    callback(job, extractJobSteps(lines, job));
+  }
+}
+
+/**
+ * Invokes `callback(step, job)` for every step of every top-level job,
+ * flattening {@link forEachJob} in declaration order. Use this when a policy
+ * inspects each step independently of its siblings. Callback return values are
+ * ignored; there is no early-exit protocol.
+ *
+ * @param {string[]} lines - Workflow file content split into lines
+ * @param {(step: object, job: object) => void} callback - Invoked once per step
+ * @returns {void}
+ */
+function forEachJobStep(lines, callback) {
+  forEachJob(lines, (job, steps) => {
+    for (const step of steps) {
+      callback(step, job);
+    }
+  });
+}
+
+/**
  * Extracts a concurrency.group value (string) and line number from a YAML
  * block whose key starts at the given containing indent (so any directly-
  * nested key sits at containingIndent + 2). Returns null when no
@@ -1552,6 +1588,8 @@ module.exports = {
   extractWorkflowPathFilterBlocks,
   extractWorkflowPathIgnoreBlocks,
   extractedWorkflowStepRunText,
+  forEachJob,
+  forEachJobStep,
   getIndent,
   jobHasMatrix,
   jobTargetsWindows,

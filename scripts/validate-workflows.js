@@ -121,6 +121,8 @@ const {
   extractWorkflowPathEntries,
   extractWorkflowPathIgnoreBlocks,
   extractedWorkflowStepRunText,
+  forEachJob,
+  forEachJobStep,
   getIndent,
   jobHasMatrix,
   jobTargetsWindows,
@@ -832,16 +834,14 @@ function isBashCompatibleShell(shell) {
 
 function findWindowsBashPortabilityViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
   const workflowDefaultsShell = extractWorkflowDefaultsShell(lines);
 
-  for (const job of jobs) {
+  forEachJob(lines, (job, steps) => {
     if (!jobTargetsWindows(lines, job)) {
-      continue;
+      return;
     }
 
     const jobDefaultsShell = extractJobDefaultsShell(lines, job);
-    const steps = extractJobSteps(lines, job);
 
     for (const step of steps) {
       if (!step.run || typeof step.run.text !== "string") {
@@ -868,7 +868,7 @@ function findWindowsBashPortabilityViolations(relativePath, lines) {
         )
       );
     }
-  }
+  });
 
   return violations;
 }
@@ -1129,14 +1129,12 @@ function isUnityRunStep(step) {
  */
 function findUnityLockTimeoutViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
 
-  for (const job of jobs) {
-    const steps = extractJobSteps(lines, job);
+  forEachJob(lines, (job, steps) => {
     const acquireStep = steps.find((step) => step.uses === ORGANIZATION_BUILD_LOCK_ACQUIRE_USES);
 
     if (!acquireStep) {
-      continue;
+      return;
     }
 
     const jobTimeout = extractJobTimeoutMinutes(lines, job);
@@ -1235,7 +1233,7 @@ function findUnityLockTimeoutViolations(relativePath, lines) {
         }
       }
     }
-  }
+  });
 
   return violations;
 }
@@ -1586,34 +1584,30 @@ const GAME_CI_TEST_RUNNER_ALLOWED_INPUTS = new Set([
 
 function findGameCiTestRunnerInputViolations(relativePath, lines) {
   const violations = [];
-  for (const job of extractJobs(lines)) {
-    const steps = extractJobSteps(lines, job);
-    for (const step of steps) {
-      if (step.uses !== "game-ci/unity-test-runner@v4") {
-        continue;
-      }
-      for (const key of step.with.keys()) {
-        if (!GAME_CI_TEST_RUNNER_ALLOWED_INPUTS.has(key)) {
-          violations.push(
-            new Violation(
-              relativePath,
-              step.startIndex + 1,
-              `${key}:`,
-              `Job '${job.id}' uses unsupported game-ci/unity-test-runner@v4 input '${key}'. Remove it or update GAME_CI_TEST_RUNNER_ALLOWED_INPUTS after verifying the upstream action supports it.`,
-              "error"
-            )
-          );
-        }
+  forEachJobStep(lines, (step, job) => {
+    if (step.uses !== "game-ci/unity-test-runner@v4") {
+      return;
+    }
+    for (const key of step.with.keys()) {
+      if (!GAME_CI_TEST_RUNNER_ALLOWED_INPUTS.has(key)) {
+        violations.push(
+          new Violation(
+            relativePath,
+            step.startIndex + 1,
+            `${key}:`,
+            `Job '${job.id}' uses unsupported game-ci/unity-test-runner@v4 input '${key}'. Remove it or update GAME_CI_TEST_RUNNER_ALLOWED_INPUTS after verifying the upstream action supports it.`,
+            "error"
+          )
+        );
       }
     }
-  }
+  });
   return violations;
 }
 
 function findUnityGameCiLockAndPreflightViolations(relativePath, lines) {
   const violations = [];
-  for (const job of extractJobs(lines)) {
-    const steps = extractJobSteps(lines, job);
+  forEachJob(lines, (job, steps) => {
     for (let index = 0; index < steps.length; index++) {
       const step = steps[index];
       if (step.uses !== "game-ci/unity-test-runner@v4") {
@@ -1759,7 +1753,7 @@ function findUnityGameCiLockAndPreflightViolations(relativePath, lines) {
         }
       }
     }
-  }
+  });
   return violations;
 }
 
@@ -1844,45 +1838,43 @@ function findUnityReleaseModeViolations(relativePath, lines) {
     return violations;
   }
 
-  for (const job of extractJobs(lines)) {
-    for (const step of extractJobSteps(lines, job)) {
-      if (stepRunsUnityCiTestsDirectly(step)) {
-        const runText = stripPowerShellLineComments(step.run.text);
-        for (const parameterName of ["ReleaseCodeOptimization", "ReleasePlayerBuild"]) {
-          if (runTextWiresPowerShellTrueArgument(runText, parameterName)) {
-            continue;
-          }
-          violations.push(
-            new Violation(
-              relativePath,
-              step.startIndex + 1,
-              `run-ci-tests.ps1 -${parameterName}`,
-              `Job '${job.id}' runs run-ci-tests.ps1 without -${parameterName}. Unity tests and generated standalone players must run in Release mode; pass -${parameterName} directly or wire it through a true-valued hashtable splat.`,
-              "error"
-            )
-          );
+  forEachJobStep(lines, (step, job) => {
+    if (stepRunsUnityCiTestsDirectly(step)) {
+      const runText = stripPowerShellLineComments(step.run.text);
+      for (const parameterName of ["ReleaseCodeOptimization", "ReleasePlayerBuild"]) {
+        if (runTextWiresPowerShellTrueArgument(runText, parameterName)) {
+          continue;
         }
-      }
-
-      if (typeof step.uses === "string" && step.uses.includes(GAME_CI_UNITY_TEST_RUNNER_USES)) {
-        const customParameters =
-          step.with && typeof step.with.get === "function"
-            ? step.with.get("customParameters") || ""
-            : "";
-        if (!/-releaseCodeOptimization\b/i.test(customParameters)) {
-          violations.push(
-            new Violation(
-              relativePath,
-              step.startIndex + 1,
-              "game-ci customParameters: -releaseCodeOptimization",
-              `Job '${job.id}' uses game-ci/unity-test-runner without -releaseCodeOptimization in customParameters. Unity tests must compile in Release mode.`,
-              "error"
-            )
-          );
-        }
+        violations.push(
+          new Violation(
+            relativePath,
+            step.startIndex + 1,
+            `run-ci-tests.ps1 -${parameterName}`,
+            `Job '${job.id}' runs run-ci-tests.ps1 without -${parameterName}. Unity tests and generated standalone players must run in Release mode; pass -${parameterName} directly or wire it through a true-valued hashtable splat.`,
+            "error"
+          )
+        );
       }
     }
-  }
+
+    if (typeof step.uses === "string" && step.uses.includes(GAME_CI_UNITY_TEST_RUNNER_USES)) {
+      const customParameters =
+        step.with && typeof step.with.get === "function"
+          ? step.with.get("customParameters") || ""
+          : "";
+      if (!/-releaseCodeOptimization\b/i.test(customParameters)) {
+        violations.push(
+          new Violation(
+            relativePath,
+            step.startIndex + 1,
+            "game-ci customParameters: -releaseCodeOptimization",
+            `Job '${job.id}' uses game-ci/unity-test-runner without -releaseCodeOptimization in customParameters. Unity tests must compile in Release mode.`,
+            "error"
+          )
+        );
+      }
+    }
+  });
 
   return violations;
 }
@@ -1894,13 +1886,12 @@ function findPerfDeltasCommentGateViolations(relativePath, lines) {
   }
 
   const violations = [];
-  for (const job of extractJobs(lines)) {
-    const steps = extractJobSteps(lines, job);
+  forEachJob(lines, (job, steps) => {
     const commentStep = steps.find((step) => step.name === "Upsert the perf-deltas PR comment");
     const gateStep = steps.find((step) => step.name === "Enforce DxMessaging perf regression gate");
 
     if (!commentStep && !gateStep) {
-      continue;
+      return;
     }
 
     if (!commentStep) {
@@ -1913,7 +1904,7 @@ function findPerfDeltasCommentGateViolations(relativePath, lines) {
           "error"
         )
       );
-      continue;
+      return;
     }
 
     const commentSource = stepSourceText(lines, commentStep);
@@ -1936,7 +1927,7 @@ function findPerfDeltasCommentGateViolations(relativePath, lines) {
     }
 
     if (!gateStep) {
-      continue;
+      return;
     }
 
     const gateSource = stepSourceText(lines, gateStep);
@@ -1963,7 +1954,7 @@ function findPerfDeltasCommentGateViolations(relativePath, lines) {
         )
       );
     }
-  }
+  });
 
   return violations;
 }
@@ -2297,8 +2288,7 @@ function findUnityNativeProvisioningViolations(relativePath, lines) {
     return violations;
   }
 
-  for (const job of extractJobs(lines)) {
-    const steps = extractJobSteps(lines, job);
+  forEachJob(lines, (job, steps) => {
     const ciManagedEnsureSteps = steps.filter(stepRunsCiManagedEnsureEditor);
     for (const step of ciManagedEnsureSteps) {
       for (const command of extractCiManagedEnsureEditorCommands(step)) {
@@ -2330,7 +2320,7 @@ function findUnityNativeProvisioningViolations(relativePath, lines) {
 
     const runSteps = steps.filter(stepRunsUnityCiTestsDirectly);
     if (runSteps.length === 0) {
-      continue;
+      return;
     }
 
     const nonGenerateOnlyRunSteps = runSteps.filter((step) => !stepRunsUnityGenerateOnly(step));
@@ -2361,7 +2351,7 @@ function findUnityNativeProvisioningViolations(relativePath, lines) {
           "error"
         )
       );
-      continue;
+      return;
     }
 
     for (const runStep of runSteps) {
@@ -2465,7 +2455,7 @@ function findUnityNativeProvisioningViolations(relativePath, lines) {
         );
       }
     }
-  }
+  });
 
   return violations;
 }
@@ -2487,9 +2477,7 @@ function findUnityLicenseReturnViolations(relativePath, lines) {
     return violations;
   }
 
-  for (const job of extractJobs(lines)) {
-    const steps = extractJobSteps(lines, job);
-
+  forEachJob(lines, (job, steps) => {
     // The LAST native Unity run step in the job (the return must come after it).
     let lastRunStep = null;
     for (const step of steps) {
@@ -2498,7 +2486,7 @@ function findUnityLicenseReturnViolations(relativePath, lines) {
       }
     }
     if (!lastRunStep) {
-      continue;
+      return;
     }
 
     const returnStep = steps.find((step) => step.uses === RETURN_UNITY_LICENSE_USES);
@@ -2513,7 +2501,7 @@ function findUnityLicenseReturnViolations(relativePath, lines) {
           "error"
         )
       );
-      continue;
+      return;
     }
 
     if (returnStep.startIndex < lastRunStep.startIndex) {
@@ -2565,7 +2553,7 @@ function findUnityLicenseReturnViolations(relativePath, lines) {
         );
       }
     }
-  }
+  });
 
   return violations;
 }
@@ -2635,15 +2623,13 @@ function findRequiredUnityLicenseSecretViolations(relativePath, lines) {
   // Find the FIRST Unity-native run step across all jobs; its absence means the
   // file has no Unity-licensed work and the serial secrets are not required.
   let firstRunStep = null;
-  for (const job of extractJobs(lines)) {
-    for (const step of extractJobSteps(lines, job)) {
-      if (stepRunsUnityNatively(step)) {
-        if (!firstRunStep || step.startIndex < firstRunStep.startIndex) {
-          firstRunStep = step;
-        }
+  forEachJobStep(lines, (step) => {
+    if (stepRunsUnityNatively(step)) {
+      if (!firstRunStep || step.startIndex < firstRunStep.startIndex) {
+        firstRunStep = step;
       }
     }
-  }
+  });
   if (!firstRunStep) {
     return violations;
   }
@@ -2898,10 +2884,8 @@ function findDynamicRunsOnMissingNeedsViolations(relativePath, lines) {
 
 function findChangelogCoverageCheckoutViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
 
-  for (const job of jobs) {
-    const steps = extractJobSteps(lines, job);
+  forEachJob(lines, (job, steps) => {
     let latestCheckoutHasFullHistory = false;
 
     for (const step of steps) {
@@ -2928,7 +2912,7 @@ function findChangelogCoverageCheckoutViolations(relativePath, lines) {
         )
       );
     }
-  }
+  });
 
   return violations;
 }
@@ -2943,45 +2927,40 @@ function checkoutPersistCredentialsValue(step) {
 
 function findCheckoutCredentialPersistenceViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
 
-  for (const job of jobs) {
-    const steps = extractJobSteps(lines, job);
+  forEachJobStep(lines, (step, job) => {
+    if (typeof step.uses !== "string" || !step.uses.startsWith("actions/checkout@")) {
+      return;
+    }
 
-    for (const step of steps) {
-      if (typeof step.uses !== "string" || !step.uses.startsWith("actions/checkout@")) {
-        continue;
-      }
-
-      const persistCredentials = checkoutPersistCredentialsValue(step);
-      if (persistCredentials === null) {
-        violations.push(
-          new Violation(
-            relativePath,
-            step.startIndex + 1,
-            "actions/checkout persist-credentials",
-            `Workflow job '${job.id}' uses actions/checkout without an explicit persist-credentials value. Set persist-credentials: false and configure push credentials only in the guarded step that actually pushes.`,
-            "error"
-          )
-        );
-        continue;
-      }
-
-      if (workflowScalarIsFalse(persistCredentials)) {
-        continue;
-      }
-
+    const persistCredentials = checkoutPersistCredentialsValue(step);
+    if (persistCredentials === null) {
       violations.push(
         new Violation(
           relativePath,
           step.startIndex + 1,
-          `persist-credentials: ${persistCredentials}`,
-          `Workflow job '${job.id}' persists checkout credentials. Use persist-credentials: false and configure push credentials only in the guarded step that actually pushes.`,
+          "actions/checkout persist-credentials",
+          `Workflow job '${job.id}' uses actions/checkout without an explicit persist-credentials value. Set persist-credentials: false and configure push credentials only in the guarded step that actually pushes.`,
           "error"
         )
       );
+      return;
     }
-  }
+
+    if (workflowScalarIsFalse(persistCredentials)) {
+      return;
+    }
+
+    violations.push(
+      new Violation(
+        relativePath,
+        step.startIndex + 1,
+        `persist-credentials: ${persistCredentials}`,
+        `Workflow job '${job.id}' persists checkout credentials. Use persist-credentials: false and configure push credentials only in the guarded step that actually pushes.`,
+        "error"
+      )
+    );
+  });
 
   return violations;
 }
@@ -3189,11 +3168,8 @@ function tokenizedGitRemoteFeedsGuardedAutoCommit(steps, stepIndex) {
 
 function findTokenizedGitRemoteCredentialViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
 
-  for (const job of jobs) {
-    const steps = extractJobSteps(lines, job);
-
+  forEachJob(lines, (job, steps) => {
     for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
       const step = steps[stepIndex];
       if (!step.run || !runTextConfiguresTokenizedGitRemote(step.run)) {
@@ -3214,7 +3190,7 @@ function findTokenizedGitRemoteCredentialViolations(relativePath, lines) {
         )
       );
     }
-  }
+  });
 
   return violations;
 }
@@ -3229,27 +3205,22 @@ function runTextConfiguresPersistentGitExtraheader(runText) {
 
 function findPersistentGitExtraheaderCredentialViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
 
-  for (const job of jobs) {
-    const steps = extractJobSteps(lines, job);
-
-    for (const step of steps) {
-      if (!step.run || !runTextConfiguresPersistentGitExtraheader(step.run)) {
-        continue;
-      }
-
-      violations.push(
-        new Violation(
-          relativePath,
-          step.run.line,
-          "git config http.*.extraheader",
-          `Workflow job '${job.id}' persists Git extraheader credentials. Use command-scoped git -c http.https://github.com/.extraheader=... only on the clone/fetch/push command that needs authentication.`,
-          "error"
-        )
-      );
+  forEachJobStep(lines, (step, job) => {
+    if (!step.run || !runTextConfiguresPersistentGitExtraheader(step.run)) {
+      return;
     }
-  }
+
+    violations.push(
+      new Violation(
+        relativePath,
+        step.run.line,
+        "git config http.*.extraheader",
+        `Workflow job '${job.id}' persists Git extraheader credentials. Use command-scoped git -c http.https://github.com/.extraheader=... only on the clone/fetch/push command that needs authentication.`,
+        "error"
+      )
+    );
+  });
 
   return violations;
 }
@@ -3281,31 +3252,27 @@ function stepChecksAutoCommitAppCredentials(step) {
 
 function findAutoCommitAppCredentialWarningViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
 
-  for (const job of jobs) {
-    const steps = extractJobSteps(lines, job);
-    for (const step of steps) {
-      if (!stepChecksAutoCommitAppCredentials(step)) {
-        continue;
-      }
-
-      const runText = extractedWorkflowStepRunText(step);
-      if (/::warning::/.test(runText)) {
-        continue;
-      }
-
-      violations.push(
-        new Violation(
-          relativePath,
-          step.startIndex + 1,
-          "AUTO_COMMIT_APP_* missing-secret warning",
-          `Workflow job '${job.id}' checks AUTO_COMMIT_APP_* credentials and sets has-app=false without emitting a ::warning::. Missing auto-commit provisioning must be visible in the run logs.`,
-          "error"
-        )
-      );
+  forEachJobStep(lines, (step, job) => {
+    if (!stepChecksAutoCommitAppCredentials(step)) {
+      return;
     }
-  }
+
+    const runText = extractedWorkflowStepRunText(step);
+    if (/::warning::/.test(runText)) {
+      return;
+    }
+
+    violations.push(
+      new Violation(
+        relativePath,
+        step.startIndex + 1,
+        "AUTO_COMMIT_APP_* missing-secret warning",
+        `Workflow job '${job.id}' checks AUTO_COMMIT_APP_* credentials and sets has-app=false without emitting a ::warning::. Missing auto-commit provisioning must be visible in the run logs.`,
+        "error"
+      )
+    );
+  });
 
   return violations;
 }
@@ -3405,12 +3372,10 @@ function runTextHasBranchFreshnessDiagnostic(runInput) {
 
 function findGitHubAppAutoCommitRobustnessViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
 
-  for (const job of jobs) {
-    const steps = extractJobSteps(lines, job);
+  forEachJob(lines, (job, steps) => {
     if (!steps.some((step) => stepCreatesGitHubAppToken(step))) {
-      continue;
+      return;
     }
 
     const gitAutoCommitStep = steps.find((step) => stepUsesGitAutoCommitAction(step));
@@ -3421,7 +3386,7 @@ function findGitHubAppAutoCommitRobustnessViolations(relativePath, lines) {
       (step) => step.run && runTextPushesCurrentHeadToCurrentRef(step.run)
     );
     if (!gitAutoCommitStep && pushSteps.length === 0) {
-      continue;
+      return;
     }
 
     if (gitAutoCommitStep) {
@@ -3469,7 +3434,7 @@ function findGitHubAppAutoCommitRobustnessViolations(relativePath, lines) {
         );
       }
     }
-  }
+  });
 
   return violations;
 }
@@ -4218,15 +4183,14 @@ function resolveJobLabelSetsForShellPolicy(lines, job, outputsMap) {
 
 function findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
   const workflowDefaultsShell = extractWorkflowDefaultsShell(lines);
   const outputsMap = extractJobOutputsSourceMap(lines);
 
-  for (const job of jobs) {
+  forEachJob(lines, (job, steps) => {
     const resolution = resolveJobLabelSetsForShellPolicy(lines, job, outputsMap);
 
     if (resolution.kind === "none") {
-      continue;
+      return;
     }
 
     if (resolution.kind === "dynamic-unresolved") {
@@ -4244,7 +4208,7 @@ function findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lin
           "warning"
         )
       );
-      continue;
+      return;
     }
 
     // Apply the policy only if ANY resolved label set is self-hosted
@@ -4255,11 +4219,10 @@ function findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lin
       isSelfHostedWindowsLabelSet(labels)
     );
     if (!appliesToAtLeastOneBranch) {
-      continue;
+      return;
     }
 
     const jobDefaultsShell = extractJobDefaultsShell(lines, job);
-    const steps = extractJobSteps(lines, job);
 
     for (const step of steps) {
       // `uses:` steps inherit the composite action's shell decisions;
@@ -4330,7 +4293,7 @@ function findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lin
         )
       );
     }
-  }
+  });
 
   return violations;
 }
@@ -4358,22 +4321,20 @@ function stepConfiguresGitLongPaths(step) {
 
 function findSelfHostedWindowsCheckoutLongPathViolations(relativePath, lines) {
   const violations = [];
-  const jobs = extractJobs(lines);
   const outputsMap = extractJobOutputsSourceMap(lines);
 
-  for (const job of jobs) {
-    const steps = extractJobSteps(lines, job);
+  forEachJob(lines, (job, steps) => {
     const checkoutSteps = steps.filter(
       (step) => typeof step.uses === "string" && step.uses.startsWith("actions/checkout@")
     );
     if (checkoutSteps.length === 0) {
-      continue;
+      return;
     }
 
     const resolution = resolveJobLabelSetsForShellPolicy(lines, job, outputsMap);
 
     if (resolution.kind === "none") {
-      continue;
+      return;
     }
 
     if (resolution.kind === "dynamic-unresolved") {
@@ -4387,14 +4348,14 @@ function findSelfHostedWindowsCheckoutLongPathViolations(relativePath, lines) {
           "warning"
         )
       );
-      continue;
+      return;
     }
 
     const appliesToAtLeastOneBranch = resolution.labelSets.some((labels) =>
       isSelfHostedWindowsLabelSet(labels)
     );
     if (!appliesToAtLeastOneBranch) {
-      continue;
+      return;
     }
 
     let priorGitConfigGlobal = null;
@@ -4430,7 +4391,7 @@ function findSelfHostedWindowsCheckoutLongPathViolations(relativePath, lines) {
         )
       );
     }
-  }
+  });
 
   return violations;
 }
@@ -4691,6 +4652,72 @@ function findComputeUnityAssembliesGateViolations(relativePath, content) {
 }
 
 /**
+ * Ordered registry of the per-workflow policy checks dispatched by
+ * {@link validateWorkflow}. TABLE ORDER IS OUTPUT ORDER: violations are
+ * appended in registry order, so reordering entries reorders the validator's
+ * reported violations.
+ *
+ * Each entry names its `policy` function. Uniform policies are invoked as
+ * `policy(relativePath, lines)`; the non-uniform signatures provide a
+ * `run(ctx)` adapter over the dispatch context
+ * `{ relativePath, lines, content, repoRoot, isIgnoredPathFn }`.
+ */
+const WORKFLOW_POLICY_CHECKS = Object.freeze(
+  [
+    {
+      policy: findIgnoredPathViolations,
+      run: (ctx) =>
+        findIgnoredPathViolations(ctx.relativePath, ctx.lines, ctx.repoRoot, ctx.isIgnoredPathFn)
+    },
+    { policy: findComparisonPackageValidationTriggerViolations },
+    {
+      policy: findLockfileInstallViolations,
+      run: (ctx) =>
+        findLockfileInstallViolations(
+          ctx.relativePath,
+          ctx.lines,
+          ctx.isIgnoredPathFn(ctx.repoRoot, "package-lock.json")
+        )
+    },
+    { policy: findPreCommitInstallHookWriterViolations },
+    { policy: findWindowsBashPortabilityViolations },
+    { policy: findForbiddenRunsOnGroupViolations },
+    { policy: findForbiddenSharedConcurrencyViolations },
+    { policy: findConcurrencyQueueViolations },
+    { policy: findMatrixConcurrencyEvictionViolations },
+    { policy: findGameCiTestRunnerInputViolations },
+    { policy: findUnityGameCiLockAndPreflightViolations },
+    { policy: findUnityNativeProvisioningViolations },
+    { policy: findUnityReleaseModeViolations },
+    { policy: findPerfDeltasCommentGateViolations },
+    { policy: findUnityLicenseReturnViolations },
+    { policy: findForbiddenUnityLicenseSecretViolations },
+    { policy: findRequiredUnityLicenseSecretViolations },
+    { policy: findSelfHostedLabelAllowlistViolations },
+    { policy: findDynamicRunsOnMissingNeedsViolations },
+    { policy: findChangelogCoverageCheckoutViolations },
+    { policy: findCheckoutCredentialPersistenceViolations },
+    { policy: findSelfHostedWindowsCheckoutLongPathViolations },
+    { policy: findTokenizedGitRemoteCredentialViolations },
+    { policy: findPersistentGitExtraheaderCredentialViolations },
+    { policy: findAutoCommitAppCredentialWarningViolations },
+    { policy: findGitHubAppAutoCommitRobustnessViolations },
+    { policy: findSelfHostedRunnerPreflightViolations },
+    { policy: findForbidPlainShellBashOnSelfHostedWindowsViolations },
+    { policy: findUnityLockTimeoutViolations },
+    { policy: findCrossPlatformPreflightTargetedGateViolations },
+    {
+      policy: findLycheeActionPolicyViolations,
+      run: (ctx) => findLycheeActionPolicyViolations(ctx.relativePath, ctx.content)
+    },
+    {
+      policy: findComputeUnityAssembliesGateViolations,
+      run: (ctx) => findComputeUnityAssembliesGateViolations(ctx.relativePath, ctx.content)
+    }
+  ].map((check) => Object.freeze(check))
+);
+
+/**
  * Validates a single workflow file.
  *
  * @param {string} filePath - Absolute path to the workflow file
@@ -4761,70 +4788,10 @@ function validateWorkflow(filePath, options = {}) {
   });
 
   try {
-    violations.push(...findIgnoredPathViolations(relativePath, lines, repoRoot, isIgnoredPathFn));
-
-    violations.push(...findComparisonPackageValidationTriggerViolations(relativePath, lines));
-
-    const packageLockIgnored = isIgnoredPathFn(repoRoot, "package-lock.json");
-    violations.push(...findLockfileInstallViolations(relativePath, lines, packageLockIgnored));
-
-    violations.push(...findPreCommitInstallHookWriterViolations(relativePath, lines));
-
-    violations.push(...findWindowsBashPortabilityViolations(relativePath, lines));
-
-    violations.push(...findForbiddenRunsOnGroupViolations(relativePath, lines));
-
-    violations.push(...findForbiddenSharedConcurrencyViolations(relativePath, lines));
-
-    violations.push(...findConcurrencyQueueViolations(relativePath, lines));
-
-    violations.push(...findMatrixConcurrencyEvictionViolations(relativePath, lines));
-
-    violations.push(...findGameCiTestRunnerInputViolations(relativePath, lines));
-
-    violations.push(...findUnityGameCiLockAndPreflightViolations(relativePath, lines));
-
-    violations.push(...findUnityNativeProvisioningViolations(relativePath, lines));
-
-    violations.push(...findUnityReleaseModeViolations(relativePath, lines));
-
-    violations.push(...findPerfDeltasCommentGateViolations(relativePath, lines));
-
-    violations.push(...findUnityLicenseReturnViolations(relativePath, lines));
-
-    violations.push(...findForbiddenUnityLicenseSecretViolations(relativePath, lines));
-
-    violations.push(...findRequiredUnityLicenseSecretViolations(relativePath, lines));
-
-    violations.push(...findSelfHostedLabelAllowlistViolations(relativePath, lines));
-
-    violations.push(...findDynamicRunsOnMissingNeedsViolations(relativePath, lines));
-
-    violations.push(...findChangelogCoverageCheckoutViolations(relativePath, lines));
-
-    violations.push(...findCheckoutCredentialPersistenceViolations(relativePath, lines));
-
-    violations.push(...findSelfHostedWindowsCheckoutLongPathViolations(relativePath, lines));
-
-    violations.push(...findTokenizedGitRemoteCredentialViolations(relativePath, lines));
-
-    violations.push(...findPersistentGitExtraheaderCredentialViolations(relativePath, lines));
-
-    violations.push(...findAutoCommitAppCredentialWarningViolations(relativePath, lines));
-
-    violations.push(...findGitHubAppAutoCommitRobustnessViolations(relativePath, lines));
-
-    violations.push(...findSelfHostedRunnerPreflightViolations(relativePath, lines));
-
-    violations.push(...findForbidPlainShellBashOnSelfHostedWindowsViolations(relativePath, lines));
-
-    violations.push(...findUnityLockTimeoutViolations(relativePath, lines));
-
-    violations.push(...findCrossPlatformPreflightTargetedGateViolations(relativePath, lines));
-
-    violations.push(...findLycheeActionPolicyViolations(relativePath, content));
-
-    violations.push(...findComputeUnityAssembliesGateViolations(relativePath, content));
+    const context = { relativePath, lines, content, repoRoot, isIgnoredPathFn };
+    for (const check of WORKFLOW_POLICY_CHECKS) {
+      violations.push(...(check.run ? check.run(context) : check.policy(relativePath, lines)));
+    }
   } catch (error) {
     violations.push(
       new Violation(
@@ -5034,7 +5001,8 @@ if (typeof module !== "undefined" && module.exports) {
     findWorkflowLineLengthViolations,
     validatePreCommitConfigLineLengths,
     validateWorkflow,
-    Violation
+    Violation,
+    WORKFLOW_POLICY_CHECKS
   };
 }
 

@@ -53,6 +53,8 @@ describe("module shape", () => {
     "extractWorkflowPathFilterBlocks",
     "extractWorkflowPathIgnoreBlocks",
     "extractedWorkflowStepRunText",
+    "forEachJob",
+    "forEachJobStep",
     "getIndent",
     "jobHasMatrix",
     "jobTargetsWindows",
@@ -165,6 +167,81 @@ describe("self-contained structural parsing", () => {
   test("getIndent counts leading spaces", () => {
     expect(engine.getIndent("    foo")).toBe(4);
     expect(engine.getIndent("nope")).toBe(0);
+  });
+});
+
+describe("job/step iterators", () => {
+  const WORKFLOW = [
+    "name: iterators",
+    "on: push",
+    "jobs:",
+    "  build:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - name: Checkout",
+    "        uses: actions/checkout@v4",
+    "      - name: Run",
+    "        run: echo hello",
+    "  stepless:",
+    "    uses: ./.github/workflows/reusable.yml",
+    "  deploy:",
+    "    runs-on: windows-latest",
+    "    steps:",
+    "      - run: echo deploy"
+  ];
+
+  test("forEachJob visits jobs in declaration order with steps deep-equal to extractJobSteps", () => {
+    const visited = [];
+    engine.forEachJob(WORKFLOW, (job, steps) => {
+      visited.push({ job, steps });
+    });
+
+    const jobs = engine.extractJobs(WORKFLOW);
+    expect(visited.map((entry) => entry.job.id)).toEqual(["build", "stepless", "deploy"]);
+    visited.forEach((entry, index) => {
+      expect(entry.job).toEqual(jobs[index]);
+      expect(entry.steps).toEqual(engine.extractJobSteps(WORKFLOW, jobs[index]));
+    });
+  });
+
+  test("forEachJobStep flattens (step, job) pairs in declaration order", () => {
+    const visited = [];
+    engine.forEachJobStep(WORKFLOW, (step, job) => {
+      visited.push({ step, job });
+    });
+
+    const expected = [];
+    for (const job of engine.extractJobs(WORKFLOW)) {
+      for (const step of engine.extractJobSteps(WORKFLOW, job)) {
+        expected.push({ step, job });
+      }
+    }
+    expect(visited).toEqual(expected);
+    expect(visited.map((entry) => entry.job.id)).toEqual(["build", "build", "deploy"]);
+  });
+
+  test("a job without steps: yields an empty steps array and zero step callbacks", () => {
+    const stepsByJob = new Map();
+    engine.forEachJob(WORKFLOW, (job, steps) => {
+      stepsByJob.set(job.id, steps);
+    });
+    expect(stepsByJob.get("stepless")).toEqual([]);
+
+    const stepJobIds = [];
+    engine.forEachJobStep(WORKFLOW, (_step, job) => {
+      stepJobIds.push(job.id);
+    });
+    expect(stepJobIds).not.toContain("stepless");
+  });
+
+  test("a workflow without jobs: invokes neither callback", () => {
+    const noJobs = ["name: empty", "on: push"];
+    const jobCallback = jest.fn();
+    const stepCallback = jest.fn();
+    engine.forEachJob(noJobs, jobCallback);
+    engine.forEachJobStep(noJobs, stepCallback);
+    expect(jobCallback).not.toHaveBeenCalled();
+    expect(stepCallback).not.toHaveBeenCalled();
   });
 });
 
