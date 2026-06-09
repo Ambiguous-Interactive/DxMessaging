@@ -334,20 +334,21 @@ describe("findComparisonPackageValidationTriggerViolations", () => {
   ).map((triggerPath) => `      - "${triggerPath}"`);
 
   test("requires every comparison-package source and mirror path in each paths block", () => {
-    const lines = [
-      "on:",
-      "  pull_request:",
-      "    paths:",
-      ...requiredWithoutLock,
-      "  push:",
-      "    paths:",
-      ...requiredWithoutLock,
-      "jobs:",
-      "  actionlint:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: node scripts/validate-comparison-packages.js"
-    ];
+    const lines = singleJobLines(
+      "actionlint",
+      ["      - run: node scripts/validate-comparison-packages.js"],
+      {
+        header: [
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          ...requiredWithoutLock,
+          "  push:",
+          "    paths:",
+          ...requiredWithoutLock
+        ]
+      }
+    );
 
     const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
 
@@ -359,20 +360,21 @@ describe("findComparisonPackageValidationTriggerViolations", () => {
   });
 
   test("accepts complete exact path filters", () => {
-    const lines = [
-      "on:",
-      "  pull_request:",
-      "    paths:",
-      ...requiredPathLines,
-      "  push:",
-      "    paths:",
-      ...requiredPathLines,
-      "jobs:",
-      "  actionlint:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: node scripts/validate-comparison-packages.js"
-    ];
+    const lines = singleJobLines(
+      "actionlint",
+      ["      - run: node scripts/validate-comparison-packages.js"],
+      {
+        header: [
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          ...requiredPathLines,
+          "  push:",
+          "    paths:",
+          ...requiredPathLines
+        ]
+      }
+    );
 
     const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
 
@@ -380,21 +382,22 @@ describe("findComparisonPackageValidationTriggerViolations", () => {
   });
 
   test("accepts broader path filters that cover required mirrors", () => {
-    const lines = [
-      "on:",
-      "  pull_request:",
-      "    paths:",
-      "      - .github/comparison-packages.json",
-      "      - scripts/validate-comparison-packages.js",
-      "      - scripts/unity/run-ci-tests.ps1",
-      "      - .unity-test-project/Packages/**",
-      "      - Tests/Runtime/**",
-      "jobs:",
-      "  actionlint:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: npm run validate:comparison-packages"
-    ];
+    const lines = singleJobLines(
+      "actionlint",
+      ["      - run: npm run validate:comparison-packages"],
+      {
+        header: [
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - .github/comparison-packages.json",
+          "      - scripts/validate-comparison-packages.js",
+          "      - scripts/unity/run-ci-tests.ps1",
+          "      - .unity-test-project/Packages/**",
+          "      - Tests/Runtime/**"
+        ]
+      }
+    );
 
     const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
 
@@ -402,18 +405,19 @@ describe("findComparisonPackageValidationTriggerViolations", () => {
   });
 
   test("reports order-sensitive paths exclusions that remove comparison-package mirrors", () => {
-    const lines = [
-      "on:",
-      "  pull_request:",
-      "    paths:",
-      "      - '**'",
-      "      - '!.unity-test-project/Packages/**'",
-      "jobs:",
-      "  actionlint:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: node scripts/validate-comparison-packages.js"
-    ];
+    const lines = singleJobLines(
+      "actionlint",
+      ["      - run: node scripts/validate-comparison-packages.js"],
+      {
+        header: [
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - '**'",
+          "      - '!.unity-test-project/Packages/**'"
+        ]
+      }
+    );
 
     const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
 
@@ -427,20 +431,21 @@ describe("findComparisonPackageValidationTriggerViolations", () => {
   });
 
   test("accepts paths exclusions when a later positive pattern re-includes the mirror", () => {
-    const lines = [
-      "on:",
-      "  pull_request:",
-      "    paths:",
-      "      - '**'",
-      "      - '!.unity-test-project/Packages/**'",
-      "      - '.unity-test-project/Packages/manifest.json'",
-      "      - '.unity-test-project/Packages/packages-lock.json'",
-      "jobs:",
-      "  actionlint:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: node scripts/validate-comparison-packages.js"
-    ];
+    const lines = singleJobLines(
+      "actionlint",
+      ["      - run: node scripts/validate-comparison-packages.js"],
+      {
+        header: [
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - '**'",
+          "      - '!.unity-test-project/Packages/**'",
+          "      - '.unity-test-project/Packages/manifest.json'",
+          "      - '.unity-test-project/Packages/packages-lock.json'"
+        ]
+      }
+    );
 
     const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
 
@@ -448,13 +453,7 @@ describe("findComparisonPackageValidationTriggerViolations", () => {
   });
 
   test("does not require path coverage when no paths filter is present", () => {
-    const lines = [
-      "jobs:",
-      "  release:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: npm run validate:all"
-    ];
+    const lines = singleJobLines("release", ["      - run: npm run validate:all"]);
 
     const violations = findComparisonPackageValidationTriggerViolations("release.yml", lines);
 
@@ -462,18 +461,19 @@ describe("findComparisonPackageValidationTriggerViolations", () => {
   });
 
   test("reports paths-ignore entries that exclude comparison-package mirrors", () => {
-    const lines = [
-      "on:",
-      "  pull_request:",
-      "    paths-ignore:",
-      "      - docs/**",
-      "      - .unity-test-project/Packages/**",
-      "jobs:",
-      "  actionlint:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: node scripts/validate-comparison-packages.js"
-    ];
+    const lines = singleJobLines(
+      "actionlint",
+      ["      - run: node scripts/validate-comparison-packages.js"],
+      {
+        header: [
+          "on:",
+          "  pull_request:",
+          "    paths-ignore:",
+          "      - docs/**",
+          "      - .unity-test-project/Packages/**"
+        ]
+      }
+    );
 
     const violations = findComparisonPackageValidationTriggerViolations("actionlint.yml", lines);
 
@@ -483,17 +483,9 @@ describe("findComparisonPackageValidationTriggerViolations", () => {
   });
 
   test("ignores workflows that do not run the comparison-package drift gate", () => {
-    const lines = [
-      "on:",
-      "  pull_request:",
-      "    paths:",
-      "      - docs/**",
-      "jobs:",
-      "  docs:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: npm run validate:docs"
-    ];
+    const lines = singleJobLines("docs", ["      - run: npm run validate:docs"], {
+      header: ["on:", "  pull_request:", "    paths:", "      - docs/**"]
+    });
 
     const violations = findComparisonPackageValidationTriggerViolations("docs.yml", lines);
 
@@ -870,6 +862,18 @@ describe("pre-commit hook environment policy", () => {
 });
 
 describe("windows matrix bash shell portability policy", () => {
+  const MATRIX_JOB_OPTS = Object.freeze({
+    runsOn: "${{ matrix.os }}",
+    header: ["name: test"],
+    jobKeys: [
+      "    strategy:",
+      "      matrix:",
+      "        os:",
+      "          - ubuntu-latest",
+      "          - windows-latest"
+    ]
+  });
+
   test.each([
     {
       name: "detects if bracket conditionals",
@@ -929,155 +933,117 @@ describe("windows matrix bash shell portability policy", () => {
   test.each([
     {
       name: "flags bash syntax in windows matrix job without shell override",
-      lines: [
-        "name: test",
-        "jobs:",
-        "  validate:",
-        "    runs-on: ${{ matrix.os }}",
-        "    strategy:",
-        "      matrix:",
-        "        os:",
-        "          - ubuntu-latest",
-        "          - windows-latest",
-        "    steps:",
-        "      - name: Install",
-        "        run: |",
-        "          if [ -f package-lock.json ]; then",
-        "            npm ci",
-        "          else",
-        "            npm i --no-audit --no-fund",
-        "          fi"
-      ],
+      lines: singleJobLines(
+        "validate",
+        [
+          "      - name: Install",
+          "        run: |",
+          "          if [ -f package-lock.json ]; then",
+          "            npm ci",
+          "          else",
+          "            npm i --no-audit --no-fund",
+          "          fi"
+        ],
+        MATRIX_JOB_OPTS
+      ),
       expectedViolationCount: 1
     },
     {
       name: "flags shell chaining operators in windows matrix job without shell override",
-      lines: [
-        "name: test",
-        "jobs:",
-        "  validate:",
-        "    runs-on: ${{ matrix.os }}",
-        "    strategy:",
-        "      matrix:",
-        "        os:",
-        "          - ubuntu-latest",
-        "          - windows-latest",
-        "    steps:",
-        "      - name: Install",
-        "        run: npm ci && npm run validate:npm-meta"
-      ],
+      lines: singleJobLines(
+        "validate",
+        ["      - name: Install", "        run: npm ci && npm run validate:npm-meta"],
+        MATRIX_JOB_OPTS
+      ),
       expectedViolationCount: 1
     },
     {
       name: "allows step-level shell override",
-      lines: [
-        "name: test",
-        "jobs:",
-        "  validate:",
-        "    runs-on: ${{ matrix.os }}",
-        "    strategy:",
-        "      matrix:",
-        "        os:",
-        "          - ubuntu-latest",
-        "          - windows-latest",
-        "    steps:",
-        "      - name: Install",
-        "        shell: bash",
-        "        run: |",
-        "          if [ -f package-lock.json ]; then",
-        "            npm ci",
-        "          else",
-        "            npm i --no-audit --no-fund",
-        "          fi"
-      ],
+      lines: singleJobLines(
+        "validate",
+        [
+          "      - name: Install",
+          "        shell: bash",
+          "        run: |",
+          "          if [ -f package-lock.json ]; then",
+          "            npm ci",
+          "          else",
+          "            npm i --no-audit --no-fund",
+          "          fi"
+        ],
+        MATRIX_JOB_OPTS
+      ),
       expectedViolationCount: 0
     },
     {
       name: "allows job defaults.run.shell override",
-      lines: [
-        "name: test",
-        "jobs:",
-        "  validate:",
-        "    runs-on: ${{ matrix.os }}",
-        "    strategy:",
-        "      matrix:",
-        "        os:",
-        "          - ubuntu-latest",
-        "          - windows-latest",
-        "    defaults:",
-        "      run:",
-        "        shell: bash",
-        "    steps:",
-        "      - name: Install",
-        "        run: |",
-        "          if [ -f package-lock.json ]; then",
-        "            npm ci",
-        "          else",
-        "            npm i --no-audit --no-fund",
-        "          fi"
-      ],
+      lines: singleJobLines(
+        "validate",
+        [
+          "      - name: Install",
+          "        run: |",
+          "          if [ -f package-lock.json ]; then",
+          "            npm ci",
+          "          else",
+          "            npm i --no-audit --no-fund",
+          "          fi"
+        ],
+        {
+          ...MATRIX_JOB_OPTS,
+          jobKeys: [
+            ...MATRIX_JOB_OPTS.jobKeys,
+            "    defaults:",
+            "      run:",
+            "        shell: bash"
+          ]
+        }
+      ),
       expectedViolationCount: 0
     },
     {
       name: "allows workflow defaults.run.shell override",
-      lines: [
-        "name: test",
-        "defaults:",
-        "  run:",
-        "    shell: bash",
-        "jobs:",
-        "  validate:",
-        "    runs-on: ${{ matrix.os }}",
-        "    strategy:",
-        "      matrix:",
-        "        os:",
-        "          - ubuntu-latest",
-        "          - windows-latest",
-        "    steps:",
-        "      - name: Install",
-        "        run: |",
-        "          if [ -f package-lock.json ]; then",
-        "            npm ci",
-        "          else",
-        "            npm i --no-audit --no-fund",
-        "          fi"
-      ],
+      lines: singleJobLines(
+        "validate",
+        [
+          "      - name: Install",
+          "        run: |",
+          "          if [ -f package-lock.json ]; then",
+          "            npm ci",
+          "          else",
+          "            npm i --no-audit --no-fund",
+          "          fi"
+        ],
+        {
+          ...MATRIX_JOB_OPTS,
+          header: ["name: test", "defaults:", "  run:", "    shell: bash"]
+        }
+      ),
       expectedViolationCount: 0
     },
     {
       name: "does not enforce bash-shell policy for ubuntu-only jobs",
-      lines: [
-        "name: test",
-        "jobs:",
-        "  validate:",
-        "    runs-on: ubuntu-latest",
-        "    steps:",
-        "      - name: Install",
-        "        run: |",
-        "          if [ -f package-lock.json ]; then",
-        "            npm ci",
-        "          else",
-        "            npm i --no-audit --no-fund",
-        "          fi"
-      ],
+      lines: singleJobLines(
+        "validate",
+        [
+          "      - name: Install",
+          "        run: |",
+          "          if [ -f package-lock.json ]; then",
+          "            npm ci",
+          "          else",
+          "            npm i --no-audit --no-fund",
+          "          fi"
+        ],
+        { header: ["name: test"] }
+      ),
       expectedViolationCount: 0
     },
     {
       name: "does not flag non-bash run blocks in windows jobs",
-      lines: [
-        "name: test",
-        "jobs:",
-        "  validate:",
-        "    runs-on: ${{ matrix.os }}",
-        "    strategy:",
-        "      matrix:",
-        "        os:",
-        "          - ubuntu-latest",
-        "          - windows-latest",
-        "    steps:",
-        "      - name: Install",
-        "        run: npm ci"
-      ],
+      lines: singleJobLines(
+        "validate",
+        ["      - name: Install", "        run: npm ci"],
+        MATRIX_JOB_OPTS
+      ),
       expectedViolationCount: 0
     }
   ])("findWindowsBashPortabilityViolations: $name", ({ lines, expectedViolationCount }) => {
@@ -1243,8 +1209,6 @@ describe("validateWorkflow newline handling", () => {
   test("detects forbidden pattern when file uses lone CR line endings", () => {
     const tempDir = makeTempDir("validate-workflows");
     try {
-      const workflowPath = path.join(tempDir, "test.yml");
-
       const workflowContent = [
         "name: Test",
         "jobs:",
@@ -1253,7 +1217,7 @@ describe("validateWorkflow newline handling", () => {
         "      - run: git add --renormalize -- '*.md' '*.json'"
       ].join("\r");
 
-      fs.writeFileSync(workflowPath, workflowContent, "utf8");
+      const workflowPath = writeWorkflowFile(tempDir, "test.yml", workflowContent);
       const violations = validateWorkflow(workflowPath);
 
       expect(violations.some((v) => v.severity === "error")).toBe(true);
@@ -1325,22 +1289,13 @@ describe("validatePreCommitConfigLineLengths", () => {
   test("reports line-length violations from .pre-commit-config.yaml using yamllint policy", () => {
     const tempDir = makeTempDir("validate-precommit-line-length");
     try {
-      const configPath = path.join(tempDir, ".pre-commit-config.yaml");
-      fs.writeFileSync(
-        path.join(tempDir, ".yamllint.yaml"),
-        ["rules:", "  line-length:", "    max: 40"].join("\n"),
-        "utf8"
-      );
-      fs.writeFileSync(
-        configPath,
-        [
-          "repos:",
-          "  - repo: local",
-          "    hooks:",
-          "      # this comment is intentionally longer than forty characters for test coverage"
-        ].join("\n"),
-        "utf8"
-      );
+      writeWorkflowFile(tempDir, ".yamllint.yaml", ["rules:", "  line-length:", "    max: 40"]);
+      const configPath = writeWorkflowFile(tempDir, ".pre-commit-config.yaml", [
+        "repos:",
+        "  - repo: local",
+        "    hooks:",
+        "      # this comment is intentionally longer than forty characters for test coverage"
+      ]);
 
       const violations = validatePreCommitConfigLineLengths({
         repoRoot: tempDir,
@@ -1375,17 +1330,13 @@ describe("resolveWorkflowLineLengthPolicy", () => {
   test("loads max and non-breakable options from .yamllint.yaml", () => {
     const tempDir = makeTempDir("validate-workflows-policy-yamllint");
     try {
-      fs.writeFileSync(
-        path.join(tempDir, ".yamllint.yaml"),
-        [
-          "rules:",
-          "  line-length:",
-          "    max: 180",
-          "    allow-non-breakable-words: false",
-          "    allow-non-breakable-inline-mappings: false"
-        ].join("\n"),
-        "utf8"
-      );
+      writeWorkflowFile(tempDir, ".yamllint.yaml", [
+        "rules:",
+        "  line-length:",
+        "    max: 180",
+        "    allow-non-breakable-words: false",
+        "    allow-non-breakable-inline-mappings: false"
+      ]);
 
       const policy = resolveWorkflowLineLengthPolicy(tempDir);
 
@@ -1402,17 +1353,13 @@ describe("resolveWorkflowLineLengthPolicy", () => {
   test("treats inline-mappings option as implying non-breakable words", () => {
     const tempDir = makeTempDir("validate-workflows-policy-inline-map");
     try {
-      fs.writeFileSync(
-        path.join(tempDir, ".yamllint.yaml"),
-        [
-          "rules:",
-          "  line-length:",
-          "    max: 200",
-          "    allow-non-breakable-words: false",
-          "    allow-non-breakable-inline-mappings: true"
-        ].join("\n"),
-        "utf8"
-      );
+      writeWorkflowFile(tempDir, ".yamllint.yaml", [
+        "rules:",
+        "  line-length:",
+        "    max: 200",
+        "    allow-non-breakable-words: false",
+        "    allow-non-breakable-inline-mappings: true"
+      ]);
 
       const policy = resolveWorkflowLineLengthPolicy(tempDir);
       expect(policy.allowNonBreakableInlineMappings).toBe(true);
@@ -1427,13 +1374,12 @@ describe("resolveWorkflowLineLengthMax", () => {
   test("loads max from .yamllint.yaml when present", () => {
     const tempDir = makeTempDir("validate-workflows-yamllint");
     try {
-      fs.writeFileSync(
-        path.join(tempDir, ".yamllint.yaml"),
-        ["rules:", "  line-length:", "    max: 187", "    allow-non-breakable-words: true"].join(
-          "\n"
-        ),
-        "utf8"
-      );
+      writeWorkflowFile(tempDir, ".yamllint.yaml", [
+        "rules:",
+        "  line-length:",
+        "    max: 187",
+        "    allow-non-breakable-words: true"
+      ]);
 
       expect(resolveWorkflowLineLengthMax(tempDir)).toBe(187);
     } finally {
@@ -1520,17 +1466,6 @@ describe("findLycheeActionPolicyViolations", () => {
   const blockingWorkflowPath = ".github/workflows/lint-doc-links.yml";
   const advisoryWorkflowPath = ".github/workflows/markdown-link-validity.yml";
 
-  function makeWorkflow(stepLines) {
-    return [
-      "name: Test",
-      "jobs:",
-      "  lint:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      ...stepLines
-    ].join("\n");
-  }
-
   const installPinnedLycheeStep = [
     "      - name: Install pinned lychee",
     "        uses: ./.github/actions/install-pinned-lychee",
@@ -1584,7 +1519,7 @@ describe("findLycheeActionPolicyViolations", () => {
   test("accepts the blocking workflow's pinned native-timeout lychee shape", () => {
     const violations = findLycheeActionPolicyViolations(
       blockingWorkflowPath,
-      makeWorkflow(validBlockingLycheeSteps)
+      singleJobWorkflow("lint", validBlockingLycheeSteps, { header: ["name: Test"] })
     );
 
     expect(violations).toEqual([]);
@@ -1640,20 +1575,27 @@ describe("findLycheeActionPolicyViolations", () => {
       expectedMessage: "tracked docs"
     }
   ])("rejects blocking lychee CLI shape: $label", ({ steps, expectedPattern, expectedMessage }) => {
-    const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, makeWorkflow(steps));
+    const violations = findLycheeActionPolicyViolations(
+      blockingWorkflowPath,
+      singleJobWorkflow("lint", steps, { header: ["name: Test"] })
+    );
 
     expect(violations.some((violation) => violation.pattern === expectedPattern)).toBe(true);
     expect(violations.some((violation) => violation.message.includes(expectedMessage))).toBe(true);
   });
 
   test("rejects active lycheeverse action usage before it can hide installer breakage", () => {
-    const content = makeWorkflow([
-      "      - name: Scan external links",
-      "        uses: lycheeverse/lychee-action@v2",
-      "        with:",
-      "          args: ./docs",
-      "          fail: false"
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        "      - name: Scan external links",
+        "        uses: lycheeverse/lychee-action@v2",
+        "        with:",
+        "          args: ./docs",
+        "          fail: false"
+      ],
+      { header: ["name: Test"] }
+    );
 
     const violations = findLycheeActionPolicyViolations(".github/workflows/some.yml", content);
 
@@ -1663,16 +1605,20 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("reports a blocking workflow missing the external lychee liveness step", () => {
-    const content = makeWorkflow([
-      ...installPinnedLycheeStep,
-      "      - name: Check internal links and anchors (offline)",
-      "        run: >-",
-      "          lychee",
-      "          -c .lychee.toml",
-      "          --offline",
-      "          --include-fragments",
-      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        ...installPinnedLycheeStep,
+        "      - name: Check internal links and anchors (offline)",
+        "        run: >-",
+        "          lychee",
+        "          -c .lychee.toml",
+        "          --offline",
+        "          --include-fragments",
+        '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+      ],
+      { header: ["name: Test"] }
+    );
 
     const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, content);
 
@@ -1682,17 +1628,21 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("reports a blocking workflow missing the offline lychee step", () => {
-    const content = makeWorkflow([
-      ...installPinnedLycheeStep,
-      "      - name: Probe external link liveness",
-      "        run: >-",
-      "          lychee",
-      "          -c .lychee.toml",
-      "          --scheme https",
-      "          --scheme http",
-      "          --accept-timeouts=true",
-      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        ...installPinnedLycheeStep,
+        "      - name: Probe external link liveness",
+        "        run: >-",
+        "          lychee",
+        "          -c .lychee.toml",
+        "          --scheme https",
+        "          --scheme http",
+        "          --accept-timeouts=true",
+        '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+      ],
+      { header: ["name: Test"] }
+    );
 
     const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, content);
 
@@ -1702,23 +1652,27 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("reports a blocking external lychee step missing required schemes", () => {
-    const content = makeWorkflow([
-      ...installPinnedLycheeStep,
-      "      - name: Check internal links and anchors (offline)",
-      "        run: >-",
-      "          lychee",
-      "          -c .lychee.toml",
-      "          --offline",
-      "          --include-fragments",
-      '          --files-from "${RUNNER_TEMP}/doc-files.txt"',
-      "      - name: Probe external link liveness",
-      "        run: >-",
-      "          lychee",
-      "          -c .lychee.toml",
-      "          --scheme https",
-      "          --accept-timeouts=true",
-      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        ...installPinnedLycheeStep,
+        "      - name: Check internal links and anchors (offline)",
+        "        run: >-",
+        "          lychee",
+        "          -c .lychee.toml",
+        "          --offline",
+        "          --include-fragments",
+        '          --files-from "${RUNNER_TEMP}/doc-files.txt"',
+        "      - name: Probe external link liveness",
+        "        run: >-",
+        "          lychee",
+        "          -c .lychee.toml",
+        "          --scheme https",
+        "          --accept-timeouts=true",
+        '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+      ],
+      { header: ["name: Test"] }
+    );
 
     const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, content);
 
@@ -1728,7 +1682,7 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("allows the scheduled advisory scan to report through the tracking issue", () => {
-    const content = makeWorkflow(validAdvisoryLycheeSteps);
+    const content = singleJobWorkflow("lint", validAdvisoryLycheeSteps, { header: ["name: Test"] });
 
     const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
 
@@ -1736,7 +1690,13 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("reports a scheduled advisory workflow with no lychee scan step", () => {
-    const content = makeWorkflow(["      - name: Do nothing", "        run: echo ok"]);
+    const content = singleJobWorkflow(
+      "lint",
+      ["      - name: Do nothing", "        run: echo ok"],
+      {
+        header: ["name: Test"]
+      }
+    );
 
     const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
 
@@ -1770,23 +1730,27 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("rejects advisory workflow lychee steps that would fail the workflow directly", () => {
-    const content = makeWorkflow([
-      ...installPinnedLycheeStep,
-      "      - name: Scan external links (advisory)",
-      "        id: lychee",
-      "        run: |",
-      "          mkdir -p ./lychee",
-      "          lychee \\",
-      "            -c .lychee.toml \\",
-      "            --scheme https \\",
-      "            --scheme http \\",
-      "            --format markdown \\",
-      `            --output ${ADVISORY_LYCHEE_REPORT_PATH} \\`,
-      '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
-      "      - name: Sync the dead-link tracking issue",
-      "        run: |",
-      validAdvisoryIssueBodyLine
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        ...installPinnedLycheeStep,
+        "      - name: Scan external links (advisory)",
+        "        id: lychee",
+        "        run: |",
+        "          mkdir -p ./lychee",
+        "          lychee \\",
+        "            -c .lychee.toml \\",
+        "            --scheme https \\",
+        "            --scheme http \\",
+        "            --format markdown \\",
+        `            --output ${ADVISORY_LYCHEE_REPORT_PATH} \\`,
+        '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
+        "      - name: Sync the dead-link tracking issue",
+        "        run: |",
+        validAdvisoryIssueBodyLine
+      ],
+      { header: ["name: Test"] }
+    );
 
     const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
 
@@ -1812,7 +1776,11 @@ describe("findLycheeActionPolicyViolations", () => {
       expectedMessage: ADVISORY_LYCHEE_REPORT_PATH
     }
   ])("rejects advisory report generation shape: $label", ({ omittedLine, expectedMessage }) => {
-    const content = makeWorkflow(validAdvisoryLycheeSteps.filter((line) => line !== omittedLine));
+    const content = singleJobWorkflow(
+      "lint",
+      validAdvisoryLycheeSteps.filter((line) => line !== omittedLine),
+      { header: ["name: Test"] }
+    );
 
     const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
 
@@ -1823,10 +1791,12 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("rejects advisory issue sync steps that drop the lychee report body file", () => {
-    const content = makeWorkflow(
+    const content = singleJobWorkflow(
+      "lint",
       validAdvisoryLycheeSteps.map((line) =>
         line.includes("--body-file") ? '          gh issue edit "${number}"' : line
-      )
+      ),
+      { header: ["name: Test"] }
     );
 
     const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
@@ -1839,28 +1809,32 @@ describe("findLycheeActionPolicyViolations", () => {
   test.each(["--accept-timeouts", "--accept-timeouts=true"])(
     "rejects advisory workflow timeout acceptance via %s",
     (acceptTimeoutsArg) => {
-      const content = makeWorkflow([
-        ...installPinnedLycheeStep,
-        "      - name: Scan external links (advisory)",
-        "        id: lychee",
-        "        run: |",
-        "          set +e",
-        "          mkdir -p ./lychee",
-        "          lychee \\",
-        "            -c .lychee.toml \\",
-        "            --scheme https \\",
-        "            --scheme http \\",
-        `            ${acceptTimeoutsArg} \\`,
-        "            --format markdown \\",
-        `            --output ${ADVISORY_LYCHEE_REPORT_PATH} \\`,
-        '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
-        '          exit_code="${?}"',
-        '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
-        "          exit 0",
-        "      - name: Sync the dead-link tracking issue",
-        "        run: |",
-        validAdvisoryIssueBodyLine
-      ]);
+      const content = singleJobWorkflow(
+        "lint",
+        [
+          ...installPinnedLycheeStep,
+          "      - name: Scan external links (advisory)",
+          "        id: lychee",
+          "        run: |",
+          "          set +e",
+          "          mkdir -p ./lychee",
+          "          lychee \\",
+          "            -c .lychee.toml \\",
+          "            --scheme https \\",
+          "            --scheme http \\",
+          `            ${acceptTimeoutsArg} \\`,
+          "            --format markdown \\",
+          `            --output ${ADVISORY_LYCHEE_REPORT_PATH} \\`,
+          '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
+          '          exit_code="${?}"',
+          '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
+          "          exit 0",
+          "      - name: Sync the dead-link tracking issue",
+          "        run: |",
+          validAdvisoryIssueBodyLine
+        ],
+        { header: ["name: Test"] }
+      );
 
       const violations = findLycheeActionPolicyViolations(advisoryWorkflowPath, content);
 
@@ -1870,13 +1844,17 @@ describe("findLycheeActionPolicyViolations", () => {
   );
 
   test("ignores archived disabled workflows when checking retired lychee-action usage", () => {
-    const content = makeWorkflow([
-      "      - name: Old scan",
-      "        uses: lycheeverse/lychee-action@v2",
-      "        with:",
-      "          args: ./docs",
-      "          fail: false"
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        "      - name: Old scan",
+        "        uses: lycheeverse/lychee-action@v2",
+        "        with:",
+        "          args: ./docs",
+        "          fail: false"
+      ],
+      { header: ["name: Test"] }
+    );
 
     const violations = findLycheeActionPolicyViolations(
       ".github/workflows-disabled/old-lychee.yml",
@@ -1887,27 +1865,31 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("rejects the old blocking fail:false JSON post-classification pattern", () => {
-    const content = makeWorkflow([
-      ...installPinnedLycheeStep,
-      "      - name: Probe external link liveness",
-      "        id: external",
-      "        run: |",
-      "          set +e",
-      "          lychee \\",
-      "            -c .lychee.toml \\",
-      "            --scheme https \\",
-      "            --scheme http \\",
-      '            --files-from "${RUNNER_TEMP}/doc-files.txt" \\',
-      '            > "${RUNNER_TEMP}/external.json"',
-      '          exit_code="${?}"',
-      '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
-      "          exit 0",
-      "      - name: Fail only on genuinely-dead external links",
-      "        if: steps.external.outputs.exit_code != '0'",
-      "        run: |",
-      '          dead="$(jq \'.error_map[]?[]? | select(.status.text != \"Timeout\")\' external.json)"',
-      '          echo "${dead}"'
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        ...installPinnedLycheeStep,
+        "      - name: Probe external link liveness",
+        "        id: external",
+        "        run: |",
+        "          set +e",
+        "          lychee \\",
+        "            -c .lychee.toml \\",
+        "            --scheme https \\",
+        "            --scheme http \\",
+        '            --files-from "${RUNNER_TEMP}/doc-files.txt" \\',
+        '            > "${RUNNER_TEMP}/external.json"',
+        '          exit_code="${?}"',
+        '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
+        "          exit 0",
+        "      - name: Fail only on genuinely-dead external links",
+        "        if: steps.external.outputs.exit_code != '0'",
+        "        run: |",
+        '          dead="$(jq \'.error_map[]?[]? | select(.status.text != \"Timeout\")\' external.json)"',
+        '          echo "${dead}"'
+      ],
+      { header: ["name: Test"] }
+    );
 
     const messages = findLycheeActionPolicyViolations(blockingWorkflowPath, content).map(
       (violation) => violation.message
@@ -1921,17 +1903,21 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("does not let --offline hide malformed blocking external liveness steps", () => {
-    const content = makeWorkflow([
-      ...installPinnedLycheeStep,
-      "      - name: Probe external link liveness",
-      "        run: >-",
-      "          lychee",
-      "          -c .lychee.toml",
-      "          --offline",
-      "          --scheme https",
-      "          --scheme http",
-      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        ...installPinnedLycheeStep,
+        "      - name: Probe external link liveness",
+        "        run: >-",
+        "          lychee",
+        "          -c .lychee.toml",
+        "          --offline",
+        "          --scheme https",
+        "          --scheme http",
+        '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+      ],
+      { header: ["name: Test"] }
+    );
 
     const messages = findLycheeActionPolicyViolations(blockingWorkflowPath, content).map(
       (violation) => violation.message
@@ -1942,18 +1928,22 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("rejects --offline on a blocking external step even when native timeout policy is present", () => {
-    const content = makeWorkflow([
-      ...installPinnedLycheeStep,
-      "      - name: Probe external link liveness",
-      "        run: >-",
-      "          lychee",
-      "          -c .lychee.toml",
-      "          --offline",
-      "          --scheme=https",
-      "          --scheme http",
-      "          --accept-timeouts=true",
-      '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
-    ]);
+    const content = singleJobWorkflow(
+      "lint",
+      [
+        ...installPinnedLycheeStep,
+        "      - name: Probe external link liveness",
+        "        run: >-",
+        "          lychee",
+        "          -c .lychee.toml",
+        "          --offline",
+        "          --scheme=https",
+        "          --scheme http",
+        "          --accept-timeouts=true",
+        '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+      ],
+      { header: ["name: Test"] }
+    );
 
     const violations = findLycheeActionPolicyViolations(blockingWorkflowPath, content);
 
@@ -1964,21 +1954,23 @@ describe("findLycheeActionPolicyViolations", () => {
   test("validateWorkflow reports blocking external lychee steps missing timeout acceptance", () => {
     const tempDir = makeTempDir("validate-workflows-lychee");
     try {
-      const workflowPath = path.join(tempDir, ".github", "workflows", "lint-doc-links.yml");
-      fs.mkdirSync(path.dirname(workflowPath), { recursive: true });
-      fs.writeFileSync(
-        workflowPath,
-        makeWorkflow([
-          ...installPinnedLycheeStep,
-          "      - name: Probe external link liveness",
-          "        run: >-",
-          "          lychee",
-          "          -c .lychee.toml",
-          "          --scheme https",
-          "          --scheme http",
-          '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
-        ]),
-        "utf8"
+      const workflowPath = writeWorkflowFile(
+        tempDir,
+        ".github/workflows/lint-doc-links.yml",
+        singleJobWorkflow(
+          "lint",
+          [
+            ...installPinnedLycheeStep,
+            "      - name: Probe external link liveness",
+            "        run: >-",
+            "          lychee",
+            "          -c .lychee.toml",
+            "          --scheme https",
+            "          --scheme http",
+            '          --files-from "${RUNNER_TEMP}/doc-files.txt"'
+          ],
+          { header: ["name: Test"] }
+        )
       );
 
       const violations = validateWorkflow(workflowPath, {
@@ -1997,27 +1989,29 @@ describe("findLycheeActionPolicyViolations", () => {
   test("validateWorkflow reports advisory lychee timeout acceptance", () => {
     const tempDir = makeTempDir("validate-workflows-lychee");
     try {
-      const workflowPath = path.join(tempDir, ".github", "workflows", "markdown-link-validity.yml");
-      fs.mkdirSync(path.dirname(workflowPath), { recursive: true });
-      fs.writeFileSync(
-        workflowPath,
-        makeWorkflow([
-          ...installPinnedLycheeStep,
-          "      - name: Scan external links (advisory)",
-          "        id: lychee",
-          "        run: |",
-          "          set +e",
-          "          lychee \\",
-          "            -c .lychee.toml \\",
-          "            --scheme https \\",
-          "            --scheme http \\",
-          "            --accept-timeouts=true \\",
-          '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
-          '          exit_code="${?}"',
-          '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
-          "          exit 0"
-        ]),
-        "utf8"
+      const workflowPath = writeWorkflowFile(
+        tempDir,
+        ".github/workflows/markdown-link-validity.yml",
+        singleJobWorkflow(
+          "lint",
+          [
+            ...installPinnedLycheeStep,
+            "      - name: Scan external links (advisory)",
+            "        id: lychee",
+            "        run: |",
+            "          set +e",
+            "          lychee \\",
+            "            -c .lychee.toml \\",
+            "            --scheme https \\",
+            "            --scheme http \\",
+            "            --accept-timeouts=true \\",
+            '            --files-from "${RUNNER_TEMP}/doc-files.txt"',
+            '          exit_code="${?}"',
+            '          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"',
+            "          exit 0"
+          ],
+          { header: ["name: Test"] }
+        )
       );
 
       const violations = validateWorkflow(workflowPath, {
