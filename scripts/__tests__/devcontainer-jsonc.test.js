@@ -12,9 +12,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
+
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const {
   stripJsoncComments,
@@ -401,7 +402,7 @@ const SHELL_AVAILABLE = HAS_BASH && HAS_JQ && fs.existsSync(SHELL_PARSER);
 
 (SHELL_AVAILABLE ? describe : describe.skip)("shell parser parity with Node parser", () => {
   test.each(PARSE_FIXTURES)("$name", ({ input, expected }) => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "devcontainer-jsonc-"));
+    const tempDir = makeTempDir("devcontainer-jsonc");
     try {
       const tempFile = path.join(tempDir, "devcontainer.json");
       fs.writeFileSync(tempFile, input, "utf8");
@@ -423,7 +424,7 @@ const SHELL_AVAILABLE = HAS_BASH && HAS_JQ && fs.existsSync(SHELL_PARSER);
         expect(shellLines[i]).toContain(`type=${type}`);
       }
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
@@ -521,7 +522,7 @@ const PROPERTY_FIXTURES = [
 
 (SHELL_AVAILABLE ? describe : describe.skip)("get_devcontainer_property", () => {
   test.each(PROPERTY_FIXTURES)("$name", ({ input, property, expected }) => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "devcontainer-prop-"));
+    const tempDir = makeTempDir("devcontainer-prop");
     try {
       const tempFile = path.join(tempDir, "devcontainer.json");
       fs.writeFileSync(tempFile, input, "utf8");
@@ -533,12 +534,12 @@ const PROPERTY_FIXTURES = [
       expect(result.status).toBe(0);
       expect(result.stdout).toBe(expected);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("invalid JSON returns non-zero exit", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "devcontainer-prop-"));
+    const tempDir = makeTempDir("devcontainer-prop");
     try {
       const tempFile = path.join(tempDir, "devcontainer.json");
       fs.writeFileSync(tempFile, '{ "remoteUser":', "utf8");
@@ -549,12 +550,12 @@ const PROPERTY_FIXTURES = [
       );
       expect(result.status).not.toBe(0);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("missing property argument returns non-zero exit", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "devcontainer-prop-"));
+    const tempDir = makeTempDir("devcontainer-prop");
     try {
       const tempFile = path.join(tempDir, "devcontainer.json");
       fs.writeFileSync(tempFile, '{ "remoteUser": "vscode" }', "utf8");
@@ -563,7 +564,7 @@ const PROPERTY_FIXTURES = [
       });
       expect(result.status).not.toBe(0);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
@@ -594,7 +595,7 @@ const PROPERTY_FIXTURES = [
   ];
 
   test.each(COMPOSITE_PROPERTY_FIXTURES)("$name", ({ input, property, expectedStderrMatch }) => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "devcontainer-prop-"));
+    const tempDir = makeTempDir("devcontainer-prop");
     try {
       const tempFile = path.join(tempDir, "devcontainer.json");
       fs.writeFileSync(tempFile, input, "utf8");
@@ -608,7 +609,7 @@ const PROPERTY_FIXTURES = [
       expect(result.status).not.toBe(0);
       expect(result.stderr).toMatch(expectedStderrMatch);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 

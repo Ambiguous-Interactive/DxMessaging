@@ -5,9 +5,9 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 const {
   isGitTracked,
   validateSettingsContent,
@@ -68,7 +68,7 @@ describe("validate-vscode-settings", () => {
   });
 
   test("validateVscodeSettings skips missing file", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vscode-settings-"));
+    const tempDir = makeTempDir("vscode-settings");
     try {
       const fakePath = path.join(tempDir, "settings.json");
       const result = validateVscodeSettings(fakePath);
@@ -77,12 +77,12 @@ describe("validate-vscode-settings", () => {
       expect(result.tracked).toBe(false);
       expect(result.violations).toHaveLength(0);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("validateVscodeSettings reports violation for forbidden setting", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vscode-settings-"));
+    const tempDir = makeTempDir("vscode-settings");
     try {
       const settingsPath = path.join(tempDir, "settings.json");
       const content = [
@@ -101,7 +101,7 @@ describe("validate-vscode-settings", () => {
       expect(result.violations).toHaveLength(1);
       expect(result.violations[0].line).toBe(2);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
@@ -119,7 +119,7 @@ describe("validate-vscode-settings", () => {
   });
 
   test("validateVscodeSettings skips untracked file when requireTracked is true", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vscode-settings-"));
+    const tempDir = makeTempDir("vscode-settings");
     try {
       const settingsPath = path.join(tempDir, "settings.json");
       fs.writeFileSync(settingsPath, '{"chat.tools.terminal.autoApprove":true}', "utf8");
@@ -131,12 +131,12 @@ describe("validate-vscode-settings", () => {
       expect(result.tracked).toBe(false);
       expect(result.violations).toHaveLength(0);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("validateVscodeSettings validates tracked file when requireTracked is true", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vscode-settings-"));
+    const tempDir = makeTempDir("vscode-settings");
     try {
       const settingsPath = path.join(tempDir, "settings.json");
       fs.writeFileSync(settingsPath, '{"chat.tools.terminal.autoApprove":true}', "utf8");
@@ -148,7 +148,7 @@ describe("validate-vscode-settings", () => {
       expect(result.tracked).toBe(true);
       expect(result.violations).toHaveLength(1);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });

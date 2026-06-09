@@ -35,7 +35,6 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
@@ -46,6 +45,7 @@ const {
   combinedText,
   normalizePwshText
 } = require("../lib/pwsh-output");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ENSURE_EDITOR = path.join(REPO_ROOT, "scripts", "unity", "ensure-editor.ps1");
@@ -63,11 +63,7 @@ const workspaces = [];
 
 afterAll(() => {
   for (const ws of workspaces) {
-    try {
-      fs.rmSync(ws, { recursive: true, force: true });
-    } catch {
-      // best-effort temp cleanup; never fail the suite on teardown.
-    }
+    cleanupDir(ws);
   }
 });
 
@@ -90,7 +86,7 @@ function extractEnsureEditorFunctions(functionNames) {
 }
 
 function runPwshScript(scriptText, env = process.env) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-progress-stall-harness-"));
+  const base = makeTempDir("progress-stall-harness");
   workspaces.push(base);
   const harnessPath = path.join(base, "harness.ps1");
   fs.writeFileSync(harnessPath, scriptText, "utf8");
@@ -151,7 +147,7 @@ function makeFakeUnityCli(binDir, bodyLines) {
 // Run the WHOLE ensure-editor.ps1 against a fake CLI built from `bodyLines`,
 // hermetically. `extraEnv` lets a test set DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS etc.
 function runEnsureEditorWithFakeCli(bodyLines, installRoot, extraEnv = {}, extraArgs = []) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-progress-stall-full-"));
+  const base = makeTempDir("progress-stall-full");
   workspaces.push(base);
   const binDir = path.join(base, "bin");
   makeFakeUnityCli(binDir, bodyLines);
@@ -343,7 +339,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
   // the stall and via the install-retry classifier reaching 125 -> retryable.
   // -------------------------------------------------------------------------
   test("a stuck (byte-identical) stream is killed and surfaces sentinel exit 125 (NOT 124)", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-progress-stall-stuck-"));
+    const base = makeTempDir("progress-stall-stuck");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const pidFile = path.join(base, "cli.pid");
@@ -432,7 +428,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
   // installer's exit code drives the outcome, not the stall detector).
   // -------------------------------------------------------------------------
   test("an advancing (changing-triple) stream does NOT trip the stall detector", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-progress-stall-advance-"));
+    const base = makeTempDir("progress-stall-advance");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const editorRoot = path.join(installRoot, "6000.3.16f1");
@@ -513,7 +509,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
   // stream + tiny wall-clock, the wall sentinel (124) must fire, not 125.
   // -------------------------------------------------------------------------
   test("DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS=0 opts out (no heartbeat kill even on the stuck stream)", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-progress-stall-optout-"));
+    const base = makeTempDir("progress-stall-optout");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
 
@@ -572,7 +568,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
     // the kill, so the assertion is on PRESENCE (mutation-test-stable: removing
     // the notice emission turns this red without exposing it to flake on a
     // fast runner).
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-progress-stall-notice-"));
+    const base = makeTempDir("progress-stall-notice");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
 
@@ -673,7 +669,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
   // itself killed the process).
   // -------------------------------------------------------------------------
   test("native exit 125 from the Unity CLI is NOT misattributed as a heartbeat stall", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-progress-stall-native125-"));
+    const base = makeTempDir("progress-stall-native125");
     workspaces.push(base);
     const binDir = path.join(base, "bin");
     // A fake CLI that exits NATIVELY with 125 immediately (no streaming, no
@@ -747,7 +743,7 @@ describe("ensure-editor.ps1 heartbeat-stall detector + periodic notice", () => {
   // cannot silently pass.
   // -------------------------------------------------------------------------
   test("the periodic notice's 'no progress line observed yet' branch fires when no triple has been seen", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-progress-stall-no-triple-"));
+    const base = makeTempDir("progress-stall-no-triple");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
 

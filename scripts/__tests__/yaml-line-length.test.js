@@ -4,6 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 // `yaml` is a transitive dependency only; we use it INSIDE TESTS to assert that
 // a rewrite (or a left-untouched line) still parses as YAML. Shipping code must
@@ -162,7 +163,7 @@ describe("findLineLengthViolations (faithful yamllint port)", () => {
     const content = `items:\n  - ${"a".repeat(251)}\n`;
     expect(findLineLengthViolations(content, policy)).toHaveLength(0);
     if (HAS_YAMLLINT) {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-seq-dash-"));
+      const tempDir = makeTempDir("yaml-seq-dash");
       try {
         const target = path.join(tempDir, "seq.yaml");
         fs.writeFileSync(target, content, "utf8");
@@ -173,7 +174,7 @@ describe("findLineLengthViolations (faithful yamllint port)", () => {
         // Real yamllint agrees: the exempt sequence-item line is not a finding.
         expect(lint.status).toBe(0);
       } finally {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+        cleanupDir(tempDir);
       }
     }
   });
@@ -437,7 +438,7 @@ describe("fix-yaml-block-scalar-line-length CLI helpers", () => {
   });
 
   test("uniqueExistingYamlFiles filters non-yaml and missing files", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-block-filter-"));
+    const tempDir = makeTempDir("yaml-block-filter");
     try {
       const yamlFile = path.join(tempDir, "a.yaml");
       fs.writeFileSync(yamlFile, "key: value\n", "utf8");
@@ -450,12 +451,12 @@ describe("fix-yaml-block-scalar-line-length CLI helpers", () => {
         ])
       ).toEqual([yamlFile]);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("processFiles check mode reports without writing; write mode rewrites", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-block-proc-"));
+    const tempDir = makeTempDir("yaml-block-proc");
     try {
       fs.writeFileSync(
         path.join(tempDir, ".yamllint.yaml"),
@@ -497,7 +498,7 @@ describe("fix-yaml-block-scalar-line-length CLI helpers", () => {
       expect(secondPass.changedFiles).toHaveLength(0);
       expect(fs.readFileSync(target, "utf8")).toBe(written);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });
@@ -936,7 +937,7 @@ describe("findLineLengthViolations: invalid-YAML divergence boundary (documented
 // ===========================================================================
 describe("L1: no spurious EOL flips / no-op when nothing is rewritten", () => {
   test("a file with zero rewritten lines is left byte-identical (CRLF preserved on disk)", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-block-eol-"));
+    const tempDir = makeTempDir("yaml-block-eol");
     try {
       fs.writeFileSync(
         path.join(tempDir, ".yamllint.yaml"),
@@ -957,7 +958,7 @@ describe("L1: no spurious EOL flips / no-op when nothing is rewritten", () => {
       const after = fs.readFileSync(target);
       expect(after.equals(before)).toBe(true); // byte-identical, CRLF preserved
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });

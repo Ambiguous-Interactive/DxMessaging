@@ -7,6 +7,8 @@
 const fs = require("fs");
 const path = require("path");
 
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
+
 const {
   parseArgs,
   parsePackageVersion,
@@ -923,9 +925,8 @@ describe("validate-changelog", () => {
       // temp dir. This exercises the live `git` binary (so git must be
       // on PATH for this test to be meaningful) and asserts the
       // structured failure shape.
-      const os = require("os");
       const realExecFileSync = require("child_process").execFileSync;
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-changelog-no-git-"));
+      const tempDir = makeTempDir("validate-changelog-no-git");
       try {
         const cwdOverrideImpl = (cmd, args, options) =>
           realExecFileSync(cmd, args, { ...options, cwd: tempDir });
@@ -940,7 +941,7 @@ describe("validate-changelog", () => {
         expect(typeof state.originRefsProbeError).toBe("string");
         expect(state.originRefsProbeError.length).toBeGreaterThan(0);
       } finally {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+        cleanupDir(tempDir);
       }
     });
   });

@@ -43,6 +43,7 @@ const {
   getCspellHookExtensions
 } = require("../lib/cspell-extension-parity");
 const { normalizeNodeColorEnv } = require("../lib/shell-command");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const PRE_COMMIT_CONFIG_PATH = path.join(REPO_ROOT, ".pre-commit-config.yaml");
@@ -400,11 +401,11 @@ describe("real cspell integration", () => {
   let tempDir;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(REPO_ROOT, "dxm-cspell-fixture-"));
+    tempDir = makeTempDir("cspell-fixture", { root: REPO_ROOT, prefix: "dxm-" });
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   function writeFixture(relativePath, content) {

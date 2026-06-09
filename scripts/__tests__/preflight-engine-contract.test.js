@@ -32,10 +32,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
 
+const { makeTempGitRepo, cleanupDir } = require("../lib/jest-fixtures");
 const { spawnPlatformCommandSync } = require("../lib/shell-command");
 const { stagesInConfig, hookIdsForStage } = require("../lib/precommit-stage-model");
 const preflight = require("../preflight");
@@ -821,10 +821,9 @@ const SYNTHETIC_CONFIG = `repos:
 `;
 
 function makeOracleRepo() {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-preflight-oracle-"));
-  expect(runGit(["init", "-q"], temp).status).toBe(0);
-  runGit(["config", "user.email", "test@example.com"], temp);
-  runGit(["config", "user.name", "Test"], temp);
+  const temp = makeTempGitRepo("preflight-oracle", {
+    user: { email: "test@example.com", name: "Test" }
+  });
   fs.writeFileSync(path.join(temp, ".pre-commit-config.yaml"), SYNTHETIC_CONFIG, "utf8");
   fs.writeFileSync(path.join(temp, "a.cs"), "class A {}\n", "utf8");
   fs.writeFileSync(path.join(temp, "b.md"), "# heading\n", "utf8");
@@ -850,7 +849,7 @@ describeOracle("pre-commit selection oracle (real pre-commit in a temp repo)", (
   });
   afterAll(() => {
     if (temp) {
-      fs.rmSync(temp, { recursive: true, force: true });
+      cleanupDir(temp);
     }
   });
 

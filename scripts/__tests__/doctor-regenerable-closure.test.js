@@ -20,12 +20,11 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
 
 const doctor = require("../doctor");
-const { withPlatform } = require("../lib/jest-fixtures");
+const { withPlatform, makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -95,11 +94,11 @@ describe("regenerable isolated-Jest cache closure contract", () => {
   let sandboxRoot;
 
   beforeEach(() => {
-    sandboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-regen-closure-"));
+    sandboxRoot = makeTempDir("regen-closure");
   });
 
   afterEach(() => {
-    fs.rmSync(sandboxRoot, { recursive: true, force: true });
+    cleanupDir(sandboxRoot);
   });
 
   for (const platform of ["linux", "win32", "darwin"]) {

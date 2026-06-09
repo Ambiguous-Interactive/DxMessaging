@@ -33,6 +33,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const { assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const RUN_CI_TESTS = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
@@ -100,10 +101,7 @@ function runMarker(scenario) {
     "if ($r -eq '') { Write-Output 'OK' } else { Write-Output ('PROBLEM:' + $r) }"
   ].join("\n");
 
-  const markerPath = path.join(
-    fs.mkdtempSync(path.join(require("os").tmpdir(), "dxm-marker-")),
-    "configure-complete.marker"
-  );
+  const markerPath = path.join(makeTempDir("marker"), "configure-complete.marker");
 
   const result = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", program], {
     env: {
@@ -115,11 +113,7 @@ function runMarker(scenario) {
     encoding: "utf8",
     maxBuffer: 8 * 1024 * 1024
   });
-  try {
-    fs.rmSync(path.dirname(markerPath), { recursive: true, force: true });
-  } catch {
-    // best-effort temp cleanup
-  }
+  cleanupDir(path.dirname(markerPath));
   return result;
 }
 

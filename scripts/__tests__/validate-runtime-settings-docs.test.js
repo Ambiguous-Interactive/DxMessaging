@@ -25,6 +25,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
+
 const {
   DEFAULT_SOURCE_PATH,
   DEFAULT_DOC_PATH,
@@ -60,7 +62,7 @@ const KNOWN_PUBLIC_PROPERTIES = [
 let tempRoot = null;
 
 function makeTempRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "dx-runtime-settings-docs-"));
+  return makeTempDir("dx-runtime-settings-docs");
 }
 
 function writeTempFile(name, contents) {
@@ -111,8 +113,8 @@ function buildDoc(propertyNames, { useBackticks = true } = {}) {
 }
 
 afterEach(() => {
-  if (tempRoot && fs.existsSync(tempRoot)) {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+  if (tempRoot) {
+    cleanupDir(tempRoot);
   }
   tempRoot = null;
 });

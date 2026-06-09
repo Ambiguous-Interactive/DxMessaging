@@ -1,8 +1,8 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const {
   parseYamlBoolean,
@@ -82,7 +82,7 @@ describe("fix-yaml-comments-line-length", () => {
   });
 
   test("uniqueExistingYamlFiles filters non-yaml and missing files", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-comment-filter-"));
+    const tempDir = makeTempDir("yaml-comment-filter");
     try {
       const yamlFile = path.join(tempDir, "a.yaml");
       const markdownFile = path.join(tempDir, "README.md");
@@ -96,12 +96,12 @@ describe("fix-yaml-comments-line-length", () => {
       ]);
       expect(filtered).toEqual([yamlFile]);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("processFiles check mode reports violations without writing files", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-comment-check-"));
+    const tempDir = makeTempDir("yaml-comment-check");
     try {
       fs.writeFileSync(
         path.join(tempDir, ".yamllint.yaml"),
@@ -125,12 +125,12 @@ describe("fix-yaml-comments-line-length", () => {
       expect(result.changedFiles).toHaveLength(0);
       expect(fs.readFileSync(targetPath, "utf8")).toBe(original);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("processFiles write mode rewrites wrapped comments", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-comment-write-"));
+    const tempDir = makeTempDir("yaml-comment-write");
     try {
       fs.writeFileSync(
         path.join(tempDir, ".yamllint.yaml"),
@@ -157,7 +157,7 @@ describe("fix-yaml-comments-line-length", () => {
       expect(rewrittenLines[0].length).toBeLessThanOrEqual(72);
       expect(rewrittenLines[1].length).toBeLessThanOrEqual(72);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
@@ -199,7 +199,7 @@ describe("fix-yaml-comments-line-length", () => {
   });
 
   test("resolveYamlLineLengthPolicy loads max and booleans from .yamllint.yaml", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-comment-policy-"));
+    const tempDir = makeTempDir("yaml-comment-policy");
     try {
       const configPath = path.join(tempDir, ".yamllint.yaml");
       fs.writeFileSync(
@@ -219,7 +219,7 @@ describe("fix-yaml-comments-line-length", () => {
       expect(policy.allowNonBreakableInlineMappings).toBe(true);
       expect(policy.allowNonBreakableWords).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });

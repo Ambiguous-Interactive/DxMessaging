@@ -50,7 +50,6 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
@@ -61,6 +60,7 @@ const {
   combinedText,
   normalizePwshText
 } = require("../lib/pwsh-output");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ENSURE_EDITOR = path.join(REPO_ROOT, "scripts", "unity", "ensure-editor.ps1");
@@ -91,11 +91,7 @@ function expectPwshFailure(run) {
 
 afterAll(() => {
   for (const ws of workspaces) {
-    try {
-      fs.rmSync(ws, { recursive: true, force: true });
-    } catch {
-      // best-effort temp cleanup; never fail the suite on teardown.
-    }
+    cleanupDir(ws);
   }
 });
 
@@ -117,7 +113,7 @@ function extractEnsureEditorFunctions(functionNames) {
 }
 
 function runPwshScript(scriptText, env = process.env) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-harness-"));
+  const base = makeTempDir("ensure-resilience-harness");
   workspaces.push(base);
   const harnessPath = path.join(base, "harness.ps1");
   fs.writeFileSync(harnessPath, scriptText, "utf8");
@@ -177,7 +173,7 @@ function makeFakeUnityCli(binDir, bodyLines) {
 // hermetically (host-folder vars sandboxed; node stub-startup probe skipped).
 // `extraEnv` lets a test set DXM_ENSURE_EDITOR_INSTALL_TIMEOUT_SECONDS etc.
 function runEnsureEditorWithFakeCli(bodyLines, installRoot, extraEnv = {}, extraArgs = []) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-full-"));
+  const base = makeTempDir("ensure-resilience-full");
   workspaces.push(base);
   const binDir = path.join(base, "bin");
   makeFakeUnityCli(binDir, bodyLines);
@@ -372,7 +368,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   //     annotation; the shim process does not survive. ---
   describe("#1 install timeout", () => {
     test("a hung module install is killed and surfaces the wrap-immune ::error:: timeout annotation", () => {
-      const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-timeout-"));
+      const base = makeTempDir("ensure-resilience-timeout");
       workspaces.push(base);
       const installRoot = path.join(base, "configured-root");
       const pidFile = path.join(base, "cli.pid");
@@ -596,7 +592,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   // --- NORMAL COMPLETION IS UNAFFECTED: a fast fake CLI returns promptly with
   //     the correct exit code + full streamed output through the timeout runner. ---
   test("PowerShell 5.1-compatible process quoting preserves paths and args with spaces", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm ensure args "));
+    const base = makeTempDir("ensure args");
     workspaces.push(base);
     const cliScript = path.join(base, "fake unity cli.js");
     fs.writeFileSync(
@@ -656,7 +652,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   itSweep(
     "the stale-process sweep is VERSION-DIR scoped: kills this-version lockers, spares a concurrent different-version editor",
     () => {
-      const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-sweep-"));
+      const base = makeTempDir("ensure-sweep");
       workspaces.push(base);
       // Host-native paths so the script's GetFullPath-based path containment is
       // correct on this OS (the assertion is about scoping logic, not Windows
@@ -739,7 +735,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   itSweep(
     "the real cross-identity locker (image outside root, empty cmdline+exe, no readable module) is NOT matched (honest residual)",
     () => {
-      const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-sweep-residual-"));
+      const base = makeTempDir("ensure-sweep-residual");
       workspaces.push(base);
       const installRoot = path.join(base, "Editors");
       const version = "6000.3.16f1";
@@ -792,7 +788,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   );
 
   test("#1 normal completion is unaffected: a fast install streams full output and resolves the editor", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-fast-"));
+    const base = makeTempDir("ensure-resilience-fast");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const diagnosticsPath = path.join(base, "custom-diagnostics", "provisioning.json");
@@ -877,7 +873,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   }, 60000);
 
   test("EditorOnly fresh install never requests module installation or Android", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editoronly-"));
+    const base = makeTempDir("ensure-editoronly");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const diagnosticsPath = path.join(base, "diagnostics", "ensure-editor-summary.json");
@@ -933,7 +929,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   }, 60000);
 
   test("failed full repair summary preserves the resolved partial editor path", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-repair-summary-"));
+    const base = makeTempDir("ensure-resilience-repair-summary");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const diagnosticsPath = path.join(base, "diagnostics", "ensure-editor-summary.json");
@@ -990,7 +986,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   //     lines) surfaces the wrap-immune ::error:: naming the last progress msg +
   //     disk space. ---
   test("#3 a failing install surfaces the wrap-immune ::error:: with last progress msg + disk space", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-diag-"));
+    const base = makeTempDir("ensure-resilience-diag");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
 
@@ -1088,7 +1084,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   // --- Clear-PartialAndroidModulePayload: removes NDK/SDK under the editor and
   //     stays strictly inside the editor directory (never touches siblings). ---
   test("Clear-PartialAndroidModulePayload removes NDK/SDK and stays inside the editor dir", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-clear-"));
+    const base = makeTempDir("ensure-resilience-clear");
     workspaces.push(base);
     const editorRoot = path.join(base, "6000.0.32f1");
     const editorExe = path.join(editorRoot, "Editor", "Unity.exe");
@@ -1152,7 +1148,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   // The @cross-platform-regression suite still exercises the full deep-path path on
   // ubuntu + macos. ---
   test("Write-UnityModuleInstallPostMortem emits per-group state and the long-path/MAX_PATH warning on a deep NDK path", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-postmortem-"));
+    const base = makeTempDir("ensure-resilience-postmortem");
     workspaces.push(base);
     const editorRoot = path.join(base, "6000.0.32f1");
     const editorExe = path.join(editorRoot, "Editor", "Unity.exe");
@@ -1240,9 +1236,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   itLongPathEnabled(
     "Write-UnityModuleInstallPostMortem suppresses the MAX_PATH warning when long paths are enabled",
     () => {
-      const base = fs.mkdtempSync(
-        path.join(os.tmpdir(), "dxm-ensure-resilience-postmortem-longpaths-")
-      );
+      const base = makeTempDir("ensure-resilience-postmortem-longpaths");
       workspaces.push(base);
       const editorRoot = path.join(base, "6000.0.32f1");
       const editorExe = path.join(editorRoot, "Editor", "Unity.exe");
@@ -1347,7 +1341,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   describe("BLOCKER-1 live per-line streaming", () => {
     // Build a node CLI script the harness drives via `node <scriptPath> install`.
     function writeNodeCli(bodyJs) {
-      const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-livecli-"));
+      const base = makeTempDir("ensure-resilience-livecli");
       workspaces.push(base);
       const scriptPath = path.join(base, "cli.js");
       fs.writeFileSync(
@@ -1363,7 +1357,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
     // timing file. Returns { status, stdout, stderr, timingPath, timingRows }
     // where timingRows is [{ ticks, text }] in echo order.
     function runCaptureWithTiming(cliScript, timeoutSeconds) {
-      const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-liverun-"));
+      const base = makeTempDir("ensure-resilience-liverun");
       workspaces.push(base);
       const timingPath = path.join(base, "timing.tsv");
       const cliScriptLiteral = cliScript.replace(/'/g, "''");
@@ -1504,7 +1498,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
   // intentionally creates so the suite leaves nothing behind. -------------------
   describe("MAJOR-1 orphan-pipe hang is classified as a timeout, not a false success", () => {
     test("a child that exits 0 but leaves a grandchild holding stdout hits the deadline (Success=$false / exit 124)", () => {
-      const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-orphan-"));
+      const base = makeTempDir("ensure-resilience-orphan");
       workspaces.push(base);
       const gcPidFile = path.join(base, "grandchild.pid");
 
@@ -1513,7 +1507,7 @@ describe("ensure-editor.ps1 module-install resilience + diagnostics", () => {
       // pid; print one line; then exit 0 IMMEDIATELY. The held-open pipe means the
       // capture loop never sees stdout EOF.
       const cliScript = (() => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-resilience-orphancli-"));
+        const dir = makeTempDir("ensure-resilience-orphancli");
         workspaces.push(dir);
         const p = path.join(dir, "cli.js");
         fs.writeFileSync(

@@ -1,8 +1,8 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const {
   OUTPUT_RELATIVE_PATH,
@@ -19,19 +19,19 @@ function readRepoFile(relativePath) {
 
 describe("generate-ambiguous-release-runbook", () => {
   test("generates the local runbook at the expected ignored path", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dx-runbook-"));
+    const tempRoot = makeTempDir("dx-runbook");
     try {
       const outputPath = generateRunbook({ rootDir: tempRoot });
 
       expect(outputPath).toBe(path.join(tempRoot, OUTPUT_RELATIVE_PATH));
       expect(fs.readFileSync(outputPath, "utf8")).toBe(generateRunbookContent());
     } finally {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
+      cleanupDir(tempRoot);
     }
   });
 
   test("does not clobber an existing local runbook by default", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dx-runbook-"));
+    const tempRoot = makeTempDir("dx-runbook");
     const outputPath = path.join(tempRoot, OUTPUT_RELATIVE_PATH);
     const existingContent = "local operator notes\n";
 
@@ -42,12 +42,12 @@ describe("generate-ambiguous-release-runbook", () => {
       expect(() => generateRunbook({ rootDir: tempRoot })).toThrow(/--force/);
       expect(fs.readFileSync(outputPath, "utf8")).toBe(existingContent);
     } finally {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
+      cleanupDir(tempRoot);
     }
   });
 
   test("does not clobber if the runbook appears during a non-force write", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dx-runbook-"));
+    const tempRoot = makeTempDir("dx-runbook");
     const outputPath = path.join(tempRoot, OUTPUT_RELATIVE_PATH);
     const existingContent = "created by another process\n";
     const writeFileSyncSpy = jest.spyOn(fs, "writeFileSync");
@@ -71,12 +71,12 @@ describe("generate-ambiguous-release-runbook", () => {
       );
     } finally {
       writeFileSyncSpy.mockRestore();
-      fs.rmSync(tempRoot, { recursive: true, force: true });
+      cleanupDir(tempRoot);
     }
   });
 
   test("overwrites an existing local runbook when force is explicit", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dx-runbook-"));
+    const tempRoot = makeTempDir("dx-runbook");
     const outputPath = path.join(tempRoot, OUTPUT_RELATIVE_PATH);
 
     try {
@@ -86,7 +86,7 @@ describe("generate-ambiguous-release-runbook", () => {
       expect(generateRunbook({ rootDir: tempRoot, force: true })).toBe(outputPath);
       expect(fs.readFileSync(outputPath, "utf8")).toBe(generateRunbookContent());
     } finally {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
+      cleanupDir(tempRoot);
     }
   });
 

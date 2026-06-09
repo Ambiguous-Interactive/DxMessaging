@@ -5,10 +5,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const { syncBanner, roundTestCount, readPackageVersion } = require("../sync-banner-version.js");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 function buildBanner(version = "1.0.0", testLabel = "0+ Tests") {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -28,14 +28,14 @@ describe("sync-banner-version.js", () => {
   let tempDir;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-banner-node-"));
+    tempDir = makeTempDir("sync-banner-node");
     fs.mkdirSync(path.join(tempDir, "docs", "images"), { recursive: true });
     fs.mkdirSync(path.join(tempDir, "Tests"), { recursive: true });
     fs.mkdirSync(path.join(tempDir, "scripts"), { recursive: true });
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   test("syncBanner updates version, rounds test count, and stages the SVG", () => {

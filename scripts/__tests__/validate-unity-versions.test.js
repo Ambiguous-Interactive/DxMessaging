@@ -13,6 +13,8 @@ const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
 
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
+
 const {
   loadCanonical,
   validateCanonicalSchema,
@@ -416,7 +418,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
   const createdDirs = [];
 
   function makeFixtureRepo(canonicalJsonText) {
-    const dir = fs.mkdtempSync(path.join(REPO_ROOT, "dxm-uv-test-"));
+    const dir = makeTempDir("uv-test", { root: REPO_ROOT, prefix: "dxm-" });
     createdDirs.push(dir);
     fs.mkdirSync(path.join(dir, ".github"), { recursive: true });
     fs.writeFileSync(path.join(dir, ".github", "unity-versions.json"), canonicalJsonText, "utf8");
@@ -425,7 +427,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
 
   afterAll(() => {
     for (const dir of createdDirs) {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -437,7 +439,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       const code = main({ repoRoot: dir, log: () => {}, errorLog: () => {} });
       expect(code).toBe(1);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -447,7 +449,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       const code = main({ repoRoot: dir, log: () => {}, errorLog: () => {} });
       expect(code).toBe(1);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 });

@@ -22,9 +22,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
+
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const DEVCONTAINER_DIR = path.join(REPO_ROOT, ".devcontainer");
@@ -387,7 +388,7 @@ const HAS_BASH_FOR_MOUNT_FN = canRunBash();
     let tempDir;
     let scriptPath;
     beforeAll(() => {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "matches-expected-mount-"));
+      tempDir = makeTempDir("matches-expected-mount");
       scriptPath = path.join(tempDir, "harness.sh");
       const wrapper = [
         "#!/usr/bin/env bash",
@@ -405,7 +406,7 @@ const HAS_BASH_FOR_MOUNT_FN = canRunBash();
       fs.chmodSync(scriptPath, 0o755);
     });
     afterAll(() => {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     });
 
     function runMatches(mountEntry, sourceName, targetDir) {

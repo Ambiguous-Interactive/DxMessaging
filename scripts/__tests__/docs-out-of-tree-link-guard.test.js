@@ -16,11 +16,10 @@
 
 "use strict";
 
-const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const validator = require("../validate-docs-out-of-tree-links");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const FIXTURES = [
   {
@@ -458,10 +457,10 @@ const FIXTURES = [
 describe("validate-docs-out-of-tree-links scanContent", () => {
   let tempDir;
   beforeAll(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-out-of-tree-"));
+    tempDir = makeTempDir("docs-out-of-tree");
   });
   afterAll(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   test.each(FIXTURES)("$name", ({ relativePath, content, expectedViolations, reasonMatch }) => {

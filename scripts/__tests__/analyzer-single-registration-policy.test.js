@@ -33,9 +33,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const yaml = require("yaml");
+
+const { tempDirTracker } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const COMPUTE_ACTION = path.join(
@@ -68,12 +69,10 @@ function read(file) {
 // asmdef set to exercise the ownership gate in isolation.
 // ---------------------------------------------------------------------------
 describe("asmdef discovery excludes foreign assemblies", () => {
-  const tempRoots = [];
+  const tempDirs = tempDirTracker();
 
   afterAll(() => {
-    for (const root of tempRoots) {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
+    tempDirs.cleanup();
   });
 
   /**
@@ -82,8 +81,7 @@ describe("asmdef discovery excludes foreign assemblies", () => {
    * @returns {string} absolute repo root
    */
   function makeRepo(entries) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-asmdef-foreign-"));
-    tempRoots.push(root);
+    const root = tempDirs.make("asmdef-foreign");
     for (const entry of entries) {
       const dir = path.join(root, "Tests", entry.dir);
       fs.mkdirSync(dir, { recursive: true });

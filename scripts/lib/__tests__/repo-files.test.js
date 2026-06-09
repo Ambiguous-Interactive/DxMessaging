@@ -11,8 +11,9 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+
+const { makeTempDir, cleanupDir } = require("../jest-fixtures");
 
 const {
   REPO_ROOT,
@@ -31,11 +32,11 @@ const {
  * @param {(dir: string) => void} run
  */
 function withTempDir(run) {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dxm-repo-files-")));
+  const dir = fs.realpathSync(makeTempDir("repo-files"));
   try {
     run(dir);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    cleanupDir(dir);
   }
 }
 

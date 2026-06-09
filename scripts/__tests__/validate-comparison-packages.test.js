@@ -22,6 +22,8 @@ const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
 
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
+
 const {
   validateSourceSchema,
   scopeCoversId,
@@ -486,7 +488,7 @@ describe("checkGeneratorWired (real repo)", () => {
   });
 
   test("comments alone do not satisfy the generator wiring guard", () => {
-    const dir = fs.mkdtempSync(path.join(REPO_ROOT, "dxm-cmp-test-"));
+    const dir = makeTempDir("test", { root: REPO_ROOT, prefix: "dxm-cmp-" });
     try {
       const generatorAbs = path.join(dir, GENERATOR_RELATIVE_PATH);
       fs.mkdirSync(path.dirname(generatorAbs), { recursive: true });
@@ -499,7 +501,7 @@ describe("checkGeneratorWired (real repo)", () => {
       expect(violations.join("\n")).toMatch(/does not reference 'comparison-packages.json'/);
       expect(violations.join("\n")).toMatch(/does not reference 'unityBuiltInPackages'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 });
@@ -560,7 +562,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
    * `mutate(paths)` to drift exactly one thing before running main().
    */
   function makeFixtureRepo(mutate) {
-    const dir = fs.mkdtempSync(path.join(REPO_ROOT, "dxm-cmp-test-"));
+    const dir = makeTempDir("test", { root: REPO_ROOT, prefix: "dxm-cmp-" });
     createdDirs.push(dir);
 
     const sourceAbs = path.join(dir, SOURCE_RELATIVE_PATH);
@@ -618,7 +620,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
 
   afterAll(() => {
     for (const dir of createdDirs) {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -629,7 +631,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(errorText).toBe("");
       expect(code).toBe(0);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -644,7 +646,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/missing pinned comparison package 'com.neuecc.unirx'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -659,7 +661,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/missing required Unity built-in package 'com.unity.ugui'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -674,7 +676,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/missing required Unity built-in package 'com.unity.ugui'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -689,7 +691,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/dependencies\.com\.cysharp\.messagepipe\.version/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -704,7 +706,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/`dependencies.com.cysharp.unitask` is '0.0.0-drift'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -719,7 +721,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/no `scopedRegistries` entry has url/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -734,7 +736,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/is missing scope/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -763,7 +765,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
         /maps package 'com.cysharp.messagepipe' to define 'DRIFTED_DEFINE'/
       );
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -778,7 +780,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/`defines` is missing an entry for package 'com.cysharp.unitask'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -794,7 +796,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/define 'UNITY_ATOMS_CORE_PRESENT' is assigned to multiple/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -812,7 +814,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/is not covered by any `registry.scopes` prefix/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -825,7 +827,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/Cannot read '.github\/comparison-packages.json'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -838,7 +840,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/does not reference 'comparison-packages.json'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 
@@ -852,7 +854,7 @@ describe("main (end-to-end negative against a fixture repo)", () => {
       expect(code).toBe(1);
       expect(errorText).toMatch(/does not reference 'unityBuiltInPackages'/);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      cleanupDir(dir);
     }
   });
 });

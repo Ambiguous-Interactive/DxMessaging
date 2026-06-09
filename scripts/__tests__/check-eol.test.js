@@ -16,6 +16,7 @@ const {
   isPathExcluded
 } = require("../check-eol.js");
 const { crlfExts, lfExts } = require("../lib/eol-policy.js");
+const { tempDirTracker } = require("../lib/jest-fixtures");
 
 function getLeadingBlockComment(filePath) {
   const content = fs.readFileSync(filePath, "utf8");
@@ -326,7 +327,7 @@ describe("fix-eol -> check-eol closure contract", () => {
   const FIX_EOL = path.join(REPO_ROOT, "scripts", "fix-eol.js");
   const CHECK_EOL = path.join(REPO_ROOT, "scripts", "check-eol.js");
 
-  const tempDirs = [];
+  const tempDirs = tempDirTracker();
 
   // Create the fixture scratch dir INSIDE the repo under a benign, non-excluded
   // name -- NOT under os.tmpdir().
@@ -358,9 +359,8 @@ describe("fix-eol -> check-eol closure contract", () => {
   // The gitignore prefix is NOT in check-eol's excludeRegexes (separate lists),
   // so the isPathExcluded() self-guard below still passes and the fixtures are
   // still collected.
-  function makeTempDir() {
-    const dir = fs.mkdtempSync(path.join(REPO_ROOT, "dxm-eol-closure-"));
-    tempDirs.push(dir);
+  function makeClosureFixtureDir() {
+    const dir = tempDirs.make("eol-closure", { root: REPO_ROOT, prefix: "dxm-" });
     // Self-guard: assert the scratch location is admissible to check-eol's
     // exclusion list (the SAME source of truth the script uses). If this ever
     // fires, the fixtures would be silently dropped and downstream
@@ -387,20 +387,14 @@ describe("fix-eol -> check-eol closure contract", () => {
   }
 
   afterAll(() => {
-    for (const dir of tempDirs) {
-      try {
-        fs.rmSync(dir, { recursive: true, force: true });
-      } catch (_error) {
-        // Best-effort cleanup; a leaked temp dir must never fail the suite.
-      }
-    }
+    tempDirs.cleanup();
   });
 
   test("one fix-eol pass clears every content shape check-eol can flag", () => {
     // No git needed: the fixtures live in an in-repo, non-excluded scratch dir
-    // (see makeTempDir), so check-eol/fix-eol resolve and collect them on every
-    // platform without any git-init recipe.
-    const dir = makeTempDir();
+    // (see makeClosureFixtureDir), so check-eol/fix-eol resolve and collect them
+    // on every platform without any git-init recipe.
+    const dir = makeClosureFixtureDir();
     // Dirty fixtures spanning every content-level violation check-eol reports.
     // Written as raw bytes so the on-disk EOLs are exactly what we intend
     // (writeFileSync with a string would not introduce CRLF on its own, but
@@ -462,7 +456,7 @@ describe("fix-eol -> check-eol closure contract", () => {
       // the index-level contract cannot be exercised. Never fail on infra.
       return;
     }
-    const dir = makeTempDir();
+    const dir = makeClosureFixtureDir();
     const gitHere = (args) => git(dir, args);
 
     expect(gitHere(["init"]).status).toBe(0);
@@ -493,7 +487,7 @@ describe("fix-eol -> check-eol closure contract", () => {
     // Precondition: the fixture must have been collected (not dropped by an
     // exclusion segment), else status 0 would pass vacuously -- the same
     // Windows `Temp`-exclusion failure mode the closure test guards against.
-    // The in-repo, non-excluded scratch dir (makeTempDir) ensures this on every
+    // The in-repo, non-excluded scratch dir (makeClosureFixtureDir) ensures this on every
     // platform; assert it explicitly so a future scratch-location regression is
     // caught here too.
     expect(checked.stdout || "").not.toMatch(/EOL check skipped/);

@@ -63,16 +63,48 @@ describe("validate-shared-helper-usage: definition detection", () => {
     expect(detect("functionwalk(dir) {}")).toEqual([]);
   });
 
+  test("detects local definitions of the jest-fixtures helpers too", () => {
+    expect(detect("function withPlatform(p, fn) {}")).toEqual(["withPlatform"]);
+    expect(detect("function makeTempDir(label) {}")).toEqual(["makeTempDir"]);
+    expect(detect("const cleanupDir = (d) => {};")).toEqual(["cleanupDir"]);
+    expect(detect("function makeTempGitRepo(label, o) {}")).toEqual(["makeTempGitRepo"]);
+    expect(detect("const tempDirTracker = () => ({});")).toEqual(["tempDirTracker"]);
+  });
+
   test("does NOT match destructured imports or call sites (only definitions)", () => {
     expect(detect('const { readUtf8 } = require("./lib/repo-files");')).toEqual([]);
     expect(detect('const { parseArgs: parseCliArgs } = require("./lib/cli-options");')).toEqual([]);
     expect(detect("readUtf8(absolutePath);")).toEqual([]);
     expect(detect("const x = walk(dir);")).toEqual([]);
+    // The destructured jest-fixtures import the migrated suites use: a USE,
+    // never a re-definition, so the gate must leave it alone.
+    expect(detect('const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");')).toEqual(
+      []
+    );
+    expect(detect('const { tempDirTracker } = require("../lib/jest-fixtures");')).toEqual([]);
+    expect(detect("cleanupDir(tempDir);")).toEqual([]);
+    expect(detect('const dir = makeTempDir("label");')).toEqual([]);
     // A member access such as obj.readUtf8 = ... is not a bare local definition.
     expect(detect("obj.parseArgs = function () {};")).toEqual([]);
     // A longer identifier sharing a prefix must not match.
     expect(detect("function toRepoRelativeKey(a) {}")).toEqual([]);
     expect(detect("const readUtf8Raw = (p) => p;")).toEqual([]);
+    expect(detect("function makeTempDirAt(root) {}")).toEqual([]);
+  });
+});
+
+describe("validate-shared-helper-usage: consolidated helper set", () => {
+  test("the jest-fixtures helpers are banned and jest-fixtures.js is their shared home", () => {
+    for (const name of [
+      "withPlatform",
+      "makeTempDir",
+      "cleanupDir",
+      "makeTempGitRepo",
+      "tempDirTracker"
+    ]) {
+      expect(BANNED_HELPERS).toContain(name);
+    }
+    expect(SHARED_HOMES.has("scripts/lib/jest-fixtures.js")).toBe(true);
   });
 });
 

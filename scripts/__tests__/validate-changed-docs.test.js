@@ -1,8 +1,8 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const {
   getChangedDocEntries,
@@ -81,7 +81,7 @@ describe("validate-changed-docs", () => {
 
   test("runs shared validators and reports ASCII violations before hook-time", () => {
     const emDash = String.fromCodePoint(0x2014);
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "changed-docs-"));
+    const tempDir = makeTempDir("changed-docs");
     const target = path.join(tempDir, "failing.md");
     fs.writeFileSync(target, `# Title\n\nBad${emDash}dash.\n`, "utf8");
 
@@ -100,13 +100,13 @@ describe("validate-changed-docs", () => {
         stdoutSpy.mockRestore();
       }
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("reports staged ASCII violations even when the worktree file is clean", () => {
     const emDash = String.fromCodePoint(0x2014);
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "changed-docs-"));
+    const tempDir = makeTempDir("changed-docs");
     fs.mkdirSync(path.join(tempDir, "docs"), { recursive: true });
     fs.writeFileSync(path.join(tempDir, "docs", "failing.md"), "# Title\n\nClean dash.\n", "utf8");
 
@@ -142,7 +142,7 @@ describe("validate-changed-docs", () => {
         stdoutSpy.mockRestore();
       }
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });

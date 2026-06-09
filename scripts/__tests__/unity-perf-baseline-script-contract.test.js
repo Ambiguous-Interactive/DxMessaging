@@ -2,11 +2,11 @@
 
 const childProcess = require("child_process");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const { prependPathEnv } = require("../lib/spawn-env-sandbox");
 const { assertSpawnStatus, stdoutText } = require("../lib/pwsh-output");
+const { makeTempDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPT_PATH = path.join(REPO_ROOT, "scripts", "unity", "capture-perf-baseline.ps1");
@@ -36,7 +36,7 @@ const REAL_PWSH = (() => {
 })();
 
 function makeTempToolDir() {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-perf-baseline-wrapper-"));
+  const tempRoot = makeTempDir("perf-baseline-wrapper");
   const binDir = path.join(tempRoot, "bin");
   fs.mkdirSync(binDir);
 

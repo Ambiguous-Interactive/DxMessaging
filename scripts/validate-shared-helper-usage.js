@@ -4,12 +4,14 @@
 /**
  * @fileoverview Bans duplicated local copies of the consolidated shared helpers.
  *
- * Sessions 037-038 of the JS consolidation moved five copy-pasted helpers into
+ * Sessions 037-041 of the JS consolidation moved copy-pasted helpers into
  * shared libraries:
  *
  *   - `readUtf8`, `lineNumberAt`, `toRepoRelative`  -> `scripts/lib/repo-files.js`
  *   - `parseArgs`                                   -> `scripts/lib/cli-options.js`
  *   - `walk` (as `walkFiles`)                       -> `scripts/lib/repo-files.js`
+ *   - `withPlatform`, `makeTempDir`, `cleanupDir`,
+ *     `makeTempGitRepo`, `tempDirTracker`           -> `scripts/lib/jest-fixtures.js`
  *
  * To keep that consolidation from eroding, this gate fails when a `scripts/**`
  * file defines a local function/const named one of those helpers OUTSIDE its
@@ -41,13 +43,28 @@ const { stripJsCommentsAndStrings } = require("./lib/source-stripping");
  * Helper names whose local duplication is banned outside their shared home.
  * @type {string[]}
  */
-const BANNED_HELPERS = ["readUtf8", "lineNumberAt", "toRepoRelative", "parseArgs", "walk"];
+const BANNED_HELPERS = [
+  "readUtf8",
+  "lineNumberAt",
+  "toRepoRelative",
+  "parseArgs",
+  "walk",
+  "withPlatform",
+  "makeTempDir",
+  "cleanupDir",
+  "makeTempGitRepo",
+  "tempDirTracker"
+];
 
 /**
  * The shared libraries that DEFINE these helpers and are therefore exempt.
  * @type {Set<string>}
  */
-const SHARED_HOMES = new Set(["scripts/lib/repo-files.js", "scripts/lib/cli-options.js"]);
+const SHARED_HOMES = new Set([
+  "scripts/lib/repo-files.js",
+  "scripts/lib/cli-options.js",
+  "scripts/lib/jest-fixtures.js"
+]);
 
 /**
  * Files permitted to keep a local definition of a banned helper, with the

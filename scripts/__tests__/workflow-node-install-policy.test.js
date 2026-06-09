@@ -39,9 +39,9 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const YAML = require("yaml");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 const { collectTransitiveThirdParty } = require("../lib/node-require-scan");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -365,7 +365,7 @@ describe("CI jobs install node_modules before running dependency-needing scripts
     // from observing transient directories under the real .github/actions tree.
     // A nested third-party need must surface in the parent's closure, and a
     // self-referential `uses:` must terminate.
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-nested-actions-"));
+    const tempRoot = makeTempDir("nested-actions");
     const tempActionsDir = path.join(tempRoot, ".github", "actions");
     const childDir = path.join(tempActionsDir, "__nested_child__");
     const parentDir = path.join(tempActionsDir, "__nested_parent__");
@@ -393,7 +393,7 @@ describe("CI jobs install node_modules before running dependency-needing scripts
       expect([...got.needs]).toEqual(["yaml"]);
       expect(got.missing).toEqual([]);
     } finally {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
+      cleanupDir(tempRoot);
     }
 
     // Confirm the real nested composite in the repo resolves cleanly.

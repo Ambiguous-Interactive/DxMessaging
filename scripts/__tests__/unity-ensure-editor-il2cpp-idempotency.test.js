@@ -52,6 +52,7 @@ const {
   assertSpawnStatus,
   combinedText
 } = require("../lib/pwsh-output");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ENSURE_EDITOR = path.join(REPO_ROOT, "scripts", "unity", "ensure-editor.ps1");
@@ -168,11 +169,7 @@ const workspaces = [];
 
 afterAll(() => {
   for (const ws of workspaces) {
-    try {
-      fs.rmSync(ws, { recursive: true, force: true });
-    } catch {
-      // best-effort temp cleanup; never fail the suite on teardown.
-    }
+    cleanupDir(ws);
   }
 });
 
@@ -180,7 +177,7 @@ afterAll(() => {
 // dot-source it, invoke it against $EditorPath, and print the boolean result.
 // Returns the trimmed stdout (e.g. "True" / "False") plus exit status.
 function probeIl2Cpp(editorPath) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-il2cpp-probe-"));
+  const base = makeTempDir("il2cpp-probe");
   workspaces.push(base);
   const harnessPath = path.join(base, "harness.ps1");
 
@@ -213,7 +210,7 @@ function probeIl2Cpp(editorPath) {
 }
 
 function runPwshScript(scriptText) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-harness-"));
+  const base = makeTempDir("ensure-editor-harness");
   workspaces.push(base);
   const harnessPath = path.join(base, "harness.ps1");
   fs.writeFileSync(harnessPath, scriptText, "utf8");
@@ -371,7 +368,7 @@ function assertFakeUnityCliResolves(env, expectedPath) {
 }
 
 function runEnsureEditorWithFakeCli(handlerLines, installRoot, baseEnv = process.env) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-full-"));
+  const base = makeTempDir("ensure-editor-full");
   workspaces.push(base);
   const binDir = path.join(base, "bin");
   const unityPath = makeFakeUnityCli(binDir, handlerLines);
@@ -497,7 +494,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   });
 
   test("Test-Il2CppModulePresent requires a concrete IL2CPP player leaf", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-il2cpp-editor-"));
+    const base = makeTempDir("il2cpp-editor");
     workspaces.push(base);
 
     // Build ...\<version>\Editor\Data\PlaybackEngines\...\Variations\
@@ -543,7 +540,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
     {
       name: "success only when ALL CI module groups are on disk",
       setup: () => {
-        const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-il2cpp-editor-"));
+        const base = makeTempDir("il2cpp-editor");
         workspaces.push(base);
         const editorExe = path.join(base, "6000.0.32f1", "Editor", "Unity.exe");
         writeFakeUnityEditor(editorExe);
@@ -561,7 +558,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
     {
       name: "WebGL extension-only leftovers rejected without Emscripten toolchain proof",
       setup: () => {
-        const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-webgl-leftover-editor-"));
+        const base = makeTempDir("webgl-leftover-editor");
         workspaces.push(base);
         const editorExe = path.join(base, "6000.0.32f1", "Editor", "Unity.exe");
         writeFakeUnityEditor(editorExe);
@@ -600,7 +597,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   );
 
   test("managed editor missing CI modules is quarantined and reinstalled with the full module set", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-repair-"));
+    const base = makeTempDir("ensure-editor-repair");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const editorRoot = path.join(installRoot, "6000.0.32f1");
@@ -712,7 +709,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   // (which exits 6), NEVER runs `uninstall`, and NEVER quarantines the (potentially
   // locked) version directory. This is the fix that sidesteps the locker entirely.
   test("a not-module-manageable editor is repaired by the atomic in-place reinstall WITHOUT install-modules/uninstall/quarantine", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-proactive-atomic-"));
+    const base = makeTempDir("ensure-proactive-atomic");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const editorRoot = path.join(installRoot, "6000.0.32f1");
@@ -808,7 +805,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   // (post-quarantine) succeeds. We assert the fallback warning fired, the quarantine
   // happened, and the editor was ultimately repaired.
   test("atomic in-place reinstall that cannot deliver modules FALLS BACK to quarantine+reinstall", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-proactive-fallback-"));
+    const base = makeTempDir("ensure-proactive-fallback");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const editorRoot = path.join(installRoot, "6000.0.32f1");
@@ -873,7 +870,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   }, 90000);
 
   test("repair install retries when a successful install leaves no Unity.exe", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-repair-no-editor-"));
+    const base = makeTempDir("ensure-editor-repair-no-editor");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const editorRoot = path.join(installRoot, "6000.0.32f1");
@@ -932,7 +929,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   });
 
   test("repair-disabled env var fails without quarantining a managed editor missing CI modules", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-no-repair-"));
+    const base = makeTempDir("ensure-editor-no-repair");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const editorRoot = path.join(installRoot, "6000.0.32f1");
@@ -965,7 +962,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   // bounded Android step emits an Android-specific post-mortem, then escalates to
   // a managed quarantine/reinstall with the selected provisioning profile.
   test("an Android-tier-only failure escalates to managed quarantine and profile reinstall", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-android-only-"));
+    const base = makeTempDir("ensure-editor-android-only");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const editorRoot = path.join(installRoot, "6000.0.32f1");
@@ -1110,7 +1107,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   });
 
   test("an Android-tier-only failure with repair disabled does not quarantine or reinstall", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-android-no-repair-"));
+    const base = makeTempDir("ensure-editor-android-no-repair");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const editorRoot = path.join(installRoot, "6000.0.32f1");
@@ -1191,7 +1188,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   itNativeRepair(
     "a failed final native-startup probe repairs with the full module set atomically",
     () => {
-      const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-native-repair-"));
+      const base = makeTempDir("ensure-editor-native-repair");
       workspaces.push(base);
       const installRoot = path.join(base, "configured-root");
       const editorRoot = path.join(installRoot, "6000.0.32f1");
@@ -1353,7 +1350,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   });
 
   test("base editor install failure recovers when Unity.exe resolves afterward", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-recover-"));
+    const base = makeTempDir("ensure-editor-recover");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const cliRoot = installRoot;
@@ -1398,7 +1395,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   });
 
   test("already-installed base editor failure without Unity.exe quarantines and retries", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-partial-"));
+    const base = makeTempDir("ensure-editor-partial");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const cliRoot = installRoot;
@@ -1463,7 +1460,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   });
 
   test("already-installed repair quarantines both configured and CLI getter roots", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-nested-cli-root-"));
+    const base = makeTempDir("ensure-editor-nested-cli-root");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const cliRoot = path.join(installRoot, "cli-root");
@@ -1532,7 +1529,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   });
 
   test("managed-only mode refuses CLI mutations when the getter root is external", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-external-root-"));
+    const base = makeTempDir("ensure-editor-external-root");
     workspaces.push(base);
     const installRoot = path.join(base, "configured-root");
     const externalRoot = path.join(base, "external-cli-root");
@@ -1587,7 +1584,7 @@ describe("ensure-editor.ps1 IL2CPP module idempotency", () => {
   //     because it is harmless here and MEANINGFUL on Windows (where it reproduces
   //     the exact case-miss), but it does not strengthen the Linux assertion.
   test("a host Unity install in ProgramFiles never leaks into resolution (hermetic sandbox)", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-leak-"));
+    const base = makeTempDir("ensure-editor-leak");
     workspaces.push(base);
 
     const installRoot = path.join(base, "configured-root");

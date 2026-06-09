@@ -65,11 +65,11 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { maskCommentsAndStrings } = require("../lib/source-stripping");
 const { assertSpawnStatus } = require("../lib/pwsh-output");
+const { tempDirTracker } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const ENSURE_EDITOR = path.join(REPO_ROOT, "scripts", "unity", "ensure-editor.ps1");
@@ -90,22 +90,14 @@ if (!PWSH_PRESENT) {
   );
 }
 
-const workspaces = [];
+const workspaces = tempDirTracker();
 
 afterAll(() => {
-  for (const ws of workspaces) {
-    try {
-      fs.rmSync(ws, { recursive: true, force: true });
-    } catch {
-      // best-effort temp cleanup; never fail the suite on teardown.
-    }
-  }
+  workspaces.cleanup();
 });
 
 function makeWorkspace() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-ensure-editor-shortcircuit-"));
-  workspaces.push(dir);
-  return dir;
+  return workspaces.make("ensure-editor-shortcircuit");
 }
 
 function combined(result) {

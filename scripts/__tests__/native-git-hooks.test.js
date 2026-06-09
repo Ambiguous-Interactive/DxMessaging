@@ -5,9 +5,9 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 const { installGitHooks, REQUIRED_NATIVE_HOOKS } = require("../install-git-hooks");
 const {
   parseGitVersion,
@@ -196,7 +196,7 @@ describe("native Git hooks", () => {
   });
 
   test("pre-commit stamp fingerprint covers staged content and changelog-relevant local changes", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-hook-stamp-"));
+    const temp = makeTempDir("hook-stamp");
     try {
       const stampFile = path.join(temp, "stamp.json");
       fs.mkdirSync(path.join(temp, "Runtime"), { recursive: true });
@@ -262,12 +262,12 @@ describe("native Git hooks", () => {
         }).valid
       ).toBe(false);
     } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
+      cleanupDir(temp);
     }
   });
 
   test("hook fingerprint changes when staged content changes but porcelain status is stable", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-hook-fingerprint-"));
+    const temp = makeTempDir("hook-fingerprint");
     try {
       const stampFile = path.join(temp, "stamp.json");
       const first = fingerprintGitState(temp, {
@@ -280,12 +280,12 @@ describe("native Git hooks", () => {
       expect(first.indexTree).not.toBe(second.indexTree);
       expect(first).not.toEqual(second);
     } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
+      cleanupDir(temp);
     }
   });
 
   test("pre-push stamp validates only the exact pushed range", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-hook-prepush-stamp-"));
+    const temp = makeTempDir("hook-prepush-stamp");
     try {
       const stampFile = path.join(temp, "stamp.json");
       writeHookValidationStamp(temp, "pre-push", {
@@ -330,7 +330,7 @@ describe("native Git hooks", () => {
         }).valid
       ).toBe(false);
     } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
+      cleanupDir(temp);
     }
   });
 
@@ -699,7 +699,7 @@ describe("native Git hooks", () => {
   });
 
   test("installer configures core.hooksPath in a Git worktree", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-native-hooks-"));
+    const temp = makeTempDir("native-hooks");
     try {
       expect(runGit(["init"], temp).status).toBe(0);
 
@@ -720,12 +720,12 @@ describe("native Git hooks", () => {
       expect(configured.status).toBe(0);
       expect(configured.stdout.trim()).toBe("scripts/hooks");
     } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
+      cleanupDir(temp);
     }
   });
 
   test("installer refuses to configure core.hooksPath when a required native hook is missing", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-native-hooks-missing-"));
+    const temp = makeTempDir("native-hooks-missing");
     try {
       expect(runGit(["init"], temp).status).toBe(0);
 
@@ -752,12 +752,12 @@ describe("native Git hooks", () => {
       const configured = runGit(["config", "--local", "--get", "core.hooksPath"], temp);
       expect(configured.status).not.toBe(0);
     } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
+      cleanupDir(temp);
     }
   });
 
   test("installer no-ops outside a Git worktree", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-native-hooks-outside-"));
+    const temp = makeTempDir("native-hooks-outside");
     try {
       const result = installGitHooks({
         cwd: temp,
@@ -767,7 +767,7 @@ describe("native Git hooks", () => {
 
       expect(result).toEqual({ ok: true, changed: false, skipped: true });
     } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
+      cleanupDir(temp);
     }
   });
 });

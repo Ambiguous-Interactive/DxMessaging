@@ -11,9 +11,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
+
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const VALIDATOR_SCRIPT_PATH = path.resolve(__dirname, "../validate-doc-code-patterns.js");
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -26,13 +27,13 @@ function runValidator(filePath) {
 }
 
 function withFixture(suffix, contents, callback) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-doc-code-patterns-"));
+  const tempDir = makeTempDir("doc-code-patterns");
   const filePath = path.join(tempDir, `fixture${suffix}`);
   try {
     fs.writeFileSync(filePath, contents, "utf8");
     callback(filePath);
   } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   }
 }
 

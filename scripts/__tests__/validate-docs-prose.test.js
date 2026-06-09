@@ -14,9 +14,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
+
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const VALIDATOR_SCRIPT_PATH = path.resolve(__dirname, "../validate-docs-prose.js");
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -41,13 +42,13 @@ function runValidator(args) {
 }
 
 function withFixture(suffix, contents, callback) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-prose-"));
+  const tempDir = makeTempDir("prose");
   const filePath = path.join(tempDir, `fixture${suffix}`);
   try {
     fs.writeFileSync(filePath, contents, "utf8");
     callback(filePath, tempDir);
   } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   }
 }
 
@@ -573,7 +574,7 @@ describe("validate-docs-prose generated file exemptions (C8)", () => {
 
 describe("validate-docs-prose --paths walks .cs anywhere (C9)", () => {
   test("--paths <dir> walks .cs files outside CS_SCAN_ROOTS", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-paths-cs-"));
+    const tempDir = makeTempDir("paths-cs");
     try {
       const subDir = path.join(tempDir, "Random");
       fs.mkdirSync(subDir);
@@ -587,14 +588,14 @@ describe("validate-docs-prose --paths walks .cs anywhere (C9)", () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("powerful");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });
 
 describe("validate-docs-prose baseline (C5)", () => {
   test("baseline file skips matching violations", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-baseline-"));
+    const tempDir = makeTempDir("baseline");
     try {
       const dirty = path.join(tempDir, "dirty.md");
       fs.writeFileSync(dirty, "This is a powerful library.\n", "utf8");
@@ -620,7 +621,7 @@ describe("validate-docs-prose baseline (C5)", () => {
       expect(cleanResult.status).toBe(0);
       expect(cleanResult.stdout).toContain("0 violations");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
@@ -679,7 +680,7 @@ describe("validate-docs-prose --list-rules dumps term lists (m4)", () => {
 
 describe("validate-docs-prose --summary trailer goes to stdout (m10)", () => {
   test("--summary trailer is on stdout", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-summary-"));
+    const tempDir = makeTempDir("summary");
     try {
       const f = path.join(tempDir, "f.md");
       fs.writeFileSync(f, "Powerful and robust prose.\n", "utf8");
@@ -692,7 +693,7 @@ describe("validate-docs-prose --summary trailer goes to stdout (m10)", () => {
       // Trailer text is on stdout (m10), not stderr.
       expect(result.stdout).toMatch(/violation\(s\) across/);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });
@@ -734,7 +735,7 @@ describe("validate-docs-prose extended marketing terms", () => {
 
 describe("validate-docs-prose absolute path fallback (m2)", () => {
   test("violation outside the repo root falls back to absolute path", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxmsg-outside-"));
+    const tempDir = makeTempDir("outside");
     try {
       const f = path.join(tempDir, "outside.md");
       fs.writeFileSync(f, "Powerful claim.\n", "utf8");
@@ -749,7 +750,7 @@ describe("validate-docs-prose absolute path fallback (m2)", () => {
       expect(result.stderr).not.toMatch(/^\.\./m);
       expect(result.stderr).toContain(f);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });

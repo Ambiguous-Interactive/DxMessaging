@@ -14,6 +14,7 @@ const path = require("path");
 const yaml = require("yaml");
 const { spawnSync } = require("child_process");
 
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 const { sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
 const { getPropertyValue, hasElement, getElements } = require("../lib/msbuild-xml");
 const { assertSpawnStatus } = require("../lib/pwsh-output");
@@ -115,7 +116,7 @@ describe("generated Unity test harness contract", () => {
         return;
       }
 
-      const base = fs.mkdtempSync(path.join(require("os").tmpdir(), "dxm-generate-only-"));
+      const base = makeTempDir("generate-only");
       const repoRoot = path.join(base, "repo");
       const project = path.join(base, "project");
       const artifacts = path.join(base, "artifacts");
@@ -203,7 +204,7 @@ describe("generated Unity test harness contract", () => {
         // csc.rsp at editor load, which -GenerateOnly never reaches.)
         expect(fs.existsSync(path.join(project, "Assets", "csc.rsp"))).toBe(false);
       } finally {
-        fs.rmSync(base, { recursive: true, force: true });
+        cleanupDir(base);
       }
     });
 
@@ -216,7 +217,7 @@ describe("generated Unity test harness contract", () => {
         return;
       }
 
-      const base = fs.mkdtempSync(path.join(require("os").tmpdir(), "dxm-manifest-generate-"));
+      const base = makeTempDir("manifest-generate");
       const project = path.join(base, "project");
       const artifacts = path.join(base, "artifacts");
       try {
@@ -283,7 +284,7 @@ describe("generated Unity test harness contract", () => {
           expect(manifest).not.toHaveProperty("scopedRegistries");
         }
       } finally {
-        fs.rmSync(base, { recursive: true, force: true });
+        cleanupDir(base);
       }
     });
 

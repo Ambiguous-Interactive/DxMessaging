@@ -5,8 +5,8 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 const {
   validateAllLlmMarkdownFiles,
   validateDuplicateSeeAlsoHeadings,
@@ -48,11 +48,11 @@ describe("validate-skills .llm markdown policy", () => {
   let tempDir;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-policy-"));
+    tempDir = makeTempDir("llm-policy");
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   test("uses expected repository line-limit constants", () => {

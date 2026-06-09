@@ -671,18 +671,18 @@ describe("validate-skills optional field validation", () => {
 describe("validate-skills integration tests for optional fields", () => {
   const fs = require("fs");
   const path = require("path");
-  const os = require("os");
+  const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
   const { validateSkill } = require("../validate-skills");
 
   let tempDir;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-skills-test-"));
+    tempDir = makeTempDir("validate-skills-test");
   });
 
   afterEach(() => {
-    if (tempDir && fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+    if (tempDir) {
+      cleanupDir(tempDir);
     }
   });
 

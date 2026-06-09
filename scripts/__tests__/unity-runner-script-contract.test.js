@@ -19,6 +19,8 @@ const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
 
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
+
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const UNITY_SCRIPTS = path.join(REPO_ROOT, "scripts", "unity");
 
@@ -962,7 +964,6 @@ describe("scripts/unity direct CI runner contract", () => {
   // a silent no-op.
   describe("run-ci-tests Write-UnityFailedTestAnnotations behavioral enumeration", () => {
     const { combinedText: combinePwsh } = require("../lib/pwsh-output");
-    const os = require("os");
 
     function pwshAvailable() {
       return (
@@ -1025,7 +1026,7 @@ describe("scripts/unity direct CI runner contract", () => {
     ].join("\n");
 
     function runEnumeration(xmlText) {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-failed-enum-"));
+      const tmpDir = makeTempDir("failed-enum");
       const xmlPath = path.join(tmpDir, "results.xml");
       fs.writeFileSync(xmlPath, xmlText, "utf8");
       const program = [
@@ -1048,7 +1049,7 @@ describe("scripts/unity direct CI runner contract", () => {
           maxBuffer: 16 * 1024 * 1024
         }
       );
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      cleanupDir(tmpDir);
       return result;
     }
 

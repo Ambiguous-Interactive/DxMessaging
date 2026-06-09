@@ -32,12 +32,12 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
 const { sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
 const { assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const RUN_CI_TESTS = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
@@ -116,7 +116,7 @@ function cleanedEnv(sandboxRoot, extraEnv) {
 }
 
 function makeWorkspace() {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-acc-mask-"));
+  const base = makeTempDir("acc-mask");
   const repoRoot = path.join(base, "repo");
   const artifacts = path.join(base, "artifacts");
   const project = path.join(base, "project");
@@ -175,11 +175,7 @@ const workspaces = [];
 
 afterAll(() => {
   for (const ws of workspaces) {
-    try {
-      fs.rmSync(ws.base, { recursive: true, force: true });
-    } catch {
-      // best-effort temp cleanup; never fail the suite on teardown.
-    }
+    cleanupDir(ws.base);
   }
 });
 

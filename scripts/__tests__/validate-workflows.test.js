@@ -8,8 +8,9 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const {
   isForbiddenRenormalizePattern,
@@ -1235,7 +1236,7 @@ describe("Real workflow patterns", () => {
 
 describe("validateWorkflow newline handling", () => {
   test("detects forbidden pattern when file uses lone CR line endings", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-"));
+    const tempDir = makeTempDir("validate-workflows");
     try {
       const workflowPath = path.join(tempDir, "test.yml");
 
@@ -1252,7 +1253,7 @@ describe("validateWorkflow newline handling", () => {
 
       expect(violations.some((v) => v.severity === "error")).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });
@@ -1317,7 +1318,7 @@ describe("workflow line-length guard", () => {
 
 describe("validatePreCommitConfigLineLengths", () => {
   test("reports line-length violations from .pre-commit-config.yaml using yamllint policy", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-precommit-line-length-"));
+    const tempDir = makeTempDir("validate-precommit-line-length");
     try {
       const configPath = path.join(tempDir, ".pre-commit-config.yaml");
       fs.writeFileSync(
@@ -1346,12 +1347,12 @@ describe("validatePreCommitConfigLineLengths", () => {
       expect(violations[0].line).toBe(4);
       expect(violations[0].message).toContain("YAML line exceeds 40 characters");
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("returns no violations when pre-commit config is missing", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-precommit-missing-"));
+    const tempDir = makeTempDir("validate-precommit-missing");
     try {
       const violations = validatePreCommitConfigLineLengths({
         repoRoot: tempDir,
@@ -1360,14 +1361,14 @@ describe("validatePreCommitConfigLineLengths", () => {
 
       expect(violations).toEqual([]);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });
 
 describe("resolveWorkflowLineLengthPolicy", () => {
   test("loads max and non-breakable options from .yamllint.yaml", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-policy-yamllint-"));
+    const tempDir = makeTempDir("validate-workflows-policy-yamllint");
     try {
       fs.writeFileSync(
         path.join(tempDir, ".yamllint.yaml"),
@@ -1389,12 +1390,12 @@ describe("resolveWorkflowLineLengthPolicy", () => {
         allowNonBreakableInlineMappings: false
       });
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("treats inline-mappings option as implying non-breakable words", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-policy-inline-map-"));
+    const tempDir = makeTempDir("validate-workflows-policy-inline-map");
     try {
       fs.writeFileSync(
         path.join(tempDir, ".yamllint.yaml"),
@@ -1412,14 +1413,14 @@ describe("resolveWorkflowLineLengthPolicy", () => {
       expect(policy.allowNonBreakableInlineMappings).toBe(true);
       expect(policy.allowNonBreakableWords).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });
 
 describe("resolveWorkflowLineLengthMax", () => {
   test("loads max from .yamllint.yaml when present", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-yamllint-"));
+    const tempDir = makeTempDir("validate-workflows-yamllint");
     try {
       fs.writeFileSync(
         path.join(tempDir, ".yamllint.yaml"),
@@ -1431,16 +1432,16 @@ describe("resolveWorkflowLineLengthMax", () => {
 
       expect(resolveWorkflowLineLengthMax(tempDir)).toBe(187);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("falls back to default when .yamllint.yaml is absent", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-yamllint-missing-"));
+    const tempDir = makeTempDir("validate-workflows-yamllint-missing");
     try {
       expect(resolveWorkflowLineLengthMax(tempDir)).toBe(200);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });
@@ -1956,7 +1957,7 @@ describe("findLycheeActionPolicyViolations", () => {
   });
 
   test("validateWorkflow reports blocking external lychee steps missing timeout acceptance", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-lychee-"));
+    const tempDir = makeTempDir("validate-workflows-lychee");
     try {
       const workflowPath = path.join(tempDir, ".github", "workflows", "lint-doc-links.yml");
       fs.mkdirSync(path.dirname(workflowPath), { recursive: true });
@@ -1984,12 +1985,12 @@ describe("findLycheeActionPolicyViolations", () => {
         violations.some((violation) => violation.message.includes("--accept-timeouts=true"))
       ).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("validateWorkflow reports advisory lychee timeout acceptance", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-lychee-"));
+    const tempDir = makeTempDir("validate-workflows-lychee");
     try {
       const workflowPath = path.join(tempDir, ".github", "workflows", "markdown-link-validity.yml");
       fs.mkdirSync(path.dirname(workflowPath), { recursive: true });
@@ -2025,7 +2026,7 @@ describe("findLycheeActionPolicyViolations", () => {
         )
       ).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });
@@ -3541,7 +3542,7 @@ describe("findSelfHostedRunnerPreflightViolations (Bug 3)", () => {
 
 describe("validateWorkflow policy integration", () => {
   test("reports ignored path filters and unsafe lockfile install policy", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-policy-"));
+    const tempDir = makeTempDir("validate-workflows-policy");
     try {
       const workflowPath = path.join(tempDir, "policy-test.yml");
       const workflowContent = [
@@ -3580,12 +3581,12 @@ describe("validateWorkflow policy integration", () => {
         )
       ).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("reports workflow line-length violations using repo yamllint ceiling", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-line-length-"));
+    const tempDir = makeTempDir("validate-workflows-line-length");
     try {
       const workflowDir = path.join(tempDir, ".github", "workflows");
       fs.mkdirSync(workflowDir, { recursive: true });
@@ -3622,12 +3623,12 @@ describe("validateWorkflow policy integration", () => {
         )
       ).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("surfaces ignore policy evaluation failures as validation errors", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-policy-error-"));
+    const tempDir = makeTempDir("validate-workflows-policy-error");
     try {
       const workflowPath = path.join(tempDir, "policy-error-test.yml");
       fs.writeFileSync(
@@ -3655,12 +3656,12 @@ describe("validateWorkflow policy integration", () => {
         )
       ).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 
   test("uses provided repoRoot when reporting violation file paths", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "validate-workflows-repo-root-"));
+    const tempDir = makeTempDir("validate-workflows-repo-root");
     try {
       const workflowDir = path.join(tempDir, ".github", "workflows");
       fs.mkdirSync(workflowDir, { recursive: true });
@@ -3689,7 +3690,7 @@ describe("validateWorkflow policy integration", () => {
         violations.every((violation) => violation.file === ".github/workflows/relative-path.yml")
       ).toBe(true);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 

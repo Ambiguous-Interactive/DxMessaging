@@ -11,9 +11,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const GUARD_SCRIPT = path.resolve(__dirname, "..", "hooks", "yaml-line-length-guard.js");
 const {
@@ -118,11 +119,11 @@ describe("yaml-line-length-guard PostToolUse integration", () => {
   let tempDir;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-guard-"));
+    tempDir = makeTempDir("yaml-guard");
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   test("auto-fixes (a), leaves (b), emits additionalContext naming (b) + skill, exit 0", () => {

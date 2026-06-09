@@ -1,9 +1,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
+
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const {
   BEGIN_MARKER,
@@ -243,11 +244,11 @@ describe("render-perf-doc machine specs (--machine-specs provenance)", () => {
   let tempDir;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-render-specs-"));
+    tempDir = makeTempDir("render-specs");
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   const SAMPLE_SPECS = {
@@ -683,11 +684,11 @@ describe("render-perf-doc Prettier parity (CRITICAL-1)", () => {
   let tempDir;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-render-prettier-"));
+    tempDir = makeTempDir("render-prettier");
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   test("a freshly rendered doc (multi-scope + matrices) passes managed Prettier --check unchanged", () => {
@@ -812,7 +813,7 @@ describe("render-perf-doc render (doc rewrite)", () => {
   let inputPath;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-render-perf-"));
+    tempDir = makeTempDir("render-perf");
     docPath = path.join(tempDir, "performance.md");
     inputPath = path.join(tempDir, "unity.log");
     fs.writeFileSync(docPath, seedDoc(), "utf8");
@@ -820,7 +821,7 @@ describe("render-perf-doc render (doc rewrite)", () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   function renderDoc(overrides = {}) {
@@ -919,7 +920,7 @@ describe("render-perf-doc CLI", () => {
   let inputPath;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-render-perf-cli-"));
+    tempDir = makeTempDir("render-perf-cli");
     docPath = path.join(tempDir, "performance.md");
     inputPath = path.join(tempDir, "unity.log");
     fs.writeFileSync(docPath, seedDoc(), "utf8");
@@ -927,7 +928,7 @@ describe("render-perf-doc CLI", () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    cleanupDir(tempDir);
   });
 
   test("writes the doc and exits 0", () => {

@@ -1,10 +1,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const yaml = require("yaml");
+const { tempDirTracker } = require("../lib/jest-fixtures");
 const { assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -25,12 +25,10 @@ function pwshAvailable() {
 }
 
 const PWSH_PRESENT = pwshAvailable();
-const workspaces = [];
+const workspaceTracker = tempDirTracker();
 
 afterAll(() => {
-  for (const workspace of workspaces) {
-    fs.rmSync(workspace, { recursive: true, force: true });
-  }
+  workspaceTracker.cleanup();
 });
 
 function escapePwshDoubleQuoted(value) {
@@ -66,9 +64,7 @@ function runActionScript(resultsDir, label, cwd, extraEnv) {
 }
 
 function makeWorkspace() {
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-verify-unity-results-"));
-  workspaces.push(workspace);
-  return workspace;
+  return workspaceTracker.make("verify-unity-results");
 }
 
 function writeResultsXml(resultsDir, attrs) {

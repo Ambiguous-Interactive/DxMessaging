@@ -5,8 +5,9 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 
 const {
   parseHookEntries,
@@ -1972,7 +1973,7 @@ describe("validate-pre-commit-tooling", () => {
   });
 
   test("validateConfigFile handles CRLF and lone CR line endings", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pre-commit-tooling-"));
+    const tempDir = makeTempDir("pre-commit-tooling");
     const filePath = path.join(tempDir, ".pre-commit-config.yaml");
 
     try {
@@ -2000,7 +2001,7 @@ describe("validate-pre-commit-tooling", () => {
       expect(perfBudget).toHaveLength(1);
       expect(perfBudget[0].message).toMatch(/exceeds per-hook ceiling/);
     } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      cleanupDir(tempDir);
     }
   });
 });

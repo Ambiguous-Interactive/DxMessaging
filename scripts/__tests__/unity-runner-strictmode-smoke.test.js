@@ -38,10 +38,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 const { sandboxHostFolderEnv } = require("../lib/spawn-env-sandbox");
 const { assertSpawnNonZeroStatus, assertSpawnStatus, combinedText } = require("../lib/pwsh-output");
 
@@ -387,7 +387,7 @@ function cleanedEnv(sandboxRoot) {
 //   stub-editor-failing.ps1 -> a stub whose -runTests exits non-zero
 //   returned.marker      -> $env:DXM_SMOKE_RETURN_MARKER (return-proof file)
 function makeWorkspace() {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-strictmode-smoke-"));
+  const base = makeTempDir("strictmode-smoke");
   const repoRoot = path.join(base, "repo");
   const artifacts = path.join(base, "artifacts");
   const project = path.join(base, "project");
@@ -556,11 +556,7 @@ const workspaces = [];
 
 afterAll(() => {
   for (const ws of workspaces) {
-    try {
-      fs.rmSync(ws.base, { recursive: true, force: true });
-    } catch {
-      // best-effort temp cleanup; never fail the suite on teardown.
-    }
+    cleanupDir(ws.base);
   }
 });
 

@@ -1,10 +1,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const childProcess = require("child_process");
 
+const { makeTempDir } = require("../lib/jest-fixtures");
 const {
   CSV_HEADER,
   buildCsv,
@@ -180,7 +180,7 @@ describe("extract-perf-baseline", () => {
   });
 
   test("appends rows to an existing baseline without duplicating the header", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-perf-"));
+    const tempDir = makeTempDir("perf");
     const inputPath = path.join(tempDir, "unity.log");
     const outputPath = path.join(tempDir, "perf-baseline.csv");
     fs.writeFileSync(`${outputPath}`, `${CSV_HEADER}\n`, "utf8");

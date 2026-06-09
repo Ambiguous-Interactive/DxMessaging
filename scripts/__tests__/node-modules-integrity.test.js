@@ -18,6 +18,7 @@
 
 const path = require("path");
 
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 const {
   INTEGRITY_TARGETS,
   DEFAULT_LOADABLE_REL_PATHS,
@@ -815,9 +816,8 @@ describe("probeResolverHealth", () => {
     // load. We approximate by pointing repoRoot at a directory whose
     // package.json does not resolve unrs-resolver -- the probe should
     // then push a 'unrs-resolver' failure with MODULE_NOT_FOUND.
-    const os = require("os");
     const fs = require("fs");
-    const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), "resolver-probe-fixture-"));
+    const tmpRepo = makeTempDir("resolver-probe-fixture");
     try {
       // Bare repo: package.json + empty node_modules. No unrs-resolver
       // installed -> the probe's repoRequire('unrs-resolver') throws
@@ -834,7 +834,7 @@ describe("probeResolverHealth", () => {
       expect(unrsFailure).toBeTruthy();
       expect(unrsFailure.error).toMatch(/MODULE_NOT_FOUND|Cannot find module/);
     } finally {
-      fs.rmSync(tmpRepo, { recursive: true, force: true });
+      cleanupDir(tmpRepo);
     }
   });
 });

@@ -21,10 +21,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const doctor = require("../doctor");
+const { makeTempDir, cleanupDir } = require("../lib/jest-fixtures");
 const { REGENERABLE_CACHE_REPAIRS } = require("../lib/regenerable-cache-registry");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -197,7 +197,7 @@ describe("regenerable-cache-registry completeness", () => {
     // entry.probeAndHeal(sandbox) -> re-probe the matching doctor section ->
     // assert it is no longer 'fail' and the corrupt dir is gone.
     for (const entry of REGENERABLE_CACHE_REPAIRS) {
-      const sandboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-regen-complete-"));
+      const sandboxRoot = makeTempDir("regen-complete");
       try {
         // Plant the partial install (omit jest-circus/build/runner.js).
         const installDir = path.join(sandboxRoot, "jest_30.3.0");
@@ -241,7 +241,7 @@ describe("regenerable-cache-registry completeness", () => {
         });
         expect(after.status).not.toBe("fail");
       } finally {
-        fs.rmSync(sandboxRoot, { recursive: true, force: true });
+        cleanupDir(sandboxRoot);
       }
     }
   });
@@ -254,7 +254,7 @@ describe("regenerable-cache-registry completeness", () => {
     const entry = REGENERABLE_CACHE_REPAIRS.find((e) => e.id === "isolated-managed-jest-cache");
     expect(entry).toBeTruthy();
 
-    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-regen-stray-"));
+    const parent = makeTempDir("regen-stray");
     const fileRoot = path.join(parent, "dxmessaging-managed-jest");
     try {
       fs.writeFileSync(fileRoot, "stray file where the cache dir belongs\n");
@@ -279,7 +279,7 @@ describe("regenerable-cache-registry completeness", () => {
       });
       expect(after.status).not.toBe("fail");
     } finally {
-      fs.rmSync(parent, { recursive: true, force: true });
+      cleanupDir(parent);
     }
   });
 

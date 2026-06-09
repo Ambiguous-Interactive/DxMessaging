@@ -28,10 +28,10 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { assertSpawnStatus } = require("../lib/pwsh-output");
+const { tempDirTracker } = require("../lib/jest-fixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const BOOTSTRAP_SCRIPT = path.join(REPO_ROOT, "scripts", "unity", "bootstrap-windows-runner.ps1");
@@ -52,22 +52,14 @@ if (!PWSH_PRESENT) {
   );
 }
 
-const workspaces = [];
+const workspaces = tempDirTracker();
 
 afterAll(() => {
-  for (const ws of workspaces) {
-    try {
-      fs.rmSync(ws, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup; never fail the suite on teardown.
-    }
-  }
+  workspaces.cleanup();
 });
 
 function makeWorkspace() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-bootstrap-helper-mutation-"));
-  workspaces.push(dir);
-  return dir;
+  return workspaces.make("bootstrap-helper-mutation");
 }
 
 function combined(result) {
