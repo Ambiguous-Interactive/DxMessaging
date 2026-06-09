@@ -866,7 +866,7 @@ jobs:
         # The App must have Contents: read and write, be installed on this repo,
         # and be allowed to bypass the master/main branch protection. The job `if`
         # above already proved both secrets are present.
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
           private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
