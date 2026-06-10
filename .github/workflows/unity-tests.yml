@@ -126,9 +126,8 @@ jobs:
           GH_TOKEN: ${{ secrets.RUNNER_AUDIT_PAT || secrets.GITHUB_TOKEN }}
           REQUIRED_LABELS: "self-hosted,Windows,RAM-64GB"
         # Repeated literal of the labels list. Keep in sync with unity-tests
-        # `runs-on:` declaration below; the validator
-        # (scripts/validate-workflows.js) enforces that this preflight runs
-        # before any self-hosted matrix in this workflow.
+        # `runs-on:` declaration below; this preflight must run before any
+        # self-hosted matrix in this workflow.
         # gh api --paginate | jq -s pattern mirrors stuck-job-watchdog.yml;
         # see that file's comments for why `jq -s` is required.
         run: |
@@ -239,8 +238,8 @@ jobs:
         # self-hosted Windows runner resolved to the WSL stub at
         # C:\Windows\System32\bash.exe and failed with "Windows Subsystem
         # for Linux has no installed distributions." See FIX #4 sweep
-        # report in the dev/wallstop/swap branch and validate-workflows.js
-        # rule `forbidPlainShellBashOnSelfHostedWindows`.
+        # report in the dev/wallstop/swap branch: never use plain
+        # `shell: bash` on self-hosted Windows runners.
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
         with:
           matrix-note: "default (organization lock wraps the Unity section)"

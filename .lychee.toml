@@ -49,8 +49,8 @@ retry_wait_time = 2     # seconds between retries
 max_redirects = 10
 
 # Accept every status that proves the server answered, EXCEPT the two that mean the
-# resource is genuinely gone (404 Not Found, 410 Gone -- deliberately absent, and
-# `validate-lychee-config.js` errors if either is ever added here).
+# resource is genuinely gone (404 Not Found, 410 Gone -- deliberately absent;
+# never add either to this list).
 #   401/403          auth wall / WAF / bot detection (the page is real)
 #   405/406/415/451  method, content-type, or legal blocks against automated clients
 #   408/429          request timeout / rate limiting (throttling, not breakage)
@@ -83,7 +83,7 @@ exclude = [
   "^https?://127\\.0\\.0\\.1",
   "^https?://0\\.0\\.0\\.0",
   # Self-repo blob/tree links are validated OFFLINE against the working tree by
-  # scripts/validate-docs-out-of-tree-links.js -- a live check 404s for files added
-  # in the same PR before they reach the default branch.
+  # the offline lychee pass in lint-doc-links.yml -- a live check 404s for files
+  # added in the same PR before they reach the default branch.
   "^https://github\\.com/Ambiguous-Interactive/DxMessaging/(?:blob|tree)/",
 ]

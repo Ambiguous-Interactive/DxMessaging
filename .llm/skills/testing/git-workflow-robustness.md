@@ -191,23 +191,22 @@ git add --renormalize -- '*.md' '**/*.md'
 
 #### When to use each approach
 
-| Goal                                         | Command                           |
-| -------------------------------------------- | --------------------------------- |
-| Fix files on disk after cloning              | `node scripts/fix-eol.js`         |
-| Re-stage files after `.gitattributes` change | `git add --renormalize`           |
-| Fix files copied from external source        | `node scripts/fix-eol.js`         |
-| Verify line endings without changing         | `node scripts/check-eol.js`       |
-| Verify line endings before committing        | `node scripts/check-eol.js --all` |
+| Goal                                         | Command                                        |
+| -------------------------------------------- | ---------------------------------------------- |
+| Fix files on disk after cloning              | `git add --renormalize . && git checkout -- .` |
+| Re-stage files after `.gitattributes` change | `git add --renormalize`                        |
+| Verify line endings before committing        | `pre-commit run mixed-line-ending --all-files` |
 
 #### Working tree fix pattern
 
 ```bash
-# Recommended: Fix working tree directly
-node scripts/fix-eol.js
-
-# Optional: Verbose mode shows what was fixed
-node scripts/fix-eol.js -v
+# Renormalize the index per .gitattributes, then rewrite the working tree
+git add --renormalize .
+git checkout -- .
 ```
+
+`.gitattributes` is the source of truth for line endings; the pre-commit
+`mixed-line-ending` hook is the enforcement.
 
 ## See Also
 

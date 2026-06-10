@@ -163,7 +163,7 @@ Standalone runs IL2CPP for AOT coverage.
   differ by design. Read each leg against its own backend, not against the other.
 - "I will leave a Unity workflow without Release flags because the runner
   defaults Release." The runner default is the backstop; workflows still spell
-  out Release flags so `validate-workflows` catches YAML drift before Unity runs.
+  out Release flags explicitly so YAML drift is visible in review.
 
 ## See Also
 

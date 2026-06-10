@@ -100,10 +100,6 @@ node_modules/
 node_modules.meta
 package-lock.json
 package-lock.json.meta
-jest.config.js
-jest.config.js.meta
-jest.config.mjs
-jest.config.mjs.meta
 coverage/
 coverage.meta
 __pycache__.meta

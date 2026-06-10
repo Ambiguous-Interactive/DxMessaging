@@ -187,7 +187,7 @@ accept = [
 ]
 ```
 
-Do NOT add a per-domain `exclude` (for example a regex for the npm registry page or the Game Programming Patterns site) to silence a bot-detection response, and do NOT swap the link to a "more stable" domain. Both are the fragile patterns this policy retired: the prior `webaim.org` to `w3.org` swap failed identically because both block bots. The `exclude` list in `.lychee.toml` is reserved for endpoints CI cannot reach at all (localhost, the not-yet-deployed GitHub Pages site, and self-repo blob/tree links validated offline). The `validate-lychee-config.js` script enforces this: it FORBIDS accepting 404/410 and REQUIRES accepting 403/429.
+Do NOT add a per-domain `exclude` (for example a regex for the npm registry page or the Game Programming Patterns site) to silence a bot-detection response, and do NOT swap the link to a "more stable" domain. Both are the fragile patterns this policy retired: the prior `webaim.org` to `w3.org` swap failed identically because both block bots. The `exclude` list in `.lychee.toml` is reserved for endpoints CI cannot reach at all (localhost, the not-yet-deployed GitHub Pages site, and self-repo blob/tree links validated offline). Keep `.lychee.toml` accepting 403/429 (bot blocks) and never accepting 404/410 (true dead links).
 
 #### `exclude` Pattern Guidelines (reserved cases only)
 

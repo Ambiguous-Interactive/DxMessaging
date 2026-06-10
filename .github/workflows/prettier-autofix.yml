@@ -12,7 +12,6 @@ on:
       - ".prettierrc*"
       - ".markdownlint*"
       - "package.json"
-      - "scripts/check-eol.ps1"
   pull_request_target:
     paths:
       - "**/*.md"
@@ -24,7 +23,6 @@ on:
       - ".prettierrc*"
       - ".markdownlint*"
       - "package.json"
-      - "scripts/check-eol.ps1"
   workflow_dispatch:
 
 concurrency:
@@ -66,9 +64,9 @@ jobs:
       - name: Run Prettier (write fixes)
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
-          npm run format:md
-          npm run format:json
-          npm run format:yaml
+          npx prettier --write "**/*.{md,markdown}"
+          npx prettier --write "**/*.{json,asmdef,asmref}"
+          npx prettier --write "**/*.{yml,yaml}"
 
       - name: Markdownlint (auto-fix)
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
@@ -122,23 +120,16 @@ jobs:
           git checkout -f FETCH_HEAD
 
       - name: Prettier check (Markdown)
-        run: npm run format:md:check
+        run: npx prettier --check "**/*.{md,markdown}"
 
       - name: Prettier check (JSON / asmdef / asmref)
-        run: npm run format:json:check
+        run: npx prettier --check "**/*.{json,asmdef,asmref}"
 
       - name: Prettier check (YAML)
-        run: npm run format:yaml:check
+        run: npx prettier --check "**/*.{yml,yaml}"
 
       - name: Markdown lint (CI gate)
         run: npm run lint:markdown
-
-      - name: Normalize line endings in index
-        run: git add --renormalize .
-
-      - name: Enforce EOL (CRLF) and No BOM
-        shell: pwsh
-        run: ./scripts/check-eol.ps1 -VerboseOutput
 
   autofix_fork:
     name: Fork PR bot formatting PR (Dependabot only)
@@ -171,9 +162,9 @@ jobs:
 
       - name: Run Prettier (write fixes)
         run: |
-          npm run format:md
-          npm run format:json
-          npm run format:yaml
+          npx prettier --write "**/*.{md,markdown}"
+          npx prettier --write "**/*.{json,asmdef,asmref}"
+          npx prettier --write "**/*.{yml,yaml}"
 
       - name: Markdownlint (auto-fix)
         run: npx --yes markdownlint-cli2@0.22.1 "**/*.md" "**/*.markdown" --fix

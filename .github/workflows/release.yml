@@ -45,6 +45,12 @@ jobs:
             echo "::error::Tag ${tag} does not match package.json version v${PACKAGE_VERSION}."
             exit 1
           fi
+          # package.json advertises changelogUrl; never publish a version that
+          # CHANGELOG.md does not mention.
+          if ! grep -Eq "^## \[?${PACKAGE_VERSION}([^0-9]|$)" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no entry for ${PACKAGE_VERSION}."
+            exit 1
+          fi
           {
             echo "package-version=${PACKAGE_VERSION}"
             echo "tag=${tag}"
@@ -71,6 +77,13 @@ jobs:
         with:
           node-version: "22.18.0"
 
+      - name: Setup .NET
+        # validate:all runs check:analyzers, which builds the source
+        # generators against the SDK pinned in SourceGenerators/global.json.
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: SourceGenerators/global.json
+
       - name: Install Node dependencies
         run: |
           set -euo pipefail
@@ -83,11 +96,7 @@ jobs:
       - name: Run release validation
         run: |
           set -euo pipefail
-          npm run test:scripts
-          npm run test:unity-contracts
-          npm run validate:npm-meta
-          npm run validate:llms-txt
-          npm run validate:repo-identity
+          node --test scripts/
           npm run validate:all
 
       - name: Pack npm package
@@ -109,6 +118,55 @@ jobs:
             "${{ needs.verify-tag.outputs.tag }}" \
             "${package_file}" > .artifacts/release/release-notes.md
           echo "package-file=${package_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify tarball .meta pairing (issue 204 guard)
+        # Unity consumers need a .meta sibling for every shipped file and
+        # directory under the Unity-relevant roots. A missing .meta makes
+        # Unity mint a fresh GUID (breaking references); an orphan .meta
+        # produces import warnings. tar -tzf on the packed artifact is the
+        # ground truth for what actually ships.
+        env:
+          PACKAGE_FILE: ${{ steps.pack.outputs.package-file }}
+        run: |
+          set -euo pipefail
+          tar -tzf ".artifacts/release/${PACKAGE_FILE}" \
+            | sed 's|^package/||' | sort -u > /tmp/entries.txt
+          grep -E '^(Editor|Runtime|Samples~|SourceGenerators)(/|\.meta$)' \
+            /tmp/entries.txt > /tmp/unity-entries.txt || true
+          grep '\.meta$' /tmp/unity-entries.txt \
+            | sort -u > /tmp/present-metas.txt || true
+          # Every shipped file needs a sibling .meta, and so does every
+          # ancestor directory -- except the hidden Samples~ root, which by
+          # Unity convention has no .meta of its own.
+          grep -v '\.meta$' /tmp/unity-entries.txt | while IFS= read -r f; do
+            printf '%s.meta\n' "${f}"
+            d="$(dirname "${f}")"
+            while [ "${d}" != "." ]; do
+              printf '%s.meta\n' "${d}"
+              d="$(dirname "${d}")"
+            done
+          done | grep -vxF 'Samples~.meta' | sort -u > /tmp/required-metas.txt
+          missing="$(comm -23 /tmp/required-metas.txt /tmp/present-metas.txt)"
+          orphans="$(while IFS= read -r m; do
+            t="${m%.meta}"
+            if ! grep -qxF "${t}" /tmp/entries.txt \
+              && ! grep -q "^${t}/" /tmp/entries.txt; then
+              printf '%s\n' "${m}"
+            fi
+          done < /tmp/present-metas.txt)"
+          if [ -n "${missing}" ]; then
+            echo "::error::Tarball ships path(s) without a .meta sibling:"
+            printf '%s\n' "${missing}"
+          fi
+          if [ -n "${orphans}" ]; then
+            echo "::error::Tarball ships orphan .meta file(s) with no target:"
+            printf '%s\n' "${orphans}"
+          fi
+          if [ -n "${missing}" ] || [ -n "${orphans}" ]; then
+            exit 1
+          fi
+          echo "Tarball .meta pairing OK:" \
+            "$(wc -l < /tmp/present-metas.txt) .meta entries verified."
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
@@ -239,18 +297,14 @@ jobs:
         # self-hosted Windows runner resolved to the WSL stub at
         # C:\Windows\System32\bash.exe and failed with "Windows Subsystem
         # for Linux has no installed distributions." See FIX #4 sweep
-        # report in the dev/wallstop/swap branch and validate-workflows.js
-        # rule `forbidPlainShellBashOnSelfHostedWindows`.
+        # report in the dev/wallstop/swap branch: never use plain
+        # `shell: bash` on self-hosted Windows runners.
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "22.18.0"
-
-      - name: Run Unity contract checks
-        shell: pwsh
-        run: npm run test:unity-contracts
 
       # Single source of truth for the assembly include list: the same
       # asmdef-discovery.js module the local run-tests scripts use. Extracted

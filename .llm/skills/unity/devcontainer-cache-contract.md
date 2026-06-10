@@ -37,7 +37,7 @@ impact:
     details: "One contract file is the single source of truth across four configuration surfaces"
   testability:
     rating: "high"
-    details: "validate-caching.sh + Phase 4 Jest contract test enforce the contract on every PR"
+    details: "validate-caching.sh enforces the contract on every devcontainer-test.yml run"
 
 prerequisites:
   - "Familiarity with Docker named volumes and bind mounts"
@@ -155,7 +155,7 @@ The `${BASH_SOURCE[0]:?...}` form fails loud rather than deriving a wrong root f
 
 `cache_contract_describe_workspace_root` emits a one-line diagnostic stating which branch resolved the root (`from WORKSPACE_FOLDER env` versus `derived from script location; WORKSPACE_FOLDER unset`). Sourcing the file stays silent; `validate-caching.sh` calls the helper explicitly so the resolution is visible in validator output.
 
-The anti-drift tests in `scripts/__tests__/devcontainer-cache-contract.test.js` assert: no hardcoded absolute workspace literal remains; the derived fallback (with `WORKSPACE_FOLDER` unset) resolves to the repo root; an explicit `WORKSPACE_FOLDER` wins; the `node_modules` contract target lines up with the `${containerWorkspaceFolder}/node_modules` mount in `devcontainer.json`; and the diagnostic helper reports both branches.
+Anti-drift invariants to keep honest when editing the contract: no hardcoded absolute workspace literal; the derived fallback (with `WORKSPACE_FOLDER` unset) resolves to the repo root; an explicit `WORKSPACE_FOLDER` wins; and the `node_modules` contract target lines up with the `${containerWorkspaceFolder}/node_modules` mount in `devcontainer.json`.
 
 ## How the Validator Works
 
@@ -167,7 +167,7 @@ The anti-drift tests in `scripts/__tests__/devcontainer-cache-contract.test.js` 
 1. **Workflow configuration**: `devcontainer-test.yml` and `devcontainer-prebuild.yml` push and pull the prebuilt image.
 1. **Runtime mount state** (only inside a container): each target is a real mount point owned by `vscode:vscode`, and a write probe succeeds.
 
-Outside a container the runtime block is skipped with a single warning. Inside the devcontainer, every assertion is a hard failure. The Phase 3 `devcontainer-test.yml` workflow runs `validate-caching.sh` and the Phase 4 contract test (`devcontainer-cache-contract.test.js`) statically verifies the mount list.
+Outside a container the runtime block is skipped with a single warning. Inside the devcontainer, every assertion is a hard failure. The `devcontainer-test.yml` workflow runs `validate-caching.sh` inside the built image; it is the sole automated enforcement of this contract.
 
 ## Adding a New Cache Mount
 

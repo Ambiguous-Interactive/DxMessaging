@@ -491,20 +491,12 @@ if (require.main === module) {
 }
 
 module.exports = {
-  DEFAULT_TOLERANCE,
-  DEFAULT_REGRESSION_THRESHOLD,
-  DEFAULT_SCOPE,
-  DXMESSAGING_TECH_KEY,
-  REGISTRATION_SCENARIOS,
-  parseArgs,
   isDxMessagingRow,
   indexDxMessagingRows,
-  deltaScenarioOrder,
   scenarioLabel,
   compareRow,
   buildDeltaTable,
   isRegression,
   computeRegressed,
-  readBaselineRows,
-  render
+  readBaselineRows
 };

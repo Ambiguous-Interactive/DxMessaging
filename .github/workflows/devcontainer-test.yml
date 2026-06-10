@@ -14,7 +14,8 @@
 #     - The Unity test runner script's --help is wired up (smoke test only;
 #       a real Unity run requires the UNITY_SERIAL / UNITY_EMAIL / UNITY_PASSWORD
 #       secrets (or a local ULF fallback) which this gate does not exercise)
-#     - The script-test Jest suite passes inside the devcontainer image
+#     - The script-test node:test suite (node --test scripts/) passes inside
+#       the devcontainer image
 #
 # Triggers:
 #   - PRs to master that touch the devcontainer / workflows / Unity scripts
@@ -136,7 +137,7 @@ jobs:
             echo "=== Unity runner help ==="
             bash scripts/unity/run-tests.sh --help >/dev/null
 
-            echo "=== Jest script tests ==="
-            node scripts/run-managed-jest.js scripts/__tests__/
+            echo "=== Node script tests ==="
+            node --test scripts/
 
             echo "=== All devcontainer smoke checks passed ==="

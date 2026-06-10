@@ -41,7 +41,9 @@ jobs:
 
       - name: Run CSharpier (format repository)
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'dependabot[bot]' }}
-        run: dotnet tool run csharpier format
+        # The trailing "." is required: without a path, "csharpier format"
+        # reads stdin (empty in a run step) and formats nothing.
+        run: dotnet tool run csharpier format .
 
       - name: Renormalize line endings
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'dependabot[bot]' }}
@@ -96,11 +98,17 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Install CSharpier (pinned)
-        run: dotnet tool install -g csharpier --version 1.1.2
+      - name: Restore .NET tools
+        # Use the fork checkout's tool manifest (.config/dotnet-tools.json) so
+        # the CSharpier version stays pinned in exactly one place and cannot
+        # drift from the same-repo "check ." gate.
+        run: dotnet tool restore
 
       - name: Run CSharpier (format repository)
-        run: ~/.dotnet/tools/csharpier .
+        # CSharpier 1.x requires the "format" subcommand, and the trailing "."
+        # is required: without a path, "csharpier format" reads stdin (empty
+        # in a run step) and formats nothing.
+        run: dotnet tool run csharpier format .
 
       - name: Renormalize line endings
         shell: bash

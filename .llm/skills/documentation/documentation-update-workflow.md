@@ -88,7 +88,7 @@ Without a workflow, documentation updates are inconsistent, and important refere
 1. **Add version notes**: Mark new/changed behavior with version
 1. **Update CHANGELOG**: Add entry under appropriate section
 1. **Cross-reference**: Ensure links and "See Also" sections are current
-1. **Auto-fix Markdown structure**: Run `node scripts/fix-md029-md051.js <changed-docs.md ...>`
+1. **Format Markdown**: Run `npx prettier --write <changed-docs.md ...>`
 1. **Lint Markdown before commit**: Run `npx markdownlint-cli2 <changed-docs.md ...>`
 
 ### Example: Adding a New Emit Overload
@@ -109,7 +109,7 @@ Documentation updates needed:
 
 1. **docs/concepts/message-types.md** - Add section on prioritized emission
 1. **docs/architecture/performance.md** - Note any performance implications
-1. **docs/Quickreference/reference.md** - Add to API quick reference table
+1. **docs/reference/quick-reference.md** - Add to API quick reference table
 1. **CHANGELOG.md** - Add under "Added" section
 
 ### Documentation Checklist
@@ -126,7 +126,7 @@ Documentation updates needed:
 - [ ] Examples use current API, not deprecated patterns
 - [ ] Ordered lists use MD029 `one` style (`1.` prefixes)
 - [ ] Internal fragment links resolve correctly (MD051)
-- [ ] `node scripts/fix-md029-md051.js` run on changed docs
+- [ ] `npx prettier --write` run on changed docs
 - [ ] `npx markdownlint-cli2` passes for changed docs
 
 ## Performance Notes

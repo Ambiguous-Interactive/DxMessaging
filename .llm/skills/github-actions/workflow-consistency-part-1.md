@@ -153,7 +153,7 @@ jobs:
           fi
 
       - name: Run checks
-        run: npm run check
+        run: npm test
 ```
 
 ## Common Mistakes

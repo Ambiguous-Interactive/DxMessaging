@@ -41,7 +41,7 @@ impact:
 
 prerequisites:
   - "Understanding of filesystem case sensitivity"
-  - "Familiarity with Jest testing framework"
+  - "Familiarity with the Node.js built-in node:test runner"
   - "Knowledge of CI/CD pipeline concepts"
 
 dependencies:
@@ -56,7 +56,7 @@ applies_to:
     - "JavaScript"
     - "Bash"
   frameworks:
-    - "Jest"
+    - "node:test"
     - "GitHub Actions"
   versions:
     node: ">=18.0"
@@ -92,7 +92,7 @@ issues and ensure all scripts have proper test coverage.
 1. **Verify exact file path case** before committing using `git ls-files` or `ls -la`
 1. **Test in case-sensitive environments** (Docker, WSL, or Linux) before pushing
 1. **Derive paths from source of truth** instead of hardcoding filenames
-1. **Maintain test coverage** for all scripts (see [Script Test Coverage](../testing/script-test-coverage.md))
+1. **Maintain test coverage** for all scripts (via `npm test`, the node --test suite)
 1. **Add case validation in CI** to catch issues automatically
 
 ## Filename Case Sensitivity
@@ -186,10 +186,10 @@ Run your scripts in a case-sensitive environment before committing:
 ```bash
 # Option 1: Use Docker with Linux
 docker run --rm -v "$PWD:/workspace" -w /workspace mcr.microsoft.com/powershell:latest \
-    pwsh -File scripts/sync-banner-version.ps1
+    pwsh -File scripts/unity/run-tests.ps1
 
 # Option 2: Use WSL on Windows
-wsl pwsh -File scripts/sync-banner-version.ps1
+wsl pwsh -File scripts/unity/run-tests.ps1
 
 # Option 3: Create a case-sensitive volume on macOS
 # (requires disk utility to create APFS case-sensitive volume)
@@ -220,15 +220,9 @@ Two acceptable patterns in tests that need a fake Unity binary:
    return gate lives in `Ensure-UnityNativeStartupHealthy` in
    `scripts/unity/ensure-editor.ps1`.
 1. **Use a real PE-shaped stub**: on Windows write a `.cmd` companion file and
-   reroute through it instead of writing a shebang `.exe`. See the
-   `unity.cmd` pattern in
-   `scripts/__tests__/unity-ensure-editor-il2cpp-idempotency.test.js`
-   (around the `makeFakeUnityCli` helper).
+   reroute through it instead of writing a shebang `.exe`.
 
-The static guard `scripts/__tests__/unity-native-startup-probe-isolation.test.js`
-pins both halves of the contract (production gate + test-harness opt-in) and
-fans out to scan every other test under `scripts/__tests__/` that drives
-`ensure-editor.ps1` with a fake `Unity.exe`. Any such test must reference
+Any test that drives `ensure-editor.ps1` with a fake `Unity.exe` must reference
 `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE` or carry the comment escape hatch
 `// @allow-unity-native-probe`.
 
@@ -262,8 +256,7 @@ Never hand-roll it -- use `isPathInsideDirectory` / `isPathOutsideDirectory` /
 `path.isAbsolute` branch plus symlink-resolve + case-fold on Windows
 (`isOutsideRelative(rel)` is `""`->false, else `..` / `..`+sep / absolute). If you
 truly cannot use the helper, pair with `path.isAbsolute(rel)` (idiom
-`!rel.startsWith("..") && !path.isAbsolute(rel)`). Enforced by
-`scripts/__tests__/path-containment-policy.test.js` (CATEGORY A).
+`!rel.startsWith("..") && !path.isAbsolute(rel)`).
 
 ## Validation Checklist
 
@@ -278,16 +271,13 @@ Before merging scripts:
 
 ### Test Coverage
 
-- [ ] Test coverage exists for all scripts (see [Script Test Coverage](../testing/script-test-coverage.md))
+- [ ] Test coverage exists for all scripts (`npm test`)
 
 ## See Also
 
-- [Script Test Coverage](../testing/script-test-coverage.md) - Test coverage requirements for scripts
 - [Shell Best Practices](./shell-best-practices.md) - Shell-specific case sensitivity patterns
 - [PowerShell Best Practices](./powershell-best-practices.md) - PowerShell scripting patterns
 - [Test Coverage Requirements](../testing/comprehensive-test-coverage.md) - General test coverage requirements
-- [Jest Hook Robustness](./jest-hook-robustness.md)
-- [Let Tools Resolve Modules](./let-tools-resolve-modules.md)
 
 ## Changelog
 

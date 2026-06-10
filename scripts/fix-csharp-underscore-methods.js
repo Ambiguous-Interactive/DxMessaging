@@ -11,7 +11,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { parseArgs: parseCliArgs } = require("./lib/cli-options");
+const { normalizeToLf } = require("./lib/line-endings");
 
 const METHOD_DECLARATION_PATTERN =
   /^\s*(?:(?:\[[^\]\r\n]+\]\s*)*)(?:(?:public|private|protected|internal)\s+)?(?:(?:static|virtual|override|abstract|sealed|async|new|extern|partial|unsafe|readonly)\s+)*(?:[\w<>\[\],.?]+\s+)+(?<name>[A-Za-z_]\w*_[A-Za-z0-9_]+)\s*(?:<[^>\r\n]+>\s*)?\(/gm;
@@ -32,10 +32,6 @@ const EXCLUDED_DIRECTORY_PATTERNS = [
   /(^|[\\/])\.artifacts([\\/]|$)/,
   /(^|[\\/])site([\\/]|$)/
 ];
-
-function normalizeToLf(value) {
-  return String(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
 
 function isCsharpSourceFile(filePath) {
   if (typeof filePath !== "string" || filePath.trim().length === 0) {
@@ -135,20 +131,21 @@ function getGitRepoRoot() {
 
 function parseArgs(argv) {
   // Only `--check` and `--all` are flags; every other token -- bare paths, a
-  // lone `-`, `--`, `=`-forms, and unrecognized `--opt` -- was pushed verbatim
-  // onto fileArgs by the original loop, in argv order. Disabling the `--`
-  // separator and `=` splitting and collecting unknown options as positionals
-  // reproduces that exactly.
-  const { values, positionals } = parseCliArgs(argv, {
-    options: {
-      checkOnly: { type: "boolean", aliases: ["--check"] },
-      allFiles: { type: "boolean", aliases: ["--all"] }
-    },
-    allowEquals: false,
-    endOfOptions: false,
-    unknownOption: "collect"
-  });
-  return { checkOnly: values.checkOnly, allFiles: values.allFiles, fileArgs: positionals };
+  // lone `-`, `--`, `=`-forms, and unrecognized `--opt` -- falls through to
+  // fileArgs verbatim, in argv order (pre-commit passes filenames that way).
+  const parsed = { checkOnly: false, allFiles: false, fileArgs: [] };
+
+  for (const token of argv) {
+    if (token === "--check") {
+      parsed.checkOnly = true;
+    } else if (token === "--all") {
+      parsed.allFiles = true;
+    } else {
+      parsed.fileArgs.push(token);
+    }
+  }
+
+  return parsed;
 }
 
 function isExcludedPath(fullPath) {
@@ -520,26 +517,14 @@ function main() {
   return 0;
 }
 
+// Export only the symbols consumed externally
+// (scripts/__tests__/fix-csharp-underscore-methods.test.js).
 module.exports = {
-  METHOD_DECLARATION_PATTERN,
-  CSHARP_SOURCE_FILE_PATTERN,
-  META_FILE_PATTERN,
-  WINDOWS_POSIX_DRIVE_PATH_PATTERN,
-  DEBUG_ENV_VAR,
   isCsharpSourceFile,
-  normalizeExplicitPathArg,
-  toWindowsAbsolutePathFromPosixDrivePath,
-  resolveCandidatePath,
-  realpathIfExists,
-  canonicalPathForComparison,
-  isPathInsideRoot,
-  isExcludedRepoLocalPath,
   convertMethodNameToPascalCase,
   collectMethodRenames,
   applyMethodRenames,
-  processFile,
-  parseArgs,
-  resolveTargetFiles
+  processFile
 };
 
 if (require.main === module) {

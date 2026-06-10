@@ -10,7 +10,6 @@ source:
   repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: ".lychee.toml"
-    - path: "scripts/validate-lychee-config.js"
     - path: ".github/workflows/lint-doc-links.yml"
     - path: ".github/workflows/markdown-link-validity.yml"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
@@ -36,7 +35,7 @@ impact:
     details: "Prevents silent CI failures from deprecated config fields across lychee upgrades"
   testability:
     rating: "medium"
-    details: "Validation script has unit tests and runs in both pre-push hooks and CI"
+    details: "Enforced by the pinned lychee binary (install-pinned-lychee) plus the offline/online passes in lint-doc-links.yml"
 
 prerequisites:
   - "Understanding of TOML configuration format"
@@ -67,7 +66,6 @@ aliases:
 related:
   - "workflow-consistency"
   - "link-quality-guidelines"
-  - "validation-patterns"
 
 status: "stable"
 ---
@@ -84,8 +82,8 @@ files. Its configuration lives in `.lychee.toml`, but field names can change bet
 versions. The repository pins the lychee binary at install time so a new lychee release
 cannot silently change which config fields are valid.
 
-This skill documents the field deprecation patterns observed in lychee, the validation
-tooling built to catch these issues proactively, and best practices for maintaining
+This skill documents the field deprecation patterns observed in lychee, the version
+pinning that keeps the config schema stable, and best practices for maintaining
 third-party tool configurations that can drift.
 
 ## Problem Statement
@@ -121,70 +119,27 @@ finds the nested binary, and verifies `lychee --version`.
 
 ## Solution
 
-### 1. Validation Script
+### 1. Pin the lychee version
 
-The `scripts/validate-lychee-config.js` script validates `.lychee.toml` against a
-known-good field list for lychee v0.24.2:
+Both workflows install a pinned lychee binary (see `install-pinned-lychee`), so
+`.lychee.toml` is written against one known schema (v0.24.2). When bumping the
+pinned version, diff the upstream example config for added/removed/renamed
+fields and update `.lychee.toml` in the same change.
 
-```bash
-# Run from repository root
-node scripts/validate-lychee-config.js
-```
+### 2. Config policy
 
-The script:
-
-1. Reads `.lychee.toml` and parses top-level TOML keys
-   (including `[table]` and `[[array_of_tables]]` headers by extracting the top-level
-   table segment)
-1. Checks each key against a `VALID_FIELDS` set containing all valid v0.24.2 options
-1. Validates field values where applicable (e.g., `verbose` must be one of the allowed
-   string enum values: "error", "warn", "info", "debug", "trace", including when
-   key-value pairs are defined inside TOML tables)
-1. Requires properly paired quote boundaries before unquoting string-enum values (invalid
-   quote forms like `"info` or `"info'` are rejected, not normalized)
-1. Keeps v0.24.2's `accept_timeouts` in `VALID_FIELDS` but rejects it in the shared
-   config because timeout acceptance is command-line-only in the blocking workflow.
-1. Enforces the link-acceptance policy via `validateStrictLinkPolicy`: it FORBIDS
-   accepting 404 or 410 (those mean the link is gone) and REQUIRES accepting 403 and
-   429 (sites return these to CI bots even when the page is valid). This is the inverse
-   of the retired rule that forbade accepting 403.
-1. Reports errors for any unrecognized fields
-1. Reports warnings for duplicate fields
-1. Exits with code 1 on validation failure
-
-When a field is invalid, the script prints the full list of valid fields, making it
-straightforward to find the correct replacement.
-
-### 2. Git Hook Integration
-
-The validation runs in both `pre-commit` and `pre-push` via `.pre-commit-config.yaml`:
-
-```yaml
-- repo: local
-  hooks:
-    - id: validate-lychee-config
-      name: Validate lychee configuration
-      entry: node scripts/validate-lychee-config.js
-      language: system
-      pass_filenames: false
-      files: '^\.lychee\.toml$'
-      stages:
-        - pre-commit
-        - pre-push
-```
-
-Key design decisions:
-
-- **Runs on both commit and push**: Catches config errors early (`pre-commit`) while still
-  enforcing at push boundaries (`pre-push`)
-- **File filter**: Only triggers when `.lychee.toml` is in the changeset
-- **Non-interactive**: Uses `pass_filenames: false` since the script finds the config itself
+- Keep only fields valid for the pinned version; prefer the new names
+  (`max_retries`, `include_mail`, `verbose`).
+- Link-acceptance policy: never accept 404 or 410 (those mean the link is
+  gone); always accept 403 and 429 (sites return these to CI bots even when
+  the page is valid).
+- `accept_timeouts` stays command-line-only (`--accept-timeouts=true` in the
+  blocking workflow) so the advisory scan still reports slow hosts.
 
 ### 3. CI Workflow Integration
 
-Both link-checking workflows share the single `.lychee.toml`. The blocking workflow
-validates it before lychee; the scheduled advisory scan does not run
-`validate-lychee-config.js` and relies on hooks/preflight when config changes.
+Both link-checking workflows share the single `.lychee.toml`. Keep the config aligned
+with the pinned lychee version in both.
 
 - **`lint-doc-links.yml`** (blocking PR/push check) runs two passes. An OFFLINE pass
   validates relative/local links and in-repo `#anchor` fragments against the working
@@ -193,13 +148,11 @@ validates it before lychee; the scheduled advisory scan does not run
   bot-detection and transient codes.
 - **`markdown-link-validity.yml`** (scheduled advisory scan) runs daily on a cron plus
   `workflow_dispatch`. It NEVER fails the run; it captures the lychee exit code, opens
-  or updates one tracking issue from `./lychee/out.md`, installs the pinned binary, and
-  does not run the config validator. Its lychee step writes Markdown to `./lychee/out.md`
-  so the issue sync step has a body file on dead-link runs.
+  or updates one tracking issue from `./lychee/out.md`, and installs the pinned binary.
+  Its lychee step writes Markdown to `./lychee/out.md` so the issue sync step has a
+  body file on dead-link runs.
 
 ```yaml
-- name: Validate lychee configuration
-  run: node scripts/validate-lychee-config.js
 - name: Collect tracked docs
   run: |
     git ls-files -z '*.md' '*.markdown' | tr '\0' '\n' \
@@ -250,7 +203,7 @@ max_redirects = 10
 
 # Accept every status proving the server answered EXCEPT 404/410 (gone). Widen this
 # list (never add a per-domain exclude) if a site adopts a new blocking status.
-# validate-lychee-config.js forbids 404/410 and requires 403/429.
+# Policy: never accept 404/410; always accept 403/429.
 accept = [
   "200..=299",
   "401",
@@ -284,15 +237,13 @@ the command line for the external-liveness pass only (the offline pass omits it)
 
 ## Best Practices for Tool Config Drift
 
-### Pin and Validate
+### Pin and Document
 
-When a CI tool can float, pin its effective binary version, add a validation script that
-checks config against that schema, run it before the tool in CI and hooks, and document
-the target version in the script.
+When a CI tool can float, pin its effective binary version and document the target
+version next to the config.
 
-### Keep the Valid Field List Updated
+### Keep the Config Aligned With the Pinned Version
 
 When lychee releases a new version, diff the
 [lychee example config](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee.example.toml)
-for added/removed/renamed fields, update the `VALID_FIELDS` set and version comment in
-`scripts/validate-lychee-config.js`, then re-run validation against `.lychee.toml`.
+for added/removed/renamed fields and update `.lychee.toml` accordingly.

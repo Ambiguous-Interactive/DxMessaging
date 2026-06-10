@@ -178,7 +178,7 @@ function createMetadataReaderProject(projectDir) {
       "    MetadataReader metadata = peReader.GetMetadataReader();",
       "    ModuleDefinition module = metadata.GetModuleDefinition();",
       "    string mvid = metadata.GetGuid(module.Mvid).ToString();",
-      "    string informationalVersion = \"(missing)\";",
+      '    string informationalVersion = "(missing)";',
       "    foreach (CustomAttributeHandle handle in metadata.GetAssemblyDefinition().GetCustomAttributes())",
       "    {",
       "        CustomAttribute attribute = metadata.GetCustomAttribute(handle);",
@@ -196,18 +196,18 @@ function createMetadataReaderProject(projectDir) {
       "        string name = container.Kind == HandleKind.TypeReference",
       "            ? metadata.GetString(metadata.GetTypeReference((TypeReferenceHandle)container).Name)",
       "            : metadata.GetString(metadata.GetTypeDefinition((TypeDefinitionHandle)container).Name);",
-      "        if (name != \"AssemblyInformationalVersionAttribute\")",
+      '        if (name != "AssemblyInformationalVersionAttribute")',
       "        {",
       "            continue;",
       "        }",
       "        BlobReader blob = metadata.GetBlobReader(attribute.Value);",
       "        if (blob.ReadUInt16() == 1)",
       "        {",
-      "            informationalVersion = blob.ReadSerializedString() ?? \"(null)\";",
+      '            informationalVersion = blob.ReadSerializedString() ?? "(null)";',
       "        }",
       "    }",
-      "    string debugTypes = string.Join(\",\", peReader.ReadDebugDirectory().Select(entry => entry.Type.ToString()));",
-      "    Console.WriteLine($\"{Path.GetFileName(file)} informationalVersion={informationalVersion} mvid={mvid} debugDirectory=[{debugTypes}]\");",
+      '    string debugTypes = string.Join(",", peReader.ReadDebugDirectory().Select(entry => entry.Type.ToString()));',
+      '    Console.WriteLine($"{Path.GetFileName(file)} informationalVersion={informationalVersion} mvid={mvid} debugDirectory=[{debugTypes}]");',
       "}",
       ""
     ].join(os.EOL),
@@ -219,7 +219,9 @@ function metadataDiagnostics(paths) {
   const projectDir = path.join(ARTIFACT_ROOT, "metadata-reader");
   createMetadataReaderProject(projectDir);
   try {
-    return run("dotnet", ["run", "--project", projectDir, "--", ...paths], { cwd: REPO_ROOT }).trim();
+    return run("dotnet", ["run", "--project", projectDir, "--", ...paths], {
+      cwd: REPO_ROOT
+    }).trim();
   } catch (error) {
     return `metadata unavailable: ${error.message}`;
   }
@@ -331,9 +333,3 @@ function main(argv = process.argv.slice(2)) {
 if (require.main === module) {
   process.exit(main());
 }
-
-module.exports = {
-  FIRST_PARTY_ANALYZER_DLLS,
-  parseArgs,
-  main
-};

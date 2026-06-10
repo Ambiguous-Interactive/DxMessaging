@@ -191,17 +191,14 @@ dotnet build SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/Walls
 # Run tests (Unity Test Runner)
 # Open Unity 2021.3+ project > Window > Test Runner > PlayMode
 
-# Format markdown
-npm run format:md
+# Format markdown / JSON / YAML
+npm run format
 
 # Lint markdown
 npm run lint:markdown
 
-# Validate YAML
-npm run check:yaml
-
 # Spell check
-npx cspell "**/*"
+npm run check:spelling
 ```
 
 ### Project Standards
@@ -217,7 +214,7 @@ npx cspell "**/*"
 This repository includes comprehensive AI agent guidance in the `.llm/` directory:
 
 - **[.llm/context.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/context.md)** - Repository guidelines, coding standards, testing policies
-- **[.llm/skills/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills)** - 175+ specialized skill documents covering:
+- **[.llm/skills/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills)** - 153+ specialized skill documents covering:
   - **documentation/**
   - **github-actions/**
   - **packaging/**

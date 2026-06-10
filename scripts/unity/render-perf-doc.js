@@ -338,7 +338,7 @@ function formatMachineSpecs(specs) {
 // `| --- |` form -- is what makes the rendered doc pass the repo's REQUIRED
 // `prettier --check` markdown gate and stay byte-stable run-to-run (the
 // workflow's post-render `prettier --write` becomes a verified no-op on the
-// table). See render-perf-doc.test.js `prettier alignment parity`.
+// table).
 function alignTable(rows) {
   const columnCount = rows[0].length;
   const widths = new Array(columnCount).fill(3);
@@ -801,35 +801,9 @@ if (require.main === module) {
   }
 }
 
+// Export only the symbols consumed externally
+// (scripts/unity/render-perf-deltas.js).
 module.exports = {
-  BEGIN_MARKER,
-  END_MARKER,
-  SCENARIO_ORDER,
-  SCOPE_ORDER,
-  DISPATCH_DISPLAY_NAMES,
-  COMPARISON_SCENARIO_ORDER,
-  COMPARISON_SCENARIO_LABELS,
-  COMPARISON_TECH_ORDER,
-  COMPARISON_TECH_LABELS,
-  SCOPE_BACKEND,
-  DEFAULT_TOLERANCE,
-  NEUTRAL_RUNNER_DESCRIPTION,
-  parseArgs,
   deriveScope,
-  parseComparisonScenario,
-  selectRowsForVersion,
-  alignTable,
-  buildDispatchTable,
-  buildComparisonSections,
-  buildBlock,
-  formatBytesPerOp,
-  scopeLabel,
-  deriveBackendLabel,
-  readMachineSpecs,
-  formatMachineSpecs,
-  replaceBlock,
-  locateMarkers,
-  tableRows,
-  blocksEquivalent,
-  render
+  alignTable
 };

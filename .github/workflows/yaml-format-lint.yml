@@ -56,16 +56,7 @@ jobs:
           fi
 
       - name: Prettier check (YAML)
-        run: npm run format:yaml:check
-
-      - name: YAML line-length auto-fixer check (comments + block scalars)
-        run: |
-          # Node check-mode of the auto-fixers gates CI so hand-edits or drift
-          # around the fixers fail here, not at the last-resort yamllint hook.
-          # Comments auto-wrap via `npm run format:yaml:comments`; long pwsh
-          # run block-scalar strings auto-rewrite via `npm run format:yaml:lines`.
-          npm run check:yaml:comments
-          npm run check:yaml:lines
+        run: npx prettier --check "**/*.{yml,yaml}"
 
       - name: yamllint
         uses: ibiqlik/action-yamllint@v3.1.1

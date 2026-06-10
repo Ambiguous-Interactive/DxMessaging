@@ -55,4 +55,4 @@ jobs:
           fi
 
       - name: Validate llms.txt generator contract
-        run: npm run validate:llms-txt
+        run: npm run check:llms-txt

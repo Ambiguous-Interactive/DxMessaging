@@ -153,28 +153,9 @@ Without this, examples showing anti-patterns will trigger false positives:
 Bad: `See [README.md](../README.md)` <- Inline code, should be skipped
 ```
 
-### Linting Scripts Need Unit Tests
+### Do Not Write New Bespoke Documentation Linters
 
-Documentation linting scripts are code and need tests like any other code:
-
-| Test Category        | Examples                                      |
-| -------------------- | --------------------------------------------- |
-| Normal patterns      | Valid links with good text                    |
-| Anti-patterns        | Raw file names that should be flagged         |
-| Edge cases           | Inline code, fenced blocks, nested structures |
-| False positive cases | Anti-pattern examples in documentation        |
-| Boundary conditions  | Empty files, single-line files, no links      |
-
-### Script Implementation Checklist
-
-When creating or modifying documentation linters:
-
-- [ ] Skip content in fenced code blocks (` ``` `)
-- [ ] Skip content in inline code (backticks)
-- [ ] Handle nested structures correctly
-- [ ] Include unit tests covering edge cases
-- [ ] Test against existing documentation files
-- [ ] Document expected behavior in script comments
+The repository deliberately uses off-the-shelf linters (markdownlint-cli2, prettier, cspell, lychee) instead of bespoke documentation-linter scripts. See the Tooling Philosophy section of `.llm/context.md` before adding any new linting script; the code-block-skipping guidance above exists only for the rare case where an existing kept script must be modified.
 
 ## Validation Checklist
 

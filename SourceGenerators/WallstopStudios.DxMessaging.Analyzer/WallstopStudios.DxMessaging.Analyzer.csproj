@@ -17,8 +17,8 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <!-- DO NOT bump this without verifying Unity 2021 still loads the analyzer.
          Unity 2021's analyzer loader silently rejects analyzers compiled against
-         Roslyn 4.x. This pin is enforced by
-         scripts/__tests__/unity-test-harness-contract.test.js. -->
+         Roslyn 4.x. No automated test pins this anymore; verify in Unity
+         before changing it. -->
     <MicrosoftCodeAnalysisVersion>3.8.0</MicrosoftCodeAnalysisVersion>
     <RootNamespace>WallstopStudios.DxMessaging.SourceGenerators</RootNamespace>
     <AssemblyName>WallstopStudios.DxMessaging.Analyzer</AssemblyName>

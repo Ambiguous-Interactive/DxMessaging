@@ -21,7 +21,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { normalizeToLf } = require("./lib/quote-parser");
+const { normalizeToLf } = require("./lib/line-endings");
 const { isPathOutsideDirectory } = require("./lib/path-classifier");
 const { walkFiles } = require("./lib/repo-files");
 
@@ -333,17 +333,14 @@ dotnet build SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/Walls
 # Run tests (Unity Test Runner)
 # Open Unity 2021.3+ project > Window > Test Runner > PlayMode
 
-# Format markdown
-npm run format:md
+# Format markdown / JSON / YAML
+npm run format
 
 # Lint markdown
 npm run lint:markdown
 
-# Validate YAML
-npm run check:yaml
-
 # Spell check
-npx cspell "**/*"
+npm run check:spelling
 \`\`\`
 
 ### Project Standards
@@ -520,6 +517,5 @@ module.exports = {
   countSkillFiles,
   getSkillCategories,
   hasValidLastUpdatedLine,
-  normalizeForComparison,
-  normalizeToLf
+  normalizeForComparison
 };

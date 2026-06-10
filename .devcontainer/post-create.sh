@@ -214,6 +214,40 @@ validate_dotnet() {
     return 0
 }
 
+# Install the exact SDK pinned in SourceGenerators/global.json
+# (rollForward: disable) so `npm run check:analyzers` — and therefore
+# `npm run validate:all` — works out of the box. The base image ships
+# 9.0.3xx and 10.x channels, which do not satisfy an exact-version pin.
+ensure_pinned_sdk() {
+    log_header "Ensuring pinned .NET SDK (SourceGenerators/global.json)"
+
+    local global_json="${WORKSPACE_DIR}/SourceGenerators/global.json"
+    if [[ ! -f "${global_json}" ]]; then
+        log_warning "SourceGenerators/global.json not found; skipping"
+        return 0
+    fi
+
+    if (cd "${WORKSPACE_DIR}/SourceGenerators" && dotnet --version >/dev/null 2>&1); then
+        log_success "Pinned SDK already resolvable"
+        return 0
+    fi
+
+    log_info "Pinned SDK missing; installing into /usr/share/dotnet"
+    local installer=/tmp/dotnet-install.sh
+    if ! wget -q https://dot.net/v1/dotnet-install.sh -O "${installer}"; then
+        log_warning "Could not download dotnet-install.sh (offline?); see the pinned-SDK remediation in CONTRIBUTING.md"
+        return 0
+    fi
+    # --install-dir must match the existing dotnet host location; the default
+    # ~/.dotnet is not consulted by the /usr/share/dotnet host on PATH.
+    if sudo bash "${installer}" --jsonfile "${global_json}" --install-dir /usr/share/dotnet; then
+        log_success "Pinned SDK installed: $(cd "${WORKSPACE_DIR}/SourceGenerators" && dotnet --version 2>/dev/null || echo unknown)"
+    else
+        log_warning "Pinned SDK install failed (continuing); check:analyzers will not run until it is installed"
+    fi
+    return 0
+}
+
 # -----------------------------------------------------------------------------
 # Workspace Validation (UPM package — no Assets/ or ProjectSettings/ at root)
 # -----------------------------------------------------------------------------
@@ -289,9 +323,10 @@ print_summary() {
     echo ""
     echo "  Quick Commands:"
     echo "    dotnet test                          # Run .NET tests"
-    echo "    dotnet csharpier .                   # Format C# sources"
-    echo "    npm run preflight:pre-commit         # Run repo preflight checks"
-    echo "    pre-commit run --all-files           # Run all pre-commit hooks"
+    echo "    dotnet csharpier format .            # Format C# sources"
+    echo "    npm test                             # Run script tests (node --test)"
+    echo "    pre-commit run --all-files           # Run commit-stage hooks"
+    echo "    pre-commit run --all-files --hook-stage pre-push  # Run pre-push hooks (cspell, asmdef, script tests)"
     echo "    bash .devcontainer/validate-caching.sh   # Validate cache mount contract"
     echo "    # bash scripts/unity/run-tests.sh --platform editmode  (Phase 2)"
     echo ""
@@ -351,9 +386,19 @@ main() {
     run_optional "Restoring .NET local tools" dotnet tool restore
     run_optional "Installing workspace npm dependencies" npm install
     run_optional "Configuring git safe.directory" git config --global --add safe.directory "$workspace_dir"
-    run_optional "Installing pre-commit hook environments" node scripts/ensure-pre-commit.js install-hooks
+    # Clones from before the tooling simplification may still point
+    # core.hooksPath at the deleted scripts/hooks directory; pre-commit
+    # refuses to install while core.hooksPath is set, so clear it first.
+    if [[ "$(git config --local core.hooksPath 2>/dev/null || true)" == *scripts/hooks* ]]; then
+        run_optional "Clearing stale core.hooksPath" git config --local --unset core.hooksPath
+    fi
+    run_optional "Installing pre-commit hooks" pre-commit install --install-hooks
 
-    # Step 5: validate environment (warn-only, never blocking).
+    # Step 5: make the SDK pinned by SourceGenerators/global.json resolvable
+    # so `npm run validate:all` (check:analyzers) works out of the box.
+    ensure_pinned_sdk
+
+    # Step 6: validate environment (warn-only, never blocking).
     validate_dotnet || { log_error ".NET validation failed"; exit_code=1; }
     validate_workspace || { log_error "Workspace validation failed"; exit_code=1; }
 

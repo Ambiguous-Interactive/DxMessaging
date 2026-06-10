@@ -9,16 +9,16 @@
  *   - .github/actions/compute-unity-assemblies (primary CI consumer)
  *   - scripts/unity/run-tests.sh (default include / exclude assembly list)
  *   - scripts/unity/run-tests.ps1 (PowerShell parity)
- *   - scripts/__tests__/unity-perf-isolation.test.js (Phase 4 contract)
  *   - .github/workflows-disabled/unity-tests.yml (customParameters template)
  *
  * No filesystem mutation. Pure functions only.
  *
  * Exports:
- *   - enumerateTestAsmdefs(repoRoot)
- *   - classifyAsmdef(name)
  *   - defaultIncludeAssemblies(repoRoot, options?)
- *   - defaultExcludeAssemblies(repoRoot, options?)
+ *
+ * The enumeration/classification helpers are module-internal; run this file
+ * directly (`node scripts/unity/lib/asmdef-discovery.js`) for a self-test
+ * that prints every discovered asmdef with its classification.
  *
  * Default include/exclude rules:
  *   - "core"        => INCLUDED by default.
@@ -177,11 +177,6 @@ function readAsmdefPlatforms(asmdefPath) {
     includePlatforms: Array.isArray(parsed.includePlatforms) ? parsed.includePlatforms : [],
     excludePlatforms: Array.isArray(parsed.excludePlatforms) ? parsed.excludePlatforms : []
   };
-}
-
-function readAsmdefIsEditorOnly(asmdefPath) {
-  const platforms = readAsmdefPlatforms(asmdefPath).includePlatforms;
-  return platforms.length === 1 && platforms[0] === "Editor";
 }
 
 /**
@@ -371,15 +366,11 @@ function defaultExcludeAssemblies(repoRoot, options) {
     .map((entry) => entry.name);
 }
 
+// Only defaultIncludeAssemblies has external consumers
+// (compute-unity-assemblies/action.yml, run-tests.sh, run-tests.ps1). The
+// other helpers are internal; the self-test block below uses them directly.
 module.exports = {
-  PERF_NAME_REGEX,
-  COMPARISON_NAME_REGEX,
-  INTEGRATION_NAME_REGEX,
-  classifyAsmdef,
-  enumerateTestAsmdefs,
-  isAsmdefCompatibleWithTarget,
-  defaultIncludeAssemblies,
-  defaultExcludeAssemblies
+  defaultIncludeAssemblies
 };
 
 if (require.main === module) {

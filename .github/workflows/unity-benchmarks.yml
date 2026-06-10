@@ -183,8 +183,8 @@ jobs:
         # self-hosted Windows runner resolved to the WSL stub at
         # C:\Windows\System32\bash.exe and failed with "Windows Subsystem
         # for Linux has no installed distributions." See FIX #4 sweep
-        # report in the dev/wallstop/swap branch and validate-workflows.js
-        # rule `forbidPlainShellBashOnSelfHostedWindows`.
+        # report in the dev/wallstop/swap branch: never use plain
+        # `shell: bash` on self-hosted Windows runners.
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
         with:
           matrix-note: "default (organization lock wraps the Unity section)"

@@ -2,118 +2,37 @@
 /**
  * Cross-platform banner sync.
  * Keeps docs/images/DxMessaging-banner.svg aligned with package.json version
- * and rounded repository test count.
+ * and the rounded C# test count (Tests/ + SourceGenerators/).
+ *
+ * This script only rewrites the SVG; it never stages anything. The pre-commit
+ * hook relies on pre-commit's own modified-file detection, and CI
+ * (validate-banner.yml) follows the sync with `git diff --exit-code`.
  */
 
 "use strict";
 
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
 
 const VERSION_PATTERN =
   /<!-- Version badge \(top right\).*?-->\s*<g[^>]*>\s*<rect[^>]*\/>\s*<text[^>]*>v\d+\.\d+\.\d+[^<]*<\/text>\s*<\/g>/s;
 const VERSION_VALUE_PATTERN = />v(\d+\.\d+\.\d+[^<]*)<\/text>/;
 const TEST_COUNT_PATTERN =
   /(<text(?=[^>]*\bx="20")(?=[^>]*\by="13")(?=[^>]*\bfill="#00d9ff")[^>]*>)(\d+\+ Tests)(<\/text>)/;
-const TEST_FILE_NAME_PATTERN = /(?:Test|Tests)\.cs$|\.(?:test|spec)\.js$/;
-const TEST_ROOTS = ["Tests", "SourceGenerators", "scripts"];
+const TEST_FILE_NAME_PATTERN = /(?:Test|Tests)\.cs$/;
+const TEST_ROOTS = ["Tests", "SourceGenerators"];
 
 function stripSourceComments(content) {
   return content.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
-function maskJavaScriptNonCode(content) {
-  let result = "";
-  let state = "code";
-  let quote = "";
-  let escaped = false;
-
-  const mask = (char) => (char === "\n" || char === "\r" ? char : " ");
-
-  for (let i = 0; i < content.length; ) {
-    const char = content[i];
-    const next = content[i + 1] ?? "";
-
-    if (state === "code") {
-      if (char === "/" && next === "/") {
-        result += mask(char) + mask(next);
-        i += 2;
-        state = "line-comment";
-        continue;
-      }
-      if (char === "/" && next === "*") {
-        result += mask(char) + mask(next);
-        i += 2;
-        state = "block-comment";
-        continue;
-      }
-      if (char === "'" || char === '"' || char === "`") {
-        result += mask(char);
-        quote = char;
-        escaped = false;
-        i++;
-        state = "string";
-        continue;
-      }
-
-      result += char;
-      i++;
-      continue;
-    }
-
-    if (state === "line-comment") {
-      result += mask(char);
-      i++;
-      if (char === "\n" || char === "\r") {
-        state = "code";
-      }
-      continue;
-    }
-
-    if (state === "block-comment") {
-      result += mask(char);
-      if (char === "*" && next === "/") {
-        result += mask(next);
-        i += 2;
-        state = "code";
-        continue;
-      }
-      i++;
-      continue;
-    }
-
-    result += mask(char);
-    i++;
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === quote) {
-      state = "code";
-    }
-  }
-
-  return result;
-}
-
 function countTestMarkers(filePath, content) {
-  if (filePath.endsWith(".cs")) {
-    const source = stripSourceComments(content);
-    return (source.match(/\[(?:UnityTest|Test|TestCase|TestCaseSource|Theory|Fact)\b/g) ?? [])
-      .length;
+  if (!filePath.endsWith(".cs")) {
+    return 0;
   }
-
-  if (/\.(?:test|spec)\.js$/.test(filePath)) {
-    const source = maskJavaScriptNonCode(content);
-    return (source.match(/(?<![\w.])(?:test|it)\s*\(/g) ?? []).length;
-  }
-
-  return 0;
+  const source = stripSourceComments(content);
+  return (source.match(/\[(?:UnityTest|Test|TestCase|TestCaseSource|Theory|Fact)\b/g) ?? [])
+    .length;
 }
 
 function collectTestFiles(dir, results) {
@@ -172,30 +91,11 @@ function readPackageVersion(packageJsonPath) {
   return version;
 }
 
-function stageFile(repoRoot, filePath, execFileSyncFn = execFileSync) {
-  try {
-    execFileSyncFn("git", ["add", filePath], {
-      cwd: repoRoot,
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-  } catch (error) {
-    const stderr =
-      typeof error?.stderr === "string"
-        ? error.stderr.trim()
-        : Buffer.isBuffer(error?.stderr)
-          ? error.stderr.toString("utf8").trim()
-          : "";
-    const suffix = stderr.length > 0 ? ` ${stderr}` : "";
-    throw new Error(`Failed to stage ${filePath} with git add.${suffix}`);
-  }
-}
-
 function syncBanner(options = {}) {
   const repoRoot = options.repoRoot ?? path.resolve(__dirname, "..");
   const packageJsonPath = options.packageJsonPath ?? path.join(repoRoot, "package.json");
   const svgPath =
     options.svgPath ?? path.join(repoRoot, "docs", "images", "DxMessaging-banner.svg");
-  const stageFileFn = options.stageFileFn ?? stageFile;
 
   if (!fs.existsSync(packageJsonPath)) {
     throw new Error(`package.json not found at: ${packageJsonPath}`);
@@ -235,7 +135,6 @@ function syncBanner(options = {}) {
   );
 
   fs.writeFileSync(svgPath, updatedSvg, "utf8");
-  stageFileFn(repoRoot, svgPath);
 
   return {
     updated: true,
@@ -262,18 +161,16 @@ function main() {
   }
 }
 
+// Export only the symbols consumed externally
+// (scripts/__tests__/sync-banner-version.test.js).
 module.exports = {
   VERSION_PATTERN,
   TEST_COUNT_PATTERN,
   stripSourceComments,
-  maskJavaScriptNonCode,
   countTestMarkers,
-  getRepositoryTestFiles,
-  calculateRepositoryTestCount,
   roundTestCount,
   getVersionBadge,
   readPackageVersion,
-  stageFile,
   syncBanner
 };
 

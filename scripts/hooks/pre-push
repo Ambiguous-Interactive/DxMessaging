@@ -1,6 +1,0 @@
-#!/usr/bin/env node
-"use strict";
-
-const { main } = require("../run-native-prepush");
-
-process.exit(main(process.argv.slice(2)));

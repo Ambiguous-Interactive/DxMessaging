@@ -101,7 +101,7 @@ jobs:
         run: npm run update:llms-txt
 
       - name: Validate llms.txt generator contract
-        run: npm run validate:llms-txt
+        run: npm run check:llms-txt
 
       - name: Check for changes
         id: git-check
@@ -131,7 +131,7 @@ jobs:
               echo "::warning::${message}"
               git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
               npm run update:llms-txt
-              npm run validate:llms-txt
+              npm run check:llms-txt
             fi
 
             if git diff --quiet -- llms.txt; then
@@ -178,5 +178,5 @@ jobs:
             echo "::warning::${message}"
             git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
             npm run update:llms-txt
-            npm run validate:llms-txt
+            npm run check:llms-txt
           done

@@ -484,8 +484,8 @@ function New-ConfiguratorSource {
     # non-deprecated ApiCompatibilityLevel.NET_Standard (which targets .NET Standard
     # 2.1), CompilationPipeline.codeOptimization = Release, and disables managed
     # stripping so the test assemblies + [Preserve] callback survive a Release Mono
-    # player build. The contracts in
-    # scripts/__tests__/unity-runner-script-contract.test.js assert that NEW reality.
+    # player build. This is an invariant of the
+    # generated configurator; no automated contract test pins it anymore.
     @"
 using System;
 using System.IO;
@@ -2649,7 +2649,7 @@ try {
         # (https://docs.unity3d.com/Manual/EditorCommandLineArguments.html), if the
         # Editor is running tests with -runTests, -quit causes it to QUIT IMMEDIATELY
         # before in-progress tests can complete -- the editor exits 0 having written
-        # no results.xml. Pinned by scripts/__tests__/unity-runner-script-contract.test.js.
+        # no results.xml.
         $testArgs = @(
             '-batchmode',
             '-nographics',

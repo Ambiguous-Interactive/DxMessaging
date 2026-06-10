@@ -76,9 +76,8 @@ runs:
         # Rerun the catastrophic-pattern scan over the (possibly partial)
         # log. The pattern list MUST stay in sync with verify-unity-results/
         # action.yml's $patterns array and run-ci-tests.ps1's
-        # $script:CatastrophicPatterns -- the
-        # unity-workflow-shape.test.js "catastrophic patterns stay in sync"
-        # invariant pins all three call sites to the same labels.
+        # $script:CatastrophicPatterns -- all three call sites must use the
+        # same labels (kept in sync by convention; update all three together).
         $patterns = @(
           @{ Label = 'PrecompiledAssemblyException'; Pattern = 'PrecompiledAssemblyException'; UseSimple = $true }
           @{ Label = 'CompilationFailedException'; Pattern = 'CompilationFailedException'; UseSimple = $true }

@@ -95,10 +95,9 @@ permissions:
   actions: read
 
 jobs:
-  # Required-by-validator preflight: every job whose runs-on declares
-  # `self-hosted` must `needs:` a runner-access preflight (structural rule;
-  # see scripts/validate-workflows.js#findSelfHostedRunnerPreflightViolations
-  # and docs/runbooks/unity-runners-after-transfer.md). This mirrors the
+  # Preflight convention: every job whose runs-on declares `self-hosted`
+  # must `needs:` a runner-access preflight (see
+  # docs/runbooks/unity-runners-after-transfer.md). This mirrors the
   # release.yml runner-preflight pattern exactly.
   runner-preflight:
     name: Self-hosted runner access preflight

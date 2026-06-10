@@ -44,7 +44,6 @@ DxMessaging is a UPM package with package ID
 Run:
 
 ```bash
-npm run validate:npm-meta
 npm pack --dry-run
 ```
 

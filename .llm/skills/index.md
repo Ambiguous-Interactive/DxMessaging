@@ -1,7 +1,7 @@
 # Skills Index
 
-> **Auto-generated** on 2026-06-08. Do not edit manually.
-> Run `node scripts/generate-skills-index.js` to regenerate.
+> Hand-maintained catalog. When adding or removing a skill file, update this
+> index (and the counts) in the same change.
 
 ---
 
@@ -9,20 +9,20 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 175   |
+| Total Skills | 153   |
 | Categories   | 8     |
 
 ---
 
 ## Table of Contents
 
-- [Documentation](#documentation) (31)
-- [GitHub Actions](#github-actions) (8)
+- [Documentation](#documentation) (27)
+- [GitHub Actions](#github-actions) (7)
 - [Packaging](#packaging) (2)
-- [Performance](#performance) (47)
-- [Scripting](#scripting) (22)
+- [Performance](#performance) (45)
+- [Scripting](#scripting) (9)
 - [Solid](#solid) (15)
-- [Testing](#testing) (40)
+- [Testing](#testing) (38)
 - [Unity](#unity) (10)
 
 ---
@@ -32,7 +32,6 @@
 | Skill                                                                                                 | Lines      | Complexity     | Status   | Performance  | Tags                              |
 | ----------------------------------------------------------------------------------------------------- | ---------- | -------------- | -------- | ------------ | --------------------------------- |
 | [ASCII-Only Documentation Policy](./documentation/ascii-only-docs.md)                                 | [ok] 173   | [basic]        | [stable] | [risk: none] | documentation, ascii              |
-| [Banner SVG Conventions](./documentation/banner-svg-conventions.md)                                   | [ok] 199   | [intermediate] | [stable] | [risk: none] | documentation, svg                |
 | [Changelog Entry Writing and Anti-Patterns](./documentation/changelog-entry-writing.md)               | [warn] 296 | [basic]        | [stable] | [risk: none] | changelog, release-notes          |
 | [Changelog Entry Writing and Anti-Patterns Part 1](./documentation/changelog-entry-writing-part-1.md) | [draft] 56 | [intermediate] | [stable] | [risk: low]  | migration, split                  |
 | [Changelog Management](./documentation/changelog-management.md)                                       | [ok] 229   | [basic]        | [stable] | [risk: none] | changelog, documentation          |
@@ -57,9 +56,6 @@
 | [Mermaid Diagram Theming Part 1](./documentation/mermaid-theming-part-1.md)                           | [ok] 160   | [intermediate] | [stable] | [risk: low]  | migration, split                  |
 | [MkDocs Navigation Management](./documentation/mkdocs-navigation.md)                                  | [ok] 252   | [basic]        | [stable] | [risk: none] | documentation, mkdocs             |
 | [MkDocs Navigation Management Part 1](./documentation/mkdocs-navigation-part-1.md)                    | [draft] 71 | [intermediate] | [stable] | [risk: low]  | migration, split                  |
-| [No PLAN Vocabulary in Shipping Content](./documentation/no-plan-vocabulary.md)                       | [ok] 154   | [basic]        | [stable] | [risk: none] | documentation, vocabulary         |
-| [Skill File Sizing Guidelines](./documentation/skill-file-sizing.md)                                  | [ok] 258   | [basic]        | [stable] | [risk: none] | documentation, skills             |
-| [Skill File Sizing Guidelines Part 1](./documentation/skill-file-sizing-part-1.md)                    | [draft] 34 | [intermediate] | [stable] | [risk: low]  | migration, split                  |
 | [User vs Dev Perf Doc Separation](./documentation/user-vs-dev-perf-doc-separation.md)                 | [ok] 169   | [basic]        | [stable] | [risk: none] | documentation, performance        |
 | [XML Documentation Standards](./documentation/documentation-xml-docs.md)                              | [ok] 191   | [basic]        | [stable] | [risk: none] | documentation, xml-docs           |
 
@@ -74,7 +70,6 @@
 | [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [warn] 299 | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
 | [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 81 | [intermediate] | [stable] | [risk: low]    | migration, split      |
 | [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 209   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
-| [YAML Line-Length Budget](./github-actions/yaml-line-length.md)                                        | [ok] 169   | [intermediate] | [stable] | [risk: low]    | github-actions, yaml  |
 
 ## Packaging
 
@@ -107,8 +102,6 @@
 | [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [ok] 260    | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path      |
 | [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 198    | [advanced]     | [stable] | [risk: critical] | memory, reclamation     |
 | [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 186    | [advanced]     | [stable] | [risk: critical] | sweep, eviction         |
-| [Git Hook Performance Budget](./performance/git-hook-performance.md)                                               | [warn] 299  | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit   |
-| [Git Hook Performance: Stages and Tooling](./performance/git-hook-performance-tooling.md)                          | [ok] 240    | [intermediate] | [stable] | [risk: high]     | git-hooks, pre-commit   |
 | [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 177    | [advanced]     | [stable] | [risk: high]     | caching, memory         |
 | [Object Pooling Anti-Patterns](./performance/object-pooling-anti-patterns.md)                                      | [ok] 145    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
 | [Object Pooling for Zero-Allocation Messaging](./performance/object-pooling.md)                                    | [ok] 124    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
@@ -137,30 +130,17 @@
 
 ## Scripting
 
-| Skill                                                                                                    | Lines       | Complexity     | Status   | Performance    | Tags                             |
-| -------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | -------------- | -------------------------------- |
-| [Change-Aware Preflight](./scripting/change-aware-preflight.md)                                          | [ok] 217    | [intermediate] | [stable] | [risk: medium] | pre-commit, pre-push             |
-| [Cross-Platform Script Compatibility](./scripting/cross-platform-compatibility.md)                       | [warn] 298  | [intermediate] | [stable] | [risk: none]   | cross-platform, case-sensitivity |
-| [Cross-Toolchain Path Comparison](./scripting/cross-toolchain-path-comparison.md)                        | [ok] 229    | [intermediate] | [stable] | [risk: none]   | cross-platform, testing          |
-| [Dependency Version Parity](./scripting/dependency-version-parity.md)                                    | [ok] 194    | [intermediate] | [stable] | [risk: low]    | dependencies, lockfile           |
-| [Integrity Gate Robustness](./scripting/integrity-gate-robustness.md)                                    | [warn] 299  | [intermediate] | [stable] | [risk: low]    | integrity, auto-repair           |
-| [JavaScript Code Quality Practices](./scripting/javascript-code-quality.md)                              | [ok] 159    | [intermediate] | [stable] | [risk: none]   | javascript, code-quality         |
-| [JavaScript Code Quality Practices Part 1](./scripting/javascript-code-quality-part-1.md)                | [ok] 178    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
-| [JavaScript Code Quality Practices Part 2](./scripting/javascript-code-quality-part-2.md)                | [ok] 142    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
-| [Jest Hook Robustness](./scripting/jest-hook-robustness.md)                                              | [warn] 300  | [intermediate] | [stable] | [risk: none]   | jest, pre-commit                 |
-| [Let Tools Resolve Modules](./scripting/let-tools-resolve-modules.md)                                    | [ok] 152    | [basic]        | [stable] | [risk: none]   | cross-platform, tooling          |
-| [Native Git Hook Bootstrap](./scripting/native-git-hooks.md)                                             | [ok] 127    | [intermediate] | [stable] | [risk: low]    | git-hooks, cross-platform        |
-| [PowerShell Scripting Best Practices](./scripting/powershell-best-practices.md)                          | [draft] 106 | [intermediate] | [stable] | [risk: none]   | powershell, scripting            |
-| [PowerShell Scripting Best Practices Part 1](./scripting/powershell-best-practices-part-1.md)            | [ok] 204    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
-| [PowerShell Scripting Best Practices Part 2](./scripting/powershell-best-practices-part-2.md)            | [ok] 223    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
-| [Regex Pattern Documentation](./scripting/regex-documentation.md)                                        | [ok] 150    | [intermediate] | [stable] | [risk: none]   | regex, documentation             |
-| [Regex Pattern Documentation Part 1](./scripting/regex-documentation-part-1.md)                          | [ok] 193    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
-| [Regex Pattern Documentation Part 2](./scripting/regex-documentation-part-2.md)                          | [ok] 180    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
-| [Shell Scripting Best Practices](./scripting/shell-best-practices.md)                                    | [ok] 218    | [intermediate] | [stable] | [risk: none]   | shell, bash                      |
-| [Shell Scripting Best Practices Part 1](./scripting/shell-best-practices-part-1.md)                      | [ok] 201    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
-| [Validation Patterns and Duplicate Warning Prevention](./scripting/validation-patterns.md)               | [ok] 240    | [intermediate] | [stable] | [risk: none]   | validation, javascript           |
-| [Validation Patterns and Duplicate Warning Prevention Part 1](./scripting/validation-patterns-part-1.md) | [ok] 204    | [intermediate] | [stable] | [risk: low]    | migration, split                 |
-| [Validation Patterns and Duplicate Warning Prevention Part 2](./scripting/validation-patterns-part-2.md) | [draft] 116 | [intermediate] | [stable] | [risk: low]    | migration, split                 |
+| Skill                                                                                         | Lines       | Complexity     | Status   | Performance  | Tags                             |
+| --------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ------------ | -------------------------------- |
+| [Cross-Platform Script Compatibility](./scripting/cross-platform-compatibility.md)            | [warn] 298  | [intermediate] | [stable] | [risk: none] | cross-platform, case-sensitivity |
+| [PowerShell Scripting Best Practices](./scripting/powershell-best-practices.md)               | [draft] 106 | [intermediate] | [stable] | [risk: none] | powershell, scripting            |
+| [PowerShell Scripting Best Practices Part 1](./scripting/powershell-best-practices-part-1.md) | [ok] 204    | [intermediate] | [stable] | [risk: low]  | migration, split                 |
+| [PowerShell Scripting Best Practices Part 2](./scripting/powershell-best-practices-part-2.md) | [ok] 223    | [intermediate] | [stable] | [risk: low]  | migration, split                 |
+| [Regex Pattern Documentation](./scripting/regex-documentation.md)                             | [ok] 150    | [intermediate] | [stable] | [risk: none] | regex, documentation             |
+| [Regex Pattern Documentation Part 1](./scripting/regex-documentation-part-1.md)               | [ok] 193    | [intermediate] | [stable] | [risk: low]  | migration, split                 |
+| [Regex Pattern Documentation Part 2](./scripting/regex-documentation-part-2.md)               | [ok] 180    | [intermediate] | [stable] | [risk: low]  | migration, split                 |
+| [Shell Scripting Best Practices](./scripting/shell-best-practices.md)                         | [ok] 218    | [intermediate] | [stable] | [risk: none] | shell, bash                      |
+| [Shell Scripting Best Practices Part 1](./scripting/shell-best-practices-part-1.md)           | [ok] 201    | [intermediate] | [stable] | [risk: low]  | migration, split                 |
 
 ## Solid
 
@@ -199,7 +179,6 @@
 | [LeakWatcher: Detecting Registration Leaks in Tests](./testing/leak-watcher-usage.md)                   | [ok] 260    | [basic]        | [stable] | [risk: low]      | testing, leaks               |
 | [Lifecycle Edge-Case Test Coverage](./testing/lifecycle-edge-coverage.md)                               | [ok] 249    | [intermediate] | [stable] | [risk: none]     | testing, lifecycle           |
 | [Memory Reclaim Coverage](./testing/memory-reclaim-coverage.md)                                         | [ok] 184    | [intermediate] | [stable] | [risk: high]     | testing, memory              |
-| [Script Test Coverage Requirements](./testing/script-test-coverage.md)                                  | [ok] 260    | [intermediate] | [stable] | [risk: none]     | testing, scripts             |
 | [Shared Fixtures: Generic Base](./testing/shared-test-fixtures-generic-base.md)                         | [ok] 186    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |
 | [Shared Fixtures: Reference Counting](./testing/shared-test-fixtures-reference-counting.md)             | [ok] 253    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |
 | [Shared Test Fixtures with Reference Counting](./testing/shared-test-fixtures.md)                       | [ok] 166    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |
@@ -219,7 +198,6 @@
 | [Test Failure Investigation and Zero-Flaky Policy](./testing/test-failure-investigation.md)             | [ok] 120    | [intermediate] | [stable] | [risk: none]     | testing, investigation       |
 | [Test Failure Investigation Procedure](./testing/test-failure-investigation-procedure.md)               | [ok] 217    | [intermediate] | [stable] | [risk: none]     | testing, investigation       |
 | [Test Failure Root Causes and Anti-Patterns](./testing/test-failure-investigation-root-causes.md)       | [ok] 187    | [intermediate] | [stable] | [risk: none]     | testing, root-cause-analysis |
-| [Test Invalid Skill](./testing/test-invalid-skill.md)                                                   | [draft] 31  | [expert]       | [stable] | [risk: high]     | testing, fixtures            |
 | [Test Organization and Assertions](./testing/test-coverage-organization-assertions.md)                  | [ok] 174    | [basic]        | [stable] | [risk: none]     | testing, assertions          |
 | [Test Production Code Directly](./testing/test-production-code.md)                                      | [ok] 146    | [intermediate] | [stable] | [risk: none]     | testing, anti-patterns       |
 | [Test Production Code Directly Part 1](./testing/test-production-code-part-1.md)                        | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split             |
@@ -243,5 +221,3 @@
 | [UPM Test Harness](./unity/upm-test-harness.md)                             | [ok] 193   | [basic]        | [stable] | [risk: none] | unity, upm           |
 
 ---
-
-_Generated by `scripts/generate-skills-index.js`_

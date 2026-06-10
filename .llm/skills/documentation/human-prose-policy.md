@@ -23,7 +23,7 @@ tags:
 
 complexity:
   level: "basic"
-  reasoning: "Mechanical phrase enforcement with a small allow-marker system"
+  reasoning: "A fixed phrase ban list applied when writing and reviewing prose"
 
 impact:
   performance:
@@ -34,7 +34,7 @@ impact:
     details: "Removes LLM drift from docs and keeps voice consistent across contributors"
   testability:
     rating: "low"
-    details: "Validator and Vale rule packs cover the policy automatically"
+    details: "Writing convention checked at review time; Vale rule packs cover the mechanical checks when run locally"
 
 prerequisites:
   - "Awareness of the project's documentation linting toolchain"
@@ -72,7 +72,7 @@ status: "stable"
 
 ## Overview
 
-DxMessaging documentation is written for humans reading reference material. Prose that reads like a marketing landing page or a generic LLM completion costs the reader trust and the project tokens. This policy bans a specific set of LLM-signature phrasings and is enforced mechanically by `scripts/validate-docs-prose.js` (the source of truth) plus Vale rule packs under `.vale/styles/DxMessaging/` for structural prose checks.
+DxMessaging documentation is written for humans reading reference material. Prose that reads like a marketing landing page or a generic LLM completion costs the reader trust and the project tokens. This policy bans a specific set of LLM-signature phrasings; the Vale rule packs under `.vale/styles/DxMessaging/` cover the mechanical checks, and the rest is applied when writing and reviewing.
 
 ## Rationale
 
@@ -100,73 +100,25 @@ Soft conversational fluff (regex):
 
 `gives you (the )?best`, `provides you with`, `helps you to`, `allows you to easily`, `enables you to`.
 
-The validator's `--list-rules` flag prints the canonical set with full term lists; the JS file is the source of truth.
+The Banned Categories lists above are the canonical set; apply them when writing and reviewing prose. There is no bespoke validator (see Enforcement below).
 
 ## Allowed Exceptions
 
 - **Skill files about the policy.** Files under `.llm/skills/documentation/` are wholly exempt.
 - **`CHANGELOG.md` and `comprehensive`.** Release notes legitimately use the term. The exemption is matched case-insensitively on the basename.
-- **Auto-generated files.** `.llm/skills/index.md` and `llms.txt` are exempt because they are regenerated mechanically.
-- **YAML frontmatter.** A leading `---\n...\n---\n` block at the top of `.md` files is skipped entirely. Schema strings inside frontmatter (such as `complexity` reasoning fields) never trigger the validator.
-- **Inline allow markers.** When a banned term is genuinely the right word for a specific sentence, mark it inline using one of:
-
-  ```markdown
-  <!-- prose-allow: powerful -->
-  <!-- prose-allow-next-line: powerful, robust -->
-  <!-- prose-allow-file: powerful -->
-  ```
-
-  Markers must fit on a single line: the opening `<!--` and the closing `-->` must be on the same line. A multi-line marker emits a `WARN` to stderr but does not fail the run. Marker comments are themselves stripped from the scan, so they never trigger on themselves.
-  - `prose-allow` matches on the same line.
-  - `prose-allow-next-line` applies to the next non-blank scanned line.
-  - `prose-allow-file` applies file-wide.
-
-  Skill files outside `.llm/skills/documentation/` should use `<!-- prose-allow-file: term -->` near the top when a banned term is necessary in the body. Use markers sparingly. The default answer to a flagged term is to rewrite the sentence.
+- **Auto-generated files.** `llms.txt` is exempt because it is regenerated mechanically by `scripts/update-llms-txt.js`. (`.llm/skills/index.md` is a hand-maintained catalog and follows the policy like any other doc.)
+- **YAML frontmatter.** A leading `---\n...\n---\n` block at the top of `.md` files is out of scope. Schema strings inside frontmatter (such as `complexity` reasoning fields) are not prose.
+- **Genuinely-right words.** When a banned term is the right word for a specific sentence (for example, quoting an error message or naming an upstream feature), keep it and be ready to defend it in review. Historical `<!-- prose-allow* -->` HTML comments in older docs were markers for a deleted validator; no tool processes them anymore, so do not add new ones. The default answer to a banned term is still to rewrite the sentence.
 
 ## Enforcement
 
-The policy is fully enforced going forward. There is no grandfather list: every violation reported by `scripts/validate-docs-prose.js` is a new defect to fix.
+This is a writing convention applied at authoring and review time; there is no bespoke validator. The Vale configuration (`.vale.ini` + `.vale/styles/DxMessaging/`) covers passive voice, weasel words, hedges, marketing language, and LLM filler when you run Vale locally (`vale docs/ README.md`).
 
-| Layer                                     | What it covers                                            | When it runs                                                                                                                  |
-| ----------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `scripts/validate-docs-prose.js`          | All banned phrases, allow markers, exemptions             | Standalone CLI for ad-hoc runs; same module also called in-process by the consolidated runners below                          |
-| `run-staged-md-pipeline` pre-commit hook  | Runs the prose validator in-process on staged `.md` files | Local pre-commit (consolidated `.md` pipeline that also handles fixers, prettier, markdownlint, ascii, and code-pattern lint) |
-| `run-staged-validators` pre-commit hook   | Runs the prose validator in-process on staged `.cs` files | Local pre-commit (consolidated `.cs` validator runner that also handles ascii and code-pattern lint)                          |
-| `.vale.ini` + `.vale/styles/DxMessaging/` | Passive voice, weasel words, additional style rules       | Local-only until committed and wired into CI                                                                                  |
-
-The custom JS validator is the source of truth. The Vale configuration is additive and currently lives only in working trees; once it is committed and wired into a workflow, this row will move to "CI". File an issue if Vale flags something the JS validator missed so the `RULES` array can absorb the rule first.
-
-An earlier transitional baseline list has been retired; the policy is now fully enforced from a clean slate.
+There is no grandfather list: every banned phrase you encounter in a file you touch is a defect to fix.
 
 ## How to Fix Violations
 
-There is no auto-fix. Each banned phrase is a sign that the sentence around it should be rewritten. The CLI tells you the rule and the suggested replacement strategy:
-
-```bash
-node scripts/validate-docs-prose.js
-```
-
-```text
-docs/install.md:42:5 [marketing/marketing] 'cutting-edge' -- Marketing adjective; replace with a concrete claim. modern, current, or describe the specific feature
-```
-
-To see the per-category counts across the repository:
-
-```bash
-node scripts/validate-docs-prose.js --summary
-```
-
-To run a single rule (useful when you are sweeping one category):
-
-```bash
-node scripts/validate-docs-prose.js --rule marketing
-```
-
-To list every configured rule and its term list:
-
-```bash
-node scripts/validate-docs-prose.js --list-rules
-```
+There is no auto-fix. Each banned phrase is a sign that the sentence around it should be rewritten with a concrete claim or a plain statement.
 
 ### Before / After
 

@@ -17,7 +17,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { normalizeToLf } = require("../lib/quote-parser");
+const { normalizeToLf } = require("../lib/line-endings");
 
 const DOCS_DIR = path.join(__dirname, "..", "..", "docs");
 
@@ -416,11 +416,9 @@ if (require.main === module) {
 // Export functions for testing
 module.exports = {
   isExternalLink,
-  isAnchorOnlyLink,
   docsPathToWikiPage,
   findMarkdownLinks,
   CodeBlockTracker,
-  transformImagePath,
   transformLine,
   transformFile
 };

@@ -54,4 +54,4 @@ jobs:
           fi
 
       - name: Prettier check (JSON / asmdef)
-        run: npm run format:json:check
+        run: npx prettier --check "**/*.{json,asmdef,asmref}"
