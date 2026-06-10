@@ -71,6 +71,20 @@ describe("validate-shared-helper-usage: definition detection", () => {
     expect(detect("const tempDirTracker = () => ({});")).toEqual(["tempDirTracker"]);
   });
 
+  test("detects local definitions of the iterator, workflow-fixture, and walker helpers too", () => {
+    expect(detect("const forEachJob = (lines, cb) => {};")).toEqual(["forEachJob"]);
+    expect(detect("function forEachJobStep(lines, cb) {}")).toEqual(["forEachJobStep"]);
+    expect(detect('const asLines = (text) => text.split("\\n");')).toEqual(["asLines"]);
+    expect(detect("function singleJobLines(id, steps) {}")).toEqual(["singleJobLines"]);
+    expect(detect("function singleJobWorkflow(stepBlocks) {}")).toEqual(["singleJobWorkflow"]);
+    expect(detect("let writeWorkflowFile = function (root, rel, c) {};")).toEqual([
+      "writeWorkflowFile"
+    ]);
+    expect(detect("function listFilesRecursive(dir, predicate) {}")).toEqual([
+      "listFilesRecursive"
+    ]);
+  });
+
   test("does NOT match destructured imports or call sites (only definitions)", () => {
     expect(detect('const { readUtf8 } = require("./lib/repo-files");')).toEqual([]);
     expect(detect('const { parseArgs: parseCliArgs } = require("./lib/cli-options");')).toEqual([]);
@@ -84,12 +98,25 @@ describe("validate-shared-helper-usage: definition detection", () => {
     expect(detect('const { tempDirTracker } = require("../lib/jest-fixtures");')).toEqual([]);
     expect(detect("cleanupDir(tempDir);")).toEqual([]);
     expect(detect('const dir = makeTempDir("label");')).toEqual([]);
+    // The destructured engine/workflow-fixtures imports the migrated suites
+    // use: uses, never re-definitions, so the gate must leave them alone.
+    expect(
+      detect('const { forEachJob, forEachJobStep } = require("./lib/workflow-policy-engine");')
+    ).toEqual([]);
+    expect(
+      detect(
+        'const { singleJobWorkflow, writeWorkflowFile } = require("../lib/workflow-fixtures");'
+      )
+    ).toEqual([]);
+    expect(detect('const content = singleJobWorkflow("unity", steps);')).toEqual([]);
     // A member access such as obj.readUtf8 = ... is not a bare local definition.
     expect(detect("obj.parseArgs = function () {};")).toEqual([]);
     // A longer identifier sharing a prefix must not match.
     expect(detect("function toRepoRelativeKey(a) {}")).toEqual([]);
     expect(detect("const readUtf8Raw = (p) => p;")).toEqual([]);
     expect(detect("function makeTempDirAt(root) {}")).toEqual([]);
+    expect(detect("function asLinesWithMeta(text) {}")).toEqual([]);
+    expect(detect("const singleJobLinesBase = [];")).toEqual([]);
   });
 });
 
@@ -105,6 +132,21 @@ describe("validate-shared-helper-usage: consolidated helper set", () => {
       expect(BANNED_HELPERS).toContain(name);
     }
     expect(SHARED_HOMES.has("scripts/lib/jest-fixtures.js")).toBe(true);
+  });
+
+  test("the iterator and workflow-fixture helpers are banned with their homes registered", () => {
+    for (const name of ["forEachJob", "forEachJobStep"]) {
+      expect(BANNED_HELPERS).toContain(name);
+    }
+    expect(SHARED_HOMES.has("scripts/lib/workflow-policy-engine.js")).toBe(true);
+    for (const name of ["asLines", "singleJobLines", "singleJobWorkflow", "writeWorkflowFile"]) {
+      expect(BANNED_HELPERS).toContain(name);
+    }
+    expect(SHARED_HOMES.has("scripts/lib/workflow-fixtures.js")).toBe(true);
+    // The walker consolidation: the listFilesRecursive NAME is banned outright
+    // (its behavior lives in repo-files' walkFiles).
+    expect(BANNED_HELPERS).toContain("listFilesRecursive");
+    expect(SHARED_HOMES.has("scripts/lib/repo-files.js")).toBe(true);
   });
 });
 

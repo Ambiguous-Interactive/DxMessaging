@@ -4,14 +4,17 @@
 /**
  * @fileoverview Bans duplicated local copies of the consolidated shared helpers.
  *
- * Sessions 037-041 of the JS consolidation moved copy-pasted helpers into
+ * Sessions 037-044 of the JS consolidation moved copy-pasted helpers into
  * shared libraries:
  *
  *   - `readUtf8`, `lineNumberAt`, `toRepoRelative`  -> `scripts/lib/repo-files.js`
  *   - `parseArgs`                                   -> `scripts/lib/cli-options.js`
- *   - `walk` (as `walkFiles`)                       -> `scripts/lib/repo-files.js`
+ *   - `walk`, `listFilesRecursive` (as `walkFiles`) -> `scripts/lib/repo-files.js`
  *   - `withPlatform`, `makeTempDir`, `cleanupDir`,
  *     `makeTempGitRepo`, `tempDirTracker`           -> `scripts/lib/jest-fixtures.js`
+ *   - `forEachJob`, `forEachJobStep`                -> `scripts/lib/workflow-policy-engine.js`
+ *   - `asLines`, `singleJobLines`,
+ *     `singleJobWorkflow`, `writeWorkflowFile`      -> `scripts/lib/workflow-fixtures.js`
  *
  * To keep that consolidation from eroding, this gate fails when a `scripts/**`
  * file defines a local function/const named one of those helpers OUTSIDE its
@@ -30,8 +33,9 @@
  * is.
  *
  * This is the "ban duplicated local helpers" half of the JS size/policy budget
- * gate. The total/per-file LOC budget half is deferred until the large
- * `validate-workflows.js` refactor lands and a stable cleaned baseline exists.
+ * gate. The total/per-file LOC budget half is the sibling gate
+ * `scripts/validate-js-loc-budget.js` (`npm run validate:js-loc-budget`),
+ * pinned to the consolidated baseline these sessions produced.
  */
 
 const path = require("path");
@@ -49,11 +53,18 @@ const BANNED_HELPERS = [
   "toRepoRelative",
   "parseArgs",
   "walk",
+  "listFilesRecursive",
   "withPlatform",
   "makeTempDir",
   "cleanupDir",
   "makeTempGitRepo",
-  "tempDirTracker"
+  "tempDirTracker",
+  "forEachJob",
+  "forEachJobStep",
+  "asLines",
+  "singleJobLines",
+  "singleJobWorkflow",
+  "writeWorkflowFile"
 ];
 
 /**
@@ -63,7 +74,9 @@ const BANNED_HELPERS = [
 const SHARED_HOMES = new Set([
   "scripts/lib/repo-files.js",
   "scripts/lib/cli-options.js",
-  "scripts/lib/jest-fixtures.js"
+  "scripts/lib/jest-fixtures.js",
+  "scripts/lib/workflow-policy-engine.js",
+  "scripts/lib/workflow-fixtures.js"
 ]);
 
 /**
@@ -307,7 +320,7 @@ function classifyFindings(found, allowlist) {
     }
     violations.push(
       `${file}:${line}: local "${helper}" duplicates the shared helper. ` +
-        `Use the shared version (repo-files.js / cli-options.js), or add a documented ALLOWLIST entry.`
+        `Use the shared version (see SHARED_HOMES), or add a documented ALLOWLIST entry.`
     );
   }
 
