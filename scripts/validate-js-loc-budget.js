@@ -64,7 +64,7 @@ const TOTAL_BUDGET = 140600;
 /**
  * Per-file cap for any tracked JS file without a PER_FILE_OVERRIDES entry.
  * The knee of the current size distribution: 14 files sit above it (all
- * pinned below), versus 37 above 1000.
+ * pinned below), versus 36 above 1000.
  * @type {number}
  */
 const PER_FILE_DEFAULT_CAP = 1500;
