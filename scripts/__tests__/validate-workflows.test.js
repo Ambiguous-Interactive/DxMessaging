@@ -2070,18 +2070,14 @@ describe("findChangelogCoverageCheckoutViolations", () => {
     ["bare git diff origin/master", "git diff origin/master...HEAD"],
     ["bare git merge-base origin/main", "git merge-base origin/main HEAD"]
   ])("requires full-history checkout for %s", (_name, coverageCommand) => {
-    const lines = [
-      "jobs:",
-      "  changelog:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("changelog", [
       "      - name: Checkout repository",
       "        uses: actions/checkout@v6",
       "        with:",
       "          persist-credentials: false",
       "      - name: Validate changelog coverage",
       `        run: ${coverageCommand}`
-    ];
+    ]);
 
     const violations = findChangelogCoverageCheckoutViolations("workflow.yml", lines);
 
@@ -2101,11 +2097,7 @@ describe("findChangelogCoverageCheckoutViolations", () => {
     ["unquoted zero", "          fetch-depth: 0"],
     ["quoted zero", '          fetch-depth: "0"']
   ])("allows full-history checkout with %s", (_name, fetchDepthLine) => {
-    const lines = [
-      "jobs:",
-      "  changelog:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("changelog", [
       "      - name: Checkout repository",
       "        uses: actions/checkout@v6",
       "        with:",
@@ -2113,7 +2105,7 @@ describe("findChangelogCoverageCheckoutViolations", () => {
       "          persist-credentials: false",
       "      - name: Validate changelog coverage",
       "        run: pre-commit run validate-changelog-policy --all-files"
-    ];
+    ]);
 
     const violations = findChangelogCoverageCheckoutViolations("workflow.yml", lines);
 
@@ -2121,17 +2113,13 @@ describe("findChangelogCoverageCheckoutViolations", () => {
   });
 
   test("allows shorthand full-history checkout before changelog coverage", () => {
-    const lines = [
-      "jobs:",
-      "  changelog:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("changelog", [
       "      - uses: actions/checkout@v6",
       "        with:",
       "          fetch-depth: 0",
       "      - name: Validate changelog coverage",
       "        run: node scripts/validate-changelog.js --check-coverage"
-    ];
+    ]);
 
     const violations = findChangelogCoverageCheckoutViolations("workflow.yml", lines);
 
@@ -2158,17 +2146,13 @@ describe("findChangelogCoverageCheckoutViolations", () => {
       ]
     ]
   ])("detects changelog coverage in %s", (_name, runStepLines) => {
-    const lines = [
-      "jobs:",
-      "  changelog:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("changelog", [
       "      - name: Checkout repository",
       "        uses: actions/checkout@v6",
       "      - name: Other step",
       "        run: echo before",
       ...runStepLines
-    ];
+    ]);
 
     const violations = findChangelogCoverageCheckoutViolations("workflow.yml", lines);
 
@@ -2177,18 +2161,14 @@ describe("findChangelogCoverageCheckoutViolations", () => {
   });
 
   test("requires the full-history checkout to precede changelog coverage", () => {
-    const lines = [
-      "jobs:",
-      "  changelog:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("changelog", [
       "      - name: Validate changelog coverage",
       "        run: node scripts/validate-changelog.js --check-coverage",
       "      - name: Checkout repository",
       "        uses: actions/checkout@v6",
       "        with:",
       "          fetch-depth: 0"
-    ];
+    ]);
 
     const violations = findChangelogCoverageCheckoutViolations("workflow.yml", lines);
 
@@ -2196,11 +2176,7 @@ describe("findChangelogCoverageCheckoutViolations", () => {
   });
 
   test("uses the most recent checkout before changelog coverage", () => {
-    const lines = [
-      "jobs:",
-      "  changelog:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("changelog", [
       "      - name: Full checkout",
       "        uses: actions/checkout@v6",
       "        with:",
@@ -2209,7 +2185,7 @@ describe("findChangelogCoverageCheckoutViolations", () => {
       "        uses: actions/checkout@v6",
       "      - name: Validate changelog coverage",
       "        run: node scripts/validate-changelog.js --check-coverage"
-    ];
+    ]);
 
     const violations = findChangelogCoverageCheckoutViolations("workflow.yml", lines);
 
@@ -2217,11 +2193,7 @@ describe("findChangelogCoverageCheckoutViolations", () => {
   });
 
   test("shorthand shallow checkout after full checkout invalidates changelog coverage", () => {
-    const lines = [
-      "jobs:",
-      "  changelog:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("changelog", [
       "      - name: Full checkout",
       "        uses: actions/checkout@v6",
       "        with:",
@@ -2229,7 +2201,7 @@ describe("findChangelogCoverageCheckoutViolations", () => {
       "      - uses: actions/checkout@v6",
       "      - name: Validate changelog coverage",
       "        run: node scripts/validate-changelog.js --check-coverage"
-    ];
+    ]);
 
     const violations = findChangelogCoverageCheckoutViolations("workflow.yml", lines);
 
@@ -2353,15 +2325,11 @@ describe("runTextInvokesChangelogCoverage + NPM_SCRIPTS_REQUIRING_GIT_HISTORY (B
 
 describe("findCheckoutCredentialPersistenceViolations", () => {
   test("requires every checkout to declare persist-credentials explicitly", () => {
-    const lines = [
-      "jobs:",
-      "  check:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("check", [
       "      - name: Checkout",
       "        uses: actions/checkout@v6",
       "      - run: npm test"
-    ];
+    ]);
 
     const violations = findCheckoutCredentialPersistenceViolations("workflow.yml", lines);
 
@@ -2371,17 +2339,13 @@ describe("findCheckoutCredentialPersistenceViolations", () => {
   });
 
   test("accepts checkout credential opt-out for read-only jobs", () => {
-    const lines = [
-      "jobs:",
-      "  check:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("check", [
       "      - name: Checkout",
       "        uses: actions/checkout@v6",
       "        with:",
       "          persist-credentials: false",
       "      - run: npm test"
-    ];
+    ]);
 
     const violations = findCheckoutCredentialPersistenceViolations("workflow.yml", lines);
 
@@ -2389,11 +2353,7 @@ describe("findCheckoutCredentialPersistenceViolations", () => {
   });
 
   test("rejects persisted checkout credentials even before a local auto-commit action", () => {
-    const lines = [
-      "jobs:",
-      "  autofix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("autofix", [
       "      - name: Checkout",
       "        uses: actions/checkout@v6",
       "        with:",
@@ -2401,7 +2361,7 @@ describe("findCheckoutCredentialPersistenceViolations", () => {
       "      - name: Commit fixes",
       "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
       "        uses: stefanzweifel/git-auto-commit-action@v7"
-    ];
+    ]);
 
     const violations = findCheckoutCredentialPersistenceViolations("workflow.yml", lines);
 
@@ -2412,17 +2372,13 @@ describe("findCheckoutCredentialPersistenceViolations", () => {
   test.each(["true", "${{ inputs.persist_credentials }}"])(
     "rejects persist-credentials: %s without an allowed consumer",
     (persistValue) => {
-      const lines = [
-        "jobs:",
-        "  check:",
-        "    runs-on: ubuntu-latest",
-        "    steps:",
+      const lines = singleJobLines("check", [
         "      - name: Checkout",
         "        uses: actions/checkout@v6",
         "        with:",
         `          persist-credentials: ${persistValue}`,
         "      - run: npm test"
-      ];
+      ]);
 
       const violations = findCheckoutCredentialPersistenceViolations("workflow.yml", lines);
 
@@ -2433,19 +2389,29 @@ describe("findCheckoutCredentialPersistenceViolations", () => {
 });
 
 describe("findTokenizedGitRemoteCredentialViolations", () => {
+  const guardedConfigureStep = [
+    "      - name: Configure push credentials",
+    "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+    "        env:",
+    "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+    '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"'
+  ];
+
+  const guardedCommitFixesStep = [
+    "      - name: Commit fixes",
+    "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
+    "        uses: stefanzweifel/git-auto-commit-action@v7"
+  ];
+
   test("rejects tokenized remote setup that is not adjacent to a guarded auto-commit", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("update", [
       "      - name: Configure push credentials too early",
       "        env:",
       "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
       '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
       "      - run: npm test",
       "      - run: git push origin HEAD"
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2454,18 +2420,14 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("rejects tokenized remote setup split across shell continuations", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("update", [
       "      - name: Configure push credentials too early",
       "        env:",
       "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
       "        run: |",
       "          git remote set-url origin \\",
       '            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"'
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2474,23 +2436,13 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("accepts tokenized remote setup immediately before matching auto-commit action", () => {
-    const lines = [
-      "jobs:",
-      "  autofix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Configure push credentials",
-      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
-      "        env:",
-      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
-      '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
-      "      - name: Commit fixes",
-      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
-      "        uses: stefanzweifel/git-auto-commit-action@v7",
+    const lines = singleJobLines("autofix", [
+      ...guardedConfigureStep,
+      ...guardedCommitFixesStep,
       "      - name: Clear push credentials",
       "        if: ${{ always() && steps.changes.outputs.has_changes == 'true' }}",
       '        run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"'
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2498,11 +2450,7 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("accepts tokenized auto-commit handoff split across shell continuations", () => {
-    const lines = [
-      "jobs:",
-      "  autofix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("autofix", [
       "      - name: Configure push credentials",
       "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
       "        env:",
@@ -2510,15 +2458,13 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
       "        run: |",
       "          git remote set-url origin \\",
       '            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
-      "      - name: Commit fixes",
-      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
-      "        uses: stefanzweifel/git-auto-commit-action@v7",
+      ...guardedCommitFixesStep,
       "      - name: Clear push credentials",
       "        if: ${{ always() && steps.changes.outputs.has_changes == 'true' }}",
       "        run: |",
       "          git remote set-url origin \\",
       '            "https://github.com/${GITHUB_REPOSITORY}.git"'
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2526,21 +2472,11 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("rejects tokenized auto-commit handoff without immediate cleanup", () => {
-    const lines = [
-      "jobs:",
-      "  autofix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Configure push credentials",
-      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
-      "        env:",
-      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
-      '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
-      "      - name: Commit fixes",
-      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
-      "        uses: stefanzweifel/git-auto-commit-action@v7",
+    const lines = singleJobLines("autofix", [
+      ...guardedConfigureStep,
+      ...guardedCommitFixesStep,
       "      - run: git fetch origin HEAD"
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2549,20 +2485,14 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("rejects tokenized remote setup before auto-commit when guards differ", () => {
-    const lines = [
-      "jobs:",
-      "  autofix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("autofix", [
       "      - name: Configure push credentials",
       "        if: ${{ github.event_name == 'pull_request' }}",
       "        env:",
       "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
       '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
-      "      - name: Commit fixes",
-      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
-      "        uses: stefanzweifel/git-auto-commit-action@v7"
-    ];
+      ...guardedCommitFixesStep
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2571,18 +2501,14 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("rejects tokenized remote setup before auto-commit when the handoff is unguarded", () => {
-    const lines = [
-      "jobs:",
-      "  autofix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("autofix", [
       "      - name: Configure push credentials",
       "        env:",
       "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
       '        run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
       "      - name: Commit fixes",
       "        uses: stefanzweifel/git-auto-commit-action@v7"
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2591,11 +2517,7 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("rejects auto-commit handoff blocks that also push manually", () => {
-    const lines = [
-      "jobs:",
-      "  autofix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("autofix", [
       "      - name: Configure push credentials",
       "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
       "        env:",
@@ -2603,10 +2525,8 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
       "        run: |",
       '          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
       "          git push origin HEAD",
-      "      - name: Commit fixes",
-      "        if: ${{ steps.changes.outputs.has_changes == 'true' }}",
-      "        uses: stefanzweifel/git-auto-commit-action@v7"
-    ];
+      ...guardedCommitFixesStep
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2615,17 +2535,13 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("rejects manual tokenized remote setup even when the same run block pushes", () => {
-    const lines = [
-      "jobs:",
-      "  fork_fix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("fork_fix", [
       "      - name: Create bot branch and push",
       "        if: steps.changes.outputs.has_changes == 'true'",
       "        run: |",
       '          git remote add upstream "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"',
       "          git push upstream bot/fix --force"
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2634,18 +2550,14 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("rejects tokenized remote setup in folded run scalars", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("update", [
       "      - name: Configure push credentials too early",
       "        env:",
       "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
       "        run: >",
       "          git remote set-url origin",
       '          "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"'
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2658,14 +2570,10 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
     'git fetch "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD',
     'git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD'
   ])("rejects tokenized git command form: %s", (command) => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("update", [
       "      - name: Tokenized git command",
       `        run: ${command}`
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2673,11 +2581,7 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("accepts command-scoped extraheader credentials for manual pushes", () => {
-    const lines = [
-      "jobs:",
-      "  fork_fix:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("fork_fix", [
       "      - name: Create bot branch and push",
       "        if: steps.changes.outputs.has_changes == 'true'",
       "        env:",
@@ -2686,7 +2590,7 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
       "          auth_header=\"$(printf 'x-access-token:%s' \"${GH_TOKEN}\" | base64 | tr -d '\\n')\"",
       '          git remote add upstream "https://github.com/${GITHUB_REPOSITORY}.git"',
       '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push upstream bot/fix --force'
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2694,15 +2598,11 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("ignores documentation text that mentions tokenized remotes", () => {
-    const lines = [
-      "jobs:",
-      "  docs:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("docs", [
       "      - name: Explain remote policy",
       "        run: |",
       '          echo "Do not run git remote set-url origin https://x-access-token:TOKEN@example.invalid/repo.git"'
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2710,15 +2610,11 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("ignores quoted documentation text with shell separators", () => {
-    const lines = [
-      "jobs:",
-      "  docs:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("docs", [
       "      - name: Explain remote policy",
       "        run: |",
       '          echo "example; git remote set-url origin https://x-access-token:TOKEN@example.invalid/repo.git"'
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2726,17 +2622,13 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
   });
 
   test("ignores heredoc content that mentions tokenized remotes", () => {
-    const lines = [
-      "jobs:",
-      "  docs:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("docs", [
       "      - name: Write docs",
       "        run: |",
       "          cat <<'EOF' > notes.txt",
       "          git remote set-url origin https://x-access-token:TOKEN@example.invalid/repo.git",
       "          EOF"
-    ];
+    ]);
 
     const violations = findTokenizedGitRemoteCredentialViolations("workflow.yml", lines);
 
@@ -2746,16 +2638,12 @@ describe("findTokenizedGitRemoteCredentialViolations", () => {
 
 describe("findPersistentGitExtraheaderCredentialViolations", () => {
   test("rejects persisted Git extraheader credentials", () => {
-    const lines = [
-      "jobs:",
-      "  push:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("push", [
       "      - name: Persist auth header",
       "        run: |",
       '          git config http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
       "          git push origin HEAD"
-    ];
+    ]);
 
     const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
 
@@ -2764,17 +2652,13 @@ describe("findPersistentGitExtraheaderCredentialViolations", () => {
   });
 
   test("rejects persisted Git extraheader credentials split across shell continuations", () => {
-    const lines = [
-      "jobs:",
-      "  push:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("push", [
       "      - name: Persist auth header",
       "        run: |",
       "          git config \\",
       '            http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
       "          git push origin HEAD"
-    ];
+    ]);
 
     const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
 
@@ -2783,17 +2667,13 @@ describe("findPersistentGitExtraheaderCredentialViolations", () => {
   });
 
   test("rejects persisted Git extraheader credentials in folded run scalars", () => {
-    const lines = [
-      "jobs:",
-      "  push:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("push", [
       "      - name: Persist auth header",
       "        run: >",
       "          git config",
       '          http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
       "          && git push origin HEAD"
-    ];
+    ]);
 
     const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
 
@@ -2801,18 +2681,18 @@ describe("findPersistentGitExtraheaderCredentialViolations", () => {
   });
 
   test("rejects persisted Git extraheader credentials split across PowerShell continuations", () => {
-    const lines = [
-      "jobs:",
-      "  push:",
-      "    runs-on: windows-latest",
-      "    steps:",
-      "      - name: Persist auth header",
-      "        shell: pwsh",
-      "        run: |",
-      "          git config `",
-      '            http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
-      "          git push origin HEAD"
-    ];
+    const lines = singleJobLines(
+      "push",
+      [
+        "      - name: Persist auth header",
+        "        shell: pwsh",
+        "        run: |",
+        "          git config `",
+        '            http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth_header}"',
+        "          git push origin HEAD"
+      ],
+      { runsOn: "windows-latest" }
+    );
 
     const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
 
@@ -2820,15 +2700,11 @@ describe("findPersistentGitExtraheaderCredentialViolations", () => {
   });
 
   test("accepts command-scoped Git extraheader credentials", () => {
-    const lines = [
-      "jobs:",
-      "  push:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("push", [
       "      - name: Push with command-scoped auth",
       "        run: |",
       '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin HEAD'
-    ];
+    ]);
 
     const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
 
@@ -2836,15 +2712,11 @@ describe("findPersistentGitExtraheaderCredentialViolations", () => {
   });
 
   test("ignores documentation text that mentions persistent extraheaders", () => {
-    const lines = [
-      "jobs:",
-      "  docs:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("docs", [
       "      - name: Explain header policy",
       "        run: |",
       '          echo "Do not run git config http.https://github.com/.extraheader AUTHORIZATION"'
-    ];
+    ]);
 
     const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
 
@@ -2852,15 +2724,11 @@ describe("findPersistentGitExtraheaderCredentialViolations", () => {
   });
 
   test("ignores quoted documentation text with separators that mentions extraheaders", () => {
-    const lines = [
-      "jobs:",
-      "  docs:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("docs", [
       "      - name: Explain header policy",
       "        run: |",
       '          echo "example; git config http.https://github.com/.extraheader AUTHORIZATION"'
-    ];
+    ]);
 
     const violations = findPersistentGitExtraheaderCredentialViolations("workflow.yml", lines);
 
@@ -2869,12 +2737,25 @@ describe("findPersistentGitExtraheaderCredentialViolations", () => {
 });
 
 describe("GitHub App auto-commit workflow policy", () => {
+  const appTokenStep = [
+    "      - name: Generate auto-commit GitHub App token",
+    "        id: app-token",
+    "        uses: actions/create-github-app-token@v2"
+  ];
+
+  const commitAndPushFreshnessPreamble = [
+    "      - name: Commit and push",
+    "        run: |",
+    '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
+    "            fetch --no-tags --depth=1 origin \\",
+    '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
+    '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
+    '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
+    "          git commit -m generated"
+  ];
+
   test("rejects AUTO_COMMIT_APP_* checks that silently set has-app=false", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("update", [
       "      - name: Check for the auto-commit GitHub App credentials",
       "        id: check-autocommit-app",
       "        env:",
@@ -2886,7 +2767,7 @@ describe("GitHub App auto-commit workflow policy", () => {
       "          else",
       '            echo "has-app=false" >> "${GITHUB_OUTPUT}"',
       "          fi"
-    ];
+    ]);
 
     const violations = findAutoCommitAppCredentialWarningViolations("workflow.yml", lines);
 
@@ -2895,11 +2776,7 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("accepts AUTO_COMMIT_APP_* checks that warn before setting has-app=false", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const lines = singleJobLines("update", [
       "      - name: Check for the auto-commit GitHub App credentials",
       "        id: check-autocommit-app",
       "        env:",
@@ -2912,7 +2789,7 @@ describe("GitHub App auto-commit workflow policy", () => {
       '            echo "::warning::AUTO_COMMIT_APP_* secrets are not set; skipping auto-commit."',
       '            echo "has-app=false" >> "${GITHUB_OUTPUT}"',
       "          fi"
-    ];
+    ]);
 
     const violations = findAutoCommitAppCredentialWarningViolations("workflow.yml", lines);
 
@@ -2920,17 +2797,11 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("rejects GitHub App token pushes through git-auto-commit-action", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
       "      - name: Commit generated file",
       "        uses: stefanzweifel/git-auto-commit-action@v7"
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -2939,19 +2810,13 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("rejects GitHub App token pushes without branch freshness diagnostics", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
       "      - name: Commit and push",
       "        run: |",
       "          git commit -m generated",
       '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin "HEAD:${GITHUB_REF_NAME}"'
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -2960,14 +2825,8 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("rejects GitHub App token pushes that do not pass command-scoped credentials", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
       "      - name: Check default branch is still current",
       "        run: |",
       '          git fetch origin "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
@@ -2977,7 +2836,7 @@ describe("GitHub App auto-commit workflow policy", () => {
       "        run: |",
       "          git commit -m generated",
       '          git push origin "HEAD:${GITHUB_REF_NAME}"'
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -2986,24 +2845,11 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("rejects unauthenticated pushes even when the same step has an authenticated fetch", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
-      "      - name: Commit and push",
-      "        run: |",
-      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
-      "            fetch --no-tags --depth=1 origin \\",
-      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
-      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
-      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
-      "          git commit -m generated",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
+      ...commitAndPushFreshnessPreamble,
       '          git push origin "HEAD:${GITHUB_REF_NAME}"'
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3012,24 +2858,11 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("rejects extraheader -c arguments placed after the push subcommand", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
-      "      - name: Commit and push",
-      "        run: |",
-      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
-      "            fetch --no-tags --depth=1 origin \\",
-      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
-      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
-      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
-      "          git commit -m generated",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
+      ...commitAndPushFreshnessPreamble,
       '          git push -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" origin "HEAD:${GITHUB_REF_NAME}"'
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3042,26 +2875,13 @@ describe("GitHub App auto-commit workflow policy", () => {
     ['if { git push origin "HEAD:${default_branch}"; }; then'],
     ['if (git push origin "HEAD:${default_branch}"); then']
   ])("rejects shell-control-prefixed pushes without command-scoped credentials: %s", (pushLine) => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
-      "      - name: Commit and push",
-      "        run: |",
-      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
-      "            fetch --no-tags --depth=1 origin \\",
-      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
-      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
-      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
-      "          git commit -m generated",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
+      ...commitAndPushFreshnessPreamble,
       `          ${pushLine}`,
       "            exit 0",
       "          fi"
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3083,24 +2903,11 @@ describe("GitHub App auto-commit workflow policy", () => {
   ])(
     "rejects equivalent current-head App-token pushes without command-scoped credentials: %s",
     (pushCommand) => {
-      const lines = [
-        "jobs:",
-        "  update:",
-        "    runs-on: ubuntu-latest",
-        "    steps:",
-        "      - name: Generate auto-commit GitHub App token",
-        "        id: app-token",
-        "        uses: actions/create-github-app-token@v2",
-        "      - name: Commit and push",
-        "        run: |",
-        '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
-        "            fetch --no-tags --depth=1 origin \\",
-        '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
-        '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
-        '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
-        "          git commit -m generated",
+      const lines = singleJobLines("update", [
+        ...appTokenStep,
+        ...commitAndPushFreshnessPreamble,
         `          ${pushCommand}`
-      ];
+      ]);
 
       const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3110,18 +2917,12 @@ describe("GitHub App auto-commit workflow policy", () => {
   );
 
   test("rejects any GitHub App token git push without command-scoped credentials", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
       "      - name: Push release tag",
       "        run: |",
       "          git push origin refs/tags/v1.2.3"
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3130,19 +2931,13 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("accepts command-scoped non-branch App-token pushes without freshness diagnostics", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
       "      - name: Push release tag",
       "        run: |",
       '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
       "            push origin refs/tags/v1.2.3"
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3150,25 +2945,12 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("accepts race-aware command-scoped GitHub App token pushes", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
-      "      - name: Commit and push",
-      "        run: |",
-      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
-      "            fetch --no-tags --depth=1 origin \\",
-      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
-      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
-      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
-      "          git commit -m generated",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
+      ...commitAndPushFreshnessPreamble,
       '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
       '            push origin "HEAD:${GITHUB_REF_NAME}"'
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3176,27 +2958,14 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("accepts shell-control-prefixed pushes with command-scoped credentials", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
-      "      - name: Commit and push",
-      "        run: |",
-      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
-      "            fetch --no-tags --depth=1 origin \\",
-      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
-      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
-      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
-      "          git commit -m generated",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
+      ...commitAndPushFreshnessPreamble,
       '          if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
       '            push origin "HEAD:${GITHUB_REF_NAME}"; then',
       "            exit 0",
       "          fi"
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3226,24 +2995,11 @@ describe("GitHub App auto-commit workflow policy", () => {
       'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push origin HEAD'
     ]
   ])("accepts equivalent command-scoped current-head App-token pushes: %s", (pushCommand) => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
-      "      - name: Commit and push",
-      "        run: |",
-      '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
-      "            fetch --no-tags --depth=1 origin \\",
-      '            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"',
-      '          latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"',
-      '          echo "::warning::Default branch advanced to ${latest_sha}; regenerating generated output."',
-      "          git commit -m generated",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
+      ...commitAndPushFreshnessPreamble,
       `          ${pushCommand}`
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3251,14 +3007,8 @@ describe("GitHub App auto-commit workflow policy", () => {
   });
 
   test("accepts default-branch variable freshness diagnostics", () => {
-    const lines = [
-      "jobs:",
-      "  update:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - name: Generate auto-commit GitHub App token",
-      "        id: app-token",
-      "        uses: actions/create-github-app-token@v2",
+    const lines = singleJobLines("update", [
+      ...appTokenStep,
       "      - name: Commit and push",
       "        run: |",
       '          default_branch="${{ github.event.repository.default_branch }}"',
@@ -3270,7 +3020,7 @@ describe("GitHub App auto-commit workflow policy", () => {
       "          git commit -m generated",
       '          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \\',
       '            push origin "HEAD:${default_branch}"'
-    ];
+    ]);
 
     const violations = findGitHubAppAutoCommitRobustnessViolations("workflow.yml", lines);
 
@@ -3289,14 +3039,9 @@ describe("findSelfHostedRunnerPreflightViolations (Bug 3)", () => {
   ];
 
   test("flags self-hosted job that has no preflight dependency", () => {
-    const lines = [
-      "jobs:",
-      "  unity-tests:",
-      "    runs-on: [self-hosted, Windows, RAM-64GB]",
-      "    steps:",
-      "      - name: Test",
-      "        run: echo test"
-    ];
+    const lines = singleJobLines("unity-tests", ["      - name: Test", "        run: echo test"], {
+      runsOn: "[self-hosted, Windows, RAM-64GB]"
+    });
 
     const violations = findSelfHostedRunnerPreflightViolations("workflow.yml", lines);
     expect(violations).toHaveLength(1);
@@ -3349,26 +3094,14 @@ describe("findSelfHostedRunnerPreflightViolations (Bug 3)", () => {
   });
 
   test("ignores jobs that target ubuntu-latest (not self-hosted)", () => {
-    const lines = [
-      "jobs:",
-      "  ubuntu-job:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: echo hi"
-    ];
+    const lines = singleJobLines("ubuntu-job", ["      - run: echo hi"]);
 
     const violations = findSelfHostedRunnerPreflightViolations("workflow.yml", lines);
     expect(violations).toHaveLength(0);
   });
 
   test("does not require the preflight job to gate itself", () => {
-    const lines = [
-      "jobs:",
-      "  runner-preflight:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      ...runnerPreflightStep
-    ];
+    const lines = singleJobLines("runner-preflight", runnerPreflightStep);
 
     const violations = findSelfHostedRunnerPreflightViolations("workflow.yml", lines);
     expect(violations).toHaveLength(0);
@@ -3416,13 +3149,7 @@ describe("findSelfHostedRunnerPreflightViolations (Bug 3)", () => {
     ["scalar ubuntu-latest", "ubuntu-latest", false],
     ["scalar self-hosted", "self-hosted", true]
   ])("extractStaticJobLabels: %s", (_name, runsOnText, expectedHasSelfHosted) => {
-    const lines = [
-      "jobs:",
-      "  job1:",
-      `    runs-on: ${runsOnText}`,
-      "    steps:",
-      "      - run: echo hi"
-    ];
+    const lines = singleJobLines("job1", ["      - run: echo hi"], { runsOn: runsOnText });
     const { extractJobs } = require("../validate-workflows.js");
     const jobs = extractJobs(lines);
     expect(jobs).toHaveLength(1);
@@ -3438,24 +3165,14 @@ describe("findSelfHostedRunnerPreflightViolations (Bug 3)", () => {
     const { extractJobs } = require("../validate-workflows.js");
 
     // (1) Canonical positive: hosted runner + actions/runners marker.
-    const matching = [
-      "jobs:",
-      "  runner-preflight:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const matching = singleJobLines("runner-preflight", [
       "      - run: gh api repos/${GITHUB_REPOSITORY}/actions/runners"
-    ];
+    ]);
     let jobs = extractJobs(matching);
     expect(jobIsRunnerAccessPreflight(matching, jobs[0])).toBe(true);
 
     // (2) No marker -> not a preflight (name alone is insufficient).
-    const nameOnly = [
-      "jobs:",
-      "  runner-preflight:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
-      "      - run: echo unrelated"
-    ];
+    const nameOnly = singleJobLines("runner-preflight", ["      - run: echo unrelated"]);
     jobs = extractJobs(nameOnly);
     expect(jobIsRunnerAccessPreflight(nameOnly, jobs[0])).toBe(false);
 
@@ -3463,50 +3180,38 @@ describe("findSelfHostedRunnerPreflightViolations (Bug 3)", () => {
     // qualifies under the structural-only rule (H1). The previous
     // implementation gated on /preflight/i which overfit the name; this
     // assertion locks in that the name is no longer consulted.
-    const markerNoPreflightName = [
-      "jobs:",
-      "  setup:",
-      "    runs-on: ubuntu-latest",
-      "    steps:",
+    const markerNoPreflightName = singleJobLines("setup", [
       "      - run: gh api repos/${GITHUB_REPOSITORY}/actions/runners"
-    ];
+    ]);
     jobs = extractJobs(markerNoPreflightName);
     expect(jobIsRunnerAccessPreflight(markerNoPreflightName, jobs[0])).toBe(true);
 
     // (4) Marker on a SELF-HOSTED job does NOT qualify -- a self-hosted
     // job cannot gate self-hosted access. The whole point of the
     // preflight is to surface a failure BEFORE the self-hosted dispatch.
-    const markerOnSelfHosted = [
-      "jobs:",
-      "  bad:",
-      "    runs-on: [self-hosted, Windows, RAM-64GB]",
-      "    steps:",
-      "      - run: gh api repos/${GITHUB_REPOSITORY}/actions/runners"
-    ];
+    const markerOnSelfHosted = singleJobLines(
+      "bad",
+      ["      - run: gh api repos/${GITHUB_REPOSITORY}/actions/runners"],
+      { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+    );
     jobs = extractJobs(markerOnSelfHosted);
     expect(jobIsRunnerAccessPreflight(markerOnSelfHosted, jobs[0])).toBe(false);
 
     // (5) Marker on a hosted runner with a non-canonical name +
     // org-scoped endpoint also qualifies. This is the actual shape
     // after the runner-preflight rewrite (org-first, repo-fallback).
-    const orgScopedEndpoint = [
-      "jobs:",
-      "  runner-access-probe:",
-      "    runs-on: ubuntu-22.04",
-      "    steps:",
-      "      - run: gh api orgs/${GITHUB_REPOSITORY_OWNER}/actions/runners"
-    ];
+    const orgScopedEndpoint = singleJobLines(
+      "runner-access-probe",
+      ["      - run: gh api orgs/${GITHUB_REPOSITORY_OWNER}/actions/runners"],
+      { runsOn: "ubuntu-22.04" }
+    );
     jobs = extractJobs(orgScopedEndpoint);
     expect(jobIsRunnerAccessPreflight(orgScopedEndpoint, jobs[0])).toBe(true);
 
     // (6) Other hosted-runner label families also qualify (windows-latest, macos-latest).
-    const onWindows = [
-      "jobs:",
-      "  probe:",
-      "    runs-on: windows-latest",
-      "    steps:",
-      "      - run: gh api orgs/foo/actions/runners"
-    ];
+    const onWindows = singleJobLines("probe", ["      - run: gh api orgs/foo/actions/runners"], {
+      runsOn: "windows-latest"
+    });
     jobs = extractJobs(onWindows);
     expect(jobIsRunnerAccessPreflight(onWindows, jobs[0])).toBe(true);
   });
