@@ -3248,8 +3248,7 @@ describe("validateWorkflow policy integration", () => {
   test("reports ignored path filters and unsafe lockfile install policy", () => {
     const tempDir = makeTempDir("validate-workflows-policy");
     try {
-      const workflowPath = path.join(tempDir, "policy-test.yml");
-      const workflowContent = [
+      const workflowPath = writeWorkflowFile(tempDir, "policy-test.yml", [
         "name: Policy Test",
         "on:",
         "  pull_request:",
@@ -3265,9 +3264,7 @@ describe("validateWorkflow policy integration", () => {
         "            exit 1",
         "          fi",
         "          npm ci"
-      ].join("\n");
-
-      fs.writeFileSync(workflowPath, workflowContent, "utf8");
+      ]);
       const isIgnoredPathMock = (_repoRoot, candidatePath) => candidatePath === "package-lock.json";
       const violations = validateWorkflow(workflowPath, {
         repoRoot: tempDir,
@@ -3292,27 +3289,15 @@ describe("validateWorkflow policy integration", () => {
   test("reports workflow line-length violations using repo yamllint ceiling", () => {
     const tempDir = makeTempDir("validate-workflows-line-length");
     try {
-      const workflowDir = path.join(tempDir, ".github", "workflows");
-      fs.mkdirSync(workflowDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(tempDir, ".yamllint.yaml"),
-        ["rules:", "  line-length:", "    max: 40"].join("\n"),
-        "utf8"
-      );
-
-      const workflowPath = path.join(workflowDir, "line-length.yml");
-      fs.writeFileSync(
-        workflowPath,
-        [
-          "name: Line Length",
-          "jobs:",
-          "  lint:",
-          "    runs-on: ubuntu-latest",
-          "    steps:",
-          "      - run: echo this workflow line is intentionally longer than forty chars"
-        ].join("\n"),
-        "utf8"
-      );
+      writeWorkflowFile(tempDir, ".yamllint.yaml", ["rules:", "  line-length:", "    max: 40"]);
+      const workflowPath = writeWorkflowFile(tempDir, ".github/workflows/line-length.yml", [
+        "name: Line Length",
+        "jobs:",
+        "  lint:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - run: echo this workflow line is intentionally longer than forty chars"
+      ]);
 
       const violations = validateWorkflow(workflowPath, {
         repoRoot: tempDir,
@@ -3334,18 +3319,13 @@ describe("validateWorkflow policy integration", () => {
   test("surfaces ignore policy evaluation failures as validation errors", () => {
     const tempDir = makeTempDir("validate-workflows-policy-error");
     try {
-      const workflowPath = path.join(tempDir, "policy-error-test.yml");
-      fs.writeFileSync(
-        workflowPath,
-        [
-          "name: Policy Error Test",
-          "on:",
-          "  pull_request:",
-          "    paths:",
-          "      - package-lock.json"
-        ].join("\n"),
-        "utf8"
-      );
+      const workflowPath = writeWorkflowFile(tempDir, "policy-error-test.yml", [
+        "name: Policy Error Test",
+        "on:",
+        "  pull_request:",
+        "    paths:",
+        "      - package-lock.json"
+      ]);
 
       const violations = validateWorkflow(workflowPath, {
         repoRoot: tempDir,
@@ -3367,22 +3347,14 @@ describe("validateWorkflow policy integration", () => {
   test("uses provided repoRoot when reporting violation file paths", () => {
     const tempDir = makeTempDir("validate-workflows-repo-root");
     try {
-      const workflowDir = path.join(tempDir, ".github", "workflows");
-      fs.mkdirSync(workflowDir, { recursive: true });
-
-      const workflowPath = path.join(workflowDir, "relative-path.yml");
-      fs.writeFileSync(
-        workflowPath,
-        [
-          "name: Relative Path",
-          "jobs:",
-          "  lint:",
-          "    runs-on: ubuntu-latest",
-          "    steps:",
-          "      - run: git add --renormalize -- '*.md' '*.json'"
-        ].join("\n"),
-        "utf8"
-      );
+      const workflowPath = writeWorkflowFile(tempDir, ".github/workflows/relative-path.yml", [
+        "name: Relative Path",
+        "jobs:",
+        "  lint:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - run: git add --renormalize -- '*.md' '*.json'"
+      ]);
 
       const violations = validateWorkflow(workflowPath, {
         repoRoot: tempDir,
@@ -3594,122 +3566,98 @@ describe("forbidPlainShellBashOnSelfHostedWindows", () => {
   test.each([
     {
       name: "flags shell: bash on self-hosted Windows step",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: diagnostics",
-        "        shell: bash",
-        "        run: echo hello"
-      ],
+      lines: singleJobLines(
+        "unity",
+        ["      - name: diagnostics", "        shell: bash", "        run: echo hello"],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 1
     },
     {
       name: "flags unspecified shell on self-hosted Windows step",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: diagnostics",
-        "        run: echo hello"
-      ],
+      lines: singleJobLines("unity", ["      - name: diagnostics", "        run: echo hello"], {
+        runsOn: "[self-hosted, Windows, RAM-64GB]"
+      }),
       expectedViolations: 1
     },
     {
       name: "allows shell: pwsh on self-hosted Windows step",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: diagnostics",
-        "        shell: pwsh",
-        "        run: Write-Output 'hello'"
-      ],
+      lines: singleJobLines(
+        "unity",
+        ["      - name: diagnostics", "        shell: pwsh", "        run: Write-Output 'hello'"],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 0
     },
     {
       name: "allows uses: composite action on self-hosted Windows step",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: diagnostics",
-        "        uses: ./.github/actions/print-self-hosted-runner-diagnostics"
-      ],
+      lines: singleJobLines(
+        "unity",
+        [
+          "      - name: diagnostics",
+          "        uses: ./.github/actions/print-self-hosted-runner-diagnostics"
+        ],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 0
     },
     {
       name: "allows job defaults.run.shell pwsh on self-hosted Windows job",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    defaults:",
-        "      run:",
-        "        shell: pwsh",
-        "    steps:",
-        "      - name: diagnostics",
-        "        run: Write-Output 'hello'"
-      ],
+      lines: singleJobLines(
+        "unity",
+        ["      - name: diagnostics", "        run: Write-Output 'hello'"],
+        {
+          runsOn: "[self-hosted, Windows, RAM-64GB]",
+          jobKeys: ["    defaults:", "      run:", "        shell: pwsh"]
+        }
+      ),
       expectedViolations: 0
     },
     {
       name: "does not enforce policy on Linux self-hosted job",
-      lines: [
-        "jobs:",
-        "  linux-job:",
-        "    runs-on: [self-hosted, Linux, X64, RAM-64GB]",
-        "    steps:",
-        "      - name: diagnostics",
-        "        shell: bash",
-        "        run: echo hello"
-      ],
+      lines: singleJobLines(
+        "linux-job",
+        ["      - name: diagnostics", "        shell: bash", "        run: echo hello"],
+        { runsOn: "[self-hosted, Linux, X64, RAM-64GB]" }
+      ),
       expectedViolations: 0
     },
     {
       name: "does not enforce policy on hosted ubuntu job",
-      lines: [
-        "jobs:",
-        "  ubuntu-job:",
-        "    runs-on: ubuntu-latest",
-        "    steps:",
-        "      - name: diagnostics",
-        "        shell: bash",
-        "        run: echo hello"
-      ],
+      lines: singleJobLines(
+        "ubuntu-job",
+        ["      - name: diagnostics", "        shell: bash", "        run: echo hello"],
+        { runsOn: "ubuntu-latest" }
+      ),
       expectedViolations: 0
     },
     {
       name: "flags multiple offending steps in one job",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: a",
-        "        shell: bash",
-        "        run: echo a",
-        "      - name: b",
-        "        shell: bash",
-        "        run: echo b"
-      ],
+      lines: singleJobLines(
+        "unity",
+        [
+          "      - name: a",
+          "        shell: bash",
+          "        run: echo a",
+          "      - name: b",
+          "        shell: bash",
+          "        run: echo b"
+        ],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 2
     },
     {
       name: "allows explicit Git Bash absolute path shell",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: needs-posix",
-        "        shell: \"'C:\\\\Program Files\\\\Git\\\\bin\\\\bash.EXE' --noprofile --norc -eo pipefail {0}\"",
-        "        run: echo hello"
-      ],
+      lines: singleJobLines(
+        "unity",
+        [
+          "      - name: needs-posix",
+          "        shell: \"'C:\\\\Program Files\\\\Git\\\\bin\\\\bash.EXE' --noprofile --norc -eo pipefail {0}\"",
+          "        run: echo hello"
+        ],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 0
     },
     {
@@ -3732,18 +3680,10 @@ describe("forbidPlainShellBashOnSelfHostedWindows", () => {
       // workflow-defaults consultation is observable from the test
       // matrix.
       name: "flags workflow-scope defaults.run.shell: bash on self-hosted Windows step",
-      lines: [
-        "defaults:",
-        "  run:",
-        "    shell: bash",
-        "",
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: diagnostics",
-        "        run: echo hello"
-      ],
+      lines: singleJobLines("unity", ["      - name: diagnostics", "        run: echo hello"], {
+        runsOn: "[self-hosted, Windows, RAM-64GB]",
+        header: ["defaults:", "  run:", "    shell: bash", ""]
+      }),
       expectedViolations: 1,
       expectedMessageMatch: /resolved via workflow defaults/
     },
@@ -3755,19 +3695,14 @@ describe("forbidPlainShellBashOnSelfHostedWindows", () => {
       // precedence (e.g. workflowDefaultsShell preferred over stepShell),
       // this fixture will start emitting a violation.
       name: "step-level shell: pwsh overrides workflow-defaults shell: bash (no violation)",
-      lines: [
-        "defaults:",
-        "  run:",
-        "    shell: bash",
-        "",
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: diagnostics",
-        "        shell: pwsh",
-        "        run: Write-Output 'hello'"
-      ],
+      lines: singleJobLines(
+        "unity",
+        ["      - name: diagnostics", "        shell: pwsh", "        run: Write-Output 'hello'"],
+        {
+          runsOn: "[self-hosted, Windows, RAM-64GB]",
+          header: ["defaults:", "  run:", "    shell: bash", ""]
+        }
+      ),
       expectedViolations: 0
     },
     {
@@ -3776,15 +3711,11 @@ describe("forbidPlainShellBashOnSelfHostedWindows", () => {
       // (not workflow defaults). Locks in the source-attribution shape so
       // a refactor that always reports "workflow defaults" surfaces here.
       name: "step-level shell: bash annotation matches 'resolved via step'",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: diagnostics",
-        "        shell: bash",
-        "        run: echo hello"
-      ],
+      lines: singleJobLines(
+        "unity",
+        ["      - name: diagnostics", "        shell: bash", "        run: echo hello"],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 1,
       expectedMessageMatch: /resolved via step/
     },
@@ -3793,17 +3724,10 @@ describe("forbidPlainShellBashOnSelfHostedWindows", () => {
       // annotation must read "resolved via job defaults" (NOT workflow
       // defaults, even when workflow defaults are absent).
       name: "job-defaults shell: bash annotation matches 'resolved via job defaults'",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    defaults:",
-        "      run:",
-        "        shell: bash",
-        "    steps:",
-        "      - name: diagnostics",
-        "        run: echo hello"
-      ],
+      lines: singleJobLines("unity", ["      - name: diagnostics", "        run: echo hello"], {
+        runsOn: "[self-hosted, Windows, RAM-64GB]",
+        jobKeys: ["    defaults:", "      run:", "        shell: bash"]
+      }),
       expectedViolations: 1,
       expectedMessageMatch: /resolved via job defaults/
     },
@@ -3922,181 +3846,129 @@ describe("forbidPlainShellBashOnSelfHostedWindows", () => {
 });
 
 describe("findSelfHostedWindowsCheckoutLongPathViolations", () => {
+  const checkoutStep = [
+    "      - name: Checkout",
+    "        uses: actions/checkout@v6",
+    "        with:",
+    "          persist-credentials: false"
+  ];
+
+  const enableLongPathsStep = [
+    "      - name: Enable Git long paths",
+    "        shell: pwsh",
+    "        env:",
+    "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+    "        run: git config --global core.longpaths true"
+  ];
+
+  const checkoutWithGitConfigStep = [
+    "      - name: Checkout",
+    "        uses: actions/checkout@v6",
+    "        env:",
+    "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+    "        with:",
+    "          persist-credentials: false"
+  ];
+
   test.each([
     {
       name: "flags checkout before Git long paths on self-hosted Windows",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        with:",
-        "          persist-credentials: false"
-      ],
+      lines: singleJobLines("unity", checkoutStep, { runsOn: "[self-hosted, Windows, RAM-64GB]" }),
       expectedViolations: 1
     },
     {
       name: "allows Git long paths before checkout",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: Enable Git long paths",
-        "        shell: pwsh",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        run: git config --global core.longpaths true",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        with:",
-        "          persist-credentials: false"
-      ],
+      lines: singleJobLines("unity", [...enableLongPathsStep, ...checkoutWithGitConfigStep], {
+        runsOn: "[self-hosted, Windows, RAM-64GB]"
+      }),
       expectedViolations: 0
     },
     {
       name: "flags Git long paths after checkout because cleanup has already run",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        with:",
-        "          persist-credentials: false",
-        "      - name: Enable Git long paths",
-        "        shell: pwsh",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        run: git config --global core.longpaths true"
-      ],
+      lines: singleJobLines("unity", [...checkoutStep, ...enableLongPathsStep], {
+        runsOn: "[self-hosted, Windows, RAM-64GB]"
+      }),
       expectedViolations: 1
     },
     {
       name: "flags echoing the Git long paths command because it does not configure Git",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: Print intended command",
-        "        shell: pwsh",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        run: Write-Host 'git config --global core.longpaths true'",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        with:",
-        "          persist-credentials: false"
-      ],
+      lines: singleJobLines(
+        "unity",
+        [
+          "      - name: Print intended command",
+          "        shell: pwsh",
+          "        env:",
+          "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+          "        run: Write-Host 'git config --global core.longpaths true'",
+          ...checkoutWithGitConfigStep
+        ],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 1
     },
     {
       name: "flags conditional Git long paths setup because checkout can still run",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: Enable Git long paths",
-        "        if: false",
-        "        shell: pwsh",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        run: git config --global core.longpaths true",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        with:",
-        "          persist-credentials: false"
-      ],
+      lines: singleJobLines(
+        "unity",
+        [
+          "      - name: Enable Git long paths",
+          "        if: false",
+          "        shell: pwsh",
+          "        env:",
+          "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+          "        run: git config --global core.longpaths true",
+          ...checkoutWithGitConfigStep
+        ],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 1
     },
     {
       name: "flags command hidden inside a conditional run block",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: Enable Git long paths",
-        "        shell: pwsh",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        run: |",
-        "          if ($false) {",
-        "            git config --global core.longpaths true",
-        "          }",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        with:",
-        "          persist-credentials: false"
-      ],
+      lines: singleJobLines(
+        "unity",
+        [
+          "      - name: Enable Git long paths",
+          "        shell: pwsh",
+          "        env:",
+          "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+          "        run: |",
+          "          if ($false) {",
+          "            git config --global core.longpaths true",
+          "          }",
+          ...checkoutWithGitConfigStep
+        ],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 1
     },
     {
       name: "flags env text inside the script body because it is not top-level step env",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: Enable Git long paths",
-        "        shell: pwsh",
-        "        run: |",
-        "          env:",
-        "            GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "          git config --global core.longpaths true",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        with:",
-        "          persist-credentials: false"
-      ],
+      lines: singleJobLines(
+        "unity",
+        [
+          "      - name: Enable Git long paths",
+          "        shell: pwsh",
+          "        run: |",
+          "          env:",
+          "            GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
+          "          git config --global core.longpaths true",
+          ...checkoutWithGitConfigStep
+        ],
+        { runsOn: "[self-hosted, Windows, RAM-64GB]" }
+      ),
       expectedViolations: 1
     },
     {
       name: "flags checkout missing matching GIT_CONFIG_GLOBAL env",
-      lines: [
-        "jobs:",
-        "  unity:",
-        "    runs-on: [self-hosted, Windows, RAM-64GB]",
-        "    steps:",
-        "      - name: Enable Git long paths",
-        "        shell: pwsh",
-        "        env:",
-        "          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig",
-        "        run: git config --global core.longpaths true",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        with:",
-        "          persist-credentials: false"
-      ],
+      lines: singleJobLines("unity", [...enableLongPathsStep, ...checkoutStep], {
+        runsOn: "[self-hosted, Windows, RAM-64GB]"
+      }),
       expectedViolations: 1
     },
     {
       name: "allows hosted Windows without the self-hosted checkout guard",
-      lines: [
-        "jobs:",
-        "  hosted:",
-        "    runs-on: windows-latest",
-        "    steps:",
-        "      - name: Checkout",
-        "        uses: actions/checkout@v6",
-        "        with:",
-        "          persist-credentials: false"
-      ],
+      lines: singleJobLines("hosted", checkoutStep, { runsOn: "windows-latest" }),
       expectedViolations: 0
     },
     {
