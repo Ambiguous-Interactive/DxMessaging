@@ -23,6 +23,7 @@ const {
   stepConsumesUnityLicense,
   ifExpressionGatesOnComputeEmptiness
 } = require("../validate-workflows.js");
+const { singleJobWorkflow } = require("../lib/workflow-fixtures");
 
 const WORKFLOWS_DIR = path.resolve(__dirname, "..", "..", ".github", "workflows");
 
@@ -80,16 +81,14 @@ function runTestsStep({ gate } = {}) {
   ];
 }
 
-function singleJobWorkflow(stepBlocks) {
-  return join([
-    "name: Synthetic",
-    "on: workflow_dispatch",
-    "jobs:",
-    "  unity:",
-    "    runs-on: [self-hosted, Windows, RAM-64GB]",
-    "    steps:",
-    ...stepBlocks.flat()
-  ]);
+// Synthetic one-job workflow shared by the tests below: the fixed header/job
+// shape comes from the shared builder; call sites pass step BLOCKS (arrays of
+// step lines), flattened here.
+function syntheticWorkflow(stepBlocks) {
+  return singleJobWorkflow("unity", stepBlocks.flat(), {
+    runsOn: "[self-hosted, Windows, RAM-64GB]",
+    header: ["name: Synthetic", "on: workflow_dispatch"]
+  });
 }
 
 describe("findComputeUnityAssembliesGateViolations", () => {
@@ -111,7 +110,7 @@ describe("findComputeUnityAssembliesGateViolations", () => {
 
   describe("(b) compute step without an id fails", () => {
     test("missing id on the compute step is reported", () => {
-      const content = singleJobWorkflow([COMPUTE_STEP_WITHOUT_ID, provisionStep({ gate: GATE })]);
+      const content = syntheticWorkflow([COMPUTE_STEP_WITHOUT_ID, provisionStep({ gate: GATE })]);
       const violations = findComputeUnityAssembliesGateViolations("synthetic.yml", content);
       expect(violations).toHaveLength(1);
       expect(violations[0].pattern).toBe("compute-unity-assemblies without id");
@@ -122,7 +121,7 @@ describe("findComputeUnityAssembliesGateViolations", () => {
 
   describe("(c) id present but a license-consuming step is not gated fails", () => {
     test("non-gated ensure-editor.ps1 provision step is reported", () => {
-      const content = singleJobWorkflow([COMPUTE_STEP_WITH_ID, provisionStep()]);
+      const content = syntheticWorkflow([COMPUTE_STEP_WITH_ID, provisionStep()]);
       const violations = findComputeUnityAssembliesGateViolations("synthetic.yml", content);
       expect(violations).toHaveLength(1);
       expect(violations[0].pattern).toBe("Unity license-consuming step not gated on is-empty");
@@ -130,21 +129,21 @@ describe("findComputeUnityAssembliesGateViolations", () => {
     });
 
     test("non-gated acquire-build-lock step is reported", () => {
-      const content = singleJobWorkflow([COMPUTE_STEP_WITH_ID, acquireLockStep()]);
+      const content = syntheticWorkflow([COMPUTE_STEP_WITH_ID, acquireLockStep()]);
       const violations = findComputeUnityAssembliesGateViolations("synthetic.yml", content);
       expect(violations).toHaveLength(1);
       expect(violations[0].pattern).toBe("Unity license-consuming step not gated on is-empty");
     });
 
     test("non-gated run-ci-tests.ps1 run step is reported", () => {
-      const content = singleJobWorkflow([COMPUTE_STEP_WITH_ID, runTestsStep()]);
+      const content = syntheticWorkflow([COMPUTE_STEP_WITH_ID, runTestsStep()]);
       const violations = findComputeUnityAssembliesGateViolations("synthetic.yml", content);
       expect(violations).toHaveLength(1);
       expect(violations[0].pattern).toBe("Unity license-consuming step not gated on is-empty");
     });
 
     test("each non-gated license-consuming step is reported independently", () => {
-      const content = singleJobWorkflow([
+      const content = syntheticWorkflow([
         COMPUTE_STEP_WITH_ID,
         provisionStep(),
         acquireLockStep(),
@@ -160,7 +159,7 @@ describe("findComputeUnityAssembliesGateViolations", () => {
 
   describe("(d) a correctly gated synthetic workflow passes", () => {
     test("all three license-consuming steps gated on the compute id", () => {
-      const content = singleJobWorkflow([
+      const content = syntheticWorkflow([
         COMPUTE_STEP_WITH_ID,
         provisionStep({ gate: GATE }),
         acquireLockStep({ gate: GATE }),
@@ -172,14 +171,14 @@ describe("findComputeUnityAssembliesGateViolations", () => {
 
     test("gate ANDed with another condition still passes", () => {
       const combined = "${{ !cancelled() && steps.compute.outputs.is-empty != 'true' }}";
-      const content = singleJobWorkflow([COMPUTE_STEP_WITH_ID, provisionStep({ gate: combined })]);
+      const content = syntheticWorkflow([COMPUTE_STEP_WITH_ID, provisionStep({ gate: combined })]);
       const violations = findComputeUnityAssembliesGateViolations("synthetic.yml", content);
       expect(violations).toEqual([]);
     });
 
     test("double-quoted true literal in the gate still passes", () => {
       const doubleQuoted = '${{ steps.compute.outputs.is-empty != "true" }}';
-      const content = singleJobWorkflow([
+      const content = syntheticWorkflow([
         COMPUTE_STEP_WITH_ID,
         provisionStep({ gate: doubleQuoted })
       ]);
@@ -208,7 +207,7 @@ describe("findComputeUnityAssembliesGateViolations", () => {
 
   describe("robustness", () => {
     test("multiple compute steps in one job: each must carry an id", () => {
-      const content = singleJobWorkflow([
+      const content = syntheticWorkflow([
         COMPUTE_STEP_WITH_ID,
         [
           "      - name: Compute playmode assembly list",
@@ -225,7 +224,7 @@ describe("findComputeUnityAssembliesGateViolations", () => {
 
     test("gate may reference any compute id present in the job", () => {
       const secondGate = "${{ steps.compute2.outputs.is-empty != 'true' }}";
-      const content = singleJobWorkflow([
+      const content = syntheticWorkflow([
         COMPUTE_STEP_WITH_ID,
         [
           "      - name: Compute playmode assembly list",
@@ -242,7 +241,7 @@ describe("findComputeUnityAssembliesGateViolations", () => {
 
     test("a step gated on a foreign id is still reported", () => {
       const foreignGate = "${{ steps.other.outputs.is-empty != 'true' }}";
-      const content = singleJobWorkflow([
+      const content = syntheticWorkflow([
         COMPUTE_STEP_WITH_ID,
         provisionStep({ gate: foreignGate })
       ]);
@@ -284,7 +283,7 @@ describe("findComputeUnityAssembliesGateViolations", () => {
       // When the sole compute step in a job has no id, there is no id for the
       // license-consuming steps to reference; the missing-id violation is the
       // single, root-cause report (the gate-miss is not piled on top).
-      const content = singleJobWorkflow([
+      const content = syntheticWorkflow([
         COMPUTE_STEP_WITHOUT_ID,
         provisionStep(),
         acquireLockStep()
@@ -341,7 +340,7 @@ describe("findComputeUnityAssembliesGateViolations", () => {
         });
 
         const isolated = require("../validate-workflows.js");
-        const content = singleJobWorkflow([COMPUTE_STEP_WITH_ID, provisionStep({ gate: GATE })]);
+        const content = syntheticWorkflow([COMPUTE_STEP_WITH_ID, provisionStep({ gate: GATE })]);
         const violations = isolated.findComputeUnityAssembliesGateViolations(
           "synthetic.yml",
           content

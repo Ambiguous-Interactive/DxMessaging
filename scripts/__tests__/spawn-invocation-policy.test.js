@@ -103,11 +103,10 @@
 
 "use strict";
 
-const fs = require("fs");
 const path = require("path");
 
 const { stripJsCommentsAndStrings } = require("../lib/source-stripping");
-const { readUtf8, lineNumberAt, toRepoRelative } = require("../lib/repo-files");
+const { readUtf8, lineNumberAt, toRepoRelative, walkFiles } = require("../lib/repo-files");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPTS_ROOT = path.join(REPO_ROOT, "scripts");
@@ -148,55 +147,24 @@ const TEST_ALLOW_LIST = new Set([
   path.join("scripts", "__tests__", "spawn-invocation-policy.test.js")
 ]);
 
-function listFilesRecursive(absoluteDir, predicate) {
-  const out = [];
-  if (!fs.existsSync(absoluteDir)) {
-    return out;
-  }
-
-  const stack = [absoluteDir];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch (error) {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (WALK_SKIP_DIRS.has(entry.name)) {
-          continue;
-        }
-        stack.push(path.join(dir, entry.name));
-        continue;
-      }
-      if (!entry.isFile()) {
-        continue;
-      }
-      const abs = path.join(dir, entry.name);
-      if (predicate(abs)) {
-        out.push(abs);
-      }
-    }
-  }
-
-  return out;
-}
-
 function listTestFiles() {
-  return listFilesRecursive(TESTS_ROOT, (abs) => abs.endsWith(".test.js"));
+  return walkFiles(TESTS_ROOT, {
+    match: (abs) => abs.endsWith(".test.js"),
+    excludeDir: (abs, entry) => WALK_SKIP_DIRS.has(entry.name)
+  });
 }
 
 function listProductionScriptFiles() {
-  return listFilesRecursive(SCRIPTS_ROOT, (abs) => {
-    if (!abs.endsWith(".js")) {
-      return false;
-    }
-    // Exclude any __tests__ directory anywhere in the tree.
-    const relParts = path.relative(SCRIPTS_ROOT, abs).split(path.sep);
-    return !relParts.includes("__tests__");
+  return walkFiles(SCRIPTS_ROOT, {
+    match: (abs) => {
+      if (!abs.endsWith(".js")) {
+        return false;
+      }
+      // Exclude any __tests__ directory anywhere in the tree.
+      const relParts = path.relative(SCRIPTS_ROOT, abs).split(path.sep);
+      return !relParts.includes("__tests__");
+    },
+    excludeDir: (abs, entry) => WALK_SKIP_DIRS.has(entry.name)
   });
 }
 

@@ -68,7 +68,7 @@ const fs = require("fs");
 const path = require("path");
 const { normalizeToLf } = require("../lib/quote-parser");
 const { extractCommentsOnly } = require("../lib/source-stripping");
-const { readUtf8 } = require("../lib/repo-files");
+const { readUtf8, walkFiles } = require("../lib/repo-files");
 const {
   TARGETED_STEP_NAME,
   extractTargetedStepRunBlock,
@@ -105,45 +105,15 @@ function toRepoPosixRelative(absolutePath) {
   return path.relative(REPO_ROOT, absolutePath).split(path.sep).join("/");
 }
 
-function listFilesRecursive(absoluteDir, predicate) {
-  const out = [];
-  if (!fs.existsSync(absoluteDir)) {
-    return out;
-  }
-
-  const stack = [absoluteDir];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (WALK_SKIP_DIRS.has(entry.name)) {
-          continue;
-        }
-        stack.push(path.join(dir, entry.name));
-        continue;
-      }
-      if (entry.isFile() && predicate(path.join(dir, entry.name))) {
-        out.push(path.join(dir, entry.name));
-      }
-    }
-  }
-
-  return out;
-}
-
 function listTestFiles() {
-  return listFilesRecursive(SCRIPTS_ROOT, (abs) => {
-    if (!abs.endsWith(".test.js")) {
-      return false;
-    }
-    return path.relative(SCRIPTS_ROOT, abs).split(path.sep).includes("__tests__");
+  return walkFiles(SCRIPTS_ROOT, {
+    match: (abs) => {
+      if (!abs.endsWith(".test.js")) {
+        return false;
+      }
+      return path.relative(SCRIPTS_ROOT, abs).split(path.sep).includes("__tests__");
+    },
+    excludeDir: (abs, entry) => WALK_SKIP_DIRS.has(entry.name)
   });
 }
 

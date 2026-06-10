@@ -77,7 +77,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { stripJsCommentsAndStrings } = require("../lib/source-stripping");
-const { readUtf8, lineNumberAt } = require("../lib/repo-files");
+const { readUtf8, lineNumberAt, walkFiles } = require("../lib/repo-files");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPTS_ROOT = path.join(REPO_ROOT, "scripts");
@@ -126,43 +126,13 @@ function toRepoRelativePosix(absolutePath) {
   return toRepoRelativeKey(absolutePath).split(path.sep).join("/");
 }
 
-function listFilesRecursive(absoluteDir, predicate) {
-  const out = [];
-  if (!fs.existsSync(absoluteDir)) {
-    return out;
-  }
-
-  const stack = [absoluteDir];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (WALK_SKIP_DIRS.has(entry.name)) {
-          continue;
-        }
-        stack.push(path.join(dir, entry.name));
-        continue;
-      }
-      if (entry.isFile() && predicate(path.join(dir, entry.name))) {
-        out.push(path.join(dir, entry.name));
-      }
-    }
-  }
-
-  return out;
-}
-
 function listScriptAndTestFiles() {
   // Every scripts/**/*.js (production + tests). CATEGORY A scans all of them;
   // CATEGORY B only the *.test.js files (filtered by the caller).
-  return listFilesRecursive(SCRIPTS_ROOT, (abs) => abs.endsWith(".js"));
+  return walkFiles(SCRIPTS_ROOT, {
+    match: (abs) => abs.endsWith(".js"),
+    excludeDir: (abs, entry) => WALK_SKIP_DIRS.has(entry.name)
+  });
 }
 
 // ---------------------------------------------------------------------------
