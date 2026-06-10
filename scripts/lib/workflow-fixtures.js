@@ -135,12 +135,19 @@ function singleJobWorkflow(id, steps, options) {
  *
  * @param {string} rootDir Directory the relative path is resolved against.
  * @param {string} relPath Path of the file under `rootDir`,
- *   e.g. `".github/workflows/test.yml"`.
+ *   e.g. `".github/workflows/test.yml"`. Must be relative: an absolute path
+ *   would silently escape `rootDir` (and its cleanup), so it is rejected.
  * @param {string[] | string} content Lines to join with `"\n"`, or the exact
  *   file content.
  * @returns {string} Absolute path of the written file.
+ * @throws {TypeError} When `relPath` is absolute.
  */
 function writeWorkflowFile(rootDir, relPath, content) {
+  if (path.isAbsolute(relPath)) {
+    throw new TypeError(
+      `writeWorkflowFile expects a relative path under rootDir; got absolute "${relPath}"`
+    );
+  }
   const absPath = path.resolve(rootDir, relPath);
   const data = Array.isArray(content) ? content.join("\n") : content;
   fs.mkdirSync(path.dirname(absPath), { recursive: true });

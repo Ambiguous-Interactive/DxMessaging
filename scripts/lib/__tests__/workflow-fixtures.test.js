@@ -292,5 +292,19 @@ describe("workflow-fixtures", () => {
         cleanupDir(root);
       }
     });
+
+    test("rejects an absolute relPath instead of escaping rootDir", () => {
+      const root = makeTempDir("workflow-fixtures-escape");
+      try {
+        const absolute = path.join(root, "escape.yml");
+        expect(() => writeWorkflowFile(root, absolute, "jobs: {}")).toThrow(TypeError);
+        expect(() => writeWorkflowFile(root, absolute, "jobs: {}")).toThrow(
+          `writeWorkflowFile expects a relative path under rootDir; got absolute "${absolute}"`
+        );
+        expect(fs.existsSync(absolute)).toBe(false);
+      } finally {
+        cleanupDir(root);
+      }
+    });
   });
 });
