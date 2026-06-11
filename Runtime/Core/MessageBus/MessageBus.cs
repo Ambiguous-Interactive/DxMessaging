@@ -29,7 +29,30 @@ namespace DxMessaging.Core.MessageBus
     public sealed class MessageBus : IMessageBus
     {
         private long _emissionId;
-        public long EmissionId => _emissionId;
+
+        // The emission id of the dispatch pass currently executing on this
+        // bus. Assigned alongside each _emissionId increment and
+        // saved/restored by DispatchLease, so when a nested (reentrant)
+        // emission completes, the OUTER emission resumes reading ITS OWN id
+        // rather than the bumped live counter. Every per-emission freeze key
+        // (bus-side GetOrAddMessageHandlerStack, handler-side
+        // GetOrAddNewHandlerStack via dispatch links / the EmissionId
+        // property, prefreeze stamps, snapshot acquisition) compares against
+        // this scoped value; using the live counter instead would make the
+        // outer emission's post-nested cache reads look like a NEW emission
+        // and rebuild (dropping mid-emission-deregistered handlers /
+        // surfacing mid-emission registrations), violating the documented
+        // frozen-snapshot contract. Outside any dispatch the two values are
+        // always equal.
+        private long _scopedEmissionId;
+
+        /// <summary>
+        /// The id of the emission currently being dispatched when read from
+        /// inside a handler/interceptor/post-processor (nested emissions get
+        /// their own id and the outer id is restored when they complete);
+        /// outside of dispatch, the id of the most recent emission.
+        /// </summary>
+        public long EmissionId => 0 < _dispatchDepth ? _scopedEmissionId : _emissionId;
         internal long TickCounter => _tickCounter;
 
         internal readonly struct PrefreezeDescriptor
@@ -365,15 +388,26 @@ namespace DxMessaging.Core.MessageBus
         {
             private readonly MessageBus _bus;
 
+            // The scoped emission id of the emission this lease is nested
+            // inside (or the idle value at the outermost lease). Restored on
+            // Dispose so that when a nested (reentrant) emission completes,
+            // the outer emission's remaining dispatch reads its OWN emission
+            // id again - the per-emission freeze keys (GetOrAdd*HandlerStack,
+            // prefreeze stamps) rely on this to keep the outer emission's
+            // frozen caches frozen across nested emissions.
+            private readonly long _previousScopedEmissionId;
+
             public DispatchLease(MessageBus bus)
             {
                 _bus = bus;
-                _bus._dispatchDepth++;
+                _previousScopedEmissionId = bus._scopedEmissionId;
+                bus._dispatchDepth++;
             }
 
             public void Dispose()
             {
                 MessageBus bus = _bus;
+                bus._scopedEmissionId = _previousScopedEmissionId;
                 bus._dispatchDepth--;
                 if (bus._dispatchDepth == 0 && bus._hasDeferredResetTeardown)
                 {
@@ -1099,9 +1133,25 @@ namespace DxMessaging.Core.MessageBus
         // and the _dispatchDepth gate in SweepDirtyTypedHandlerSlots. These
         // lists allocate only on the rare reset-during-dispatch path; the
         // steady-state dispatch path pays a single flag check on lease exit.
+        //
+        // _deferredDisplacedSnapshots extends the same machinery to dispatch
+        // snapshots DISPLACED out of DispatchState.active by a nested
+        // emission's snapshot promotion (see ReleaseDisplacedSnapshot): a
+        // handler that mutates the same-type registration set and then
+        // reentrantly emits the same message type promotes the staged pending
+        // snapshot under a new emission id, displacing the snapshot the OUTER
+        // dispatch loop is still iterating. Releasing it inline would clear
+        // and pool the frozen arrays mid-iteration (NRE / silent handler
+        // drops / cross-dispatch pool aliasing at deeper nesting). Displaced
+        // snapshots are queued here instead and released when the outermost
+        // dispatch lease exits. A snapshot can be queued at most once: it is
+        // removed from its DispatchState field at the moment it is queued,
+        // snapshot instances are never shared between state fields, and
+        // Release() is additionally idempotent via its _pooled guard.
         private bool _hasDeferredResetTeardown;
         private List<HandlerCache<int, HandlerCache>> _deferredResetHandlerCaches;
         private List<DispatchState> _deferredResetDispatchStates;
+        private List<DispatchSnapshot> _deferredDisplacedSnapshots;
 
         // Bumped by ResetState. Deregister closures captured before the bump
         // compare their captured generation to this field and silently skip
@@ -1909,9 +1959,70 @@ namespace DxMessaging.Core.MessageBus
             _hasDeferredResetTeardown = true;
         }
 
+        /// <summary>
+        /// Releases a snapshot displaced out of <see cref="DispatchState.active"/>
+        /// (or discarded while shrinking to empty). When any dispatch lease is
+        /// active beyond the one owned by the emission performing the
+        /// displacement (<c>_dispatchDepth &gt; 1</c>), an OUTER emission may
+        /// still be iterating the displaced snapshot's pooled arrays, so the
+        /// release is deferred to the outermost lease exit via
+        /// <see cref="FlushDeferredResetTeardown"/>. At depth &lt;= 1 every
+        /// prior emission has fully completed (leases strictly nest), so the
+        /// displaced snapshot is provably unreferenced and is released inline,
+        /// preserving the legacy pooling behavior for non-reentrant churn.
+        /// Note this deferral is only needed for <c>active</c>:
+        /// <see cref="DispatchState.pending"/> is never returned to a dispatch
+        /// loop (the acquire paths only ever return <c>active</c>, and
+        /// promotion transfers ownership pending -&gt; active while clearing
+        /// pending), so inline pending releases in
+        /// <see cref="StageDispatchSnapshot{TMessage}"/> /
+        /// <see cref="AcquireDispatchSnapshot{TMessage}"/> can never free
+        /// arrays an in-flight emission is iterating.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReleaseDisplacedSnapshot(ref DispatchSnapshot snapshot)
+        {
+            DispatchSnapshot displaced = snapshot;
+            snapshot = DispatchSnapshot.Empty;
+            if (displaced == null || displaced.IsEmpty)
+            {
+                return;
+            }
+
+            if (1 < _dispatchDepth)
+            {
+                _deferredDisplacedSnapshots ??= new List<DispatchSnapshot>();
+                _deferredDisplacedSnapshots.Add(displaced);
+                _hasDeferredResetTeardown = true;
+                return;
+            }
+
+            displaced.Release();
+        }
+
         private void FlushDeferredResetTeardown()
         {
             _hasDeferredResetTeardown = false;
+            // Displaced snapshots are released FIRST: they are standalone
+            // (queued only after being unlinked from their DispatchState
+            // field, and snapshot instances are never shared between state
+            // fields), so releasing them cannot interact with the cache
+            // clears / state resets below, which release *different* snapshot
+            // objects still referenced by their states. Releasing them ahead
+            // of the clears keeps the pools warm for any rebuilds those
+            // clears trigger later, and Release() stays idempotent via
+            // _pooled should both paths ever observe the same instance.
+            List<DispatchSnapshot> displacedSnapshots = _deferredDisplacedSnapshots;
+            if (displacedSnapshots != null)
+            {
+                for (int i = 0; i < displacedSnapshots.Count; ++i)
+                {
+                    displacedSnapshots[i].Release();
+                }
+
+                displacedSnapshots.Clear();
+            }
+
             List<HandlerCache<int, HandlerCache>> deferredCaches = _deferredResetHandlerCaches;
             if (deferredCaches != null)
             {
@@ -2153,6 +2264,7 @@ namespace DxMessaging.Core.MessageBus
         {
             ResetTypedSlotsForReferencedHandlers();
             _emissionId = 0;
+            _scopedEmissionId = 0;
             _tickCounter = 0;
             _diagnosticsMode = ShouldEnableDiagnostics();
             _loggedReflexiveWarning = false;
@@ -3076,6 +3188,7 @@ namespace DxMessaging.Core.MessageBus
             unchecked
             {
                 _emissionId++;
+                _scopedEmissionId = _emissionId;
             }
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
@@ -3104,7 +3217,7 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     untargetedPostHandlers,
                     UntargetedPostSlot,
-                    _emissionId
+                    _scopedEmissionId
                 );
             }
 
@@ -3133,7 +3246,7 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         sortedHandlers,
                         UntargetedPostSlot,
-                        _emissionId
+                        _scopedEmissionId
                     )
                     : untargetedPostSnapshot;
                 // Flat dispatch; see InternalUntargetedBroadcast for the
@@ -3221,6 +3334,7 @@ namespace DxMessaging.Core.MessageBus
             unchecked
             {
                 _emissionId++;
+                _scopedEmissionId = _emissionId;
             }
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
@@ -3251,7 +3365,7 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     targetedPostByPriority,
                     TargetedPostSlot,
-                    _emissionId
+                    _scopedEmissionId
                 );
                 PrefreezeTargetedPostSnapshot<TMessage>(ref target, targetedPostSnapshot);
             }
@@ -3268,7 +3382,7 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     targetedWithoutTargetingHandlers,
                     TargetedWithoutContextPostSlot,
-                    _emissionId
+                    _scopedEmissionId
                 );
                 PrefreezeTargetedWithoutTargetingPostSnapshot<TMessage>(
                     targetedWithoutTargetingPostSnapshot
@@ -3516,7 +3630,7 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     sortedHandlers,
                     TargetedHandleSlot,
-                    _emissionId
+                    _scopedEmissionId
                 );
                 // Pre-freeze the typed-handler caches across every priority bucket so
                 // deregistrations performed by an earlier priority's handler cannot
@@ -3615,7 +3729,7 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         sortedHandlers,
                         TargetedPostSlot,
-                        _emissionId
+                        _scopedEmissionId
                     );
                     PrefreezeTargetedPostSnapshot<TMessage>(ref target, snapshot);
                 }
@@ -3625,7 +3739,7 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         sortedHandlers,
                         TargetedPostSlot,
-                        _emissionId
+                        _scopedEmissionId
                     );
                 }
                 else
@@ -3783,7 +3897,7 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         postTwt,
                         TargetedWithoutContextPostSlot,
-                        _emissionId
+                        _scopedEmissionId
                     )
                     : targetedWithoutTargetingPostSnapshot;
                 DispatchBucket[] buckets = snapshot.buckets;
@@ -3946,7 +4060,10 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : ITargetedMessage
         {
             // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(cache, _emissionId);
+            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
+                cache,
+                _scopedEmissionId
+            );
             int messageHandlersCount = messageHandlers.Count;
             if (messageHandlersCount == 0)
             {
@@ -4102,7 +4219,10 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : ITargetedMessage
         {
             // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(cache, _emissionId);
+            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
+                cache,
+                _scopedEmissionId
+            );
             int messageHandlersCount = messageHandlers.Count;
             if (messageHandlersCount == 0)
             {
@@ -4178,7 +4298,10 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : ITargetedMessage
         {
             // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(cache, _emissionId);
+            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
+                cache,
+                _scopedEmissionId
+            );
             int messageHandlersCount = messageHandlers.Count;
             if (messageHandlersCount == 0)
             {
@@ -4273,6 +4396,7 @@ namespace DxMessaging.Core.MessageBus
             unchecked
             {
                 _emissionId++;
+                _scopedEmissionId = _emissionId;
             }
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
@@ -4303,7 +4427,7 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     broadcastPostByPriority,
                     BroadcastPostSlot,
-                    _emissionId
+                    _scopedEmissionId
                 );
                 PrefreezeBroadcastPostSnapshot<TMessage>(ref source, broadcastPostSnapshot);
             }
@@ -4320,7 +4444,7 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     broadcastWithoutSourceHandlers,
                     BroadcastWithoutContextPostSlot,
-                    _emissionId
+                    _scopedEmissionId
                 );
                 PrefreezeBroadcastWithoutSourcePostSnapshot<TMessage>(
                     broadcastWithoutSourcePostSnapshot
@@ -4354,7 +4478,7 @@ namespace DxMessaging.Core.MessageBus
                 Touch(bwsHandlers, touchTick);
                 List<KeyValuePair<int, HandlerCache>> frozen = GetOrAddMessageHandlerStack(
                     bwsHandlers,
-                    _emissionId
+                    _scopedEmissionId
                 );
                 int frozenCount = frozen.Count;
                 bool needsBwsPrefreeze = frozenCount > 1;
@@ -4363,7 +4487,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     singleBucketBwsHandlers = GetOrAddMessageHandlerStack(
                         frozen[0].Value,
-                        _emissionId
+                        _scopedEmissionId
                     );
                     needsBwsPrefreeze = singleBucketBwsHandlers.Count > 1;
                 }
@@ -4375,13 +4499,13 @@ namespace DxMessaging.Core.MessageBus
                         List<MessageHandler> mhList =
                             (i == 0 && singleBucketBwsHandlers != null)
                                 ? singleBucketBwsHandlers
-                                : GetOrAddMessageHandlerStack(entry.Value, _emissionId);
+                                : GetOrAddMessageHandlerStack(entry.Value, _scopedEmissionId);
                         for (int h = 0; h < mhList.Count; ++h)
                         {
                             mhList[h]
                                 .PrefreezeBroadcastWithoutSourceHandlersForEmission<TMessage>(
                                     entry.Key,
-                                    _emissionId,
+                                    _scopedEmissionId,
                                     this
                                 );
                         }
@@ -4407,7 +4531,7 @@ namespace DxMessaging.Core.MessageBus
                 foundAnyHandlers = true;
                 List<KeyValuePair<int, HandlerCache>> handlerList = GetOrAddMessageHandlerStack(
                     sortedHandlers,
-                    _emissionId
+                    _scopedEmissionId
                 );
                 int handlerListCount = handlerList.Count;
                 // Pre-freeze the typed-handler caches across every priority bucket so
@@ -4434,7 +4558,7 @@ namespace DxMessaging.Core.MessageBus
                     // re-acquiring it inside the prefreeze loop below.
                     singleBucketFrozenHandlers = GetOrAddMessageHandlerStack(
                         handlerList[0].Value,
-                        _emissionId
+                        _scopedEmissionId
                     );
                     needsPrefreeze = singleBucketFrozenHandlers.Count > 1;
                 }
@@ -4446,7 +4570,10 @@ namespace DxMessaging.Core.MessageBus
                         List<MessageHandler> prefreezeHandlers =
                             (i == 0 && singleBucketFrozenHandlers != null)
                                 ? singleBucketFrozenHandlers
-                                : GetOrAddMessageHandlerStack(prefreezeEntry.Value, _emissionId);
+                                : GetOrAddMessageHandlerStack(
+                                    prefreezeEntry.Value,
+                                    _scopedEmissionId
+                                );
                         int prefreezeHandlerCount = prefreezeHandlers.Count;
                         for (int h = 0; h < prefreezeHandlerCount; ++h)
                         {
@@ -4454,12 +4581,22 @@ namespace DxMessaging.Core.MessageBus
                                 .PrefreezeBroadcastHandlersForEmission<TMessage>(
                                     source,
                                     prefreezeEntry.Key,
-                                    _emissionId,
+                                    _scopedEmissionId,
                                     this
                                 );
                         }
                     }
                 }
+                // The unrolled cases COPY every KeyValuePair out of the live
+                // handlerList BEFORE invoking any handler. handlerList is the
+                // shared per-cache snapshot list that a NESTED (reentrant)
+                // emission rebuilds IN PLACE when a handler mutates the
+                // same-type registration set and then re-emits; indexing it
+                // lazily between invocations would read shifted entries - or
+                // throw ArgumentOutOfRangeException when a deregistration
+                // shrank it - instead of honoring this emission's frozen
+                // priority walk. The copies are stack-resident value types:
+                // zero allocation, identical steady-state cost.
                 switch (handlerListCount)
                 {
                     case 1:
@@ -4470,52 +4607,64 @@ namespace DxMessaging.Core.MessageBus
                     }
                     case 2:
                     {
-                        KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[1];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
+                        KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
+                        KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
+                        RunBroadcast(ref source, ref typedMessage, entry0.Key, entry0.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry1.Key, entry1.Value);
                         break;
                     }
                     case 3:
                     {
-                        KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[1];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[2];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
+                        KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
+                        KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
+                        KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
+                        RunBroadcast(ref source, ref typedMessage, entry0.Key, entry0.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry1.Key, entry1.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry2.Key, entry2.Value);
                         break;
                     }
                     case 4:
                     {
-                        KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[1];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[2];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[3];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
+                        KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
+                        KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
+                        KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
+                        KeyValuePair<int, HandlerCache> entry3 = handlerList[3];
+                        RunBroadcast(ref source, ref typedMessage, entry0.Key, entry0.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry1.Key, entry1.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry2.Key, entry2.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry3.Key, entry3.Value);
                         break;
                     }
                     case 5:
                     {
-                        KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[1];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[2];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[3];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        entry = handlerList[4];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
+                        KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
+                        KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
+                        KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
+                        KeyValuePair<int, HandlerCache> entry3 = handlerList[3];
+                        KeyValuePair<int, HandlerCache> entry4 = handlerList[4];
+                        RunBroadcast(ref source, ref typedMessage, entry0.Key, entry0.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry1.Key, entry1.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry2.Key, entry2.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry3.Key, entry3.Value);
+                        RunBroadcast(ref source, ref typedMessage, entry4.Key, entry4.Value);
                         break;
                     }
                     default:
                     {
                         for (int i = 0; i < handlerListCount; ++i)
                         {
+                            // Live-count guard for the 6+ bucket fallback: a
+                            // nested emission may have rebuilt handlerList in
+                            // place (see the case comment above). Bounding by
+                            // the live Count prevents an out-of-range crash;
+                            // the rare 6+-priorities + mid-emission-removal +
+                            // reentrant-emit corner degrades to best-effort
+                            // ordering instead of throwing.
+                            if (handlerList.Count <= i)
+                            {
+                                break;
+                            }
+
                             KeyValuePair<int, HandlerCache> entry = handlerList[i];
                             RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
                         }
@@ -4549,7 +4698,7 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         broadcastPostByPriority,
                         BroadcastPostSlot,
-                        _emissionId
+                        _scopedEmissionId
                     );
                     PrefreezeBroadcastPostSnapshot<TMessage>(ref source, broadcastPostSnapshot);
                 }
@@ -4860,7 +5009,10 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : IBroadcastMessage
         {
             // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(cache, _emissionId);
+            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
+                cache,
+                _scopedEmissionId
+            );
             int messageHandlersCount = messageHandlers.Count;
             if (messageHandlersCount == 0)
             {
@@ -5022,7 +5174,10 @@ namespace DxMessaging.Core.MessageBus
             // dict here would skip handlers that the snapshot still includes.
             // GetOrAddMessageHandlerStack returns the snapshot list; bail only
             // when that snapshot is empty.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(cache, _emissionId);
+            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
+                cache,
+                _scopedEmissionId
+            );
             int messageHandlersCount = messageHandlers.Count;
             if (messageHandlersCount == 0)
             {
@@ -5095,7 +5250,7 @@ namespace DxMessaging.Core.MessageBus
                 this,
                 _globalSlots,
                 DispatchKind.Untargeted,
-                _emissionId
+                _scopedEmissionId
             );
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
@@ -5166,7 +5321,7 @@ namespace DxMessaging.Core.MessageBus
                 this,
                 _globalSlots,
                 DispatchKind.Targeted,
-                _emissionId
+                _scopedEmissionId
             );
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
@@ -5240,7 +5395,7 @@ namespace DxMessaging.Core.MessageBus
                 this,
                 _globalSlots,
                 DispatchKind.Broadcast,
-                _emissionId
+                _scopedEmissionId
             );
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
@@ -5531,7 +5686,7 @@ namespace DxMessaging.Core.MessageBus
                 this,
                 sortedHandlers,
                 UntargetedHandleSlot,
-                _emissionId
+                _scopedEmissionId
             );
 
             // Flat dispatch: every registration was resolved to its final
@@ -5613,7 +5768,7 @@ namespace DxMessaging.Core.MessageBus
                 this,
                 sortedHandlers,
                 TargetedWithoutContextHandleSlot,
-                _emissionId
+                _scopedEmissionId
             );
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
@@ -5818,7 +5973,10 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : ITargetedMessage
         {
             // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(cache, _emissionId);
+            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
+                cache,
+                _scopedEmissionId
+            );
             int messageHandlersCount = messageHandlers.Count;
             if (messageHandlersCount == 0)
             {
@@ -5830,7 +5988,7 @@ namespace DxMessaging.Core.MessageBus
                 messageHandlers[j]
                     .PrefreezeTargetedWithoutTargetingHandlersForEmission<TMessage>(
                         priority,
-                        _emissionId,
+                        _scopedEmissionId,
                         this
                     );
             }
@@ -5912,7 +6070,7 @@ namespace DxMessaging.Core.MessageBus
 
             List<KeyValuePair<int, HandlerCache>> handlerList = GetOrAddMessageHandlerStack(
                 sortedHandlers,
-                _emissionId
+                _scopedEmissionId
             );
             int handlerListCount = handlerList.Count;
             // Hoist per-MessageHandler prefreeze across ALL priority buckets
@@ -5931,7 +6089,7 @@ namespace DxMessaging.Core.MessageBus
                     KeyValuePair<int, HandlerCache> prefreezeEntry = handlerList[i];
                     List<MessageHandler> mhList = GetOrAddMessageHandlerStack(
                         prefreezeEntry.Value,
-                        _emissionId
+                        _scopedEmissionId
                     );
                     int mhCount = mhList.Count;
                     for (int h = 0; h < mhCount; ++h)
@@ -5939,12 +6097,16 @@ namespace DxMessaging.Core.MessageBus
                         mhList[h]
                             .PrefreezeBroadcastWithoutSourceHandlersForEmission<TMessage>(
                                 prefreezeEntry.Key,
-                                _emissionId,
+                                _scopedEmissionId,
                                 this
                             );
                     }
                 }
             }
+            // Copy every KeyValuePair out of the live handlerList BEFORE
+            // invoking any handler; a nested (reentrant) emission rebuilds
+            // the shared list in place after a same-type mutation. See the
+            // matching comment on the SourcedBroadcast priority walk.
             switch (handlerListCount)
             {
                 case 1:
@@ -5955,52 +6117,59 @@ namespace DxMessaging.Core.MessageBus
                 }
                 case 2:
                 {
-                    KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[1];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
+                    KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
+                    KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
+                    RunBroadcastWithoutSource(ref source, ref message, entry0.Key, entry0.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry1.Key, entry1.Value);
                     return true;
                 }
                 case 3:
                 {
-                    KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[1];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[2];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
+                    KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
+                    KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
+                    KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
+                    RunBroadcastWithoutSource(ref source, ref message, entry0.Key, entry0.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry1.Key, entry1.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry2.Key, entry2.Value);
                     return true;
                 }
                 case 4:
                 {
-                    KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[1];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[2];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[3];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
+                    KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
+                    KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
+                    KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
+                    KeyValuePair<int, HandlerCache> entry3 = handlerList[3];
+                    RunBroadcastWithoutSource(ref source, ref message, entry0.Key, entry0.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry1.Key, entry1.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry2.Key, entry2.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry3.Key, entry3.Value);
                     return true;
                 }
                 case 5:
                 {
-                    KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[1];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[2];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[3];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    entry = handlerList[4];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
+                    KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
+                    KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
+                    KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
+                    KeyValuePair<int, HandlerCache> entry3 = handlerList[3];
+                    KeyValuePair<int, HandlerCache> entry4 = handlerList[4];
+                    RunBroadcastWithoutSource(ref source, ref message, entry0.Key, entry0.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry1.Key, entry1.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry2.Key, entry2.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry3.Key, entry3.Value);
+                    RunBroadcastWithoutSource(ref source, ref message, entry4.Key, entry4.Value);
                     return true;
                 }
             }
 
             for (int i = 0; i < handlerListCount; ++i)
             {
+                // Live-count guard for the 6+ bucket fallback; see the
+                // SourcedBroadcast priority walk for the rationale.
+                if (handlerList.Count <= i)
+                {
+                    break;
+                }
+
                 KeyValuePair<int, HandlerCache> entry = handlerList[i];
                 RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
             }
@@ -6023,7 +6192,10 @@ namespace DxMessaging.Core.MessageBus
             // dict here would skip handlers that the snapshot still includes.
             // GetOrAddMessageHandlerStack returns the snapshot list; bail only
             // when that snapshot is empty.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(cache, _emissionId);
+            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
+                cache,
+                _scopedEmissionId
+            );
             int messageHandlersCount = messageHandlers.Count;
             if (messageHandlersCount == 0)
             {
@@ -6035,7 +6207,7 @@ namespace DxMessaging.Core.MessageBus
                 messageHandlers[j]
                     .PrefreezeBroadcastWithoutSourceHandlersForEmission<TMessage>(
                         priority,
-                        _emissionId,
+                        _scopedEmissionId,
                         this
                     );
             }
@@ -6664,7 +6836,12 @@ namespace DxMessaging.Core.MessageBus
             {
                 if (state.hasPending)
                 {
-                    ReleaseSnapshot(ref state.active);
+                    // Displacement, not plain release: an OUTER emission may
+                    // still be iterating state.active (handler mutated the
+                    // registration set, then reentrantly emitted this type).
+                    // ReleaseDisplacedSnapshot defers the release to the
+                    // outermost dispatch-lease exit when one is in flight.
+                    messageBus.ReleaseDisplacedSnapshot(ref state.active);
                     if (state.pendingDirty || (hasHandlers && state.pending.IsEmpty))
                     {
                         ReleaseSnapshot(ref state.pending);
@@ -6682,8 +6859,7 @@ namespace DxMessaging.Core.MessageBus
                 }
                 else if (!hasHandlers && !state.active.IsEmpty)
                 {
-                    ReleaseSnapshot(ref state.active);
-                    state.active = DispatchSnapshot.Empty;
+                    messageBus.ReleaseDisplacedSnapshot(ref state.active);
                 }
 
                 state.snapshotEmissionId = emissionId;
@@ -6961,7 +7137,10 @@ namespace DxMessaging.Core.MessageBus
             {
                 if (state.hasPending)
                 {
-                    ReleaseSnapshot(ref state.active);
+                    // See AcquireDispatchSnapshot: the displaced active
+                    // snapshot may still be iterated by an outer emission, so
+                    // its release is deferred while a dispatch lease is live.
+                    messageBus.ReleaseDisplacedSnapshot(ref state.active);
                     if (state.pendingDirty || (hasHandlers && state.pending.IsEmpty))
                     {
                         ReleaseSnapshot(ref state.pending);
@@ -6979,8 +7158,7 @@ namespace DxMessaging.Core.MessageBus
                 }
                 else if (!hasHandlers && !state.active.IsEmpty)
                 {
-                    ReleaseSnapshot(ref state.active);
-                    state.active = DispatchSnapshot.Empty;
+                    messageBus.ReleaseDisplacedSnapshot(ref state.active);
                 }
 
                 state.snapshotEmissionId = emissionId;
@@ -7137,7 +7315,7 @@ namespace DxMessaging.Core.MessageBus
 
             MessageHandler.TargetedDispatchLink<TMessage> link =
                 DxUnsafe.As<MessageHandler.TargetedDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref target, ref message, priority, _emissionId);
+            link.Invoke(handler, ref target, ref message, priority, _scopedEmissionId);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7157,7 +7335,7 @@ namespace DxMessaging.Core.MessageBus
 
             MessageHandler.TargetedPostDispatchLink<TMessage> link =
                 DxUnsafe.As<MessageHandler.TargetedPostDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref target, ref message, priority, _emissionId);
+            link.Invoke(handler, ref target, ref message, priority, _scopedEmissionId);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7199,7 +7377,7 @@ namespace DxMessaging.Core.MessageBus
                         .handler.PrefreezeTargetedPostProcessorsForEmission<TMessage>(
                             target,
                             priority,
-                            _emissionId,
+                            _scopedEmissionId,
                             this
                         );
                 }
@@ -7252,7 +7430,7 @@ namespace DxMessaging.Core.MessageBus
                         .handler.PrefreezeTargetedHandlersForEmission<TMessage>(
                             target,
                             priority,
-                            _emissionId,
+                            _scopedEmissionId,
                             this
                         );
                 }
@@ -7269,7 +7447,7 @@ namespace DxMessaging.Core.MessageBus
             MessageHandler handler = entry.handler;
             if (entry.prefreeze.kind == PrefreezeKindGlobalUntargetedHandlers)
             {
-                handler.PrefreezeGlobalUntargetedForEmission(_emissionId, this);
+                handler.PrefreezeGlobalUntargetedForEmission(_scopedEmissionId, this);
             }
 
             if (!handler.active)
@@ -7294,7 +7472,7 @@ namespace DxMessaging.Core.MessageBus
             MessageHandler handler = entry.handler;
             if (entry.prefreeze.kind == PrefreezeKindGlobalTargetedHandlers)
             {
-                handler.PrefreezeGlobalTargetedForEmission(_emissionId, this);
+                handler.PrefreezeGlobalTargetedForEmission(_scopedEmissionId, this);
             }
 
             if (!handler.active)
@@ -7319,7 +7497,7 @@ namespace DxMessaging.Core.MessageBus
             MessageHandler handler = entry.handler;
             if (entry.prefreeze.kind == PrefreezeKindGlobalBroadcastHandlers)
             {
-                handler.PrefreezeGlobalBroadcastForEmission(_emissionId, this);
+                handler.PrefreezeGlobalBroadcastForEmission(_scopedEmissionId, this);
             }
 
             if (!handler.active)
@@ -7346,7 +7524,7 @@ namespace DxMessaging.Core.MessageBus
                 entries[entryIndex]
                     .handler.PrefreezeTargetedWithoutTargetingHandlersForEmission<TMessage>(
                         priority,
-                        _emissionId,
+                        _scopedEmissionId,
                         this
                     );
             }
@@ -7371,7 +7549,7 @@ namespace DxMessaging.Core.MessageBus
                 DxUnsafe.As<MessageHandler.TargetedWithoutTargetingDispatchLink<TMessage>>(
                     entry.dispatch
                 );
-            link.Invoke(handler, ref target, ref message, priority, _emissionId);
+            link.Invoke(handler, ref target, ref message, priority, _scopedEmissionId);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7393,7 +7571,7 @@ namespace DxMessaging.Core.MessageBus
                 DxUnsafe.As<MessageHandler.TargetedWithoutTargetingPostDispatchLink<TMessage>>(
                     entry.dispatch
                 );
-            link.Invoke(handler, ref target, ref message, priority, _emissionId);
+            link.Invoke(handler, ref target, ref message, priority, _scopedEmissionId);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7433,7 +7611,7 @@ namespace DxMessaging.Core.MessageBus
                     entries[entryIndex]
                         .handler.PrefreezeTargetedWithoutTargetingPostProcessorsForEmission<TMessage>(
                             priority,
-                            _emissionId,
+                            _scopedEmissionId,
                             this
                         );
                 }
@@ -7457,7 +7635,7 @@ namespace DxMessaging.Core.MessageBus
 
             MessageHandler.BroadcastDispatchLink<TMessage> link =
                 DxUnsafe.As<MessageHandler.BroadcastDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref source, ref message, priority, _emissionId);
+            link.Invoke(handler, ref source, ref message, priority, _scopedEmissionId);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7477,7 +7655,7 @@ namespace DxMessaging.Core.MessageBus
 
             MessageHandler.BroadcastPostDispatchLink<TMessage> link =
                 DxUnsafe.As<MessageHandler.BroadcastPostDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref source, ref message, priority, _emissionId);
+            link.Invoke(handler, ref source, ref message, priority, _scopedEmissionId);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7519,7 +7697,7 @@ namespace DxMessaging.Core.MessageBus
                         .handler.PrefreezeBroadcastPostProcessorsForEmission<TMessage>(
                             source,
                             priority,
-                            _emissionId,
+                            _scopedEmissionId,
                             this
                         );
                 }
@@ -7540,7 +7718,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 handler.PrefreezeBroadcastWithoutSourceHandlersForEmission<TMessage>(
                     entry.prefreeze.priority,
-                    _emissionId,
+                    _scopedEmissionId,
                     this
                 );
             }
@@ -7554,7 +7732,7 @@ namespace DxMessaging.Core.MessageBus
                 DxUnsafe.As<MessageHandler.BroadcastWithoutSourceDispatchLink<TMessage>>(
                     entry.dispatch
                 );
-            link.Invoke(handler, ref source, ref message, priority, _emissionId);
+            link.Invoke(handler, ref source, ref message, priority, _scopedEmissionId);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7576,7 +7754,7 @@ namespace DxMessaging.Core.MessageBus
                 DxUnsafe.As<MessageHandler.BroadcastWithoutSourcePostDispatchLink<TMessage>>(
                     entry.dispatch
                 );
-            link.Invoke(handler, ref source, ref message, priority, _emissionId);
+            link.Invoke(handler, ref source, ref message, priority, _scopedEmissionId);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7617,7 +7795,7 @@ namespace DxMessaging.Core.MessageBus
                     entries[entryIndex]
                         .handler.PrefreezeBroadcastWithoutSourcePostProcessorsForEmission<TMessage>(
                             priority,
-                            _emissionId,
+                            _scopedEmissionId,
                             this
                         );
                 }

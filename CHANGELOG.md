@@ -16,11 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   24.1M, four post-processors 3.3M to 14.6M, all with zero steady-state
   allocations and unchanged dispatch semantics (snapshot freezing, priority
   and registration order, mid-emission registration visibility, immediate
-  deactivation). Targeted and broadcast dispatch are unchanged and will be
-  migrated next.
+  deactivation). One deliberate refinement: a handler that deactivates
+  itself mid-emission now skips its own remaining untargeted delegates in
+  that emission (the active check runs per delegate instead of once per
+  handler), matching the documented immediate-deactivation semantics.
+  Targeted and broadcast dispatch are unchanged and will be migrated next.
 
 ### Fixed
 
+- Registering or deregistering a handler mid-emission and then reentrantly
+  emitting the same message type no longer corrupts the in-flight dispatch.
+  The nested emission's snapshot rebuild previously released the pooled
+  arrays the outer emission was still iterating
+  (`NullReferenceException` / `ArgumentOutOfRangeException`, or silent
+  cross-dispatch aliasing at deeper nesting). Displaced snapshots are now
+  released only after the outermost dispatch exits, each emission keeps its
+  own frozen-cache identity across nested emissions, and the broadcast
+  priority walk tolerates nested membership churn.
 - A `MessageRegistrationLease` whose `OnActivate` callback throws no longer
   wedges its registrations. The lease previously recorded itself as inactive
   while the registrations stayed live, so `Deactivate()` and `Dispose()`
