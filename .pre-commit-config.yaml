@@ -7,6 +7,8 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-merge-conflict
+        stages:
+          - pre-commit
       - id: mixed-line-ending
         # Fixer: pre-commit only. Pre-push must stay check-only so a push
         # never mutates the working tree.
@@ -21,6 +23,10 @@ repos:
           - -c
           - .yamllint.yaml
         files: '(?i)\.(ya?ml)$'
+        # YAML is fixed before commit and checked in CI; do not spend pre-push
+        # budget on non-script/non-asmdef files.
+        stages:
+          - pre-commit
 
   - repo: local
     hooks:
@@ -113,6 +119,8 @@ repos:
           standalone/IL2CPP player builds).
       - id: script-tests
         name: Run fast JavaScript script tests (node --test)
+        # Curated unit/mocked subset only. Real subprocess/archive integration
+        # tests stay in `npm test` so pre-push remains a fast backstop.
         entry: >-
           node --test
           scripts/lib/__tests__/lib.test.js

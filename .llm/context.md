@@ -21,7 +21,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 
 - JS tooling is intentionally minimal (<= 10k tracked lines, enforced by `scripts/validate-js-loc-budget.js` / `npm run validate:js-loc-budget`); prefer off-the-shelf tools (prettier, cspell, markdownlint-cli2, csharpier, actionlint, lychee, yamllint, pre-commit built-ins); do not add bespoke validators, wrappers, preflight/doctor machinery, or custom git-hook plumbing.
 - Git hooks are managed solely by the standard pre-commit framework: `pipx install pre-commit` (or pip), then `pre-commit install`. Do not set `core.hooksPath`, write hooks into `.git/hooks` by hand, or wrap pre-commit in Node scripts.
-- Script tests use the built-in `node --test` runner (`npm test`); there is no jest. Pre-push runs only the fast script-test subset, so agents must run full `npm test` when changing `scripts/**/*.js` or GitHub composite action scripts.
+- Script tests use the built-in `node --test` runner (`npm test`); there is no jest. Pre-push runs only the fast script-test subset and excludes real subprocess/archive integration tests, so agents must run full `npm test` when changing `scripts/**/*.js` or GitHub composite action scripts.
 - Run tools directly (`npx prettier`, `npx cspell`, `npx markdownlint-cli2`); never reintroduce "managed" runner wrappers.
 
 ## Core Delivery Rules
@@ -110,6 +110,7 @@ The agent runs from inside the slim devcontainer (.NET 9/10 base + docker-outsid
 - Reuse shared helpers in `scripts/lib/` (`repo-files.js`, `path-classifier.js`, `line-endings.js`, `shell-command.js`) before duplicating parsing logic.
 - For Node child-process calls in `scripts/*.js`, prefer argument-array invocations (`spawnSync` / `execFileSync`) and `stdio` options instead of shell redirection; for `npm`/`npx` calls use `spawnPlatformCommandSync()` from `scripts/lib/shell-command.js` (Windows shims must not be spawned directly).
 - For local tar archive operands, never pass a raw absolute path to `tar -f`; Windows drive-letter paths are parsed as remote archive specs by GNU tar. Use `buildLocalTarArchiveSpec()` in `scripts/validate-npm-meta.js` or the same `cwd` + `./basename` pattern, and cover `path.win32` in tests.
+- For script tests that assert path-derived child-process options, do not hardcode a foreign absolute path shape like `/tmp/...` or `C:\...` against the host `path` module. Build fixtures with `os.tmpdir()` / `path.join()`, derive expected `cwd` / basename operands through the production helper, and add explicit `path.win32` / `path.posix` coverage for flavor-specific behavior.
 - For dynamic `import()` in `scripts/*.js`, convert filesystem paths with `pathToFileURL(...).href` before importing (raw Windows drive-letter paths fail Node's ESM loader).
 - For "is this path inside/outside directory X" decisions, use the helpers in `scripts/lib/path-classifier.js`; never hand-roll `path.relative(dir, file).startsWith("..")` (cross-drive Windows breaks it).
 - Normalize multiline text handling before line-based parsing; add tests for parser changes and malformed input edge cases.
