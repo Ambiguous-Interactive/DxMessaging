@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `DiagnosticsTarget` gating now matches its documented semantics. Player
+  builds previously enabled diagnostics for the `Editor` flag and ignored the
+  `Runtime` flag, and the Editor enabled diagnostics when only `Runtime` was
+  set. `Editor` now enables diagnostics only inside the Unity Editor,
+  `Runtime` only in player/runtime builds, and `All` in both, exactly as the
+  diagnostics guide describes.
 - Analyzer payload builds are now reproducible under the pinned
   `SourceGenerators/global.json` SDK. The shipped analyzer and source-generator
   DLLs no longer embed source revision or PDB metadata, CI double-builds them

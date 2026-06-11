@@ -109,23 +109,23 @@ namespace DxMessaging.Core.MessageBus
 
         internal static bool ShouldEnableDiagnostics()
         {
-            DiagnosticsTarget targets = GlobalDiagnosticsTargets;
+#if UNITY_2021_3_OR_NEWER
+            return ShouldEnableDiagnostics(GlobalDiagnosticsTargets, Application.isEditor);
+#else
+            return ShouldEnableDiagnostics(GlobalDiagnosticsTargets, isEditor: false);
+#endif
+        }
+
+        internal static bool ShouldEnableDiagnostics(DiagnosticsTarget targets, bool isEditor)
+        {
             if (targets == DiagnosticsTarget.Off)
             {
                 return false;
             }
 
-#if UNITY_2021_3_OR_NEWER
-            if (Application.isEditor)
-            {
-                return targets.HasFlagNoAlloc(DiagnosticsTarget.Editor)
-                    || targets.HasFlagNoAlloc(DiagnosticsTarget.Runtime);
-            }
-
-            return targets.HasFlagNoAlloc(DiagnosticsTarget.Editor);
-#else
-            return targets.HasFlagNoAlloc(DiagnosticsTarget.Runtime);
-#endif
+            return isEditor
+                ? targets.HasFlagNoAlloc(DiagnosticsTarget.Editor)
+                : targets.HasFlagNoAlloc(DiagnosticsTarget.Runtime);
         }
 
         /// <summary>
