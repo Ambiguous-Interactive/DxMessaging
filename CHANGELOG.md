@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `MessageRegistrationLease` whose `OnActivate` callback throws no longer
+  wedges its registrations. The lease previously recorded itself as inactive
+  while the registrations stayed live, so `Deactivate()` and `Dispose()`
+  silently refused to release them. The lease now marks itself active before
+  invoking the callback: the exception still propagates, and standard
+  `Deactivate()`/`Dispose()` teardown fully releases the registrations.
 - Calling `DxMessagingStaticState.Reset` (or resetting a bus) from inside a
   message handler no longer crashes the in-flight emission. Targeted and
   broadcast dispatch previously returned the active emission's pooled snapshot

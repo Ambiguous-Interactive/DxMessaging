@@ -200,12 +200,15 @@ namespace DxMessaging.Core.MessageBus
 
             _messageHandler.active = true;
             _token.Enable();
+            // _isActive is set BEFORE the user callback runs so the lease's
+            // state matches the registrations even if OnActivate throws:
+            // Deactivate()/Dispose() can then always release the live
+            // registrations (a post-callback assignment left them wedged).
+            _isActive = true;
             if (_lifecycle.OnActivate != null)
             {
                 _lifecycle.OnActivate(_token);
             }
-
-            _isActive = true;
         }
 
         /// <summary>
