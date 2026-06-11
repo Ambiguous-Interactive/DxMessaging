@@ -1254,6 +1254,32 @@ function Invoke-UnityLicenseActivate {
     Write-CiNotice 'Activated the Unity license (serial).'
 }
 
+function Test-UnityLicenseReturnLogShowsEntitlementReturned {
+    param(
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    try {
+        if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+            return $false
+        }
+
+        $returnedEntitlement = Select-String `
+            -LiteralPath $LogPath `
+            -Pattern 'Successfully returned the entitlement license' `
+            -SimpleMatch `
+            -Quiet
+        $legacyFileUnavailable = Select-String `
+            -LiteralPath $LogPath `
+            -Pattern 'Serial number unavailable for ULF return' `
+            -SimpleMatch `
+            -Quiet
+        return $returnedEntitlement -and $legacyFileUnavailable
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-UnityLicenseReturn {
     param(
         [Parameter(Mandatory = $true)][string]$EditorPath,
@@ -1298,7 +1324,11 @@ function Invoke-UnityLicenseReturn {
         Write-Host "::endgroup::"
 
         if ($exitCode -ne 0) {
-            Write-Host "::warning::Unity license return exited with code $exitCode; the workflow if:always() return step and the next run's return-at-start are the backstops for the leaked seat."
+            if (Test-UnityLicenseReturnLogShowsEntitlementReturned -LogPath $LogPath) {
+                Write-CiNotice "Unity returned the entitlement license, then exited with code $exitCode while skipping legacy ULF return; treating the seat return as successful."
+            } else {
+                Write-Host "::warning::Unity license return exited with code $exitCode; the workflow if:always() return step and the next run's return-at-start are the backstops for the leaked seat."
+            }
         } else {
             Write-CiNotice 'Returned the Unity license (serial).'
         }

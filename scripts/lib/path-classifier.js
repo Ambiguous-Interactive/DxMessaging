@@ -13,7 +13,7 @@
  *     repo-relative log lines.
  *
  * No side effects at module load; every function is pure modulo the
- * fs.realpathSync probe inside `normalizeForPathComparison`.
+ * fs.realpathSync probe inside `canonicalizePathForComparison`.
  */
 
 const fs = require("fs");
@@ -21,42 +21,82 @@ const path = require("path");
 
 /**
  * Resolve a path to an absolute, OS-canonical, symlink-followed form suitable
- * for prefix/inside-of comparison. On Windows, the comparison is
- * case-insensitive (lowercased). On POSIX, the comparison is case-sensitive.
+ * for prefix/inside-of comparison. Missing leaf paths are normalized by
+ * resolving the nearest existing ancestor with realpath and appending the
+ * unresolved tail, which keeps an existing base directory and a nonexistent
+ * child comparable.
  *
- * If `fs.realpathSync` fails (e.g. the target does not exist), the resolved
- * path is returned without realpath resolution; callers handle existence
- * separately.
+ * On Windows, the comparison is case-insensitive (lowercased). On POSIX, the
+ * comparison is case-sensitive.
+ *
+ * If no existing ancestor can be resolved with realpath, the resolved path is returned
+ * without realpath resolution; callers handle existence separately.
  *
  * @param {string} targetPath Path to normalize.
+ * @param {{
+ *   pathImpl?: typeof path,
+ *   realpathSync?: typeof fs.realpathSync,
+ *   caseInsensitive?: boolean
+ * }} [options] Dependency injection for tests and callers that classify
+ *   non-host path flavors.
  * @returns {string} Normalized absolute path.
  */
-function normalizeForPathComparison(targetPath) {
-  let resolved = path.resolve(targetPath);
-  try {
-    resolved = fs.realpathSync.native
-      ? fs.realpathSync.native(resolved)
-      : fs.realpathSync(resolved);
-  } catch {
-    // Keep resolved path when target is unavailable; callers handle existence separately.
+function canonicalizePathForComparison(
+  targetPath,
+  {
+    pathImpl = path,
+    realpathSync = fs.realpathSync,
+    caseInsensitive = process.platform === "win32"
+  } = {}
+) {
+  const resolved = pathImpl.resolve(targetPath);
+  const missingSegments = [];
+  let currentPath = resolved;
+
+  while (true) {
+    try {
+      const realpath =
+        typeof realpathSync.native === "function"
+          ? realpathSync.native(currentPath)
+          : realpathSync(currentPath);
+      const canonicalPath =
+        missingSegments.length === 0
+          ? realpath
+          : pathImpl.join(realpath, ...missingSegments.reverse());
+      return caseInsensitive ? canonicalPath.toLowerCase() : canonicalPath;
+    } catch {
+      const parentPath = pathImpl.dirname(currentPath);
+      if (parentPath === currentPath) {
+        return caseInsensitive ? resolved.toLowerCase() : resolved;
+      }
+
+      missingSegments.push(pathImpl.basename(currentPath));
+      currentPath = parentPath;
+    }
   }
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 /**
  * Return true when `filePath` is `directoryPath` itself or a descendant of it.
  * Comparison is symlink-resolved and case-folded on Windows (see
- * `normalizeForPathComparison`).
+ * `canonicalizePathForComparison`).
  *
  * @param {string} filePath Path under test.
  * @param {string} directoryPath Candidate parent directory.
+ * @param {{
+ *   pathImpl?: typeof path,
+ *   realpathSync?: typeof fs.realpathSync,
+ *   caseInsensitive?: boolean
+ * }} [options] Dependency injection for tests and callers that classify
+ *   non-host path flavors.
  * @returns {boolean}
  */
-function isPathInsideDirectory(filePath, directoryPath) {
-  const normalizedFilePath = normalizeForPathComparison(filePath);
-  const normalizedDirectoryPath = normalizeForPathComparison(directoryPath);
-  const relativePath = path.relative(normalizedDirectoryPath, normalizedFilePath);
-  return !isOutsideRelative(relativePath);
+function isPathInsideDirectory(filePath, directoryPath, options = {}) {
+  const { pathImpl = path } = options;
+  const normalizedFilePath = canonicalizePathForComparison(filePath, options);
+  const normalizedDirectoryPath = canonicalizePathForComparison(directoryPath, options);
+  const relativePath = pathImpl.relative(normalizedDirectoryPath, normalizedFilePath);
+  return !isOutsideRelative(relativePath, pathImpl);
 }
 
 /**
@@ -77,10 +117,16 @@ function isPathInsideDirectory(filePath, directoryPath) {
  *
  * @param {string} filePath Path under test.
  * @param {string} directoryPath Candidate parent directory.
+ * @param {{
+ *   pathImpl?: typeof path,
+ *   realpathSync?: typeof fs.realpathSync,
+ *   caseInsensitive?: boolean
+ * }} [options] Dependency injection for tests and callers that classify
+ *   non-host path flavors.
  * @returns {boolean} True when `filePath` is outside `directoryPath`.
  */
-function isPathOutsideDirectory(filePath, directoryPath) {
-  return !isPathInsideDirectory(filePath, directoryPath);
+function isPathOutsideDirectory(filePath, directoryPath, options = {}) {
+  return !isPathInsideDirectory(filePath, directoryPath, options);
 }
 
 /**
@@ -171,6 +217,7 @@ function toRepoPosixRelative(absPath, repoRoot) {
 }
 
 module.exports = {
+  canonicalizePathForComparison,
   isPathOutsideDirectory,
   isOutsideRelative,
   toPosixPath,

@@ -11,8 +11,26 @@ const {
   convertMethodNameToPascalCase,
   collectMethodRenames,
   applyMethodRenames,
-  processFile
+  processFile,
+  isPathInsideRoot,
+  isExcludedRepoLocalPath
 } = require("../fix-csharp-underscore-methods.js");
+
+function fakeRealpathSync(mapping) {
+  const realpathSync = (fullPath) => {
+    const key = fullPath.toLowerCase();
+    if (mapping.has(key)) {
+      return mapping.get(key);
+    }
+
+    const error = new Error(`ENOENT: no such file or directory, realpath '${fullPath}'`);
+    error.code = "ENOENT";
+    throw error;
+  };
+
+  realpathSync.native = realpathSync;
+  return realpathSync;
+}
 
 test("convertMethodNameToPascalCase joins segments in PascalCase", () => {
   assert.equal(convertMethodNameToPascalCase("Parse_Line_Bare"), "ParseLineBare");
@@ -90,5 +108,36 @@ test("processFile rewrites files unless checkOnly is set", () => {
     assert.equal(repeat.changed, false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("explicit-file path filters use robust Windows containment", () => {
+  const realpathSync = fakeRealpathSync(
+    new Map([
+      ["c:\\repo", "\\\\?\\C:\\Repo"],
+      ["c:\\repo\\.artifacts", "\\\\?\\C:\\Repo\\.artifacts"]
+    ])
+  );
+  const options = { realpathSync };
+
+  const insideCases = [
+    ["missing repo-local file", "C:\\Repo\\Runtime\\Missing.cs", true],
+    ["repo root itself", "C:\\Repo", true],
+    ["outside sibling", "C:\\Other\\Runtime\\File.cs", false],
+    ["cross-drive file", "D:\\Repo\\Runtime\\File.cs", false]
+  ];
+
+  for (const [name, fullPath, expected] of insideCases) {
+    assert.equal(isPathInsideRoot("C:\\Repo", fullPath, options), expected, name);
+  }
+
+  const excludedCases = [
+    ["missing file under excluded directory", "C:\\Repo\\.artifacts\\Generated.cs", true],
+    ["normal source file", "C:\\Repo\\Runtime\\Generated.cs", false],
+    ["outside file is not repo-local excluded", "C:\\Other\\.artifacts\\Generated.cs", false]
+  ];
+
+  for (const [name, fullPath, expected] of excludedCases) {
+    assert.equal(isExcludedRepoLocalPath("C:\\Repo", fullPath, options), expected, name);
   }
 });
