@@ -2,9 +2,9 @@
 title: "Cross-Platform Script Compatibility"
 id: "cross-platform-compatibility"
 category: "scripting"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-01-28"
-updated: "2026-05-30"
+updated: "2026-06-11"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -258,6 +258,17 @@ Never hand-roll it -- use `isPathInsideDirectory` / `isPathOutsideDirectory` /
 truly cannot use the helper, pair with `path.isAbsolute(rel)` (idiom
 `!rel.startsWith("..") && !path.isAbsolute(rel)`).
 
+## Local tar archive operands
+
+GNU tar treats an archive operand containing an unqualified colon as a remote
+archive spec. On Windows this makes `tar -f C:\Temp\package.tgz` fail before it
+opens the local file. Do not pass raw absolute paths to `tar -f`.
+
+For local archive paths, resolve the file once, set the subprocess `cwd` to the
+archive directory, and pass `./<basename>` as the archive operand. In this repo,
+use `buildLocalTarArchiveSpec()` from `scripts/validate-npm-meta.js` for npm
+tarball validation, and add `path.win32` coverage when touching this behavior.
+
 ## Validation Checklist
 
 Before merging scripts:
@@ -283,5 +294,6 @@ Before merging scripts:
 
 | Version | Date       | Changes                                                          |
 | ------- | ---------- | ---------------------------------------------------------------- |
+| 1.2.0   | 2026-06-11 | Add local tar archive operand guidance for Windows drive paths   |
 | 1.1.0   | 2026-05-30 | Add cross-drive path containment section (Windows `os.tmpdir()`) |
 | 1.0.0   | 2026-01-28 | Initial version from PR #144 feedback                            |

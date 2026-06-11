@@ -132,7 +132,7 @@
 
 | Skill                                                                                         | Lines       | Complexity     | Status   | Performance  | Tags                             |
 | --------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ------------ | -------------------------------- |
-| [Cross-Platform Script Compatibility](./scripting/cross-platform-compatibility.md)            | [warn] 298  | [intermediate] | [stable] | [risk: none] | cross-platform, case-sensitivity |
+| [Cross-Platform Script Compatibility](./scripting/cross-platform-compatibility.md)            | [warn] 299  | [intermediate] | [stable] | [risk: none] | cross-platform, case-sensitivity |
 | [PowerShell Scripting Best Practices](./scripting/powershell-best-practices.md)               | [draft] 106 | [intermediate] | [stable] | [risk: none] | powershell, scripting            |
 | [PowerShell Scripting Best Practices Part 1](./scripting/powershell-best-practices-part-1.md) | [ok] 204    | [intermediate] | [stable] | [risk: low]  | migration, split                 |
 | [PowerShell Scripting Best Practices Part 2](./scripting/powershell-best-practices-part-2.md) | [ok] 223    | [intermediate] | [stable] | [risk: low]  | migration, split                 |

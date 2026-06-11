@@ -165,15 +165,28 @@ function collectDryRunEntries() {
   return parsePackJsonEntries(String(result.stdout || ""));
 }
 
+function buildLocalTarArchiveSpec(tarballPath, pathImpl = path, baseDir = REPO_ROOT) {
+  if (typeof tarballPath !== "string" || tarballPath.length === 0) {
+    throw new Error("buildLocalTarArchiveSpec requires a non-empty tarball path.");
+  }
+
+  const resolved = pathImpl.resolve(baseDir, tarballPath);
+  return {
+    archive: `./${pathImpl.basename(resolved)}`,
+    cwd: pathImpl.dirname(resolved)
+  };
+}
+
 function collectTarballEntries(tarballPath, execFileSyncImpl = execFileSync) {
   if (typeof tarballPath !== "string" || tarballPath.length === 0) {
     throw new Error("collectTarballEntries requires a non-empty tarball path.");
   }
 
+  const archiveSpec = buildLocalTarArchiveSpec(tarballPath);
   let output;
   try {
-    output = execFileSyncImpl("tar", ["-tzf", tarballPath], {
-      cwd: REPO_ROOT,
+    output = execFileSyncImpl("tar", ["-tzf", archiveSpec.archive], {
+      cwd: archiveSpec.cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -187,10 +200,11 @@ function collectTarballEntries(tarballPath, execFileSyncImpl = execFileSync) {
 }
 
 function readTarballPackageJson(tarballPath, execFileSyncImpl = execFileSync) {
+  const archiveSpec = buildLocalTarArchiveSpec(tarballPath);
   let output;
   try {
-    output = execFileSyncImpl("tar", ["-xOf", tarballPath, "package/package.json"], {
-      cwd: REPO_ROOT,
+    output = execFileSyncImpl("tar", ["-xOf", archiveSpec.archive, "package/package.json"], {
+      cwd: archiveSpec.cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -608,6 +622,7 @@ if (require.main === module) {
 module.exports = {
   FORBIDDEN_PATH_RULES,
   UNITY_ROOTS,
+  buildLocalTarArchiveSpec,
   collectReleaseArtifacts,
   collectTarballEntries,
   computeRequiredMetaPaths,

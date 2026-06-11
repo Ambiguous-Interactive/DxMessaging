@@ -35,6 +35,8 @@ function commandExists(command) {
   return !result.error && result.status === 0;
 }
 
+const HAS_PWSH = commandExists("pwsh");
+
 function toPowerShellSingleQuoted(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
@@ -67,7 +69,7 @@ function runVerifyUnityResultsAction(resultsDir) {
     "pwsh",
     ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
     {
-      cwd: REPO_ROOT,
+      cwd: resultsDir,
       encoding: "utf8",
       env: {
         ...process.env,
@@ -105,7 +107,7 @@ function runDumpUnityLogTailAction(resultsDir, scriptDir = resultsDir || os.tmpd
         scriptPath
       ],
       {
-        cwd: REPO_ROOT,
+        cwd: scriptDir,
         encoding: "utf8"
       }
     );
@@ -115,7 +117,7 @@ function runDumpUnityLogTailAction(resultsDir, scriptDir = resultsDir || os.tmpd
 }
 
 test("verify-unity-results scans retry logs when final unity.log exists", (t) => {
-  if (!commandExists("pwsh")) {
+  if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
@@ -144,7 +146,7 @@ test("verify-unity-results scans retry logs when final unity.log exists", (t) =>
 });
 
 test("verify-unity-results scans retry logs when final unity.log is absent", (t) => {
-  if (!commandExists("pwsh")) {
+  if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
@@ -168,7 +170,7 @@ test("verify-unity-results scans retry logs when final unity.log is absent", (t)
 });
 
 test("dump-unity-log-tail scans retry logs when final unity.log exists", (t) => {
-  if (!commandExists("pwsh")) {
+  if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
@@ -193,7 +195,7 @@ test("dump-unity-log-tail scans retry logs when final unity.log exists", (t) => 
 });
 
 test("dump-unity-log-tail scans retry logs when final unity.log is absent", (t) => {
-  if (!commandExists("pwsh")) {
+  if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
@@ -218,7 +220,7 @@ test("dump-unity-log-tail scans retry logs when final unity.log is absent", (t) 
 });
 
 test("dump-unity-log-tail tolerates an empty results directory input", (t) => {
-  if (!commandExists("pwsh")) {
+  if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }

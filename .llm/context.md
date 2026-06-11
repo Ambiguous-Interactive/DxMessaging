@@ -21,7 +21,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 
 - JS tooling is intentionally minimal (<= 10k tracked lines, enforced by `scripts/validate-js-loc-budget.js` / `npm run validate:js-loc-budget`); prefer off-the-shelf tools (prettier, cspell, markdownlint-cli2, csharpier, actionlint, lychee, yamllint, pre-commit built-ins); do not add bespoke validators, wrappers, preflight/doctor machinery, or custom git-hook plumbing.
 - Git hooks are managed solely by the standard pre-commit framework: `pipx install pre-commit` (or pip), then `pre-commit install`. Do not set `core.hooksPath`, write hooks into `.git/hooks` by hand, or wrap pre-commit in Node scripts.
-- Script tests use the built-in `node --test` runner (`npm test`); there is no jest.
+- Script tests use the built-in `node --test` runner (`npm test`); there is no jest. Pre-push runs only the fast script-test subset, so agents must run full `npm test` when changing `scripts/**/*.js` or GitHub composite action scripts.
 - Run tools directly (`npx prettier`, `npx cspell`, `npx markdownlint-cli2`); never reintroduce "managed" runner wrappers.
 
 ## Core Delivery Rules
@@ -32,7 +32,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 - Preserve existing naming and architectural patterns.
 - Never commit repository settings that auto-approve chat-invoked terminal commands.
 - Ensure fenced markdown examples are closed and do not swallow real sections (for example `## See Also`).
-- Before committing, run the relevant formatters/linters yourself (`npm run format:check`, `npm run lint:markdown`, `npm run check:spelling`, `npm run validate:all` as applicable); hooks are the backstop, not the first signal.
+- Before committing, run the relevant formatters/linters yourself (`npm run format:check`, `npm run lint:markdown`, `npm run check:spelling`, `npm run validate:all` as applicable); hooks are the fast backstop, not the first signal.
 
 ## Build and Test Commands
 
@@ -51,7 +51,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 - JS LOC budget: `npm run validate:js-loc-budget`
 - npm tarball hygiene + Unity .meta pairing: `npm run validate:npm-meta`
 - Everything: `npm run validate:all`
-- Hooks (one-time setup): `pipx install pre-commit && pre-commit install`; run all: `pre-commit run --all-files && pre-commit run --all-files --hook-stage pre-push` (cspell, asmdef validation, and script tests are staged at pre-push and skipped by the default stage)
+- Hooks (one-time setup): `pipx install pre-commit && pre-commit install`; normal hooks run on changed files. Use targeted `pre-commit run <hook-id> --files ...` during development. Reserve `pre-commit run --all-files` / `pre-commit run --all-files --hook-stage pre-push` for hook-config changes or release audits; they are whole-repo audits, not the routine agent loop. For release audits, run the direct heavy checks (`npm test`, `npm run check:spelling`, `npm run validate:all`) alongside the all-files hook audits. Pre-push is intentionally sub-second as hook body work and excludes heavier checks such as spelling and npm pack validation; agents must run those directly when relevant.
 
 ## Running Unity Tests
 
@@ -109,6 +109,7 @@ The agent runs from inside the slim devcontainer (.NET 9/10 base + docker-outsid
 - Before writing any new script, re-read the Tooling Philosophy section; an off-the-shelf tool or a few lines in an existing kept script is almost always the right answer.
 - Reuse shared helpers in `scripts/lib/` (`repo-files.js`, `path-classifier.js`, `line-endings.js`, `shell-command.js`) before duplicating parsing logic.
 - For Node child-process calls in `scripts/*.js`, prefer argument-array invocations (`spawnSync` / `execFileSync`) and `stdio` options instead of shell redirection; for `npm`/`npx` calls use `spawnPlatformCommandSync()` from `scripts/lib/shell-command.js` (Windows shims must not be spawned directly).
+- For local tar archive operands, never pass a raw absolute path to `tar -f`; Windows drive-letter paths are parsed as remote archive specs by GNU tar. Use `buildLocalTarArchiveSpec()` in `scripts/validate-npm-meta.js` or the same `cwd` + `./basename` pattern, and cover `path.win32` in tests.
 - For dynamic `import()` in `scripts/*.js`, convert filesystem paths with `pathToFileURL(...).href` before importing (raw Windows drive-letter paths fail Node's ESM loader).
 - For "is this path inside/outside directory X" decisions, use the helpers in `scripts/lib/path-classifier.js`; never hand-roll `path.relative(dir, file).startsWith("..")` (cross-drive Windows breaks it).
 - Normalize multiline text handling before line-based parsing; add tests for parser changes and malformed input edge cases.

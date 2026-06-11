@@ -8,7 +8,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 
+const validateNpmMeta = require("../validate-npm-meta.js");
+
 const {
+  buildLocalTarArchiveSpec,
   collectTarballEntries,
   computeRequiredMetaPaths,
   findForbiddenTarballPaths,
@@ -17,7 +20,7 @@ const {
   runValidation,
   validatePackEntries,
   validatePublishedFilesArePairedWithMetas
-} = require("../validate-npm-meta.js");
+} = validateNpmMeta;
 
 const FORBIDDEN_PATH_CASES = [
   {
@@ -98,7 +101,8 @@ function createReleaseFixture(t, options = {}) {
   );
 
   const tarball = path.join(tempDir, `${name}-${version}.tgz`);
-  const tar = spawnSync("tar", ["-czf", tarball, "-C", tempDir, "package"], {
+  const tar = spawnSync("tar", ["-czf", `./${path.basename(tarball)}`, "-C", tempDir, "package"], {
+    cwd: tempDir,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -294,10 +298,15 @@ test("runValidation rejects forbidden paths from a concrete tarball", (t) => {
     fs.writeFileSync(path.join(artifactDir, "Leaked.dll"), "", "utf8");
 
     const tarball = path.join(tempDir, "package.tgz");
-    const tar = spawnSync("tar", ["-czf", tarball, "-C", tempDir, "package"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"]
-    });
+    const tar = spawnSync(
+      "tar",
+      ["-czf", `./${path.basename(tarball)}`, "-C", tempDir, "package"],
+      {
+        cwd: tempDir,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"]
+      }
+    );
     if (tar.error && tar.error.code === "ENOENT") {
       t.skip("tar is not available");
       return;
@@ -412,12 +421,69 @@ test("runValidation rejects missing release notes artifacts", (t) => {
   }
 });
 
-test("collectTarballEntries normalizes tar output paths", () => {
-  const entries = collectTarballEntries("dummy.tgz", () => {
-    return "package/Runtime/Core/Foo.cs\npackage/Runtime/Core/Foo.cs.meta\n";
+test("buildLocalTarArchiveSpec keeps Windows drive letters out of tar operands", () => {
+  const spec = buildLocalTarArchiveSpec(
+    "C:\\Temp\\release\\com.example.package-1.2.3.tgz",
+    path.win32,
+    "D:\\Repo"
+  );
+
+  assert.deepEqual(spec, {
+    archive: "./com.example.package-1.2.3.tgz",
+    cwd: "C:\\Temp\\release"
   });
+});
+
+test("buildLocalTarArchiveSpec keeps local colon basenames local", () => {
+  const spec = buildLocalTarArchiveSpec("/tmp/release/foo:bar.tgz", path.posix, "/workspace/repo");
+
+  assert.deepEqual(spec, {
+    archive: "./foo:bar.tgz",
+    cwd: "/tmp/release"
+  });
+});
+
+test("readTarballPackageJson uses the local tar archive operand", () => {
+  const calls = [];
+  const json = JSON.stringify({ name: "com.example.package", version: "1.2.3" });
+
+  const packageJson = validateNpmMeta.readTarballPackageJson(
+    "/tmp/release/pkg.tgz",
+    (command, args, options) => {
+      calls.push({ command, args, cwd: options.cwd });
+      return json;
+    }
+  );
+
+  assert.deepEqual(packageJson, { name: "com.example.package", version: "1.2.3" });
+  assert.deepEqual(calls, [
+    {
+      command: "tar",
+      args: ["-xOf", "./pkg.tgz", "package/package.json"],
+      cwd: "/tmp/release"
+    }
+  ]);
+});
+
+test("collectTarballEntries lists the archive from its parent directory", () => {
+  const archiveDir = path.join(os.tmpdir(), "tarball-entry-test");
+  const calls = [];
+  const entries = collectTarballEntries(
+    path.join(archiveDir, "pkg.tgz"),
+    (command, args, options) => {
+      calls.push({ command, args, cwd: options.cwd });
+      return "package/Runtime/Core/Foo.cs\npackage/Runtime/Core/Foo.cs.meta\n";
+    }
+  );
 
   assert.deepEqual(entries, ["Runtime/Core/Foo.cs", "Runtime/Core/Foo.cs.meta"]);
+  assert.deepEqual(calls, [
+    {
+      command: "tar",
+      args: ["-tzf", "./pkg.tgz"],
+      cwd: archiveDir
+    }
+  ]);
 });
 
 test("collectTarballEntries reports tar command errors clearly", () => {

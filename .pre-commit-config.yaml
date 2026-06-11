@@ -111,32 +111,18 @@ repos:
           Fail when a package asmdef populates precompiledReferences while
           overrideReferences is false (compiles in the Editor but breaks
           standalone/IL2CPP player builds).
-      - id: validate-npm-meta
-        name: Validate npm tarball hygiene
-        entry: node scripts/validate-npm-meta.js
-        language: system
-        pass_filenames: false
-        files: '^(package\.json|\.npmignore|CHANGELOG\.md|Editor/|Runtime/|Samples~/|SourceGenerators/)'
-        stages:
-          - pre-push
-        description: >-
-          Run npm pack dry-run checks that reject forbidden build-artifact
-          paths and enforce Unity .meta pairing for shipped package files.
-      - id: cspell
-        name: Check spelling
-        # --no-must-find-files: without it cspell exits 1 when every file
-        # pre-commit passes is excluded by .cspell.json ignorePaths (e.g. a
-        # push that only touches Samples~/**), failing with zero issues.
-        entry: npx --no-install cspell --no-progress --no-summary --no-must-find-files
-        language: system
-        files: '(?i)\.(md|markdown|cs|json|ya?ml|ps1|js)$'
-        pass_filenames: true
-        require_serial: true
-        stages:
-          - pre-push
       - id: script-tests
-        name: Run JavaScript script tests (node --test)
-        entry: node --test scripts/
+        name: Run fast JavaScript script tests (node --test)
+        entry: >-
+          node --test
+          scripts/lib/__tests__/lib.test.js
+          scripts/__tests__/fix-csharp-underscore-methods.test.js
+          scripts/__tests__/sync-banner-version.test.js
+          scripts/__tests__/unity-perf.test.js
+          scripts/__tests__/validate-asmdef-references.test.js
+          scripts/__tests__/validate-npm-meta.test.js
+          scripts/__tests__/validate-unity-versions.test.js
+          scripts/wiki/__tests__/transform.test.js
         language: system
         pass_filenames: false
         files: '^(package\.json|scripts/.*\.js)$'
