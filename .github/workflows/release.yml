@@ -131,6 +131,16 @@ jobs:
           set -euo pipefail
           tar -tzf ".artifacts/release/${PACKAGE_FILE}" \
             | sed 's|^package/||' | sort -u > /tmp/entries.txt
+          # Defense layer 2: reject build artifacts and IDE-ephemeral files.
+          # Layer 1 is .npmignore / package.json#files.
+          forbidden="$(grep -Ei \
+            '(^|/)\.vs/|(^|/)\.idea/|(^|/)bin/|(^|/)obj/|\.pdb$|\.lscache(\.meta)?$|\.DotSettings\.user(\.meta)?$' \
+            /tmp/entries.txt || true)"
+          if [ -n "${forbidden}" ]; then
+            echo "::error::Tarball contains forbidden build-artifact path(s):"
+            printf '%s\n' "${forbidden}"
+            exit 1
+          fi
           grep -E '^(Editor|Runtime|Samples~|SourceGenerators)(/|\.meta$)' \
             /tmp/entries.txt > /tmp/unity-entries.txt || true
           grep '\.meta$' /tmp/unity-entries.txt \
