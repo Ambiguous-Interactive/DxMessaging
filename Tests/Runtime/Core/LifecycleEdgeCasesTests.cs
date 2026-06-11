@@ -262,6 +262,181 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
+        /// Pins <see cref="MessageRegistrationToken.UnregisterAll"/> called
+        /// from INSIDE a handler mid-dispatch. This exercises a different
+        /// path from <see cref="MessageRegistrationToken.Disable"/>: in
+        /// addition to invoking every live deregistration, UnregisterAll
+        /// clears the token's STAGED registration map, so a later
+        /// <c>Enable()</c> must NOT resurrect the handlers. Mid-dispatch the
+        /// in-flight emission completes against its frozen snapshot (the same
+        /// contract as <see cref="TokenDisableMidDispatch"/>), the bus must
+        /// not throw or corrupt its counters, and the token must remain
+        /// usable for fresh registrations afterwards.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator UnregisterAllMidDispatch(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            // A standalone token (not a MessageAwareComponent token) keeps this
+            // test in full control of every registration: UnregisterAll() on a
+            // component token would also wipe the component's built-in
+            // StringMessage registrations and skew the bus counters.
+            GameObject host = new(nameof(UnregisterAllMidDispatch) + scenario.Kind);
+            _spawned.Add(host);
+            InstanceId hostId = host;
+            MessageHandler handler = new(host) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler);
+            token.Enable();
+
+            IMessageBus bus = MessageHandler.MessageBus;
+            int aCount = 0;
+            int bCount = 0;
+            int freshCount = 0;
+
+            using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
+            {
+                int initialUntargeted = bus.RegisteredUntargeted;
+                int initialTargeted = bus.RegisteredTargeted;
+                int initialBroadcast = bus.RegisteredBroadcast;
+
+                // Handler A (priority 0) clears the whole token mid-dispatch;
+                // handler B (priority 1) observes the in-flight snapshot.
+                _ = RegisterCountingHandler(
+                    scenario,
+                    token,
+                    hostId,
+                    () =>
+                    {
+                        ++aCount;
+                        token.UnregisterAll();
+                    },
+                    priority: 0
+                );
+                _ = RegisterCountingHandler(scenario, token, hostId, () => ++bCount, priority: 1);
+
+                Assert.DoesNotThrow(
+                    () => EmitForScenario(scenario, hostId),
+                    "[{0}] UnregisterAll from inside a handler must not throw mid-dispatch.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    1,
+                    aCount,
+                    "[{0}] Handler A must run on the in-flight emission. aCount={1}, bCount={2}.",
+                    scenario.Kind,
+                    aCount,
+                    bCount
+                );
+                Assert.AreEqual(
+                    1,
+                    bCount,
+                    "[{0}] Snapshot semantics: B must still run on the in-flight emission even after UnregisterAll. aCount={1}, bCount={2}.",
+                    scenario.Kind,
+                    aCount,
+                    bCount
+                );
+
+                // The registrations must be gone from the bus immediately.
+                Assert.AreEqual(
+                    initialUntargeted,
+                    bus.RegisteredUntargeted,
+                    "[{0}] Untargeted counter must return to baseline after UnregisterAll.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    initialTargeted,
+                    bus.RegisteredTargeted,
+                    "[{0}] Targeted counter must return to baseline after UnregisterAll.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    initialBroadcast,
+                    bus.RegisteredBroadcast,
+                    "[{0}] Broadcast counter must return to baseline after UnregisterAll.",
+                    scenario.Kind
+                );
+
+                EmitForScenario(scenario, hostId);
+                Assert.AreEqual(
+                    1,
+                    aCount,
+                    "[{0}] After UnregisterAll, the next emission must NOT invoke A.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    1,
+                    bCount,
+                    "[{0}] After UnregisterAll, the next emission must NOT invoke B.",
+                    scenario.Kind
+                );
+
+                // KEY difference from Disable(): the staged registrations were
+                // cleared, so Enable() must NOT resurrect the handlers.
+                token.Enable();
+                EmitForScenario(scenario, hostId);
+                Assert.AreEqual(
+                    1,
+                    aCount,
+                    "[{0}] Enable() after UnregisterAll must NOT resurrect A (staged state was cleared).",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    1,
+                    bCount,
+                    "[{0}] Enable() after UnregisterAll must NOT resurrect B (staged state was cleared).",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    initialUntargeted,
+                    bus.RegisteredUntargeted,
+                    "[{0}] Untargeted counter must stay at baseline after Enable() post-UnregisterAll.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    initialTargeted,
+                    bus.RegisteredTargeted,
+                    "[{0}] Targeted counter must stay at baseline after Enable() post-UnregisterAll.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    initialBroadcast,
+                    bus.RegisteredBroadcast,
+                    "[{0}] Broadcast counter must stay at baseline after Enable() post-UnregisterAll.",
+                    scenario.Kind
+                );
+
+                // The token (and the bus) must remain fully usable: a fresh
+                // registration on the re-enabled token dispatches normally.
+                MessageRegistrationHandle freshHandle = RegisterCountingHandler(
+                    scenario,
+                    token,
+                    hostId,
+                    () => ++freshCount
+                );
+                EmitForScenario(scenario, hostId);
+                Assert.AreEqual(
+                    1,
+                    freshCount,
+                    "[{0}] A registration made after UnregisterAll must receive emissions (bus must not be corrupted).",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    1,
+                    aCount,
+                    "[{0}] Old handler A must stay dead after the fresh registration's emission.",
+                    scenario.Kind
+                );
+
+                token.RemoveRegistration(freshHandle);
+            }
+
+            token.Dispose();
+            yield break;
+        }
+
+        /// <summary>
         /// <see cref="IMessageBus"/> does NOT extend <see cref="IDisposable"/>
         /// in the public surface, so an "EmitOnDisposedBus" test does not
         /// translate directly. The closest defined behavior is "no handlers

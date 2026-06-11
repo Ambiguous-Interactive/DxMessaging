@@ -2370,6 +2370,18 @@ namespace DxMessaging.Core
             }
 
             public readonly Dictionary<T, Entry> entries = new();
+
+            // Original-handler keys in first-registration order. Dictionary
+            // enumeration order is NOT stable across Remove/Add churn (.NET
+            // reuses freed slots LIFO), so dispatch snapshots are rebuilt from
+            // this list instead of from <see cref="entries"/> to honor the
+            // documented "same priority uses registration order" contract.
+            // Invariants: contains exactly the keys of <see cref="entries"/>;
+            // a key is appended on its FIRST registration only (refcount
+            // increments do not move it) and removed when its refcount drops
+            // to zero. Maintained exclusively by the AddHandler* family and
+            // <see cref="DxMessaging.Core.Internal.IHandlerActionCache.Reset"/>.
+            public readonly List<T> insertionOrder = new();
             public readonly List<T> cache = new();
             public long version;
             public long lastSeenVersion = -1;
@@ -2422,6 +2434,7 @@ namespace DxMessaging.Core
             void DxMessaging.Core.Internal.IHandlerActionCache.Reset()
             {
                 entries.Clear();
+                insertionOrder.Clear();
                 cache.Clear();
                 lastSeenVersion = -1;
                 lastSeenEmissionId = -1;
@@ -3481,7 +3494,7 @@ namespace DxMessaging.Core
                     emissionId
                 );
                 int handlersCount = handlers.Count;
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](message);
                 }
@@ -3520,7 +3533,7 @@ namespace DxMessaging.Core
                     emissionId
                 );
                 int handlersCount = handlers.Count;
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](target, message);
                 }
@@ -3569,36 +3582,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](source, message);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](source, message);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](source, message);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](source, message);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](source, message);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](source, message);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](source, message);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](source, message);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](source, message);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](source, message);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](source, message);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](source, message);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](source, message);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](source, message);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](source, message);
                 }
@@ -4501,6 +4554,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
                 TypedSlot<T> slot = FindContextSlot(handlersByContext);
                 if (slot != null)
@@ -4580,6 +4637,15 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        // List.Remove is O(n) over the same-priority bucket.
+                        // Accepted tradeoff (here and at every sibling
+                        // deregistration site): buckets are small in practice,
+                        // removal is a cold churn path, and the list keeps
+                        // steady-state dispatch allocation-free while
+                        // preserving first-registration order, unlike
+                        // Dictionary enumeration whose freed slots are reused
+                        // LIFO.
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localSlot != null)
                         {
@@ -4648,6 +4714,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 Dictionary<
@@ -4686,6 +4756,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         // Deliberately keep the priority and context mappings to preserve
                         // frozen snapshots for the current emission.
@@ -4822,36 +4893,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref typedMessage);
                 }
@@ -4893,36 +5004,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref typedMessage);
                 }
@@ -4973,36 +5124,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref typedMessage);
                 }
@@ -5045,36 +5236,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref context, ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref context, ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref context, ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref context, ref typedMessage);
                 }
@@ -5172,36 +5403,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref context, ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref context, ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref context, ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref context, ref typedMessage);
                 }
@@ -5290,36 +5561,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](typedMessage);
                 }
@@ -5356,36 +5667,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](typedMessage);
                 }
@@ -5429,36 +5780,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
                         return;
                     }
                     case 3:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
                         return;
                     }
                     case 4:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
+                        if (typedHandlers.Count < 4)
+                        {
+                            return;
+                        }
                         typedHandlers[3](context, typedMessage);
                         return;
                     }
                     case 5:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
+                        if (typedHandlers.Count < 4)
+                        {
+                            return;
+                        }
                         typedHandlers[3](context, typedMessage);
+                        if (typedHandlers.Count < 5)
+                        {
+                            return;
+                        }
                         typedHandlers[4](context, typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < typedHandlers.Count; ++i)
                 {
                     typedHandlers[i](context, typedMessage);
                 }
@@ -5504,66 +5895,151 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
                         return;
                     }
                     case 3:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
                         return;
                     }
                     case 4:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
+                        if (typedHandlers.Count < 4)
+                        {
+                            return;
+                        }
                         typedHandlers[3](context, typedMessage);
                         return;
                     }
                     case 5:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
+                        if (typedHandlers.Count < 4)
+                        {
+                            return;
+                        }
                         typedHandlers[3](context, typedMessage);
+                        if (typedHandlers.Count < 5)
+                        {
+                            return;
+                        }
                         typedHandlers[4](context, typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < typedHandlers.Count; ++i)
                 {
                     typedHandlers[i](context, typedMessage);
                 }
             }
 
+            // Mid-dispatch clear contract: the List returned here is the LIVE
+            // cache.cache list, not a copy. IHandlerActionCache.Reset() (bus
+            // reset / sweep eviction) clears it IN PLACE, so every dispatch
+            // loop that indexes the returned list re-checks list.Count before
+            // each invocation past the first (and the >5 fallback loops bound
+            // on the live Count). A reset fired from inside a handler then
+            // cleanly stops the in-flight bucket: no peer delegate runs and
+            // nothing throws. The re-check is a single inlined List.Count
+            // field read on data already in cache, so steady-state dispatch
+            // cost is unchanged.
             internal static List<TU> GetOrAddNewHandlerStack<TU>(
                 HandlerActionCache<TU> actionCache,
                 long emissionId
             )
             {
+                DebugAssertInsertionOrderInSync(actionCache);
                 if (actionCache.lastSeenEmissionId != emissionId)
                 {
                     if (actionCache.version != actionCache.lastSeenVersion)
                     {
+                        // Rebuild the dispatch snapshot from insertionOrder, NOT from
+                        // the entries dictionary: dictionary enumeration order permutes
+                        // after Remove/Add churn (freed slots are reused LIFO), while
+                        // insertionOrder preserves the documented first-registration
+                        // order for equal-priority handlers. This branch only runs on
+                        // registration churn (version bump), never on steady-state
+                        // dispatch, and allocates nothing (the pooled cache list is
+                        // cleared and refilled in place).
                         List<TU> list = actionCache.cache;
                         list.Clear();
-                        foreach (
-                            KeyValuePair<
-                                TU,
-                                HandlerActionCache<TU>.Entry
-                            > kvp in actionCache.entries
-                        )
+                        List<TU> orderedHandlers = actionCache.insertionOrder;
+                        int orderedCount = orderedHandlers.Count;
+                        for (int i = 0; i < orderedCount; ++i)
                         {
-                            list.Add(kvp.Value.handler);
+                            if (
+                                actionCache.entries.TryGetValue(
+                                    orderedHandlers[i],
+                                    out HandlerActionCache<TU>.Entry entry
+                                )
+                            )
+                            {
+                                list.Add(entry.handler);
+                            }
                         }
                         actionCache.lastSeenVersion = actionCache.version;
                     }
                     actionCache.lastSeenEmissionId = emissionId;
                 }
                 return actionCache.cache;
+            }
+
+            // Asserts insertionOrder stays in lockstep with the entries
+            // dictionary at every dispatch-snapshot read. Drift indicates a
+            // mutation site of HandlerActionCache.entries that forgot to
+            // mirror the change into insertionOrder (AddHandler* family,
+            // deregistration closures, IHandlerActionCache.Reset). Stripped
+            // in Release builds via [Conditional("DEBUG")] -- zero hot-path
+            // cost.
+            [Conditional("DEBUG")]
+            private static void DebugAssertInsertionOrderInSync<TU>(
+                HandlerActionCache<TU> actionCache
+            )
+            {
+                System.Diagnostics.Debug.Assert(
+                    actionCache.insertionOrder.Count == actionCache.entries.Count,
+                    "HandlerActionCache.insertionOrder must mirror entries: every first "
+                        + "registration appends and every final deregistration removes. A "
+                        + "count mismatch means a mutation site skipped the insertionOrder "
+                        + "update and same-priority dispatch order is no longer trustworthy."
+                );
             }
 
             private static void PrefreezeHandlersForEmission<THandler>(
@@ -5632,6 +6108,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
                 if (firstRegistration)
                 {
@@ -5682,6 +6162,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         localSlot.liveCount--;
                         return;
@@ -5744,6 +6225,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 Dictionary<
@@ -5782,6 +6267,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localCache.entries.Count == 0)
                         {
@@ -5829,6 +6315,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 HandlerActionCache<TU> localCache = cache;
@@ -5852,6 +6342,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         return;
                     }
@@ -5897,6 +6388,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 Dictionary<int, HandlerActionCache<TU>> localHandlers = handlers;
@@ -5925,6 +6420,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localCache.entries.Count == 0)
                         {
@@ -5980,6 +6476,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
                 TypedSlot<T> slot = FindPrioritySlot(handlers);
                 if (slot != null)
@@ -6055,6 +6555,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localSlot != null)
                         {
@@ -6107,6 +6608,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 Dictionary<int, HandlerActionCache<TU>> localHandlers = handlers;
@@ -6135,6 +6640,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         // Intentionally DO NOT remove the priority key here to preserve
                         // the cache handle during an in-flight emission.

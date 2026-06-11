@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Calling `DxMessagingStaticState.Reset` (or resetting a bus) from inside a
+  message handler no longer crashes the in-flight emission. Targeted and
+  broadcast dispatch previously returned the active emission's pooled snapshot
+  arrays mid-iteration (`NullReferenceException` /
+  `ArgumentOutOfRangeException`); the teardown is now deferred until the
+  outermost dispatch exits, mirroring the existing `Trim` deferral, and the
+  remaining handlers in that emission short-circuit cleanly.
+- Equal-priority handlers now always dispatch in live registration order. The
+  documented "same priority uses registration order" contract previously broke
+  after remove/re-register churn (a new handler could dispatch in a removed
+  handler's old position), after `Disable()`/`Enable()` cycles (replay order
+  permuted), and across components (a newly created component could dispatch
+  in a destroyed component's old position). Handler caches, bus-side priority
+  buckets, and token replay now preserve insertion order explicitly.
+- Targeted and broadcast post-processors now follow an interceptor-rewritten
+  target/source. When an interceptor redirects a message via its
+  `ref InstanceId` parameter, post-processors registered for the rewritten id
+  run (previously the broadcast path never re-resolved the rewritten source,
+  and the targeted path preferred a stale pre-interceptor snapshot, so the
+  rewritten id's post-processors were silently skipped).
 - `DiagnosticsTarget` gating now matches its documented semantics. Player
   builds previously enabled diagnostics for the `Editor` flag and ignored the
   `Runtime` flag, and the Editor enabled diagnostics when only `Runtime` was

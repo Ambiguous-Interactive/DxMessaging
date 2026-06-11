@@ -58,6 +58,17 @@ namespace DxMessaging.Core
         private readonly MessageHandler _messageHandler;
 
         private readonly Dictionary<MessageRegistrationHandle, Action> _registrations = new();
+
+        // Staged-registration handles in registration order. Dictionary
+        // enumeration order is NOT stable across Remove/Add churn, so Enable()
+        // (and RetargetMessageBus) replay staged registrations by walking this
+        // list instead of _registrations.Values; otherwise a Disable()/Enable()
+        // cycle after churn would silently permute the documented
+        // "same priority uses registration order" dispatch contract.
+        // Invariant: contains exactly the keys of _registrations, in the order
+        // InternalRegister staged them (handle ids are monotonically
+        // increasing, so this list is also sorted by handle id).
+        private readonly List<MessageRegistrationHandle> _registrationOrder = new();
         private readonly Dictionary<MessageRegistrationHandle, Action> _deregistrations = new();
         private readonly List<Action> _actionQueue = new();
         internal readonly Dictionary<
@@ -1804,6 +1815,7 @@ namespace DxMessaging.Core
                 MessageRegistrationHandle.CreateMessageRegistrationHandle();
 
             _registrations[handle] = Registration;
+            _registrationOrder.Add(handle);
             _metadata[handle] = metadataProducer();
 
             // Generally, registrations should take place before all calls to enable. Just in case, though...
@@ -1843,8 +1855,22 @@ namespace DxMessaging.Core
 
             if (_registrations is { Count: > 0 })
             {
+                // Replay staged registrations in original registration order
+                // (via _registrationOrder) rather than in
+                // _registrations.Values enumeration order, which permutes
+                // after Remove/Add churn. This preserves the documented
+                // equal-priority "registration order" dispatch contract across
+                // Disable()/Enable() cycles. Snapshot into _actionQueue first
+                // so replay tolerates re-entrant registration mutation.
                 _actionQueue.Clear();
-                _actionQueue.AddRange(_registrations.Values);
+                int registrationCount = _registrationOrder.Count;
+                for (int i = 0; i < registrationCount; ++i)
+                {
+                    if (_registrations.TryGetValue(_registrationOrder[i], out Action registration))
+                    {
+                        _actionQueue.Add(registration);
+                    }
+                }
                 foreach (Action action in _actionQueue)
                 {
                     action();
@@ -1911,6 +1937,7 @@ namespace DxMessaging.Core
 
             _enabled = false;
             _registrations?.Clear();
+            _registrationOrder?.Clear();
             _deregistrations?.Clear();
         }
 
@@ -1952,8 +1979,17 @@ namespace DxMessaging.Core
 
             if (rebindActiveRegistrations && _registrations is { Count: > 0 })
             {
+                // Mirror Enable(): rebind in original registration order so the
+                // equal-priority dispatch order survives a bus retarget.
                 _actionQueue.Clear();
-                _actionQueue.AddRange(_registrations.Values);
+                int registrationCount = _registrationOrder.Count;
+                for (int i = 0; i < registrationCount; ++i)
+                {
+                    if (_registrations.TryGetValue(_registrationOrder[i], out Action registration))
+                    {
+                        _actionQueue.Add(registration);
+                    }
+                }
                 foreach (Action registration in _actionQueue)
                 {
                     registration?.Invoke();
@@ -1982,6 +2018,7 @@ namespace DxMessaging.Core
             // Disable()/Enable() cycle does not silently re-register the
             // handler we were just asked to remove.
             _ = _registrations?.Remove(handle);
+            _ = _registrationOrder?.Remove(handle);
             _ = _metadata?.Remove(handle);
             _ = _callCounts?.Remove(handle);
         }

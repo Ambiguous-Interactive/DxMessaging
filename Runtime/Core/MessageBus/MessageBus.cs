@@ -363,13 +363,30 @@ namespace DxMessaging.Core.MessageBus
 
             public void Dispose()
             {
-                _bus._dispatchDepth--;
+                MessageBus bus = _bus;
+                bus._dispatchDepth--;
+                if (bus._dispatchDepth == 0 && bus._hasDeferredResetTeardown)
+                {
+                    bus.FlushDeferredResetTeardown();
+                }
             }
         }
 
         private sealed class HandlerCache
         {
             public readonly Dictionary<MessageHandler, int> handlers = new();
+
+            // MessageHandler keys in first-registration order. Dictionary
+            // enumeration order is NOT stable across Remove/Add churn (.NET
+            // reuses freed slots LIFO), so dispatch snapshots are built from
+            // this list instead of from <see cref="handlers"/> to honor the
+            // documented "same priority uses registration order" contract
+            // across components. Invariants: contains exactly the keys of
+            // <see cref="handlers"/>; a key is appended on its FIRST
+            // registration only (refcount increments do not move it) and
+            // removed when its refcount drops to zero. Mirrors the
+            // MessageHandler-side HandlerActionCache.insertionOrder design.
+            public readonly List<MessageHandler> insertionOrder = new();
             public readonly List<MessageHandler> cache = new();
             public long version;
             public long lastSeenVersion = -1;
@@ -384,6 +401,7 @@ namespace DxMessaging.Core.MessageBus
                 // captured cache identity and reset generations, so monotonic versioning
                 // is handled by sweep-driven slot reset paths.
                 handlers.Clear();
+                insertionOrder.Clear();
                 cache.Clear();
                 version = 0;
                 lastSeenVersion = -1;
@@ -1059,6 +1077,21 @@ namespace DxMessaging.Core.MessageBus
         private long _globalSlotSweepGeneration;
         private int _lastContextTypeSlotsEvicted;
         private int _dispatchDepth;
+
+        // Deferred teardown for ResetState() invoked from inside a handler
+        // while an emission is in flight. Clearing a context HandlerCache (or
+        // resetting a global DispatchState) inline would release the in-flight
+        // emission's frozen DispatchSnapshot bucket/entry arrays back to their
+        // ArrayPools (and clear the frozen priority list) while the dispatch
+        // loop is still iterating them. Instead, the caches/states are queued
+        // here and torn down when the outermost dispatch lease exits --
+        // mirroring how Trim/sweep defer eviction via HasActiveDispatchSnapshot
+        // and the _dispatchDepth gate in SweepDirtyTypedHandlerSlots. These
+        // lists allocate only on the rare reset-during-dispatch path; the
+        // steady-state dispatch path pays a single flag check on lease exit.
+        private bool _hasDeferredResetTeardown;
+        private List<HandlerCache<int, HandlerCache>> _deferredResetHandlerCaches;
+        private List<DispatchState> _deferredResetDispatchStates;
 
         // Bumped by ResetState. Deregister closures captured before the bump
         // compare their captured generation to this field and silently skip
@@ -1771,7 +1804,23 @@ namespace DxMessaging.Core.MessageBus
 
             foreach (HandlerCache<int, HandlerCache> handlers in handlersByTarget.Values)
             {
-                handlers?.Clear();
+                if (handlers == null)
+                {
+                    continue;
+                }
+
+                if (_dispatchDepth > 0)
+                {
+                    // An emission is in flight (ResetState invoked from inside
+                    // a handler): Clear() would release the active dispatch
+                    // snapshot's pooled arrays and the frozen priority list
+                    // while the dispatch loop is still iterating them. Defer
+                    // the teardown until the outermost dispatch lease exits.
+                    DeferHandlerCacheClear(handlers);
+                    continue;
+                }
+
+                handlers.Clear();
             }
 
             handlersByTarget.Clear();
@@ -1800,6 +1849,52 @@ namespace DxMessaging.Core.MessageBus
             }
 
             sink.Clear();
+        }
+
+        private void DeferHandlerCacheClear(HandlerCache<int, HandlerCache> handlers)
+        {
+            _deferredResetHandlerCaches ??= new List<HandlerCache<int, HandlerCache>>();
+            _deferredResetHandlerCaches.Add(handlers);
+            _hasDeferredResetTeardown = true;
+        }
+
+        private void DeferDispatchStateReset(ref DispatchState state)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            _deferredResetDispatchStates ??= new List<DispatchState>();
+            _deferredResetDispatchStates.Add(state);
+            state = null;
+            _hasDeferredResetTeardown = true;
+        }
+
+        private void FlushDeferredResetTeardown()
+        {
+            _hasDeferredResetTeardown = false;
+            List<HandlerCache<int, HandlerCache>> deferredCaches = _deferredResetHandlerCaches;
+            if (deferredCaches != null)
+            {
+                for (int i = 0; i < deferredCaches.Count; ++i)
+                {
+                    deferredCaches[i].Clear();
+                }
+
+                deferredCaches.Clear();
+            }
+
+            List<DispatchState> deferredStates = _deferredResetDispatchStates;
+            if (deferredStates != null)
+            {
+                for (int i = 0; i < deferredStates.Count; ++i)
+                {
+                    deferredStates[i].Reset();
+                }
+
+                deferredStates.Clear();
+            }
         }
 
         private void TrackContextMapHighWater(
@@ -2035,6 +2130,18 @@ namespace DxMessaging.Core.MessageBus
             ClearAndReturnContextSink(_contextSinks[BusContextIndex.BroadcastPostProcessDefault]);
             _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext].Clear();
             _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext].Clear();
+            if (_dispatchDepth > 0)
+            {
+                // BusGlobalSlot.Clear() resets its dispatch states inline,
+                // which would release an in-flight global accept-all
+                // snapshot's pooled arrays mid-iteration. Detach the states
+                // first so the release runs after the outermost dispatch
+                // lease exits; see FlushDeferredResetTeardown.
+                DeferDispatchStateReset(ref _globalSlots.untargetedDispatchState);
+                DeferDispatchStateReset(ref _globalSlots.targetedDispatchState);
+                DeferDispatchStateReset(ref _globalSlots.broadcastDispatchState);
+            }
+
             _globalSlots.Clear();
 
             _untargetedInterceptsByType.Clear();
@@ -3154,6 +3261,9 @@ namespace DxMessaging.Core.MessageBus
                 );
             }
 
+            // Capture the pre-interceptor target so post-processing can detect a
+            // rewritten id and re-resolve its snapshot against the final target.
+            InstanceId preInterceptorTarget = target;
             if (!RunTargetedInterceptors(ref typedMessage, ref target))
             {
                 return;
@@ -3475,14 +3585,39 @@ namespace DxMessaging.Core.MessageBus
                 && sortedHandlers.handlers.Count > 0
             )
             {
-                DispatchSnapshot snapshot = targetedPostSnapshot.IsEmpty
-                    ? AcquireDispatchSnapshot<TMessage>(
+                // Post-processors follow the FINAL (post-interceptor) target. When an
+                // interceptor rewrote the id, the pre-frozen snapshot is keyed by the
+                // ORIGINAL target and must not be dispatched against the new one;
+                // re-resolve for the rewritten target instead, mirroring the
+                // handle-phase re-resolution above (Acquire + Prefreeze). Like that
+                // path, this exposes registrations made mid-emission for the
+                // REWRITTEN id (its cache had no snapshot pinned at emission start);
+                // the pre-frozen snapshot - and its mid-emission registration
+                // gating - is preferred only when the target is unchanged.
+                DispatchSnapshot snapshot;
+                if (target != preInterceptorTarget)
+                {
+                    snapshot = AcquireDispatchSnapshot<TMessage>(
                         this,
                         sortedHandlers,
                         TargetedPostSlot,
                         _emissionId
-                    )
-                    : targetedPostSnapshot;
+                    );
+                    PrefreezeTargetedPostSnapshot<TMessage>(ref target, snapshot);
+                }
+                else if (targetedPostSnapshot.IsEmpty)
+                {
+                    snapshot = AcquireDispatchSnapshot<TMessage>(
+                        this,
+                        sortedHandlers,
+                        TargetedPostSlot,
+                        _emissionId
+                    );
+                }
+                else
+                {
+                    snapshot = targetedPostSnapshot;
+                }
                 DispatchBucket[] buckets = snapshot.buckets;
                 int bucketCount = snapshot.bucketCount;
                 for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
@@ -4178,6 +4313,9 @@ namespace DxMessaging.Core.MessageBus
                 );
             }
 
+            // Capture the pre-interceptor source so post-processing can detect a
+            // rewritten id and re-resolve its snapshot against the final source.
+            InstanceId preInterceptorSource = source;
             if (!RunBroadcastInterceptors(ref typedMessage, ref source))
             {
                 return;
@@ -4374,6 +4512,34 @@ namespace DxMessaging.Core.MessageBus
             }
 
             bool bwsFound = InternalBroadcastWithoutSource(ref source, ref typedMessage);
+
+            // Post-processors follow the FINAL (post-interceptor) source. The
+            // pre-frozen snapshot above is keyed by the ORIGINAL source; when an
+            // interceptor rewrote it, re-resolve the snapshot for the new source,
+            // mirroring the targeted handle-phase re-resolution (Acquire +
+            // Prefreeze). Like that path, this exposes registrations made
+            // mid-emission for the REWRITTEN id (its cache had no snapshot pinned
+            // at emission start); the pre-frozen snapshot - and its mid-emission
+            // registration gating - applies only when the source is unchanged.
+            if (source != preInterceptorSource)
+            {
+                broadcastPostSnapshot = DispatchSnapshot.Empty;
+                if (
+                    _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
+                        .TryGetValue<TMessage>(out broadcastPostHandlers)
+                    && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
+                    && broadcastPostByPriority.handlers.Count > 0
+                )
+                {
+                    broadcastPostSnapshot = AcquireDispatchSnapshot<TMessage>(
+                        this,
+                        broadcastPostByPriority,
+                        BroadcastPostSlot,
+                        _emissionId
+                    );
+                    PrefreezeBroadcastPostSnapshot<TMessage>(ref source, broadcastPostSnapshot);
+                }
+            }
 
             if (!broadcastPostSnapshot.IsEmpty)
             {
@@ -6187,6 +6353,13 @@ namespace DxMessaging.Core.MessageBus
             int count = handler.GetValueOrDefault(messageHandler, 0);
 
             handler[messageHandler] = count + 1;
+            if (count == 0)
+            {
+                // First registration of this MessageHandler in the bucket:
+                // record its position. Refcount increments (count > 0) must
+                // NOT move it.
+                cache.insertionOrder.Add(messageHandler);
+            }
             StageDispatchSnapshot<T>(this, capturedHandlers, slotKey);
             Type type = typeof(T);
             _log.Log(
@@ -6254,6 +6427,15 @@ namespace DxMessaging.Core.MessageBus
                 if (count <= 1)
                 {
                     bool complete = handler.Remove(messageHandler);
+                    // List.Remove is O(n) over the same-priority bucket.
+                    // Accepted tradeoff (here and at the context-path sibling
+                    // site): buckets are small in practice, removal is a cold
+                    // churn path, and the list keeps dispatch-order rebuilds
+                    // allocation-free while preserving first-registration
+                    // order, unlike Dictionary enumeration whose freed slots
+                    // are reused LIFO. Mirrors the MessageHandler-side
+                    // insertionOrder tradeoff.
+                    _ = cache.insertionOrder.Remove(messageHandler);
                     MarkDirtyHandler(messageHandler);
                     cache.version++;
                     // do not mutate cache.cache here; let next read rebuild from handlers
@@ -6348,6 +6530,13 @@ namespace DxMessaging.Core.MessageBus
             int count = handler.GetValueOrDefault(messageHandler, 0);
 
             handler[messageHandler] = count + 1;
+            if (count == 0)
+            {
+                // First registration of this MessageHandler in the bucket:
+                // record its position. Refcount increments (count > 0) must
+                // NOT move it.
+                cache.insertionOrder.Add(messageHandler);
+            }
 
             Type type = typeof(T);
             _log.Log(
@@ -6412,6 +6601,9 @@ namespace DxMessaging.Core.MessageBus
                 if (count <= 1)
                 {
                     bool complete = handler.Remove(messageHandler);
+                    // O(n) List.Remove: see the tradeoff comment at the
+                    // scalar-path sibling site in InternalRegisterUntargeted.
+                    _ = cache.insertionOrder.Remove(messageHandler);
                     MarkDirtyHandler(messageHandler);
                     cache.version++;
                     // do not mutate cache.cache here; let next read rebuild from handlers
@@ -6670,13 +6862,7 @@ namespace DxMessaging.Core.MessageBus
 
                 int entryCount = handlerLookup.Count;
                 DispatchEntry[] entries = DispatchEntryPool.Rent(entryCount);
-                FillDispatchEntries<TMessage>(
-                    messageBus,
-                    handlerLookup,
-                    slotKey,
-                    priority,
-                    entries
-                );
+                FillDispatchEntries<TMessage>(messageBus, cache, slotKey, priority, entries);
                 buckets[i] = new DispatchBucket(priority, entries, entryCount, pooledEntries: true);
             }
 
@@ -6685,23 +6871,30 @@ namespace DxMessaging.Core.MessageBus
 
         private static void FillDispatchEntries<TMessage>(
             MessageBus messageBus,
-            Dictionary<MessageHandler, int> handlerLookup,
+            HandlerCache cache,
             SlotKey slotKey,
             int priority,
             DispatchEntry[] entries
         )
             where TMessage : IMessage
         {
-            if (handlerLookup == null)
+            if (cache == null)
             {
                 return;
             }
 
             PrefreezeDescriptor prefreeze = CreatePrefreezeDescriptor(slotKey, priority);
             int index = 0;
-            foreach (KeyValuePair<MessageHandler, int> kvp in handlerLookup)
+            // Iterate insertionOrder, NOT the handlers dictionary: Dictionary
+            // enumeration order permutes after Remove/Add churn (freed slots
+            // are reused LIFO), which would seat a newly-registered
+            // MessageHandler in a destroyed one's position and break the
+            // documented same-priority cross-component registration order.
+            List<MessageHandler> ordered = cache.insertionOrder;
+            int orderedCount = ordered.Count;
+            for (int i = 0; i < orderedCount && index < entries.Length; ++i)
             {
-                MessageHandler messageHandler = kvp.Key;
+                MessageHandler messageHandler = ordered[i];
                 object dispatch = GetDispatchLink<TMessage>(messageBus, messageHandler, slotKey);
                 entries[index++] = new DispatchEntry(messageHandler, dispatch, prefreeze);
             }
@@ -7459,8 +7652,13 @@ namespace DxMessaging.Core.MessageBus
                 {
                     List<MessageHandler> list = cache.cache;
                     list.Clear();
-                    Dictionary<MessageHandler, int>.KeyCollection keys = cache.handlers.Keys;
-                    list.AddRange(keys);
+                    // Rebuild from insertionOrder, NOT from handlers.Keys:
+                    // Dictionary key enumeration permutes after Remove/Add
+                    // churn (freed slots are reused LIFO), which would break
+                    // the documented same-priority cross-component
+                    // registration order. List.AddRange over a List<T> is a
+                    // single Array.Copy with no enumerator allocation.
+                    list.AddRange(cache.insertionOrder);
                     cache.lastSeenVersion = cache.version;
                 }
                 cache.lastSeenEmissionId = emissionId;
