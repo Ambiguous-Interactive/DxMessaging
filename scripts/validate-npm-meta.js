@@ -9,10 +9,15 @@
  *
  * Release mode can validate a concrete tarball via:
  *   node scripts/validate-npm-meta.js --tarball <path-to.tgz>
+ *
+ * Release artifact mode validates the downloaded release artifact directory:
+ *   node scripts/validate-npm-meta.js --release-dir .artifacts/release \
+ *     --expected-name com.example.package --expected-version 1.2.3
  */
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 
 const { normalizeToLf } = require("./lib/line-endings");
@@ -181,6 +186,149 @@ function collectTarballEntries(tarballPath, execFileSyncImpl = execFileSync) {
   return uniqSortedPaths(normalizeToLf(output).split("\n"));
 }
 
+function readTarballPackageJson(tarballPath, execFileSyncImpl = execFileSync) {
+  let output;
+  try {
+    output = execFileSyncImpl("tar", ["-xOf", tarballPath, "package/package.json"], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } catch (error) {
+    const stderr = normalizeToLf(String(error.stderr || "")).trim();
+    const detail = stderr.length > 0 ? stderr : error.message;
+    throw new Error(
+      `Unable to read package/package.json from '${toPosixPath(tarballPath)}': ${detail}`
+    );
+  }
+
+  try {
+    return JSON.parse(normalizeToLf(output));
+  } catch (error) {
+    throw new Error(`Unable to parse package/package.json from tarball: ${error.message}`);
+  }
+}
+
+function computeFileSha256(filePath) {
+  const hash = crypto.createHash("sha256");
+  hash.update(fs.readFileSync(filePath));
+  return hash.digest("hex");
+}
+
+function readSingleSha256Line(checksumFile) {
+  const lines = normalizeToLf(fs.readFileSync(checksumFile, "utf8"))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length !== 1) {
+    throw new Error(
+      `Checksum file '${toPosixPath(checksumFile)}' must contain exactly one non-empty line.`
+    );
+  }
+
+  const match = /^([0-9a-fA-F]{64})\s+\*?(.+)$/.exec(lines[0]);
+  if (!match) {
+    throw new Error(`Checksum file '${toPosixPath(checksumFile)}' is not sha256sum formatted.`);
+  }
+
+  return {
+    hash: match[1].toLowerCase(),
+    fileName: match[2].trim()
+  };
+}
+
+function collectReleaseArtifacts(releaseDir) {
+  if (typeof releaseDir !== "string" || releaseDir.length === 0) {
+    throw new Error("collectReleaseArtifacts requires a non-empty release directory.");
+  }
+  if (!fs.existsSync(releaseDir) || !fs.statSync(releaseDir).isDirectory()) {
+    throw new Error(`Release artifact directory does not exist: ${toPosixPath(releaseDir)}`);
+  }
+
+  const entries = fs.readdirSync(releaseDir, { withFileTypes: true });
+  const tarballs = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".tgz"))
+    .map((entry) => path.join(releaseDir, entry.name))
+    .sort();
+  const checksumFiles = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".sha256"))
+    .map((entry) => path.join(releaseDir, entry.name))
+    .sort();
+
+  if (tarballs.length !== 1) {
+    throw new Error(
+      `Expected exactly one .tgz in release artifact directory; found ${tarballs.length}.`
+    );
+  }
+  if (checksumFiles.length !== 1) {
+    throw new Error(
+      `Expected exactly one .sha256 in release artifact directory; found ${checksumFiles.length}.`
+    );
+  }
+
+  const tarball = tarballs[0];
+  const checksumFile = checksumFiles[0];
+  const expectedChecksumFile = `${tarball}.sha256`;
+  if (path.resolve(checksumFile) !== path.resolve(expectedChecksumFile)) {
+    throw new Error(
+      `Checksum file must be adjacent to the tarball as '${toPosixPath(expectedChecksumFile)}'.`
+    );
+  }
+
+  const releaseNotes = path.join(releaseDir, "release-notes.md");
+  if (!fs.existsSync(releaseNotes) || !fs.statSync(releaseNotes).isFile()) {
+    throw new Error(`Release notes artifact is missing: ${toPosixPath(releaseNotes)}`);
+  }
+  if (fs.readFileSync(releaseNotes, "utf8").trim().length === 0) {
+    throw new Error(`Release notes artifact is empty: ${toPosixPath(releaseNotes)}`);
+  }
+
+  return {
+    tarball,
+    checksumFile,
+    releaseNotes
+  };
+}
+
+function validateReleaseArtifacts(options) {
+  const releaseDir = options.releaseDir;
+  const expectedName = options.expectedName;
+  const expectedVersion = options.expectedVersion;
+  if (!expectedName || !expectedVersion) {
+    throw new Error("--release-dir requires --expected-name and --expected-version.");
+  }
+
+  const artifacts = collectReleaseArtifacts(releaseDir);
+  const checksum = readSingleSha256Line(artifacts.checksumFile);
+  const expectedFileName = path.basename(artifacts.tarball);
+  if (checksum.fileName !== expectedFileName) {
+    throw new Error(
+      `Checksum file references '${checksum.fileName}', expected '${expectedFileName}'.`
+    );
+  }
+
+  const actualHash = computeFileSha256(artifacts.tarball);
+  if (checksum.hash !== actualHash) {
+    throw new Error(
+      `Checksum mismatch for '${toPosixPath(artifacts.tarball)}': expected ${checksum.hash}, got ${actualHash}.`
+    );
+  }
+
+  const packageJson = readTarballPackageJson(artifacts.tarball);
+  if (packageJson.name !== expectedName || packageJson.version !== expectedVersion) {
+    throw new Error(
+      `Downloaded package artifact identity mismatch: expected ${expectedName}@${expectedVersion}, got ${packageJson.name}@${packageJson.version}.`
+    );
+  }
+
+  return {
+    ...artifacts,
+    packageName: packageJson.name,
+    packageVersion: packageJson.version
+  };
+}
+
 function isUnityRelevantPath(relativePath) {
   if (typeof relativePath !== "string" || relativePath.length === 0) {
     return false;
@@ -309,7 +457,10 @@ function validatePackEntries(entries) {
 function parseCliArgs(args) {
   const options = {
     tarball: "",
-    packJson: ""
+    packJson: "",
+    releaseDir: "",
+    expectedName: "",
+    expectedVersion: ""
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -332,6 +483,33 @@ function parseCliArgs(args) {
       index += 1;
       continue;
     }
+    if (arg === "--release-dir") {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error("--release-dir requires a value.");
+      }
+      options.releaseDir = value;
+      index += 1;
+      continue;
+    }
+    if (arg === "--expected-name") {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error("--expected-name requires a value.");
+      }
+      options.expectedName = value;
+      index += 1;
+      continue;
+    }
+    if (arg === "--expected-version") {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error("--expected-version requires a value.");
+      }
+      options.expectedVersion = value;
+      index += 1;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       options.help = true;
       continue;
@@ -339,15 +517,24 @@ function parseCliArgs(args) {
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  if (options.tarball && options.packJson) {
-    throw new Error("Use either --tarball or --pack-json, not both.");
+  const sources = [options.tarball, options.packJson, options.releaseDir].filter(Boolean);
+  if (sources.length > 1) {
+    throw new Error("Use only one of --tarball, --pack-json, or --release-dir.");
+  }
+  if (!options.releaseDir && (options.expectedName || options.expectedVersion)) {
+    throw new Error("--expected-name and --expected-version are only valid with --release-dir.");
   }
 
   return options;
 }
 
 function printHelp() {
-  console.log("Usage: node scripts/validate-npm-meta.js [--tarball <file.tgz>] [--pack-json <file.json>]");
+  console.log(
+    "Usage: node scripts/validate-npm-meta.js [--tarball <file.tgz>] [--pack-json <file.json>]"
+  );
+  console.log(
+    "       node scripts/validate-npm-meta.js --release-dir <dir> --expected-name <name> --expected-version <version>"
+  );
   console.log("  Default mode validates npm pack --json --dry-run --ignore-scripts output.");
 }
 
@@ -358,6 +545,10 @@ function runValidation(options = {}) {
   if (options.tarball) {
     source = `tarball ${toPosixPath(options.tarball)}`;
     entries = collectTarballEntries(options.tarball);
+  } else if (options.releaseDir) {
+    const artifacts = validateReleaseArtifacts(options);
+    source = `release artifact ${toPosixPath(artifacts.tarball)}`;
+    entries = collectTarballEntries(artifacts.tarball);
   } else if (options.packJson) {
     source = `pack JSON ${toPosixPath(options.packJson)}`;
     entries = parsePackJsonEntries(fs.readFileSync(options.packJson, "utf8"));
@@ -417,13 +608,16 @@ if (require.main === module) {
 module.exports = {
   FORBIDDEN_PATH_RULES,
   UNITY_ROOTS,
+  collectReleaseArtifacts,
   collectTarballEntries,
   computeRequiredMetaPaths,
   findForbiddenTarballPaths,
   isUnityRelevantPath,
   normalizePackEntry,
   parsePackJsonEntries,
+  readTarballPackageJson,
   runValidation,
   validatePackEntries,
+  validateReleaseArtifacts,
   validatePublishedFilesArePairedWithMetas
 };

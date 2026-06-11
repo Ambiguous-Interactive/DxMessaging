@@ -6,10 +6,26 @@ on:
       - .github/workflows/script-tests.yml
       - .github/workflows/release.yml
       - .github/actions/**/action.yml
+      - .github/unity-versions.json
       - .github/workflows/unity-*.yml
       - package.json
       - .npmignore
       - CHANGELOG.md
+      - CHANGELOG.md.meta
+      - LICENSE.md
+      - LICENSE.md.meta
+      - README.md
+      - README.md.meta
+      - "Third Party Notices.md"
+      - "Third Party Notices.md.meta"
+      - package.json.meta
+      - Editor.meta
+      - Editor/**
+      - Runtime.meta
+      - Runtime/**
+      - Samples~/**
+      - SourceGenerators.meta
+      - SourceGenerators/**
       - scripts/**/*.ps1
       - scripts/**/*.sh
       # All tracked JS (not just scripts/): validate:all runs the JS LoC
@@ -29,10 +45,26 @@ on:
       - .github/workflows/script-tests.yml
       - .github/workflows/release.yml
       - .github/actions/**/action.yml
+      - .github/unity-versions.json
       - .github/workflows/unity-*.yml
       - package.json
       - .npmignore
       - CHANGELOG.md
+      - CHANGELOG.md.meta
+      - LICENSE.md
+      - LICENSE.md.meta
+      - README.md
+      - README.md.meta
+      - "Third Party Notices.md"
+      - "Third Party Notices.md.meta"
+      - package.json.meta
+      - Editor.meta
+      - Editor/**
+      - Runtime.meta
+      - Runtime/**
+      - Samples~/**
+      - SourceGenerators.meta
+      - SourceGenerators/**
       - scripts/**/*.ps1
       - scripts/**/*.sh
       # All tracked JS (not just scripts/): see the pull_request paths note.

@@ -439,15 +439,29 @@ jobs:
       # FIRST; the GitHub Release is created/finalized only AFTER npm publish
       # succeeds. If npm publish failed and the GitHub Release ran first, a
       # non-draft Release would advertise a version that npm never received.
+      - name: Validate downloaded release package
+        id: release_package
+        run: |
+          set -euo pipefail
+          pkg="$(jq -r .name package.json)"
+          ver="${{ needs.verify-tag.outputs.package-version }}"
+          node scripts/validate-npm-meta.js \
+            --release-dir .artifacts/release \
+            --expected-name "${pkg}" \
+            --expected-version "${ver}"
+          mapfile -t package_files < <(find .artifacts/release -maxdepth 1 -type f -name '*.tgz' | sort)
+          package_file="${package_files[0]}"
+          checksum_file="${package_file}.sha256"
+          {
+            echo "package-file=${package_file}"
+            echo "checksum-file=${checksum_file}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Publish to npm with provenance
         run: |
           set -euo pipefail
           npx --yes --package=npm@^11.5.1 npm --version
-          package_file="$(find .artifacts/release -maxdepth 1 -name '*.tgz' -print -quit)"
-          if [ -z "${package_file}" ]; then
-            echo "::error::Packed npm package artifact is missing."
-            exit 1
-          fi
+          package_file="${{ steps.release_package.outputs.package-file }}"
           # Make publish safely RE-RUNNABLE: if this exact name@version is
           # already on the registry (a prior run published it before failing
           # downstream), skip the publish instead of failing on the
@@ -470,10 +484,12 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ needs.verify-tag.outputs.tag }}"
+          package_file="${{ steps.release_package.outputs.package-file }}"
+          checksum_file="${{ steps.release_package.outputs.checksum-file }}"
           if gh release view "${tag}" >/dev/null 2>&1; then
             gh release upload "${tag}" \
-              .artifacts/release/*.tgz \
-              .artifacts/release/*.sha256 \
+              "${package_file}" \
+              "${checksum_file}" \
               --clobber
             gh release edit "${tag}" \
               --title "${tag}" \
@@ -481,8 +497,8 @@ jobs:
               --draft=false
           else
             gh release create "${tag}" \
-              .artifacts/release/*.tgz \
-              .artifacts/release/*.sha256 \
+              "${package_file}" \
+              "${checksum_file}" \
               --title "${tag}" \
               --notes-file .artifacts/release/release-notes.md \
               --verify-tag

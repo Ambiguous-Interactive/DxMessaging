@@ -151,6 +151,56 @@ runs:
           Write-Host "::endgroup::"
         }
 
+        function Add-UnityDiagnosticLogFile {
+          param(
+            [Parameter(Mandatory = $true)]$LogFiles,
+            [Parameter(Mandatory = $true)]$Seen,
+            [string]$Path
+          )
+
+          if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            return
+          }
+
+          try {
+            $fullPath = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+          } catch {
+            return
+          }
+
+          if ($Seen.Add($fullPath)) {
+            $LogFiles.Add($fullPath)
+          }
+        }
+
+        function Get-UnityDiagnosticLogFiles {
+          param([string]$ResultsDir)
+
+          $logFiles = New-Object System.Collections.Generic.List[string]
+          $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+          if (-not $ResultsDir) {
+            return @($logFiles)
+          }
+
+          Add-UnityDiagnosticLogFile `
+            -LogFiles $logFiles `
+            -Seen $seen `
+            -Path (Join-Path $ResultsDir 'unity.log')
+
+          if (Test-Path -LiteralPath $ResultsDir -PathType Container) {
+            Get-ChildItem -LiteralPath $ResultsDir -File -Recurse -Filter '*.log' -ErrorAction SilentlyContinue |
+              Sort-Object FullName |
+              ForEach-Object {
+                Add-UnityDiagnosticLogFile `
+                  -LogFiles $logFiles `
+                  -Seen $seen `
+                  -Path $_.FullName
+              }
+          }
+
+          return @($logFiles)
+        }
+
         # CLASS-OF-ISSUE DIAGNOSTIC: when results.xml is missing, the operator's
         # next question is "WHY did Unity not produce results?". The most common
         # silent-killer answers are catastrophic compile-time errors -- the editor
@@ -177,19 +227,7 @@ runs:
             @{ Label = 'warning CS8032'; Pattern = 'warning CS8032'; UseSimple = $false }
           )
 
-          $logFiles = New-Object System.Collections.Generic.List[string]
-          $unityLog = Join-Path $ResultsDir 'unity.log'
-          if (Test-Path -LiteralPath $unityLog -PathType Leaf) {
-            $logFiles.Add($unityLog)
-          } elseif (Test-Path -LiteralPath $ResultsDir -PathType Container) {
-            Get-ChildItem -LiteralPath $ResultsDir -File -Recurse -Filter '*.log' -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -notlike '*.first-attempt.log' } |
-              ForEach-Object {
-                if (-not $logFiles.Contains($_.FullName)) {
-                  $logFiles.Add($_.FullName)
-                }
-              }
-          }
+          $logFiles = @(Get-UnityDiagnosticLogFiles -ResultsDir $ResultsDir)
 
           if ($logFiles.Count -lt 1) {
             return
@@ -269,19 +307,7 @@ runs:
             'Failed to resolve packages:\s+operation cancelled',
             'IPCStream \(Upm-[^)]+\): IPC stream failed to read'
           )
-          $logFiles = New-Object System.Collections.Generic.List[string]
-          $unityLog = Join-Path $ResultsDir 'unity.log'
-          if (Test-Path -LiteralPath $unityLog -PathType Leaf) {
-            $logFiles.Add($unityLog)
-          } elseif (Test-Path -LiteralPath $ResultsDir -PathType Container) {
-            Get-ChildItem -LiteralPath $ResultsDir -File -Recurse -Filter '*.log' -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -notlike '*.first-attempt.log' } |
-              ForEach-Object {
-                if (-not $logFiles.Contains($_.FullName)) {
-                  $logFiles.Add($_.FullName)
-                }
-              }
-          }
+          $logFiles = @(Get-UnityDiagnosticLogFiles -ResultsDir $ResultsDir)
 
           foreach ($logFile in $logFiles) {
             try {
