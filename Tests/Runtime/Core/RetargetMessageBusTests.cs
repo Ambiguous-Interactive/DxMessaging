@@ -312,9 +312,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>
         /// Pins mid-dispatch retargeting against the bus's snapshot semantics:
-        /// the dispatch loop pre-freezes the per-priority handler stacks at
-        /// emission start (see <c>MessageBus.PrefreezeUntargetedSnapshot</c> and
-        /// the equivalents for the other kinds), so a priority-0 handler that
+        /// the dispatch snapshot is frozen at emission start (the untargeted
+        /// path resolves registrations into an immutable flat array at
+        /// snapshot-build time; the other kinds pre-freeze the per-priority
+        /// handler stacks), so a priority-0 handler that
         /// retargets its own token mid-dispatch deregisters the priority-1
         /// peer from the old bus WITHOUT removing it from the in-flight
         /// emission. This is the same contract pinned by
