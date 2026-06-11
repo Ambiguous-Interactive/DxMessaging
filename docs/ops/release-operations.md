@@ -55,16 +55,10 @@ Tracked pages:
 
 ## Local Operator Runbook
 
-Generate an ignored local checklist for non-sensitive execution notes:
-
-```bash
-npm run generate:ambiguous-release-runbook
-```
-
-The command writes `.operator-runbooks/ambiguous-release-setup.md`. The file is
-gitignored and excluded from npm packages. Generation refuses to overwrite an
-existing runbook; use `node scripts/generate-ambiguous-release-runbook.js --force`
-only after preserving local notes.
+Keep an ignored local checklist for non-sensitive execution notes at
+`.operator-runbooks/ambiguous-release-setup.md` (the `.operator-runbooks/`
+directory is gitignored and excluded from npm packages); copy the checklist
+structure from [Ambiguous Release Migration](./ambiguous-release-migration.md).
 
 Do not store secrets, tokens, recovery codes, screenshots, publisher
 identifiers, private account metadata, private contact details, or publisher
@@ -84,8 +78,10 @@ There is no manual `workflow_dispatch` release path. A tag such as `3.0.1` or
 The release workflow performs these gates:
 
 1. Verify the semver tag and package version.
-1. Run script tests, Unity workflow contract tests, npm package validation,
-   `llms.txt` validation, repository identity validation, and `validate:all`.
+1. Run script tests (`node --test scripts/`) and `npm run validate:all`
+   (asmdef references, Unity version matrix, JS LoC budget, analyzer payload,
+   `llms.txt` freshness). Repository identity checks are now the manual
+   checklist in [GitHub Transfer](./github-transfer.md).
 1. Pack the npm tarball and write a `.sha256` checksum.
 1. Attest the packed `.tgz` with GitHub artifact attestations.
 1. Run the trusted Unity release check on the Ambiguous self-hosted Windows

@@ -4,9 +4,10 @@ on:
   pull_request:
     paths:
       - "docs/images/DxMessaging-banner.svg"
-      - "scripts/validate-banner.js"
-      - "scripts/sync-banner-version.ps1"
+      - "scripts/sync-banner-version.js"
       - "package.json"
+      - "Tests/**"
+      - "SourceGenerators/**"
       - ".github/workflows/validate-banner.yml"
   push:
     branches:
@@ -14,9 +15,10 @@ on:
       - master
     paths:
       - "docs/images/DxMessaging-banner.svg"
-      - "scripts/validate-banner.js"
-      - "scripts/sync-banner-version.ps1"
+      - "scripts/sync-banner-version.js"
       - "package.json"
+      - "Tests/**"
+      - "SourceGenerators/**"
       - ".github/workflows/validate-banner.yml"
   workflow_dispatch:
 
@@ -38,12 +40,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # No npm cache / install: sync-banner-version.js uses only node builtins.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "22.18.0"
-          cache: "npm"
-          cache-dependency-path: package.json
 
-      - name: Run validate-banner
-        run: node scripts/validate-banner.js
+      - name: Regenerate banner and verify it is committed
+        run: |
+          node scripts/sync-banner-version.js
+          git diff --exit-code docs/images/DxMessaging-banner.svg

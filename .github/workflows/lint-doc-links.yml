@@ -1,19 +1,24 @@
 name: Lint Docs Links
 
-# Blocking PR/push link check. Two gates, both deterministic enough to gate a PR:
-#   1. Offline: relative/local links AND in-repo "#anchor" fragments are validated
+# Blocking PR/push link check. Three gates, all deterministic enough to gate a PR:
+#   1. Link-text style: check-markdown-links.ps1 flags markdown-to-markdown links
+#      whose link text is just the raw file name (e.g. "[README.md](README.md)");
+#      link text must be human-readable. This is a style check lychee cannot do
+#      (lychee checks validity, not text), and markdownlint's MD059 only bans
+#      generic texts like "here", not raw file names.
+#   2. Offline: relative/local links AND in-repo "#anchor" fragments are validated
 #      against the working tree with zero network, so they can never flake. (This
-#      is a separate pass from gate 2 precisely so that EXTERNAL fragments are NOT
+#      is a separate pass from gate 3 precisely so that EXTERNAL fragments are NOT
 #      liveness-checked -- a remote page restructuring its anchors must never red a
 #      PR. Local anchors are deterministic; external ones are not.)
-#   2. Lenient external liveness: bot-detection / rate-limit / transient codes are
+#   3. Lenient external liveness: bot-detection / rate-limit / transient codes are
 #      accepted (see .lychee.toml), and this blocking pass treats timeouts as
 #      advisory via lychee's native --accept-timeouts=true CLI flag. A PR fails
 #      only on a genuinely dead link (404/410 or DNS/connection failure).
-# Both passes are fed the set of TRACKED docs via `git ls-files | --files-from`, so
-# vendored/generated/scratch trees are excluded automatically (lychee's glob does
-# NOT honor .gitignore). Deep external rot is tracked by the scheduled advisory
-# scan in markdown-link-validity.yml.
+# Both lychee passes are fed the set of TRACKED docs via `git ls-files |
+# --files-from`, so vendored/generated/scratch trees are excluded automatically
+# (lychee's glob does NOT honor .gitignore). Deep external rot is tracked by the
+# scheduled advisory scan in markdown-link-validity.yml.
 
 on:
   push:
@@ -25,8 +30,7 @@ on:
       - "**/*.markdown"
       - "docs/**"
       - ".lychee.toml"
-      - "scripts/lint-doc-links.ps1"
-      - "scripts/validate-lychee-config.js"
+      - ".github/scripts/check-markdown-links.ps1"
       - ".github/actions/install-pinned-lychee/action.yml"
   pull_request:
     paths:
@@ -34,8 +38,7 @@ on:
       - "**/*.markdown"
       - "docs/**"
       - ".lychee.toml"
-      - "scripts/lint-doc-links.ps1"
-      - "scripts/validate-lychee-config.js"
+      - ".github/scripts/check-markdown-links.ps1"
       - ".github/actions/install-pinned-lychee/action.yml"
   workflow_dispatch:
 
@@ -51,19 +54,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22.18.0"
-          cache: "npm"
-          cache-dependency-path: package.json
-
-      - name: Validate lychee configuration
-        run: node scripts/validate-lychee-config.js
-
-      - name: Run Markdown link linter
+      # Gate 1 -- link-text style. Flags markdown-to-markdown links whose text is
+      # just the raw target file name; link text must be human-readable.
+      - name: Check markdown link text is human-readable
         shell: pwsh
-        run: ./scripts/lint-doc-links.ps1 -VerboseOutput
+        run: ./.github/scripts/check-markdown-links.ps1 -Root .
 
       # Source of truth for "which docs to check": tracked files only. lychee's
       # glob ignores .gitignore, so this is how node_modules / site / coverage /
@@ -79,7 +74,7 @@ jobs:
         with:
           version: v0.24.2
 
-      # Gate 1 -- offline. Validates relative/local links and in-repo "#anchor"
+      # Gate 2 -- offline. Validates relative/local links and in-repo "#anchor"
       # fragments against files on disk. No network, so a failure is a real broken
       # local link or a missing heading anchor, never a flake.
       - name: Check internal links and anchors (offline)
@@ -90,7 +85,7 @@ jobs:
             --include-fragments \
             --files-from "${RUNNER_TEMP}/doc-files.txt"
 
-      # Gate 2 -- external liveness. Timeout acceptance is command-line-only here:
+      # Gate 3 -- external liveness. Timeout acceptance is command-line-only here:
       # the scheduled advisory scan should still report persistent slow hosts.
       - name: Probe external link liveness
         run: |

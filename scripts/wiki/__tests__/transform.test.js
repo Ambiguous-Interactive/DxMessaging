@@ -1,6 +1,7 @@
-/**
- * Test suite for wiki transformation functions
- */
+"use strict";
+
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
 
 const {
   isExternalLink,
@@ -11,380 +12,218 @@ const {
   transformFile
 } = require("../transform-docs-to-wiki.js");
 
-describe("isExternalLink", () => {
-  test("identifies http links", () => {
-    expect(isExternalLink("http://example.com")).toBe(true);
-  });
-
-  test("identifies https links", () => {
-    expect(isExternalLink("https://example.com/path")).toBe(true);
-  });
-
-  test("identifies mailto links", () => {
-    expect(isExternalLink("mailto:test@example.com")).toBe(true);
-  });
-
-  test("identifies tel links", () => {
-    expect(isExternalLink("tel:+1234567890")).toBe(true);
-  });
-
-  test("identifies ftp links", () => {
-    expect(isExternalLink("ftp://files.example.com")).toBe(true);
-  });
-
-  test("identifies relative paths as internal", () => {
-    expect(isExternalLink("./file.md")).toBe(false);
-    expect(isExternalLink("../file.md")).toBe(false);
-    expect(isExternalLink("file.md")).toBe(false);
-  });
-
-  test("identifies absolute paths as internal", () => {
-    expect(isExternalLink("/docs/file.md")).toBe(false);
-  });
+test("isExternalLink identifies external schemes", () => {
+  assert.equal(isExternalLink("http://example.com"), true);
+  assert.equal(isExternalLink("https://example.com/path"), true);
+  assert.equal(isExternalLink("mailto:test@example.com"), true);
+  assert.equal(isExternalLink("tel:+1234567890"), true);
+  assert.equal(isExternalLink("ftp://files.example.com"), true);
 });
 
-describe("docsPathToWikiPage", () => {
-  test("converts simple path", () => {
-    expect(docsPathToWikiPage("concepts/message-types.md")).toBe("Concepts-Message-Types");
-  });
-
-  test("converts nested path", () => {
-    expect(docsPathToWikiPage("getting-started/overview.md")).toBe("Getting-Started-Overview");
-  });
-
-  test("converts index.md to parent directory name", () => {
-    expect(docsPathToWikiPage("concepts/index.md")).toBe("Concepts");
-  });
-
-  test("converts nested index.md to parent path", () => {
-    expect(docsPathToWikiPage("advanced/topics/index.md")).toBe("Advanced-Topics");
-  });
-
-  test("converts root index.md to Home", () => {
-    expect(docsPathToWikiPage("index.md")).toBe("Home");
-  });
-
-  test("converts README.md to Home", () => {
-    expect(docsPathToWikiPage("README.md")).toBe("Home");
-  });
-
-  test("handles parent directory README reference", () => {
-    expect(docsPathToWikiPage("../README.md")).toBe("Home");
-  });
-
-  test("capitalizes each path segment", () => {
-    expect(docsPathToWikiPage("guides/testing.md")).toBe("Guides-Testing");
-  });
-
-  test("handles paths without .md extension", () => {
-    expect(docsPathToWikiPage("concepts/types")).toBe("Concepts-Types");
-  });
+test("isExternalLink identifies internal paths", () => {
+  assert.equal(isExternalLink("./file.md"), false);
+  assert.equal(isExternalLink("../file.md"), false);
+  assert.equal(isExternalLink("file.md"), false);
+  assert.equal(isExternalLink("/docs/file.md"), false);
 });
 
-describe("CodeBlockTracker", () => {
-  let tracker;
-
-  beforeEach(() => {
-    tracker = new CodeBlockTracker();
-  });
-
-  test("tracks triple backtick code blocks", () => {
-    expect(tracker.processLine("```")).toBe(true);
-    expect(tracker.processLine("code here")).toBe(true);
-    expect(tracker.processLine("```")).toBe(false);
-  });
-
-  test("tracks code blocks with language", () => {
-    expect(tracker.processLine("```javascript")).toBe(true);
-    expect(tracker.processLine("const x = 1;")).toBe(true);
-    expect(tracker.processLine("```")).toBe(false);
-  });
-
-  test("tracks code blocks with csharp language", () => {
-    expect(tracker.processLine("```csharp")).toBe(true);
-    expect(tracker.processLine("public class Test {}")).toBe(true);
-    expect(tracker.processLine("```")).toBe(false);
-  });
-
-  test("tracks quadruple backtick code blocks", () => {
-    expect(tracker.processLine("````")).toBe(true);
-    expect(tracker.processLine("```")).toBe(true);
-    expect(tracker.processLine("nested")).toBe(true);
-    expect(tracker.processLine("```")).toBe(true);
-    expect(tracker.processLine("````")).toBe(false);
-  });
-
-  test("tracks tilde code blocks", () => {
-    expect(tracker.processLine("~~~")).toBe(true);
-    expect(tracker.processLine("code")).toBe(true);
-    expect(tracker.processLine("~~~")).toBe(false);
-  });
-
-  test("does not close backtick block with tildes", () => {
-    expect(tracker.processLine("```")).toBe(true);
-    expect(tracker.processLine("~~~")).toBe(true);
-    expect(tracker.processLine("```")).toBe(false);
-  });
-
-  test("reset clears state", () => {
-    tracker.processLine("```");
-    expect(tracker.inCodeBlock).toBe(true);
-    tracker.reset();
-    expect(tracker.inCodeBlock).toBe(false);
-  });
-
-  test("handles indented code fences", () => {
-    expect(tracker.processLine("    ```python")).toBe(true);
-    expect(tracker.processLine('    print("hello")')).toBe(true);
-    expect(tracker.processLine("    ```")).toBe(false);
-  });
+test("docsPathToWikiPage converts paths to wiki page names", () => {
+  assert.equal(docsPathToWikiPage("concepts/message-types.md"), "Concepts-Message-Types");
+  assert.equal(docsPathToWikiPage("getting-started/overview.md"), "Getting-Started-Overview");
+  assert.equal(docsPathToWikiPage("guides/testing.md"), "Guides-Testing");
+  assert.equal(docsPathToWikiPage("concepts/types"), "Concepts-Types");
 });
 
-describe("findMarkdownLinks", () => {
-  test("finds simple link", () => {
-    const links = findMarkdownLinks("See [guide](guide.md) for more.");
-    expect(links).toHaveLength(1);
-    expect(links[0].text).toBe("guide");
-    expect(links[0].href).toBe("guide.md");
-    expect(links[0].isImage).toBe(false);
-  });
-
-  test("finds multiple links", () => {
-    const links = findMarkdownLinks("[one](a.md) and [two](b.md)");
-    expect(links).toHaveLength(2);
-    expect(links[0].text).toBe("one");
-    expect(links[0].href).toBe("a.md");
-    expect(links[1].text).toBe("two");
-    expect(links[1].href).toBe("b.md");
-  });
-
-  test("finds image links", () => {
-    const links = findMarkdownLinks("![alt text](image.png)");
-    expect(links).toHaveLength(1);
-    expect(links[0].text).toBe("alt text");
-    expect(links[0].href).toBe("image.png");
-    expect(links[0].isImage).toBe(true);
-  });
-
-  test("finds links with anchors", () => {
-    const links = findMarkdownLinks("[section](page.md#heading)");
-    expect(links).toHaveLength(1);
-    expect(links[0].href).toBe("page.md#heading");
-  });
-
-  test("ignores links inside inline code", () => {
-    const links = findMarkdownLinks("Use `[link](file.md)` syntax");
-    expect(links).toHaveLength(0);
-  });
-
-  test("ignores links inside double-backtick inline code", () => {
-    const links = findMarkdownLinks("Use ``[link](file.md)`` syntax");
-    expect(links).toHaveLength(0);
-  });
-
-  test("ignores links inside double-backtick with text before", () => {
-    const links = findMarkdownLinks("Some text ``[link](file.md)`` more text");
-    expect(links).toHaveLength(0);
-  });
-
-  test("finds real link after double-backtick inline code", () => {
-    const links = findMarkdownLinks("Use ``code`` then [real](file.md)");
-    expect(links).toHaveLength(1);
-    expect(links[0].text).toBe("real");
-    expect(links[0].href).toBe("file.md");
-  });
-
-  test("ignores links inside triple-backtick inline code", () => {
-    const links = findMarkdownLinks("Use ```[link](file.md)``` syntax");
-    expect(links).toHaveLength(0);
-  });
-
-  test("handles mixed single and double backtick code spans", () => {
-    const links = findMarkdownLinks("`single` and ``double [link](file.md)`` and [real](page.md)");
-    expect(links).toHaveLength(1);
-    expect(links[0].text).toBe("real");
-    expect(links[0].href).toBe("page.md");
-  });
-
-  test("handles unclosed multi-backtick delimiter", () => {
-    const links = findMarkdownLinks("Text ``unclosed [link](file.md)");
-    expect(links).toHaveLength(1);
-    expect(links[0].href).toBe("file.md");
-  });
-
-  test("handles asymmetric backticks correctly", () => {
-    // Double open, single close - should not match, link should be found
-    const links = findMarkdownLinks("Text ``code` [link](file.md)");
-    expect(links).toHaveLength(1);
-    expect(links[0].href).toBe("file.md");
-  });
-
-  test("finds links with nested brackets in text", () => {
-    const links = findMarkdownLinks("[[nested]](page.md)");
-    expect(links).toHaveLength(1);
-    expect(links[0].text).toBe("[nested]");
-  });
-
-  test("finds links with parentheses in href", () => {
-    const links = findMarkdownLinks("[link](page_(version).md)");
-    expect(links).toHaveLength(1);
-    expect(links[0].href).toBe("page_(version).md");
-  });
-
-  test("returns empty array for no links", () => {
-    const links = findMarkdownLinks("No links here");
-    expect(links).toHaveLength(0);
-  });
-
-  test("handles escaped brackets", () => {
-    const links = findMarkdownLinks("\\[not a link\\](file.md)");
-    expect(links).toHaveLength(0);
-  });
-
-  test("handles empty code span before link", () => {
-    const links = findMarkdownLinks("`` `` then [link](file.md)");
-    expect(links).toHaveLength(1);
-    expect(links[0].text).toBe("link");
-    expect(links[0].href).toBe("file.md");
-  });
-
-  test("handles very long backtick sequences", () => {
-    const links = findMarkdownLinks("``````````[link](file.md)``````````");
-    expect(links).toHaveLength(0);
-  });
-
-  test("handles backticks at end of line with no close", () => {
-    const links = findMarkdownLinks("text with unclosed ``");
-    expect(links).toHaveLength(0);
-  });
-
-  test("handles backtick immediately before link", () => {
-    const links = findMarkdownLinks("`[link](file.md)");
-    expect(links).toHaveLength(1);
-    expect(links[0].text).toBe("link");
-    expect(links[0].href).toBe("file.md");
-  });
+test("docsPathToWikiPage maps index and README pages", () => {
+  assert.equal(docsPathToWikiPage("concepts/index.md"), "Concepts");
+  assert.equal(docsPathToWikiPage("advanced/topics/index.md"), "Advanced-Topics");
+  assert.equal(docsPathToWikiPage("index.md"), "Home");
+  assert.equal(docsPathToWikiPage("README.md"), "Home");
+  assert.equal(docsPathToWikiPage("../README.md"), "Home");
 });
 
-describe("transformLine", () => {
-  test("transforms internal markdown link to wiki link", () => {
-    const result = transformLine("[Guide](guide.md)", "index.md");
-    // When link text matches wiki page name, simple [[Page]] format is used
-    expect(result).toBe("[[Guide]]");
-  });
+test("CodeBlockTracker tracks backtick code blocks", () => {
+  const tracker = new CodeBlockTracker();
+  assert.equal(tracker.processLine("```"), true);
+  assert.equal(tracker.processLine("code here"), true);
+  assert.equal(tracker.processLine("```"), false);
 
-  test("preserves external links", () => {
-    const result = transformLine("[GitHub](https://github.com)", "index.md");
-    expect(result).toBe("[GitHub](https://github.com)");
-  });
-
-  test("preserves anchor-only links", () => {
-    const result = transformLine("[Section](#section)", "index.md");
-    expect(result).toBe("[Section](#section)");
-  });
-
-  test("transforms links with anchors", () => {
-    const result = transformLine("[Topic](concepts/types.md#section)", "index.md");
-    expect(result).toBe("[[Concepts-Types#section|Topic]]");
-  });
-
-  test("transforms relative paths correctly", () => {
-    // Note: Path resolution happens at a different level, '../index.md' becomes '..' page
-    const result = transformLine("[Back](../index.md)", "concepts/types.md");
-    expect(result).toBe("[[..|Back]]");
-  });
-
-  test("handles multiple links in one line", () => {
-    const result = transformLine("[One](a.md) and [Two](b.md)", "index.md");
-    expect(result).toContain("[[A|One]]");
-    expect(result).toContain("[[B|Two]]");
-  });
-
-  test("transforms image paths", () => {
-    const result = transformLine("![Image](images/diagram.png)", "index.md");
-    expect(result).toBe("![Image](wiki-images/diagram.png)");
-  });
-
-  test("preserves external image links", () => {
-    const result = transformLine("![Badge](https://img.shields.io/badge.svg)", "index.md");
-    expect(result).toBe("![Badge](https://img.shields.io/badge.svg)");
-  });
-
-  test("returns unchanged line with no links", () => {
-    const result = transformLine("Just some text", "index.md");
-    expect(result).toBe("Just some text");
-  });
+  assert.equal(tracker.processLine("```csharp"), true);
+  assert.equal(tracker.processLine("public class Test {}"), true);
+  assert.equal(tracker.processLine("```"), false);
 });
 
-describe("transformFile", () => {
-  test("preserves code blocks", () => {
-    const content = `# Example
+test("CodeBlockTracker handles nested fences of different lengths", () => {
+  const tracker = new CodeBlockTracker();
+  assert.equal(tracker.processLine("````"), true);
+  assert.equal(tracker.processLine("```"), true);
+  assert.equal(tracker.processLine("nested"), true);
+  assert.equal(tracker.processLine("```"), true);
+  assert.equal(tracker.processLine("````"), false);
+});
 
-\`\`\`markdown
-[This should not be transformed](link.md)
-\`\`\`
+test("CodeBlockTracker handles tilde fences and mismatched markers", () => {
+  const tracker = new CodeBlockTracker();
+  assert.equal(tracker.processLine("~~~"), true);
+  assert.equal(tracker.processLine("code"), true);
+  assert.equal(tracker.processLine("~~~"), false);
 
-[This should be transformed](link.md)`;
+  // A tilde line must not close a backtick block.
+  assert.equal(tracker.processLine("```"), true);
+  assert.equal(tracker.processLine("~~~"), true);
+  assert.equal(tracker.processLine("```"), false);
+});
 
-    const result = transformFile(content, "index.md");
-    expect(result).toContain("[This should not be transformed](link.md)");
-    expect(result).toContain("[[Link|This should be transformed]]");
-  });
+test("CodeBlockTracker reset clears state and indented fences work", () => {
+  const tracker = new CodeBlockTracker();
+  tracker.processLine("```");
+  assert.equal(tracker.inCodeBlock, true);
+  tracker.reset();
+  assert.equal(tracker.inCodeBlock, false);
 
-  test("handles multiple code blocks", () => {
-    const content = `[before](a.md)
+  assert.equal(tracker.processLine("    ```python"), true);
+  assert.equal(tracker.processLine('    print("hello")'), true);
+  assert.equal(tracker.processLine("    ```"), false);
+});
 
-\`\`\`
-[inside1](b.md)
-\`\`\`
+test("findMarkdownLinks finds simple, multiple, image, and anchored links", () => {
+  let links = findMarkdownLinks("See [guide](guide.md) for more.");
+  assert.equal(links.length, 1);
+  assert.equal(links[0].text, "guide");
+  assert.equal(links[0].href, "guide.md");
+  assert.equal(links[0].isImage, false);
 
-[between](c.md)
+  links = findMarkdownLinks("[one](a.md) and [two](b.md)");
+  assert.equal(links.length, 2);
+  assert.equal(links[1].href, "b.md");
 
-\`\`\`csharp
-[inside2](d.md)
-\`\`\`
+  links = findMarkdownLinks("![alt text](image.png)");
+  assert.equal(links.length, 1);
+  assert.equal(links[0].isImage, true);
 
-[after](e.md)`;
+  links = findMarkdownLinks("[section](page.md#heading)");
+  assert.equal(links[0].href, "page.md#heading");
+});
 
-    const result = transformFile(content, "index.md");
-    expect(result).toContain("[[A|before]]");
-    expect(result).toContain("[inside1](b.md)");
-    expect(result).toContain("[[C|between]]");
-    expect(result).toContain("[inside2](d.md)");
-    expect(result).toContain("[[E|after]]");
-  });
+test("findMarkdownLinks ignores links inside inline code spans", () => {
+  assert.equal(findMarkdownLinks("Use `[link](file.md)` syntax").length, 0);
+  assert.equal(findMarkdownLinks("Use ``[link](file.md)`` syntax").length, 0);
+  assert.equal(findMarkdownLinks("Some text ``[link](file.md)`` more text").length, 0);
+  assert.equal(findMarkdownLinks("Use ```[link](file.md)``` syntax").length, 0);
+  assert.equal(findMarkdownLinks("``````````[link](file.md)``````````").length, 0);
+});
 
-  test("preserves line structure", () => {
-    const content = `Line 1
-Line 2
-Line 3`;
+test("findMarkdownLinks finds real links around code spans", () => {
+  let links = findMarkdownLinks("Use ``code`` then [real](file.md)");
+  assert.equal(links.length, 1);
+  assert.equal(links[0].text, "real");
 
-    const result = transformFile(content, "index.md");
-    const lines = result.split("\n");
-    expect(lines).toHaveLength(3);
-  });
+  links = findMarkdownLinks("`single` and ``double [link](file.md)`` and [real](page.md)");
+  assert.equal(links.length, 1);
+  assert.equal(links[0].href, "page.md");
 
-  test("handles lone CR line endings", () => {
-    const content = "[Guide](guide.md)\r\r[Section](#keep-anchor)\r";
+  links = findMarkdownLinks("`` `` then [link](file.md)");
+  assert.equal(links.length, 1);
+  assert.equal(links[0].text, "link");
+});
 
-    const result = transformFile(content, "index.md");
-    expect(result).toContain("[[Guide]]");
-    expect(result).toContain("[Section](#keep-anchor)");
-    expect(result).toContain("\n\n");
-    expect(result).not.toContain("\r");
-  });
+test("findMarkdownLinks handles unclosed and asymmetric backticks", () => {
+  let links = findMarkdownLinks("Text ``unclosed [link](file.md)");
+  assert.equal(links.length, 1);
+  assert.equal(links[0].href, "file.md");
 
-  test("handles empty content", () => {
-    const result = transformFile("", "index.md");
-    expect(result).toBe("");
-  });
+  // Double open, single close: not a code span, link is found.
+  links = findMarkdownLinks("Text ``code` [link](file.md)");
+  assert.equal(links.length, 1);
 
-  test("handles content with only code blocks", () => {
-    const content = `\`\`\`
-code only
-\`\`\``;
+  links = findMarkdownLinks("`[link](file.md)");
+  assert.equal(links.length, 1);
 
-    const result = transformFile(content, "index.md");
-    expect(result).toBe(content);
-  });
+  assert.equal(findMarkdownLinks("text with unclosed ``").length, 0);
+});
+
+test("findMarkdownLinks handles brackets, parens, escapes, and no links", () => {
+  let links = findMarkdownLinks("[[nested]](page.md)");
+  assert.equal(links.length, 1);
+  assert.equal(links[0].text, "[nested]");
+
+  links = findMarkdownLinks("[link](page_(version).md)");
+  assert.equal(links[0].href, "page_(version).md");
+
+  assert.equal(findMarkdownLinks("No links here").length, 0);
+  assert.equal(findMarkdownLinks("\\[not a link\\](file.md)").length, 0);
+});
+
+test("transformLine converts internal links and preserves external/anchor links", () => {
+  assert.equal(transformLine("[Guide](guide.md)", "index.md"), "[[Guide]]");
+  assert.equal(
+    transformLine("[GitHub](https://github.com)", "index.md"),
+    "[GitHub](https://github.com)"
+  );
+  assert.equal(transformLine("[Section](#section)", "index.md"), "[Section](#section)");
+  assert.equal(transformLine("Just some text", "index.md"), "Just some text");
+});
+
+test("transformLine handles anchors, relative paths, and multiple links", () => {
+  assert.equal(
+    transformLine("[Topic](concepts/types.md#section)", "index.md"),
+    "[[Concepts-Types#section|Topic]]"
+  );
+  assert.equal(transformLine("[Back](../index.md)", "concepts/types.md"), "[[..|Back]]");
+
+  const result = transformLine("[One](a.md) and [Two](b.md)", "index.md");
+  assert.ok(result.includes("[[A|One]]"));
+  assert.ok(result.includes("[[B|Two]]"));
+});
+
+test("transformLine rewrites image paths but keeps external images", () => {
+  assert.equal(
+    transformLine("![Image](images/diagram.png)", "index.md"),
+    "![Image](wiki-images/diagram.png)"
+  );
+  assert.equal(
+    transformLine("![Badge](https://img.shields.io/badge.svg)", "index.md"),
+    "![Badge](https://img.shields.io/badge.svg)"
+  );
+});
+
+test("transformFile leaves links inside code blocks untouched", () => {
+  const content = [
+    "[before](a.md)",
+    "",
+    "```",
+    "[inside1](b.md)",
+    "```",
+    "",
+    "[between](c.md)",
+    "",
+    "```csharp",
+    "[inside2](d.md)",
+    "```",
+    "",
+    "[after](e.md)"
+  ].join("\n");
+
+  const result = transformFile(content, "index.md");
+  assert.ok(result.includes("[[A|before]]"));
+  assert.ok(result.includes("[inside1](b.md)"));
+  assert.ok(result.includes("[[C|between]]"));
+  assert.ok(result.includes("[inside2](d.md)"));
+  assert.ok(result.includes("[[E|after]]"));
+});
+
+test("transformFile preserves line structure and handles edge inputs", () => {
+  assert.equal(transformFile("Line 1\nLine 2\nLine 3", "index.md").split("\n").length, 3);
+  assert.equal(transformFile("", "index.md"), "");
+
+  const codeOnly = "```\ncode only\n```";
+  assert.equal(transformFile(codeOnly, "index.md"), codeOnly);
+});
+
+test("transformFile normalizes lone CR line endings", () => {
+  const result = transformFile("[Guide](guide.md)\r\r[Section](#keep-anchor)\r", "index.md");
+  assert.ok(result.includes("[[Guide]]"));
+  assert.ok(result.includes("[Section](#keep-anchor)"));
+  assert.ok(result.includes("\n\n"));
+  assert.ok(!result.includes("\r"));
 });

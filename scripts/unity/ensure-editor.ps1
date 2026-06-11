@@ -3325,12 +3325,11 @@ function Test-UnityImportResolution {
     # Hashtable initialized with EVERY key the caller may inspect so a
     # StrictMode (Set-StrictMode -Version Latest) reader can't accidentally
     # probe an undefined property name and throw mid-annotation.
-    # Named $buckets (not $result / $resolution) so the textual scan in
-    # powershell-strictmode-collection-safety.test.js does not cross-match
-    # the in-body indexing here against the bare captures of
+    # Named $buckets (not $result / $resolution) to keep this in-body
+    # indexing visually distinct from the bare captures of
     # Test-UnityImportResolution / Invoke-UnityCliCapture in callers. The
     # in-body indexing is provably safe (we always initialize every key
-    # above), but the textual scanner has no scope awareness.
+    # above).
     $buckets = @{
         missing            = @()
         systemResolved     = @{}

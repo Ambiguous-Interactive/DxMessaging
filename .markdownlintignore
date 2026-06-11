@@ -5,3 +5,8 @@ obj/
 Temp/
 Samples~/
 /.github/
+/progress/
+/.artifacts/
+/site/
+/_site/
+*PLAN.md

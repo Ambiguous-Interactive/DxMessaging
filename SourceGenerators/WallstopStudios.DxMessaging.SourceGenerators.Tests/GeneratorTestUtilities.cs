@@ -413,7 +413,7 @@ namespace DxMessaging.Core.Extensions
     /// is the load-bearing detail: with these stubs in place, the pattern
     /// "new X().Emit()" will not compile (CS1612 / CS1510 depending on
     /// context) -- which is the bug class the doc-snippet compilation tests
-    /// and validate-doc-code-patterns.js exist to catch.
+    /// exist to catch.
     /// </summary>
     public static class MessageExtensions
     {

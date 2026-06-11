@@ -33,7 +33,7 @@ impact:
     details: "Centralizes session-PATH refresh, a best-effort invoker, and getter-based discovery so a beta CLI flag drift cannot break Unity bootstrap"
   testability:
     rating: "medium"
-    details: "powershell-syntax.test.js reparses the script; unity-runner-script-contract.test.js pins the PATH and resilience tokens"
+    details: "Validated manually and by CI runs; the former contract tests were removed in the tooling simplification"
 
 prerequisites:
   - "Familiarity with Windows PowerShell 5.1 and Set-StrictMode"
@@ -79,7 +79,7 @@ Editor provisioning runs before the organization Unity license lock. The locked 
 
 The standalone CLI is a moving beta surface (`v0.1.0-beta.x`). Some flags are undocumented and differ between releases, so the script treats every optional operation as best-effort and never lets an uncertain flag abort the install. Two failure modes drove the current design: the installer leaves `unity` off the current session PATH, and `unity install-path` was once called with a positional directory argument, which the CLI rejected.
 
-The script is parsed cross-platform: `scripts/__tests__/powershell-syntax.test.js` reparses the `.ps1` on Linux `pwsh`, so it must stay valid PowerShell 5.1 under `Set-StrictMode -Version Latest` even though the Windows-only registry calls never execute on Linux.
+The script is parsed cross-platform: it must stay valid PowerShell 5.1 under `Set-StrictMode -Version Latest` (and reparse cleanly on Linux `pwsh`) even though the Windows-only registry calls never execute on Linux.
 
 ## Problem Statement
 
@@ -195,13 +195,13 @@ After module validation, `ensure-editor.ps1` runs a native startup probe before 
 
 The `0xC0000135` failure mode has its own short-circuit: both probe sites emit a wrap-immune single-line `::error::` annotation BEFORE the throw and refuse to loop on a futile Unity reinstall (the missing DLL is on the OS, not in the Unity install). The host-OS prereqs themselves are remediated out-of-band by [Unity Runner Host Prerequisites](./unity-runner-host-prereqs.md) -- a per-job preflight composite (`.github/actions/assert-unity-host-prereqs`) auto-installs the Microsoft Visual C++ 2015-2022 Redistributable, Windows long-path support, Defender exclusions, and PowerShell 7, exporting `DXM_RUNNER_PREREQ_INSTALLED=1` on success so the short-circuit annotation can adjust the suggested cause when the preflight has already run.
 
-## Verification
+## Verification (invariants to keep honest in review)
 
-- `scripts/__tests__/powershell-syntax.test.js` reparses the edited `.ps1`; keep it valid PowerShell 5.1.
-- `scripts/__tests__/unity-runner-script-contract.test.js` pins both the PATH fix (`$script:UnityCliPath`, `GetEnvironmentVariable`, `Update-SessionPathFromRegistry`, the absolute-path fallback) and the resilience design: `install-path` SET uses `-s` (never a positional `$Root`), `Invoke-UnityCliSafe` exists, `Get-UnityCliInstallRoot` reads `@('install-path')`, the defensive `--format json` / `ConvertFrom-Json` discovery, the requested/verified CI module lists, and quarantine/reinstall repair.
-- `scripts/__tests__/unity-ensure-editor-production-contract.test.js` pins the `--accept-eula` contract: the single source-of-truth `Get-UnityCliModuleInstallArguments` is the ONLY place that builds a module-install (`install`/`install-modules` ... `-m` ...) arg vector, every live install call site routes through it, and the requested `-m` ids exclude `android-open-jdk` while the verified groups include it.
-- `scripts/__tests__/unity-ensure-editor-il2cpp-idempotency.test.js` covers disk-proof idempotency, managed-install quarantine/reinstall, and the `DXM_UNITY_DISABLE_EDITOR_REPAIR=1` refusal path.
-- `scripts/__tests__/unity-workflow-shape.test.js` requires the active Unity workflows to provision editors before acquiring the organization Unity lock and to export `UNITY_EDITOR_PATH` for the locked test step.
+- The edited `.ps1` stays valid PowerShell 5.1 (parse it with `pwsh` on Linux before pushing).
+- The PATH fix stays intact: `$script:UnityCliPath`, `GetEnvironmentVariable`, `Update-SessionPathFromRegistry`, and the absolute-path fallback; `install-path` SET uses `-s` (never a positional `$Root`); `Invoke-UnityCliSafe` exists; `Get-UnityCliInstallRoot` reads `@('install-path')`; discovery stays defensive (`--format json` / `ConvertFrom-Json`); quarantine/reinstall repair is preserved.
+- The `--accept-eula` contract: `Get-UnityCliModuleInstallArguments` remains the ONLY place that builds a module-install (`install`/`install-modules` ... `-m` ...) arg vector, every live install call site routes through it, and the requested `-m` ids exclude `android-open-jdk` while the verified groups include it.
+- Disk-proof idempotency, managed-install quarantine/reinstall, and the `DXM_UNITY_DISABLE_EDITOR_REPAIR=1` refusal path keep working.
+- Active Unity workflows provision editors before acquiring the organization Unity lock and export `UNITY_EDITOR_PATH` for the locked test step.
 
 ## See Also
 

@@ -78,7 +78,7 @@ status: "stable"
 > best-practice API per scenario, unsupported scenarios render `N/A` (never
 > faked), a per-(tech,scenario) fan-out assertion guards against silent dedup,
 > and the comparison registry, PINNED versions, and required Unity built-ins live ONLY in
-> `.github/comparison-packages.json` with a drift gate.
+> `.github/comparison-packages.json`; keep every mirror in sync by hand.
 
 ## Overview
 
@@ -200,18 +200,12 @@ Three consumers read this file and must agree:
   `defineConstraints` so Unity must satisfy the full AND gate before compiling
   the assembly.
 
-`scripts/validate-comparison-packages.js` (npm `validate:comparison-packages`,
-part of `validate:all`) fails on any drift between the JSON, the asmdef
-`versionDefines`, same-asmdef `defineConstraints`, the committed manifest, and
-the committed package lock. It also rejects duplicate package define mappings,
-duplicate package entries inside one asmdef, and asmdefs that constrain a
-single-source package define they do not produce locally. The dedicated
-`validate-comparison-packages` pre-commit/pre-push hook runs that gate for
-source, mirror, asmdef, validator, and CI manifest-generator edits. Any
-path-filtered workflow that invokes the gate must include every source and
-mirror path; `validate:workflows` fails if a workflow can run the gate but skip
-a mirror-only edit. The single-source file is the authority; the validator keeps
-the mirrors honest.
+The single-source file is the authority. When editing it, manually update and
+review every mirror in the same change: the asmdef `versionDefines`,
+same-asmdef `defineConstraints`, the committed
+`.unity-test-project/Packages/manifest.json`, and the committed
+`packages-lock.json`. Keep package define mappings unique (one define per
+package) and never constrain a define the asmdef does not produce locally.
 
 ## Common Pitfalls
 
@@ -223,12 +217,11 @@ the mirrors honest.
   `StructScenarioDispatchesNonPrimitiveStructPayload` contract test fail any
   bridge that claims the scenario while dispatching a primitive or boxed payload.
 - "I will bump the pin in the manifest only." Bump
-  `.github/comparison-packages.json`; the validator flags the rest.
+  `.github/comparison-packages.json` and update every mirror in the same change.
 - "Two companion packages can share one `_PRESENT` symbol." Use one define per
   package and require every package-specific define in the consuming asmdef.
-- "I will add the drift gate to a path-filtered workflow and include only the
-  source JSON." Include the manifest and package-lock mirrors too; workflow
-  trigger coverage is part of the drift gate.
+- "I will path-filter a workflow on only the source JSON." Include the
+  manifest and package-lock mirrors in the trigger paths too.
 - "I will route every library through a DxMessaging-style wrapper." Use each
   library's own best-practice API per scenario.
 - "I will skip the fan-out assertion; the rows look complete." The assertion is
@@ -243,7 +236,6 @@ the mirrors honest.
 ## References
 
 - Single source: `.github/comparison-packages.json`
-- Drift gate: `scripts/validate-comparison-packages.js`
 - Harness: `Tests/Runtime/Comparisons/ComparisonHarness.cs`
 - Payload-fidelity contract: `Tests/Runtime/Comparisons/ComparisonBridgeContract.cs`
 - Baselines: `Tests/Runtime/Comparisons/ZeroDependencyComparisonTests.cs`

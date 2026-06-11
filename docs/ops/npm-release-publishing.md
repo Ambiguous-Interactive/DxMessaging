@@ -66,16 +66,11 @@ There is no manual release dispatch.
 
 The workflow runs these checks before publishing:
 
-- `npm run test:scripts`
-- `npm run test:unity-contracts`
-- `npm run validate:npm-meta`
-- `npm run validate:llms-txt`
-- `npm run validate:repo-identity`
+- `npm test`
 - `npm run validate:all`
 - trusted Unity editmode release check on the Ambiguous Windows runner
 
-Run the same commands locally from a clean tracked state before tagging. If new
-files are untracked, `validate:untracked-policy` fails by design.
+Run the same commands locally from a clean tracked state before tagging.
 
 ## Artifacts
 

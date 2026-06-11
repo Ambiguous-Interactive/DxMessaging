@@ -4,38 +4,75 @@ on:
   pull_request:
     paths:
       - .github/workflows/script-tests.yml
+      - .github/workflows/release.yml
       - .github/actions/**/action.yml
+      - .github/unity-versions.json
       - .github/workflows/unity-*.yml
-      - Editor/Analyzers/**
-      - Editor/SetupCscRsp.cs
       - package.json
-      - Runtime/**/*.cs
+      - .npmignore
+      - CHANGELOG.md
+      - CHANGELOG.md.meta
+      - LICENSE.md
+      - LICENSE.md.meta
+      - README.md
+      - README.md.meta
+      - "Third Party Notices.md"
+      - "Third Party Notices.md.meta"
+      - package.json.meta
+      - Editor.meta
+      - Editor/**
+      - Runtime.meta
+      - Runtime/**
+      - Samples~/**
+      - SourceGenerators.meta
       - SourceGenerators/**
-      - Tests/**/*.asmdef
-      - Tests/**/*.cs
       - scripts/**/*.ps1
       - scripts/**/*.sh
-      - scripts/**/*.js
-      - scripts/__tests__/**/*.js
+      # All tracked JS (not just scripts/): validate:all runs the JS LoC
+      # budget gate, which counts every tracked *.js/*.cjs/*.mjs (including
+      # docs/javascripts/), so JS added anywhere must trigger this workflow.
+      - "**/*.js"
+      - "**/*.cjs"
+      - "**/*.mjs"
+      # validate:all runs validate:asmdef-references, which reads every
+      # tracked .asmdef — so asmdef-only PRs must trigger this workflow.
+      - "**/*.asmdef"
   push:
     branches:
       - main
       - master
     paths:
       - .github/workflows/script-tests.yml
+      - .github/workflows/release.yml
       - .github/actions/**/action.yml
+      - .github/unity-versions.json
       - .github/workflows/unity-*.yml
-      - Editor/Analyzers/**
-      - Editor/SetupCscRsp.cs
       - package.json
-      - Runtime/**/*.cs
+      - .npmignore
+      - CHANGELOG.md
+      - CHANGELOG.md.meta
+      - LICENSE.md
+      - LICENSE.md.meta
+      - README.md
+      - README.md.meta
+      - "Third Party Notices.md"
+      - "Third Party Notices.md.meta"
+      - package.json.meta
+      - Editor.meta
+      - Editor/**
+      - Runtime.meta
+      - Runtime/**
+      - Samples~/**
+      - SourceGenerators.meta
       - SourceGenerators/**
-      - Tests/**/*.asmdef
-      - Tests/**/*.cs
       - scripts/**/*.ps1
       - scripts/**/*.sh
-      - scripts/**/*.js
-      - scripts/__tests__/**/*.js
+      # All tracked JS (not just scripts/): see the pull_request paths note.
+      - "**/*.js"
+      - "**/*.cjs"
+      - "**/*.mjs"
+      # validate:all runs validate:asmdef-references: see the pull_request note.
+      - "**/*.asmdef"
   workflow_dispatch:
 
 concurrency:
@@ -46,28 +83,24 @@ permissions:
   contents: read
 
 jobs:
-  preflight-pre-push:
-    name: Run preflight:pre-push (${{ matrix.os }})
+  script-tests:
+    name: Script tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 15
     permissions:
       contents: read
-    # Phase 5 CI parity: run the full `npm run preflight:pre-push` chain on
-    # the two developer OS runners GitHub Actions provides for this matrix
-    # (Ubuntu + Windows). macOS parity is covered by the
-    # pre-commit-tooling-check.yml workflow's preflight step, which runs the
-    # same chain on macos-latest. The concurrency group is expanded with
-    # ${{ matrix.os }} per scripts/validate-workflows.js: a matrix job may
-    # not share a single concurrency slot across OS entries (one slot would
-    # cancel every successive OS the moment the next OS queues).
+    # The concurrency group is expanded with ${{ matrix.os }}: a matrix job
+    # may not share a single concurrency slot across OS entries (one slot
+    # would cancel every successive OS the moment the next OS queues).
     concurrency:
-      group: ${{ github.workflow }}-preflight-pre-push-${{ matrix.os }}-${{ github.ref }}
+      group: ${{ github.workflow }}-script-tests-${{ matrix.os }}-${{ github.ref }}
       cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
         os:
           - ubuntu-latest
+          - macos-latest
           - windows-latest
 
     steps:
@@ -75,25 +108,29 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
           persist-credentials: false
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "22.18.0"
           cache: npm
+          # package-lock.json is gitignored in this repo, so point the cache
+          # key at package.json or setup-node fails to find a lockfile.
           cache-dependency-path: package.json
 
-      - name: Ensure pinned pre-commit
-        run: node scripts/ensure-pre-commit.js
+      - name: Setup .NET
+        # validate:all runs check:analyzers, which builds the source
+        # generators against the SDK pinned in SourceGenerators/global.json.
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: SourceGenerators/global.json
 
       - name: Install dependencies
+        # No tracked package-lock.json: npm ci requires a lockfile, so fall
+        # back to npm install when it is absent (repo-standard pattern).
+        # `shell: bash` is required for the windows-latest matrix leg, where
+        # the default run shell is pwsh and cannot parse this bash syntax.
         shell: bash
         run: |
           if [ -f package-lock.json ]; then
@@ -102,15 +139,13 @@ jobs:
             npm i --no-audit --no-fund
           fi
 
-      - name: Run preflight:pre-push
-        # `shell: bash` ensures the chained npm script + pre-commit
-        # invocation resolves the same way on windows-latest (Git Bash) as
-        # on ubuntu-latest, so a Windows-only quoting or path-shim
-        # regression cannot pass CI unnoticed.
-        # timeout-minutes: the heaviest step (full parity sweep + full Jest
-        # suite). The job timeout (30) is generous, but a per-step timeout turns
-        # a genuine wedge into a clear "step timed out" signal instead of an
-        # opaque job-level cancel -- consistent with the other preflight jobs.
-        timeout-minutes: 15
+      - name: Run script tests
+        # `shell: bash` ensures the invocation resolves consistently across
+        # Linux, native macOS, and windows-latest (Git Bash), so platform-only
+        # quoting or path regressions cannot pass CI unnoticed.
         shell: bash
-        run: npm run preflight:pre-push
+        run: node --test scripts/
+
+      - name: Run validators
+        shell: bash
+        run: npm run validate:all

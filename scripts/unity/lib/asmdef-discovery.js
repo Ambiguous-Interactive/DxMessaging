@@ -9,16 +9,16 @@
  *   - .github/actions/compute-unity-assemblies (primary CI consumer)
  *   - scripts/unity/run-tests.sh (default include / exclude assembly list)
  *   - scripts/unity/run-tests.ps1 (PowerShell parity)
- *   - scripts/__tests__/unity-perf-isolation.test.js (Phase 4 contract)
  *   - .github/workflows-disabled/unity-tests.yml (customParameters template)
  *
  * No filesystem mutation. Pure functions only.
  *
  * Exports:
- *   - enumerateTestAsmdefs(repoRoot)
- *   - classifyAsmdef(name)
  *   - defaultIncludeAssemblies(repoRoot, options?)
- *   - defaultExcludeAssemblies(repoRoot, options?)
+ *
+ * The enumeration/classification helpers are module-internal; run this file
+ * directly (`node scripts/unity/lib/asmdef-discovery.js`) for a self-test
+ * that prints every discovered asmdef with its classification.
  *
  * Default include/exclude rules:
  *   - "core"        => INCLUDED by default.
@@ -33,6 +33,8 @@
 
 const fs = require("fs");
 const path = require("path");
+
+const { walkFiles } = require("../../lib/repo-files");
 
 /**
  * Names matching this pattern are perf/benchmark/allocation assemblies and must
@@ -88,37 +90,6 @@ const STANDALONE_PLATFORM_NAMES = new Set([
  */
 function isDxMessagingOwnedAssembly(name) {
   return typeof name === "string" && name.startsWith(DXMESSAGING_ASSEMBLY_PREFIX);
-}
-
-/**
- * Recursively enumerate every file path under `dir` whose basename matches
- * `predicate`. Sync. Returns POSIX-style relative paths joined to `dir`.
- *
- * @param {string} dir - Absolute directory to walk
- * @param {(basename: string) => boolean} predicate - File-name filter
- * @returns {string[]} Absolute file paths
- */
-function walkSync(dir, predicate) {
-  const results = [];
-  if (!fs.existsSync(dir)) {
-    return results;
-  }
-
-  /** @type {fs.Dirent[]} */
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const childPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...walkSync(childPath, predicate));
-      continue;
-    }
-
-    if (entry.isFile() && predicate(entry.name)) {
-      results.push(childPath);
-    }
-  }
-
-  return results;
 }
 
 /**
@@ -208,11 +179,6 @@ function readAsmdefPlatforms(asmdefPath) {
   };
 }
 
-function readAsmdefIsEditorOnly(asmdefPath) {
-  const platforms = readAsmdefPlatforms(asmdefPath).includePlatforms;
-  return platforms.length === 1 && platforms[0] === "Editor";
-}
-
 /**
  * @param {string[]} includePlatforms
  * @param {string[]} excludePlatforms
@@ -271,7 +237,9 @@ function enumerateTestAsmdefs(repoRoot) {
   }
 
   const testsDir = path.join(repoRoot, "Tests");
-  const asmdefPaths = walkSync(testsDir, (n) => n.endsWith(".asmdef"));
+  const asmdefPaths = walkFiles(testsDir, {
+    match: (full, dirent) => dirent.name.endsWith(".asmdef")
+  });
 
   /** @type {AsmdefEntry[]} */
   const entries = asmdefPaths.map((asmdefPath) => {
@@ -340,13 +308,7 @@ function defaultIncludeAssemblies(repoRoot, options) {
       if (entry.isForeign) {
         return false;
       }
-      if (
-        !isAsmdefCompatibleWithTarget(
-          entry.includePlatforms,
-          entry.excludePlatforms,
-          target
-        )
-      ) {
+      if (!isAsmdefCompatibleWithTarget(entry.includePlatforms, entry.excludePlatforms, target)) {
         return false;
       }
       if (entry.isPerf) {
@@ -387,13 +349,7 @@ function defaultExcludeAssemblies(repoRoot, options) {
       if (entry.isForeign) {
         return true;
       }
-      if (
-        !isAsmdefCompatibleWithTarget(
-          entry.includePlatforms,
-          entry.excludePlatforms,
-          target
-        )
-      ) {
+      if (!isAsmdefCompatibleWithTarget(entry.includePlatforms, entry.excludePlatforms, target)) {
         return true;
       }
       if (entry.isPerf) {
@@ -410,15 +366,11 @@ function defaultExcludeAssemblies(repoRoot, options) {
     .map((entry) => entry.name);
 }
 
+// Only defaultIncludeAssemblies has external consumers
+// (compute-unity-assemblies/action.yml, run-tests.sh, run-tests.ps1). The
+// other helpers are internal; the self-test block below uses them directly.
 module.exports = {
-  PERF_NAME_REGEX,
-  COMPARISON_NAME_REGEX,
-  INTEGRATION_NAME_REGEX,
-  classifyAsmdef,
-  enumerateTestAsmdefs,
-  isAsmdefCompatibleWithTarget,
-  defaultIncludeAssemblies,
-  defaultExcludeAssemblies
+  defaultIncludeAssemblies
 };
 
 if (require.main === module) {

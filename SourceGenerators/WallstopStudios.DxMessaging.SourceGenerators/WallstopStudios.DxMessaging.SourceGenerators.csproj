@@ -4,8 +4,8 @@
     <!-- DO NOT bump this without verifying Unity 2021 still loads the source
          generators. Unity 2021's analyzer/source-generator loader runs on
          Roslyn 3.8.x and fails to instantiate generators compiled against
-         Roslyn 4.x. This pin is enforced by
-         scripts/__tests__/unity-test-harness-contract.test.js. -->
+         Roslyn 4.x. No automated test pins this anymore; verify in Unity
+         before changing it. -->
     <MicrosoftCodeAnalysisVersion>3.8.0</MicrosoftCodeAnalysisVersion>
     <AssemblyInformationalVersion>$(Version)</AssemblyInformationalVersion>
   </PropertyGroup>

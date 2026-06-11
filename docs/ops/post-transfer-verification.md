@@ -18,25 +18,20 @@ updates, and Unity Asset Store account checks.
 1. Confirm stale links are gone:
 
 ```bash
-npm run validate:repo-identity
+git grep -i "wallstop-studios/DxMessaging"
 ```
+
+The grep should return no tracked matches.
 
 ## Validation
 
 Run from a clean tracked state:
 
 ```bash
-npm run test:scripts
-npm run test:unity-contracts
-npm run validate:npm-meta
-npm run validate:llms-txt
+npm test
 npm run validate:all
-node scripts/validate-workflows.js
+npm pack --json --dry-run --ignore-scripts
 ```
-
-If `validate:untracked-policy` fails, either commit intended files or add a
-documented ignore rule. Do not ignore files that should be part of the release
-change.
 
 ## CI
 
@@ -53,7 +48,6 @@ change.
 There is no release dry-run workflow. Use local validation before tagging:
 
 ```bash
-npm run validate:npm-meta
 npm pack --json --dry-run --ignore-scripts
 ```
 

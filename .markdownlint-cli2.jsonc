@@ -1,8 +1,6 @@
 {
-  // Apply automatic fixes when available
-  "fix": true,
-
-  // Limit linting impact until large, single-line docs are reformatted
+  // NOTE: no "fix" here -- `npm run lint:markdown` is check-only. Auto-fix is
+  // opt-in via `--fix` (the pre-commit hook and format-on-demand pass it).
   "ignores": [
     // Exclude third-party and generated content
     "**/node_modules/**",
@@ -13,6 +11,11 @@
     "**/Samples~/**",
     "**/.github/**",
     "**/.venv/**",
-    "**/site/**"
+    "**/site/**",
+    "**/_site/**",
+    // Git-ignored local scratch areas
+    "progress/**",
+    ".artifacts/**",
+    "*PLAN.md"
   ]
 }

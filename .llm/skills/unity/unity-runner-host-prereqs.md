@@ -40,7 +40,7 @@ impact:
     details: "Keeps host prereq install, CI preflight, and Unity startup diagnostics tied to one script contract."
   testability:
     rating: "high"
-    details: "Hermetic env-var seams and contract tests pin detection, workflow targeting, and short-circuit behavior."
+    details: "Hermetic env-var seams allow manual exercise of detection, workflow targeting, and short-circuit paths; no automated contract test pins them anymore, so review changes manually."
 
 prerequisites:
   - "Familiarity with Windows PowerShell and HKLM-scoped install detection"
@@ -234,15 +234,8 @@ auto-install.
 
 ## Verification
 
-Keep these tests aligned with any change to the bootstrap or short-circuit:
-
-- `scripts/__tests__/unity-runner-host-prereq-contract.test.js`
-- `scripts/__tests__/unity-ensure-editor-production-contract.test.js`
-- `scripts/__tests__/unity-runner-script-contract.test.js`
-- `scripts/__tests__/powershell-syntax.test.js`
-- `scripts/__tests__/hermetic-host-env-policy.test.js`
-
-Mutation-test the guards, not only the green path. A fresh runner missing VC++
+When changing the bootstrap or short-circuit, manually exercise the guards,
+not only the green path. A fresh runner missing VC++
 must still surface through file-on-disk probes and must not fall through to a
 managed Unity reinstall.
 

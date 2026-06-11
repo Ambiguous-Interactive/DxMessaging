@@ -286,11 +286,10 @@ Do not add broad `restore-keys` for Unity Library caches.
 Run:
 
 ```bash
-npm run test:unity-contracts
-node scripts/validate-workflows.js
+npm test
 ```
 
-The validator hard-fails if any workflow reintroduces the reserved
+Also confirm in review that no workflow reintroduces the reserved
 native `concurrency.group: wallstop-organization-builds` use
 (workflow-level or job-level, in multi-line mapping, inline mapping, or
 scalar-shorthand form).

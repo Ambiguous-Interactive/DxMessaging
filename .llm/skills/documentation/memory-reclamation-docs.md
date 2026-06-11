@@ -114,17 +114,13 @@ When any trigger file changes, update IN THE SAME CHANGE:
 
 ## Validation
 
-Run from the repository root:
+There is no automated drift gate; review by hand:
 
-```bash
-npm run validate:runtime-settings-docs
-npm run validate:changelog:coverage
-```
-
-If `validate:runtime-settings-docs` reports `missing-doc-row`, add the new
-row to `docs/reference/runtime-settings.md` matching the shape of the
-existing rows. If it reports `extra-doc-row`, remove the stale row because
-the underlying setting was removed or renamed.
+- Every setting in `DxMessagingRuntimeSettings` has a matching row in
+  `docs/reference/runtime-settings.md` (add missing rows in the shape of the
+  existing ones; remove rows for settings that were removed or renamed).
+- `docs/guides/memory-reclamation.md` reflects the same change.
+- `CHANGELOG.md` is updated when the change is user-visible.
 
 If `validate:changelog:coverage` raises `W002`, rewrite the entry around user
 impact. Internal-only renames belong in developer docs, not in the changelog.

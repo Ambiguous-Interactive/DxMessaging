@@ -88,7 +88,31 @@ runs:
           Write-Host "::endgroup::"
 
           if ($exitCode -ne 0) {
-            Write-Host "::warning::Unity license return exited with code $exitCode; the next run's return-at-start is the backstop for the leaked seat."
+            $returnedEntitlement = $false
+            $legacyFileUnavailable = $false
+            try {
+              if (Test-Path -LiteralPath $returnLog -PathType Leaf) {
+                $returnedEntitlement = Select-String `
+                  -LiteralPath $returnLog `
+                  -Pattern 'Successfully returned the entitlement license' `
+                  -SimpleMatch `
+                  -Quiet
+                $legacyFileUnavailable = Select-String `
+                  -LiteralPath $returnLog `
+                  -Pattern 'Serial number unavailable for ULF return' `
+                  -SimpleMatch `
+                  -Quiet
+              }
+            } catch {
+              $returnedEntitlement = $false
+              $legacyFileUnavailable = $false
+            }
+
+            if ($returnedEntitlement -and $legacyFileUnavailable) {
+              Write-Host "::notice::Unity returned the entitlement license, then exited with code $exitCode while skipping legacy ULF return; treating the seat return as successful."
+            } else {
+              Write-Host "::warning::Unity license return exited with code $exitCode; the next run's return-at-start is the backstop for the leaked seat."
+            }
           } else {
             Write-Host "::notice::Returned the Unity license seat."
           }

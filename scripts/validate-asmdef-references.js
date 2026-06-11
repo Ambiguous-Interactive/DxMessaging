@@ -47,7 +47,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
-const { normalizeToLf } = require("./lib/quote-parser");
+const { normalizeToLf } = require("./lib/line-endings");
 const { toPosixPath } = require("./lib/path-classifier");
 
 const repoRoot = path.resolve(__dirname, "..");
@@ -326,14 +326,11 @@ if (require.main === module) {
   }
 }
 
+// Export only the symbols consumed externally
+// (scripts/__tests__/validate-asmdef-references.test.js).
 module.exports = {
-  PACKAGE_SOURCE_PREFIXES,
-  SECONDARY_SCOPE_NOTE,
   isOwnPackageAsmdef,
-  getOwnPackageAsmdefPaths,
-  readAsmdef,
   resolveOverrideReferences,
   resolvePrecompiledReferences,
-  findAsmdefReferenceViolations,
-  validateAsmdefReferences
+  findAsmdefReferenceViolations
 };

@@ -35,7 +35,7 @@
  *
  * Excluded from scanning: `.github/unity-versions.json` itself (it is the
  * source) and everything under `.github/workflows-disabled/` (an intentionally
- * unchecked archive, consistent with scripts/validate-workflows.js scoping).
+ * unchecked archive).
  *
  * This script is PURE Node and dependency-free (fs + path + JSON.parse + regex
  * only) so it runs in CI without an `npm install`.
@@ -180,7 +180,9 @@ function validateCanonicalSchema(data) {
 
   const all = data.all;
   if (!Array.isArray(all) || all.length === 0) {
-    errors.push(`${CANONICAL_RELATIVE_PATH}: \`all\` must be a non-empty array of version strings.`);
+    errors.push(
+      `${CANONICAL_RELATIVE_PATH}: \`all\` must be a non-empty array of version strings.`
+    );
     // Without a usable `all`, the remaining checks cannot run meaningfully.
     return errors;
   }
@@ -526,18 +528,11 @@ function main(options = {}) {
 }
 
 module.exports = {
-  loadCanonical,
   validateCanonicalSchema,
   extractVersionLiterals,
   checkConsumer,
   resolveWorkflowPolicy,
-  resolveScanTargets,
-  listActiveWorkflows,
-  parseVersionTriple,
-  main,
-  CONSUMER_POLICIES,
-  VERSION_LITERAL_REGEX,
-  CANONICAL_RELATIVE_PATH
+  parseVersionTriple
 };
 
 if (require.main === module) {

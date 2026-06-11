@@ -175,6 +175,7 @@ nav:
   - Guides:
       - Patterns: guides/patterns.md
       - Unity Integration: guides/unity-integration.md
+      - MCP Local Setup: guides/mcp-local-setup.md
       - Testing: guides/testing.md
       - Diagnostics: guides/diagnostics.md
       - Memory Reclamation: guides/memory-reclamation.md
@@ -223,4 +224,3 @@ nav:
       - Perf Benchmark Methodology: runbooks/perf-benchmark-methodology.md
       - Perf-Numbers Auto-Commit: runbooks/perf-numbers-auto-commit.md
       - Unity Runners After Transfer: runbooks/unity-runners-after-transfer.md
-      - Windows Partial Extract: runbooks/windows-partial-extract.md

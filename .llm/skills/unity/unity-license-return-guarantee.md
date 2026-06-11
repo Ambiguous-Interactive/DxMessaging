@@ -12,10 +12,6 @@ source:
     - path: "scripts/unity/run-ci-tests.ps1"
     - path: ".github/actions/return-unity-license/action.yml"
     - path: ".github/actions/validate-unity-license/action.yml"
-    - path: "scripts/validate-workflows.js"
-    - path: "scripts/__tests__/unity-license-leak-safety.test.js"
-    - path: "scripts/__tests__/unity-runner-strictmode-smoke.test.js"
-    - path: "scripts/__tests__/unity-workflow-shape.test.js"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
@@ -92,8 +88,7 @@ status: "stable"
   (`./.github/actions/return-unity-license`) in a Unity workflow.
 - Diagnosing a Unity job that fails to activate because all serial seats are
   consumed.
-- Touching `scripts/validate-workflows.js`, the leak-safety static guard, or the
-  strictmode smoke test.
+- Reviewing any change to the Unity workflows' license activation/return steps.
 
 ## Why It Matters
 
@@ -221,26 +216,18 @@ a persistent runner.
 | Prior run leaked a seat      | A seat is still activated from a previous run.   | Return-at-start (defensive `-returnlicense` before activating).     |
 | Both machines leak at once   | Zero seats free; a new run cannot activate.      | NOT fully covered -- raise the seat count (accepted residual risk). |
 
-## Enforcement Layers
+## Contract Invariants (review these on every change)
 
-Four named layers keep the contract honest:
+There is no automated validator for these anymore; keep them honest in review:
 
-1. **Static guard** -- `scripts/__tests__/unity-license-leak-safety.test.js`
-   scans `run-ci-tests.ps1` for the `Invoke-UnityLicenseActivate` /
-   `Invoke-UnityLicenseReturn` function names (activation bracketed by a
-   `finally` return), requires the `return-unity-license` action, and FORBIDS any
-   `secrets.UNITY_LICENSING_SERVER` reference.
-1. **Behavioral leak-regression** -- `scripts/__tests__/unity-runner-strictmode-smoke.test.js`
-   exercises the runner under StrictMode and asserts a return happens on the
-   failure paths (no leaked seat on a thrown / non-zero run).
-1. **Validator rules** -- `findUnityLicenseReturnViolations` requires the
-   `if: always()` `return-unity-license` step inside the org-lock window;
-   `findForbiddenUnityLicenseSecretViolations` now rejects any reintroduced
-   `UNITY_LICENSING_SERVER`; `findRequiredUnityLicenseSecretViolations` requires
-   the three serial secrets be wired on Unity jobs. All in
-   `scripts/validate-workflows.js`.
-1. **Workflow-shape assertion** -- `scripts/__tests__/unity-workflow-shape.test.js`
-   pins the `if: always()` shape (and order) of the return step per Unity job.
+1. `run-ci-tests.ps1` brackets activation with `Invoke-UnityLicenseActivate` /
+   `Invoke-UnityLicenseReturn` (the return lives in a `finally`), and runs a
+   defensive return-at-start.
+1. Every Unity workflow keeps the `if: always()` `return-unity-license` step
+   inside the org-lock window.
+1. No workflow reintroduces a `secrets.UNITY_LICENSING_SERVER` reference, and
+   every Unity job wires the three serial secrets
+   (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`).
 
 ## Anti-Patterns
 

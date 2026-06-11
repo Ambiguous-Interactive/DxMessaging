@@ -183,10 +183,10 @@ checkout credentials disabled and pass the push token to that specific action or
 command-scoped Git invocation. For local `stefanzweifel/git-auto-commit-action`
 paths, prefer a guarded `git remote set-url` step immediately before the
 auto-commit step, followed immediately by a guarded cleanup step that restores
-`origin` to a plain `https://github.com/...` URL. `npm run validate:workflows`
-enforces explicit `persist-credentials: false` on every checkout and rejects
-tokenized Git remotes outside matching single-command `git-auto-commit-action`
-handoffs with cleanup. Manual clone/fetch/push steps should use command-scoped
+`origin` to a plain `https://github.com/...` URL. Keep explicit
+`persist-credentials: false` on every checkout, and never leave a tokenized
+Git remote outside a matching single-command `git-auto-commit-action`
+handoff with cleanup. Manual clone/fetch/push steps should use command-scoped
 `git -c http.https://github.com/.extraheader=...` credentials, never a tokenized
 remote URL or persistent `git config http.*.extraheader`.
 

@@ -54,8 +54,10 @@ public sealed class DocsSnippetCompilationTests
         // that are not real bugs in the documentation. Note: CS1612 is never
         // produced by this stub setup -- the broken "new X().Emit()" pattern
         // surfaces as CS1510 (which we intentionally ignore, see below), so
-        // semantic detection of that bug class is delegated to the textual
-        // pattern lint in scripts/validate-doc-code-patterns.js.
+        // this harness cannot detect that bug class semantically. The textual
+        // doc-pattern lint that previously guarded it was retired in the
+        // tooling simplification, so that bug class is currently unguarded;
+        // reviewers must catch it manually in doc snippets.
         "CS0027", // keyword 'this' is not available in the current context
         "CS0115", // no suitable method found to override (snippet defines class without true base wired)
         "CS1512", // 'base' is not available in the current context
@@ -71,10 +73,10 @@ public sealed class DocsSnippetCompilationTests
         // surface because the test compilation does not load the full runtime
         // assembly; doc snippets reference real APIs (RegisterUntargeted<T>,
         // [DxAutoConstructor]-generated constructors, etc.) whose stubs are
-        // intentionally minimal in GeneratorTestUtilities.SharedStubs. The
-        // canonical defense against the "new X().Emit()" bug class is
-        // scripts/validate-doc-code-patterns.js (which performs a textual
-        // pattern check that is not subject to stub coverage gaps). The
+        // intentionally minimal in GeneratorTestUtilities.SharedStubs. There is
+        // no longer an automated defense against the "new X().Emit()" bug
+        // class (the textual doc-pattern lint was retired); review doc
+        // snippets for it manually. The
         // compilation test cannot reliably catch that specific bug here: the
         // stub setup produces CS1510 (not CS1612) for the broken pattern,
         // and CS1510 must remain in the ignore list to suppress unrelated
@@ -88,7 +90,7 @@ public sealed class DocsSnippetCompilationTests
         "CS0453", // type must be non-nullable value type (placeholder strings as messages)
         "CS0501", // method must declare body (partial members not generated)
         "CS0579", // duplicate attribute (auto-generated partials would dedupe in real build)
-        "CS1510", // ref or out value must be assignable. Kept in ignore list because stub-only compilation produces CS1510 noise on legitimate snippets that touch unstubbed ref-returning APIs; this means the harness CANNOT catch the "new X().Emit()" struct-rvalue bug and that class is enforced solely by scripts/validate-doc-code-patterns.js (see struct-emit-temporary rule).
+        "CS1510", // ref or out value must be assignable. Kept in ignore list because stub-only compilation produces CS1510 noise on legitimate snippets that touch unstubbed ref-returning APIs; this means the harness CANNOT catch the "new X().Emit()" struct-rvalue bug; that class has no automated guard since the textual doc-pattern lint was retired, so it must be caught in review.
         "CS1739", // overload doesn't have parameter named (placeholder constructors)
         "CS0305", // generic type requires N type arguments (placeholder collections)
         "CS0104", // ambiguous reference (UnityEngine.Object vs System.Object script collision)
@@ -187,9 +189,9 @@ using UnityEngine;
         // bug class. The stub setup produces CS1510 (not CS1612) for that
         // pattern, and CS1510 must remain ignored to keep legitimate snippets
         // that touch unstubbed ref-returning members from triggering false
-        // positives. The textual lint scripts/validate-doc-code-patterns.js
-        // (struct-emit-temporary rule) is the canonical defense for that
-        // class of bug.
+        // positives. The textual lint that previously guarded this class of bug
+        // was retired in the tooling simplification, so it is currently
+        // unguarded; review doc snippets for it manually.
         var diagnostics = GeneratorTestUtilities
             .CompileDocSnippet(snippet)
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)

@@ -15,8 +15,7 @@
 [![openupm](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging?label=openupm&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.wallstop-studios.dxmessaging/)<br/>
 [![Version](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging.svg)](https://www.npmjs.com/package/com.wallstop-studios.dxmessaging)<br/>
 [![Performance: PlayMode (Mono) + Standalone (IL2CPP)](<https://img.shields.io/badge/Performance-PlayMode%20(Mono)%20%2B%20Standalone%20(IL2CPP)-blueviolet.svg>)](docs/architecture/performance.md)<br/>
-[![Markdown Link Validity](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml)<br/>
-[![Markdown Link Text Check](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-text-check.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-text-check.yml)
+[![Markdown Link Validity](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml)
 
 > **🤖 AI Assistance Disclosure:**
 >

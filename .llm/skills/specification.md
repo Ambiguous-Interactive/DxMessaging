@@ -193,10 +193,8 @@ status: "draft|review|stable|deprecated"
 
 After the frontmatter, skills follow this structure:
 
-Each skill file must stay within the repository line-budget policy: target
-120-260 lines, treat 261-300 as a split warning, and never exceed 300 lines.
-Run `npm run repair:llm-policy` and `npm run validate:llm-policy` before
-handoff.
+Each skill file should stay focused: target 120-260 lines and split into
+companion `-part-N.md` files when a file grows past that.
 
 ```markdown
 ---
@@ -226,5 +224,4 @@ Describe the specific problem this pattern addresses. Include:
 ## See Also
 
 - [skill-template](./templates/skill-template.md)
-- [Skill File Sizing Guidelines](./documentation/skill-file-sizing.md)
 ```

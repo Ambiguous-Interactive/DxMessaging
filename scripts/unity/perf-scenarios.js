@@ -134,7 +134,6 @@ function isComparisonScenario(scenario) {
 }
 
 module.exports = {
-  COMPARISON_SCENARIO_PREFIX,
   SCENARIO_ORDER,
   SCENARIOS,
   DISPATCH_DISPLAY_NAMES,

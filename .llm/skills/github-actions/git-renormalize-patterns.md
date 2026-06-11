@@ -216,13 +216,7 @@ for ext in cs md json asmdef yml; do
 done
 ```
 
-Run automated validation:
-
-```bash
-node scripts/validate-workflows.js
-```
-
-This validation runs in CI (via actionlint workflow) but not in pre-commit hooks.
+Workflow files are linted by actionlint in CI.
 
 ## See Also
 

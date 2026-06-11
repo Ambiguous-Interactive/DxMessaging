@@ -3,10 +3,7 @@
 # =============================================================================
 # parse-devcontainer-mounts.sh
 # =============================================================================
-# Robust JSONC (JSON with comments) parsing for devcontainer.json. The Node
-# counterpart lives at scripts/lib/devcontainer-jsonc.js; the two MUST agree
-# on the comment-stripping algorithm. A Jest parity test exercises both
-# implementations against a shared fixture set.
+# Robust JSONC (JSON with comments) parsing for devcontainer.json.
 #
 # Public surface:
 #   strip_jsonc_comments <file>
@@ -25,17 +22,17 @@
 #     Output is the raw scalar value (no surrounding quotes). When the
 #     property is absent or null, the function exits 0 with empty stdout.
 #     The function FAILS LOUDLY (non-zero exit + stderr message) on jq parse
-#     errors. Use this in any .devcontainer/*.sh script that previously used
-#     a brittle `grep ... \.json"` pattern -- the grep approach silently
-#     misses commented-out keys and string-literal "matches".
+#     errors. Use this in any .devcontainer/*.sh script instead of a brittle
+#     `grep ... \.json"` pattern -- the grep approach silently misses
+#     commented-out keys and string-literal "matches".
 # =============================================================================
 
 [[ "${_DXM_DEVCONTAINER_JSONC_LOADED:-}" == "1" ]] && return 0
 _DXM_DEVCONTAINER_JSONC_LOADED=1
 
-# Strip JSONC comments from stdin / file argument. Implementation mirrors
-# stripJsoncComments() in scripts/lib/devcontainer-jsonc.js: a four-state
-# machine tracking (default, in-string, in-line-comment, in-block-comment).
+# Strip JSONC comments from stdin / file argument. Implementation is a
+# four-state machine tracking (default, in-string, in-line-comment,
+# in-block-comment).
 # Comments are replaced with spaces (not removed) so character offsets do not
 # shift; newlines inside block comments are preserved so line numbers stay
 # aligned for downstream jq diagnostics.
@@ -53,10 +50,9 @@ strip_jsonc_comments() {
     # We use awk for the state machine. Bash's per-character loop would work
     # but is roughly 10x slower on devcontainer.json (~6 KB) and we want the
     # validator to stay snappy. A leading UTF-8 BOM (0xEF 0xBB 0xBF) is
-    # stripped from the very first line BEFORE state-machine entry; jq
-    # tolerates a BOM but the Node JSON.parse counterpart does not, and the
-    # parity test enforces byte-equivalent output. CR bytes from CRLF line
-    # endings are normalized to LF so output line counts match the Node side.
+    # stripped from the very first line BEFORE state-machine entry, and CR
+    # bytes from CRLF line endings are normalized to LF so downstream line
+    # counts stay stable.
     awk '
         BEGIN {
             in_string = 0
@@ -154,16 +150,12 @@ strip_jsonc_comments() {
 # raw scalar value (no surrounding quotes). When the property is absent or
 # null the function exits 0 with empty stdout. jq parse errors exit 2.
 #
-# Non-scalar policy (round-3 MINOR-C, locked in by the parity test at
-# scripts/__tests__/devcontainer-jsonc.test.js): when the requested
-# property resolves to an array or object, this function FAILS LOUDLY
-# (exit 2 + descriptive stderr message). The Node counterpart
-# `getDevcontainerProperty` in scripts/lib/devcontainer-jsonc.js throws a
-# TypeError with the same semantics. Composite values must be read via
-# `strip_jsonc_comments <file> | jq <expression>` (or
-# `parseDevcontainerMounts` on the Node side); the legacy behavior --
-# returning jq's `tostring` of the composite -- silently disagreed with
-# the Node `String(value)` shape ("[object Object]" / "1,2,3").
+# Non-scalar policy: when the requested property resolves to an array or
+# object, this function FAILS LOUDLY (exit 2 + descriptive stderr message).
+# Composite values must be read via
+# `strip_jsonc_comments <file> | jq <expression>`; the legacy behavior --
+# returning jq's `tostring` of the composite -- produced misleading shapes
+# ("[object Object]" / "1,2,3").
 #
 # Use this helper in .devcontainer/*.sh scripts instead of grep against the
 # raw JSON -- grep cannot distinguish between commented-out keys, string
@@ -323,8 +315,7 @@ parse_devcontainer_mounts() {
 }
 
 # CLI dispatcher so the script is usable both as a sourced library and as a
-# standalone tool (handy for ad-hoc debugging and for the Jest parity test
-# which shells out to the bash implementation).
+# standalone tool (handy for ad-hoc debugging).
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     cmd="${1:-}"
     case "$cmd" in

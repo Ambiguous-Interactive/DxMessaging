@@ -218,30 +218,27 @@ npm pack --dry-run 2>&1 | grep "Tests\.meta" || echo "Tests.meta correctly exclu
 ## Issue #204 invariants
 
 [Issue #204](https://github.com/Ambiguous-Interactive/DxMessaging/issues/204) shipped
-build artifacts and orphaned `.meta` files in the npm tarball. The fix lives
-in `scripts/validate-npm-meta.js` and is enforced at pre-push, in
-`prepack`, and by the `validate-npm-meta` workflow. The invariants the
-validator pins:
+build artifacts and orphaned `.meta` files in the npm tarball. Verify these
+invariants against the real `npm pack --json --dry-run` output (never a
+config-string proxy) whenever packaging metadata changes:
 
 1. The npm tarball contains no `bin/`, `obj/`, `*.pdb`, `*.tmp`,
    `*.csproj.user`, `.vs/`, `.idea/`, `*.suo`, or `*.DotSettings.user`
-   paths. Function: `validateNoBuildArtifactsInTarball`.
+   paths.
 1. Every shipped Unity-relevant path has a corresponding `.meta` neighbour
    in the tarball (a `Foo.cs` ships with `Foo.cs.meta`; a `Foo.asmdef`
-   ships with `Foo.asmdef.meta`). Function:
-   `validatePublishedFilesArePairedWithMetas`.
+   ships with `Foo.asmdef.meta`).
 1. Every shipped directory has its directory `.meta` in the tarball. If
    `Runtime/Core/Foo.cs` ships, the tarball must also contain
-   `Runtime/Core.meta` and `Runtime.meta`. Function:
-   `validatePublishedFilesArePairedWithMetas`.
+   `Runtime/Core.meta` and `Runtime.meta`.
 
 ### New tooling directories
 
 When a script writes outputs to a new top-level directory (for example
 `.artifacts/`, `.profiler-output/`, `.unity-test-project/`), add the
-directory to `.gitignore` AND `.npmignore` AND the validator's exclude
-list IN THE SAME CHANGE. Skipping any of the three lets build artifacts
-leak into the tarball or the working tree on a fresh checkout.
+directory to `.gitignore` AND `.npmignore` IN THE SAME CHANGE. Skipping
+either lets build artifacts leak into the tarball or the working tree on
+a fresh checkout.
 
 ## See Also
 

@@ -34,10 +34,10 @@ impact:
     details: "Keeps the default local run small by excluding perf suites that would otherwise dominate the runtime"
   maintainability:
     rating: "high"
-    details: "Single regex governs classification across runner, CI, and contract test"
+    details: "Single regex governs classification across the runner scripts and CI"
   testability:
     rating: "high"
-    details: "Phase 4 contract test exercises every asmdef and asserts correct classification"
+    details: "Classification is a convention reviewed manually; run asmdef-discovery.js directly for a self-test that prints every asmdef classification"
 
 prerequisites:
   - "Familiarity with Unity asmdef files"
@@ -195,16 +195,13 @@ bash scripts/unity/run-tests.sh --platform playmode --include-comparisons
 
 The runner should print `comparisons=true` and include the comparison asmdef in the resolved assembly list. Unity compiles each external bridge only when its package is present, because the asmdef `versionDefines` (sourced from `.github/comparison-packages.json`) guard each bridge; the zero-dependency baselines always compile.
 
-## Phase 4 Contract Test
+## Classification Invariants
 
-`scripts/__tests__/unity-perf-isolation.test.js` (Phase 4B) enumerates every asmdef under `Tests/` and asserts:
+When adding or moving test asmdefs, keep these invariants honest (the exclusion list is computed by `scripts/unity/lib/asmdef-discovery.js`, not hand-maintained):
 
 - Every asmdef matching the perf regex is classified as `perf`.
 - Every asmdef NOT matching the perf or integration regex is classified as `core` and appears in `defaultIncludeAssemblies(repo)`.
-- The disabled `unity-tests.yml` template resolves its assembly list via `defaultIncludeAssemblies` rather than hand-rolled YAML.
-- Disabled `unity-benchmarks.yml` template opts into perf via `{ includePerf: true }`.
-
-The test catches the silent regression "I added a new perf asmdef and forgot to update the exclusion list" because the exclusion list is computed, not hand-maintained.
+- Workflows resolve their assembly lists via `defaultIncludeAssemblies` rather than hand-rolled YAML; benchmark workflows opt into perf via `{ includePerf: true }`.
 
 ## See Also
 

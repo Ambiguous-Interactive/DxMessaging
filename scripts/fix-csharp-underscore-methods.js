@@ -11,6 +11,11 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { normalizeToLf } = require("./lib/line-endings");
+const {
+  canonicalizePathForComparison,
+  isOutsideRelative
+} = require("./lib/path-classifier");
 
 const METHOD_DECLARATION_PATTERN =
   /^\s*(?:(?:\[[^\]\r\n]+\]\s*)*)(?:(?:public|private|protected|internal)\s+)?(?:(?:static|virtual|override|abstract|sealed|async|new|extern|partial|unsafe|readonly)\s+)*(?:[\w<>\[\],.?]+\s+)+(?<name>[A-Za-z_]\w*_[A-Za-z0-9_]+)\s*(?:<[^>\r\n]+>\s*)?\(/gm;
@@ -31,10 +36,6 @@ const EXCLUDED_DIRECTORY_PATTERNS = [
   /(^|[\\/])\.artifacts([\\/]|$)/,
   /(^|[\\/])site([\\/]|$)/
 ];
-
-function normalizeToLf(value) {
-  return String(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
 
 function isCsharpSourceFile(filePath) {
   if (typeof filePath !== "string" || filePath.trim().length === 0) {
@@ -133,25 +134,22 @@ function getGitRepoRoot() {
 }
 
 function parseArgs(argv) {
-  const fileArgs = [];
-  let checkOnly = false;
-  let allFiles = false;
+  // Only `--check` and `--all` are flags; every other token -- bare paths, a
+  // lone `-`, `--`, `=`-forms, and unrecognized `--opt` -- falls through to
+  // fileArgs verbatim, in argv order (pre-commit passes filenames that way).
+  const parsed = { checkOnly: false, allFiles: false, fileArgs: [] };
 
-  for (const arg of argv) {
-    if (arg === "--check") {
-      checkOnly = true;
-      continue;
+  for (const token of argv) {
+    if (token === "--check") {
+      parsed.checkOnly = true;
+    } else if (token === "--all") {
+      parsed.allFiles = true;
+    } else {
+      parsed.fileArgs.push(token);
     }
-
-    if (arg === "--all") {
-      allFiles = true;
-      continue;
-    }
-
-    fileArgs.push(arg);
   }
 
-  return { checkOnly, allFiles, fileArgs };
+  return parsed;
 }
 
 function isExcludedPath(fullPath) {
@@ -168,55 +166,32 @@ function pathModuleForPath(value) {
   return /^[A-Za-z]:[\\/]/.test(value) || value.includes("\\") ? path.win32 : path.posix;
 }
 
-function realpathIfExists(fullPath, { realpathSync = fs.realpathSync } = {}) {
-  try {
-    if (typeof realpathSync.native === "function") {
-      return realpathSync.native(fullPath);
-    }
-
-    return realpathSync(fullPath);
-  } catch {
-    return fullPath;
-  }
-}
-
-function canonicalPathForComparison(fullPath, options = {}) {
-  const pathModule = pathModuleForPath(fullPath);
-  return realpathIfExists(pathModule.resolve(fullPath), options);
-}
-
-function isPathInsideRoot(rootDir, fullPath, options = {}) {
-  const canonicalRootDir = canonicalPathForComparison(rootDir, options);
-  const canonicalFullPath = canonicalPathForComparison(fullPath, options);
+function pathComparisonContext(rootDir, fullPath, { realpathSync = fs.realpathSync } = {}) {
   const pathModule =
-    pathModuleForPath(canonicalRootDir) === path.win32
-      ? path.win32
-      : pathModuleForPath(canonicalFullPath);
-  const normalizedRootDir = pathModule.resolve(canonicalRootDir);
-  const normalizedFullPath = pathModule.resolve(canonicalFullPath);
-  const relativePath = pathModule.relative(normalizedRootDir, normalizedFullPath);
-
-  if (relativePath === "") {
-    return true;
-  }
-
-  // On Windows, different drive letters can yield an absolute relative path.
-  return !relativePath.startsWith("..") && !pathModule.isAbsolute(relativePath);
-}
-
-function isExcludedRepoLocalPath(repoRoot, fullPath, options = {}) {
-  const canonicalRepoRoot = canonicalPathForComparison(repoRoot, options);
-  const canonicalFullPath = canonicalPathForComparison(fullPath, options);
-  const pathModule =
-    pathModuleForPath(canonicalRepoRoot) === path.win32
-      ? path.win32
-      : pathModuleForPath(canonicalFullPath);
+    pathModuleForPath(rootDir) === path.win32 ? path.win32 : pathModuleForPath(fullPath);
+  const canonicalOptions = {
+    pathImpl: pathModule,
+    realpathSync,
+    caseInsensitive: pathModule === path.win32
+  };
+  const canonicalRootDir = canonicalizePathForComparison(rootDir, canonicalOptions);
+  const canonicalFullPath = canonicalizePathForComparison(fullPath, canonicalOptions);
   const relativePath = pathModule.relative(
-    pathModule.resolve(canonicalRepoRoot),
+    pathModule.resolve(canonicalRootDir),
     pathModule.resolve(canonicalFullPath)
   );
 
-  if (relativePath === "" || relativePath.startsWith("..") || pathModule.isAbsolute(relativePath)) {
+  return { relativePath, pathModule };
+}
+
+function isPathInsideRoot(rootDir, fullPath, options = {}) {
+  const { relativePath, pathModule } = pathComparisonContext(rootDir, fullPath, options);
+  return !isOutsideRelative(relativePath, pathModule);
+}
+
+function isExcludedRepoLocalPath(repoRoot, fullPath, options = {}) {
+  const { relativePath, pathModule } = pathComparisonContext(repoRoot, fullPath, options);
+  if (isOutsideRelative(relativePath, pathModule)) {
     return false;
   }
 
@@ -523,26 +498,16 @@ function main() {
   return 0;
 }
 
+// Export only the symbols consumed externally
+// (scripts/__tests__/fix-csharp-underscore-methods.test.js).
 module.exports = {
-  METHOD_DECLARATION_PATTERN,
-  CSHARP_SOURCE_FILE_PATTERN,
-  META_FILE_PATTERN,
-  WINDOWS_POSIX_DRIVE_PATH_PATTERN,
-  DEBUG_ENV_VAR,
   isCsharpSourceFile,
-  normalizeExplicitPathArg,
-  toWindowsAbsolutePathFromPosixDrivePath,
-  resolveCandidatePath,
-  realpathIfExists,
-  canonicalPathForComparison,
-  isPathInsideRoot,
-  isExcludedRepoLocalPath,
   convertMethodNameToPascalCase,
   collectMethodRenames,
   applyMethodRenames,
   processFile,
-  parseArgs,
-  resolveTargetFiles
+  isPathInsideRoot,
+  isExcludedRepoLocalPath
 };
 
 if (require.main === module) {

@@ -1,5 +1,5 @@
 {
-  "_comment": "Canonical single source for the OpenUPM scoped registry, PINNED comparison-benchmark package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons), the committed .unity-test-project/Packages/manifest.json (local parity), and scripts/validate-comparison-packages.js (drift gate vs comparison asmdef versionDefines/defineConstraints and both manifests). Bump versions/modules/defines HERE only; the validator fails if any consumer drifts. See .llm/skills/testing/comparison-parity-and-package-single-source.md.",
+  "_comment": "Canonical single source for the OpenUPM scoped registry, PINNED comparison-benchmark package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons) and the committed .unity-test-project/Packages/manifest.json (local parity). Bump versions/modules/defines HERE only and keep both consumers in sync. See .llm/skills/testing/comparison-parity-and-package-single-source.md.",
   "registry": {
     "name": "package.openupm.com",
     "url": "https://package.openupm.com",

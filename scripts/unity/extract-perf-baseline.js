@@ -3,12 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const {
-  COMPARISON_SCENARIO_IDS,
-  COMPARISON_SCENARIO_PREFIX,
-  SCENARIOS,
-  isComparisonScenario
-} = require("./perf-scenarios.js");
+const { COMPARISON_SCENARIO_IDS, SCENARIOS, isComparisonScenario } = require("./perf-scenarios.js");
 
 const CSV_HEADER =
   "scenario,platform,commit,runIndex,emitsPerSecond,allocatedBytesDelta,wallClockMs";
@@ -383,9 +378,6 @@ if (require.main === module) {
 
 module.exports = {
   CSV_HEADER,
-  SCENARIOS,
-  COMPARISON_SCENARIO_PREFIX,
-  isComparisonScenario,
   isKeptScenario,
   extractRows,
   buildCsv,

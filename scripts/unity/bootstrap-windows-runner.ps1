@@ -97,10 +97,9 @@
     `$PSNativeCommandUseErrorActionPreference` are configured ONLY inside the
     `if ($invokedAsScript)` dispatcher at the bottom of the file. Each
     function that needs StrictMode does its own LOCAL `Set-StrictMode` (which
-    is scoped to that function and unwinds on return). Contract tests
-    (powershell-syntax.test.js et al.) dot-source the script for parse + AST
-    inspection; that path must stay side-effect-free with respect to caller
-    preferences.
+    is scoped to that function and unwinds on return). Dot-sourcing the
+    script (for example for parse/AST inspection) must stay side-effect-free
+    with respect to caller preferences.
 
     NOTE: dot-sourcing WILL bind the script's param-block variables
     (`$DetectOnly`, `$UnityInstallRoot`, `$VcRedistUrl`, `$VcRedist2010Url`,
@@ -157,7 +156,7 @@
         # Exit 0 if every prereq is present; exit 2 if any are missing.
 
 .NOTES
-    Parses cleanly on Linux pwsh (enforced by scripts/__tests__/powershell-syntax.test.js).
+    Parses cleanly on Linux pwsh (verify with `pwsh -NoProfile -Command` after edits).
     Every Windows-only call site (registry, Add-MpPreference, winget) is wrapped
     in a Test-IsWindowsHost gate so this file is safe to load on Linux/macOS.
 #>
@@ -222,7 +221,7 @@ function Write-CiError {
 function Test-IsWindowsHost {
     # Single source of truth for "is this a real Windows host". Used as a top-
     # level gate on every install/registry call so the script loads cleanly
-    # on Linux pwsh (which is where powershell-syntax.test.js exercises it).
+    # on Linux pwsh.
     # We deliberately do NOT consult $IsWindows here -- PS 5.1 lacks that
     # built-in (it is a PS 6+/7 automatic variable) and Set-StrictMode -Version
     # Latest would throw on the access. DirectorySeparatorChar is universally

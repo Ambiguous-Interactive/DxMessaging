@@ -672,7 +672,7 @@ To reproduce the strict-mode mkdocs build that runs in CI:
 npm run validate:docs:strict
 ```
 
-That command installs the pinned `requirements-docs.txt` and runs `mkdocs build --strict --site-dir _site`. Use `npm run validate:docs` for the much faster out-of-tree link guard alone (no mkdocs install required).
+That command creates a virtual environment under `.artifacts/docs-venv/`, installs the pinned `requirements-docs.txt` into it, and runs `mkdocs build --strict --site-dir _site`. The venv keeps the install working on PEP 668 "externally managed" Python installs such as the devcontainer's. On Windows, run the same three steps by hand using the venv's `Scripts/` directory instead of `bin/`.
 
 ## Audit log
 

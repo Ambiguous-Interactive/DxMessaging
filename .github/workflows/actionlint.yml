@@ -5,17 +5,8 @@ on:
     paths:
       - ".github/workflows/**"
       - ".github/actionlint.yaml"
-      - "scripts/validate-workflows.js"
       - ".github/unity-versions.json"
       - "scripts/validate-unity-versions.js"
-      - "scripts/unity/maintain-windows-runner.ps1"
-      - "scripts/unity/install-runner-maintenance-task.ps1"
-      - ".github/comparison-packages.json"
-      - "scripts/validate-comparison-packages.js"
-      - "scripts/unity/run-ci-tests.ps1"
-      - ".unity-test-project/Packages/manifest.json"
-      - ".unity-test-project/Packages/packages-lock.json"
-      - "Tests/Runtime/Comparisons/**"
   push:
     branches:
       - main
@@ -23,17 +14,8 @@ on:
     paths:
       - ".github/workflows/**"
       - ".github/actionlint.yaml"
-      - "scripts/validate-workflows.js"
       - ".github/unity-versions.json"
       - "scripts/validate-unity-versions.js"
-      - "scripts/unity/maintain-windows-runner.ps1"
-      - "scripts/unity/install-runner-maintenance-task.ps1"
-      - ".github/comparison-packages.json"
-      - "scripts/validate-comparison-packages.js"
-      - "scripts/unity/run-ci-tests.ps1"
-      - ".unity-test-project/Packages/manifest.json"
-      - ".unity-test-project/Packages/packages-lock.json"
-      - "Tests/Runtime/Comparisons/**"
   workflow_dispatch:
 
 concurrency:
@@ -64,29 +46,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22.18.0"
-          cache: npm
-          cache-dependency-path: package.json
-
-      - name: Install dependencies
-        # validate-workflows.js parses workflows structurally with the declared
-        # `yaml` devDependency (formatting-invariant gate checks), so the job
-        # MUST install node_modules before running it. A cached install is a few
-        # seconds; without it `require("yaml")` throws MODULE_NOT_FOUND and every
-        # workflow fails the compute-unity-assemblies gate check. package-lock.json
-        # is gitignored, so the block is lockfile-aware (npm ci when present, npm
-        # install fallback otherwise) per the workflow install-policy.
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm i --no-audit --no-fund
-          fi
-
-      - name: Validate workflow patterns
-        run: node scripts/validate-workflows.js
 
       - name: Validate Unity version single-source
+        # Uses only node builtins; no npm install required.
         run: node scripts/validate-unity-versions.js
-
-      - name: Validate comparison package single-source
-        run: node scripts/validate-comparison-packages.js

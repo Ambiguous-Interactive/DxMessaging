@@ -11,8 +11,8 @@ status: stable
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
   files:
-    - path: "scripts/__tests__/validate-skills-tags.test.js"
-    - path: "scripts/__tests__/validate-skills-optional-fields.test.js"
+    - path: "scripts/__tests__/"
+    - path: "Tests/"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
@@ -23,7 +23,6 @@ tags:
   - javascript
 related:
   - comprehensive-test-coverage
-  - script-test-coverage
 complexity:
   level: intermediate
   reasoning: "Requires understanding of JavaScript truthiness and test organization principles"
@@ -166,9 +165,9 @@ warnings.push(`Missing 'complexity.level' - will show '?' in Complexity column`)
 Example:
 
 ```javascript
-// SYNC: Column names must match table headers in generate-skills-index.js
-// Actual headers: | Skill | Lines | Complexity | Status | Performance | Tags |
-`Missing 'complexity.level' - will show '?' in Complexity column of skills index`;
+// SYNC: Section heading must match the heading emitted by scripts/update-llms-txt.js
+// Actual heading: ## AI Agent Skills
+`Missing skill frontmatter - the skill is omitted from the llms.txt skills section`;
 ```
 
 ## Test Coverage for Message Content
@@ -206,13 +205,13 @@ describe("warning message content", () => {
 SYNC notes only work when they exist in both directions.
 
 ```javascript
-// FILE A: validate-skills.js
-// SYNC: Keep logic in sync with validate-skills-tags.test.js validateTags()
+// FILE A: parse-config.js
+// SYNC: Keep logic in sync with parse-config.test.js validateTags()
 if (frontmatter.tags === undefined || frontmatter.tags === null) {
 
-// FILE B: validate-skills-tags.test.js
+// FILE B: parse-config.test.js
 /**
- * SYNC: Keep logic in sync with validate-skills.js validateSkill() tags validation block
+ * SYNC: Keep logic in sync with parse-config.js validateSkill() tags validation block
  */
 function validateTags(frontmatter, relativePath) {
 ```
@@ -240,4 +239,3 @@ Before committing test code, verify:
 ## See Also
 
 - [Test Coverage Requirements](comprehensive-test-coverage.md)
-- [Script Test Coverage](script-test-coverage.md)

@@ -114,7 +114,7 @@ Outside the curated callout-emoji exception, **any** non-ASCII character is a vi
 
 ## Substitution Table
 
-When rewriting content, apply these substitutions. The full implementation lives in `scripts/normalize-docs-ascii.js`.
+When rewriting content, apply these substitutions by hand (there is no auto-fixer script).
 
 | Original           | Codepoint           | Replacement    | Notes                                         |
 | ------------------ | ------------------- | -------------- | --------------------------------------------- |
@@ -140,28 +140,20 @@ When rewriting content, apply these substitutions. The full implementation lives
 
 ## Allowed Exceptions
 
-- **Callout-position emojis.** A real emoji at the start of an admonition line (`> 1F4DD Note`) is allowed. The validator counts these against a soft cap of 5 per file.
+- **Callout-position emojis.** A real emoji at the start of an admonition line (`> 1F4DD Note`) is allowed; keep these to roughly 5 per file.
 - **Skill emoji-shortcode example data.** `.llm/skills/documentation/markdown-compatibility-part-1.md` and `markdown-compatibility-part-2.md` are exempt from emoji and codepoint scanning entirely; they document the project's emoji-shortcode conventions and need to display the source forms.
 
 ## Enforcement
 
-Three layers, all wired up:
+This is a writing convention applied at authoring time; there is no dedicated validator. Apply the substitution table when writing or editing docs, and fix any non-ASCII characters you encounter in files you touch.
 
-1. **`scripts/validate-docs-ascii.js`** - the runtime check, exits non-zero on any banned character. Reports `file:line:column` with codepoint and char.
-1. **`scripts/normalize-docs-ascii.js`** - the auto-fixer, idempotent, applies the substitution table. Run with `--check` for a dry run.
-1. **Pre-commit hooks** - `run-staged-md-pipeline` runs the normalizer before Markdown validation and is wrapped by `scripts/run-and-restage.js`, so successful auto-fixes are staged automatically. `run-staged-validators` keeps validator coverage for `.cs` XML doc comments. The standalone CLI `node scripts/validate-docs-ascii.js` is preserved for ad-hoc invocations. The same validator runs on every PR via the **CI workflow** at `.github/workflows/docs-lint.yml`.
-
-## How to Fix Violations
+To spot violations in changed files:
 
 ```bash
-# Apply auto-substitutions (idempotent).
-node scripts/normalize-docs-ascii.js <changed-doc-files...>
-
-# Confirm clean.
-node scripts/validate-docs-ascii.js <changed-doc-files...>
+grep -nP '[^\x00-\x7F]' <changed-doc-files...>
 ```
 
-For arrows, review the diff carefully: `to` / `from` reads better in prose than `->` / `<-`, but a menu path like `Tools > Wallstop Studios > DxMessaging` should keep the `>` form. The normalizer already attempts this distinction; hand-tune ambiguous cases.
+For arrows, review carefully: `to` / `from` reads better in prose than `->` / `<-`, but a menu path like `Tools > Wallstop Studios > DxMessaging` should keep the `>` form.
 
 For box-drawing characters, the normalizer flags but does not auto-fix. Rewrite as either an ASCII tree or a Mermaid diagram (preferred for non-tree shapes).
 

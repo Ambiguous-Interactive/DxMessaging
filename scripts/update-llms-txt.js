@@ -21,8 +21,9 @@
 
 const fs = require("fs");
 const path = require("path");
-const { normalizeToLf } = require("./lib/quote-parser");
+const { normalizeToLf } = require("./lib/line-endings");
 const { isPathOutsideDirectory } = require("./lib/path-classifier");
+const { walkFiles } = require("./lib/repo-files");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const LLMS_TXT_PATH = path.join(ROOT_DIR, "llms.txt");
@@ -60,33 +61,16 @@ function isCountedSkillPath(fullPath) {
  * Count markdown files in .llm/skills directory
  */
 function countSkillFiles() {
-  let count = 0;
-
-  function walkDir(dir) {
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch (error) {
-      console.warn(`Warning: Unable to read directory ${dir}: ${error.message}`);
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!NON_SKILL_DIRECTORIES.has(entry.name)) {
-          walkDir(fullPath);
-        }
-      } else if (entry.isFile() && isCountedSkillPath(fullPath)) {
-        count++;
-      }
-    }
+  if (!fs.existsSync(LLM_SKILLS_DIR)) {
+    return 0;
   }
 
-  if (fs.existsSync(LLM_SKILLS_DIR)) {
-    walkDir(LLM_SKILLS_DIR);
-  }
-
-  return count;
+  return walkFiles(LLM_SKILLS_DIR, {
+    excludeDir: (fullPath, entry) => NON_SKILL_DIRECTORIES.has(entry.name),
+    match: (fullPath) => isCountedSkillPath(fullPath),
+    onError: (error, dir) =>
+      console.warn(`Warning: Unable to read directory ${dir}: ${error.message}`)
+  }).length;
 }
 
 /**
@@ -349,17 +333,14 @@ dotnet build SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/Walls
 # Run tests (Unity Test Runner)
 # Open Unity 2021.3+ project > Window > Test Runner > PlayMode
 
-# Format markdown
-npm run format:md
+# Format markdown / JSON / YAML
+npm run format
 
 # Lint markdown
 npm run lint:markdown
 
-# Validate YAML
-npm run check:yaml
-
 # Spell check
-npx cspell "**/*"
+npm run check:spelling
 \`\`\`
 
 ### Project Standards
@@ -536,6 +517,5 @@ module.exports = {
   countSkillFiles,
   getSkillCategories,
   hasValidLastUpdatedLine,
-  normalizeForComparison,
-  normalizeToLf
+  normalizeForComparison
 };

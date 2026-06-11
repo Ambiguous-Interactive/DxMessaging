@@ -17,10 +17,16 @@
 **/bin/
 **/obj/
 **/*.pdb
+**/*.tmp
+**/*.tmp.meta
+**/*.suo
+**/*.suo.meta
 # C# Dev Kit per-project cache files (auto-regenerated; never publish).
 **/*.lscache
 **/*.lscache.meta
-# JetBrains Rider per-user solution settings.
+# Per-user IDE/MSBuild settings.
+**/*.user
+**/*.user.meta
 **/*.DotSettings.user
 **/*.DotSettings.user.meta
 
@@ -100,10 +106,6 @@ node_modules/
 node_modules.meta
 package-lock.json
 package-lock.json.meta
-jest.config.js
-jest.config.js.meta
-jest.config.mjs
-jest.config.mjs.meta
 coverage/
 coverage.meta
 __pycache__.meta

@@ -25,7 +25,7 @@
 # How the assembly list stays correct over time:
 #   The `Compute test assembly list` step shells out to
 #   scripts/unity/lib/asmdef-discovery.js, the SAME module used by
-#   scripts/unity/run-tests.sh and the Phase 4 contract test. When a new perf
+#   scripts/unity/run-tests.sh / run-tests.ps1. When a new perf
 #   asmdef is added under Tests/, the regex in asmdef-discovery.js (matching
 #   Benchmarks|Allocations|Comparisons) classifies it automatically and this
 #   workflow needs no edits. Likewise, new core asmdefs are picked up

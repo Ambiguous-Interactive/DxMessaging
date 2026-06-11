@@ -45,7 +45,6 @@ dependencies:
   packages: []
   skills:
     - "comprehensive-test-coverage"
-    - "script-test-coverage"
 
 applies_to:
   languages:
@@ -53,12 +52,11 @@ applies_to:
     - "TypeScript"
     - "C#"
   frameworks:
-    - "Jest"
+    - "node:test"
     - "Node.js"
     - "NUnit"
   versions:
     node: ">=18.0"
-    jest: ">=29.0"
 
 aliases:
   - "Test real code"
@@ -68,7 +66,6 @@ aliases:
 
 related:
   - "comprehensive-test-coverage"
-  - "script-test-coverage"
   - "test-code-quality"
 
 status: "stable"

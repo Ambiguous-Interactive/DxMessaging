@@ -23,8 +23,7 @@ runs:
 
         # This action validates classic SERIAL activation (the repo moved OFF the
         # Unity Licensing Server / floating license). The directory name
-        # validate-unity-license is retained so callers and
-        # scripts/validate-workflows.js (which hard-codes the path) do not churn.
+        # validate-unity-license is retained so callers do not churn.
         $hasSerial = -not [string]::IsNullOrWhiteSpace($env:UNITY_SERIAL)
         $hasEmail = -not [string]::IsNullOrWhiteSpace($env:UNITY_EMAIL)
         $hasPassword = -not [string]::IsNullOrWhiteSpace($env:UNITY_PASSWORD)

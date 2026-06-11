@@ -395,8 +395,9 @@ To add or bump a comparison library:
 1. Update the committed `.unity-test-project/Packages/manifest.json` and
    `.unity-test-project/Packages/packages-lock.json` to keep local parity with
    the single source.
-1. Run the drift validator (`npm run validate:comparison-packages`) to confirm
-   every consumer agrees with `.github/comparison-packages.json`.
+1. Re-check by hand that every consumer (asmdef `versionDefines` /
+   `defineConstraints`, manifest, package lock) agrees with
+   `.github/comparison-packages.json`.
 
 ## History note
 

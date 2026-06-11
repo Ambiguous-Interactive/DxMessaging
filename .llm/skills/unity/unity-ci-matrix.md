@@ -34,7 +34,7 @@ impact:
     details: "One workflow per concern; the matrix is computed from a single dispatch input"
   testability:
     rating: "high"
-    details: "Phase 4 contract test pins the workflow shape and asmdef discovery source-of-truth"
+    details: "Workflow shape and asmdef discovery source-of-truth are conventions reviewed manually; no automated contract test pins them"
 
 prerequisites:
   - "Familiarity with GitHub Actions matrix expansion"
@@ -121,7 +121,7 @@ The Unity serial has only a small activation-seat pool (typically ~2 seats) shar
 - `max-parallel: 1` only: cannot prevent two separate runs (two pushes, `unity-tests` plus `unity-benchmarks`, or another org repo) from racing for the seat.
 - The lock only: leaves all 9 cells spawning at once, so 8 idle cells burn their job-timeout clocks waiting, race for the seat, and clutter logs. Since the lock already forces one-Unity-at-a-time, that parallelism buys ZERO throughput.
 
-With both layers, the within-run lock wait collapses to near-zero, so the cross-run lock poll budget can stay generous. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden by `scripts/validate-workflows.js`. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows only (`unity-tests.yml`, `unity-benchmarks.yml`); single-job workflows (`release.unity-checks`, the GameCI experiment) have no matrix and rely solely on the lock for across-run serialization.
+With both layers, the within-run lock wait collapses to near-zero, so the cross-run lock poll budget can stay generous. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows only (`unity-tests.yml`, `unity-benchmarks.yml`); single-job workflows (`release.unity-checks`, the GameCI experiment) have no matrix and rely solely on the lock for across-run serialization.
 
 **Timeout invariant.** GitHub counts the lock-wait against the job clock, so a job at the back of the serialized queue is killed before its lock wait can finish unless:
 
@@ -129,7 +129,7 @@ With both layers, the within-run lock wait collapses to near-zero, so the cross-
 job timeout-minutes >= acquire timeout-minutes + RUN_BUDGET (120)
 ```
 
-The acquire input `timeout-minutes` is the lock POLL budget (how long the action waits for the seat), counted against the job clock. The current magnitudes are: acquire `timeout-minutes: "300"`, job `timeout-minutes: 420`, and a step-level `timeout-minutes: 120` on the Unity run step. `scripts/validate-workflows.js` enforces the invariant via `findUnityLockTimeoutViolations` (constant `UNITY_LOCK_RUN_BUDGET_MINUTES = 120`); `scripts/__tests__/unity-workflow-shape.test.js` pins the same numbers per job.
+The acquire input `timeout-minutes` is the lock POLL budget (how long the action waits for the seat), counted against the job clock. The current magnitudes are: acquire `timeout-minutes: "300"`, job `timeout-minutes: 420`, and a step-level `timeout-minutes: 120` on the Unity run step. Keep these magnitudes aligned across the Unity workflows when editing timeouts.
 
 The step-level `timeout-minutes: 120` protects the in-use seat from a hung editor: it must be `>= 120` and STRICTLY below the job timeout so the step fails first and releases the lock instead of the whole job being cancelled with the seat still held. This step guard matters because `stuck-job-watchdog.yml` ignores any `in_progress` job -- nothing else bounds a post-acquire hang, so without the step timeout a wedged editor would squat the seat for the full job timeout.
 
@@ -152,7 +152,7 @@ Every workflow that consumes `./.github/actions/compute-unity-assemblies` mirror
 
 The `Verify tests actually ran` step keeps a cancellation-safe gate and must also require `steps.compute.outcome == 'success'` plus either `steps.compute.outputs.is-empty == 'true'` or a non-skipped Unity run step (never an is-empty gate alone). It receives `expected-empty: ${{ steps.compute.outputs.is-empty }}`, so an intentional skip reads as success rather than a "tests did not run" failure, while checkout/cache/setup/provisioning/lock failures that prevent Unity from launching are not obscured by a generic missing-results annotation. The skip path does not fire for the current asmdef set; it is the robustness path for a target whose assemblies are all filtered out, such as a runtime-only standalone run when every DxMessaging test asmdef is editor-only.
 
-`scripts/validate-workflows.js` enforces this through `findComputeUnityAssembliesGateViolations`, which parses each workflow structurally with the `yaml` package (formatting-invariant; a parse failure or a missing `yaml` module is a hard error, never a silent pass). It flags any compute step without an `id`, and any license-consuming step whose `if:` omits `steps.<compute-id>.outputs.is-empty != 'true'` (quote- and whitespace-tolerant, and allowed to be combined with other conditions). Do not gate verify on is-empty, and do not satisfy the rule by removing the gated steps; mirror `unity-tests.yml`.
+When editing these workflows, keep every compute step carrying an `id` and every license-consuming step gated on `steps.<compute-id>.outputs.is-empty != 'true'`. Do not gate verify on is-empty, and do not remove the gated steps; mirror `unity-tests.yml`.
 
 ## When to Add a Unity Version
 

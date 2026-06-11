@@ -69,16 +69,27 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Restore .NET tools
         run: dotnet tool restore
+      - name: Install dependencies
+        # No tracked package-lock.json: npm ci requires a lockfile, so fall
+        # back to npm install when it is absent (repo-standard pattern).
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
       - name: Apply Prettier fixes
         run: |
-          node scripts/run-managed-prettier.js --write "**/*.{md,markdown}"
-          node scripts/run-managed-prettier.js --write "**/*.{json,asmdef,asmref}"
-          node scripts/run-managed-prettier.js --write "**/*.{yml,yaml}"
+          npx prettier --write "**/*.{md,markdown}"
+          npx prettier --write "**/*.{json,asmdef,asmref}"
+          npx prettier --write "**/*.{yml,yaml}"
       - name: Apply markdownlint fixes
         run: |
           npx --yes markdownlint-cli2@0.22.1 "**/*.md" "**/*.markdown" --fix
       - name: Apply CSharpier formatting
-        run: dotnet tool run csharpier format
+        # The trailing "." is required: without a path, "csharpier format"
+        # reads stdin (empty in a run step) and formats nothing.
+        run: dotnet tool run csharpier format .
       - name: Renormalize line endings
         shell: bash
         run: |
@@ -93,8 +104,11 @@ jobs:
       - name: Detect changes
         id: changes
         shell: bash
+        # Must check the index too: the renormalize step above stages the
+        # formatters' output with "git add --renormalize", so a worktree-only
+        # check (git diff --quiet) would always report no changes.
         run: |
-          if git diff --quiet; then
+          if git diff --quiet && git diff --cached --quiet; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
@@ -229,16 +243,27 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Restore .NET tools
         run: dotnet tool restore
+      - name: Install dependencies
+        # No tracked package-lock.json: npm ci requires a lockfile, so fall
+        # back to npm install when it is absent (repo-standard pattern).
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
       - name: Apply Prettier fixes
         run: |
-          node scripts/run-managed-prettier.js --write "**/*.{md,markdown}"
-          node scripts/run-managed-prettier.js --write "**/*.{json,asmdef,asmref}"
-          node scripts/run-managed-prettier.js --write "**/*.{yml,yaml}"
+          npx prettier --write "**/*.{md,markdown}"
+          npx prettier --write "**/*.{json,asmdef,asmref}"
+          npx prettier --write "**/*.{yml,yaml}"
       - name: Apply markdownlint fixes
         run: |
           npx --yes markdownlint-cli2@0.22.1 "**/*.md" "**/*.markdown" --fix
       - name: Apply CSharpier formatting
-        run: dotnet tool run csharpier format
+        # The trailing "." is required: without a path, "csharpier format"
+        # reads stdin (empty in a run step) and formats nothing.
+        run: dotnet tool run csharpier format .
       - name: Renormalize line endings
         shell: bash
         run: |
@@ -253,8 +278,11 @@ jobs:
       - name: Detect changes
         id: changes
         shell: bash
+        # Must check the index too: the renormalize step above stages the
+        # formatters' output with "git add --renormalize", so a worktree-only
+        # check (git diff --quiet) would always report no changes.
         run: |
-          if git diff --quiet; then
+          if git diff --quiet && git diff --cached --quiet; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"

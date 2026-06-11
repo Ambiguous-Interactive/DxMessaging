@@ -65,9 +65,11 @@ After transfer, verify each surface points at the canonical repository:
 Run:
 
 ```bash
-npm run validate:repo-identity
-npm run validate:llms-txt
+git grep -i "wallstop-studios/DxMessaging"
+npm run check:llms-txt
 ```
+
+The grep should return no tracked matches.
 
 ## Local Git Remotes
 

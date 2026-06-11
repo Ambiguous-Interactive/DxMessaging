@@ -2,39 +2,36 @@
 
 Thanks for helping improve DxMessaging!
 
-Before committing, install the versioned hook bootstrap and local linters so you catch issues early.
-Run these steps in order:
+Developer setup (run these steps in order):
 
-1. Install Node dependencies: `npm install`
-1. Install versioned native hooks and repair tooling: `npm run repair:hooks`
-1. Run Node tooling preflight: `npm run preflight:pre-commit` (includes YAML formatting + yamllint checks)
-1. Run on all files: `node scripts/ensure-pre-commit.js run --all-files`
+1. Install Node dependencies: `npm install` (no `package-lock.json` is tracked, so `npm ci` will not work)
+1. Restore the .NET local tools (CSharpier): `dotnet tool restore` - without this, the first commit touching a `.cs` file fails because the csharpier hook cannot find the tool
+1. Install the pre-commit framework: `pipx install pre-commit` (or `pip install pre-commit`)
+1. Install the git hooks: `pre-commit install`
+1. Optionally run everything once: `pre-commit run --all-files && pre-commit run --all-files --hook-stage pre-push` (the second command is needed because `pre-commit run` defaults to commit-stage hooks; spelling, asmdef validation, and the script tests are staged at pre-push)
 
-`jest` does not need to be installed globally. Hooks and scripts route through `scripts/run-managed-jest.js` so they can use local devDependencies first, then a managed fallback when needed.
-
-Prettier hooks and npm scripts route through `scripts/run-managed-prettier.js` so format checks and writes use the same resolved Prettier version across local shells and CI.
+Git hooks are managed solely by the standard [pre-commit framework](https://pre-commit.com); the hook set lives in `.pre-commit-config.yaml`. If you contributed before the tooling simplification and your local clone still points `core.hooksPath` at the removed `scripts/hooks` directory, clear it once with `git config --local --unset core.hooksPath` and re-run `pre-commit install`, or commits will fail looking for deleted hook scripts.
 
 ## Before you push
 
-You do not need to remember which validator to run for each file you touched:
-
-- `npm run preflight` -- change-aware (the default). It inspects exactly what you changed (committed range vs the integration base, plus staged/unstaged/untracked work), delegates file-to-hook selection to pre-commit, self-heals tooling first, and runs the relevant checks in-loop. A push-guard runs it automatically before `git push`. See [Change-Aware Preflight](./.llm/skills/scripting/change-aware-preflight.md).
-- `npm run preflight:pre-push` -- full parity with the native pre-push hook (the exhaustive sweep CI runs); use it when you want the complete check set on demand.
-- `npm run doctor` -- diagnose and repair the local Node/hook environment (run it after a `testRunner option was not found` / `jest-circus` error or a partial `node_modules` extract).
+- Script tests: `npm test` (the built-in `node --test` runner; no jest)
+- Repo validators: `npm run validate:all` (note: the `check:analyzers` step builds `SourceGenerators/` and requires the exact .NET SDK pinned in `SourceGenerators/global.json` — `rollForward` is `disable`, so a nearby 9.0.3xx SDK does not satisfy it. The devcontainer installs the pinned SDK during post-create; if `dotnet build` still reports a missing SDK, install it into the existing dotnet host location with: `wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && sudo bash /tmp/dotnet-install.sh --jsonfile SourceGenerators/global.json --install-dir /usr/share/dotnet`. The `--install-dir /usr/share/dotnet` part matters: the default `~/.dotnet` location is not consulted by the system `dotnet` host on `PATH`.)
+- Formatting: `npm run format:check` (fix with `npm run format`)
+- Markdown lint: `npm run lint:markdown`
+- Spelling: `npm run check:spelling`
+- All hooks at once: `pre-commit run --all-files && pre-commit run --all-files --hook-stage pre-push` (the pre-push stage covers cspell, asmdef validation, and the script tests)
 
 Windows note: if you use `nvm` or `fnm`, run commits from a shell where Node is initialized (PowerShell or Git Bash) and verify `npm --version` before running hooks.
-If you edit `.github/workflows/*.yml`, run `npm run preflight:pre-commit` in that same shell before `git commit`.
 
 Line endings: Git normalizes most text files to **LF** through `.gitattributes`. **Exception:** C#/.NET files (`.cs`, `.csproj`, `.sln`, `.props`) use CRLF per .NET conventions. Run this once after cloning (especially on Windows) to fix your working tree:
 
 ```bash
 git config core.autocrlf false
-node scripts/fix-eol.js
+git add --renormalize .
+git checkout -- .
 ```
 
-This directly converts files in your working directory to the correct line endings. Add `-v` for verbose output showing each file fixed.
-
-> **Note:** You may see references to `git add --renormalize`, but that command only updates the git index (staging area) -- it does **not** modify your working tree files. Use `fix-eol.js` to actually fix files on disk.
+The pre-commit `mixed-line-ending` hook keeps line endings honest at commit time.
 
 ## VS Code Security Policy
 
@@ -42,62 +39,41 @@ This directly converts files in your working directory to the correct line endin
 - Repository settings must not bypass command review prompts for chat-invoked terminal commands.
 - If you need personal auto-approval rules, keep them in local user settings, not repository-tracked files.
 
-What runs locally:
+What runs locally (via `pre-commit`, see `.pre-commit-config.yaml`):
 
-- Markdown link text check: enforces human-readable link text (no raw file names/paths)
-- Internal markdown link validity: verifies relative links and anchors point to real files/sections
-- Markdown style and formatting: markdownlint (auto-fix common issues)
+- Markdown style and formatting: markdownlint-cli2 + Prettier
 - JSON/.asmdef formatting: Prettier (2-space indent)
 - YAML formatting: Prettier (2-space indent) + yamllint
-- NPM package validation: ensures all Unity .meta files are properly included in npm package
+- C# formatting and naming: CSharpier + the underscore-method auto-fixer
+- Banner SVG sync, llms.txt freshness, spelling (cspell), asmdef reference
+  validation, and the `node --test` script suite
 
 On pull requests, CI checks markdown links with lychee in two passes. An offline pass validates relative/local links and in-repo `#anchor` fragments against the working tree and blocks the PR on any broken one. A lenient external-liveness pass fails only on genuinely-dead links (404/410 or a DNS/connection failure); bot-detection and throttling responses (401/403/405/406/408/415/429/5xx) are accepted, so a `w3.org` 403 never reds a PR. The fix for a flaky external link is to widen `accept` in `.lychee.toml`, never to add a per-domain `exclude` or swap to a "more stable" URL. Deep external rot is caught by a scheduled advisory scan that opens a tracking issue instead of failing CI.
 
 Handy commands:
 
-- Internal links (local): `python .github/scripts/validate_markdown_links.py .`
-- Lint markdown (all files): `node scripts/ensure-pre-commit.js run markdownlint --all-files`
-- Lint markdown (manual): `npx markdownlint-cli2@0.20.0 "**/*.md" --fix`
-- Format JSON/.asmdef (all files): `node scripts/ensure-pre-commit.js run prettier --all-files`
-- Format JSON/.asmdef (manual): `node scripts/run-managed-prettier.js --write "**/*.{json,asmdef}"`
-- Format YAML (all files): `node scripts/ensure-pre-commit.js run prettier-yaml --all-files`
-- Check YAML formatting + lint: `npm run check:yaml`
-- Run yamllint hook directly: `node scripts/ensure-pre-commit.js run yamllint --all-files`
+- Lint markdown: `npm run lint:markdown` (auto-fix: `npx markdownlint-cli2 --fix "**/*.md"`)
+- Format markdown/JSON/.asmdef/YAML: `npm run format` (check-only: `npm run format:check`)
+- Run the yamllint hook directly: `pre-commit run yamllint --all-files`
+- Format C#: `dotnet tool restore && dotnet tool run csharpier format .` (the trailing `.` is required; without a path, `csharpier format` reads stdin and formats nothing)
 
-Prettier keeps YAML formatting consistent but does not automatically wrap long YAML lines. `yamllint` is the authoritative check for the 200-character YAML line-length rule.
-
-If `npm run check:yaml` reports a YAML line-length failure:
-
-1. For workflow `run:` commands, use folded scalars (`run: >-`) to split long commands across readable lines.
-1. For non-command YAML values, break long strings into multiline YAML values where valid, or refactor the content so each line stays within 200 characters.
-
-- Format C#: `dotnet tool restore && dotnet tool run csharpier format`
-- Validate pre-commit Node tooling policy: `npm run validate:pre-commit-tooling`
-- Run pre-commit Node preflight: `npm run preflight:pre-commit`
-- Validate NPM package: `npm run validate:npm-meta`
+Prettier keeps YAML formatting consistent but does not automatically wrap long YAML lines. `yamllint` is the authoritative check for the YAML line-length rule; for workflow `run:` commands, use folded scalars (`run: >-`) or multiline blocks (`run: |`) to split long commands across readable lines.
 
 ## Documentation Style and Code Samples
 
 Two strict rules apply to all documentation (Markdown files and `///` XML doc comments) and to every C# code sample:
 
-1. **ASCII-only.** Pure ASCII is required. Real Unicode emojis are allowed only on callout lines (lines starting with `>`), capped at five per file. See the [ASCII-only documentation guideline](./.llm/skills/documentation/ascii-only-docs.md). Run `node scripts/validate-docs-ascii.js` (or `node scripts/normalize-docs-ascii.js` to auto-fix).
-1. **Code samples must compile.** Every C# snippet - inline backticks, fenced blocks, table cells, and XML `<code>` blocks - must compile against the snippet harness. See the [Code samples must compile guideline](./.llm/skills/documentation/code-samples-must-compile.md). Run `node scripts/validate-doc-code-patterns.js` and the `DocsSnippetCompilationTests` suite under `SourceGenerators/`.
-
-Both rules are enforced by the consolidated pre-commit hooks (`run-staged-md-pipeline` for `.md` / `.markdown` and `run-staged-validators` for `.cs`) and the `.github/workflows/docs-lint.yml` CI job. The standalone CLI entries (`node scripts/validate-docs-ascii.js`, `node scripts/validate-doc-code-patterns.js`, `node scripts/validate-docs-prose.js`) remain available for ad-hoc invocations.
+1. **ASCII-only.** Pure ASCII is required. Real Unicode emojis are allowed only on callout lines (lines starting with `>`), capped at five per file. See the [ASCII-only documentation guideline](./.llm/skills/documentation/ascii-only-docs.md).
+1. **Code samples must compile.** Every C# snippet - inline backticks, fenced blocks, table cells, and XML `<code>` blocks - must compile against the snippet harness. See the [Code samples must compile guideline](./.llm/skills/documentation/code-samples-must-compile.md) and run the `DocsSnippetCompilationTests` suite under `SourceGenerators/`.
 
 ## NPM Package Validation
 
-Unity requires `.meta` files for every asset to maintain consistent GUIDs across installations. The `validate:npm-meta` script ensures:
+Unity requires `.meta` files for every asset to maintain consistent GUIDs across installations. When changing packaging metadata, verify against the real tarball with `npm pack --dry-run` that:
 
 1. Every `.meta` file in the package corresponds to an actual file or directory
 1. Every Unity-tracked file/directory has its `.meta` file included
 
-This validation runs automatically:
-
-- Before every push via pre-commit hooks
-- In CI/CD on every pull request
-
-If validation fails, it means either:
+If a check fails, it means either:
 
 - **Orphaned .meta files**: A `.meta` file exists without its corresponding file/directory (often from deleted files)
 - **Missing .meta files**: A file/directory exists without its `.meta` file (Unity will generate a new GUID, breaking references)
@@ -107,7 +83,7 @@ To fix issues:
 - For orphaned .meta files: Delete the orphaned `.meta` file
 - For missing .meta files: Ensure Unity generates the `.meta` file, or copy it from the repository
 
-If you do still need to repair line endings manually (for example, after copying files from an external tool), run `node scripts/fix-eol.js -v` and then re-stage the affected files.
+If you need to repair line endings manually (for example, after copying files from an external tool), run `git add --renormalize . && git checkout -- .` and then re-stage the affected files.
 
 ## SourceGenerators Analyzer Troubleshooting
 

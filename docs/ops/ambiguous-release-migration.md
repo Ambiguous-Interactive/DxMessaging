@@ -6,28 +6,29 @@ identifiers, checklist structure, and verification steps.
 
 Do not commit secrets, recovery codes, account screenshots, publisher account
 identifiers, personal access tokens, one-time codes, private billing details, or
-local execution notes. Use `npm run generate:ambiguous-release-runbook` for an
-ignored local checklist only for non-sensitive execution notes, such as public
-PR URLs, public release URLs, and dates when public verification was completed.
+local execution notes. Keep an ignored local checklist (for example under the
+gitignored `.operator-runbooks/` directory) only for non-sensitive execution
+notes, such as public PR URLs, public release URLs, and dates when public
+verification was completed.
 
 ## Public Identifiers
 
-| Surface                                 | Public value                                                              |
-| --------------------------------------- | ------------------------------------------------------------------------- |
-| GitHub repository                       | `Ambiguous-Interactive/DxMessaging`                                       |
-| Canonical repository URL                | `https://github.com/Ambiguous-Interactive/DxMessaging`                    |
-| GitHub Pages URL                        | `https://ambiguous-interactive.github.io/DxMessaging/`                    |
-| Unity and npm package id                | `com.wallstop-studios.dxmessaging`                                        |
-| Display name                            | `DxMessaging`                                                             |
-| Minimum Unity version in `package.json` | `2021.3`                                                                  |
-| Release workflow                        | `.github/workflows/release.yml`                                           |
-| Documentation workflow                  | `.github/workflows/deploy-docs.yml`                                       |
-| npm package validation workflow         | `.github/workflows/validate-npm-meta.yml`                                 |
-| Unity test workflow                     | `.github/workflows/unity-tests.yml` (editmode/playmode/standalone matrix) |
-| Unity benchmark workflow                | `.github/workflows/unity-benchmarks.yml`                                  |
-| Unity organization lock                 | `wallstop-organization-builds` via `ambiguous-organization-build-lock`    |
-| GitHub Pages environment                | `github-pages`                                                            |
-| OpenUPM package page                    | `https://openupm.com/packages/com.wallstop-studios.dxmessaging/`          |
+| Surface                                 | Public value                                                               |
+| --------------------------------------- | -------------------------------------------------------------------------- |
+| GitHub repository                       | `Ambiguous-Interactive/DxMessaging`                                        |
+| Canonical repository URL                | `https://github.com/Ambiguous-Interactive/DxMessaging`                     |
+| GitHub Pages URL                        | `https://ambiguous-interactive.github.io/DxMessaging/`                     |
+| Unity and npm package id                | `com.wallstop-studios.dxmessaging`                                         |
+| Display name                            | `DxMessaging`                                                              |
+| Minimum Unity version in `package.json` | `2021.3`                                                                   |
+| Release workflow                        | `.github/workflows/release.yml`                                            |
+| Documentation workflow                  | `.github/workflows/deploy-docs.yml`                                        |
+| npm package validation                  | `.github/workflows/release.yml` (`npm run validate:all` + `npm pack` step) |
+| Unity test workflow                     | `.github/workflows/unity-tests.yml` (editmode/playmode/standalone matrix)  |
+| Unity benchmark workflow                | `.github/workflows/unity-benchmarks.yml`                                   |
+| Unity organization lock                 | `wallstop-organization-builds` via `ambiguous-organization-build-lock`     |
+| GitHub Pages environment                | `github-pages`                                                             |
+| OpenUPM package page                    | `https://openupm.com/packages/com.wallstop-studios.dxmessaging/`           |
 
 ## Transfer Inventory
 
@@ -70,8 +71,9 @@ same network.
       and Actions tabs are visible to maintainers.
 - [ ] Confirm redirects from old public URLs are working, but do not keep old
       slugs in tracked configuration or docs.
-- [ ] Run `npm run validate:repo-identity` after tracked URL updates so stale
-      repository identity references are caught before release.
+- [ ] After tracked URL updates, grep tracked files for the old repository
+      slug (`git grep -i "wallstop-studios/DxMessaging"`) so stale repository
+      identity references are caught before release.
 
 Reference: [GitHub repository transfer documentation](https://docs.github.com/articles/about-repository-transfers).
 
@@ -105,9 +107,9 @@ organization lock.
   ```
 
   The matching release step uses `release-build-lock@v1` with `if:
-always()`. The workflow validator hard-rejects
-  `wallstop-organization-builds` when it appears as native GitHub
-  `concurrency.group`.
+always()`. Never use `wallstop-organization-builds` as a native GitHub
+  `concurrency.group`; the native primitive is repository-scoped and would
+  silently fail to serialize across repositories.
 
 - Each Unity-credential-using job runs
   `./.github/actions/validate-unity-license` before acquiring the central lock
@@ -228,10 +230,8 @@ publishes the packed package from `.artifacts/release` with
 - [ ] Confirm the npm package provenance view links back to
       `Ambiguous-Interactive/DxMessaging` after the first Trusted Publishing
       release.
-- [ ] Run `npm run validate:npm-meta` before publishing to verify Unity `.meta`
-      files and package contents.
-- [ ] Use `npm pack --json --dry-run --ignore-scripts` or
-      `npm run validate:npm-meta` for a non-publishing package check.
+- [ ] Run `npm pack --json --dry-run --ignore-scripts` before publishing and
+      verify Unity `.meta` files and package contents in the listed tarball.
 
 References:
 
@@ -246,9 +246,8 @@ creating or updating the GitHub Release, and publishing to npm.
 
 - [ ] Update `package.json` `version` to the intended public version.
 - [ ] Update `CHANGELOG.md` for the user-facing release.
-- [ ] Run `npm run test:scripts`, `npm run test:unity-contracts`,
-      `npm run validate:npm-meta`, `npm run validate:llms-txt`,
-      `npm run validate:repo-identity`, and `npm run validate:all`.
+- [ ] Run `npm test`, `npm run validate:all`, and
+      `npm pack --json --dry-run --ignore-scripts`.
 - [ ] Merge the release commit to the protected default branch.
 - [ ] Create the release tag from the exact release commit:
       `git tag -s vX.Y.Z` when signing is available, or the repository-approved
@@ -322,9 +321,9 @@ Run these checks after the transfer and again after the first tagged release.
 - [ ] `git remote -v` uses `https://github.com/Ambiguous-Interactive/DxMessaging.git`
       or the matching SSH remote for the same slug.
 - [ ] `git fetch --tags --prune` returns the expected `vX.Y.Z` release tags.
-- [ ] `npm run validate:repo-identity` passes.
-- [ ] `npm run validate:npm-meta` passes.
-- [ ] `npm run test:scripts` passes.
+- [ ] `git grep -i "wallstop-studios/DxMessaging"` finds no stale tracked references.
+- [ ] `npm pack --json --dry-run --ignore-scripts` lists the expected contents.
+- [ ] `npm test` passes.
 - [ ] `.github/workflows/deploy-docs.yml` deploys to
       `https://ambiguous-interactive.github.io/DxMessaging/`.
 - [ ] `.github/workflows/unity-tests.yml` can dispatch to self-hosted runners

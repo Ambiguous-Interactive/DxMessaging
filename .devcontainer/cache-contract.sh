@@ -16,9 +16,8 @@
 # test mode. Do not add a static .unity-test-project/Library mount here.
 
 # Re-source guard: this file is sourced by post-create.sh, post-start.sh,
-# validate-caching.sh, and (in Phase 4) the contract test harness. Multiple
-# sources in the same shell would otherwise re-declare the readonly arrays
-# and abort under `set -e`.
+# and validate-caching.sh. Multiple sources in the same shell would
+# otherwise re-declare the readonly arrays and abort under `set -e`.
 [[ "${_DXM_CACHE_CONTRACT_LOADED:-}" == "1" ]] && return 0
 _DXM_CACHE_CONTRACT_LOADED=1
 
@@ -29,8 +28,7 @@ _DXM_CACHE_CONTRACT_LOADED=1
 # <workspaceRoot>/.devcontainer/, so the parent of its directory is the
 # workspace root and equals ${containerWorkspaceFolder} by construction. This is
 # robust to repo path/name migration; never hardcode an absolute fallback (a
-# stale literal silently diverges from the real mount target). Enforced by
-# scripts/__tests__/devcontainer-cache-contract.test.js.
+# stale literal silently diverges from the real mount target).
 CACHE_WORKSPACE_ROOT="${WORKSPACE_FOLDER:-}"
 if [[ -z "${CACHE_WORKSPACE_ROOT}" ]]; then
     # ${BASH_SOURCE[0]:?...} fails LOUDLY rather than deriving a wrong root from

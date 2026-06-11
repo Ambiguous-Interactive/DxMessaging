@@ -45,6 +45,14 @@ jobs:
             echo "::error::Tag ${tag} does not match package.json version v${PACKAGE_VERSION}."
             exit 1
           fi
+          # package.json advertises changelogUrl; never publish a version that
+          # CHANGELOG.md does not mention. Use fixed-string heading checks so
+          # semver punctuation cannot alter regex matching semantics.
+          if ! grep -Fqx "## [${PACKAGE_VERSION}]" CHANGELOG.md \
+            && ! grep -Fqx "## ${PACKAGE_VERSION}" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no exact heading for ${PACKAGE_VERSION}."
+            exit 1
+          fi
           {
             echo "package-version=${PACKAGE_VERSION}"
             echo "tag=${tag}"
@@ -71,6 +79,13 @@ jobs:
         with:
           node-version: "22.18.0"
 
+      - name: Setup .NET
+        # validate:all runs check:analyzers, which builds the source
+        # generators against the SDK pinned in SourceGenerators/global.json.
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: SourceGenerators/global.json
+
       - name: Install Node dependencies
         run: |
           set -euo pipefail
@@ -83,11 +98,7 @@ jobs:
       - name: Run release validation
         run: |
           set -euo pipefail
-          npm run test:scripts
-          npm run test:unity-contracts
-          npm run validate:npm-meta
-          npm run validate:llms-txt
-          npm run validate:repo-identity
+          node --test scripts/
           npm run validate:all
 
       - name: Pack npm package
@@ -109,6 +120,15 @@ jobs:
             "${{ needs.verify-tag.outputs.tag }}" \
             "${package_file}" > .artifacts/release/release-notes.md
           echo "package-file=${package_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify tarball packaging invariants (issue 204 guard)
+        # Centralized validator checks tarball contents for forbidden
+        # build-artifact paths and Unity .meta pairing invariants.
+        env:
+          PACKAGE_FILE: ${{ steps.pack.outputs.package-file }}
+        run: |
+          set -euo pipefail
+          node scripts/validate-npm-meta.js --tarball ".artifacts/release/${PACKAGE_FILE}"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
@@ -239,18 +259,14 @@ jobs:
         # self-hosted Windows runner resolved to the WSL stub at
         # C:\Windows\System32\bash.exe and failed with "Windows Subsystem
         # for Linux has no installed distributions." See FIX #4 sweep
-        # report in the dev/wallstop/swap branch and validate-workflows.js
-        # rule `forbidPlainShellBashOnSelfHostedWindows`.
+        # report in the dev/wallstop/swap branch: never use plain
+        # `shell: bash` on self-hosted Windows runners.
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "22.18.0"
-
-      - name: Run Unity contract checks
-        shell: pwsh
-        run: npm run test:unity-contracts
 
       # Single source of truth for the assembly include list: the same
       # asmdef-discovery.js module the local run-tests scripts use. Extracted
@@ -423,15 +439,29 @@ jobs:
       # FIRST; the GitHub Release is created/finalized only AFTER npm publish
       # succeeds. If npm publish failed and the GitHub Release ran first, a
       # non-draft Release would advertise a version that npm never received.
+      - name: Validate downloaded release package
+        id: release_package
+        run: |
+          set -euo pipefail
+          pkg="$(jq -r .name package.json)"
+          ver="${{ needs.verify-tag.outputs.package-version }}"
+          node scripts/validate-npm-meta.js \
+            --release-dir .artifacts/release \
+            --expected-name "${pkg}" \
+            --expected-version "${ver}"
+          mapfile -t package_files < <(find .artifacts/release -maxdepth 1 -type f -name '*.tgz' | sort)
+          package_file="${package_files[0]}"
+          checksum_file="${package_file}.sha256"
+          {
+            echo "package-file=${package_file}"
+            echo "checksum-file=${checksum_file}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Publish to npm with provenance
         run: |
           set -euo pipefail
           npx --yes --package=npm@^11.5.1 npm --version
-          package_file="$(find .artifacts/release -maxdepth 1 -name '*.tgz' -print -quit)"
-          if [ -z "${package_file}" ]; then
-            echo "::error::Packed npm package artifact is missing."
-            exit 1
-          fi
+          package_file="${{ steps.release_package.outputs.package-file }}"
           # Make publish safely RE-RUNNABLE: if this exact name@version is
           # already on the registry (a prior run published it before failing
           # downstream), skip the publish instead of failing on the
@@ -454,10 +484,12 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ needs.verify-tag.outputs.tag }}"
+          package_file="${{ steps.release_package.outputs.package-file }}"
+          checksum_file="${{ steps.release_package.outputs.checksum-file }}"
           if gh release view "${tag}" >/dev/null 2>&1; then
             gh release upload "${tag}" \
-              .artifacts/release/*.tgz \
-              .artifacts/release/*.sha256 \
+              "${package_file}" \
+              "${checksum_file}" \
               --clobber
             gh release edit "${tag}" \
               --title "${tag}" \
@@ -465,8 +497,8 @@ jobs:
               --draft=false
           else
             gh release create "${tag}" \
-              .artifacts/release/*.tgz \
-              .artifacts/release/*.sha256 \
+              "${package_file}" \
+              "${checksum_file}" \
               --title "${tag}" \
               --notes-file .artifacts/release/release-notes.md \
               --verify-tag

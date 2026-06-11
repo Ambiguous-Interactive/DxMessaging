@@ -34,7 +34,7 @@ impact:
     details: "One JSON file is the single source for every Unity version literal in CI"
   testability:
     rating: "high"
-    details: "A dependency-free validator plus a Jest suite pin the contract on every PR"
+    details: "A dependency-free validator plus a node:test suite pin the contract on every PR"
 
 prerequisites:
   - "Familiarity with GitHub Actions workflow syntax"
@@ -79,7 +79,7 @@ status: "stable"
 
 - Bumping, adding, or removing a Unity version that CI builds or tests against.
 - Adding a new workflow or runner script that needs a Unity version.
-- Triaging a `validate:unity-versions` failure in actionlint CI, preflight, or pre-push.
+- Triaging a `validate:unity-versions` failure in actionlint CI or locally.
 
 ## When NOT to Use
 
@@ -120,8 +120,8 @@ splits consumers by capability:
 - The static consumers keep a literal, and the validator keeps that literal honest
   with a loud failure on drift.
 
-The result: bump versions only in `.github/unity-versions.json`, and CI or
-preflight tells you precisely which mirror, if any, went stale.
+The result: bump versions only in `.github/unity-versions.json`, and the
+validator tells you precisely which mirror, if any, went stale.
 
 ## The Three Consumer Policies
 
@@ -148,8 +148,8 @@ preflight tells you precisely which mirror, if any, went stale.
   - `scripts/unity/run-tests.sh`
 
 Excluded from scanning: the canonical file itself, and everything under
-`.github/workflows-disabled/` (an intentionally unchecked archive, matching the
-scope of `scripts/validate-workflows.js`). The validator strips inline `#`
+`.github/workflows-disabled/` (an intentionally unchecked archive). The
+validator strips inline `#`
 comments before scanning, so a version mentioned in a comment does not count as a
 code literal.
 
@@ -182,15 +182,8 @@ consumer files checked on success, so you can confirm the bump landed.
 
 ## Enforcement Points
 
-The validator is wired exactly like `validate:workflows`:
-
 - `.github/workflows/actionlint.yml` runs it in CI, so drift blocks the merge.
-- `npm run validate:all` and `npm run preflight:pre-commit` run it locally.
-- The explicit exhaustive `npm run preflight:pre-push` path runs it through the
-  full pre-commit preflight.
-- The `script-parser-tests` pre-push hook runs
-  `scripts/__tests__/validate-unity-versions.test.js`, which pins the schema rules
-  and every consumer policy against fixtures.
+- `npm run validate:all` runs it locally.
 
 The validator is pure Node (only `fs`, `path`, `JSON.parse`, and a regex), so it
 runs in CI without an `npm install` step.
@@ -205,4 +198,3 @@ runs in CI without an `npm install` step.
 
 - Canonical file: `.github/unity-versions.json`
 - Validator: `scripts/validate-unity-versions.js`
-- Tests: `scripts/__tests__/validate-unity-versions.test.js`

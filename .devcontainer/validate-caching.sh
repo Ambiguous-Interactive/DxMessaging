@@ -50,16 +50,14 @@ source "${SCRIPT_DIR}/lib/parse-devcontainer-mounts.sh" || {
 # =============================================================================
 # When this file is `source`-d (rather than executed), only the helper
 # library imports above happen -- the validation flow below is skipped.
-# This lets a Jest test (or a debugging shell) load the helpers without
-# kicking off a full validation run, and it makes attack-surface auditing
-# easier ("does sourcing this file run any production logic?").
+# This lets a debugging shell load the helpers without kicking off a full
+# validation run, and it makes attack-surface auditing easier ("does
+# sourcing this file run any production logic?").
 #
 # We compare BASH_SOURCE[0] to $0:
 #   - When executed directly (e.g. `bash validate-caching.sh`), they match.
 #   - When sourced (`. validate-caching.sh` / `source ...`), they differ
 #     because $0 is the parent shell's $0, not this file path.
-# Locked in by scripts/__tests__/devcontainer-cache-contract.test.js
-# (round-3 NIT-E coverage block).
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     return 0 2>/dev/null || exit 0
 fi
