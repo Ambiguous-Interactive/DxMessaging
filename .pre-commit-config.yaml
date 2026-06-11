@@ -111,6 +111,17 @@ repos:
           Fail when a package asmdef populates precompiledReferences while
           overrideReferences is false (compiles in the Editor but breaks
           standalone/IL2CPP player builds).
+      - id: validate-npm-meta
+        name: Validate npm tarball hygiene
+        entry: node scripts/validate-npm-meta.js
+        language: system
+        pass_filenames: false
+        files: '^(package\.json|\.npmignore|CHANGELOG\.md|Editor/|Runtime/|Samples~/|SourceGenerators/)'
+        stages:
+          - pre-push
+        description: >-
+          Run npm pack dry-run checks that reject forbidden build-artifact
+          paths and enforce Unity .meta pairing for shipped package files.
       - id: cspell
         name: Check spelling
         # --no-must-find-files: without it cspell exits 1 when every file

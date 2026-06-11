@@ -4,9 +4,12 @@ on:
   pull_request:
     paths:
       - .github/workflows/script-tests.yml
+      - .github/workflows/release.yml
       - .github/actions/**/action.yml
       - .github/workflows/unity-*.yml
       - package.json
+      - .npmignore
+      - CHANGELOG.md
       - scripts/**/*.ps1
       - scripts/**/*.sh
       # All tracked JS (not just scripts/): validate:all runs the JS LoC
@@ -24,9 +27,12 @@ on:
       - master
     paths:
       - .github/workflows/script-tests.yml
+      - .github/workflows/release.yml
       - .github/actions/**/action.yml
       - .github/workflows/unity-*.yml
       - package.json
+      - .npmignore
+      - CHANGELOG.md
       - scripts/**/*.ps1
       - scripts/**/*.sh
       # All tracked JS (not just scripts/): see the pull_request paths note.

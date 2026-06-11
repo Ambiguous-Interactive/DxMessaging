@@ -71,8 +71,9 @@
     "validate:asmdef-references": "node scripts/validate-asmdef-references.js",
     "validate:unity-versions": "node scripts/validate-unity-versions.js",
     "validate:js-loc-budget": "node scripts/validate-js-loc-budget.js",
+    "validate:npm-meta": "node scripts/validate-npm-meta.js",
     "validate:docs:strict": "python3 -m venv .artifacts/docs-venv && .artifacts/docs-venv/bin/python -m pip install -r requirements-docs.txt && .artifacts/docs-venv/bin/mkdocs build --strict --site-dir _site",
-    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:js-loc-budget && npm run check:analyzers && npm run check:llms-txt"
+    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:js-loc-budget && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt"
   },
   "devDependencies": {
     "cspell": "10.0.1",

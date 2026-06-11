@@ -46,9 +46,11 @@ jobs:
             exit 1
           fi
           # package.json advertises changelogUrl; never publish a version that
-          # CHANGELOG.md does not mention.
-          if ! grep -Eq "^## \[?${PACKAGE_VERSION}([^0-9]|$)" CHANGELOG.md; then
-            echo "::error::CHANGELOG.md has no entry for ${PACKAGE_VERSION}."
+          # CHANGELOG.md does not mention. Use fixed-string heading checks so
+          # semver punctuation cannot alter regex matching semantics.
+          if ! grep -Fqx "## [${PACKAGE_VERSION}]" CHANGELOG.md \
+            && ! grep -Fqx "## ${PACKAGE_VERSION}" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no exact heading for ${PACKAGE_VERSION}."
             exit 1
           fi
           {
@@ -119,64 +121,14 @@ jobs:
             "${package_file}" > .artifacts/release/release-notes.md
           echo "package-file=${package_file}" >> "${GITHUB_OUTPUT}"
 
-      - name: Verify tarball .meta pairing (issue 204 guard)
-        # Unity consumers need a .meta sibling for every shipped file and
-        # directory under the Unity-relevant roots. A missing .meta makes
-        # Unity mint a fresh GUID (breaking references); an orphan .meta
-        # produces import warnings. tar -tzf on the packed artifact is the
-        # ground truth for what actually ships.
+      - name: Verify tarball packaging invariants (issue 204 guard)
+        # Centralized validator checks tarball contents for forbidden
+        # build-artifact paths and Unity .meta pairing invariants.
         env:
           PACKAGE_FILE: ${{ steps.pack.outputs.package-file }}
         run: |
           set -euo pipefail
-          tar -tzf ".artifacts/release/${PACKAGE_FILE}" \
-            | sed 's|^package/||' | sort -u > /tmp/entries.txt
-          # Defense layer 2: reject build artifacts and IDE-ephemeral files.
-          # Layer 1 is .npmignore / package.json#files.
-          forbidden="$(grep -Ei \
-            '(^|/)\.vs/|(^|/)\.idea/|(^|/)bin/|(^|/)obj/|\.pdb$|\.lscache(\.meta)?$|\.DotSettings\.user(\.meta)?$' \
-            /tmp/entries.txt || true)"
-          if [ -n "${forbidden}" ]; then
-            echo "::error::Tarball contains forbidden build-artifact path(s):"
-            printf '%s\n' "${forbidden}"
-            exit 1
-          fi
-          grep -E '^(Editor|Runtime|Samples~|SourceGenerators)(/|\.meta$)' \
-            /tmp/entries.txt > /tmp/unity-entries.txt || true
-          grep '\.meta$' /tmp/unity-entries.txt \
-            | sort -u > /tmp/present-metas.txt || true
-          # Every shipped file needs a sibling .meta, and so does every
-          # ancestor directory -- except the hidden Samples~ root, which by
-          # Unity convention has no .meta of its own.
-          grep -v '\.meta$' /tmp/unity-entries.txt | while IFS= read -r f; do
-            printf '%s.meta\n' "${f}"
-            d="$(dirname "${f}")"
-            while [ "${d}" != "." ]; do
-              printf '%s.meta\n' "${d}"
-              d="$(dirname "${d}")"
-            done
-          done | grep -vxF 'Samples~.meta' | sort -u > /tmp/required-metas.txt
-          missing="$(comm -23 /tmp/required-metas.txt /tmp/present-metas.txt)"
-          orphans="$(while IFS= read -r m; do
-            t="${m%.meta}"
-            if ! grep -qxF "${t}" /tmp/entries.txt \
-              && ! grep -q "^${t}/" /tmp/entries.txt; then
-              printf '%s\n' "${m}"
-            fi
-          done < /tmp/present-metas.txt)"
-          if [ -n "${missing}" ]; then
-            echo "::error::Tarball ships path(s) without a .meta sibling:"
-            printf '%s\n' "${missing}"
-          fi
-          if [ -n "${orphans}" ]; then
-            echo "::error::Tarball ships orphan .meta file(s) with no target:"
-            printf '%s\n' "${orphans}"
-          fi
-          if [ -n "${missing}" ] || [ -n "${orphans}" ]; then
-            exit 1
-          fi
-          echo "Tarball .meta pairing OK:" \
-            "$(wc -l < /tmp/present-metas.txt) .meta entries verified."
+          node scripts/validate-npm-meta.js --tarball ".artifacts/release/${PACKAGE_FILE}"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7

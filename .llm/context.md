@@ -49,6 +49,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 - Unity asmdef reference integrity: `npm run validate:asmdef-references`
 - Unity version matrix consistency: `npm run validate:unity-versions`
 - JS LOC budget: `npm run validate:js-loc-budget`
+- npm tarball hygiene + Unity .meta pairing: `npm run validate:npm-meta`
 - Everything: `npm run validate:all`
 - Hooks (one-time setup): `pipx install pre-commit && pre-commit install`; run all: `pre-commit run --all-files && pre-commit run --all-files --hook-stage pre-push` (cspell, asmdef validation, and script tests are staged at pre-push and skipped by the default stage)
 
