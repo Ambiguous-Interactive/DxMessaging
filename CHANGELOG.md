@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Untargeted dispatch now resolves handlers to flat, pooled delegate arrays
+  at snapshot-build time instead of walking per-handler dictionaries and
+  dispatch links per message. Measured on Editor PlayMode Mono x64: one
+  handler 17.5M to 27.9M emits/sec, four handlers at one priority 3.9M to
+  24.1M, four post-processors 3.3M to 14.6M, all with zero steady-state
+  allocations and unchanged dispatch semantics (snapshot freezing, priority
+  and registration order, mid-emission registration visibility, immediate
+  deactivation). Targeted and broadcast dispatch are unchanged and will be
+  migrated next.
+
 ### Fixed
 
 - A `MessageRegistrationLease` whose `OnActivate` callback throws no longer
