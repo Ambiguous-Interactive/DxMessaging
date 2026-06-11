@@ -25,8 +25,10 @@ namespace DxMessaging.Tests.Runtime.Core
     /// every referenced <see cref="MessageHandler"/> and resets its typed
     /// slots, which increments the per-handler dispatch-link generation
     /// (<c>TypedHandler._outerGeneration</c>). Every dispatch link captured by
-    /// the in-flight emission's frozen snapshot guards on that generation, so
-    /// the remaining handlers of the current emission short-circuit silently:
+    /// the in-flight emission's frozen snapshot guards on that generation
+    /// (and the untargeted flat dispatch loop checks the bus reset
+    /// generation after each invocation), so the remaining handlers of the
+    /// current emission short-circuit silently:
     /// the in-flight emission STOPS cleanly at the resetting handler rather
     /// than completing the snapshot. After the reset, the bus's reset
     /// generation has been bumped, all sinks are empty, and emissions are
@@ -207,23 +209,18 @@ namespace DxMessaging.Tests.Runtime.Core
         /// afterwards.
         /// </summary>
         /// <remarks>
-        /// EXPECTED PRODUCTION GAP (left pinning the documented contract):
-        /// for Targeted and Broadcast dispatch, <c>MessageBus.ResetState</c>
-        /// routes through <c>ReturnContextMap</c>
-        /// (<c>Runtime/Core/MessageBus/MessageBus.cs</c>, the
-        /// <c>handlers?.Clear()</c> loop), which calls
-        /// <c>HandlerCache.Clear()</c> -&gt; <c>dispatchState.Reset()</c> and
-        /// thereby RELEASES the in-flight emission's active
-        /// <c>DispatchSnapshot</c> back to its pools while the dispatch loop
-        /// is still iterating it. A trailing entry in the SAME bucket is then
-        /// read from a cleared entries array (default <c>DispatchEntry</c>),
-        /// and the invoke helper dereferences <c>entry.handler.active</c>
-        /// without a null check - a NullReferenceException. The sweep and
-        /// eviction paths guard against exactly this via
-        /// <c>HasActiveDispatchSnapshot</c>; <c>ResetState</c> does not.
-        /// Untargeted dispatch is unaffected because its scalar sink is
-        /// orphaned without clearing (only <c>MessageCache.Clear()</c> runs),
-        /// leaving the snapshot intact.
+        /// Mid-dispatch reset safety: <c>MessageBus.ResetState</c> must never
+        /// release the in-flight emission's active <c>DispatchSnapshot</c>
+        /// back to its pools while the dispatch loop is still iterating it.
+        /// Both the context sinks (<c>ReturnContextMap</c>) and the scalar
+        /// sinks (<c>ClearScalarSink</c>) defer the per-type
+        /// <c>HandlerCache.Clear()</c> until the outermost dispatch lease
+        /// exits (<c>FlushDeferredResetTeardown</c>) when a reset fires from
+        /// inside a handler, so frozen snapshot arrays - including the
+        /// untargeted flat dispatch arrays - stay intact for the in-flight
+        /// emission and are returned to their pools afterwards. The in-flight
+        /// dispatch itself halts at the resetting handler (reset-generation
+        /// guard), so the same-bucket peer must not run.
         /// </remarks>
         [UnityTest]
         public IEnumerator ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow(

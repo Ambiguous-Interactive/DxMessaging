@@ -234,6 +234,13 @@ namespace DxMessaging.Core.MessageBus
 
             public DispatchBucket[] buckets;
             public int bucketCount;
+
+            // Resolved flat dispatch entries for untargeted handle/post slots
+            // (null for every other slot kind). Holds a closed
+            // UntargetedFlatDispatch<TMessage>; the dispatch site
+            // reinterprets it via DxUnsafe.As using the emission's TMessage.
+            // Owned by this snapshot: released exactly once in Release().
+            public FlatDispatchArray flat;
             private bool _pooled;
 
             public bool IsEmpty => bucketCount == 0;
@@ -245,6 +252,9 @@ namespace DxMessaging.Core.MessageBus
                 {
                     return;
                 }
+
+                flat?.Release();
+                flat = null;
 
                 for (int i = 0; i < bucketCount; ++i)
                 {
@@ -1851,6 +1861,34 @@ namespace DxMessaging.Core.MessageBus
             sink.Clear();
         }
 
+        /// <summary>
+        /// Clears a scalar (per-type, priority-keyed) sink during
+        /// <see cref="ResetState"/>, releasing each per-type cache's dispatch
+        /// snapshots back to their pools instead of dropping them to the GC
+        /// (the legacy MessageCache.Clear()-only path leaked the pooled
+        /// bucket/entry arrays - and, post-flattening, the pooled flat
+        /// untargeted arrays - on every reset). Mirrors
+        /// <see cref="ReturnContextMap"/>: when a reset fires from inside a
+        /// handler (dispatch lease active), the per-type Clear is deferred
+        /// until the outermost lease exits so the in-flight emission keeps
+        /// iterating its frozen snapshot arrays safely.
+        /// </summary>
+        private void ClearScalarSink(MessageCache<HandlerCache<int, HandlerCache>> sink)
+        {
+            foreach (HandlerCache<int, HandlerCache> handlers in sink)
+            {
+                if (_dispatchDepth > 0)
+                {
+                    DeferHandlerCacheClear(handlers);
+                    continue;
+                }
+
+                handlers.Clear();
+            }
+
+            sink.Clear();
+        }
+
         private void DeferHandlerCacheClear(HandlerCache<int, HandlerCache> handlers)
         {
             _deferredResetHandlerCaches ??= new List<HandlerCache<int, HandlerCache>>();
@@ -2120,16 +2158,16 @@ namespace DxMessaging.Core.MessageBus
             _loggedReflexiveWarning = false;
             BumpResetGeneration();
 
-            _scalarSinks[BusSinkIndex.UntargetedHandleDefault].Clear();
-            _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext].Clear();
-            _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext].Clear();
+            ClearScalarSink(_scalarSinks[BusSinkIndex.UntargetedHandleDefault]);
+            ClearScalarSink(_scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]);
+            ClearScalarSink(_scalarSinks[BusSinkIndex.TargetedHandleWithoutContext]);
             ClearAndReturnContextSink(_contextSinks[BusContextIndex.TargetedHandleDefault]);
             ClearAndReturnContextSink(_contextSinks[BusContextIndex.BroadcastHandleDefault]);
-            _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault].Clear();
+            ClearScalarSink(_scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]);
             ClearAndReturnContextSink(_contextSinks[BusContextIndex.TargetedPostProcessDefault]);
             ClearAndReturnContextSink(_contextSinks[BusContextIndex.BroadcastPostProcessDefault]);
-            _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext].Clear();
-            _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext].Clear();
+            ClearScalarSink(_scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext]);
+            ClearScalarSink(_scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext]);
             if (_dispatchDepth > 0)
             {
                 // BusGlobalSlot.Clear() resets its dispatch states inline,
@@ -3045,8 +3083,13 @@ namespace DxMessaging.Core.MessageBus
                 _emissionBuffer.Add(new MessageEmissionData(typedMessage));
             }
 
-            // Pre-freeze post-processing stacks for this emission so mutations during
-            // handlers/post-processors are not observed until the next emission.
+            // Pre-freeze the post-processing snapshot for this emission so
+            // mutations during handlers/post-processors are not observed
+            // until the next emission. Acquiring the snapshot here (before
+            // interceptors and handlers run) is sufficient: the snapshot's
+            // flat entry array was fully resolved at build time, so no lazy
+            // per-handler cache read remains to observe a mid-emission
+            // registration.
             DispatchSnapshot untargetedPostSnapshot = DispatchSnapshot.Empty;
             if (
                 _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
@@ -3063,7 +3106,6 @@ namespace DxMessaging.Core.MessageBus
                     UntargetedPostSlot,
                     _emissionId
                 );
-                PrefreezeUntargetedPostSnapshot<TMessage>(untargetedPostSnapshot);
             }
 
             if (!RunUntargetedInterceptors(ref typedMessage))
@@ -3094,62 +3136,34 @@ namespace DxMessaging.Core.MessageBus
                         _emissionId
                     )
                     : untargetedPostSnapshot;
-                DispatchBucket[] buckets = snapshot.buckets;
-                int bucketCount = snapshot.bucketCount;
-                for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
+                // Flat dispatch; see InternalUntargetedBroadcast for the
+                // frozen-array semantics that replace prefreeze stamping and
+                // for the reset-generation guard rationale.
+                FlatDispatchArray flatBase = snapshot.flat;
+                if (flatBase != null)
                 {
-                    DispatchBucket bucket = buckets[bucketIndex];
-                    DispatchEntry[] entries = bucket.entries;
-                    int entryCount = bucket.entryCount;
-                    if (entryCount == 0)
+                    UntargetedFlatDispatch<TMessage> flat = DxUnsafe.As<
+                        UntargetedFlatDispatch<TMessage>
+                    >(flatBase);
+                    UntargetedFlatEntry<TMessage>[] entries = flat.entries;
+                    int count = flat.count;
+                    long resetGeneration = _resetGeneration;
+                    for (int i = 0; i < count; ++i)
                     {
-                        continue;
-                    }
-
-                    foundAnyHandlers = true;
-                    int priority = bucket.priority;
-                    switch (entryCount)
-                    {
-                        case 1:
+                        ref UntargetedFlatEntry<TMessage> entry = ref entries[i];
+                        if (entry.handler.active)
                         {
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[0]);
-                            continue;
-                        }
-                        case 2:
-                        {
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[0]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[1]);
-                            continue;
-                        }
-                        case 3:
-                        {
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[0]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[1]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[2]);
-                            continue;
-                        }
-                        case 4:
-                        {
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[0]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[1]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[2]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[3]);
-                            continue;
-                        }
-                        case 5:
-                        {
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[0]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[1]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[2]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[3]);
-                            InvokeUntargetedPostEntry(ref typedMessage, priority, entries[4]);
-                            continue;
+                            entry.invoker(ref typedMessage);
+                            if (_resetGeneration != resetGeneration)
+                            {
+                                break;
+                            }
                         }
                     }
 
-                    for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
+                    if (0 < count || HasAnyDispatchEntries(snapshot))
                     {
-                        InvokeUntargetedPostEntry(ref typedMessage, priority, entries[entryIndex]);
+                        foundAnyHandlers = true;
                     }
                 }
             }
@@ -5519,212 +5533,65 @@ namespace DxMessaging.Core.MessageBus
                 UntargetedHandleSlot,
                 _emissionId
             );
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
 
-            if (bucketCount == 0)
+            // Flat dispatch: every registration was resolved to its final
+            // invocable delegate at snapshot-build time, so the steady-state
+            // loop is one live `active` check plus a direct delegate call per
+            // entry. The array is frozen for this emission (mutations mark
+            // the DispatchState dirty and surface on the NEXT emission's
+            // rebuild), which preserves the mid-emission contracts the old
+            // link path enforced via prefreeze stamping:
+            //   - a handler deregistered mid-emission still fires (its entry
+            //     is already in the frozen array);
+            //   - a handler registered mid-emission does not fire (it is not
+            //     in the frozen array);
+            //   - a destroyed/disabled component never fires (live per-entry
+            //     `active` check).
+            // No prefreeze pass and no per-invocation live-count guards are
+            // needed: the frozen array is never mutated mid-emission.
+            FlatDispatchArray flatBase = snapshot.flat;
+            if (flatBase == null)
             {
                 return false;
             }
 
-            // Pre-freeze the typed-handler caches across every priority bucket so
-            // deregistrations performed by an earlier priority's handler cannot
-            // empty a later priority's stack mid-emission.
-            PrefreezeUntargetedSnapshot<TMessage>(snapshot);
-
-            bool invoked = false;
-
-            for (int i = 0; i < bucketCount; ++i)
+            UntargetedFlatDispatch<TMessage> flat = DxUnsafe.As<UntargetedFlatDispatch<TMessage>>(
+                flatBase
+            );
+            UntargetedFlatEntry<TMessage>[] entries = flat.entries;
+            int count = flat.count;
+            // Reset-generation guard: ResetState() invoked from inside a
+            // handler must halt the remaining in-flight dispatch (the
+            // documented mid-dispatch reset contract; the legacy link path
+            // enforced it via per-link _outerGeneration guards). The check
+            // runs only after an actual invocation - a reset can only happen
+            // inside user code - so steady-state cost is one field re-read
+            // and a predictable branch per fired entry.
+            long resetGeneration = _resetGeneration;
+            for (int i = 0; i < count; ++i)
             {
-                DispatchBucket bucket = buckets[i];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
+                ref UntargetedFlatEntry<TMessage> entry = ref entries[i];
+                if (entry.handler.active)
                 {
-                    continue;
-                }
-
-                invoked = true;
-                int priority = bucket.priority;
-                switch (entryCount)
-                {
-                    case 1:
+                    entry.invoker(ref message);
+                    if (_resetGeneration != resetGeneration)
                     {
-                        InvokeUntargetedEntry(ref message, priority, entries[0]);
-                        continue;
-                    }
-                    case 2:
-                    {
-                        InvokeUntargetedEntry(ref message, priority, entries[0]);
-                        InvokeUntargetedEntry(ref message, priority, entries[1]);
-                        continue;
-                    }
-                    case 3:
-                    {
-                        InvokeUntargetedEntry(ref message, priority, entries[0]);
-                        InvokeUntargetedEntry(ref message, priority, entries[1]);
-                        InvokeUntargetedEntry(ref message, priority, entries[2]);
-                        continue;
-                    }
-                    case 4:
-                    {
-                        InvokeUntargetedEntry(ref message, priority, entries[0]);
-                        InvokeUntargetedEntry(ref message, priority, entries[1]);
-                        InvokeUntargetedEntry(ref message, priority, entries[2]);
-                        InvokeUntargetedEntry(ref message, priority, entries[3]);
-                        continue;
-                    }
-                    case 5:
-                    {
-                        InvokeUntargetedEntry(ref message, priority, entries[0]);
-                        InvokeUntargetedEntry(ref message, priority, entries[1]);
-                        InvokeUntargetedEntry(ref message, priority, entries[2]);
-                        InvokeUntargetedEntry(ref message, priority, entries[3]);
-                        InvokeUntargetedEntry(ref message, priority, entries[4]);
-                        continue;
+                        break;
                     }
                 }
-
-                for (int handlerIndex = 0; handlerIndex < entryCount; ++handlerIndex)
-                {
-                    InvokeUntargetedEntry(ref message, priority, entries[handlerIndex]);
-                }
             }
 
-            return invoked;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeUntargetedEntry<TMessage>(
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : IMessage
-        {
-            MessageHandler messageHandler = entry.handler;
-            if (!messageHandler.active)
+            if (0 < count)
             {
-                return;
+                return true;
             }
 
-            MessageHandler.UntargetedDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.UntargetedDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(messageHandler, ref message, priority, _emissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeUntargetedPostEntry<TMessage>(
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : IUntargetedMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.UntargetedPostDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.UntargetedPostDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref message, priority, _emissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PrefreezeUntargetedPostSnapshot<TMessage>(DispatchSnapshot snapshot)
-            where TMessage : IUntargetedMessage
-        {
-            if (snapshot.IsEmpty)
-            {
-                return;
-            }
-
-            // No fast-path short-circuit for post-processor prefreeze.
-            //
-            // The single-bucket/single-entry fast-path used by handler prefreeze
-            // (see PrefreezeUntargetedSnapshot) is unsafe for post-processors:
-            // post-processors run AFTER regular handlers, and a regular handler
-            // is allowed to register a NEW post-processor (or a new delegate on
-            // an existing post-processor cache) during its own execution. Without
-            // an unconditional prefreeze, the post-processor cache's first read
-            // happens lazily inside the post-processor dispatch; by which time
-            // the version has been bumped and the cache will be rebuilt with the
-            // newly-registered entry visible. Always prefreezing pins the
-            // emission-start snapshot before any handler can mutate it.
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-            {
-                DispatchBucket bucket = buckets[bucketIndex];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
-                {
-                    continue;
-                }
-
-                int priority = bucket.priority;
-                for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                {
-                    entries[entryIndex]
-                        .handler.PrefreezeUntargetedPostProcessorsForEmission<TMessage>(
-                            priority,
-                            _emissionId,
-                            this
-                        );
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PrefreezeUntargetedSnapshot<TMessage>(DispatchSnapshot snapshot)
-            where TMessage : IUntargetedMessage
-        {
-            if (snapshot.IsEmpty)
-            {
-                return;
-            }
-
-            // Prefreeze fast-path short-circuit: if there is exactly one priority
-            // bucket with at most one MessageHandler entry, no later handler can
-            // observe a removal performed by an earlier one, so the inline lazy
-            // freeze inside the dispatch path is sufficient. Note: a single
-            // MessageHandler may still register multiple delegates at the same
-            // priority; those share a HandlerActionCache that is frozen on first
-            // read by the per-priority RunFastHandlers/RunHandlers, so the lazy
-            // freeze covers same-priority same-MessageHandler removals correctly.
-            // See the longer rationale on the broadcast inline prefreeze block
-            // in SourcedBroadcast.
-            if (snapshot.bucketCount == 1 && snapshot.buckets[0].entryCount <= 1)
-            {
-                return;
-            }
-
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-            {
-                DispatchBucket bucket = buckets[bucketIndex];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
-                {
-                    continue;
-                }
-
-                int priority = bucket.priority;
-                for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                {
-                    entries[entryIndex]
-                        .handler.PrefreezeUntargetedHandlersForEmission<TMessage>(
-                            priority,
-                            _emissionId,
-                            this
-                        );
-                }
-            }
+            // No resolved delegates. Bus-level registrations may still exist
+            // (e.g. IMessageBus.RegisterUntargeted called without a paired
+            // typed-handler delegate); report them as "found" to match the
+            // legacy link path, which counted bucket entries rather than
+            // delegate invocations.
+            return HasAnyDispatchEntries(snapshot);
         }
 
         private bool InternalTargetedWithoutTargetingBroadcast<TMessage>(
@@ -6866,7 +6733,143 @@ namespace DxMessaging.Core.MessageBus
                 buckets[i] = new DispatchBucket(priority, entries, entryCount, pooledEntries: true);
             }
 
-            return new DispatchSnapshot(buckets, priorityCount, pooled: true);
+            DispatchSnapshot snapshot = new DispatchSnapshot(buckets, priorityCount, pooled: true);
+            if (
+                slotKey.Kind == DispatchKind.Untargeted
+                && slotKey.Variant == DispatchVariant.Default
+            )
+            {
+                snapshot.flat = BuildUntargetedFlatDispatch<TMessage>(
+                    messageBus,
+                    handlers,
+                    postProcessing: slotKey.Phase == DispatchPhase.PostProcess
+                );
+            }
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Resolves every untargeted registration reachable from the bus-side
+        /// priority buckets into a single pooled flat array of
+        /// {MessageHandler, FastHandler} pairs, in exact dispatch order:
+        /// priority ascending, then bus-bucket insertion order per priority,
+        /// then per MessageHandler all fast entries (registration order)
+        /// followed by all default entries (registration order). Runs only at
+        /// snapshot-build time (registration churn); steady-state emission
+        /// walks the result with one live <c>active</c> check per entry and a
+        /// direct delegate invocation - no dispatch links, generation guards,
+        /// per-priority dictionary lookups, or delegate-shape type tests.
+        /// Creates zero closures: default Action handlers were adapted to
+        /// FastHandler form once at registration time
+        /// (HandlerActionCache.Entry.flatInvoker).
+        /// </summary>
+        private static FlatDispatchArray BuildUntargetedFlatDispatch<TMessage>(
+            MessageBus messageBus,
+            HandlerCache<int, HandlerCache> handlers,
+            bool postProcessing
+        )
+            where TMessage : IMessage
+        {
+            List<int> orderedPriorities = handlers.order;
+            int priorityCount = orderedPriorities.Count;
+            int total = 0;
+            for (int i = 0; i < priorityCount; ++i)
+            {
+                int priority = orderedPriorities[i];
+                if (
+                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                    || cache == null
+                )
+                {
+                    continue;
+                }
+
+                DebugAssertBusInsertionOrderInSync(cache);
+                List<MessageHandler> ordered = cache.insertionOrder;
+                int orderedCount = ordered.Count;
+                for (int j = 0; j < orderedCount; ++j)
+                {
+                    total += ordered[j]
+                        .CountUntargetedFlatHandlers<TMessage>(
+                            messageBus,
+                            priority,
+                            postProcessing
+                        );
+                }
+            }
+
+            UntargetedFlatDispatch<TMessage> flat = UntargetedFlatDispatch<TMessage>.Rent(total);
+            if (total == 0)
+            {
+                return flat;
+            }
+
+            UntargetedFlatEntry<TMessage>[] flatEntries = flat.entries;
+            int write = 0;
+            for (int i = 0; i < priorityCount; ++i)
+            {
+                int priority = orderedPriorities[i];
+                if (
+                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                    || cache == null
+                )
+                {
+                    continue;
+                }
+
+                List<MessageHandler> ordered = cache.insertionOrder;
+                int orderedCount = ordered.Count;
+                for (int j = 0; j < orderedCount; ++j)
+                {
+                    write = ordered[j]
+                        .FillUntargetedFlatHandlers<TMessage>(
+                            messageBus,
+                            priority,
+                            postProcessing,
+                            flatEntries,
+                            write
+                        );
+                }
+            }
+
+            flat.count = write;
+            return flat;
+        }
+
+        // Asserts the bus-side per-priority insertionOrder list stays in
+        // lockstep with the refcount dictionary at every snapshot build.
+        // Drift indicates a mutation site of HandlerCache.handlers that
+        // forgot to mirror the change into insertionOrder (register /
+        // deregistration closures), which would corrupt the documented
+        // same-priority registration order. Mirrors the MessageHandler-side
+        // DebugAssertInsertionOrderInSync; stripped in Release builds.
+        [Conditional("DEBUG")]
+        private static void DebugAssertBusInsertionOrderInSync(HandlerCache cache)
+        {
+            System.Diagnostics.Debug.Assert(
+                cache.insertionOrder.Count == cache.handlers.Count,
+                "Bus-side HandlerCache.insertionOrder must mirror handlers: every first "
+                    + "registration appends and every final deregistration removes. A count "
+                    + "mismatch means a mutation site skipped the insertionOrder update and "
+                    + "same-priority dispatch order is no longer trustworthy."
+            );
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool HasAnyDispatchEntries(DispatchSnapshot snapshot)
+        {
+            DispatchBucket[] buckets = snapshot.buckets;
+            int bucketCount = snapshot.bucketCount;
+            for (int i = 0; i < bucketCount; ++i)
+            {
+                if (0 < buckets[i].entryCount)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void FillDispatchEntries<TMessage>(
@@ -6883,6 +6886,7 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
+            DebugAssertBusInsertionOrderInSync(cache);
             PrefreezeDescriptor prefreeze = CreatePrefreezeDescriptor(slotKey, priority);
             int index = 0;
             // Iterate insertionOrder, NOT the handlers dictionary: Dictionary
@@ -7169,7 +7173,9 @@ namespace DxMessaging.Core.MessageBus
             }
 
             // No fast-path short-circuit for post-processor prefreeze. See the
-            // detailed rationale on PrefreezeUntargetedPostSnapshot; a regular
+            // detailed rationale formerly on PrefreezeUntargetedPostSnapshot (the
+            // untargeted path now uses fully-resolved flat snapshots and no longer
+            // prefreezes); a regular
             // handler can register a new post-processor (same MessageHandler,
             // same priority) during its own execution, and the lazy first-read
             // inside post-processor dispatch would otherwise capture that newly
@@ -7402,7 +7408,9 @@ namespace DxMessaging.Core.MessageBus
             }
 
             // No fast-path short-circuit for post-processor prefreeze. See the
-            // detailed rationale on PrefreezeUntargetedPostSnapshot; a regular
+            // detailed rationale formerly on PrefreezeUntargetedPostSnapshot (the
+            // untargeted path now uses fully-resolved flat snapshots and no longer
+            // prefreezes); a regular
             // handler can register a new post-processor (same MessageHandler,
             // same priority) during its own execution, and the lazy first-read
             // inside post-processor dispatch would otherwise capture that newly
@@ -7485,7 +7493,9 @@ namespace DxMessaging.Core.MessageBus
             }
 
             // No fast-path short-circuit for post-processor prefreeze. See the
-            // detailed rationale on PrefreezeUntargetedPostSnapshot; a regular
+            // detailed rationale formerly on PrefreezeUntargetedPostSnapshot (the
+            // untargeted path now uses fully-resolved flat snapshots and no longer
+            // prefreezes); a regular
             // handler can register a new post-processor (same MessageHandler,
             // same priority) during its own execution, and the lazy first-read
             // inside post-processor dispatch would otherwise capture that newly
@@ -7581,7 +7591,9 @@ namespace DxMessaging.Core.MessageBus
             }
 
             // No fast-path short-circuit for post-processor prefreeze. See the
-            // detailed rationale on PrefreezeUntargetedPostSnapshot; a regular
+            // detailed rationale formerly on PrefreezeUntargetedPostSnapshot (the
+            // untargeted path now uses fully-resolved flat snapshots and no longer
+            // prefreezes); a regular
             // handler can register a new post-processor (same MessageHandler,
             // same priority) during its own execution, and the lazy first-read
             // inside post-processor dispatch would otherwise capture that newly

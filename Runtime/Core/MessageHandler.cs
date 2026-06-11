@@ -85,28 +85,6 @@ namespace DxMessaging.Core
             }
         }
 
-        private static int GetPriorityPrefreezeInvocationCount<TMessage, THandler>(
-            TypedHandler<TMessage> handler,
-            int slotIndex,
-            int priority
-        )
-            where TMessage : IMessage
-        {
-            Dictionary<int, IHandlerActionCache> byPriority = handler.GetPriorityHandlers(
-                slotIndex
-            );
-            if (
-                byPriority != null
-                && byPriority.TryGetValue(priority, out IHandlerActionCache erasedCache)
-                && erasedCache is HandlerActionCache<THandler> cache
-            )
-            {
-                return cache.prefreezeInvocationCount;
-            }
-
-            return 0;
-        }
-
         /// <summary>
         /// Pre-freezes this handler's broadcast post-processor caches for the given message type, source, and priority
         /// for the specified emission id, so registrations during the same emission are not observed.
@@ -243,35 +221,6 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Pre-freezes this handler's untargeted post-processor caches for a given priority.
-        /// </summary>
-        internal void PrefreezeUntargetedPostProcessorsForEmission<T>(
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : IUntargetedMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezePriorityCache<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.UntargetedPostProcessFast,
-                priority,
-                emissionId
-            );
-            PrefreezePriorityCache<T, Action<T>>(
-                handler,
-                TypedSlotIndex.UntargetedPostProcessDefault,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
         /// Pre-freezes this handler's broadcast-without-source post-processor caches for a given priority.
         /// </summary>
         internal void PrefreezeBroadcastWithoutSourcePostProcessorsForEmission<T>(
@@ -329,40 +278,6 @@ namespace DxMessaging.Core
             PrefreezePriorityCache<T, Action<InstanceId, T>>(
                 handler,
                 TypedSlotIndex.BroadcastHandleWithoutContext,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's untargeted handler caches for the given message type and priority
-        /// for the specified emission id, so removals during the same emission are not observed.
-        /// </summary>
-        /// <typeparam name="T">Untargeted message type.</typeparam>
-        /// <param name="priority">Priority bucket to freeze.</param>
-        /// <param name="emissionId">Current emission id.</param>
-        /// <param name="messageBus">Bus whose typed handler mapping to use.</param>
-        internal void PrefreezeUntargetedHandlersForEmission<T>(
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : IUntargetedMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezePriorityCache<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.UntargetedHandleFast,
-                priority,
-                emissionId
-            );
-            PrefreezePriorityCache<T, Action<T>>(
-                handler,
-                TypedSlotIndex.UntargetedHandleDefault,
                 priority,
                 emissionId
             );
@@ -2230,22 +2145,161 @@ namespace DxMessaging.Core
             return false;
         }
 
-        internal int GetUntargetedPostProcessingPrefreezeCount<T>(
+        /// <summary>
+        /// Counts the flat-dispatch entries this handler contributes to an
+        /// untargeted handle or post-process snapshot at the given priority:
+        /// one entry per unique registered delegate (fast plus default).
+        /// Build-time only; called by MessageBus.BuildUntargetedFlatDispatch.
+        /// </summary>
+        internal int CountUntargetedFlatHandlers<T>(
             IMessageBus messageBus,
-            int priority
+            int priority,
+            bool postProcessing
         )
             where T : IMessage
         {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
             {
                 return 0;
             }
 
-            return GetPriorityPrefreezeInvocationCount<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.UntargetedPostProcessFast,
-                priority
+            int fastIndex = postProcessing
+                ? TypedSlotIndex.UntargetedPostProcessFast
+                : TypedSlotIndex.UntargetedHandleFast;
+            int defaultIndex = postProcessing
+                ? TypedSlotIndex.UntargetedPostProcessDefault
+                : TypedSlotIndex.UntargetedHandleDefault;
+
+            int count = 0;
+            Dictionary<int, IHandlerActionCache> fastHandlers = typedHandler.GetPriorityHandlers(
+                fastIndex
             );
+            if (
+                fastHandlers != null
+                && fastHandlers.TryGetValue(priority, out IHandlerActionCache fastErased)
+                && fastErased is HandlerActionCache<FastHandler<T>> fastCache
+            )
+            {
+                count += fastCache.insertionOrder.Count;
+            }
+
+            Dictionary<int, IHandlerActionCache> defaultHandlers = typedHandler.GetPriorityHandlers(
+                defaultIndex
+            );
+            if (
+                defaultHandlers != null
+                && defaultHandlers.TryGetValue(priority, out IHandlerActionCache defaultErased)
+                && defaultErased is HandlerActionCache<Action<T>> defaultCache
+            )
+            {
+                count += defaultCache.insertionOrder.Count;
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// Writes this handler's resolved flat-dispatch entries for the given
+        /// priority into <paramref name="target"/> starting at
+        /// <paramref name="writeIndex"/>: all fast entries in registration
+        /// order, then all default entries in registration order, matching
+        /// the legacy link path's fast-before-default contract. Fast entries
+        /// resolve to the augmented FastHandler delegate itself; default
+        /// entries resolve to the FastHandler adapter created at registration
+        /// time (Entry.flatInvoker), so this method allocates nothing.
+        /// Returns the next write index.
+        /// </summary>
+        internal int FillUntargetedFlatHandlers<T>(
+            IMessageBus messageBus,
+            int priority,
+            bool postProcessing,
+            UntargetedFlatEntry<T>[] target,
+            int writeIndex
+        )
+            where T : IMessage
+        {
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
+            {
+                return writeIndex;
+            }
+
+            int fastIndex = postProcessing
+                ? TypedSlotIndex.UntargetedPostProcessFast
+                : TypedSlotIndex.UntargetedHandleFast;
+            int defaultIndex = postProcessing
+                ? TypedSlotIndex.UntargetedPostProcessDefault
+                : TypedSlotIndex.UntargetedHandleDefault;
+
+            Dictionary<int, IHandlerActionCache> fastHandlers = typedHandler.GetPriorityHandlers(
+                fastIndex
+            );
+            if (
+                fastHandlers != null
+                && fastHandlers.TryGetValue(priority, out IHandlerActionCache fastErased)
+                && fastErased is HandlerActionCache<FastHandler<T>> fastCache
+            )
+            {
+                List<FastHandler<T>> ordered = fastCache.insertionOrder;
+                int orderedCount = ordered.Count;
+                for (int i = 0; i < orderedCount; ++i)
+                {
+                    if (
+                        fastCache.entries.TryGetValue(
+                            ordered[i],
+                            out HandlerActionCache<FastHandler<T>>.Entry entry
+                        )
+                    )
+                    {
+                        target[writeIndex++] = new UntargetedFlatEntry<T>(this, entry.handler);
+                    }
+                }
+            }
+
+            Dictionary<int, IHandlerActionCache> defaultHandlers = typedHandler.GetPriorityHandlers(
+                defaultIndex
+            );
+            if (
+                defaultHandlers != null
+                && defaultHandlers.TryGetValue(priority, out IHandlerActionCache defaultErased)
+                && defaultErased is HandlerActionCache<Action<T>> defaultCache
+            )
+            {
+                List<Action<T>> ordered = defaultCache.insertionOrder;
+                int orderedCount = ordered.Count;
+                for (int i = 0; i < orderedCount; ++i)
+                {
+                    if (
+                        !defaultCache.entries.TryGetValue(
+                            ordered[i],
+                            out HandlerActionCache<Action<T>>.Entry entry
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    // Every default untargeted registration path supplies the
+                    // adapter at registration time (AddUntargetedHandler /
+                    // AddUntargetedPostProcessor). The type test doubles as a
+                    // null guard; a missing adapter would indicate a new
+                    // registration path that forgot to provide one.
+                    if (entry.flatInvoker is FastHandler<T> invoker)
+                    {
+                        target[writeIndex++] = new UntargetedFlatEntry<T>(this, invoker);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.Assert(
+                            false,
+                            "Untargeted default registration is missing its FastHandler "
+                                + "flat invoker; AddUntargetedHandler/AddUntargetedPostProcessor "
+                                + "must adapt the augmented handler at registration time."
+                        );
+                    }
+                }
+            }
+
+            return writeIndex;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2360,13 +2414,37 @@ namespace DxMessaging.Core
                 /// <param name="handler">Handler delegate being tracked.</param>
                 /// <param name="count">Number of times the handler has been cached.</param>
                 public Entry(T handler, int count)
+                    : this(handler, count, null) { }
+
+                /// <summary>
+                /// Initializes an entry that additionally carries a pre-resolved
+                /// flat-dispatch invoker (see <see cref="flatInvoker"/>).
+                /// </summary>
+                /// <param name="handler">Handler delegate being tracked.</param>
+                /// <param name="count">Number of times the handler has been cached.</param>
+                /// <param name="flatInvoker">Pre-resolved flat-dispatch invoker, if any.</param>
+                public Entry(T handler, int count, object flatInvoker)
                 {
                     this.handler = handler;
                     this.count = count;
+                    this.flatInvoker = flatInvoker;
                 }
 
                 public readonly T handler;
                 public readonly int count;
+
+                // Pre-resolved invoker consumed by the bus-side flat dispatch
+                // snapshot (MessageBus.BuildUntargetedFlatDispatch). For
+                // default Action<TMessage> registrations this holds a
+                // FastHandler<TMessage> adapter wrapping the AUGMENTED
+                // handler, created exactly ONCE at registration time so
+                // snapshot rebuilds never allocate closures. For delegate
+                // shapes the flat path does not consume (fast handlers, which
+                // already ARE the invoker, and every targeted/broadcast
+                // shape) this stays null. Refcount increments and decrements
+                // preserve the first registration's invoker, mirroring the
+                // first-augmented-handler-wins semantics of `handler`.
+                public readonly object flatInvoker;
             }
 
             public readonly Dictionary<T, Entry> entries = new();
@@ -3926,6 +4004,10 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandler form exactly once,
+                // at registration time, so bus-side flat snapshot rebuilds
+                // resolve default registrations without allocating closures.
+                FastHandler<T> flatInvoker = (ref T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
                         TypedSlotIndex.UntargetedHandleDefault,
@@ -3935,7 +4017,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -4228,6 +4311,10 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandler form exactly once,
+                // at registration time, so bus-side flat snapshot rebuilds
+                // resolve default registrations without allocating closures.
+                FastHandler<T> flatInvoker = (ref T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
                         TypedSlotIndex.UntargetedPostProcessDefault,
@@ -4237,7 +4324,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -6442,13 +6530,17 @@ namespace DxMessaging.Core
             // Variant of AddHandler that preserves the priority key in the dictionary when the last entry is removed.
             // This ensures that during an in-flight emission (where handler stacks are already frozen),
             // subsequent removals do not cause lookups to fail for the current pass.
+            // `flatInvoker` carries the pre-resolved flat-dispatch invoker for
+            // registrations the bus-side flat snapshot consumes (untargeted
+            // handle/post default handlers); see HandlerActionCache.Entry.flatInvoker.
             private Action AddHandlerPreservingPriorityKey<TU>(
                 Dictionary<int, IHandlerActionCache> handlers,
                 TU originalHandler,
                 TU augmentedHandler,
                 Action deregistration,
                 int priority,
-                IMessageBus messageBus
+                IMessageBus messageBus,
+                object flatInvoker = null
             )
             {
                 if (
@@ -6472,8 +6564,12 @@ namespace DxMessaging.Core
 
                 bool firstRegistration = entry.count == 0;
                 entry = firstRegistration
-                    ? new HandlerActionCache<TU>.Entry(augmentedHandler, 1)
-                    : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
+                    ? new HandlerActionCache<TU>.Entry(augmentedHandler, 1, flatInvoker)
+                    : new HandlerActionCache<TU>.Entry(
+                        entry.handler,
+                        entry.count + 1,
+                        entry.flatInvoker
+                    );
 
                 cache.entries[originalHandler] = entry;
                 if (firstRegistration)
@@ -6568,7 +6664,8 @@ namespace DxMessaging.Core
 
                     localEntry = new HandlerActionCache<TU>.Entry(
                         localEntry.handler,
-                        localEntry.count - 1
+                        localEntry.count - 1,
+                        localEntry.flatInvoker
                     );
 
                     localCache.entries[originalHandler] = localEntry;
