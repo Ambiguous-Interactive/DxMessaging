@@ -12,9 +12,70 @@ const {
   findForbiddenTarballPaths,
   normalizePackEntry,
   parsePackJsonEntries,
+  runValidation,
   validatePackEntries,
   validatePublishedFilesArePairedWithMetas
 } = require("../validate-npm-meta.js");
+
+const FORBIDDEN_PATH_CASES = [
+  {
+    path: "Runtime/bin/Debug/Foo.dll",
+    rule: "bin-dir"
+  },
+  {
+    path: "Runtime/obj/Release/Foo.dll",
+    rule: "obj-dir"
+  },
+  {
+    path: "Editor/cache.tmp",
+    rule: "tmp"
+  },
+  {
+    path: "Editor/Project.suo",
+    rule: "suo"
+  },
+  {
+    path: "Editor/UserSettings.csproj.user",
+    rule: "csproj-user"
+  },
+  {
+    path: "Editor/Team.user",
+    rule: "generic-user"
+  },
+  {
+    path: "Editor/.vs/config",
+    rule: "vs-dir"
+  },
+  {
+    path: "Editor/.idea/workspace.xml",
+    rule: "idea-dir"
+  },
+  {
+    path: "Editor/ignore.pdb",
+    rule: "pdb"
+  },
+  {
+    path: "Editor/cache.lscache",
+    rule: "lscache"
+  },
+  {
+    path: "Editor/Project.DotSettings.user",
+    rule: "dotsettings-user"
+  }
+];
+
+function withQuietValidation(callback) {
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    return callback();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+}
 
 test("normalizePackEntry strips package prefix and trailing slash", () => {
   assert.equal(normalizePackEntry("package/Runtime/Core/Foo.cs"), "Runtime/Core/Foo.cs");
@@ -36,39 +97,20 @@ test("parsePackJsonEntries loads npm --json file entries", () => {
 
 test("parsePackJsonEntries rejects malformed pack JSON payloads", () => {
   assert.throws(() => parsePackJsonEntries("{}"), /entry list/);
-  assert.throws(() => parsePackJsonEntries("[{\"files\":\"oops\"}]"), /files array/);
-  assert.throws(
-    () => parsePackJsonEntries('[{"files":[{"noPath":true}]}]'),
-    /has no string path/
-  );
+  assert.throws(() => parsePackJsonEntries('[{"files":"oops"}]'), /files array/);
+  assert.throws(() => parsePackJsonEntries('[{"files":[{"noPath":true}]}]'), /has no string path/);
 });
 
 test("findForbiddenTarballPaths catches issue-204 style artifact leaks", () => {
-  const violations = findForbiddenTarballPaths([
-    "Runtime/bin/Debug/Foo.dll",
-    "Runtime/obj/Release/Foo.dll",
-    "Editor/cache.tmp",
-    "Editor/Project.suo",
-    "Editor/UserSettings.csproj.user",
-    "Editor/Team.user",
-    "Editor/.vs/config",
-    "Editor/.idea/workspace.xml",
-    "Editor/ignore.pdb"
-  ]);
+  const violations = findForbiddenTarballPaths(FORBIDDEN_PATH_CASES.map((entry) => entry.path));
 
   assert.deepEqual(
     violations.map((violation) => violation.path),
-    [
-      "Runtime/bin/Debug/Foo.dll",
-      "Runtime/obj/Release/Foo.dll",
-      "Editor/cache.tmp",
-      "Editor/Project.suo",
-      "Editor/UserSettings.csproj.user",
-      "Editor/Team.user",
-      "Editor/.vs/config",
-      "Editor/.idea/workspace.xml",
-      "Editor/ignore.pdb"
-    ]
+    FORBIDDEN_PATH_CASES.map((entry) => entry.path)
+  );
+  assert.deepEqual(
+    violations.map((violation) => violation.rule),
+    FORBIDDEN_PATH_CASES.map((entry) => entry.rule)
   );
 });
 
@@ -165,6 +207,38 @@ test("parses real-world pack JSON from a temporary file", () => {
   }
 });
 
+test("runValidation rejects forbidden paths from npm pack JSON output", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-json-validation-test-"));
+  try {
+    for (const entry of FORBIDDEN_PATH_CASES) {
+      const jsonFile = path.join(tempDir, `${entry.rule}.json`);
+      fs.writeFileSync(
+        jsonFile,
+        JSON.stringify([
+          {
+            filename: "pkg.tgz",
+            files: [{ path: `package/${entry.path}` }]
+          }
+        ]),
+        "utf8"
+      );
+
+      const result = withQuietValidation(() => runValidation({ packJson: jsonFile }));
+      assert.equal(result.valid, false, `${entry.path} should make pack validation fail`);
+      assert.deepEqual(
+        result.forbidden.map((violation) => violation.rule),
+        [entry.rule]
+      );
+      assert.deepEqual(
+        result.forbidden.map((violation) => violation.path),
+        [entry.path]
+      );
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("collectTarballEntries normalizes tar output paths", () => {
   const entries = collectTarballEntries("dummy.tgz", () => {
     return "package/Runtime/Core/Foo.cs\npackage/Runtime/Core/Foo.cs.meta\n";
@@ -174,14 +248,11 @@ test("collectTarballEntries normalizes tar output paths", () => {
 });
 
 test("collectTarballEntries reports tar command errors clearly", () => {
-  assert.throws(
-    () => {
-      collectTarballEntries("missing.tgz", () => {
-        const error = new Error("tar failed");
-        error.stderr = "tar: missing.tgz: Cannot open: No such file or directory\n";
-        throw error;
-      });
-    },
-    /Unable to list tarball entries/
-  );
+  assert.throws(() => {
+    collectTarballEntries("missing.tgz", () => {
+      const error = new Error("tar failed");
+      error.stderr = "tar: missing.tgz: Cannot open: No such file or directory\n";
+      throw error;
+    });
+  }, /Unable to list tarball entries/);
 });

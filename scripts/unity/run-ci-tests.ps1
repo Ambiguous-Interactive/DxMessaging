@@ -161,6 +161,197 @@ function Write-UnityCatastrophicErrorAnnotations {
     }
 }
 
+function Test-UnityPackageManagerTransientFailure {
+    param([string]$LogPath)
+
+    if (-not $LogPath -or -not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $logText = Get-Content -LiteralPath $LogPath -Raw
+    } catch {
+        return $false
+    }
+
+    if (-not $logText) {
+        return $false
+    }
+
+    return (
+        $logText -match 'Cancelled resolving packages' -or
+        $logText -match 'Failed to resolve packages:\s+operation cancelled' -or
+        $logText -match 'IPCStream \(Upm-[^)]+\): IPC stream failed to read'
+    )
+}
+
+function Write-UnityPackageManagerTransientFailureWarnings {
+    param(
+        [string]$LogPath,
+        [int]$MaxLines = 12
+    )
+
+    if (-not $LogPath -or -not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+        return
+    }
+
+    $patterns = @(
+        'Cancelled resolving packages',
+        'Failed to resolve packages:\s+operation cancelled',
+        'IPCStream \(Upm-[^)]+\): IPC stream failed to read'
+    )
+
+    try {
+        $matches = @(
+            Select-String -LiteralPath $LogPath -Pattern $patterns -ErrorAction SilentlyContinue |
+                Select-Object -First $MaxLines
+        )
+    } catch {
+        return
+    }
+
+    foreach ($match in $matches) {
+        $line = ConvertTo-SingleLineDiagnostic -Text $match.Line
+        Write-Host "::warning::Unity Package Manager transient package-resolution signal: $line"
+    }
+}
+
+function Clear-UnityPackageManagerRetryState {
+    param([Parameter(Mandatory = $true)][string]$Project)
+
+    $packageCachePath = Join-Path $Project 'Library\PackageCache'
+    $packageManagerPath = Join-Path $Project 'Library\PackageManager'
+    $tempPath = Join-Path $Project 'Temp'
+    $paths = @(
+        $packageCachePath,
+        $packageManagerPath,
+        $tempPath
+    )
+
+    foreach ($envName in @('UPM_CACHE_ROOT', 'UPM_NPM_CACHE_PATH')) {
+        $value = [Environment]::GetEnvironmentVariable($envName)
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $paths += $value
+        }
+    }
+
+    Write-Host "::group::Unity Package Manager retry cleanup"
+    foreach ($path in ($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
+        try {
+            if (Test-Path -LiteralPath $path) {
+                Write-Host "Removing $path"
+                Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+            } else {
+                Write-Host "Already absent: $path"
+            }
+            New-Item -ItemType Directory -Force -Path $path -ErrorAction Stop | Out-Null
+        } catch {
+            Write-Host "::warning::Could not clear Unity Package Manager retry path '${path}': $($_.Exception.Message)"
+        }
+    }
+    Write-Host "::endgroup::"
+}
+
+function Write-UnityPackageManagerDiagnostics {
+    param(
+        [string]$Project,
+        [string]$LogPath
+    )
+
+    Write-Host "::group::Unity Package Manager diagnostics"
+    try {
+        foreach ($envName in @('UPM_CACHE_ROOT', 'UPM_NPM_CACHE_PATH', 'UPM_GIT_LFS_CACHE_PATH')) {
+            Write-Host "${envName}: $([Environment]::GetEnvironmentVariable($envName))"
+        }
+
+        if ($Project) {
+            foreach ($relativePath in @('Packages\manifest.json', 'Packages\packages-lock.json')) {
+                $file = Join-Path $Project $relativePath
+                if (Test-Path -LiteralPath $file -PathType Leaf) {
+                    Write-Host "${relativePath}:"
+                    Get-Content -LiteralPath $file -ErrorAction SilentlyContinue |
+                        ForEach-Object { Write-Host "  $_" }
+                } else {
+                    Write-Host "${relativePath}: (missing)"
+                }
+            }
+
+            $packageCache = Join-Path $Project 'Library\PackageCache'
+            Write-Host "Library PackageCache: $packageCache"
+            if (Test-Path -LiteralPath $packageCache -PathType Container) {
+                Get-ChildItem -LiteralPath $packageCache -Force -ErrorAction SilentlyContinue |
+                    Sort-Object Name |
+                    Select-Object -First 80 |
+                    ForEach-Object {
+                        $kind = if ($_.PSIsContainer) { 'dir ' } else { 'file' }
+                        Write-Host ("  [{0}] {1}" -f $kind, $_.Name)
+                    }
+            } else {
+                Write-Host "  (missing)"
+            }
+        }
+
+        if ($LogPath -and (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+            Write-Host "Package Manager failure log hits:"
+            Select-String -LiteralPath $LogPath -Pattern @(
+                'IPCStream \(Upm-[^)]+\): IPC stream failed to read',
+                'Failed to resolve packages',
+                'Cancelled resolving packages'
+            ) -ErrorAction SilentlyContinue |
+                Select-Object -First 40 |
+                ForEach-Object {
+                    Write-Host ("  line {0}: {1}" -f $_.LineNumber, $_.Line.Trim())
+                }
+        }
+    } catch {
+        Write-Host "::warning::Could not collect Unity Package Manager diagnostics: $($_.Exception.Message)"
+    }
+    Write-Host "::endgroup::"
+}
+
+function Invoke-UnityEditorTestsWithPackageManagerRetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$EditorPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [Parameter(Mandatory = $true)][string]$ResultsPath,
+        [Parameter(Mandatory = $true)][string]$Project
+    )
+
+    $runExit = Invoke-UnityEditor `
+        -EditorPath $EditorPath `
+        -Arguments $Arguments `
+        -Label $Label `
+        -LogPath $LogPath
+
+    if ((Test-Path -LiteralPath $ResultsPath -PathType Leaf) -or
+        -not (Test-UnityPackageManagerTransientFailure -LogPath $LogPath)) {
+        return $runExit
+    }
+
+    Write-CiWarning "Unity Package Manager canceled package resolution before NUnit results existed; clearing UPM state and retrying once."
+    Write-UnityPackageManagerTransientFailureWarnings -LogPath $LogPath
+    $firstAttemptLogPath = Join-Path (Split-Path -Parent $LogPath) ("{0}.first-attempt.log" -f [System.IO.Path]::GetFileNameWithoutExtension($LogPath))
+    try {
+        Copy-Item -LiteralPath $LogPath -Destination $firstAttemptLogPath -Force -ErrorAction Stop
+        Write-CiNotice "Saved first failed Unity log before retry: $firstAttemptLogPath"
+    } catch {
+        Write-CiWarning "Could not preserve first failed Unity log before retry: $($_.Exception.Message)"
+    }
+    Clear-UnityPackageManagerRetryState -Project $Project
+
+    if (Test-Path -LiteralPath $ResultsPath -PathType Leaf) {
+        Remove-Item -LiteralPath $ResultsPath -Force
+    }
+
+    return Invoke-UnityEditor `
+        -EditorPath $EditorPath `
+        -Arguments $Arguments `
+        -Label "$Label (retry 1 after UPM cancellation)" `
+        -LogPath $LogPath
+}
+
 # Collapse any run of whitespace (including CR/LF) to a single space and trim, so
 # a multi-line NUnit <failure>/<message> renders as ONE line. GitHub `::error::`
 # annotations are single-line: an embedded newline silently truncates the
@@ -2051,6 +2242,9 @@ function Write-UnityResultFailureDiagnostics {
                 'Exiting batchmode successfully',
                 'No tests',
                 'TestRunner',
+                'IPCStream \(Upm-[^)]+\): IPC stream failed to read',
+                'Failed to resolve packages',
+                'Cancelled resolving packages',
                 'results\.xml',
                 'assemblyNames'
             )
@@ -2077,6 +2271,10 @@ function Write-UnityResultFailureDiagnostics {
             }
             if ($logText -match 'Exiting batchmode successfully') {
                 Write-CiError "Unity exited with code 0 but did not write NUnit results. Check the selected assembly list, test platform, and TestRunner log lines above."
+            }
+            if (Test-UnityPackageManagerTransientFailure -LogPath $LogPath) {
+                Write-CiError "Unity Package Manager canceled package resolution before tests started. This is a CI/Unity package-resolution failure, not a DxMessaging test assertion."
+                Write-UnityPackageManagerDiagnostics -Project $Project -LogPath $LogPath
             }
 
             # Name a duplicate analyzer registration (the same generator/analyzer
@@ -2705,11 +2903,13 @@ try {
         # missing/invalid/failing file AND folds the exit code into its diagnostics,
         # but PASSES a valid run that exited non-zero only because Unity crashed in a
         # background thread during shutdown AFTER RunFinished wrote the file.
-        $runExit = Invoke-UnityEditor `
+        $runExit = Invoke-UnityEditorTestsWithPackageManagerRetry `
             -EditorPath $UnityEditorPath `
             -Arguments $testArgs `
             -Label "Run Unity $UnityVersion $TestMode tests" `
-            -LogPath $logPath
+            -LogPath $logPath `
+            -ResultsPath $resultsPath `
+            -Project $ProjectPath
         Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion $TestMode test compile"
         Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath -UnityExitCode $runExit
     }

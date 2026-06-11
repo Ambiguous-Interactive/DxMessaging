@@ -181,9 +181,9 @@ runs:
           $unityLog = Join-Path $ResultsDir 'unity.log'
           if (Test-Path -LiteralPath $unityLog -PathType Leaf) {
             $logFiles.Add($unityLog)
-          }
-          if (Test-Path -LiteralPath $ResultsDir -PathType Container) {
+          } elseif (Test-Path -LiteralPath $ResultsDir -PathType Container) {
             Get-ChildItem -LiteralPath $ResultsDir -File -Recurse -Filter '*.log' -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -notlike '*.first-attempt.log' } |
               ForEach-Object {
                 if (-not $logFiles.Contains($_.FullName)) {
                   $logFiles.Add($_.FullName)
@@ -260,6 +260,43 @@ runs:
             return ''
           }
           return (($Text -replace '\s+', ' ').Trim())
+        }
+        function Write-UnityPackageManagerFailureHints {
+          param([Parameter(Mandatory = $true)][string]$ResultsDir)
+
+          $patterns = @(
+            'Cancelled resolving packages',
+            'Failed to resolve packages:\s+operation cancelled',
+            'IPCStream \(Upm-[^)]+\): IPC stream failed to read'
+          )
+          $logFiles = New-Object System.Collections.Generic.List[string]
+          $unityLog = Join-Path $ResultsDir 'unity.log'
+          if (Test-Path -LiteralPath $unityLog -PathType Leaf) {
+            $logFiles.Add($unityLog)
+          } elseif (Test-Path -LiteralPath $ResultsDir -PathType Container) {
+            Get-ChildItem -LiteralPath $ResultsDir -File -Recurse -Filter '*.log' -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -notlike '*.first-attempt.log' } |
+              ForEach-Object {
+                if (-not $logFiles.Contains($_.FullName)) {
+                  $logFiles.Add($_.FullName)
+                }
+              }
+          }
+
+          foreach ($logFile in $logFiles) {
+            try {
+              $hit = Select-String -LiteralPath $logFile -Pattern $patterns -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+              if ($hit) {
+                $line = ConvertTo-SingleLineDiagnostic -Text $hit.Line
+                Write-Host "::error::Unity Package Manager canceled package resolution before tests started: $line"
+                Write-Host "  $($hit.Path):$($hit.LineNumber): $line"
+                return
+              }
+            } catch {
+              # Best-effort diagnostic only.
+            }
+          }
         }
         # Token holder for the ::stop-commands::<token> ... ::<token>:: fence that
         # wraps caller-controlled raw multi-line dumps (NUnit
@@ -407,6 +444,7 @@ runs:
           # step (see the Write-UnityCatastrophicPatternHits call above the
           # Test-Path block); a second call here would emit duplicate
           # `::error::` annotations for the same hits.
+          Write-UnityPackageManagerFailureHints -ResultsDir $dir
           Write-ProvisioningDiagnosticsHint -ResultsDir $dir
           Write-Host "::error::No NUnit results.xml (with a <test-run> element) under $dir -- tests did not run for $label"
           exit 1

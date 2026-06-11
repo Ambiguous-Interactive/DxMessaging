@@ -291,6 +291,7 @@ jobs:
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
         with:
           matrix-note: "perf (organization lock wraps the Unity section)"
+          requested-labels: "self-hosted, Windows, RAM-64GB, fast"
 
       - name: Cache Unity Library and package caches
         uses: actions/cache@v5
