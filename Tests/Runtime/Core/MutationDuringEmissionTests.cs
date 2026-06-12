@@ -527,11 +527,12 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// Snapshot semantics regression mirror for BroadcastWithoutSource. The
-        /// dispatch path previously prefroze per-MessageHandler typed caches
-        /// only inside RunBroadcastWithoutSource (lazily, per priority bucket)
-        /// so a removal performed by an earlier bucket polluted the later
-        /// bucket's snapshot.
+        /// Snapshot semantics regression mirror for BroadcastWithoutSource. A
+        /// historical dispatch path prefroze per-MessageHandler typed caches
+        /// lazily per priority bucket, so a removal performed by an earlier
+        /// bucket polluted the later bucket's snapshot; the flattened dispatch
+        /// resolves every delegate into a frozen array at snapshot build, which
+        /// makes the cross-priority removal unobservable by construction.
         /// </summary>
         [UnityTest]
         public IEnumerator BroadcastWithoutSourceDeregisterAcrossPrioritiesIsHonouredOnCurrentSnapshot()

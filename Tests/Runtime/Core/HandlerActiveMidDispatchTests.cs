@@ -14,14 +14,14 @@ namespace DxMessaging.Tests.Runtime.Core
     /// second delegate on the SAME handler at the SAME priority follows it.
     /// </summary>
     /// <remarks>
-    /// Untargeted dispatch checks <c>active</c> per DELEGATE (the flattened
-    /// snapshot stores one entry per delegate), so the second delegate is
-    /// skipped - "deactivation takes effect immediately", per the documented
-    /// semantics. Targeted and broadcast dispatch still check <c>active</c>
-    /// once per handler bucket entry and then run all of that handler's
-    /// delegates, so the second delegate still fires; those kinds will adopt
-    /// the per-delegate granularity when their dispatch paths are flattened,
-    /// at which point this fixture's expectations unify.
+    /// Every flattened dispatch kind (untargeted, targeted, and broadcast;
+    /// handle and post-process) checks <c>active</c> per DELEGATE - the
+    /// flattened snapshot stores one entry per delegate - so the second
+    /// delegate is skipped: "deactivation takes effect immediately", per the
+    /// documented semantics. This is the consciously unified granularity
+    /// adopted when targeted/broadcast dispatch was flattened (stage 2);
+    /// before that, those kinds checked <c>active</c> once per handler bucket
+    /// entry and the same handler's remaining delegates still fired.
     /// </remarks>
     public sealed class HandlerActiveMidDispatchTests : MessagingTestBase
     {
@@ -82,11 +82,9 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void TargetedSelfDeactivationStillRunsSameHandlerSamePriorityPeer()
+        public void TargetedSelfDeactivationSkipsSameHandlerSamePriorityPeer()
         {
-            GameObject host = new(
-                nameof(TargetedSelfDeactivationStillRunsSameHandlerSamePriorityPeer)
-            );
+            GameObject host = new(nameof(TargetedSelfDeactivationSkipsSameHandlerSamePriorityPeer));
             _spawned.Add(host);
             InstanceId hostId = host;
             MessageHandler handler = new(host) { active = true };
@@ -96,12 +94,16 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int firstCount = 0;
             int secondCount = 0;
+            bool deactivateOnInvoke = true;
             _ = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
                 host,
                 (ref SimpleTargetedMessage _) =>
                 {
                     ++firstCount;
-                    handler.active = false;
+                    if (deactivateOnInvoke)
+                    {
+                        handler.active = false;
+                    }
                 },
                 priority: 0
             );
@@ -116,13 +118,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Assert.AreEqual(1, firstCount, "The deactivating delegate must run once.");
             Assert.AreEqual(
-                1,
+                0,
                 secondCount,
-                "Targeted dispatch (not yet flattened) checks active once per "
-                    + "handler bucket entry, so the same handler's remaining "
-                    + "delegates still run this emission. This pin is expected to "
-                    + "move to the per-delegate semantics when targeted dispatch "
-                    + "is flattened."
+                "Targeted dispatch (flattened) checks active per delegate: a "
+                    + "handler that deactivates itself mid-emission must skip its "
+                    + "own remaining delegates, even at the same priority - the "
+                    + "same granularity as untargeted dispatch."
             );
 
             message.EmitGameObjectTargeted(host, bus);
@@ -132,7 +133,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 "A deactivated handler must not dispatch on the next emission."
             );
 
+            deactivateOnInvoke = false;
             handler.active = true;
+            message.EmitGameObjectTargeted(host, bus);
+            Assert.AreEqual(2, firstCount, "Reactivated handler must dispatch again.");
+            Assert.AreEqual(
+                1,
+                secondCount,
+                "After reactivation both delegates must fire (positive control)."
+            );
+
             token.Dispose();
         }
     }
