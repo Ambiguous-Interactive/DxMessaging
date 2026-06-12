@@ -2,9 +2,9 @@
 title: "DxMessaging Dispatch Hot Path"
 id: "dispatch-hot-path"
 category: "performance"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-05"
-updated: "2026-06-08"
+updated: "2026-06-12"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -107,9 +107,9 @@ The dispatch hot path lives across:
 - `Runtime/Core/Pooling/*.cs` -- anything called from those sites.
 
 Any PR touching these files has its dispatch-throughput numbers regenerated
-automatically by the `perf-numbers.yml` workflow. It re-runs two legs at the
-latest Unity version on every PR change -- PlayMode under Mono (the headline,
-shipped-runtime scope) and a Standalone IL2CPP player (AOT coverage) -- and
+automatically by the `perf-numbers.yml` workflow. It re-runs the single
+published leg at the latest Unity version on every PR change -- a Standalone
+IL2CPP Release player, the headline scope (`Debug.isDebugBuild` false) -- and
 posts the refreshed numbers as a non-blocking sticky PR comment. The comment's
 provenance line carries privacy-safe machine specs (CPU, cores, clock, RAM, GPU,
 OS) gathered by `scripts/unity/collect-machine-specs.ps1`, never a hostname or
@@ -193,14 +193,15 @@ delta comment for before/after numbers rather than a hand-captured table.
 ### Regression analysis: the dispatch number moved, the code did not
 
 An earlier headline of roughly 15-19M emits/sec dropped to roughly 11M. That
-move is mostly the methodology change, not a core code regression: the old
-number was measured under IL2CPP/AOT, the headline is now PlayMode under Mono
-(JIT), and a machine change happened alongside. The Standalone IL2CPP leg
-restores a comparable AOT data point. The memory-reclamation per-emit additions
-(the idle-sweep gate, `TrySweepIdle`, the `Touch()` field write) are cheaply
-gated -- the clock is sampled at most once per `SweepGateMask + 1` emissions --
-so they do not account for the headline difference. When a number moves, confirm
-the backend and machine before treating it as a code regression.
+move was mostly a scope change, not a core code regression: the old number was
+measured under IL2CPP/AOT, the lower one came from the in-editor Mono (JIT)
+scope while that scope was briefly the headline, and a machine change happened
+alongside. The headline is again the Standalone IL2CPP Release player, which
+restores the AOT data point. The memory-reclamation per-emit additions (the
+idle-sweep gate, `TrySweepIdle`, the `Touch()` field write) are cheaply gated
+-- the clock is sampled at most once per `SweepGateMask + 1` emissions -- so
+they do not account for the difference. When a number moves, confirm the scope,
+backend, build configuration, and machine before treating it as a regression.
 
 ## Per-scenario warm-up
 
@@ -216,14 +217,14 @@ mirrors that policy for the comparison bridges. The
 - `Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs` -- the harness.
 - `.github/workflows/perf-numbers.yml` plus
   `scripts/unity/render-perf-deltas.js` -- the PERMANENT regression gate. The
-  workflow runs the PlayMode Mono + Standalone IL2CPP legs at the latest Unity
-  version on every pull_request change, posts the regenerated numbers as a
-  non-blocking sticky PR comment, then runs `render-perf-deltas.js` against the
-  committed master baseline. The script emits `changed=true|false` and
-  `regressed=true|false`; the PR job posts a DxMessaging-only delta comment when
-  either signal is true, then fails after the comment when a gated PlayMode
-  scenario dropped throughput beyond the threshold (default 0.33) or increased
-  allocation. A missing or header-only baseline prints both signals false,
+  workflow runs the single published Standalone IL2CPP Release leg at the
+  latest Unity version on every pull_request change, posts the regenerated
+  numbers as a non-blocking sticky PR comment, then runs
+  `render-perf-deltas.js --scope Standalone` against the committed master
+  baseline. The script emits `changed=true|false` and `regressed=true|false`;
+  the PR job posts a DxMessaging-only delta comment when either signal is true,
+  then fails after the comment when a gated Standalone scenario dropped
+  throughput beyond the threshold (default 0.33) or increased allocation. A missing or header-only baseline prints both signals false,
   skipping the comment/gate gracefully on first rollout. After the PR merges, the
   push run commits `performance.md` AND `perf-baseline.csv` to the default branch
   via GitHub App, skipping with a warning if App credentials are missing or

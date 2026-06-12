@@ -153,3 +153,105 @@ test("readBaselineRows degrades gracefully when the baseline is absent", () => {
   assert.equal(readBaselineRows(""), null);
   assert.equal(readBaselineRows("/nonexistent/baseline.csv"), null);
 });
+
+// --- render-perf-doc.js: comparison-matrix winner bolding ---
+
+const {
+  buildComparisonSections,
+  deriveScope: deriveDocScope
+} = require("../unity/render-perf-doc.js");
+
+function comparisonRow(emitsPerSecond, allocatedBytesDelta = "0") {
+  return {
+    platform: "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+    commit: "abc1234",
+    runIndex: "-1",
+    emitsPerSecond,
+    allocatedBytesDelta,
+    wallClockMs: "5000.000"
+  };
+}
+
+test("buildComparisonSections bolds the fastest tech per scenario column", () => {
+  const byCell = new Map([
+    ["DxMessaging|GlobalToOne", comparisonRow("30000000.000")],
+    ["MessagePipe|GlobalToOne", comparisonRow("90000000.000")],
+    ["CsEvent|GlobalToOne", comparisonRow("90000000.000")],
+    ["DxMessaging|KeyedToOne", comparisonRow("12000000.000", "64")],
+    ["MessagePipe|KeyedToOne", comparisonRow("9000000.000")]
+  ]);
+  const sections = buildComparisonSections(new Map([["Standalone", byCell]]));
+  assert.equal(sections.length, 2);
+  const throughput = sections[0].join("\n");
+
+  // GlobalToOne: MessagePipe and CsEvent tie for fastest; both bold. DxMessaging
+  // is slower and must stay plain.
+  assert.ok(throughput.includes("**90.00 M emits/sec**"));
+  assert.ok(!throughput.includes("**30.00 M emits/sec**"));
+  assert.ok(throughput.includes("30.00 M emits/sec"));
+
+  // KeyedToOne: DxMessaging wins its column even though it lost GlobalToOne.
+  assert.ok(throughput.includes("**12.00 M emits/sec**"));
+  assert.ok(!throughput.includes("**9.00 M emits/sec**"));
+
+  // N/A capability gaps are never bolded.
+  assert.ok(!throughput.includes("**N/A**"));
+
+  // The allocations matrix stays unbolded: byte counts are not a race.
+  const allocations = sections[1].join("\n");
+  assert.ok(!allocations.includes("**"));
+});
+
+test("buildComparisonSections bolds a sole present tech as its column winner", () => {
+  const byCell = new Map([["UnityAtoms|Filtered", comparisonRow("5000000.000")]]);
+  const sections = buildComparisonSections(new Map([["Standalone", byCell]]));
+  const throughput = sections[0].join("\n");
+  assert.ok(throughput.includes("**5.00 M emits/sec**"));
+});
+
+test("render-perf-doc deriveScope reads scope tokens from platform strings", () => {
+  assert.equal(
+    deriveDocScope("Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)"),
+    "Standalone"
+  );
+  assert.equal(
+    deriveDocScope("Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)"),
+    "PlayMode"
+  );
+});
+
+const { blocksEquivalent } = require("../unity/render-perf-doc.js");
+
+test("buildComparisonSections bolds display-precision ties together", () => {
+  // 5.001M and 5.004M both render as "5.00 M emits/sec": visually tied, both bold.
+  const byCell = new Map([
+    ["DxMessaging|GlobalToOne", comparisonRow("5001000.000")],
+    ["MessagePipe|GlobalToOne", comparisonRow("5004000.000")]
+  ]);
+  const sections = buildComparisonSections(new Map([["Standalone", byCell]]));
+  const throughput = sections[0].join("\n");
+  const boldedCells = throughput.match(/\*\*5\.00 M emits\/sec\*\*/g) || [];
+  assert.equal(boldedCells.length, 2);
+});
+
+test("a winner flip within tolerance does not defeat table idempotence", () => {
+  // Same numbers within 2% tolerance, but the bold marker moved to the other
+  // tech: the committed doc must be treated as unchanged (no churn commit).
+  const existing = [
+    "| Technology  | Global broadcast      |",
+    "| ----------- | --------------------- |",
+    "| DxMessaging | **30.10 M emits/sec** |",
+    "| MessagePipe | 30.00 M emits/sec     |"
+  ].join("\n");
+  const candidate = [
+    "| Technology  | Global broadcast      |",
+    "| ----------- | --------------------- |",
+    "| DxMessaging | 30.05 M emits/sec     |",
+    "| MessagePipe | **30.20 M emits/sec** |"
+  ].join("\n");
+  assert.equal(blocksEquivalent(existing, candidate, 0.02), true);
+
+  // A real movement beyond tolerance still reports changed even when bolded.
+  const moved = candidate.replace("**30.20 M emits/sec**", "**45.00 M emits/sec**");
+  assert.equal(blocksEquivalent(existing, moved, 0.02), false);
+});

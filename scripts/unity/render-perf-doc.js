@@ -35,13 +35,15 @@ const REGISTRATION_SCENARIOS = new Set([
   "BroadcastFirstDispatch_Cold"
 ]);
 
-// Execution scopes in HEADLINE order: in-editor PlayMode runs the Mono backend
-// that ships in the supported runtime, so it is the headline scope -- it drives
-// the comparison-matrix scope and the provenance commit. Standalone runs the
-// IL2CPP/AOT backend and provides AOT coverage, then EditMode. Dispatch tables
-// render one section per scope PRESENT in this order; the comparison matrices use
-// the first scope present (PlayMode when available).
-const SCOPE_ORDER = ["PlayMode", "Standalone", "EditMode"];
+// Execution scopes in HEADLINE order: Standalone runs the IL2CPP/AOT backend in
+// a Release player -- the configuration shipped games actually run -- so it is
+// the headline scope and drives the comparison-matrix scope and the provenance
+// commit. In-editor PlayMode (Mono) and EditMode follow when present (CI
+// publishes only the Standalone leg; the renderer stays scope-agnostic so a
+// re-added leg renders without code changes). Dispatch tables render one section
+// per scope PRESENT in this order; the comparison matrices use the first scope
+// present (Standalone when available).
+const SCOPE_ORDER = ["Standalone", "PlayMode", "EditMode"];
 
 // Each execution scope USUALLY runs a specific scripting backend: PlayMode and
 // EditMode run under Mono (the shipped editor/runtime backend), while a Standalone
@@ -198,7 +200,8 @@ function deriveScope(platform) {
 //                        dispatch rows.
 // This replaces the old single-table "prefer Editor" selection: scopes are kept
 // SEPARATE (one dispatch table each) and the comparison matrices later prefer the
-// headline scope (PlayMode). Filtering to the version is by platform substring,
+// headline scope (first SCOPE_ORDER entry present; Standalone IL2CPP when
+// available). Filtering to the version is by platform substring,
 // exactly as before.
 function selectRowsForVersion(rows, platformSubstring) {
   const matching = rows.filter((row) => row.platform.includes(platformSubstring));
@@ -379,7 +382,7 @@ function buildDispatchTable(byScenario) {
 }
 
 // Build the per-scope dispatch sections (label + Platform line + table) in
-// headline scope order (PlayMode first). Returns an array of markdown line-arrays.
+// headline scope order (SCOPE_ORDER; Standalone first). Returns an array of markdown line-arrays.
 function buildDispatchSections(dispatchByScope, scopesPresent) {
   const sections = [];
   for (const scope of scopesPresent) {
@@ -403,7 +406,7 @@ function buildDispatchSections(dispatchByScope, scopesPresent) {
 
 // Choose the scope whose comparison rows feed the cross-library matrices: the
 // first scope in SCOPE_ORDER (headline order) that actually has comparison rows
-// -- PlayMode when present, else Standalone, else EditMode.
+// -- Standalone when present, else PlayMode, else EditMode.
 function preferredComparisonScope(comparisonByScope) {
   for (const scope of SCOPE_ORDER) {
     const byCell = comparisonByScope.get(scope);
@@ -444,6 +447,32 @@ function buildComparisonSections(comparisonByScope) {
     ...COMPARISON_SCENARIO_ORDER.map((key) => COMPARISON_SCENARIO_LABELS[key])
   ];
 
+  // The fastest tech per scenario COLUMN is bolded in the throughput matrix so
+  // the per-category winner is visible at a glance. Ties (same emits/sec) are
+  // all bolded; N/A capability gaps never win; the allocations matrix stays
+  // unbolded (bytes/op is a property, not a race).
+  // Winners are computed at DISPLAY precision (the formatted cell text): two
+  // techs that render identically are visually tied, so both are bolded even
+  // when their raw floats differ in digits the reader cannot see. This also
+  // reduces bold flapping between near-tied techs across runs.
+  const winningThroughputByScenario = new Map();
+  for (const scenarioKey of COMPARISON_SCENARIO_ORDER) {
+    let best = -Infinity;
+    for (const techKey of techsPresent) {
+      const row = byCell.get(`${techKey}|${scenarioKey}`);
+      if (!row) {
+        continue;
+      }
+      const emitsPerSecond = Number.parseFloat(row.emitsPerSecond);
+      if (Number.isFinite(emitsPerSecond) && emitsPerSecond > best) {
+        best = emitsPerSecond;
+      }
+    }
+    if (best > 0) {
+      winningThroughputByScenario.set(scenarioKey, formatThroughput(best));
+    }
+  }
+
   const throughputRows = [header];
   const allocationRows = [header];
   for (const techKey of techsPresent) {
@@ -452,7 +481,13 @@ function buildComparisonSections(comparisonByScope) {
     const allocationCells = [label];
     for (const scenarioKey of COMPARISON_SCENARIO_ORDER) {
       const row = byCell.get(`${techKey}|${scenarioKey}`);
-      throughputCells.push(row ? formatThroughput(row.emitsPerSecond) : "N/A");
+      if (row) {
+        const formatted = formatThroughput(row.emitsPerSecond);
+        const isWinner = winningThroughputByScenario.get(scenarioKey) === formatted;
+        throughputCells.push(isWinner ? `**${formatted}**` : formatted);
+      } else {
+        throughputCells.push("N/A");
+      }
       allocationCells.push(row ? formatBytesPerOp(row) : "N/A");
     }
     throughputRows.push(throughputCells);
@@ -549,8 +584,8 @@ function buildBlock(selection, unityVersion, { runnerDescription = "" } = {}) {
 }
 
 // The provenance commit comes from the first dispatch row in headline scope
-// order (PlayMode first), then SCENARIO_ORDER, so it is deterministic and tied
-// to a real run.
+// order (SCOPE_ORDER; Standalone first), then SCENARIO_ORDER, so it is
+// deterministic and tied to a real run.
 function firstSelectedCommit(selection) {
   for (const scope of selection.scopesPresent) {
     const byScenario = selection.dispatchByScope.get(scope);
@@ -651,7 +686,11 @@ function tableRowCells(line) {
     .replace(/^\|/, "")
     .replace(/\|$/, "")
     .split("|")
-    .map((cell) => cell.trim());
+    // Winner-bold markers (**cell**) are presentation, not data: normalize them
+    // away so a within-tolerance jitter that merely moves the bold between two
+    // near-tied techs does not defeat the idempotence comparison and churn the
+    // committed doc. Numbers inside the markers still tolerance-compare.
+    .map((cell) => cell.trim().replace(/^\*\*(.*)\*\*$/, "$1"));
 }
 
 function isSeparatorCells(cells) {
@@ -805,5 +844,7 @@ if (require.main === module) {
 // (scripts/unity/render-perf-deltas.js).
 module.exports = {
   deriveScope,
-  alignTable
+  alignTable,
+  buildComparisonSections,
+  blocksEquivalent
 };

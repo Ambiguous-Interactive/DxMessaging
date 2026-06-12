@@ -703,10 +703,16 @@ public static class DxmCiTestConfigurator
         // standalone TestRunCallback survive a NON-development (Release) Mono player
         // build; otherwise the stripper can drop the test code from the player.
         PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStrippingLevel.Disabled);
+        // Pin the IL2CPP C++ compiler configuration to Release explicitly. An
+        // ephemeral CI project has no committed default for this setting, and the
+        // published benchmark numbers must come from Release-optimized native code
+        // (matching what a shipped Release player runs), so the pin removes the
+        // variable instead of trusting any implicit default. Harmless under Mono.
+        PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.Release);
 
         // Print the EFFECTIVE Unity config so the artifact log PROVES Mono/IL2CPP
         // + .NET Standard 2.1 + Release for this run.
-        Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(BuildTargetGroup.Standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}");
+        Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(BuildTargetGroup.Standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}, il2cppConfig={PlayerSettings.GetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone)}");
 
         // Write a success marker as the FINAL action so the runner can treat the
         // CONFIGURED PROJECT -- not Unity's process exit code -- as the source of
@@ -754,13 +760,17 @@ function New-StandaloneBuildModifierSource {
     # The Development BuildOptions flag is opt-in only. Unity CI defaults to a true
     # Release/non-development player; the compatibility -ReleasePlayerBuild switch is
     # retained at the script boundary but Release is the unconditional contract.
-    # Every OTHER option (clearing
+    # CRITICAL: the Unity Test Framework's PlayerLauncher hands ModifyOptions a
+    # BuildPlayerOptions that ALREADY carries BuildOptions.Development, so the
+    # Release path must actively CLEAR the flag -- merely not adding it leaves the
+    # player a development build (Debug.isDebugBuild=true; published runs reported
+    # "x64 Debug" platform strings until this strip landed). Every OTHER option (clearing
     # AutoRunPlayer/ConnectToHost/ConnectWithProfiler, |= IncludeTestAssemblies, the
     # DXM_PLAYER_BUILD_PATH redirect, and the PostBuildCleanup exit) is REQUIRED for
     # the split-build test execution and is emitted unconditionally. This is a
     # DOUBLE-quoted here-string so $developmentOption interpolates; the generated C#
     # contains no other dollar signs or backticks, so nothing else needs escaping.
-    $developmentOption = if ($DevelopmentBuild) { '        playerOptions.options |= BuildOptions.Development;' } else { '' }
+    $developmentOption = if ($DevelopmentBuild) { '        playerOptions.options |= BuildOptions.Development;' } else { '        playerOptions.options &= ~BuildOptions.Development;' }
     @"
 using System;
 using System.IO;
