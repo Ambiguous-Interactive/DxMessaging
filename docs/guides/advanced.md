@@ -100,8 +100,7 @@ public sealed class EmissionControl : MonoBehaviour
 
     public void PauseEmissions()
     {
-        messaging.emitMessagesWhenDisabled = false;
-        messaging.ToggleMessageHandler(false); // fully pause emissions
+        messaging.ToggleMessageHandler(false); // explicit calls always win
     }
 
     public void ResumeEmissions()
@@ -116,7 +115,36 @@ Emit while disabled (opt-in)
 ```csharp
 // Keep emitting even when this GameObject is disabled
 messaging.emitMessagesWhenDisabled = true;
-// Now ToggleMessageHandler(false) will be ignored while emitMessagesWhenDisabled is true
+// While the flag is true, enable/disable cycles leave the handler untouched.
+// Explicit ToggleMessageHandler calls still always win:
+messaging.ToggleMessageHandler(false); // suspends delivery despite the flag
+messaging.ToggleMessageHandler(true); // resumes delivery
+```
+
+While `emitMessagesWhenDisabled` is true, the Unity lifecycle never toggles the
+handler: disabling the component keeps emission alive, and re-enabling does not
+revert an explicit `ToggleMessageHandler(false)`. Explicit toggle calls are the
+single source of truth until the flag is cleared. One ordering to know: if the
+lifecycle already deactivated the handler (component disabled with the flag
+clear) and you then set the flag while disabled, re-enabling does not
+reactivate it -- call `ToggleMessageHandler(true)` to resume.
+
+Re-register after release (opt-in)
+
+`MessagingComponent.Release` permanently disposes a listener's token; by default
+the listener stays unregistered across later enable/disable cycles. Override
+`ReregisterOnEnableAfterRelease` on a `MessageAwareComponent` to opt into
+automatic recovery: the next enable re-creates the token and replays
+`RegisterMessageHandlers` exactly once.
+
+```csharp
+using DxMessaging.Unity;
+
+public sealed class RespawningListener : MessageAwareComponent
+{
+    // Default is false (released components stay unregistered).
+    protected override bool ReregisterOnEnableAfterRelease => true;
+}
 ```
 
 String messages: opt-in/out

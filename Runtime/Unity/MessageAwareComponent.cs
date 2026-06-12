@@ -19,6 +19,8 @@ namespace DxMessaging.Unity
     /// - <see cref="Awake"/> creates the token and calls <see cref="RegisterMessageHandlers"/>.
     /// - <see cref="OnEnable"/>/<see cref="OnDisable"/> enable/disable the token when
     ///   <see cref="MessageRegistrationTiedToEnableStatus"/> is true.
+    /// - <see cref="OnEnable"/> can additionally re-create a released token when
+    ///   <see cref="ReregisterOnEnableAfterRelease"/> is overridden to true.
     /// - <see cref="OnDestroy"/> disables the token and releases references.
     /// </remarks>
     /// <example>
@@ -60,6 +62,25 @@ namespace DxMessaging.Unity
         /// If true, will register/unregister handles when the component is enabled or disabled.
         /// </summary>
         protected virtual bool MessageRegistrationTiedToEnableStatus => true;
+
+        /// <summary>
+        /// Controls whether enabling this component re-creates its registration token and replays
+        /// <see cref="RegisterMessageHandlers"/> after the token was released (for example via
+        /// <see cref="MessagingComponent.Release"/>).
+        /// </summary>
+        /// <remarks>
+        /// Default <c>false</c>: once released, the component stays unregistered across
+        /// enable/disable cycles until <see cref="MessagingComponent.Create"/> is invoked manually.
+        /// Override to return <c>true</c> to opt into automatic recovery on the next enable:
+        /// if no live token exists, a fresh one is created and <see cref="RegisterMessageHandlers"/>
+        /// replays exactly once; if a manual <see cref="MessagingComponent.Create"/> already minted
+        /// a fresh token since the release, that token is adopted as-is (the manual creator owns
+        /// staging, so nothing is replayed and nothing double-stages).
+        /// When <see cref="MessageRegistrationTiedToEnableStatus"/> is false, the recovery still
+        /// re-creates and stages but does NOT enable the new token; call
+        /// <see cref="MessageRegistrationToken.Enable"/> yourself, exactly as for the original token.
+        /// </remarks>
+        protected virtual bool ReregisterOnEnableAfterRelease => false;
 
         /// <summary>
         /// If true, registers demo handlers for <see cref="Core.Messages.StringMessage"/> and
@@ -138,9 +159,33 @@ namespace DxMessaging.Unity
 
         /// <summary>
         /// Enables the token if <see cref="MessageRegistrationTiedToEnableStatus"/> is true.
+        /// When <see cref="ReregisterOnEnableAfterRelease"/> is true and the token was released,
+        /// a fresh token is created and <see cref="RegisterMessageHandlers"/> replays first.
         /// </summary>
         protected virtual void OnEnable()
         {
+            if (
+                ReregisterOnEnableAfterRelease
+                && _messageRegistrationToken != null
+                && _messagingComponent != null
+            )
+            {
+                if (_messagingComponent.TryGetToken(this, out MessageRegistrationToken liveToken))
+                {
+                    // A manual MessagingComponent.Create(this) between the release and
+                    // this enable minted a fresh token the field does not know about;
+                    // adopt it so Token/Enable() operate on the live registration. The
+                    // manual creator owns staging in that case, so RegisterMessageHandlers
+                    // is NOT replayed here (no double-staging).
+                    _messageRegistrationToken = liveToken;
+                }
+                else
+                {
+                    _messageRegistrationToken = _messagingComponent.Create(this);
+                    RegisterMessageHandlers();
+                }
+            }
+
             if (MessageRegistrationTiedToEnableStatus)
             {
                 _messageRegistrationToken?.Enable();

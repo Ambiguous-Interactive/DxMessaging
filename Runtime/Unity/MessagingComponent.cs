@@ -227,34 +227,65 @@ namespace DxMessaging.Unity
         /// <summary>
         /// Activates the underlying handler when this component becomes enabled.
         /// </summary>
+        /// <remarks>
+        /// When <see cref="emitMessagesWhenDisabled"/> is true, the Unity enable/disable
+        /// lifecycle leaves the handler untouched in BOTH directions, so an explicit
+        /// <see cref="ToggleMessageHandler"/> decision survives enable/disable cycles.
+        /// </remarks>
         public void OnEnable()
         {
-            ToggleMessageHandler(true);
+            if (!emitMessagesWhenDisabled)
+            {
+                ToggleMessageHandler(true);
+            }
         }
 
         /// <summary>
         /// Deactivates the underlying handler when this component becomes disabled.
         /// </summary>
+        /// <remarks>
+        /// When <see cref="emitMessagesWhenDisabled"/> is true, disabling leaves the handler
+        /// active so the GameObject keeps emitting (and listeners whose tokens are not tied to
+        /// the Unity lifecycle keep receiving).
+        /// </remarks>
         public void OnDisable()
         {
-            ToggleMessageHandler(false);
+            if (!emitMessagesWhenDisabled)
+            {
+                ToggleMessageHandler(false);
+            }
         }
 
         /// <summary>
         /// Explicitly toggle the underlying handler's active state.
         /// </summary>
         /// <param name="newActive">Desired active state.</param>
+        /// <remarks>
+        /// Explicit calls always win: unlike the Unity lifecycle, this method is never gated by
+        /// <see cref="emitMessagesWhenDisabled"/>.
+        /// </remarks>
         public void ToggleMessageHandler(bool newActive)
         {
-            if (!newActive && emitMessagesWhenDisabled)
-            {
-                return;
-            }
-
             if (_messageHandler != null && _messageHandler.active != newActive)
             {
                 _messageHandler.active = newActive;
             }
+        }
+
+        /// <summary>
+        /// Fetches the live (created and not released) registration token for
+        /// <paramref name="listener"/> without the double-create warning
+        /// <see cref="Create(MonoBehaviour)"/> logs.
+        /// </summary>
+        internal bool TryGetToken(MonoBehaviour listener, out MessageRegistrationToken token)
+        {
+            if (listener == null)
+            {
+                token = null;
+                return false;
+            }
+
+            return _registeredListeners.TryGetValue(listener, out token);
         }
 
         /// <summary>
