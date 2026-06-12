@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Each emission now consults a cached per-(bus, message-type, kind) dispatch
+  plan instead of re-resolving interceptor, global accept-all, and
+  post-processor sinks with multiple type-cache lookups per emit. When the
+  plan shows none of those features are present (the common case), a fast
+  emit lane runs only the handle phase: one plan fetch, one validity check,
+  snapshot acquisition, and the flat dispatch loop. Plans are invalidated by
+  a single bus-wide version stamp that every registration, deregistration,
+  interceptor/global/post mutation, sweep/Trim, `ResetState`, and runtime
+  settings reload bumps; mutations performed by handlers mid-emission are
+  re-detected at phase boundaries, so frozen-snapshot semantics, mid-emission
+  registration gating, interceptor re-targeting, and mid-dispatch reset
+  behavior are unchanged (verified emission-for-emission against the previous
+  implementation). Diagnostics mode and `MessagingDebug.enabled` are still
+  read live on every emission. Out-of-Unity rig measurements (directional):
+  one-handler throughput up roughly 1.5-1.7x per kind and four-handler
+  fan-out up ~35%, with feature-heavy paths unchanged within noise and zero
+  steady-state allocations.
+- The internal flat-dispatch shape assertion (`DebugAssertFlatShape`) moved
+  from `DEBUG` builds to the opt-in `DXMESSAGING_INTERNAL_CHECKS` scripting
+  define; it cost a type test per dispatch on Editor hot paths.
 - Dispatch for every message kind (untargeted, targeted, and broadcast;
   handle and post-process phases) now resolves handlers to flat, pooled
   delegate arrays at snapshot-build time instead of walking per-handler
