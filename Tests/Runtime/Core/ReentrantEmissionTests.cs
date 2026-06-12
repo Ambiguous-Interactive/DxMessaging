@@ -844,8 +844,11 @@ namespace DxMessaging.Tests.Runtime.Core
         /// component-1 removes handler-B on component-2 during dispatch. The
         /// snapshot contract requires both handlers to run on the current emission,
         /// then only A on the next. This locks the contract for the
-        /// "single bucket, multi-MessageHandler" case where the snapshot-level
-        /// prefreeze is needed even though there is only one priority bucket.
+        /// "single bucket, multi-MessageHandler" case, which historically
+        /// required a snapshot-level prefreeze pass even with a single
+        /// priority bucket (the flattened dispatch enforces it by
+        /// construction: the resolved frozen array cannot observe the
+        /// mid-emission removal).
         /// </summary>
         [UnityTest]
         public IEnumerator DeregisterCrossMessageHandlerSamePriorityIsHonouredOnCurrentSnapshot(

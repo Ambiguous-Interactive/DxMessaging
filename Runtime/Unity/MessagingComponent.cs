@@ -185,8 +185,9 @@ namespace DxMessaging.Unity
         /// </summary>
         /// <param name="listener">Listener whose token should be released.</param>
         /// <remarks>
-        /// Invokes <see cref="MessageRegistrationToken.Disable"/> and removes the listener from the internal cache.
-        /// Safe to call multiple times.
+        /// Invokes <see cref="MessageRegistrationToken.Dispose"/> and removes the listener from the internal cache after
+        /// disposal succeeds. If token disposal throws, the listener remains cached so release can be retried. Safe to call
+        /// multiple times after a successful release.
         /// </remarks>
         public bool Release(MonoBehaviour listener)
         {
@@ -195,9 +196,10 @@ namespace DxMessaging.Unity
                 return false;
             }
 
-            if (_registeredListeners.Remove(listener, out MessageRegistrationToken token))
+            if (_registeredListeners.TryGetValue(listener, out MessageRegistrationToken token))
             {
-                token?.Disable();
+                token?.Dispose();
+                _ = _registeredListeners.Remove(listener);
                 return true;
             }
 

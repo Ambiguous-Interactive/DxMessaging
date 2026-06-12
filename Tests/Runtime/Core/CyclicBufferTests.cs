@@ -200,6 +200,71 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void ScratchCacheDoesNotRetainReferencesAfterRemovePathsOrClear()
+        {
+            object first = new();
+            object second = new();
+            object missing = new();
+            CyclicBuffer<object> buffer = new(3) { first, second };
+
+            Assert.IsFalse(
+                buffer.Remove(missing),
+                "Control failed: missing item should not remove."
+            );
+            Assert.AreEqual(
+                0,
+                buffer.ScratchCacheCount,
+                "Failed Remove must clear the scratch cache."
+            );
+
+            Assert.AreEqual(
+                0,
+                buffer.RemoveAll(_ => false),
+                "Control failed: RemoveAll should remove nothing."
+            );
+            Assert.AreEqual(
+                0,
+                buffer.ScratchCacheCount,
+                "No-op RemoveAll must clear the scratch cache."
+            );
+
+            Assert.Throws<InvalidOperationException>(
+                () => buffer.Remove(first, new ThrowingEqualityComparer<object>()),
+                "Control failed: throwing comparer must surface its exception."
+            );
+            Assert.AreEqual(
+                0,
+                buffer.ScratchCacheCount,
+                "Throwing Remove comparer must clear the scratch cache."
+            );
+
+            Assert.Throws<InvalidOperationException>(
+                () =>
+                    buffer.RemoveAll(_ =>
+                        throw new InvalidOperationException("Predicate failure.")
+                    ),
+                "Control failed: throwing predicate must surface its exception."
+            );
+            Assert.AreEqual(
+                0,
+                buffer.ScratchCacheCount,
+                "Throwing RemoveAll predicate must clear the scratch cache."
+            );
+
+            Assert.IsTrue(buffer.Remove(first), "Control failed: existing item should remove.");
+            Assert.AreEqual(
+                0,
+                buffer.ScratchCacheCount,
+                "Successful Remove must clear the scratch cache after rebuilding."
+            );
+
+            buffer.Add(first);
+            buffer.Clear();
+            Assert.AreEqual(0, buffer.Count, "Control failed: Clear must empty the buffer.");
+            Assert.AreEqual(0, buffer.ScratchCacheCount, "Clear must clear the scratch cache.");
+        }
+
+        [Test]
         [TestCase(2, new[] { 3, 4 }, Description = "Remove first element from wrapped buffer")]
         [TestCase(3, new[] { 2, 4 }, Description = "Remove middle element from wrapped buffer")]
         [TestCase(4, new[] { 2, 3 }, Description = "Remove last element from wrapped buffer")]
@@ -337,6 +402,19 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Assert.AreEqual(0, buffer.Capacity, "Capacity should remain 0.");
             Assert.AreEqual(0, buffer.Count, "Count should remain 0.");
+        }
+
+        private sealed class ThrowingEqualityComparer<T> : IEqualityComparer<T>
+        {
+            public bool Equals(T x, T y)
+            {
+                throw new InvalidOperationException("Comparer failure.");
+            }
+
+            public int GetHashCode(T obj)
+            {
+                return EqualityComparer<T>.Default.GetHashCode(obj);
+            }
         }
     }
 }

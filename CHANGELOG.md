@@ -7,8 +7,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Removed the internal per-handler dispatch-link machinery (the ten
+  `*DispatchLink` wrapper classes, their lazily-populated slot array, and
+  the outer-generation guard) plus the vestigial non-global prefreeze
+  descriptors that the flattened dispatch had already stopped consuming:
+  snapshots for non-global slots no longer build per-handler bucket entry
+  arrays at all (they dispatch exclusively through the resolved flat
+  delegate arrays and keep count-only buckets for the legacy "found any
+  handlers" reporting), which removes one pooled array rent/fill/return
+  per priority bucket from every snapshot rebuild. No public API or
+  dispatch semantics change (verified emission-for-emission against the
+  previous implementation, including global accept-all mid-emission
+  mutation ordering, trim-then-re-register staleness, reset-mid-dispatch,
+  and zero steady-state allocations).
+- Each emission now consults a cached per-(bus, message-type, kind) dispatch
+  plan instead of re-resolving interceptor, global accept-all, and
+  post-processor sinks with multiple type-cache lookups per emit. When the
+  plan shows none of those features are present (the common case), a fast
+  emit lane runs only the handle phase: one plan fetch, one validity check,
+  snapshot acquisition, and the flat dispatch loop. Plans are invalidated by
+  a single bus-wide version stamp that every registration, deregistration,
+  interceptor/global/post mutation, sweep/Trim, `ResetState`, and runtime
+  settings reload bumps; mutations performed by handlers mid-emission are
+  re-detected at phase boundaries, so frozen-snapshot semantics, mid-emission
+  registration gating, interceptor re-targeting, and mid-dispatch reset
+  behavior are unchanged (verified emission-for-emission against the previous
+  implementation). Diagnostics mode and `MessagingDebug.enabled` are still
+  read live on every emission. Out-of-Unity rig measurements (directional):
+  one-handler throughput up roughly 1.5-1.7x per kind and four-handler
+  fan-out up ~35%, with feature-heavy paths unchanged within noise and zero
+  steady-state allocations.
+- The internal flat-dispatch shape assertion (`DebugAssertFlatShape`) moved
+  from `DEBUG` builds to the opt-in `DXMESSAGING_INTERNAL_CHECKS` scripting
+  define; it cost a type test per dispatch on Editor hot paths.
+- Dispatch for every message kind (untargeted, targeted, and broadcast;
+  handle and post-process phases) now resolves handlers to flat, pooled
+  delegate arrays at snapshot-build time instead of walking per-handler
+  dictionaries and dispatch links per message. Measured on Editor PlayMode
+  Mono x64 versus the previous release: one untargeted handler 17.5M to
+  22.1M emits/sec, four untargeted handlers 3.9M to 20.0M, one targeted
+  listener 11.4M to 15.7M, sixteen targeted listeners 0.73M to 8.7M, one
+  broadcast handler 8.0M to 15.6M, four post-processors 3.3M to 12.6M -
+  all with zero steady-state allocations, an 8% faster cold registration
+  flood, and unchanged dispatch semantics (snapshot freezing, priority and
+  registration order, mid-emission registration visibility). One deliberate
+  refinement: a handler that deactivates itself mid-emission now skips its
+  own remaining delegates in that emission for every kind (the active check
+  runs per delegate instead of once per handler), matching the documented
+  immediate-deactivation semantics. Mid-emission registration gating is
+  also now uniform: a delegate registered during an emission never fires in
+  that emission, for every kind and every registration shape. Previously a
+  handler registering a different-shaped delegate for the same type on its
+  own MessageHandler could fire it in the same emission, depending on
+  unrelated handler counts.
+
 ### Fixed
 
+- Token cleanup now clears token-local diagnostics and stale teardown state:
+  `UnregisterAll()`, `Dispose()`, final-handle removal, released
+  `MessagingComponent` tokens, and disposed registration leases no longer
+  retain metadata, call counts, emission history, or stale deregistration
+  closures that could report old registrations or over-deregister later.
+  Failed `Enable()` replays now roll back partial registrations before
+  throwing the original failure; failed active `RetargetMessageBus()` replays
+  roll back partial new-bus registrations and restore previous-bus
+  registrations that are not still live behind a failed rollback cleanup.
+  Deregistration actions that throw before cleanup remain retryable instead
+  of being forgotten, including through owning registration leases and
+  `MessagingComponent.Release()` retries. `ActivateOnBuild` failures now
+  clean up the partially built lease before throwing again; if cleanup cannot
+  complete, `MessageRegistrationBuildException` exposes the retryable lease
+  so callers can dispose it after resolving the cleanup failure.
+- Interceptors registered through a `MessageRegistrationToken` bound to a
+  custom bus (`MessageRegistrationToken.Create(handler, customBus)`) now land
+  on that bus. `RegisterUntargetedInterceptor`, `RegisterTargetedInterceptor`,
+  and `RegisterBroadcastInterceptor` previously dropped the token's bus and
+  registered on the handler's default (typically global) bus, so they never
+  saw custom-bus emissions and silently intercepted global traffic instead.
+  The fix also covers registrations staged while disabled (they activate on
+  the token's bus at `Enable()` time) and `RetargetMessageBus`, which now
+  re-routes interceptors along with every other registration kind.
+- Registering or deregistering a handler mid-emission and then emitting the
+  same message type reentrant-style from inside a handler no longer corrupts
+  the in-flight dispatch.
+  The nested emission's snapshot rebuild previously released the pooled
+  arrays the outer emission was still iterating
+  (`NullReferenceException` / `ArgumentOutOfRangeException`, or silent
+  cross-dispatch aliasing at deeper nesting). Displaced snapshots are now
+  released only after the outermost dispatch exits, each emission keeps its
+  own frozen-cache identity across nested emissions, and the broadcast
+  priority walk tolerates nested membership churn.
+- A `MessageRegistrationLease` whose `OnActivate` callback throws no longer
+  wedges its registrations. The lease previously recorded itself as inactive
+  while the registrations stayed live, so `Deactivate()` and `Dispose()`
+  silently refused to release them. The lease now marks itself active before
+  invoking the callback: the exception still propagates, and standard
+  `Deactivate()`/`Dispose()` teardown fully releases the registrations.
+- Calling `DxMessagingStaticState.Reset` (or resetting a bus) from inside a
+  message handler no longer crashes the in-flight emission. Targeted and
+  broadcast dispatch previously returned the active emission's pooled snapshot
+  arrays mid-iteration (`NullReferenceException` /
+  `ArgumentOutOfRangeException`); the teardown is now deferred until the
+  outermost dispatch exits, mirroring the existing `Trim` deferral, and the
+  remaining handlers in that emission short-circuit cleanly.
+- Equal-priority handlers now always dispatch in live registration order. The
+  documented "same priority uses registration order" contract previously broke
+  after remove/re-register churn (a new handler could dispatch in a removed
+  handler's old position), after `Disable()`/`Enable()` cycles (replay order
+  permuted), and across components (a newly created component could dispatch
+  in a destroyed component's old position). Handler caches, bus-side priority
+  buckets, and token replay now preserve insertion order explicitly.
+- Targeted and broadcast post-processors now follow an interceptor-rewritten
+  target/source. When an interceptor redirects a message via its
+  `ref InstanceId` parameter, post-processors registered for the rewritten id
+  run (previously the broadcast path never re-resolved the rewritten source,
+  and the targeted path preferred a stale pre-interceptor snapshot, so the
+  rewritten id's post-processors were silently skipped).
+- `DiagnosticsTarget` gating now matches its documented semantics. Player
+  builds previously enabled diagnostics for the `Editor` flag and ignored the
+  `Runtime` flag, and the Editor enabled diagnostics when only `Runtime` was
+  set. `Editor` now enables diagnostics only inside the Unity Editor,
+  `Runtime` only in player/runtime builds, and `All` in both, exactly as the
+  diagnostics guide describes.
 - Analyzer payload builds are now reproducible under the pinned
   `SourceGenerators/global.json` SDK. The shipped analyzer and source-generator
   DLLs no longer embed source revision or PDB metadata, CI double-builds them
@@ -28,7 +150,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provider-backed emit helpers now route sourced, targeted, and untargeted messages through the resolved `IMessageBus`, so custom bus and DI-provider callers no longer fall back to the global bus for interface-shaped message dispatch.
 - Standalone and IL2CPP player builds now compile. The dispatch hot path performs reinterpret casts that previously used `System.Runtime.CompilerServices.Unsafe`; the Unity Editor supplies that type, but player builds under the .NET Standard 2.0 profile do not, so editmode and playmode passed while standalone IL2CPP failed to build with `CS0103: The name 'Unsafe' does not exist in the current context`. Those calls now route through Unity's built-in `UnsafeUtility` (in `UnityEngine.CoreModule`), which resolves identically in the Editor and every player scripting backend. The change preserves the existing zero-allocation dispatch behavior and adds no package dependency or shipped assembly.
 - Shipped source generators now compile against Unity 2021-compatible Roslyn 3.8 APIs and use the classic `ISourceGenerator` entry point, preventing Unity 2021.3 analyzer-host load failures (`CS8032`) while preserving the generated message-id and auto-constructor output for newer Unity editors.
-- Unity CI editor provisioning now self-heals managed partial or manually copied installs through explicit provisioning profiles: edit/play/release/benchmark jobs verify only the editor, standalone jobs verify `windows-il2cpp`, Android tooling is opt-in, and missing profile-required module groups trigger quarantine plus fresh Unity CLI reinstall instead of failing later in setup.
 - `MessageRegistrationToken.RemoveRegistration(handle)` now compiles cleanly on Unity 2021 while preserving the existing behavior of removing the active deregistration, staged registration, metadata, and diagnostic call-count entries.
 - Unity 2021.3 no longer aborts compilation with _Multiple precompiled assemblies with the same name_ (`PrecompiledAssemblyException`). The shipped Roslyn analyzer and source-generator DLLs are now excluded from every build platform (the Editor included) and activated solely by the `RoslynAnalyzer` asset label, so Unity treats them as compiler analyzers rather than managed precompiled assemblies that collide with the copy placed in the consuming project's `Assets/`. Generated message-id and auto-constructor output is unchanged.
 - The dependency-injection sample README (`Samples~/DI`) now links to the real `Runtime/Unity/Integrations/VContainer/VContainerRegistrationExtensions.cs`; the previous link dropped the `VContainer/` folder and resolved to a missing file.

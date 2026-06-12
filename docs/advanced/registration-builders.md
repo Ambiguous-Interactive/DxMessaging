@@ -202,6 +202,7 @@ lease.Deactivate();
 
 - `Activate()` throws `ObjectDisposedException` if called after disposal
 - `Deactivate()` is safe to call multiple times or after disposal
+- If `ActivateOnBuild` activation throws, the builder disposes the partially constructed lease before throwing again. If cleanup itself cannot finish because deregistration remains retryable, `Build()` throws `MessageRegistrationBuildException`; dispose `exception.Lease` after resolving the cleanup failure.
 
 ### Dispose Pattern
 
@@ -217,7 +218,10 @@ Disposal sequence:
 
 1. Calls `Deactivate()` if active (triggers `OnDeactivate`)
 1. Invokes `OnDispose` callback
-1. Marks lease as disposed
+1. Clears the owned token's staged registrations and token-local diagnostics
+1. Marks the lease as disposed after token cleanup succeeds
+
+Token cleanup still runs when a lifecycle callback throws; `Dispose()` rethrows the first lifecycle exception after cleanup. If the bus deregistration action itself throws before cleanup, the failed token cleanup remains retryable by calling `Dispose()` again.
 
 ---
 

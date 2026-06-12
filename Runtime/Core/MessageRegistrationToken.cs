@@ -2,6 +2,7 @@ namespace DxMessaging.Core
 {
     using System;
     using System.Collections.Generic;
+    using System.Runtime.ExceptionServices;
     using DataStructure;
     using Diagnostics;
     using MessageBus;
@@ -58,8 +59,23 @@ namespace DxMessaging.Core
         private readonly MessageHandler _messageHandler;
 
         private readonly Dictionary<MessageRegistrationHandle, Action> _registrations = new();
-        private readonly Dictionary<MessageRegistrationHandle, Action> _deregistrations = new();
+
+        // Staged-registration handles in registration order. Dictionary
+        // enumeration order is NOT stable across Remove/Add churn, so Enable()
+        // (and RetargetMessageBus) replay staged registrations by walking this
+        // list instead of _registrations.Values; otherwise a Disable()/Enable()
+        // cycle after churn would silently permute the documented
+        // "same priority uses registration order" dispatch contract.
+        // Invariant: contains exactly the keys of _registrations, in the order
+        // InternalRegister staged them (handle ids are monotonically
+        // increasing, so this list is also sorted by handle id).
+        private readonly List<MessageRegistrationHandle> _registrationOrder = new();
+        private readonly Dictionary<
+            MessageRegistrationHandle,
+            PendingDeregistration
+        > _deregistrations = new();
         private readonly List<Action> _actionQueue = new();
+        private readonly List<MessageRegistrationHandle> _handleQueue = new();
         internal readonly Dictionary<
             MessageRegistrationHandle,
             MessageRegistrationMetadata
@@ -1718,7 +1734,12 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ => _messageHandler.RegisterUntargetedInterceptor(interceptor, priority),
+                _ =>
+                    _messageHandler.RegisterUntargetedInterceptor(
+                        interceptor,
+                        priority: priority,
+                        messageBus: _messageBus
+                    ),
                 () =>
                     new MessageRegistrationMetadata(
                         null,
@@ -1748,7 +1769,12 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ => _messageHandler.RegisterBroadcastInterceptor(interceptor, priority),
+                _ =>
+                    _messageHandler.RegisterBroadcastInterceptor(
+                        interceptor,
+                        priority: priority,
+                        messageBus: _messageBus
+                    ),
                 () =>
                     new MessageRegistrationMetadata(
                         null,
@@ -1778,7 +1804,12 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ => _messageHandler.RegisterTargetedInterceptor(interceptor, priority),
+                _ =>
+                    _messageHandler.RegisterTargetedInterceptor(
+                        interceptor,
+                        priority: priority,
+                        messageBus: _messageBus
+                    ),
                 () =>
                     new MessageRegistrationMetadata(
                         null,
@@ -1804,6 +1835,7 @@ namespace DxMessaging.Core
                 MessageRegistrationHandle.CreateMessageRegistrationHandle();
 
             _registrations[handle] = Registration;
+            _registrationOrder.Add(handle);
             _metadata[handle] = metadataProducer();
 
             // Generally, registrations should take place before all calls to enable. Just in case, though...
@@ -1818,7 +1850,7 @@ namespace DxMessaging.Core
             void Registration()
             {
                 Action actualDeregistration = registerAndGetDeregistration(handle);
-                _deregistrations[handle] = actualDeregistration;
+                AddDeregistration(handle, actualDeregistration);
             }
         }
 
@@ -1843,12 +1875,15 @@ namespace DxMessaging.Core
 
             if (_registrations is { Count: > 0 })
             {
-                _actionQueue.Clear();
-                _actionQueue.AddRange(_registrations.Values);
-                foreach (Action action in _actionQueue)
-                {
-                    action();
-                }
+                // Replay staged registrations in original registration order
+                // (via _registrationOrder) rather than in
+                // _registrations.Values enumeration order, which permutes
+                // after Remove/Add churn. This preserves the documented
+                // equal-priority "registration order" dispatch contract across
+                // Disable()/Enable() cycles. Snapshot into _actionQueue first
+                // so replay tolerates re-entrant registration mutation.
+                QueueRegistrationsInOrder();
+                InvokeRegistrationQueueWithRollback();
             }
 
             _enabled = true;
@@ -1867,28 +1902,21 @@ namespace DxMessaging.Core
         /// </example>
         public void Disable()
         {
-            if (!_enabled)
+            if (!_enabled && _deregistrations.Count == 0)
             {
                 return;
             }
 
-            if (_deregistrations is { Count: > 0 })
+            Exception deregistrationException = InvokeDeregistrationQueue();
+            _enabled = _deregistrations.Count > 0;
+            if (deregistrationException != null)
             {
-                _actionQueue.Clear();
-                _actionQueue.AddRange(_deregistrations.Values);
-                foreach (Action deregistration in _actionQueue)
-                {
-                    deregistration?.Invoke();
-                }
+                ExceptionDispatchInfo.Capture(deregistrationException).Throw();
             }
-
-            // ReSharper disable once ForCanBeConvertedToForeach
-
-            _enabled = false;
         }
 
         /// <summary>
-        /// Disables the token and clears all registrations and de-registrations.
+        /// Disables the token and clears all registrations, de-registrations, and token-local diagnostic state.
         /// </summary>
         /// <example>
         /// <code>
@@ -1899,19 +1927,19 @@ namespace DxMessaging.Core
         /// </example>
         public void UnregisterAll()
         {
-            if (_deregistrations is { Count: > 0 })
+            Exception deregistrationException = InvokeDeregistrationQueue();
+            if (deregistrationException == null)
             {
-                _actionQueue.Clear();
-                _actionQueue.AddRange(_deregistrations.Values);
-                foreach (Action deregistration in _actionQueue)
-                {
-                    deregistration?.Invoke();
-                }
+                _enabled = false;
+                _registrations?.Clear();
+                _registrationOrder?.Clear();
+                ClearDiagnosticState();
+                return;
             }
 
-            _enabled = false;
-            _registrations?.Clear();
-            _deregistrations?.Clear();
+            _enabled = _deregistrations.Count > 0;
+            PruneRegistrationStateToFailedDeregistrations();
+            ExceptionDispatchInfo.Capture(deregistrationException).Throw();
         }
 
         /// <summary>
@@ -1938,27 +1966,333 @@ namespace DxMessaging.Core
                 return;
             }
 
+            IMessageBus previousMessageBus = _messageBus;
+            List<MessageRegistrationHandle> activeRetargetHandles = rebindActiveRegistrations
+                ? new List<MessageRegistrationHandle>(_deregistrations.Keys)
+                : null;
             if (rebindActiveRegistrations)
             {
-                _actionQueue.Clear();
-                _actionQueue.AddRange(_deregistrations.Values);
-                foreach (Action deregistration in _actionQueue)
+                Exception deregistrationException = InvokeDeregistrationQueue();
+                if (deregistrationException != null)
                 {
-                    deregistration?.Invoke();
+                    RestoreMissingRegistrationsAfterRetargetDeregistrationFailure(
+                        previousMessageBus,
+                        activeRetargetHandles
+                    );
+                    _enabled = _deregistrations.Count > 0;
+                    ExceptionDispatchInfo.Capture(deregistrationException).Throw();
                 }
+
+                _enabled = false;
             }
 
             _messageBus = messageBus;
 
             if (rebindActiveRegistrations && _registrations is { Count: > 0 })
             {
-                _actionQueue.Clear();
-                _actionQueue.AddRange(_registrations.Values);
-                foreach (Action registration in _actionQueue)
+                // Mirror Enable(): rebind in original registration order so the
+                // equal-priority dispatch order survives a bus retarget.
+                QueueRegistrationsInOrder();
+                try
                 {
-                    registration?.Invoke();
+                    InvokeRegistrationQueueWithRollback();
+                    _enabled = true;
+                }
+                catch (Exception exception)
+                {
+                    RestoreRegistrationsAfterRetargetFailure(previousMessageBus);
+                    ExceptionDispatchInfo.Capture(exception).Throw();
+                    throw;
                 }
             }
+        }
+
+        private void AddDeregistration(MessageRegistrationHandle handle, Action deregistration)
+        {
+            if (!_deregistrations.TryGetValue(handle, out PendingDeregistration pending))
+            {
+                pending = new PendingDeregistration();
+                _deregistrations[handle] = pending;
+            }
+
+            pending.Add(deregistration);
+        }
+
+        private Dictionary<MessageRegistrationHandle, int> SnapshotDeregistrationCounts()
+        {
+            Dictionary<MessageRegistrationHandle, int> snapshot = new(_deregistrations.Count);
+            foreach (
+                KeyValuePair<
+                    MessageRegistrationHandle,
+                    PendingDeregistration
+                > entry in _deregistrations
+            )
+            {
+                snapshot[entry.Key] = entry.Value.Count;
+            }
+
+            return snapshot;
+        }
+
+        private void RestoreMissingRegistrationsAfterRetargetDeregistrationFailure(
+            IMessageBus previousMessageBus,
+            List<MessageRegistrationHandle> activeRetargetHandles
+        )
+        {
+            _messageBus = previousMessageBus;
+            if (activeRetargetHandles == null || activeRetargetHandles.Count == 0)
+            {
+                return;
+            }
+
+            QueueMissingRegistrationsInOrder(activeRetargetHandles);
+            try
+            {
+                InvokeRegistrationQueueWithRollback();
+            }
+            catch (Exception exception)
+            {
+                if (MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Error,
+                        "Failed to restore registrations after retarget deregistration failure: {0}",
+                        exception
+                    );
+                }
+            }
+        }
+
+        private void RestoreRegistrationsAfterRetargetFailure(IMessageBus previousMessageBus)
+        {
+            _messageBus = previousMessageBus;
+            if (_registrations.Count == 0)
+            {
+                _enabled = false;
+                return;
+            }
+
+            QueueRegistrationsWithoutRetryableDeregistrationsInOrder();
+            try
+            {
+                InvokeRegistrationQueueWithRollback();
+                _enabled = true;
+            }
+            catch (Exception restoreException)
+            {
+                _enabled = _deregistrations.Count > 0;
+                if (MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Error,
+                        "Failed to restore registrations after retarget replay failure: {0}",
+                        restoreException
+                    );
+                }
+            }
+        }
+
+        private void QueueRegistrationsInOrder()
+        {
+            _actionQueue.Clear();
+            int registrationCount = _registrationOrder.Count;
+            for (int i = 0; i < registrationCount; ++i)
+            {
+                if (_registrations.TryGetValue(_registrationOrder[i], out Action registration))
+                {
+                    _actionQueue.Add(registration);
+                }
+            }
+        }
+
+        private void QueueMissingRegistrationsInOrder(
+            List<MessageRegistrationHandle> activeRetargetHandles
+        )
+        {
+            _actionQueue.Clear();
+            int registrationCount = _registrationOrder.Count;
+            for (int i = 0; i < registrationCount; ++i)
+            {
+                MessageRegistrationHandle handle = _registrationOrder[i];
+                if (
+                    !activeRetargetHandles.Contains(handle)
+                    || _deregistrations.ContainsKey(handle)
+                    || !_registrations.TryGetValue(handle, out Action registration)
+                )
+                {
+                    continue;
+                }
+
+                _actionQueue.Add(registration);
+            }
+        }
+
+        private void QueueRegistrationsWithoutRetryableDeregistrationsInOrder()
+        {
+            _actionQueue.Clear();
+            int registrationCount = _registrationOrder.Count;
+            for (int i = 0; i < registrationCount; ++i)
+            {
+                MessageRegistrationHandle handle = _registrationOrder[i];
+                if (
+                    _deregistrations.ContainsKey(handle)
+                    || !_registrations.TryGetValue(handle, out Action registration)
+                )
+                {
+                    continue;
+                }
+
+                _actionQueue.Add(registration);
+            }
+        }
+
+        private void InvokeActionQueue()
+        {
+            try
+            {
+                foreach (Action action in _actionQueue)
+                {
+                    action?.Invoke();
+                }
+            }
+            finally
+            {
+                _actionQueue.Clear();
+            }
+        }
+
+        private Exception InvokeDeregistrationQueue(
+            Dictionary<MessageRegistrationHandle, int> baselineCounts = null
+        )
+        {
+            if (_deregistrations.Count == 0)
+            {
+                return null;
+            }
+
+            bool scopedToAddedDeregistrations = baselineCounts != null;
+            _handleQueue.Clear();
+            _handleQueue.AddRange(_deregistrations.Keys);
+            Exception firstException = null;
+            try
+            {
+                foreach (MessageRegistrationHandle handle in _handleQueue)
+                {
+                    if (!_deregistrations.TryGetValue(handle, out PendingDeregistration pending))
+                    {
+                        continue;
+                    }
+
+                    int startIndex = 0;
+                    if (scopedToAddedDeregistrations)
+                    {
+                        if (baselineCounts.TryGetValue(handle, out int baselineCount))
+                        {
+                            startIndex = baselineCount;
+                        }
+
+                        if (startIndex >= pending.Count)
+                        {
+                            continue;
+                        }
+                    }
+
+                    Exception exception = pending.InvokeFrom(startIndex);
+                    if (exception != null)
+                    {
+                        firstException ??= exception;
+                    }
+
+                    if (pending.Count == 0)
+                    {
+                        _deregistrations.Remove(handle);
+                    }
+                }
+            }
+            finally
+            {
+                _handleQueue.Clear();
+            }
+
+            return firstException;
+        }
+
+        private void InvokeRegistrationQueueWithRollback()
+        {
+            Dictionary<MessageRegistrationHandle, int> rollbackBaseline =
+                SnapshotDeregistrationCounts();
+            try
+            {
+                InvokeActionQueue();
+            }
+            catch (Exception exception)
+            {
+                RollBackDeregistrationsAfterRegistrationFailure(rollbackBaseline);
+                _enabled = _deregistrations.Count > 0;
+                ExceptionDispatchInfo.Capture(exception).Throw();
+                throw;
+            }
+        }
+
+        private void RollBackDeregistrationsAfterRegistrationFailure(
+            Dictionary<MessageRegistrationHandle, int> rollbackBaseline
+        )
+        {
+            if (_deregistrations.Count == 0)
+            {
+                return;
+            }
+
+            Exception rollbackException = InvokeDeregistrationQueue(rollbackBaseline);
+            if (rollbackException != null && MessagingDebug.enabled)
+            {
+                MessagingDebug.Log(
+                    LogLevel.Error,
+                    "Failed to roll back partial registration after token replay failure: {0}",
+                    rollbackException
+                );
+            }
+        }
+
+        private void ClearDiagnosticState()
+        {
+            _metadata.Clear();
+            _callCounts.Clear();
+            _emissionBuffer.Clear();
+        }
+
+        private void PruneRegistrationStateToFailedDeregistrations()
+        {
+            for (int i = _registrationOrder.Count - 1; i >= 0; --i)
+            {
+                MessageRegistrationHandle handle = _registrationOrder[i];
+                if (_deregistrations.ContainsKey(handle))
+                {
+                    continue;
+                }
+
+                RemoveRegistrationState(handle);
+            }
+
+            _emissionBuffer.Clear();
+            if (_registrations.Count == 0)
+            {
+                ClearDiagnosticState();
+            }
+        }
+
+        private bool RemoveRegistrationState(MessageRegistrationHandle handle)
+        {
+            bool removedRegistration = _registrations.Remove(handle);
+            _ = _registrationOrder.Remove(handle);
+            _ = _metadata.Remove(handle);
+            _ = _callCounts.Remove(handle);
+            if (removedRegistration && _registrations.Count == 0)
+            {
+                ClearDiagnosticState();
+            }
+
+            return removedRegistration;
         }
 
         /// <summary>
@@ -1973,17 +2307,61 @@ namespace DxMessaging.Core
         /// </example>
         public void RemoveRegistration(MessageRegistrationHandle handle)
         {
-            if (_deregistrations.Remove(handle, out Action deregistrationAction))
+            if (_deregistrations.TryGetValue(handle, out PendingDeregistration pending))
             {
-                deregistrationAction?.Invoke();
+                Exception deregistrationException = pending.InvokeFrom(0);
+                if (pending.Count == 0)
+                {
+                    _deregistrations.Remove(handle);
+                }
+
+                if (deregistrationException != null)
+                {
+                    ExceptionDispatchInfo.Capture(deregistrationException).Throw();
+                }
             }
 
             // Drop the matching staged registration and metadata so a later
             // Disable()/Enable() cycle does not silently re-register the
             // handler we were just asked to remove.
-            _ = _registrations?.Remove(handle);
-            _ = _metadata?.Remove(handle);
-            _ = _callCounts?.Remove(handle);
+            RemoveRegistrationState(handle);
+        }
+
+        private sealed class PendingDeregistration
+        {
+            private readonly List<Action> _actions = new();
+
+            internal int Count => _actions.Count;
+
+            internal void Add(Action action)
+            {
+                _actions.Add(action);
+            }
+
+            internal Exception InvokeFrom(int startIndex)
+            {
+                if (startIndex < 0)
+                {
+                    startIndex = 0;
+                }
+
+                Exception firstException = null;
+                for (int i = startIndex; i < _actions.Count; )
+                {
+                    try
+                    {
+                        _actions[i]?.Invoke();
+                        _actions.RemoveAt(i);
+                    }
+                    catch (Exception exception)
+                    {
+                        firstException ??= exception;
+                        ++i;
+                    }
+                }
+
+                return firstException;
+            }
         }
 
         /// <summary>
@@ -2052,7 +2430,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Removes all staged registrations and releases references to the handler.
+        /// Removes all staged registrations and clears token-local diagnostic state.
         /// </summary>
         public void Dispose()
         {

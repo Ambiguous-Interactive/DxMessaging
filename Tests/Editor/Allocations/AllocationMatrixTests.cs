@@ -133,7 +133,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         private static readonly InstanceId StableSource = new InstanceId(0x4242_4242);
         private static readonly InstanceId HandlerOwner = new InstanceId(0x6363_6363);
 
-        private DiagnosticsTarget _savedGlobalDiagnostics;
+        private DiagnosticsScope _diagnosticsScope;
         private Action<LogLevel, string> _savedLogFunction;
 
         protected override bool MessagingDebugEnabled => false;
@@ -141,7 +141,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         [SetUp]
         public void CaptureDiagnosticsState()
         {
-            _savedGlobalDiagnostics = IMessageBus.GlobalDiagnosticsTargets;
+            _diagnosticsScope = new DiagnosticsScope();
             _savedLogFunction = MessagingDebug.LogFunction;
             // Stray Debug.Log calls would allocate strings and contaminate the
             // assertion. Mute the messaging logger for the duration of the
@@ -152,7 +152,8 @@ namespace DxMessaging.Tests.Editor.Allocations
         [TearDown]
         public void RestoreDiagnosticsState()
         {
-            IMessageBus.GlobalDiagnosticsTargets = _savedGlobalDiagnostics;
+            _diagnosticsScope?.Dispose();
+            _diagnosticsScope = null;
             MessagingDebug.LogFunction = _savedLogFunction;
         }
 

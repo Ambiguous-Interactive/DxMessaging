@@ -28,10 +28,9 @@ namespace DxMessaging.Core.Internal
     /// surface picks up no new members from the interface retrofit.
     /// </para>
     /// <para>
-    /// Deliberately a thin, marker-style surface: only the six members that
+    /// Deliberately a thin, marker-style surface: only the five members that
     /// staged dispatch (<see cref="Version"/>, <see cref="LastSeenVersion"/>,
-    /// <see cref="LastSeenEmissionId"/>,
-    /// <see cref="PrefreezeInvocationCount"/>) and eviction
+    /// <see cref="LastSeenEmissionId"/>) and eviction
     /// (<see cref="IsEmpty"/>, <see cref="Reset"/>) require. The
     /// <c>entries</c> dictionary and <c>cache</c> list are NOT exposed
     /// because their generic shape is the very thing this interface erases;
@@ -68,15 +67,6 @@ namespace DxMessaging.Core.Internal
         long LastSeenEmissionId { get; set; }
 
         /// <summary>
-        /// Number of invocations observed during the prefreeze window for
-        /// the most recent dispatch. Mirrors
-        /// <c>HandlerActionCache&lt;TDelegate&gt;.prefreezeInvocationCount</c>.
-        /// Read-only on this surface; the cache's own dispatchers maintain
-        /// the value.
-        /// </summary>
-        int PrefreezeInvocationCount { get; }
-
-        /// <summary>
         /// True iff the cache currently retains zero entries. Cheap (single
         /// integer compare against <c>entries.Count</c>); used by the
         /// eviction sweep so empty caches can be reclaimed without walking
@@ -87,7 +77,7 @@ namespace DxMessaging.Core.Internal
         /// <summary>
         /// Eviction-driven full clear. Empties the entries dictionary and
         /// the flat cache list, resets <see cref="LastSeenVersion"/> /
-        /// <see cref="LastSeenEmissionId"/> / <c>prefreezeInvocationCount</c>,
+        /// <see cref="LastSeenEmissionId"/>,
         /// and bumps <see cref="Version"/> as the LAST step so any captured
         /// dispatch closure that observed the prior version detects
         /// invalidation. Idempotent.
@@ -109,8 +99,8 @@ namespace DxMessaging.Core.Internal
         int MessageTypeIndex { get; }
 
         /// <summary>
-        /// True when the last sweep found no live typed slots or dispatch links
-        /// worth retaining and the owning <c>MessageCache</c> entry can be
+        /// True when the last sweep found no live typed slots worth
+        /// retaining and the owning <c>MessageCache</c> entry can be
         /// removed.
         /// </summary>
         bool MarkedForOuterRemoval { get; }
@@ -168,12 +158,6 @@ namespace DxMessaging.Core.Internal
     /// the legacy named fields were deleted and the
     /// <c>_slots[<see cref="TypedSlotIndex.Length"/>]</c> array the
     /// storage owner.
-    /// </para>
-    /// <para>
-    /// <see cref="TypedHandler{T}"/> owns a
-    /// <c>_dispatchLinks[<see cref="TypedDispatchLinkIndex.Length"/>]</c>
-    /// array as a plain <c>object[]</c> field. It is not a slot type; the
-    /// legacy named dispatch-link fields were removed.
     /// </para>
     /// </remarks>
     /// <typeparam name="T">

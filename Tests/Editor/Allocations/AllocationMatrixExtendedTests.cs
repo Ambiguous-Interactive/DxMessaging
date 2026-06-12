@@ -29,7 +29,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         private static readonly InstanceId StableSource = new InstanceId(0x6464_3232);
         private static readonly InstanceId HandlerOwner = new InstanceId(0x1313_8989);
 
-        private DiagnosticsTarget _savedGlobalDiagnostics;
+        private DiagnosticsScope _diagnosticsScope;
         private Action<LogLevel, string> _savedLogFunction;
 
         protected override bool MessagingDebugEnabled => false;
@@ -37,16 +37,16 @@ namespace DxMessaging.Tests.Editor.Allocations
         [SetUp]
         public void CaptureDiagnosticsState()
         {
-            _savedGlobalDiagnostics = IMessageBus.GlobalDiagnosticsTargets;
+            _diagnosticsScope = new DiagnosticsScope(diagnosticsTargets: DiagnosticsTarget.Off);
             _savedLogFunction = MessagingDebug.LogFunction;
             MessagingDebug.LogFunction = null;
-            IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
         }
 
         [TearDown]
         public void RestoreDiagnosticsState()
         {
-            IMessageBus.GlobalDiagnosticsTargets = _savedGlobalDiagnostics;
+            _diagnosticsScope?.Dispose();
+            _diagnosticsScope = null;
             MessagingDebug.LogFunction = _savedLogFunction;
         }
 

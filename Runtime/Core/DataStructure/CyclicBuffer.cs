@@ -77,6 +77,8 @@ namespace DxMessaging.Core.DataStructure
         private readonly List<T> _cache;
         private int _position;
 
+        internal int ScratchCacheCount => _cache.Count;
+
         /// <summary>
         /// Accesses the element at the specified chronological index (0 = oldest).
         /// </summary>
@@ -180,30 +182,37 @@ namespace DxMessaging.Core.DataStructure
             comparer ??= EqualityComparer<T>.Default;
 
             _cache.Clear();
-            for (int i = 0; i < Count; ++i)
+            try
             {
-                _cache.Add(_buffer[AdjustedIndexFor(i)]);
-            }
-
-            // Find and remove the element
-            bool removed = false;
-            for (int i = 0; i < _cache.Count; ++i)
-            {
-                if (comparer.Equals(_cache[i], element))
+                for (int i = 0; i < Count; ++i)
                 {
-                    _cache.RemoveAt(i);
-                    removed = true;
-                    break;
+                    _cache.Add(_buffer[AdjustedIndexFor(i)]);
                 }
-            }
 
-            if (!removed)
+                // Find and remove the element
+                bool removed = false;
+                for (int i = 0; i < _cache.Count; ++i)
+                {
+                    if (comparer.Equals(_cache[i], element))
+                    {
+                        _cache.RemoveAt(i);
+                        removed = true;
+                        break;
+                    }
+                }
+
+                if (!removed)
+                {
+                    return false;
+                }
+
+                RebuildFromCache();
+                return true;
+            }
+            finally
             {
-                return false;
+                _cache.Clear();
             }
-
-            RebuildFromCache();
-            return true;
         }
 
         /// <summary>
@@ -219,19 +228,26 @@ namespace DxMessaging.Core.DataStructure
             }
 
             _cache.Clear();
-            for (int i = 0; i < Count; ++i)
+            try
             {
-                _cache.Add(_buffer[AdjustedIndexFor(i)]);
-            }
+                for (int i = 0; i < Count; ++i)
+                {
+                    _cache.Add(_buffer[AdjustedIndexFor(i)]);
+                }
 
-            int removedCount = _cache.RemoveAll(predicate);
-            if (removedCount == 0)
+                int removedCount = _cache.RemoveAll(predicate);
+                if (removedCount == 0)
+                {
+                    return 0;
+                }
+
+                RebuildFromCache();
+                return removedCount;
+            }
+            finally
             {
-                return 0;
+                _cache.Clear();
             }
-
-            RebuildFromCache();
-            return removedCount;
         }
 
         private void RebuildFromCache()
@@ -240,6 +256,7 @@ namespace DxMessaging.Core.DataStructure
             _buffer.AddRange(_cache);
             Count = _cache.Count;
             _position = Count < Capacity ? Count : 0;
+            _cache.Clear();
         }
 
         /// <summary>
@@ -250,6 +267,7 @@ namespace DxMessaging.Core.DataStructure
             Count = 0;
             _position = 0;
             _buffer.Clear();
+            _cache.Clear();
         }
 
         /// <summary>

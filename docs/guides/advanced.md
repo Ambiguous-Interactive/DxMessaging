@@ -24,7 +24,7 @@ Lifecycles and tokens
   - Call `token.Enable()` in `OnEnable` and `token.Disable()` in `OnDisable`.
   - Idempotent; safe to call multiple times.
 - Clearing
-  - `token.UnregisterAll()` disables and clears staged registrations.
+  - A successful `token.UnregisterAll()` disables and clears staged registrations plus token-local diagnostics.
   - `token.RemoveRegistration(handle)` removes a single registration.
 - Diagnostics
   - `token.DiagnosticMode = true` to record per-registration call counts and emissions.

@@ -13,6 +13,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="options">Build configuration describing ownership, message bus preference, and lifecycle hooks.</param>
         /// <returns>Lease that exposes the constructed <see cref="MessageRegistrationToken"/>.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+        /// <exception cref="MessageRegistrationBuildException">ActivateOnBuild activation failed and automatic cleanup remains retryable.</exception>
         MessageRegistrationLease Build(MessageRegistrationBuildOptions options);
     }
 }

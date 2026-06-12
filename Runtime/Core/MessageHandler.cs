@@ -37,413 +37,6 @@ namespace DxMessaging.Core
             IComparable,
             IComparable<MessageHandler>
     {
-        private static void PrefreezePriorityCache<TMessage, THandler>(
-            TypedHandler<TMessage> handler,
-            int slotIndex,
-            int priority,
-            long emissionId
-        )
-            where TMessage : IMessage
-        {
-            Dictionary<int, IHandlerActionCache> byPriority = handler.GetPriorityHandlers(
-                slotIndex
-            );
-            if (
-                byPriority != null
-                && byPriority.TryGetValue(priority, out IHandlerActionCache erasedCache)
-                && erasedCache is HandlerActionCache<THandler> cache
-            )
-            {
-                _ = TypedHandler<TMessage>.GetOrAddNewHandlerStack(cache, emissionId);
-                cache.prefreezeInvocationCount++;
-            }
-        }
-
-        private static void PrefreezeContextCache<TMessage, THandler>(
-            TypedHandler<TMessage> handler,
-            int slotIndex,
-            InstanceId context,
-            int priority,
-            long emissionId
-        )
-            where TMessage : IMessage
-        {
-            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> byContext =
-                handler.GetContextHandlers(slotIndex);
-            if (
-                byContext != null
-                && byContext.TryGetValue(
-                    context,
-                    out Dictionary<int, IHandlerActionCache> byPriority
-                )
-                && byPriority.TryGetValue(priority, out IHandlerActionCache erasedCache)
-                && erasedCache is HandlerActionCache<THandler> cache
-            )
-            {
-                _ = TypedHandler<TMessage>.GetOrAddNewHandlerStack(cache, emissionId);
-                cache.prefreezeInvocationCount++;
-            }
-        }
-
-        private static int GetPriorityPrefreezeInvocationCount<TMessage, THandler>(
-            TypedHandler<TMessage> handler,
-            int slotIndex,
-            int priority
-        )
-            where TMessage : IMessage
-        {
-            Dictionary<int, IHandlerActionCache> byPriority = handler.GetPriorityHandlers(
-                slotIndex
-            );
-            if (
-                byPriority != null
-                && byPriority.TryGetValue(priority, out IHandlerActionCache erasedCache)
-                && erasedCache is HandlerActionCache<THandler> cache
-            )
-            {
-                return cache.prefreezeInvocationCount;
-            }
-
-            return 0;
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's broadcast post-processor caches for the given message type, source, and priority
-        /// for the specified emission id, so registrations during the same emission are not observed.
-        /// </summary>
-        /// <typeparam name="T">Broadcast message type.</typeparam>
-        /// <param name="source">Source instance id.</param>
-        /// <param name="priority">Priority bucket to freeze.</param>
-        /// <param name="emissionId">Current emission id.</param>
-        /// <param name="messageBus">Bus whose typed handler mapping to use.</param>
-        internal void PrefreezeBroadcastPostProcessorsForEmission<T>(
-            InstanceId source,
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : IBroadcastMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezeContextCache<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.BroadcastPostProcessFast,
-                source,
-                priority,
-                emissionId
-            );
-            PrefreezeContextCache<T, Action<T>>(
-                handler,
-                TypedSlotIndex.BroadcastPostProcessDefault,
-                source,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's targeted post-processor caches for the given message type, target, and priority
-        /// for the specified emission id, so registrations during the same emission are not observed.
-        /// </summary>
-        /// <typeparam name="T">Targeted message type.</typeparam>
-        /// <param name="target">Target instance id.</param>
-        /// <param name="priority">Priority bucket to freeze.</param>
-        /// <param name="emissionId">Current emission id.</param>
-        /// <param name="messageBus">Bus whose typed handler mapping to use.</param>
-        internal void PrefreezeTargetedPostProcessorsForEmission<T>(
-            InstanceId target,
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : ITargetedMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezeContextCache<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.TargetedPostProcessFast,
-                target,
-                priority,
-                emissionId
-            );
-            PrefreezeContextCache<T, Action<T>>(
-                handler,
-                TypedSlotIndex.TargetedPostProcessDefault,
-                target,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's targeted-without-targeting handler caches for the given message type and priority
-        /// so that removals/additions during the same emission are not observed.
-        /// </summary>
-        internal void PrefreezeTargetedWithoutTargetingHandlersForEmission<T>(
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : ITargetedMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezePriorityCache<T, FastHandlerWithContext<T>>(
-                handler,
-                TypedSlotIndex.TargetedHandleWithoutContextFast,
-                priority,
-                emissionId
-            );
-            PrefreezePriorityCache<T, Action<InstanceId, T>>(
-                handler,
-                TypedSlotIndex.TargetedHandleWithoutContext,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's targeted-without-targeting post-processor caches for a given priority.
-        /// </summary>
-        internal void PrefreezeTargetedWithoutTargetingPostProcessorsForEmission<T>(
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : ITargetedMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezePriorityCache<T, FastHandlerWithContext<T>>(
-                handler,
-                TypedSlotIndex.TargetedPostProcessWithoutContextFast,
-                priority,
-                emissionId
-            );
-            PrefreezePriorityCache<T, Action<InstanceId, T>>(
-                handler,
-                TypedSlotIndex.TargetedPostProcessWithoutContext,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's untargeted post-processor caches for a given priority.
-        /// </summary>
-        internal void PrefreezeUntargetedPostProcessorsForEmission<T>(
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : IUntargetedMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezePriorityCache<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.UntargetedPostProcessFast,
-                priority,
-                emissionId
-            );
-            PrefreezePriorityCache<T, Action<T>>(
-                handler,
-                TypedSlotIndex.UntargetedPostProcessDefault,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's broadcast-without-source post-processor caches for a given priority.
-        /// </summary>
-        internal void PrefreezeBroadcastWithoutSourcePostProcessorsForEmission<T>(
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : IBroadcastMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezePriorityCache<T, FastHandlerWithContext<T>>(
-                handler,
-                TypedSlotIndex.BroadcastPostProcessWithoutContextFast,
-                priority,
-                emissionId
-            );
-            PrefreezePriorityCache<T, Action<InstanceId, T>>(
-                handler,
-                TypedSlotIndex.BroadcastPostProcessWithoutContext,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's broadcast-without-source handler caches for the given message type and priority
-        /// for the specified emission id, so removals during the same emission are not observed.
-        /// </summary>
-        /// <typeparam name="T">Broadcast message type.</typeparam>
-        /// <param name="priority">Priority bucket to freeze.</param>
-        /// <param name="emissionId">Current emission id.</param>
-        /// <param name="messageBus">Bus whose typed handler mapping to use.</param>
-        internal void PrefreezeBroadcastWithoutSourceHandlersForEmission<T>(
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : IBroadcastMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezePriorityCache<T, FastHandlerWithContext<T>>(
-                handler,
-                TypedSlotIndex.BroadcastHandleWithoutContextFast,
-                priority,
-                emissionId
-            );
-            PrefreezePriorityCache<T, Action<InstanceId, T>>(
-                handler,
-                TypedSlotIndex.BroadcastHandleWithoutContext,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's untargeted handler caches for the given message type and priority
-        /// for the specified emission id, so removals during the same emission are not observed.
-        /// </summary>
-        /// <typeparam name="T">Untargeted message type.</typeparam>
-        /// <param name="priority">Priority bucket to freeze.</param>
-        /// <param name="emissionId">Current emission id.</param>
-        /// <param name="messageBus">Bus whose typed handler mapping to use.</param>
-        internal void PrefreezeUntargetedHandlersForEmission<T>(
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : IUntargetedMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezePriorityCache<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.UntargetedHandleFast,
-                priority,
-                emissionId
-            );
-            PrefreezePriorityCache<T, Action<T>>(
-                handler,
-                TypedSlotIndex.UntargetedHandleDefault,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's targeted handler caches for the given message type, target, and priority
-        /// for the specified emission id, so removals during the same emission are not observed.
-        /// </summary>
-        /// <typeparam name="T">Targeted message type.</typeparam>
-        /// <param name="target">Target instance id.</param>
-        /// <param name="priority">Priority bucket to freeze.</param>
-        /// <param name="emissionId">Current emission id.</param>
-        /// <param name="messageBus">Bus whose typed handler mapping to use.</param>
-        internal void PrefreezeTargetedHandlersForEmission<T>(
-            InstanceId target,
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : ITargetedMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezeContextCache<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.TargetedHandleFast,
-                target,
-                priority,
-                emissionId
-            );
-            PrefreezeContextCache<T, Action<T>>(
-                handler,
-                TypedSlotIndex.TargetedHandleDefault,
-                target,
-                priority,
-                emissionId
-            );
-        }
-
-        /// <summary>
-        /// Pre-freezes this handler's broadcast handler caches for the given message type, source, and priority
-        /// for the specified emission id, so removals during the same emission are not observed.
-        /// </summary>
-        /// <typeparam name="T">Broadcast message type.</typeparam>
-        /// <param name="source">Source instance id.</param>
-        /// <param name="priority">Priority bucket to freeze.</param>
-        /// <param name="emissionId">Current emission id.</param>
-        /// <param name="messageBus">Bus whose typed handler mapping to use.</param>
-        internal void PrefreezeBroadcastHandlersForEmission<T>(
-            InstanceId source,
-            int priority,
-            long emissionId,
-            IMessageBus messageBus
-        )
-            where T : IBroadcastMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
-            {
-                return;
-            }
-
-            PrefreezeContextCache<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.BroadcastHandleFast,
-                source,
-                priority,
-                emissionId
-            );
-            PrefreezeContextCache<T, Action<T>>(
-                handler,
-                TypedSlotIndex.BroadcastHandleDefault,
-                source,
-                priority,
-                emissionId
-            );
-        }
-
         /// <summary>
         /// High-performance handler that receives the message by reference (no boxing/copies).
         /// </summary>
@@ -2230,120 +1823,424 @@ namespace DxMessaging.Core
             return false;
         }
 
-        internal int GetUntargetedPostProcessingPrefreezeCount<T>(
+        /// <summary>
+        /// Counts the flat-dispatch entries this handler contributes to a
+        /// non-context-keyed slot (untargeted handle/post) at the given
+        /// priority: one entry per unique registered delegate (fast plus
+        /// default). Build-time only; called by MessageBus.BuildFlatDispatch.
+        /// </summary>
+        internal int CountFlatHandlers<T>(
             IMessageBus messageBus,
-            int priority
+            int priority,
+            int fastIndex,
+            int defaultIndex
         )
             where T : IMessage
         {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> handler))
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
             {
                 return 0;
             }
 
-            return GetPriorityPrefreezeInvocationCount<T, FastHandler<T>>(
-                handler,
-                TypedSlotIndex.UntargetedPostProcessFast,
-                priority
+            return CountFlatDelegates<FastHandler<T>>(
+                    typedHandler.GetPriorityHandlers(fastIndex),
+                    priority
+                )
+                + CountFlatDelegates<Action<T>>(
+                    typedHandler.GetPriorityHandlers(defaultIndex),
+                    priority
+                );
+        }
+
+        /// <summary>
+        /// Counts the flat-dispatch entries this handler contributes to a
+        /// context-keyed slot (Default-variant targeted/broadcast handle/post)
+        /// for the given context and priority. Build-time only.
+        /// </summary>
+        internal int CountContextFlatHandlers<T>(
+            IMessageBus messageBus,
+            InstanceId context,
+            int priority,
+            int fastIndex,
+            int defaultIndex
+        )
+            where T : IMessage
+        {
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
+            {
+                return 0;
+            }
+
+            return CountFlatDelegates<FastHandler<T>>(
+                    GetContextPriorityHandlers(typedHandler, fastIndex, context),
+                    priority
+                )
+                + CountFlatDelegates<Action<T>>(
+                    GetContextPriorityHandlers(typedHandler, defaultIndex, context),
+                    priority
+                );
+        }
+
+        /// <summary>
+        /// Counts the flat-dispatch entries this handler contributes to a
+        /// WithoutContext targeted/broadcast slot (whose delegates receive the
+        /// routing InstanceId) at the given priority. Build-time only.
+        /// </summary>
+        internal int CountWithContextFlatHandlers<T>(
+            IMessageBus messageBus,
+            int priority,
+            int fastIndex,
+            int defaultIndex
+        )
+            where T : IMessage
+        {
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
+            {
+                return 0;
+            }
+
+            return CountFlatDelegates<FastHandlerWithContext<T>>(
+                    typedHandler.GetPriorityHandlers(fastIndex),
+                    priority
+                )
+                + CountFlatDelegates<Action<InstanceId, T>>(
+                    typedHandler.GetPriorityHandlers(defaultIndex),
+                    priority
+                );
+        }
+
+        /// <summary>
+        /// Writes this handler's resolved flat-dispatch entries for a
+        /// non-context-keyed FastHandler-shaped slot into
+        /// <paramref name="target"/> starting at <paramref name="writeIndex"/>:
+        /// all fast entries in registration order, then all default entries in
+        /// registration order, matching the legacy link path's
+        /// fast-before-default contract. Fast entries resolve to the augmented
+        /// FastHandler delegate itself; default entries resolve to the
+        /// FastHandler adapter created at registration time
+        /// (Entry.flatInvoker), so this method allocates nothing.
+        /// Returns the next write index.
+        /// </summary>
+        internal int FillFlatHandlers<T>(
+            IMessageBus messageBus,
+            int priority,
+            int fastIndex,
+            int defaultIndex,
+            FlatDispatchEntry<T>[] target,
+            int writeIndex
+        )
+            where T : IMessage
+        {
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
+            {
+                return writeIndex;
+            }
+
+            writeIndex = FillFastFlatEntries(
+                typedHandler.GetPriorityHandlers(fastIndex),
+                priority,
+                target,
+                writeIndex
+            );
+            return FillDefaultFlatEntries(
+                typedHandler.GetPriorityHandlers(defaultIndex),
+                priority,
+                target,
+                writeIndex
+            );
+        }
+
+        /// <summary>
+        /// Context-keyed sibling of <see cref="FillFlatHandlers{T}"/> for the
+        /// Default-variant targeted/broadcast slots: resolves the per-context
+        /// priority map first, then fills fast entries followed by default
+        /// entries in registration order. Returns the next write index.
+        /// </summary>
+        internal int FillContextFlatHandlers<T>(
+            IMessageBus messageBus,
+            InstanceId context,
+            int priority,
+            int fastIndex,
+            int defaultIndex,
+            FlatDispatchEntry<T>[] target,
+            int writeIndex
+        )
+            where T : IMessage
+        {
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
+            {
+                return writeIndex;
+            }
+
+            writeIndex = FillFastFlatEntries(
+                GetContextPriorityHandlers(typedHandler, fastIndex, context),
+                priority,
+                target,
+                writeIndex
+            );
+            return FillDefaultFlatEntries(
+                GetContextPriorityHandlers(typedHandler, defaultIndex, context),
+                priority,
+                target,
+                writeIndex
+            );
+        }
+
+        /// <summary>
+        /// WithoutContext sibling of <see cref="FillFlatHandlers{T}"/> for the
+        /// targeted/broadcast slots whose delegates receive the routing
+        /// InstanceId: fills fast (FastHandlerWithContext) entries followed by
+        /// default (Action&lt;InstanceId, T&gt;, via the registration-time
+        /// FastHandlerWithContext adapter) entries in registration order.
+        /// Returns the next write index.
+        /// </summary>
+        internal int FillWithContextFlatHandlers<T>(
+            IMessageBus messageBus,
+            int priority,
+            int fastIndex,
+            int defaultIndex,
+            ContextFlatDispatchEntry<T>[] target,
+            int writeIndex
+        )
+            where T : IMessage
+        {
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
+            {
+                return writeIndex;
+            }
+
+            writeIndex = FillFastWithContextFlatEntries(
+                typedHandler.GetPriorityHandlers(fastIndex),
+                priority,
+                target,
+                writeIndex
+            );
+            return FillDefaultWithContextFlatEntries(
+                typedHandler.GetPriorityHandlers(defaultIndex),
+                priority,
+                target,
+                writeIndex
             );
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal UntargetedDispatchLink<T> GetOrCreateUntargetedDispatchLink<T>(
-            IMessageBus messageBus
+        private static Dictionary<int, IHandlerActionCache> GetContextPriorityHandlers<T>(
+            TypedHandler<T> typedHandler,
+            int slotIndex,
+            InstanceId context
         )
             where T : IMessage
         {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateUntargetedLink();
+            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> byContext =
+                typedHandler.GetContextHandlers(slotIndex);
+            if (
+                byContext != null
+                && byContext.TryGetValue(
+                    context,
+                    out Dictionary<int, IHandlerActionCache> byPriority
+                )
+            )
+            {
+                return byPriority;
+            }
+
+            return null;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal UntargetedPostDispatchLink<T> GetOrCreateUntargetedPostDispatchLink<T>(
-            IMessageBus messageBus
+        private static int CountFlatDelegates<TDelegate>(
+            Dictionary<int, IHandlerActionCache> byPriority,
+            int priority
+        )
+        {
+            if (
+                byPriority != null
+                && byPriority.TryGetValue(priority, out IHandlerActionCache erased)
+                && erased is HandlerActionCache<TDelegate> cache
+            )
+            {
+                return cache.insertionOrder.Count;
+            }
+
+            return 0;
+        }
+
+        private int FillFastFlatEntries<T>(
+            Dictionary<int, IHandlerActionCache> byPriority,
+            int priority,
+            FlatDispatchEntry<T>[] target,
+            int writeIndex
         )
             where T : IMessage
         {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateUntargetedPostLink();
+            if (
+                byPriority == null
+                || !byPriority.TryGetValue(priority, out IHandlerActionCache erased)
+                || erased is not HandlerActionCache<FastHandler<T>> cache
+            )
+            {
+                return writeIndex;
+            }
+
+            List<FastHandler<T>> ordered = cache.insertionOrder;
+            int orderedCount = ordered.Count;
+            for (int i = 0; i < orderedCount; ++i)
+            {
+                if (
+                    cache.entries.TryGetValue(
+                        ordered[i],
+                        out HandlerActionCache<FastHandler<T>>.Entry entry
+                    )
+                )
+                {
+                    target[writeIndex++] = new FlatDispatchEntry<T>(this, entry.handler);
+                }
+            }
+
+            return writeIndex;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TargetedDispatchLink<T> GetOrCreateTargetedDispatchLink<T>(IMessageBus messageBus)
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateTargetedLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TargetedPostDispatchLink<T> GetOrCreateTargetedPostDispatchLink<T>(
-            IMessageBus messageBus
+        private int FillDefaultFlatEntries<T>(
+            Dictionary<int, IHandlerActionCache> byPriority,
+            int priority,
+            FlatDispatchEntry<T>[] target,
+            int writeIndex
         )
             where T : IMessage
         {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateTargetedPostLink();
+            if (
+                byPriority == null
+                || !byPriority.TryGetValue(priority, out IHandlerActionCache erased)
+                || erased is not HandlerActionCache<Action<T>> cache
+            )
+            {
+                return writeIndex;
+            }
+
+            List<Action<T>> ordered = cache.insertionOrder;
+            int orderedCount = ordered.Count;
+            for (int i = 0; i < orderedCount; ++i)
+            {
+                if (
+                    !cache.entries.TryGetValue(
+                        ordered[i],
+                        out HandlerActionCache<Action<T>>.Entry entry
+                    )
+                )
+                {
+                    continue;
+                }
+
+                // Every default registration path for the flattened slots
+                // supplies the adapter at registration time (AddUntargetedHandler,
+                // AddTargetedHandler, AddSourcedBroadcastHandler, and their
+                // post-processor siblings). The type test doubles as a null
+                // guard; a missing adapter would indicate a new registration
+                // path that forgot to provide one.
+                if (entry.flatInvoker is FastHandler<T> invoker)
+                {
+                    target[writeIndex++] = new FlatDispatchEntry<T>(this, invoker);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.Assert(
+                        false,
+                        "Default registration is missing its FastHandler flat invoker; "
+                            + "every Add*Handler/Add*PostProcessor default path must adapt "
+                            + "the augmented handler at registration time."
+                    );
+                }
+            }
+
+            return writeIndex;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TargetedWithoutTargetingDispatchLink<T> GetOrCreateTargetedWithoutTargetingDispatchLink<T>(
-            IMessageBus messageBus
+        private int FillFastWithContextFlatEntries<T>(
+            Dictionary<int, IHandlerActionCache> byPriority,
+            int priority,
+            ContextFlatDispatchEntry<T>[] target,
+            int writeIndex
         )
             where T : IMessage
         {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateTargetedWithoutTargetingLink();
+            if (
+                byPriority == null
+                || !byPriority.TryGetValue(priority, out IHandlerActionCache erased)
+                || erased is not HandlerActionCache<FastHandlerWithContext<T>> cache
+            )
+            {
+                return writeIndex;
+            }
+
+            List<FastHandlerWithContext<T>> ordered = cache.insertionOrder;
+            int orderedCount = ordered.Count;
+            for (int i = 0; i < orderedCount; ++i)
+            {
+                if (
+                    cache.entries.TryGetValue(
+                        ordered[i],
+                        out HandlerActionCache<FastHandlerWithContext<T>>.Entry entry
+                    )
+                )
+                {
+                    target[writeIndex++] = new ContextFlatDispatchEntry<T>(this, entry.handler);
+                }
+            }
+
+            return writeIndex;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TargetedWithoutTargetingPostDispatchLink<T> GetOrCreateTargetedWithoutTargetingPostDispatchLink<T>(
-            IMessageBus messageBus
+        private int FillDefaultWithContextFlatEntries<T>(
+            Dictionary<int, IHandlerActionCache> byPriority,
+            int priority,
+            ContextFlatDispatchEntry<T>[] target,
+            int writeIndex
         )
             where T : IMessage
         {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateTargetedWithoutTargetingPostLink();
-        }
+            if (
+                byPriority == null
+                || !byPriority.TryGetValue(priority, out IHandlerActionCache erased)
+                || erased is not HandlerActionCache<Action<InstanceId, T>> cache
+            )
+            {
+                return writeIndex;
+            }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal BroadcastDispatchLink<T> GetOrCreateBroadcastDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateBroadcastLink();
-        }
+            List<Action<InstanceId, T>> ordered = cache.insertionOrder;
+            int orderedCount = ordered.Count;
+            for (int i = 0; i < orderedCount; ++i)
+            {
+                if (
+                    !cache.entries.TryGetValue(
+                        ordered[i],
+                        out HandlerActionCache<Action<InstanceId, T>>.Entry entry
+                    )
+                )
+                {
+                    continue;
+                }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal BroadcastPostDispatchLink<T> GetOrCreateBroadcastPostDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateBroadcastPostLink();
-        }
+                // See FillDefaultFlatEntries: the adapter is created once at
+                // registration time (AddTargetedWithoutTargetingHandler,
+                // AddSourcedBroadcastWithoutSourceHandler, and their
+                // post-processor siblings).
+                if (entry.flatInvoker is FastHandlerWithContext<T> invoker)
+                {
+                    target[writeIndex++] = new ContextFlatDispatchEntry<T>(this, invoker);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.Assert(
+                        false,
+                        "Default with-context registration is missing its "
+                            + "FastHandlerWithContext flat invoker; every without-context "
+                            + "Add* default path must adapt the augmented handler at "
+                            + "registration time."
+                    );
+                }
+            }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal BroadcastWithoutSourceDispatchLink<T> GetOrCreateBroadcastWithoutSourceDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateBroadcastWithoutSourceLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal BroadcastWithoutSourcePostDispatchLink<T> GetOrCreateBroadcastWithoutSourcePostDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateBroadcastWithoutSourcePostLink();
+            return writeIndex;
         }
 
         internal sealed class HandlerActionCache<T> : DxMessaging.Core.Internal.IHandlerActionCache
@@ -2360,21 +2257,56 @@ namespace DxMessaging.Core
                 /// <param name="handler">Handler delegate being tracked.</param>
                 /// <param name="count">Number of times the handler has been cached.</param>
                 public Entry(T handler, int count)
+                    : this(handler, count, null) { }
+
+                /// <summary>
+                /// Initializes an entry that additionally carries a pre-resolved
+                /// flat-dispatch invoker (see <see cref="flatInvoker"/>).
+                /// </summary>
+                /// <param name="handler">Handler delegate being tracked.</param>
+                /// <param name="count">Number of times the handler has been cached.</param>
+                /// <param name="flatInvoker">Pre-resolved flat-dispatch invoker, if any.</param>
+                public Entry(T handler, int count, object flatInvoker)
                 {
                     this.handler = handler;
                     this.count = count;
+                    this.flatInvoker = flatInvoker;
                 }
 
                 public readonly T handler;
                 public readonly int count;
+
+                // Pre-resolved invoker consumed by the bus-side flat dispatch
+                // snapshot (MessageBus.BuildMessageFlatDispatch). For
+                // default Action<TMessage> registrations this holds a
+                // FastHandler<TMessage> adapter wrapping the AUGMENTED
+                // handler, created exactly ONCE at registration time so
+                // snapshot rebuilds never allocate closures. For delegate
+                // shapes the flat path does not consume (fast handlers, which
+                // already ARE the invoker, and every targeted/broadcast
+                // shape) this stays null. Refcount increments and decrements
+                // preserve the first registration's invoker, mirroring the
+                // first-augmented-handler-wins semantics of `handler`.
+                public readonly object flatInvoker;
             }
 
             public readonly Dictionary<T, Entry> entries = new();
+
+            // Original-handler keys in first-registration order. Dictionary
+            // enumeration order is NOT stable across Remove/Add churn (.NET
+            // reuses freed slots LIFO), so dispatch snapshots are rebuilt from
+            // this list instead of from <see cref="entries"/> to honor the
+            // documented "same priority uses registration order" contract.
+            // Invariants: contains exactly the keys of <see cref="entries"/>;
+            // a key is appended on its FIRST registration only (refcount
+            // increments do not move it) and removed when its refcount drops
+            // to zero. Maintained exclusively by the AddHandler* family and
+            // <see cref="DxMessaging.Core.Internal.IHandlerActionCache.Reset"/>.
+            public readonly List<T> insertionOrder = new();
             public readonly List<T> cache = new();
             public long version;
             public long lastSeenVersion = -1;
             public long lastSeenEmissionId = -1;
-            internal int prefreezeInvocationCount;
 
             /// <summary>Monotonic version field, read-only on the interface surface.</summary>
             long DxMessaging.Core.Internal.IHandlerActionCache.Version
@@ -2401,13 +2333,6 @@ namespace DxMessaging.Core
                 set => lastSeenEmissionId = value;
             }
 
-            /// <summary>Prefreeze invocation counter mirror; maintained by the dispatchers.</summary>
-            int DxMessaging.Core.Internal.IHandlerActionCache.PrefreezeInvocationCount
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => prefreezeInvocationCount;
-            }
-
             /// <summary>True iff the entries dictionary holds zero handlers.</summary>
             bool DxMessaging.Core.Internal.IHandlerActionCache.IsEmpty
             {
@@ -2422,409 +2347,14 @@ namespace DxMessaging.Core
             void DxMessaging.Core.Internal.IHandlerActionCache.Reset()
             {
                 entries.Clear();
+                insertionOrder.Clear();
                 cache.Clear();
                 lastSeenVersion = -1;
                 lastSeenEmissionId = -1;
-                prefreezeInvocationCount = 0;
                 unchecked
                 {
                     ++version;
                 }
-            }
-        }
-
-        internal sealed class UntargetedDispatchLink<T>
-            where T : IMessage
-        {
-            private readonly TypedHandler<T> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal UntargetedDispatchLink(TypedHandler<T> typedHandler, long capturedGeneration)
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref T message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                if (!messageHandler.active)
-                {
-                    return;
-                }
-
-                typedHandler.HandleUntargeted(ref message, priority, emissionId);
-            }
-        }
-
-        internal sealed class UntargetedPostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal UntargetedPostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                if (!messageHandler.active)
-                {
-                    return;
-                }
-
-                typedHandler.HandleUntargetedPostProcessing(ref message, priority, emissionId);
-            }
-        }
-
-        internal sealed class TargetedDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal TargetedDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId target,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleTargeted(ref target, ref message, priority, emissionId);
-            }
-        }
-
-        internal sealed class TargetedPostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal TargetedPostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId target,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleTargetedPostProcessing(
-                    ref target,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class TargetedWithoutTargetingDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal TargetedWithoutTargetingDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId target,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleTargetedWithoutTargeting(
-                    ref target,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class TargetedWithoutTargetingPostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal TargetedWithoutTargetingPostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId target,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleTargetedWithoutTargetingPostProcessing(
-                    ref target,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class BroadcastDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal BroadcastDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId source,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleSourcedBroadcast(ref source, ref message, priority, emissionId);
-            }
-        }
-
-        internal sealed class BroadcastPostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal BroadcastPostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId source,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleSourcedBroadcastPostProcessing(
-                    ref source,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class BroadcastWithoutSourceDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal BroadcastWithoutSourceDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId source,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleSourcedBroadcastWithoutSource(
-                    ref source,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class BroadcastWithoutSourcePostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal BroadcastWithoutSourcePostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId source,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleBroadcastWithoutSourcePostProcessing(
-                    ref source,
-                    ref message,
-                    priority,
-                    emissionId
-                );
             }
         }
 
@@ -2835,14 +2365,13 @@ namespace DxMessaging.Core
         internal sealed class TypedHandler<T> : ITypedHandlerSlotSweeper
             where T : IMessage
         {
-            // Typed storage: 20 typed slots + 6 global slots + 10 dispatch
-            // links. The legacy named fields were deleted so new handler
-            // variants must pick an explicit axis-indexed slot.
+            // Typed storage: 20 typed slots + 6 global slots. The legacy
+            // named fields were deleted so new handler variants must pick an
+            // explicit axis-indexed slot.
             internal readonly TypedSlot<T>[] _slots = new TypedSlot<T>[TypedSlotIndex.Length];
             internal readonly TypedGlobalSlot[] _globalSlots = new TypedGlobalSlot[
                 TypedGlobalSlotIndex.Length
             ];
-            internal readonly object[] _dispatchLinks = new object[TypedDispatchLinkIndex.Length];
 
             // Constructor exists solely so the [Conditional("DEBUG")]
             // validator below runs at construction time. In Release builds
@@ -2855,7 +2384,6 @@ namespace DxMessaging.Core
                 ValidateSlotArrays();
             }
 
-            internal long _outerGeneration;
             internal bool _markedForOuterRemoval;
 
             int ITypedHandlerSlotSweeper.MessageTypeIndex
@@ -2885,12 +2413,6 @@ namespace DxMessaging.Core
                         $"_globalSlots length is {_globalSlots.Length} but TypedGlobalSlotIndex.Length is {TypedGlobalSlotIndex.Length}."
                     );
                 }
-                if (_dispatchLinks.Length != TypedDispatchLinkIndex.Length)
-                {
-                    throw new InvalidOperationException(
-                        $"_dispatchLinks length is {_dispatchLinks.Length} but TypedDispatchLinkIndex.Length is {TypedDispatchLinkIndex.Length}."
-                    );
-                }
                 // Lazy registration writers update the slot arrays; this assertion still
                 // holds at construction (slots populate on first register,
                 // not on construction). The invariant flips meaning -- not
@@ -2910,15 +2432,6 @@ namespace DxMessaging.Core
                     {
                         throw new InvalidOperationException(
                             $"_globalSlots[{i}] is non-null at construction; expected null per TypedGlobalSlotIndex because slots populate lazily on first registration."
-                        );
-                    }
-                }
-                for (int i = 0; i < _dispatchLinks.Length; ++i)
-                {
-                    if (_dispatchLinks[i] != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"_dispatchLinks[{i}] is non-null at construction; expected null per TypedDispatchLinkIndex because links populate lazily on first dispatch-link request."
                         );
                     }
                 }
@@ -3079,11 +2592,6 @@ namespace DxMessaging.Core
                     }
                 }
 
-                ClearDispatchLinks();
-                unchecked
-                {
-                    ++_outerGeneration;
-                }
                 return resetCount;
             }
 
@@ -3119,12 +2627,7 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                ClearDispatchLinks();
                 _markedForOuterRemoval = true;
-                unchecked
-                {
-                    ++_outerGeneration;
-                }
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -3147,166 +2650,6 @@ namespace DxMessaging.Core
                 }
 
                 return false;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void ClearDispatchLinks()
-            {
-                for (int i = 0; i < _dispatchLinks.Length; ++i)
-                {
-                    _dispatchLinks[i] = null;
-                }
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal UntargetedDispatchLink<T> GetOrCreateUntargetedLink()
-            {
-                UntargetedDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.UntargetedHandle]
-                    as UntargetedDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new UntargetedDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.UntargetedHandle] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal UntargetedPostDispatchLink<T> GetOrCreateUntargetedPostLink()
-            {
-                UntargetedPostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.UntargetedPostProcess]
-                    as UntargetedPostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new UntargetedPostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.UntargetedPostProcess] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal TargetedDispatchLink<T> GetOrCreateTargetedLink()
-            {
-                TargetedDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedHandle]
-                    as TargetedDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new TargetedDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedHandle] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal TargetedPostDispatchLink<T> GetOrCreateTargetedPostLink()
-            {
-                TargetedPostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedPostProcess]
-                    as TargetedPostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new TargetedPostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedPostProcess] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal TargetedWithoutTargetingDispatchLink<T> GetOrCreateTargetedWithoutTargetingLink()
-            {
-                TargetedWithoutTargetingDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedHandleWithoutContext]
-                    as TargetedWithoutTargetingDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new TargetedWithoutTargetingDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedHandleWithoutContext] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal TargetedWithoutTargetingPostDispatchLink<T> GetOrCreateTargetedWithoutTargetingPostLink()
-            {
-                TargetedWithoutTargetingPostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedPostProcessWithoutContext]
-                    as TargetedWithoutTargetingPostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new TargetedWithoutTargetingPostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedPostProcessWithoutContext] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal BroadcastDispatchLink<T> GetOrCreateBroadcastLink()
-            {
-                BroadcastDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastHandle]
-                    as BroadcastDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new BroadcastDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastHandle] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal BroadcastPostDispatchLink<T> GetOrCreateBroadcastPostLink()
-            {
-                BroadcastPostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastPostProcess]
-                    as BroadcastPostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new BroadcastPostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastPostProcess] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal BroadcastWithoutSourceDispatchLink<T> GetOrCreateBroadcastWithoutSourceLink()
-            {
-                BroadcastWithoutSourceDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastHandleWithoutContext]
-                    as BroadcastWithoutSourceDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new BroadcastWithoutSourceDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastHandleWithoutContext] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal BroadcastWithoutSourcePostDispatchLink<T> GetOrCreateBroadcastWithoutSourcePostLink()
-            {
-                BroadcastWithoutSourcePostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastPostProcessWithoutContext]
-                    as BroadcastWithoutSourcePostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new BroadcastWithoutSourcePostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastPostProcessWithoutContext] =
-                        link;
-                }
-
-                return link;
             }
 
             /// <summary>
@@ -3481,7 +2824,7 @@ namespace DxMessaging.Core
                     emissionId
                 );
                 int handlersCount = handlers.Count;
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](message);
                 }
@@ -3520,7 +2863,7 @@ namespace DxMessaging.Core
                     emissionId
                 );
                 int handlersCount = handlers.Count;
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](target, message);
                 }
@@ -3569,36 +2912,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](source, message);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](source, message);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](source, message);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](source, message);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](source, message);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](source, message);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](source, message);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](source, message);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](source, message);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](source, message);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](source, message);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](source, message);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](source, message);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](source, message);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](source, message);
                 }
@@ -3763,6 +3146,10 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandler form exactly once,
+                // at registration time, so bus-side flat snapshot rebuilds
+                // resolve default registrations without allocating closures.
+                FastHandler<T> flatInvoker = (ref T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     target,
                     GetOrCreateContextHandlers(TypedSlotIndex.TargetedHandleDefault),
@@ -3770,7 +3157,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -3817,6 +3205,12 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandlerWithContext form
+                // exactly once, at registration time, so bus-side flat snapshot
+                // rebuilds resolve default registrations without allocating
+                // closures.
+                FastHandlerWithContext<T> flatInvoker = (ref InstanceId context, ref T message) =>
+                    handler(context, message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
                         TypedSlotIndex.TargetedHandleWithoutContext,
@@ -3826,7 +3220,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -3873,6 +3268,10 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandler form exactly once,
+                // at registration time, so bus-side flat snapshot rebuilds
+                // resolve default registrations without allocating closures.
+                FastHandler<T> flatInvoker = (ref T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
                         TypedSlotIndex.UntargetedHandleDefault,
@@ -3882,7 +3281,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -3931,6 +3331,10 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandler form exactly once,
+                // at registration time, so bus-side flat snapshot rebuilds
+                // resolve default registrations without allocating closures.
+                FastHandler<T> flatInvoker = (ref T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     source,
                     GetOrCreateContextHandlers(TypedSlotIndex.BroadcastHandleDefault),
@@ -3938,7 +3342,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -3985,6 +3390,12 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandlerWithContext form
+                // exactly once, at registration time, so bus-side flat snapshot
+                // rebuilds resolve default registrations without allocating
+                // closures.
+                FastHandlerWithContext<T> flatInvoker = (ref InstanceId context, ref T message) =>
+                    handler(context, message);
                 // Preserve the priority bucket during the current emission so frozen snapshots remain valid
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
@@ -3995,7 +3406,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -4175,6 +3587,10 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandler form exactly once,
+                // at registration time, so bus-side flat snapshot rebuilds
+                // resolve default registrations without allocating closures.
+                FastHandler<T> flatInvoker = (ref T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
                         TypedSlotIndex.UntargetedPostProcessDefault,
@@ -4184,7 +3600,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -4233,6 +3650,10 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandler form exactly once,
+                // at registration time, so bus-side flat snapshot rebuilds
+                // resolve default registrations without allocating closures.
+                FastHandler<T> flatInvoker = (ref T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     target,
                     GetOrCreateContextHandlers(TypedSlotIndex.TargetedPostProcessDefault),
@@ -4240,7 +3661,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -4287,6 +3709,12 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandlerWithContext form
+                // exactly once, at registration time, so bus-side flat snapshot
+                // rebuilds resolve default registrations without allocating
+                // closures.
+                FastHandlerWithContext<T> flatInvoker = (ref InstanceId context, ref T message) =>
+                    handler(context, message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
                         TypedSlotIndex.TargetedPostProcessWithoutContext,
@@ -4296,7 +3724,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -4345,6 +3774,10 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandler form exactly once,
+                // at registration time, so bus-side flat snapshot rebuilds
+                // resolve default registrations without allocating closures.
+                FastHandler<T> flatInvoker = (ref T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     source,
                     GetOrCreateContextHandlers(TypedSlotIndex.BroadcastPostProcessDefault),
@@ -4352,7 +3785,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -4399,6 +3833,12 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
+                // Adapt the AUGMENTED handler to FastHandlerWithContext form
+                // exactly once, at registration time, so bus-side flat snapshot
+                // rebuilds resolve default registrations without allocating
+                // closures.
+                FastHandlerWithContext<T> flatInvoker = (ref InstanceId context, ref T message) =>
+                    handler(context, message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
                         TypedSlotIndex.BroadcastPostProcessWithoutContext,
@@ -4408,7 +3848,8 @@ namespace DxMessaging.Core
                     handler,
                     deregistration,
                     priority,
-                    messageBus
+                    messageBus,
+                    flatInvoker
                 );
             }
 
@@ -4455,6 +3896,10 @@ namespace DxMessaging.Core
             // MessageHandlers or routing through AddSourcedBroadcastWithoutSourceHandler /
             // AddTargetedWithoutTargetingHandler to avoid the per-(context,priority)
             // outer-dictionary growth.
+            // `flatInvoker` carries the pre-resolved flat-dispatch invoker for
+            // default-shape registrations the bus-side flat snapshot consumes
+            // (FastHandler adapter wrapping the augmented handler); see
+            // HandlerActionCache.Entry.flatInvoker.
             private Action AddHandlerPreservingPriorityKey<TU>(
                 InstanceId context,
                 Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> handlersByContext,
@@ -4462,7 +3907,8 @@ namespace DxMessaging.Core
                 TU augmentedHandler,
                 Action deregistration,
                 int priority,
-                IMessageBus messageBus
+                IMessageBus messageBus,
+                object flatInvoker = null
             )
             {
                 if (
@@ -4497,10 +3943,18 @@ namespace DxMessaging.Core
 
                 bool firstRegistration = entry.count == 0;
                 entry = firstRegistration
-                    ? new HandlerActionCache<TU>.Entry(augmentedHandler, 1)
-                    : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
+                    ? new HandlerActionCache<TU>.Entry(augmentedHandler, 1, flatInvoker)
+                    : new HandlerActionCache<TU>.Entry(
+                        entry.handler,
+                        entry.count + 1,
+                        entry.flatInvoker
+                    );
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
                 TypedSlot<T> slot = FindContextSlot(handlersByContext);
                 if (slot != null)
@@ -4580,6 +4034,15 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        // List.Remove is O(n) over the same-priority bucket.
+                        // Accepted tradeoff (here and at every sibling
+                        // deregistration site): buckets are small in practice,
+                        // removal is a cold churn path, and the list keeps
+                        // steady-state dispatch allocation-free while
+                        // preserving first-registration order, unlike
+                        // Dictionary enumeration whose freed slots are reused
+                        // LIFO.
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localSlot != null)
                         {
@@ -4592,7 +4055,8 @@ namespace DxMessaging.Core
 
                     localEntry = new HandlerActionCache<TU>.Entry(
                         localEntry.handler,
-                        localEntry.count - 1
+                        localEntry.count - 1,
+                        localEntry.flatInvoker
                     );
 
                     localCache.entries[originalHandler] = localEntry;
@@ -4648,6 +4112,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 Dictionary<
@@ -4686,6 +4154,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         // Deliberately keep the priority and context mappings to preserve
                         // frozen snapshots for the current emission.
@@ -4822,36 +4291,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref typedMessage);
                 }
@@ -4893,36 +4402,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref typedMessage);
                 }
@@ -4973,36 +4522,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref typedMessage);
                 }
@@ -5045,36 +4634,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref context, ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref context, ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref context, ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref context, ref typedMessage);
                 }
@@ -5172,36 +4801,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref context, ref typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](ref context, ref typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](ref context, ref typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](ref context, ref typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](ref context, ref typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](ref context, ref typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](ref context, ref typedMessage);
                 }
@@ -5290,36 +4959,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](typedMessage);
                 }
@@ -5356,36 +5065,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
                         return;
                     }
                     case 3:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
                         return;
                     }
                     case 4:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](typedMessage);
                         return;
                     }
                     case 5:
                     {
                         handlers[0](typedMessage);
+                        if (handlers.Count < 2)
+                        {
+                            return;
+                        }
                         handlers[1](typedMessage);
+                        if (handlers.Count < 3)
+                        {
+                            return;
+                        }
                         handlers[2](typedMessage);
+                        if (handlers.Count < 4)
+                        {
+                            return;
+                        }
                         handlers[3](typedMessage);
+                        if (handlers.Count < 5)
+                        {
+                            return;
+                        }
                         handlers[4](typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](typedMessage);
                 }
@@ -5429,36 +5178,76 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
                         return;
                     }
                     case 3:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
                         return;
                     }
                     case 4:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
+                        if (typedHandlers.Count < 4)
+                        {
+                            return;
+                        }
                         typedHandlers[3](context, typedMessage);
                         return;
                     }
                     case 5:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
+                        if (typedHandlers.Count < 4)
+                        {
+                            return;
+                        }
                         typedHandlers[3](context, typedMessage);
+                        if (typedHandlers.Count < 5)
+                        {
+                            return;
+                        }
                         typedHandlers[4](context, typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < typedHandlers.Count; ++i)
                 {
                     typedHandlers[i](context, typedMessage);
                 }
@@ -5504,60 +5293,124 @@ namespace DxMessaging.Core
                     case 2:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
                         return;
                     }
                     case 3:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
                         return;
                     }
                     case 4:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
+                        if (typedHandlers.Count < 4)
+                        {
+                            return;
+                        }
                         typedHandlers[3](context, typedMessage);
                         return;
                     }
                     case 5:
                     {
                         typedHandlers[0](context, typedMessage);
+                        if (typedHandlers.Count < 2)
+                        {
+                            return;
+                        }
                         typedHandlers[1](context, typedMessage);
+                        if (typedHandlers.Count < 3)
+                        {
+                            return;
+                        }
                         typedHandlers[2](context, typedMessage);
+                        if (typedHandlers.Count < 4)
+                        {
+                            return;
+                        }
                         typedHandlers[3](context, typedMessage);
+                        if (typedHandlers.Count < 5)
+                        {
+                            return;
+                        }
                         typedHandlers[4](context, typedMessage);
                         return;
                     }
                 }
 
-                for (int i = 0; i < handlersCount; ++i)
+                for (int i = 0; i < handlersCount && i < typedHandlers.Count; ++i)
                 {
                     typedHandlers[i](context, typedMessage);
                 }
             }
 
+            // Mid-dispatch clear contract: the List returned here is the LIVE
+            // cache.cache list, not a copy. IHandlerActionCache.Reset() (bus
+            // reset / sweep eviction) clears it IN PLACE, so every dispatch
+            // loop that indexes the returned list re-checks list.Count before
+            // each invocation past the first (and the >5 fallback loops bound
+            // on the live Count). A reset fired from inside a handler then
+            // cleanly stops the in-flight bucket: no peer delegate runs and
+            // nothing throws. The re-check is a single inlined List.Count
+            // field read on data already in cache, so steady-state dispatch
+            // cost is unchanged.
             internal static List<TU> GetOrAddNewHandlerStack<TU>(
                 HandlerActionCache<TU> actionCache,
                 long emissionId
             )
             {
+                DebugAssertInsertionOrderInSync(actionCache);
                 if (actionCache.lastSeenEmissionId != emissionId)
                 {
                     if (actionCache.version != actionCache.lastSeenVersion)
                     {
+                        // Rebuild the dispatch snapshot from insertionOrder, NOT from
+                        // the entries dictionary: dictionary enumeration order permutes
+                        // after Remove/Add churn (freed slots are reused LIFO), while
+                        // insertionOrder preserves the documented first-registration
+                        // order for equal-priority handlers. This branch only runs on
+                        // registration churn (version bump), never on steady-state
+                        // dispatch, and allocates nothing (the pooled cache list is
+                        // cleared and refilled in place).
                         List<TU> list = actionCache.cache;
                         list.Clear();
-                        foreach (
-                            KeyValuePair<
-                                TU,
-                                HandlerActionCache<TU>.Entry
-                            > kvp in actionCache.entries
-                        )
+                        List<TU> orderedHandlers = actionCache.insertionOrder;
+                        int orderedCount = orderedHandlers.Count;
+                        for (int i = 0; i < orderedCount; ++i)
                         {
-                            list.Add(kvp.Value.handler);
+                            if (
+                                actionCache.entries.TryGetValue(
+                                    orderedHandlers[i],
+                                    out HandlerActionCache<TU>.Entry entry
+                                )
+                            )
+                            {
+                                list.Add(entry.handler);
+                            }
                         }
                         actionCache.lastSeenVersion = actionCache.version;
                     }
@@ -5566,37 +5419,25 @@ namespace DxMessaging.Core
                 return actionCache.cache;
             }
 
-            private static void PrefreezeHandlersForEmission<THandler>(
-                Dictionary<int, IHandlerActionCache> handlers,
-                int priority,
-                long emissionId
+            // Asserts insertionOrder stays in lockstep with the entries
+            // dictionary at every dispatch-snapshot read. Drift indicates a
+            // mutation site of HandlerActionCache.entries that forgot to
+            // mirror the change into insertionOrder (AddHandler* family,
+            // deregistration closures, IHandlerActionCache.Reset). Stripped
+            // in Release builds via [Conditional("DEBUG")] -- zero hot-path
+            // cost.
+            [Conditional("DEBUG")]
+            private static void DebugAssertInsertionOrderInSync<TU>(
+                HandlerActionCache<TU> actionCache
             )
             {
-                if (
-                    handlers != null
-                    && handlers.TryGetValue(priority, out IHandlerActionCache erasedCache)
-                    && erasedCache is HandlerActionCache<THandler> cache
-                )
-                {
-                    cache.prefreezeInvocationCount++;
-                    _ = GetOrAddNewHandlerStack(cache, emissionId);
-                }
-            }
-
-            private static void PrefreezeHandlersForEmission<THandler>(
-                Dictionary<int, HandlerActionCache<THandler>> handlers,
-                int priority,
-                long emissionId
-            )
-            {
-                if (
-                    handlers != null
-                    && handlers.TryGetValue(priority, out HandlerActionCache<THandler> cache)
-                )
-                {
-                    cache.prefreezeInvocationCount++;
-                    _ = GetOrAddNewHandlerStack(cache, emissionId);
-                }
+                System.Diagnostics.Debug.Assert(
+                    actionCache.insertionOrder.Count == actionCache.entries.Count,
+                    "HandlerActionCache.insertionOrder must mirror entries: every first "
+                        + "registration appends and every final deregistration removes. A "
+                        + "count mismatch means a mutation site skipped the insertionOrder "
+                        + "update and same-priority dispatch order is no longer trustworthy."
+                );
             }
 
             private static Action AddHandler<TU>(
@@ -5632,6 +5473,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
                 if (firstRegistration)
                 {
@@ -5682,6 +5527,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         localSlot.liveCount--;
                         return;
@@ -5744,6 +5590,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 Dictionary<
@@ -5782,6 +5632,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localCache.entries.Count == 0)
                         {
@@ -5829,6 +5680,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 HandlerActionCache<TU> localCache = cache;
@@ -5852,6 +5707,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         return;
                     }
@@ -5897,6 +5753,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 Dictionary<int, HandlerActionCache<TU>> localHandlers = handlers;
@@ -5925,6 +5785,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localCache.entries.Count == 0)
                         {
@@ -5946,13 +5807,17 @@ namespace DxMessaging.Core
             // Variant of AddHandler that preserves the priority key in the dictionary when the last entry is removed.
             // This ensures that during an in-flight emission (where handler stacks are already frozen),
             // subsequent removals do not cause lookups to fail for the current pass.
+            // `flatInvoker` carries the pre-resolved flat-dispatch invoker for
+            // registrations the bus-side flat snapshot consumes (untargeted
+            // handle/post default handlers); see HandlerActionCache.Entry.flatInvoker.
             private Action AddHandlerPreservingPriorityKey<TU>(
                 Dictionary<int, IHandlerActionCache> handlers,
                 TU originalHandler,
                 TU augmentedHandler,
                 Action deregistration,
                 int priority,
-                IMessageBus messageBus
+                IMessageBus messageBus,
+                object flatInvoker = null
             )
             {
                 if (
@@ -5976,10 +5841,18 @@ namespace DxMessaging.Core
 
                 bool firstRegistration = entry.count == 0;
                 entry = firstRegistration
-                    ? new HandlerActionCache<TU>.Entry(augmentedHandler, 1)
-                    : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
+                    ? new HandlerActionCache<TU>.Entry(augmentedHandler, 1, flatInvoker)
+                    : new HandlerActionCache<TU>.Entry(
+                        entry.handler,
+                        entry.count + 1,
+                        entry.flatInvoker
+                    );
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
                 TypedSlot<T> slot = FindPrioritySlot(handlers);
                 if (slot != null)
@@ -6055,6 +5928,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localSlot != null)
                         {
@@ -6067,7 +5941,8 @@ namespace DxMessaging.Core
 
                     localEntry = new HandlerActionCache<TU>.Entry(
                         localEntry.handler,
-                        localEntry.count - 1
+                        localEntry.count - 1,
+                        localEntry.flatInvoker
                     );
 
                     localCache.entries[originalHandler] = localEntry;
@@ -6107,6 +5982,10 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
+                if (firstRegistration)
+                {
+                    cache.insertionOrder.Add(originalHandler);
+                }
                 cache.version++;
 
                 Dictionary<int, HandlerActionCache<TU>> localHandlers = handlers;
@@ -6135,6 +6014,7 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
+                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         // Intentionally DO NOT remove the priority key here to preserve
                         // the cache handle during an in-flight emission.

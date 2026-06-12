@@ -1,10 +1,12 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
+    using System;
     using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -78,6 +80,200 @@ namespace DxMessaging.Tests.Runtime.Core
 
             globalToken.RemoveRegistration(globalHandle);
             yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator CrossBusReentrantEmissionsCompleteWithoutCorruption(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            MessageBus busA = new();
+            MessageBus busB = new();
+            MessageHandler handlerA = new(new InstanceId(101), busA) { active = true };
+            MessageHandler handlerB = new(new InstanceId(102), busB) { active = true };
+            MessageRegistrationToken tokenA = MessageRegistrationToken.Create(handlerA, busA);
+            MessageRegistrationToken tokenB = MessageRegistrationToken.Create(handlerB, busB);
+            tokenA.Enable();
+            tokenB.Enable();
+            InstanceId context = new(7);
+
+            using LeakWatcher watcherA = new(
+                bus: busA,
+                throwOnLeak: true,
+                label: nameof(CrossBusReentrantEmissionsCompleteWithoutCorruption) + "_A"
+            );
+            using LeakWatcher watcherB = new(
+                bus: busB,
+                throwOnLeak: true,
+                label: nameof(CrossBusReentrantEmissionsCompleteWithoutCorruption) + "_B"
+            );
+
+            int countA = 0;
+            int countB = 0;
+
+            // Handler on bus A re-emits on bus B mid-dispatch; bus B's handler
+            // re-emits back on bus A mid-dispatch. Each side only bounces on its
+            // first invocation so the chain terminates deterministically:
+            // emit(A) -> countA=1 -> emit(B) -> countB=1 -> emit(A) -> countA=2.
+            _ = RegisterReentrantHandler(
+                scenario,
+                tokenA,
+                context,
+                () =>
+                {
+                    ++countA;
+                    if (countA == 1)
+                    {
+                        EmitOnBus(scenario, context, busB);
+                    }
+                }
+            );
+            _ = RegisterReentrantHandler(
+                scenario,
+                tokenB,
+                context,
+                () =>
+                {
+                    ++countB;
+                    if (countB == 1)
+                    {
+                        EmitOnBus(scenario, context, busA);
+                    }
+                }
+            );
+
+            EmitOnBus(scenario, context, busA);
+            Assert.AreEqual(
+                2,
+                countA,
+                "Bus A must observe the initial emission plus exactly one bounce-back "
+                    + "from bus B for scenario {0}.",
+                scenario
+            );
+            Assert.AreEqual(
+                1,
+                countB,
+                "Bus B must observe exactly one cross-bus emission for scenario {0}.",
+                scenario
+            );
+
+            // Post-reentrancy sanity: both buses keep dispatching normally and
+            // emissions never leak to the other bus.
+            EmitOnBus(scenario, context, busB);
+            Assert.AreEqual(
+                2,
+                countB,
+                "Bus B must keep dispatching normally after the reentrant exchange "
+                    + "for scenario {0}.",
+                scenario
+            );
+            Assert.AreEqual(
+                2,
+                countA,
+                "A plain bus B emission must not leak to bus A for scenario {0}.",
+                scenario
+            );
+
+            EmitOnBus(scenario, context, busA);
+            Assert.AreEqual(
+                3,
+                countA,
+                "Bus A must keep dispatching normally after the reentrant exchange "
+                    + "for scenario {0}.",
+                scenario
+            );
+            Assert.AreEqual(
+                2,
+                countB,
+                "A plain bus A emission must not leak to bus B for scenario {0}.",
+                scenario
+            );
+
+            tokenA.Dispose();
+            tokenB.Dispose();
+            handlerA.active = false;
+            handlerB.active = false;
+            yield break;
+        }
+
+        private static MessageRegistrationHandle RegisterReentrantHandler(
+            MessageScenario scenario,
+            MessageRegistrationToken token,
+            InstanceId context,
+            Action onInvoked
+        )
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                {
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
+                        scenario,
+                        token,
+                        (ref SimpleUntargetedMessage _) => onInvoked()
+                    );
+                }
+                case MessageKind.Targeted:
+                {
+                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
+                        scenario,
+                        token,
+                        context,
+                        (ref SimpleTargetedMessage _) => onInvoked()
+                    );
+                }
+                case MessageKind.Broadcast:
+                {
+                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
+                        scenario,
+                        token,
+                        context,
+                        (ref SimpleBroadcastMessage _) => onInvoked()
+                    );
+                }
+                default:
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(scenario),
+                        scenario.Kind,
+                        "Unsupported message kind."
+                    );
+                }
+            }
+        }
+
+        private static void EmitOnBus(MessageScenario scenario, InstanceId context, MessageBus bus)
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                {
+                    SimpleUntargetedMessage message = new();
+                    ScenarioHarness.EmitUntargeted(scenario, ref message, bus);
+                    return;
+                }
+                case MessageKind.Targeted:
+                {
+                    SimpleTargetedMessage message = new();
+                    ScenarioHarness.EmitTargeted(scenario, ref message, context, bus);
+                    return;
+                }
+                case MessageKind.Broadcast:
+                {
+                    SimpleBroadcastMessage message = new();
+                    ScenarioHarness.EmitBroadcast(scenario, ref message, context, bus);
+                    return;
+                }
+                default:
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(scenario),
+                        scenario.Kind,
+                        "Unsupported message kind."
+                    );
+                }
+            }
         }
     }
 }

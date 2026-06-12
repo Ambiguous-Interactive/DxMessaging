@@ -114,8 +114,6 @@ namespace DxMessaging.Tests.Editor.Contract
 
             public long LastSeenEmissionId { get; set; }
 
-            public int PrefreezeInvocationCount { get; set; }
-
             public bool IsEmpty { get; set; } = true;
 
             public int ResetCallCount { get; private set; }
@@ -145,8 +143,6 @@ namespace DxMessaging.Tests.Editor.Contract
             public long LastSeenVersion { get; set; }
 
             public long LastSeenEmissionId { get; set; }
-
-            public int PrefreezeInvocationCount => 0;
 
             public bool IsEmpty => true;
 
@@ -333,7 +329,7 @@ namespace DxMessaging.Tests.Editor.Contract
         /// Pins that <c>MessageHandler.HandlerActionCache&lt;T&gt;</c> implements
         /// <see cref="IHandlerActionCache"/>. The interface
         /// is implemented explicitly so the public-facing field shape on the
-        /// nested cache type is unchanged; this test exercises the six
+        /// nested cache type is unchanged; this test exercises the five
         /// interface members through an interface-typed reference to confirm
         /// they all dispatch without exception.
         /// </summary>
@@ -370,8 +366,6 @@ namespace DxMessaging.Tests.Editor.Contract
             );
             view.LastSeenEmissionId = 13;
             Assert.AreEqual(13, view.LastSeenEmissionId);
-            int prefreeze = view.PrefreezeInvocationCount;
-            Assert.AreEqual(0, prefreeze);
             Assert.IsTrue(
                 view.IsEmpty,
                 "Freshly-constructed HandlerActionCache<T> must report IsEmpty == true."
@@ -866,11 +860,10 @@ namespace DxMessaging.Tests.Editor.Contract
 
         /// <summary>
         /// Reflection-based shape pin for <see cref="IHandlerActionCache"/>.
-        /// Asserts the interface declares exactly the six members the staged
+        /// Asserts the interface declares exactly the five members the staged
         /// dispatch + eviction layers require: <see cref="IHandlerActionCache.Version"/>,
         /// <see cref="IHandlerActionCache.LastSeenVersion"/>,
         /// <see cref="IHandlerActionCache.LastSeenEmissionId"/>,
-        /// <see cref="IHandlerActionCache.PrefreezeInvocationCount"/>,
         /// <see cref="IHandlerActionCache.IsEmpty"/>, and
         /// <see cref="IHandlerActionCache.Reset"/>. Adding or removing a
         /// member breaks this test until reviewers update the expected list,
@@ -885,7 +878,6 @@ namespace DxMessaging.Tests.Editor.Contract
                 "Version",
                 "LastSeenVersion",
                 "LastSeenEmissionId",
-                "PrefreezeInvocationCount",
                 "IsEmpty",
                 "Reset",
             };

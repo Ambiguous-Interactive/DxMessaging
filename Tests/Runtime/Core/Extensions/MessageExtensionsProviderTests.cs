@@ -10,19 +10,19 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
     [TestFixture]
     public sealed class MessageExtensionsProviderTests
     {
-        private IMessageBus _originalGlobalBus;
+        private GlobalBusScope _globalBusScope;
 
         [SetUp]
         public void SetUp()
         {
-            _originalGlobalBus = MessageHandler.MessageBus;
-            MessageHandler.ResetGlobalMessageBus();
+            _globalBusScope = GlobalBusScope.CaptureAndReset();
         }
 
         [TearDown]
         public void TearDown()
         {
-            MessageHandler.SetGlobalMessageBus(_originalGlobalBus);
+            _globalBusScope?.Dispose();
+            _globalBusScope = null;
         }
 
         [Test]

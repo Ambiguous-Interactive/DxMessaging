@@ -6,22 +6,27 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
     using GlobalMessageBus = DxMessaging.Core.MessageBus.MessageBus;
+#if UNITY_2021_3_OR_NEWER
+    using DxMessaging.Tests.Runtime;
+    using DxMessaging.Tests.Runtime.Scripts.Messages;
+#endif
 
     [TestFixture]
     public sealed class MessageHandlerGlobalBusTests
     {
-        private IMessageBus _originalBus;
+        private GlobalBusScope _globalBusScope;
 
         [SetUp]
         public void CaptureOriginalBus()
         {
-            _originalBus = MessageHandler.MessageBus;
+            _globalBusScope = GlobalBusScope.Capture();
         }
 
         [TearDown]
         public void RestoreOriginalBus()
         {
-            MessageHandler.SetGlobalMessageBus(_originalBus);
+            _globalBusScope?.Dispose();
+            _globalBusScope = null;
         }
 
         [Test]
@@ -50,7 +55,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void SetGlobalMessageBusAcceptsInterfaceImplementation()
         {
-            WrapperMessageBus wrapper = new WrapperMessageBus(new GlobalMessageBus());
+            DelegatingMessageBus wrapper = new DelegatingMessageBus(new GlobalMessageBus());
             MessageHandler.SetGlobalMessageBus(wrapper);
             Assert.AreSame(wrapper, MessageHandler.MessageBus);
         }
@@ -112,7 +117,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             GlobalMessageBus primary = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(primary);
-            WrapperMessageBus secondary = new WrapperMessageBus(new GlobalMessageBus());
+            DelegatingMessageBus secondary = new DelegatingMessageBus(new GlobalMessageBus());
 
             using (MessageHandler.OverrideGlobalMessageBus(secondary))
             {
@@ -122,165 +127,253 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreSame(primary, MessageHandler.MessageBus);
         }
 
-        private class WrapperMessageBus : IMessageBus
+        /// <summary>
+        /// Pins LIFO disposal of nested
+        /// <see cref="MessageHandler.OverrideGlobalMessageBus"/> scopes: each
+        /// scope captures the bus active at its construction, so disposing
+        /// inner-then-outer walks the chain back to the original bus.
+        /// </summary>
+        [Test]
+        public void OverrideGlobalMessageBusNestedScopesRestoreInLifoOrder()
         {
-            protected readonly IMessageBus _inner;
+            GlobalMessageBus original = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            GlobalMessageBus outerBus = new GlobalMessageBus();
+            GlobalMessageBus innerBus = new GlobalMessageBus();
 
-            public WrapperMessageBus(IMessageBus inner)
-            {
-                _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-            }
+            MessageHandler.GlobalMessageBusScope outerScope =
+                MessageHandler.OverrideGlobalMessageBus(outerBus);
+            Assert.AreSame(
+                outerBus,
+                MessageHandler.MessageBus,
+                "Outer override must take effect immediately."
+            );
 
-            public bool DiagnosticsMode => _inner.DiagnosticsMode;
+            MessageHandler.GlobalMessageBusScope innerScope =
+                MessageHandler.OverrideGlobalMessageBus(innerBus);
+            Assert.AreSame(
+                innerBus,
+                MessageHandler.MessageBus,
+                "Inner override must take effect immediately."
+            );
 
-            public int RegisteredGlobalSequentialIndex => _inner.RegisteredGlobalSequentialIndex;
+            innerScope.Dispose();
+            Assert.AreSame(
+                outerBus,
+                MessageHandler.MessageBus,
+                "Disposing the inner scope must restore the outer override bus."
+            );
 
-            public int OccupiedTypeSlots => _inner.OccupiedTypeSlots;
-
-            public int OccupiedTargetSlots => _inner.OccupiedTargetSlots;
-
-            public int RegisteredBroadcast => _inner.RegisteredBroadcast;
-
-            public int RegisteredTargeted => _inner.RegisteredTargeted;
-
-            public int RegisteredUntargeted => _inner.RegisteredUntargeted;
-
-            public int RegisteredInterceptors => _inner.RegisteredInterceptors;
-
-            public int RegisteredPostProcessors => _inner.RegisteredPostProcessors;
-
-            public int RegisteredGlobalAcceptAll => _inner.RegisteredGlobalAcceptAll;
-
-            public RegistrationLog Log => _inner.Log;
-
-            public long EmissionId => _inner.EmissionId;
-
-            public virtual IMessageBus.TrimResult Trim(bool force = false) => _inner.Trim(force);
-
-            public Action RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
-                where T : IUntargetedMessage =>
-                _inner.RegisterUntargeted<T>(messageHandler, priority);
-
-            public Action RegisterUntargetedPostProcessor<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IUntargetedMessage =>
-                _inner.RegisterUntargetedPostProcessor<T>(messageHandler, priority);
-
-            public Action RegisterTargeted<T>(
-                InstanceId target,
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : ITargetedMessage =>
-                _inner.RegisterTargeted<T>(target, messageHandler, priority);
-
-            public Action RegisterTargetedPostProcessor<T>(
-                InstanceId target,
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : ITargetedMessage =>
-                _inner.RegisterTargetedPostProcessor<T>(target, messageHandler, priority);
-
-            public Action RegisterTargetedWithoutTargeting<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : ITargetedMessage =>
-                _inner.RegisterTargetedWithoutTargeting<T>(messageHandler, priority);
-
-            public Action RegisterTargetedWithoutTargetingPostProcessor<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : ITargetedMessage =>
-                _inner.RegisterTargetedWithoutTargetingPostProcessor<T>(messageHandler, priority);
-
-            public Action RegisterBroadcastPostProcessor<T>(
-                InstanceId source,
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IBroadcastMessage =>
-                _inner.RegisterBroadcastPostProcessor<T>(source, messageHandler, priority);
-
-            public Action RegisterBroadcastWithoutSourcePostProcessor<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IBroadcastMessage =>
-                _inner.RegisterBroadcastWithoutSourcePostProcessor<T>(messageHandler, priority);
-
-            public Action RegisterSourcedBroadcast<T>(
-                InstanceId source,
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IBroadcastMessage =>
-                _inner.RegisterSourcedBroadcast<T>(source, messageHandler, priority);
-
-            public Action RegisterSourcedBroadcastWithoutSource<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IBroadcastMessage =>
-                _inner.RegisterSourcedBroadcastWithoutSource<T>(messageHandler, priority);
-
-            public Action RegisterGlobalAcceptAll(MessageHandler messageHandler) =>
-                _inner.RegisterGlobalAcceptAll(messageHandler);
-
-            public Action RegisterUntargetedInterceptor<T>(
-                IMessageBus.UntargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
-                where T : IUntargetedMessage =>
-                _inner.RegisterUntargetedInterceptor(interceptor, priority);
-
-            public Action RegisterTargetedInterceptor<T>(
-                IMessageBus.TargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
-                where T : ITargetedMessage =>
-                _inner.RegisterTargetedInterceptor(interceptor, priority);
-
-            public Action RegisterBroadcastInterceptor<T>(
-                IMessageBus.BroadcastInterceptor<T> interceptor,
-                int priority = 0
-            )
-                where T : IBroadcastMessage =>
-                _inner.RegisterBroadcastInterceptor(interceptor, priority);
-
-            public void UntypedUntargetedBroadcast(IUntargetedMessage typedMessage) =>
-                _inner.UntypedUntargetedBroadcast(typedMessage);
-
-            public void UntargetedBroadcast<TMessage>(ref TMessage typedMessage)
-                where TMessage : IUntargetedMessage => _inner.UntargetedBroadcast(ref typedMessage);
-
-            public void UntypedTargetedBroadcast(
-                InstanceId target,
-                ITargetedMessage typedMessage
-            ) => _inner.UntypedTargetedBroadcast(target, typedMessage);
-
-            public void TargetedBroadcast<TMessage>(
-                ref InstanceId target,
-                ref TMessage typedMessage
-            )
-                where TMessage : ITargetedMessage =>
-                _inner.TargetedBroadcast(ref target, ref typedMessage);
-
-            public void UntypedSourcedBroadcast(
-                InstanceId source,
-                IBroadcastMessage typedMessage
-            ) => _inner.UntypedSourcedBroadcast(source, typedMessage);
-
-            public void SourcedBroadcast<TMessage>(ref InstanceId source, ref TMessage typedMessage)
-                where TMessage : IBroadcastMessage =>
-                _inner.SourcedBroadcast(ref source, ref typedMessage);
+            outerScope.Dispose();
+            Assert.AreSame(
+                original,
+                MessageHandler.MessageBus,
+                "Disposing the outer scope must restore the original bus."
+            );
         }
 
-        private sealed class CountingTrimMessageBus : WrapperMessageBus
+        /// <summary>
+        /// Pins what <see cref="MessageHandler.GlobalMessageBusScope"/>
+        /// actually does on OUT-OF-ORDER disposal (outer disposed before
+        /// inner). The implementation performs no nesting validation: each
+        /// scope independently captures the bus that was active at its own
+        /// construction and restores exactly that snapshot when disposed,
+        /// regardless of disposal order. "Sane" here means deterministic
+        /// per-scope snapshot-restore - the scope neither throws nor tries to
+        /// reconcile the stack.
+        /// </summary>
+        /// <remarks>
+        /// CONSEQUENCE (pinned below, and worth flagging to maintainers):
+        /// after disposing outer-then-inner, the globally active bus is the
+        /// OUTER override bus - the inner scope captured it as its "previous"
+        /// - NOT the original bus that was active before either override. A
+        /// caller that disposes scopes out of order is silently left on a
+        /// stale override. If GlobalMessageBusScope ever grows nesting
+        /// validation (e.g. throwing on out-of-order disposal, or restoring
+        /// the original), this test must be re-pinned deliberately.
+        /// </remarks>
+        [Test]
+        public void OverrideGlobalMessageBusOutOfOrderDisposalRestoresConstructionSnapshots()
+        {
+            GlobalMessageBus original = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            GlobalMessageBus outerBus = new GlobalMessageBus();
+            GlobalMessageBus innerBus = new GlobalMessageBus();
+
+            MessageHandler.GlobalMessageBusScope outerScope =
+                MessageHandler.OverrideGlobalMessageBus(outerBus);
+            MessageHandler.GlobalMessageBusScope innerScope =
+                MessageHandler.OverrideGlobalMessageBus(innerBus);
+            Assert.AreSame(
+                innerBus,
+                MessageHandler.MessageBus,
+                "Sanity: inner override is active before any disposal."
+            );
+
+            // Outer disposed FIRST: it restores ITS captured previous (the
+            // original bus), even though the inner scope is still open.
+            Assert.DoesNotThrow(
+                () => outerScope.Dispose(),
+                "Out-of-order disposal must not throw (no nesting validation exists)."
+            );
+            Assert.AreSame(
+                original,
+                MessageHandler.MessageBus,
+                "Disposing the outer scope restores the outer scope's construction snapshot (the original bus), ignoring the still-open inner scope."
+            );
+
+            // Inner disposed SECOND: it restores ITS captured previous - the
+            // outer override bus - leaving a stale override active. See the
+            // remarks; this is the deterministic consequence of per-scope
+            // snapshot-restore without nesting validation.
+            Assert.DoesNotThrow(() => innerScope.Dispose());
+            Assert.AreSame(
+                outerBus,
+                MessageHandler.MessageBus,
+                "Disposing the inner scope restores the inner scope's construction snapshot (the OUTER override bus), not the original. Out-of-order disposal leaves a stale override active."
+            );
+
+            // Recover explicitly so no stale override leaks past this test
+            // (the fixture TearDown also restores the captured original).
+            MessageHandler.SetGlobalMessageBus(original);
+        }
+
+#if UNITY_2021_3_OR_NEWER
+        /// <summary>
+        /// Pins <see cref="MessageHandler.SetGlobalMessageBus(IMessageBus)"/>
+        /// invoked from INSIDE a handler during dispatch. The emission in
+        /// flight was resolved against the old global bus when the emit
+        /// started, so it must complete on the old bus's frozen snapshot
+        /// (later-priority handlers on the old bus still run). The very next
+        /// emission through a global-bus-routed API (an emit with no explicit
+        /// bus) must resolve to the new global bus.
+        /// </summary>
+        [Test]
+        public void SetGlobalMessageBusFromInsideHandlerAffectsOnlySubsequentEmissions(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            GlobalMessageBus oldBus = new GlobalMessageBus();
+            GlobalMessageBus newBus = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(oldBus);
+
+            MessageHandler oldBusHandler = new MessageHandler(new InstanceId(101))
+            {
+                active = true,
+            };
+            MessageRegistrationToken oldBusToken = MessageRegistrationToken.Create(
+                oldBusHandler,
+                oldBus
+            );
+            oldBusToken.Enable();
+
+            MessageHandler newBusHandler = new MessageHandler(new InstanceId(102))
+            {
+                active = true,
+            };
+            MessageRegistrationToken newBusToken = MessageRegistrationToken.Create(
+                newBusHandler,
+                newBus
+            );
+            newBusToken.Enable();
+
+            InstanceId context = new InstanceId(103);
+            int swappingCount = 0;
+            int trailingCount = 0;
+            int newBusCount = 0;
+
+            // Priority 0 on the old bus swaps the global bus mid-dispatch;
+            // priority 1 on the old bus observes the in-flight snapshot.
+            _ = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                oldBusToken,
+                context,
+                () =>
+                {
+                    ++swappingCount;
+                    if (swappingCount == 1)
+                    {
+                        MessageHandler.SetGlobalMessageBus(newBus);
+                    }
+                },
+                priority: 0
+            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                oldBusToken,
+                context,
+                () => ++trailingCount,
+                priority: 1
+            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                newBusToken,
+                context,
+                () => ++newBusCount,
+                priority: 0
+            );
+
+            // First global-routed emission resolves the old bus at emit time.
+            Assert.DoesNotThrow(
+                () => ScenarioCallbacks.EmitForKind(scenario, context),
+                "[{0}] Swapping the global bus from inside a handler must not throw mid-dispatch.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                1,
+                swappingCount,
+                "[{0}] The swapping handler must run on the in-flight emission.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                1,
+                trailingCount,
+                "[{0}] The in-flight emission must be unaffected by the swap: the old bus's later-priority handler still runs. swapping={1}, trailing={2}, newBus={3}.",
+                scenario.Kind,
+                swappingCount,
+                trailingCount,
+                newBusCount
+            );
+            Assert.AreEqual(
+                0,
+                newBusCount,
+                "[{0}] The in-flight emission must NOT leak onto the new bus.",
+                scenario.Kind
+            );
+
+            // The next global-routed emission resolves the NEW bus.
+            ScenarioCallbacks.EmitForKind(scenario, context);
+            Assert.AreEqual(
+                1,
+                newBusCount,
+                "[{0}] The next global-routed emission must dispatch on the new global bus. swapping={1}, trailing={2}, newBus={3}.",
+                scenario.Kind,
+                swappingCount,
+                trailingCount,
+                newBusCount
+            );
+            Assert.AreEqual(
+                1,
+                swappingCount,
+                "[{0}] Old-bus handlers must not receive global-routed emissions after the swap.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                1,
+                trailingCount,
+                "[{0}] Old-bus trailing handler must not receive global-routed emissions after the swap.",
+                scenario.Kind
+            );
+
+            oldBusToken.UnregisterAll();
+            newBusToken.UnregisterAll();
+            oldBusHandler.active = false;
+            newBusHandler.active = false;
+        }
+#endif
+
+        private sealed class CountingTrimMessageBus : DelegatingMessageBus
         {
             public CountingTrimMessageBus(IMessageBus inner)
                 : base(inner) { }
@@ -302,7 +395,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// can assert field-by-field propagation through <see cref="MessageHandler.TrimAll"/>
         /// without depending on the real bus's pool/eviction state.
         /// </summary>
-        private sealed class SentinelTrimMessageBus : WrapperMessageBus
+        private sealed class SentinelTrimMessageBus : DelegatingMessageBus
         {
             private readonly IMessageBus.TrimResult _sentinel;
 
