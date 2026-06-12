@@ -38,15 +38,68 @@ jobs:
     name: Resolve Unity test matrix
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    # Job-level permissions REPLACE the top-level set: contents:read for the
+    # checkout, pull-requests:read for the CI-owned-docs-only file listing.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       unity-versions: ${{ steps.resolve.outputs.unity-versions }}
       test-modes: ${{ steps.resolve.outputs.test-modes }}
       has-required-secrets: ${{ steps.check-secrets.outputs.has-secrets }}
+      ci-owned-docs-only: ${{ steps.docs-only.outputs.docs-only }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Detect CI-owned docs-only pull request
+        id: docs-only
+        # The perf-numbers workflow owns docs/architecture/performance.md and
+        # docs/architecture/perf-baseline.csv end to end and delivers them via a
+        # fallback auto-merge PR when its direct push is rejected. A PR whose
+        # ENTIRE diff is those two files has nothing for the licensed Unity
+        # matrix to test, and skipping the matrix keeps the fallback PR cheap
+        # AND mergeable (skipped required jobs report success; a never-reporting
+        # required check would block auto-merge forever). Jobs skipped via
+        # `if:` report conclusion=skipped, which branch protection treats as
+        # passing. CONTRACT mirror of runner-preflight: detection failures must
+        # never make CI more broken than the no-detection baseline, so any API
+        # error soft-fails to docs-only=false (full matrix runs).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ] || [ -z "${PR_NUMBER:-}" ]; then
+            echo "docs-only=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          files_list="$(mktemp)"
+          if ! gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
+              --jq '.[].filename' > "${files_list}" 2>/dev/null; then
+            echo "::warning::Could not list PR files; assuming a full code diff (matrix runs)."
+            echo "docs-only=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          if [ ! -s "${files_list}" ]; then
+            echo "docs-only=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          docs_only=true
+          while IFS= read -r changed; do
+            case "${changed}" in
+              docs/architecture/performance.md|docs/architecture/perf-baseline.csv) ;;
+              *)
+                docs_only=false
+                break
+                ;;
+            esac
+          done < "${files_list}"
+          echo "CI-owned docs-only PR: ${docs_only}"
+          echo "docs-only=${docs_only}" >> "${GITHUB_OUTPUT}"
       - name: Resolve dispatch overrides
         id: resolve
         env:
@@ -203,12 +256,17 @@ jobs:
     needs:
       - matrix-config
       - runner-preflight
+    # ci-owned-docs-only: a PR touching ONLY the CI-owned perf doc + baseline
+    # (the perf-numbers fallback PR shape) skips the licensed matrix; the
+    # skipped jobs report success to branch protection so the PR stays
+    # auto-mergeable. See the matrix-config step comment.
     if: >-
       ${{
         (github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name == github.repository) &&
         (github.event_name != 'push' || github.ref_protected) &&
-        needs.matrix-config.outputs.has-required-secrets == 'true'
+        needs.matrix-config.outputs.has-required-secrets == 'true' &&
+        needs.matrix-config.outputs.ci-owned-docs-only != 'true'
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
     timeout-minutes: 660
@@ -338,7 +396,13 @@ jobs:
       - name: Run Unity Test Runner
         id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        timeout-minutes: 120
+        # 150 (was 120): the standalone leg builds a NON-development IL2CPP
+        # player with the Release C++ configuration, and a run-ci-tests.ps1
+        # change rotates the Library cache key, so first runs build cold. The
+        # editmode/playmode legs finish far below this; stays well under the
+        # job timeout (660) so the step clock fires first and releases the
+        # shared Unity seat.
+        timeout-minutes: 150
         shell: pwsh
         env:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}

@@ -11,8 +11,21 @@ paste secrets or screenshots of organization settings into this file.
 On a pull request the workflow re-runs the dispatch benchmarks and posts the
 numbers as a non-blocking sticky comment; it never pushes to the contributor
 branch. After the pull request merges, the `push` event runs the benchmarks
-again and the `commit-perf-doc` job re-renders the table. If the numbers moved,
-it attempts to commit the refreshed doc **directly to the default branch**.
+again and the `commit-perf-doc` job re-renders the table (a manual
+`workflow_dispatch` from the default branch does the same and is the supported
+recovery path after a failed publish). If the numbers moved, the job lands the
+refreshed doc + baseline in two tiers:
+
+1. **Direct push** to the default branch with the App token (the fast path;
+   requires the bypass in Step 3).
+1. **Fallback auto-merge pull request** when the direct push is rejected with
+   `GH006`: the same commit is pushed to a `ci/perf-auto-update-*` branch, a
+   pull request is opened with the App token, and squash auto-merge is
+   requested. The `pull_request` trigger path-ignores the two rendered files,
+   so the fallback PR cannot re-run the benchmark; only the cheap required
+   checks run. Superseded fallback PRs from older runs are closed automatically
+   before a new one opens. The numbers are therefore never lost: worst case
+   they wait in a visible PR for one human merge click.
 
 The push is authenticated by a **GitHub App installation token**, not the
 built-in `GITHUB_TOKEN`. The built-in token cannot push to a protected branch:
@@ -43,8 +56,9 @@ fresh table update.
 1. Give it a name such as `dxmessaging-auto-commit`. Set any homepage URL.
 1. Under **Webhook**, uncheck **Active** (this App needs no events).
 1. Under **Permissions -> Repository permissions**, set **Contents** to
-   **Read and write**. Leave everything else at **No access** (**Metadata:
-   Read-only** is added automatically).
+   **Read and write** and **Pull requests** to **Read and write** (the second
+   powers the fallback pull request tier). Leave everything else at **No
+   access** (**Metadata: Read-only** is added automatically).
 1. Create the App, then on its page choose **Generate a private key** and
    download the `.pem` file.
 1. Note the numeric **App ID** shown near the top of the App's settings page.
@@ -105,17 +119,37 @@ secrets back every auto-commit workflow that pushes to the default branch -- bot
 `perf-numbers.yml` and `update-llms-txt.yml` use them, so this one provisioning
 unblocks both at once.
 
+## Fallback pull request prerequisites
+
+The tier-2 fallback needs two repository conditions to fully self-heal:
+
+1. **Auto-merge enabled**: **Settings -> General -> Pull Requests -> Allow
+   auto-merge**. If it is off, the fallback PR still opens (numbers preserved)
+   but waits for a manual merge; the job emits a warning with the PR URL.
+1. **Required checks must run on doc-only PRs.** Auto-merge completes only once
+   every required status check reports. The fallback PR touches only
+   `docs/architecture/performance.md` and `docs/architecture/perf-baseline.csv`;
+   if a required check's workflow path-filters those files out entirely, GitHub
+   waits forever for an "Expected" check and the PR needs a human merge (or an
+   admin can mark required checks as path-aware). The licensed Unity matrix
+   (`unity-tests.yml`) handles this with a `ci-owned-docs-only` short-circuit:
+   on a PR whose entire diff is those two files it SKIPS the matrix jobs, and
+   skipped jobs report success to branch protection, so the fallback PR stays
+   cheap and auto-mergeable. Audit the remaining required-check list against
+   doc-only changes once when provisioning.
+
 ## Context: the "create and approve pull requests" toggle
 
 A previous version of this workflow opened a bot pull request via
-`peter-evans/create-pull-request`. That step failed with `GitHub Actions is not
-permitted to create or approve pull requests` because **Settings -> Actions ->
-General -> Workflow permissions -> "Allow GitHub Actions to create and approve
-pull requests"** was OFF.
+`peter-evans/create-pull-request` using the built-in `GITHUB_TOKEN`. That step
+failed with `GitHub Actions is not permitted to create or approve pull requests`
+because **Settings -> Actions -> General -> Workflow permissions -> "Allow
+GitHub Actions to create and approve pull requests"** was OFF.
 
-With the direct-push approach that toggle is **irrelevant** -- the workflow no
-longer creates pull requests. It is documented here only so the original failure
-mode is understood; you do **not** need to enable it for this approach.
+That toggle restricts only the built-in `GITHUB_TOKEN`. The tier-2 fallback
+creates its pull request with the **GitHub App installation token**, which the
+toggle does not govern, so the fallback works regardless of that setting -- the
+App just needs the **Pull requests: Read and write** permission from Step 1.
 
 ## How to verify it worked
 
@@ -130,10 +164,15 @@ mode is understood; you do **not** need to enable it for this approach.
    branch.
 1. Confirm that doc-only commit does **not** start a follow-up Performance
    Numbers run (this proves the `paths-ignore` loop break works).
-1. Confirm the run did **not** fail with `GH006` / protected-branch -- a failure
-   there means the App is not yet allowed to bypass the protection (Step 3); if
-   the branch requires status checks, see the classic-branch-protection caveat in
-   Step 3 (you likely need a ruleset bypass or an admin PAT).
+1. Confirm the run did **not** warn about a fallback pull request -- a
+   `GH006`-triggered fallback means the App is not yet allowed to bypass the
+   protection (Step 3); if the branch requires status checks, see the
+   classic-branch-protection caveat in Step 3 (you likely need a ruleset bypass
+   or an admin PAT). The numbers still land via the fallback PR; fixing the
+   bypass just restores the zero-click fast path.
+1. If a run failed before any of this landed, re-run it from the default branch
+   via **workflow_dispatch** (Actions -> Performance Numbers -> Run workflow);
+   the commit job treats a default-branch dispatch exactly like a merge push.
 
 If the numbers did not move, the `commit-perf-doc` job renders, finds no diff,
 and pushes nothing. That is the expected no-op outcome. If the
