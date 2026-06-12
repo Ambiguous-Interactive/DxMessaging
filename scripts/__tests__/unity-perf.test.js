@@ -197,7 +197,7 @@ test("buildComparisonSections bolds the fastest tech per scenario column", () =>
   // N/A capability gaps are never bolded.
   assert.ok(!throughput.includes("**N/A**"));
 
-  // The allocations matrix stays unbolded: byte counts are not a race.
+  // The allocations matrix is never bolded: byte counts are not a race.
   const allocations = sections[1].join("\n");
   assert.ok(!allocations.includes("**"));
 });

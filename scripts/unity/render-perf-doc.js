@@ -449,8 +449,8 @@ function buildComparisonSections(comparisonByScope) {
 
   // The fastest tech per scenario COLUMN is bolded in the throughput matrix so
   // the per-category winner is visible at a glance. Ties (same emits/sec) are
-  // all bolded; N/A capability gaps never win; the allocations matrix stays
-  // unbolded (bytes/op is a property, not a race).
+  // all bolded; N/A capability gaps never win; the allocations matrix is
+  // never bolded (bytes/op is a property, not a race).
   // Winners are computed at DISPLAY precision (the formatted cell text): two
   // techs that render identically are visually tied, so both are bolded even
   // when their raw floats differ in digits the reader cannot see. This also
