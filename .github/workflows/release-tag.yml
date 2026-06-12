@@ -1,0 +1,156 @@
+name: Release Tag
+
+# Bridges the release PR to the tag-triggered release pipeline. When a
+# release-prepare PR merges (squash, default title), the default branch gains
+# a commit whose subject is `release: vX.Y.Z` and whose package.json version
+# is X.Y.Z. This workflow notices that commit and pushes the annotated tag
+# vX.Y.Z at it with the GitHub App token (a GITHUB_TOKEN tag push would NOT
+# re-trigger workflows, so the App token is what makes release.yml fire).
+#
+# LOOP SAFETY: the trigger is a BRANCH push filtered to package.json; the tag
+# push this job performs is a tag ref and cannot re-trigger it. The
+# tag-already-exists check short-circuits FIRST, so routine package.json
+# pushes (dependency edits, metadata changes) carrying an already-tagged
+# version no-op silently, and a manual re-run after the tag exists is safe.
+# An UNTAGGED version whose head subject is not the release pattern no-ops
+# too, but emits a ::warning:: with the manual tag commands when CHANGELOG.md
+# documents the version (the shape of a release PR merged via merge-commit or
+# rebase instead of squash); ordinary work stays warning-free.
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - package.json
+
+concurrency:
+  group: release-tag-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  auto-tag:
+    name: Tag the release commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Detect a release commit
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.version // empty' package.json)"
+          if [ -z "${version}" ]; then
+            echo "::error::package.json version is missing."
+            exit 1
+          fi
+          tag="v${version}"
+          # Short-circuit FIRST on an existing tag: routine package.json
+          # pushes carry an already-released version and must no-op silently
+          # before any release-shape heuristics run.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists; nothing to do."
+            echo "proceed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          subject="$(git log -1 --format=%s)"
+          expected="release: ${tag}"
+          # Accept the exact subject or the squash-merge form
+          # `release: vX.Y.Z (#123)` (GitHub appends the PR number to the
+          # default squash title).
+          escaped_version="${version//./\\.}"
+          if [ "${subject}" != "${expected}" ] \
+            && ! printf '%s\n' "${subject}" | grep -Eq "^release: v${escaped_version} \(#[0-9]+\)$"; then
+            # The version is untagged and the subject is not the release
+            # pattern. When the changelog documents the version this looks
+            # like a release PR merged via merge-commit/rebase (the squash
+            # subject never made it to the head commit): warn with the manual
+            # tag commands instead of no-opping silently. Ordinary work (no
+            # changelog heading for the version) stays warning-free.
+            if grep -Fqx "## [${version}]" CHANGELOG.md; then
+              message="package.json version ${version} has no ${tag} tag and CHANGELOG.md documents '## [${version}]', "
+              message+="but the head commit subject '${subject}' does not match '${expected}', so no tag was pushed. "
+              message+="If this is the release merge (merged without squash), tag it manually: "
+              message+="git tag -a ${tag} -m \"Release ${tag}\" ${GITHUB_SHA} && git push origin ${tag}"
+              echo "::warning::${message}"
+            else
+              echo "Head commit subject '${subject}' is not '${expected}'; not a release commit. Nothing to do."
+            fi
+            echo "proceed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          # Never tag a version the changelog does not document (mirrors the
+          # release.yml verify-tag gate, fixed-string and full-line).
+          if ! grep -Fqx "## [${version}]" CHANGELOG.md; then
+            echo "::error::Head commit looks like a release commit for ${tag}, but CHANGELOG.md has no exact '## [${version}]' heading. Fix the changelog before tagging."
+            exit 1
+          fi
+          {
+            echo "proceed=true"
+            echo "version=${version}"
+            echo "tag=${tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Check for the auto-commit GitHub App credentials
+        id: check-autocommit-app
+        if: ${{ steps.detect.outputs.proceed == 'true' }}
+        # Mirrors the perf-numbers.yml probe. Without the App this degrades to
+        # a ::warning:: carrying the exact manual commands -- a GITHUB_TOKEN
+        # tag push would not trigger release.yml, so there is no point pushing
+        # the tag with it.
+        env:
+          AUTO_COMMIT_APP_ID: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          AUTO_COMMIT_APP_PRIVATE_KEY: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+          TAG: ${{ steps.detect.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${AUTO_COMMIT_APP_ID:-}" ] && [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then
+            echo "has-app=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "has-app=false" >> "${GITHUB_OUTPUT}"
+            message="AUTO_COMMIT_APP_* secrets are not set; create the release tag manually: "
+            message+="git fetch origin ${GITHUB_REF_NAME} && "
+            message+="git tag -a ${TAG} -m \"Release ${TAG}\" ${GITHUB_SHA} && "
+            message+="git push origin ${TAG}"
+            echo "::warning::${message}"
+          fi
+
+      - name: Generate the auto-commit GitHub App token
+        id: app-token
+        if: >-
+          ${{
+            steps.detect.outputs.proceed == 'true' &&
+            steps.check-autocommit-app.outputs.has-app == 'true'
+          }}
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+
+      - name: Create and push the annotated release tag
+        if: >-
+          ${{
+            steps.detect.outputs.proceed == 'true' &&
+            steps.check-autocommit-app.outputs.has-app == 'true'
+          }}
+        env:
+          GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.detect.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}" "${GITHUB_SHA}"
+          auth_header="$(printf 'x-access-token:%s' "${GH_PUSH_TOKEN}" | base64 | tr -d '\n')"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            push origin "refs/tags/${TAG}"
+          echo "::notice::Pushed ${TAG} at ${GITHUB_SHA}; the tag-triggered Release workflow takes over from here."
