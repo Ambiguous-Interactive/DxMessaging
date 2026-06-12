@@ -129,7 +129,7 @@ namespace DxMessaging.Core.MessageBus
             DispatchPhase.PostProcess,
             DispatchVariant.WithoutContext
         );
-        internal const int ExpectedMessageCacheFieldCount = 5;
+        internal const int ExpectedMessageCacheFieldCount = 8;
 
         private static readonly ISweepable[] SweepableTypeCacheRegistry =
         {
@@ -160,6 +160,21 @@ namespace DxMessaging.Core.MessageBus
                 typeof(MessageCache<InterceptorCache<object>>),
                 static (bus, force) =>
                     bus.SweepDirtyInterceptorTypeSlots(bus._broadcastInterceptsByType, force)
+            ),
+            new SweepableTypeCache(
+                nameof(_untargetedDispatchPlans),
+                typeof(MessageCache<DispatchPlan>),
+                static (bus, force) => bus.SweepStaleDispatchPlans(bus._untargetedDispatchPlans)
+            ),
+            new SweepableTypeCache(
+                nameof(_targetedDispatchPlans),
+                typeof(MessageCache<DispatchPlan>),
+                static (bus, force) => bus.SweepStaleDispatchPlans(bus._targetedDispatchPlans)
+            ),
+            new SweepableTypeCache(
+                nameof(_broadcastDispatchPlans),
+                typeof(MessageCache<DispatchPlan>),
+                static (bus, force) => bus.SweepStaleDispatchPlans(bus._broadcastDispatchPlans)
             ),
         };
 
@@ -326,6 +341,53 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>
+        /// Per-(bus, message-type, dispatch-kind) emit-preamble plan: caches
+        /// the sink-slot references the emit shells would otherwise resolve
+        /// with multiple <see cref="MessageCache{TValue}"/> lookups per
+        /// emission, plus the <see cref="fastPath"/> verdict (no
+        /// interceptors, no global accept-all handlers, no post-processors
+        /// of any variant) that lets the no-feature emit lane skip those
+        /// phases entirely. Validity is governed by a single bus-wide stamp:
+        /// the plan is trustworthy exactly while
+        /// <see cref="version"/> == <see cref="_dispatchPlanVersion"/>, and
+        /// EVERY mutation that could change a cached reference or a verdict
+        /// input bumps the bus counter (see
+        /// <see cref="InvalidateDispatchPlans"/> for the audited site list).
+        /// A stale plan is refreshed at the next emission of its type; the
+        /// emit shells additionally re-compare the stamp captured at
+        /// emission start after user code runs, falling back to live sink
+        /// lookups when a handler mutated registrations mid-emission.
+        /// <see cref="_diagnosticsMode"/> and
+        /// <see cref="MessagingDebug.enabled"/> are deliberately NOT cached
+        /// here - both are live-settable and read per emission.
+        /// </summary>
+        private sealed class DispatchPlan
+        {
+            public long version = long.MinValue;
+            public bool fastPath;
+            public HandlerCache<int, HandlerCache> scalarHandle;
+            public HandlerCache<int, HandlerCache> scalarPost;
+            public Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextHandle;
+            public Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextPost;
+
+            /// <summary>
+            /// Drops every cached sink reference and forces a refresh on the
+            /// next emission. Called by the sweep registry so evicted sink
+            /// slots are not kept alive by plan references, and by
+            /// <see cref="ResetState"/>.
+            /// </summary>
+            public void ClearCachedSinks()
+            {
+                version = long.MinValue;
+                fastPath = false;
+                scalarHandle = null;
+                scalarPost = null;
+                contextHandle = null;
+                contextPost = null;
+            }
+        }
+
         private sealed class HandlerCache<TKey, TValue>
         {
             public readonly Dictionary<TKey, TValue> handlers = new();
@@ -423,8 +485,9 @@ namespace DxMessaging.Core.MessageBus
             {
                 MessageBus bus = _bus;
                 bus._scopedEmissionId = _previousScopedEmissionId;
-                bus._dispatchDepth--;
-                if (bus._dispatchDepth == 0 && bus._hasDeferredResetTeardown)
+                int depth = bus._dispatchDepth - 1;
+                bus._dispatchDepth = depth;
+                if (depth == 0 && bus._hasDeferredResetTeardown)
                 {
                     bus.FlushDeferredResetTeardown();
                 }
@@ -775,6 +838,20 @@ namespace DxMessaging.Core.MessageBus
 
         private readonly BusGlobalSlot _globalSlots = new();
 
+        // P1 emit-preamble plans: one per (bus, type, kind), validated by a
+        // single bus-wide version stamp (see DispatchPlan /
+        // InvalidateDispatchPlans). Registered in SweepableTypeCacheRegistry
+        // so sweeps drop their cached sink references.
+        private readonly MessageCache<DispatchPlan> _untargetedDispatchPlans = new();
+        private readonly MessageCache<DispatchPlan> _targetedDispatchPlans = new();
+        private readonly MessageCache<DispatchPlan> _broadcastDispatchPlans = new();
+
+        // Bumped by every mutation that can change what a DispatchPlan
+        // caches or decides. Plans compare their stamp against this value at
+        // every emission; the emit shells also re-compare mid-emission to
+        // detect handler-driven registration changes.
+        private long _dispatchPlanVersion;
+
         /// <summary>
         /// Constructs a <see cref="MessageBus"/> using the default <see cref="StopwatchClock"/>
         /// and runtime-settings provided eviction cadence. This is the only public constructor; DI
@@ -956,6 +1033,9 @@ namespace DxMessaging.Core.MessageBus
             _evictionTickIntervalSeconds = Math.Max(0d, settings.EvictionTickIntervalSeconds);
             _idleEvictionEnabled = settings.EvictionEnabled;
             _trimApiEnabled = settings.EnableTrimApi;
+            // Defensive: plans cache no settings today, but a hot reload is
+            // a documented invalidation site (cheap, runs only on reload).
+            InvalidateDispatchPlans();
         }
 #endif
 
@@ -1301,6 +1381,64 @@ namespace DxMessaging.Core.MessageBus
             return new DispatchLease(this);
         }
 
+        /// <summary>
+        /// Invalidates every cached <see cref="DispatchPlan"/> on this bus.
+        /// MUST be called by every mutation that can change a plan's cached
+        /// sink references or its fast-path verdict. Audited site list (keep
+        /// in sync when adding mutation paths):
+        /// <list type="bullet">
+        /// <item>InternalRegisterUntargeted - register + deregister closure
+        /// (covers all six scalar sinks: untargeted/twt/bws handle + post).</item>
+        /// <item>InternalRegisterWithContext - register + deregister closure
+        /// (covers the four context sinks: targeted/broadcast handle + post,
+        /// including context-map creation).</item>
+        /// <item>RegisterGlobalAcceptAll - register + deregister closure.</item>
+        /// <item>RegisterUntargetedInterceptor / RegisterTargetedInterceptor /
+        /// RegisterBroadcastInterceptor - register + deregister closures.</item>
+        /// <item>Sweep - once at entry (covers every eviction path:
+        /// scalar/context/interceptor slot eviction, context-map removal,
+        /// global slot reset, typed-handler slot sweeps, Trim, idle sweeps).</item>
+        /// <item>ResetState - with the sink clears (also clears the plan
+        /// caches themselves).</item>
+        /// <item>ApplyRuntimeSettings - runtime settings hot reload
+        /// (defensive; plans cache no settings today).</item>
+        /// </list>
+        /// NOT required (no sink mutation): BumpResetGeneration (only
+        /// invalidates deregistration closures), handler.active toggles
+        /// (live-checked per dispatch entry), DiagnosticsMode and
+        /// MessagingDebug.enabled (read live every emission).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void InvalidateDispatchPlans()
+        {
+            unchecked
+            {
+                _dispatchPlanVersion++;
+            }
+        }
+
+        /// <summary>
+        /// Sweep-registry hook for the plan caches: drops cached sink
+        /// references from every stale plan so swept/evicted sink slots are
+        /// not kept reachable. <see cref="Sweep"/> bumps
+        /// <see cref="_dispatchPlanVersion"/> before the registry rows run,
+        /// so every plan is stale here and all references are released.
+        /// Returns 0 - plans are derived caches, not occupied type slots, so
+        /// they never count toward TrimResult eviction totals.
+        /// </summary>
+        private int SweepStaleDispatchPlans(MessageCache<DispatchPlan> plans)
+        {
+            foreach (DispatchPlan plan in plans)
+            {
+                if (plan.version != _dispatchPlanVersion)
+                {
+                    plan.ClearCachedSinks();
+                }
+            }
+
+            return 0;
+        }
+
         public TrimResult Trim(bool force = false)
         {
             if (!_trimApiEnabled)
@@ -1313,6 +1451,10 @@ namespace DxMessaging.Core.MessageBus
 
         internal TrimResult Sweep(bool force)
         {
+            // Any eviction below can remove a sink slot a DispatchPlan has
+            // cached; bump first so the plan rows at the end of this method
+            // (and the next emission of any type) see every plan as stale.
+            InvalidateDispatchPlans();
             int typeSlotsEvicted = SweepableTypeCacheRegistry[0].Sweep(this, force);
             _lastContextTypeSlotsEvicted = 0;
             int targetSlotsEvicted = SweepableTypeCacheRegistry[1].Sweep(this, force);
@@ -1322,6 +1464,12 @@ namespace DxMessaging.Core.MessageBus
             typeSlotsEvicted += SweepableTypeCacheRegistry[4].Sweep(this, force);
             typeSlotsEvicted += SweepGlobalSlot(force);
             typeSlotsEvicted += SweepDirtyTypedHandlerSlots(force);
+            // Plan rows: release cached sink references AFTER the eviction
+            // rows above so anything they evicted is dereferenced within the
+            // same sweep. Always returns 0 (derived caches, not type slots).
+            _ = SweepableTypeCacheRegistry[5].Sweep(this, force);
+            _ = SweepableTypeCacheRegistry[6].Sweep(this, force);
+            _ = SweepableTypeCacheRegistry[7].Sweep(this, force);
             if (force)
             {
                 ClearDirtySweepCandidates();
@@ -2309,6 +2457,13 @@ namespace DxMessaging.Core.MessageBus
 
             _globalSlots.Clear();
 
+            // Plans cache references into the sinks cleared above; drop them
+            // and force every type to rebuild its plan on the next emission.
+            InvalidateDispatchPlans();
+            _untargetedDispatchPlans.Clear();
+            _targetedDispatchPlans.Clear();
+            _broadcastDispatchPlans.Clear();
+
             _untargetedInterceptsByType.Clear();
             _targetedInterceptsByType.Clear();
             _broadcastInterceptsByType.Clear();
@@ -2508,6 +2663,7 @@ namespace DxMessaging.Core.MessageBus
         public Action RegisterGlobalAcceptAll(MessageHandler messageHandler)
         {
             long touchTick = AdvanceTick();
+            InvalidateDispatchPlans();
             _globalSlots.lastTouchTicks = touchTick;
             _globalSlots.version++;
             int count = _globalSlots.sharedHandlers.GetValueOrDefault(messageHandler, 0);
@@ -2563,6 +2719,7 @@ namespace DxMessaging.Core.MessageBus
                 }
 
                 long deregisterTouchTick = AdvanceTick();
+                InvalidateDispatchPlans();
                 _globalSlots.version++;
                 _log.Log(
                     new MessagingRegistration(
@@ -2631,6 +2788,7 @@ namespace DxMessaging.Core.MessageBus
         {
             EnsureAotUntargetedBridge<T>();
             _ = AdvanceTick();
+            InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _untargetedInterceptsByType.GetOrAdd<T>();
             InterceptorCache<object> capturedInterceptors = prioritizedInterceptors;
@@ -2697,6 +2855,7 @@ namespace DxMessaging.Core.MessageBus
                 }
 
                 _ = AdvanceTick();
+                InvalidateDispatchPlans();
                 prioritizedInterceptors.lastTouchTicks = _tickCounter;
                 MarkDirtyType<T>();
                 _log.Log(
@@ -2778,6 +2937,7 @@ namespace DxMessaging.Core.MessageBus
         {
             EnsureAotTargetedBridge<T>();
             _ = AdvanceTick();
+            InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _targetedInterceptsByType.GetOrAdd<T>();
             InterceptorCache<object> capturedInterceptors = prioritizedInterceptors;
@@ -2844,6 +3004,7 @@ namespace DxMessaging.Core.MessageBus
                 }
 
                 _ = AdvanceTick();
+                InvalidateDispatchPlans();
                 prioritizedInterceptors.lastTouchTicks = _tickCounter;
                 MarkDirtyType<T>();
                 _log.Log(
@@ -2925,6 +3086,7 @@ namespace DxMessaging.Core.MessageBus
         {
             EnsureAotSourcedBridge<T>();
             _ = AdvanceTick();
+            InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _broadcastInterceptsByType.GetOrAdd<T>();
             InterceptorCache<object> capturedInterceptors = prioritizedInterceptors;
@@ -2991,6 +3153,7 @@ namespace DxMessaging.Core.MessageBus
                 }
 
                 _ = AdvanceTick();
+                InvalidateDispatchPlans();
                 prioritizedInterceptors.lastTouchTicks = _tickCounter;
                 MarkDirtyType<T>();
                 _log.Log(
@@ -3198,17 +3361,79 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : IUntargetedMessage
         {
             EnsureAotUntargetedBridge<TMessage>();
+            // TrySweepIdle runs BEFORE the plan is validated: a sweep can
+            // evict sink slots (and bumps the plan version), so validating
+            // afterwards guarantees the plan's cached references are live
+            // until the first user code of this emission runs.
             TrySweepIdle();
+            if (!_untargetedDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
+            {
+                plan = _untargetedDispatchPlans.GetOrAdd<TMessage>();
+            }
+
+            long planVersion = _dispatchPlanVersion;
+            if (plan.version != planVersion)
+            {
+                RefreshUntargetedDispatchPlan<TMessage>(plan);
+            }
+
             using DispatchLease dispatchLease = EnterDispatch();
+            long emissionId;
             unchecked
             {
-                _emissionId++;
-                _scopedEmissionId = _emissionId;
+                emissionId = ++_emissionId;
+                _scopedEmissionId = emissionId;
             }
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
             {
                 _emissionBuffer.Add(new MessageEmissionData(typedMessage));
+            }
+
+            if (plan.fastPath)
+            {
+                // No interceptors, no global accept-all, no post-processors
+                // existed when the plan was validated (i.e. at emission
+                // start): handle phase only. Mutations performed BY handlers
+                // bump the plan version; the re-compare below reruns the live
+                // post-phase re-check exactly like the featured path would.
+                bool fastFound = false;
+                HandlerCache<int, HandlerCache> fastHandlers = plan.scalarHandle;
+                if (fastHandlers != null && 0 < fastHandlers.handlers.Count)
+                {
+                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                        this,
+                        fastHandlers,
+                        UntargetedHandleSlot,
+                        emissionId,
+                        default
+                    );
+                    fastFound = DispatchFlatSnapshot(fastSnapshot, ref typedMessage);
+                }
+
+                if (
+                    planVersion != _dispatchPlanVersion
+                    && RunUntargetedPostPhase<TMessage>(
+                        ref typedMessage,
+                        DispatchSnapshot.Empty,
+                        emissionId,
+                        touchTick
+                    )
+                )
+                {
+                    fastFound = true;
+                }
+
+                if (!fastFound && MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Info,
+                        "Could not find a matching untargeted broadcast handler for Message: {0}.",
+                        typedMessage
+                    );
+                }
+
+                return;
             }
 
             // Pre-freeze the post-processing snapshot for this emission so
@@ -3217,22 +3442,19 @@ namespace DxMessaging.Core.MessageBus
             // interceptors and handlers run) is sufficient: the snapshot's
             // flat entry array was fully resolved at build time, so no lazy
             // per-handler cache read remains to observe a mid-emission
-            // registration.
+            // registration. plan.scalarPost is the same reference a live
+            // sink lookup would return here (the plan was validated after
+            // the sweep and no user code has run since).
             DispatchSnapshot untargetedPostSnapshot = DispatchSnapshot.Empty;
-            if (
-                _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
-                    .TryGetValue<TMessage>(
-                        out HandlerCache<int, HandlerCache> untargetedPostHandlers
-                    )
-                && untargetedPostHandlers.handlers.Count > 0
-            )
+            HandlerCache<int, HandlerCache> untargetedPostHandlers = plan.scalarPost;
+            if (untargetedPostHandlers != null && untargetedPostHandlers.handlers.Count > 0)
             {
                 Touch(untargetedPostHandlers, touchTick);
-                untargetedPostSnapshot = AcquireDispatchSnapshot<TMessage>(
+                untargetedPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     untargetedPostHandlers,
                     UntargetedPostSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     default
                 );
             }
@@ -3245,34 +3467,21 @@ namespace DxMessaging.Core.MessageBus
             if (0 < _globalSlots.sharedHandlers.Count)
             {
                 IUntargetedMessage untargetedMessage = typedMessage;
-                BroadcastGlobalUntargeted(ref untargetedMessage);
+                BroadcastGlobalUntargeted(ref untargetedMessage, emissionId);
             }
 
-            bool foundAnyHandlers = InternalUntargetedBroadcast(ref typedMessage);
+            bool foundAnyHandlers = InternalUntargetedBroadcast(ref typedMessage, emissionId);
 
             if (
-                _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers)
-                && 0 < sortedHandlers.handlers.Count
+                RunUntargetedPostPhase<TMessage>(
+                    ref typedMessage,
+                    untargetedPostSnapshot,
+                    emissionId,
+                    touchTick
+                )
             )
             {
-                Touch(sortedHandlers, touchTick);
-                DispatchSnapshot snapshot = untargetedPostSnapshot.IsEmpty
-                    ? AcquireDispatchSnapshot<TMessage>(
-                        this,
-                        sortedHandlers,
-                        UntargetedPostSlot,
-                        _scopedEmissionId,
-                        default
-                    )
-                    : untargetedPostSnapshot;
-                // Flat dispatch; see DispatchFlatSnapshot for the
-                // frozen-array semantics that replace prefreeze stamping and
-                // for the reset-generation guard rationale.
-                if (DispatchFlatSnapshot(snapshot, ref typedMessage))
-                {
-                    foundAnyHandlers = true;
-                }
+                foundAnyHandlers = true;
             }
 
             if (!foundAnyHandlers && MessagingDebug.enabled)
@@ -3283,6 +3492,77 @@ namespace DxMessaging.Core.MessageBus
                     typedMessage
                 );
             }
+        }
+
+        /// <summary>
+        /// Live post-processing phase for untargeted emissions, shared by
+        /// the featured emit path and the fast lane's mid-emission-mutation
+        /// fallback. Re-checks the post sink LIVE (a post-processor
+        /// registered into a previously-snapshotless sink mid-emission is
+        /// observed here, matching the legacy lazy-freeze placement) and
+        /// dispatches the pre-frozen snapshot when one was acquired at
+        /// emission start.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool RunUntargetedPostPhase<TMessage>(
+            ref TMessage typedMessage,
+            DispatchSnapshot prefrozenSnapshot,
+            long emissionId,
+            long touchTick
+        )
+            where TMessage : IUntargetedMessage
+        {
+            if (
+                !_scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
+                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers)
+                || sortedHandlers.handlers.Count == 0
+            )
+            {
+                return false;
+            }
+
+            Touch(sortedHandlers, touchTick);
+            DispatchSnapshot snapshot = prefrozenSnapshot.IsEmpty
+                ? AcquireDispatchSnapshotFast<TMessage>(
+                    this,
+                    sortedHandlers,
+                    UntargetedPostSlot,
+                    emissionId,
+                    default
+                )
+                : prefrozenSnapshot;
+            // Flat dispatch; see DispatchFlatSnapshot for the frozen-array
+            // semantics that replace prefreeze stamping and for the
+            // reset-generation guard rationale.
+            return DispatchFlatSnapshot(snapshot, ref typedMessage);
+        }
+
+        /// <summary>
+        /// Rebuilds the cached emit-preamble plan for an untargeted message
+        /// type. Runs only when the bus-wide plan version moved (registration
+        /// churn, interceptor/global/post mutation, sweep, reset, settings
+        /// reload); steady-state emissions skip straight past it.
+        /// </summary>
+        private void RefreshUntargetedDispatchPlan<TMessage>(DispatchPlan plan)
+            where TMessage : IUntargetedMessage
+        {
+            _ = _scalarSinks[BusSinkIndex.UntargetedHandleDefault]
+                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handle);
+            _ = _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
+                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> post);
+            plan.scalarHandle = handle;
+            plan.scalarPost = post;
+            plan.contextHandle = null;
+            plan.contextPost = null;
+            bool hasInterceptors =
+                _untargetedInterceptsByType.TryGetValue<TMessage>(
+                    out InterceptorCache<object> interceptors
+                )
+                && interceptors.handlers.Count != 0;
+            bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
+            bool hasPost = post != null && 0 < post.handlers.Count;
+            plan.fastPath = !hasInterceptors && !hasGlobal && !hasPost;
+            plan.version = _dispatchPlanVersion;
         }
 
         /// <inheritdoc />
@@ -3323,17 +3603,129 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : ITargetedMessage
         {
             EnsureAotTargetedBridge<TMessage>();
+            // TrySweepIdle runs BEFORE the plan is validated; see
+            // UntargetedBroadcast for the ordering rationale.
             TrySweepIdle();
+            if (!_targetedDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
+            {
+                plan = _targetedDispatchPlans.GetOrAdd<TMessage>();
+            }
+
+            long planVersion = _dispatchPlanVersion;
+            if (plan.version != planVersion)
+            {
+                RefreshTargetedDispatchPlan<TMessage>(plan);
+            }
+
             using DispatchLease dispatchLease = EnterDispatch();
+            long emissionId;
             unchecked
             {
-                _emissionId++;
-                _scopedEmissionId = _emissionId;
+                emissionId = ++_emissionId;
+                _scopedEmissionId = emissionId;
             }
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
             {
                 _emissionBuffer.Add(new MessageEmissionData(typedMessage, target));
+            }
+
+            // Fast lane: no interceptors, no global accept-all, no
+            // post-processors of either variant existed at emission start.
+            // ReflexiveMessage always takes the featured path (the typeof
+            // check is a JIT-time constant for every other message type).
+            if (plan.fastPath && typeof(TMessage) != typeof(ReflexiveMessage))
+            {
+                bool fastFound = false;
+                Dictionary<InstanceId, HandlerCache<int, HandlerCache>> fastTargeted =
+                    plan.contextHandle;
+                if (
+                    fastTargeted != null
+                    && fastTargeted.TryGetValue(
+                        target,
+                        out HandlerCache<int, HandlerCache> fastSorted
+                    )
+                    && fastSorted.handlers.Count > 0
+                )
+                {
+                    Touch(fastSorted, touchTick);
+                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                        this,
+                        fastSorted,
+                        TargetedHandleSlot,
+                        emissionId,
+                        target
+                    );
+                    if (DispatchFlatSnapshot(fastSnapshot, ref typedMessage))
+                    {
+                        fastFound = true;
+                    }
+                }
+
+                // Without-targeting handle phase. While no mutation happened
+                // this emission the cached sink reference IS the live sink;
+                // otherwise fall back to the live lookup (preserving the
+                // "registration into a previously snapshotless sink
+                // mid-emission fires" lazy-acquire semantics).
+                if (planVersion == _dispatchPlanVersion)
+                {
+                    HandlerCache<int, HandlerCache> fastTwt = plan.scalarHandle;
+                    if (fastTwt != null && fastTwt.handlers.Count != 0)
+                    {
+                        DispatchSnapshot twtSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                            this,
+                            fastTwt,
+                            TargetedWithoutContextHandleSlot,
+                            emissionId,
+                            default
+                        );
+                        if (DispatchContextFlatSnapshot(twtSnapshot, ref target, ref typedMessage))
+                        {
+                            fastFound = true;
+                        }
+                    }
+                }
+                else if (
+                    InternalTargetedWithoutTargetingBroadcast(
+                        ref target,
+                        ref typedMessage,
+                        emissionId
+                    )
+                )
+                {
+                    fastFound = true;
+                }
+
+                // Post phases: nothing existed at emission start; only a
+                // mid-emission mutation can have created live post sinks.
+                // The target cannot have been rewritten (no interceptors
+                // ran), so the pre-interceptor target equals the final one.
+                if (
+                    planVersion != _dispatchPlanVersion
+                    && RunTargetedPostPhases<TMessage>(
+                        ref target,
+                        target,
+                        ref typedMessage,
+                        DispatchSnapshot.Empty,
+                        DispatchSnapshot.Empty,
+                        emissionId
+                    )
+                )
+                {
+                    fastFound = true;
+                }
+
+                if (!fastFound && MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Info,
+                        "Could not find a matching targeted broadcast handler for Id: {0}, Message: {1}.",
+                        target,
+                        typedMessage
+                    );
+                }
+
+                return;
             }
 
             // Pre-freeze targeted post-processing for this emission
@@ -3342,16 +3734,15 @@ namespace DxMessaging.Core.MessageBus
             // snapshot's flat entry array was fully resolved at build time,
             // so no lazy per-handler cache read remains to observe a
             // mid-emission registration - no prefreeze stamping needed.
+            // plan.contextPost / plan.scalarPost are the same references a
+            // live sink lookup would return here (plan validated after the
+            // sweep, no user code has run since).
             DispatchSnapshot targetedPostSnapshot = DispatchSnapshot.Empty;
             DispatchSnapshot targetedWithoutTargetingPostSnapshot = DispatchSnapshot.Empty;
+            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> targetedPostHandlers =
+                plan.contextPost;
             if (
-                _contextSinks[BusContextIndex.TargetedPostProcessDefault]
-                    .TryGetValue<TMessage>(
-                        out Dictionary<
-                            InstanceId,
-                            HandlerCache<int, HandlerCache>
-                        > targetedPostHandlers
-                    )
+                targetedPostHandlers != null
                 && targetedPostHandlers.TryGetValue(
                     target,
                     out HandlerCache<int, HandlerCache> targetedPostByPriority
@@ -3360,28 +3751,26 @@ namespace DxMessaging.Core.MessageBus
             )
             {
                 Touch(targetedPostByPriority, touchTick);
-                targetedPostSnapshot = AcquireDispatchSnapshot<TMessage>(
+                targetedPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     targetedPostByPriority,
                     TargetedPostSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     target
                 );
             }
+            HandlerCache<int, HandlerCache> targetedWithoutTargetingHandlers = plan.scalarPost;
             if (
-                _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext]
-                    .TryGetValue<TMessage>(
-                        out HandlerCache<int, HandlerCache> targetedWithoutTargetingHandlers
-                    )
+                targetedWithoutTargetingHandlers != null
                 && targetedWithoutTargetingHandlers.handlers.Count > 0
             )
             {
                 Touch(targetedWithoutTargetingHandlers, touchTick);
-                targetedWithoutTargetingPostSnapshot = AcquireDispatchSnapshot<TMessage>(
+                targetedWithoutTargetingPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     targetedWithoutTargetingHandlers,
                     TargetedWithoutContextPostSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     default
                 );
             }
@@ -3397,7 +3786,7 @@ namespace DxMessaging.Core.MessageBus
             if (0 < _globalSlots.sharedHandlers.Count)
             {
                 ITargetedMessage targetedMessage = typedMessage;
-                BroadcastGlobalTargeted(ref target, ref targetedMessage);
+                BroadcastGlobalTargeted(ref target, ref targetedMessage, emissionId);
             }
 
             bool foundAnyHandlers = false;
@@ -3623,11 +4012,11 @@ namespace DxMessaging.Core.MessageBus
             )
             {
                 Touch(sortedHandlers, touchTick);
-                DispatchSnapshot snapshot = AcquireDispatchSnapshot<TMessage>(
+                DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     sortedHandlers,
                     TargetedHandleSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     target
                 );
                 // Flat dispatch; see DispatchFlatSnapshot for the
@@ -3639,15 +4028,63 @@ namespace DxMessaging.Core.MessageBus
                 }
             }
 
-            if (InternalTargetedWithoutTargetingBroadcast(ref target, ref typedMessage))
+            if (InternalTargetedWithoutTargetingBroadcast(ref target, ref typedMessage, emissionId))
             {
                 foundAnyHandlers = true;
             }
 
             if (
+                RunTargetedPostPhases<TMessage>(
+                    ref target,
+                    preInterceptorTarget,
+                    ref typedMessage,
+                    targetedPostSnapshot,
+                    targetedWithoutTargetingPostSnapshot,
+                    emissionId
+                )
+            )
+            {
+                foundAnyHandlers = true;
+            }
+
+            if (!foundAnyHandlers && MessagingDebug.enabled)
+            {
+                MessagingDebug.Log(
+                    LogLevel.Info,
+                    "Could not find a matching targeted broadcast handler for Id: {0}, Message: {1}.",
+                    target,
+                    typedMessage
+                );
+            }
+        }
+
+        /// <summary>
+        /// Live post-processing phases for targeted emissions (target-keyed
+        /// then without-targeting), shared by the featured emit path and the
+        /// fast lane's mid-emission-mutation fallback. Both sinks are
+        /// re-checked LIVE, matching the legacy lazy-freeze placement.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool RunTargetedPostPhases<TMessage>(
+            ref InstanceId target,
+            InstanceId preInterceptorTarget,
+            ref TMessage typedMessage,
+            DispatchSnapshot targetedPostSnapshot,
+            DispatchSnapshot targetedWithoutTargetingPostSnapshot,
+            long emissionId
+        )
+            where TMessage : ITargetedMessage
+        {
+            bool foundAnyHandlers = false;
+            if (
                 _contextSinks[BusContextIndex.TargetedPostProcessDefault]
-                    .TryGetValue<TMessage>(out targetedHandlers)
-                && targetedHandlers.TryGetValue(target, out sortedHandlers)
+                    .TryGetValue<TMessage>(
+                        out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> targetedHandlers
+                    )
+                && targetedHandlers.TryGetValue(
+                    target,
+                    out HandlerCache<int, HandlerCache> sortedHandlers
+                )
                 && sortedHandlers.handlers.Count > 0
             )
             {
@@ -3663,21 +4100,21 @@ namespace DxMessaging.Core.MessageBus
                 DispatchSnapshot snapshot;
                 if (target != preInterceptorTarget)
                 {
-                    snapshot = AcquireDispatchSnapshot<TMessage>(
+                    snapshot = AcquireDispatchSnapshotFast<TMessage>(
                         this,
                         sortedHandlers,
                         TargetedPostSlot,
-                        _scopedEmissionId,
+                        emissionId,
                         target
                     );
                 }
                 else if (targetedPostSnapshot.IsEmpty)
                 {
-                    snapshot = AcquireDispatchSnapshot<TMessage>(
+                    snapshot = AcquireDispatchSnapshotFast<TMessage>(
                         this,
                         sortedHandlers,
                         TargetedPostSlot,
-                        _scopedEmissionId,
+                        emissionId,
                         target
                     );
                 }
@@ -3698,11 +4135,11 @@ namespace DxMessaging.Core.MessageBus
             )
             {
                 DispatchSnapshot snapshot = targetedWithoutTargetingPostSnapshot.IsEmpty
-                    ? AcquireDispatchSnapshot<TMessage>(
+                    ? AcquireDispatchSnapshotFast<TMessage>(
                         this,
                         postTwt,
                         TargetedWithoutContextPostSlot,
-                        _scopedEmissionId,
+                        emissionId,
                         default
                     )
                     : targetedWithoutTargetingPostSnapshot;
@@ -3712,15 +4149,47 @@ namespace DxMessaging.Core.MessageBus
                 }
             }
 
-            if (!foundAnyHandlers && MessagingDebug.enabled)
-            {
-                MessagingDebug.Log(
-                    LogLevel.Info,
-                    "Could not find a matching targeted broadcast handler for Id: {0}, Message: {1}.",
-                    target,
-                    typedMessage
+            return foundAnyHandlers;
+        }
+
+        /// <summary>
+        /// Rebuilds the cached emit-preamble plan for a targeted message
+        /// type; see <see cref="RefreshUntargetedDispatchPlan{TMessage}"/>.
+        /// The post verdict is conservative for context-keyed sinks: ANY
+        /// target with (possibly empty-but-unswept) post registrations for
+        /// this type keeps the featured path - correctness first, the
+        /// featured path re-gates per target.
+        /// </summary>
+        private void RefreshTargetedDispatchPlan<TMessage>(DispatchPlan plan)
+            where TMessage : ITargetedMessage
+        {
+            _ = _contextSinks[BusContextIndex.TargetedHandleDefault]
+                .TryGetValue<TMessage>(
+                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextHandle
                 );
-            }
+            _ = _contextSinks[BusContextIndex.TargetedPostProcessDefault]
+                .TryGetValue<TMessage>(
+                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextPost
+                );
+            _ = _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext]
+                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarHandle);
+            _ = _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext]
+                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarPost);
+            plan.contextHandle = contextHandle;
+            plan.contextPost = contextPost;
+            plan.scalarHandle = scalarHandle;
+            plan.scalarPost = scalarPost;
+            bool hasInterceptors =
+                _targetedInterceptsByType.TryGetValue<TMessage>(
+                    out InterceptorCache<object> interceptors
+                )
+                && interceptors.handlers.Count != 0;
+            bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
+            bool hasPost =
+                (contextPost != null && 0 < contextPost.Count)
+                || (scalarPost != null && 0 < scalarPost.handlers.Count);
+            plan.fastPath = !hasInterceptors && !hasGlobal && !hasPost;
+            plan.version = _dispatchPlanVersion;
         }
 
         /// <inheritdoc />
@@ -3761,17 +4230,132 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : IBroadcastMessage
         {
             EnsureAotSourcedBridge<TMessage>();
+            // TrySweepIdle runs BEFORE the plan is validated; see
+            // UntargetedBroadcast for the ordering rationale.
             TrySweepIdle();
+            if (!_broadcastDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
+            {
+                plan = _broadcastDispatchPlans.GetOrAdd<TMessage>();
+            }
+
+            long planVersion = _dispatchPlanVersion;
+            if (plan.version != planVersion)
+            {
+                RefreshBroadcastDispatchPlan<TMessage>(plan);
+            }
+
             using DispatchLease dispatchLease = EnterDispatch();
+            long emissionId;
             unchecked
             {
-                _emissionId++;
-                _scopedEmissionId = _emissionId;
+                emissionId = ++_emissionId;
+                _scopedEmissionId = emissionId;
             }
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
             {
                 _emissionBuffer.Add(new MessageEmissionData(typedMessage, source));
+            }
+
+            // Fast lane: no interceptors, no global accept-all, no
+            // post-processors of either variant existed at emission start.
+            if (plan.fastPath)
+            {
+                // Pre-freeze the broadcast-without-source HANDLE snapshot
+                // before the source-keyed handle phase runs - with no
+                // interceptors and no global walk on this lane, this is the
+                // same program point as the featured acquisition, so
+                // registrations made by a source-keyed handler this emission
+                // are not observed (matching the legacy emission-start
+                // freeze).
+                DispatchSnapshot fastBwsSnapshot = DispatchSnapshot.Empty;
+                HandlerCache<int, HandlerCache> fastBws = plan.scalarHandle;
+                if (fastBws != null && fastBws.handlers.Count > 0)
+                {
+                    fastBwsSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                        this,
+                        fastBws,
+                        BroadcastWithoutContextHandleSlot,
+                        emissionId,
+                        default
+                    );
+                }
+
+                bool fastFound = false;
+                Dictionary<InstanceId, HandlerCache<int, HandlerCache>> fastBroadcast =
+                    plan.contextHandle;
+                if (
+                    fastBroadcast != null
+                    && fastBroadcast.TryGetValue(
+                        source,
+                        out HandlerCache<int, HandlerCache> fastSorted
+                    )
+                    && 0 < fastSorted.handlers.Count
+                )
+                {
+                    Touch(fastSorted, touchTick);
+                    // Legacy reporting: the live per-source gate above
+                    // passing counts as "found".
+                    fastFound = true;
+                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                        this,
+                        fastSorted,
+                        BroadcastHandleSlot,
+                        emissionId,
+                        source
+                    );
+                    _ = DispatchFlatSnapshot(fastSnapshot, ref typedMessage);
+                }
+
+                // Without-source handle phase. While no mutation happened
+                // this emission the cached sink reference IS the live sink
+                // (and the pre-frozen snapshot above is exactly what the
+                // live phase would dispatch); otherwise fall back to the
+                // live lookup, preserving the "registration into a
+                // previously-empty sink mid-emission fires" lazy-acquire
+                // semantics.
+                bool fastBwsFound;
+                if (planVersion == _dispatchPlanVersion)
+                {
+                    fastBwsFound = false;
+                    if (fastBws != null && fastBws.handlers.Count != 0)
+                    {
+                        _ = DispatchContextFlatSnapshot(
+                            fastBwsSnapshot,
+                            ref source,
+                            ref typedMessage
+                        );
+                        // Legacy reporting: the live-sink gate passing counts
+                        // as "found".
+                        fastBwsFound = true;
+                    }
+                }
+                else
+                {
+                    fastBwsFound = InternalBroadcastWithoutSource(
+                        fastBwsSnapshot,
+                        ref source,
+                        ref typedMessage,
+                        emissionId
+                    );
+                }
+
+                // Post phases: the featured path dispatches only snapshots
+                // pre-frozen at emission start (no live post re-check for
+                // broadcasts), and none existed on this lane - even a
+                // mid-emission post registration cannot fire this emission,
+                // exactly like the featured path.
+                if (!(fastFound || fastBwsFound) && MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Info,
+                        "Could not find a matching sourced broadcast handler for Id: {0}, Message: {1}.",
+                        source,
+                        typedMessage
+                    );
+                }
+
+                return;
             }
 
             // Pre-freeze broadcast post-processing for this emission
@@ -3780,16 +4364,15 @@ namespace DxMessaging.Core.MessageBus
             // snapshot's flat entry array was fully resolved at build time,
             // so no lazy per-handler cache read remains to observe a
             // mid-emission registration - no prefreeze stamping needed.
+            // plan.contextPost / plan.scalarPost are the same references a
+            // live sink lookup would return here (plan validated after the
+            // sweep, no user code has run since).
             DispatchSnapshot broadcastPostSnapshot = DispatchSnapshot.Empty;
             DispatchSnapshot broadcastWithoutSourcePostSnapshot = DispatchSnapshot.Empty;
+            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> broadcastPostHandlers =
+                plan.contextPost;
             if (
-                _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                    .TryGetValue<TMessage>(
-                        out Dictionary<
-                            InstanceId,
-                            HandlerCache<int, HandlerCache>
-                        > broadcastPostHandlers
-                    )
+                broadcastPostHandlers != null
                 && broadcastPostHandlers.TryGetValue(
                     source,
                     out HandlerCache<int, HandlerCache> broadcastPostByPriority
@@ -3798,28 +4381,26 @@ namespace DxMessaging.Core.MessageBus
             )
             {
                 Touch(broadcastPostByPriority, touchTick);
-                broadcastPostSnapshot = AcquireDispatchSnapshot<TMessage>(
+                broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     broadcastPostByPriority,
                     BroadcastPostSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     source
                 );
             }
+            HandlerCache<int, HandlerCache> broadcastWithoutSourceHandlers = plan.scalarPost;
             if (
-                _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext]
-                    .TryGetValue<TMessage>(
-                        out HandlerCache<int, HandlerCache> broadcastWithoutSourceHandlers
-                    )
+                broadcastWithoutSourceHandlers != null
                 && broadcastWithoutSourceHandlers.handlers.Count > 0
             )
             {
                 Touch(broadcastWithoutSourceHandlers, touchTick);
-                broadcastWithoutSourcePostSnapshot = AcquireDispatchSnapshot<TMessage>(
+                broadcastWithoutSourcePostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     broadcastWithoutSourceHandlers,
                     BroadcastWithoutContextPostSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     default
                 );
             }
@@ -3835,7 +4416,7 @@ namespace DxMessaging.Core.MessageBus
             if (0 < _globalSlots.sharedHandlers.Count)
             {
                 IBroadcastMessage broadcastMessage = typedMessage;
-                BroadcastGlobalSourcedBroadcast(ref source, ref broadcastMessage);
+                BroadcastGlobalSourcedBroadcast(ref source, ref broadcastMessage, emissionId);
             }
 
             // Pre-freeze the broadcast-without-source HANDLE snapshot at the
@@ -3843,7 +4424,8 @@ namespace DxMessaging.Core.MessageBus
             // interceptors and the global walk, before the source-keyed
             // handle phase), so registrations made by a source-keyed handler
             // this emission are not observed - acquisition alone freezes the
-            // fully-resolved flat array.
+            // fully-resolved flat array. LIVE lookup: interceptors and
+            // global handlers (user code) ran above.
             DispatchSnapshot broadcastWithoutSourceHandleSnapshot = DispatchSnapshot.Empty;
             if (
                 _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
@@ -3852,11 +4434,11 @@ namespace DxMessaging.Core.MessageBus
             )
             {
                 Touch(bwsHandlers, touchTick);
-                broadcastWithoutSourceHandleSnapshot = AcquireDispatchSnapshot<TMessage>(
+                broadcastWithoutSourceHandleSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     bwsHandlers,
                     BroadcastWithoutContextHandleSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     default
                 );
             }
@@ -3880,11 +4462,11 @@ namespace DxMessaging.Core.MessageBus
                 // counts as "found", regardless of how many frozen delegates
                 // fire below.
                 foundAnyHandlers = true;
-                DispatchSnapshot snapshot = AcquireDispatchSnapshot<TMessage>(
+                DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     sortedHandlers,
                     BroadcastHandleSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     source
                 );
                 // Flat dispatch; see DispatchFlatSnapshot for the
@@ -3897,7 +4479,8 @@ namespace DxMessaging.Core.MessageBus
             bool bwsFound = InternalBroadcastWithoutSource(
                 broadcastWithoutSourceHandleSnapshot,
                 ref source,
-                ref typedMessage
+                ref typedMessage,
+                emissionId
             );
 
             // Post-processors follow the FINAL (post-interceptor) source. The
@@ -3918,11 +4501,11 @@ namespace DxMessaging.Core.MessageBus
                     && broadcastPostByPriority.handlers.Count > 0
                 )
                 {
-                    broadcastPostSnapshot = AcquireDispatchSnapshot<TMessage>(
+                    broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                         this,
                         broadcastPostByPriority,
                         BroadcastPostSlot,
-                        _scopedEmissionId,
+                        emissionId,
                         source
                     );
                 }
@@ -3961,13 +4544,51 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private void BroadcastGlobalUntargeted(ref IUntargetedMessage message)
+        /// <summary>
+        /// Rebuilds the cached emit-preamble plan for a broadcast message
+        /// type; see <see cref="RefreshUntargetedDispatchPlan{TMessage}"/>
+        /// and the conservative context-keyed post note on
+        /// <see cref="RefreshTargetedDispatchPlan{TMessage}"/>.
+        /// </summary>
+        private void RefreshBroadcastDispatchPlan<TMessage>(DispatchPlan plan)
+            where TMessage : IBroadcastMessage
+        {
+            _ = _contextSinks[BusContextIndex.BroadcastHandleDefault]
+                .TryGetValue<TMessage>(
+                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextHandle
+                );
+            _ = _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
+                .TryGetValue<TMessage>(
+                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextPost
+                );
+            _ = _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
+                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarHandle);
+            _ = _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext]
+                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarPost);
+            plan.contextHandle = contextHandle;
+            plan.contextPost = contextPost;
+            plan.scalarHandle = scalarHandle;
+            plan.scalarPost = scalarPost;
+            bool hasInterceptors =
+                _broadcastInterceptsByType.TryGetValue<TMessage>(
+                    out InterceptorCache<object> interceptors
+                )
+                && interceptors.handlers.Count != 0;
+            bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
+            bool hasPost =
+                (contextPost != null && 0 < contextPost.Count)
+                || (scalarPost != null && 0 < scalarPost.handlers.Count);
+            plan.fastPath = !hasInterceptors && !hasGlobal && !hasPost;
+            plan.version = _dispatchPlanVersion;
+        }
+
+        private void BroadcastGlobalUntargeted(ref IUntargetedMessage message, long emissionId)
         {
             DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IUntargetedMessage>(
                 this,
                 _globalSlots,
                 DispatchKind.Untargeted,
-                _scopedEmissionId
+                emissionId
             );
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
@@ -4032,13 +4653,17 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private void BroadcastGlobalTargeted(ref InstanceId target, ref ITargetedMessage message)
+        private void BroadcastGlobalTargeted(
+            ref InstanceId target,
+            ref ITargetedMessage message,
+            long emissionId
+        )
         {
             DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<ITargetedMessage>(
                 this,
                 _globalSlots,
                 DispatchKind.Targeted,
-                _scopedEmissionId
+                emissionId
             );
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
@@ -4105,14 +4730,15 @@ namespace DxMessaging.Core.MessageBus
 
         private void BroadcastGlobalSourcedBroadcast(
             ref InstanceId source,
-            ref IBroadcastMessage message
+            ref IBroadcastMessage message,
+            long emissionId
         )
         {
             DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IBroadcastMessage>(
                 this,
                 _globalSlots,
                 DispatchKind.Broadcast,
-                _scopedEmissionId
+                emissionId
             );
             DispatchBucket[] buckets = snapshot.buckets;
             int bucketCount = snapshot.bucketCount;
@@ -4387,7 +5013,7 @@ namespace DxMessaging.Core.MessageBus
             return true;
         }
 
-        private bool InternalUntargetedBroadcast<TMessage>(ref TMessage message)
+        private bool InternalUntargetedBroadcast<TMessage>(ref TMessage message, long emissionId)
             where TMessage : IUntargetedMessage
         {
             if (
@@ -4399,11 +5025,11 @@ namespace DxMessaging.Core.MessageBus
                 return false;
             }
 
-            DispatchSnapshot snapshot = AcquireDispatchSnapshot<TMessage>(
+            DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
                 this,
                 sortedHandlers,
                 UntargetedHandleSlot,
-                _scopedEmissionId,
+                emissionId,
                 default
             );
 
@@ -4417,7 +5043,8 @@ namespace DxMessaging.Core.MessageBus
 
         private bool InternalTargetedWithoutTargetingBroadcast<TMessage>(
             ref InstanceId target,
-            ref TMessage message
+            ref TMessage message,
+            long emissionId
         )
             where TMessage : ITargetedMessage
         {
@@ -4430,11 +5057,11 @@ namespace DxMessaging.Core.MessageBus
                 return false;
             }
 
-            DispatchSnapshot snapshot = AcquireDispatchSnapshot<TMessage>(
+            DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
                 this,
                 sortedHandlers,
                 TargetedWithoutContextHandleSlot,
-                _scopedEmissionId,
+                emissionId,
                 default
             );
 
@@ -4448,7 +5075,8 @@ namespace DxMessaging.Core.MessageBus
         private bool InternalBroadcastWithoutSource<TMessage>(
             DispatchSnapshot prefrozenSnapshot,
             ref InstanceId source,
-            ref TMessage message
+            ref TMessage message,
+            long emissionId
         )
             where TMessage : IBroadcastMessage
         {
@@ -4471,11 +5099,11 @@ namespace DxMessaging.Core.MessageBus
             // freeze at this point in that case, so a registration made
             // earlier in this emission into a previously-empty sink fires.
             DispatchSnapshot snapshot = prefrozenSnapshot.IsEmpty
-                ? AcquireDispatchSnapshot<TMessage>(
+                ? AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     sortedHandlers,
                     BroadcastWithoutContextHandleSlot,
-                    _scopedEmissionId,
+                    emissionId,
                     default
                 )
                 : prefrozenSnapshot;
@@ -4499,6 +5127,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             long touchTick = AdvanceTick();
+            InvalidateDispatchPlans();
             InstanceId handlerOwnerId = messageHandler.owner;
             HandlerCache<int, HandlerCache> handlers = sinks.GetOrAdd<T>();
             Touch(handlers, touchTick);
@@ -4556,6 +5185,7 @@ namespace DxMessaging.Core.MessageBus
                 }
 
                 long deregisterTouchTick = AdvanceTick();
+                InvalidateDispatchPlans();
                 cache.version++;
                 if (
                     !sinks.TryGetValue<T>(out handlers)
@@ -4662,6 +5292,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             long touchTick = AdvanceTick();
+            InvalidateDispatchPlans();
             Dictionary<InstanceId, HandlerCache<int, HandlerCache>> broadcastHandlers =
                 GetOrRentContextMap<T>(sinks);
             Dictionary<InstanceId, HandlerCache<int, HandlerCache>> capturedBroadcastHandlers =
@@ -4732,6 +5363,7 @@ namespace DxMessaging.Core.MessageBus
                 }
 
                 long deregisterTouchTick = AdvanceTick();
+                InvalidateDispatchPlans();
                 cache.version++;
                 if (
                     !sinks.TryGetValue<T>(out broadcastHandlers)
@@ -4919,6 +5551,62 @@ namespace DxMessaging.Core.MessageBus
 
             snapshot.Release();
             snapshot = DispatchSnapshot.Empty;
+        }
+
+        /// <summary>
+        /// Steady-state shortcut for <see cref="AcquireDispatchSnapshot{TMessage}"/>:
+        /// when no rebuild is staged (<c>!hasPending</c>) and a non-empty
+        /// active snapshot exists, the full method provably reduces to
+        /// "touch, stamp the emission id, return active" - one branch and
+        /// two stores instead of the full promotion ladder. Every other
+        /// state falls through to the full method unchanged.
+        /// PRECONDITION: the caller has verified
+        /// <c>0 &lt; handlers.handlers.Count</c> (every emit-path call site
+        /// is behind that live gate). With an EMPTY sink the full method's
+        /// "displace the stale active snapshot" branch must run instead;
+        /// the precondition keeps this shortcut equivalent by construction.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static DispatchSnapshot AcquireDispatchSnapshotFast<TMessage>(
+            MessageBus messageBus,
+            HandlerCache<int, HandlerCache> handlers,
+            SlotKey slotKey,
+            long emissionId,
+            InstanceId context
+        )
+            where TMessage : IMessage
+        {
+            DebugAssertAcquireFastPrecondition(handlers);
+            DispatchState state = handlers.dispatchState;
+            if (state != null && !state.hasPending && !state.active.IsEmpty)
+            {
+                handlers.lastTouchTicks = messageBus._tickCounter;
+                state.snapshotEmissionId = emissionId;
+                return state.active;
+            }
+
+            return AcquireDispatchSnapshot<TMessage>(
+                messageBus,
+                handlers,
+                slotKey,
+                emissionId,
+                context
+            );
+        }
+
+        // Guards the AcquireDispatchSnapshotFast precondition (callers gate
+        // on a non-empty live sink). Compiled out unless the
+        // DXMESSAGING_INTERNAL_CHECKS define is set (rig/diagnostic builds).
+        [Conditional("DXMESSAGING_INTERNAL_CHECKS")]
+        private static void DebugAssertAcquireFastPrecondition(
+            HandlerCache<int, HandlerCache> handlers
+        )
+        {
+            System.Diagnostics.Debug.Assert(
+                handlers != null && 0 < handlers.handlers.Count,
+                "AcquireDispatchSnapshotFast requires a non-empty live sink; the empty-sink "
+                    + "displacement branch of the full acquire must run otherwise."
+            );
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -5523,8 +6211,12 @@ namespace DxMessaging.Core.MessageBus
         // holder the dispatch site is about to DxUnsafe.As-cast it to. A
         // mismatch means a slot-key/build-shape wiring bug (e.g. a
         // WithoutContext slot built a message-shape array); the unchecked
-        // cast would otherwise corrupt the dispatch. Stripped in Release.
-        [Conditional("DEBUG")]
+        // cast would otherwise corrupt the dispatch.
+        // Gated behind the DXMESSAGING_INTERNAL_CHECKS custom define rather
+        // than DEBUG: the isinst per dispatch was measured on editor hot
+        // paths (~1ns/dispatch). Rig/diagnostic builds set the define; Unity
+        // editor/player builds compile this out entirely.
+        [Conditional("DXMESSAGING_INTERNAL_CHECKS")]
         private static void DebugAssertFlatShape<TExpected>(FlatDispatchArray flat)
             where TExpected : FlatDispatchArray
         {
