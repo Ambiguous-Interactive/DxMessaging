@@ -35,9 +35,9 @@ namespace DxMessaging.Core.MessageBus
         // saved/restored by DispatchLease, so when a nested (reentrant)
         // emission completes, the OUTER emission resumes reading ITS OWN id
         // rather than the bumped live counter. Every per-emission freeze key
-        // (bus-side GetOrAddMessageHandlerStack, handler-side
-        // GetOrAddNewHandlerStack via dispatch links / the EmissionId
-        // property, prefreeze stamps, snapshot acquisition) compares against
+        // (handler-side GetOrAddNewHandlerStack via dispatch links / the
+        // EmissionId property, global prefreeze stamps, snapshot
+        // acquisition) compares against
         // this scoped value; using the live counter instead would make the
         // outer emission's post-nested cache reads look like a NEW emission
         // and rebuild (dropping mid-emission-deregistered handlers /
@@ -107,6 +107,16 @@ namespace DxMessaging.Core.MessageBus
         private static readonly SlotKey TargetedWithoutContextPostSlot = new SlotKey(
             DispatchKind.Targeted,
             DispatchPhase.PostProcess,
+            DispatchVariant.WithoutContext
+        );
+        private static readonly SlotKey BroadcastHandleSlot = new SlotKey(
+            DispatchKind.Broadcast,
+            DispatchPhase.Handle,
+            DispatchVariant.Default
+        );
+        private static readonly SlotKey BroadcastWithoutContextHandleSlot = new SlotKey(
+            DispatchKind.Broadcast,
+            DispatchPhase.Handle,
             DispatchVariant.WithoutContext
         );
         private static readonly SlotKey BroadcastPostSlot = new SlotKey(
@@ -258,11 +268,16 @@ namespace DxMessaging.Core.MessageBus
             public DispatchBucket[] buckets;
             public int bucketCount;
 
-            // Resolved flat dispatch entries for untargeted handle/post slots
-            // (null for every other slot kind). Holds a closed
-            // UntargetedFlatDispatch<TMessage>; the dispatch site
-            // reinterprets it via DxUnsafe.As using the emission's TMessage.
-            // Owned by this snapshot: released exactly once in Release().
+            // Resolved flat dispatch entries for every flattened slot kind:
+            // untargeted handle/post, targeted/broadcast Default handle/post
+            // (context-keyed; one snapshot per context), and the
+            // targeted/broadcast WithoutContext handle/post slots. Holds a
+            // closed FlatDispatch<TMessage> (message-only delegate shape) or
+            // ContextFlatDispatch<TMessage> (WithoutContext shape, delegates
+            // receive the routing InstanceId); the dispatch site reinterprets
+            // it via DxUnsafe.As using the emission's TMessage and the slot's
+            // known shape. Owned by this snapshot: released exactly once in
+            // Release().
             public FlatDispatchArray flat;
             private bool _pooled;
 
@@ -3217,7 +3232,8 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     untargetedPostHandlers,
                     UntargetedPostSlot,
-                    _scopedEmissionId
+                    _scopedEmissionId,
+                    default
                 );
             }
 
@@ -3246,38 +3262,16 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         sortedHandlers,
                         UntargetedPostSlot,
-                        _scopedEmissionId
+                        _scopedEmissionId,
+                        default
                     )
                     : untargetedPostSnapshot;
-                // Flat dispatch; see InternalUntargetedBroadcast for the
+                // Flat dispatch; see DispatchFlatSnapshot for the
                 // frozen-array semantics that replace prefreeze stamping and
                 // for the reset-generation guard rationale.
-                FlatDispatchArray flatBase = snapshot.flat;
-                if (flatBase != null)
+                if (DispatchFlatSnapshot(snapshot, ref typedMessage))
                 {
-                    UntargetedFlatDispatch<TMessage> flat = DxUnsafe.As<
-                        UntargetedFlatDispatch<TMessage>
-                    >(flatBase);
-                    UntargetedFlatEntry<TMessage>[] entries = flat.entries;
-                    int count = flat.count;
-                    long resetGeneration = _resetGeneration;
-                    for (int i = 0; i < count; ++i)
-                    {
-                        ref UntargetedFlatEntry<TMessage> entry = ref entries[i];
-                        if (entry.handler.active)
-                        {
-                            entry.invoker(ref typedMessage);
-                            if (_resetGeneration != resetGeneration)
-                            {
-                                break;
-                            }
-                        }
-                    }
-
-                    if (0 < count || HasAnyDispatchEntries(snapshot))
-                    {
-                        foundAnyHandlers = true;
-                    }
+                    foundAnyHandlers = true;
                 }
             }
 
@@ -3342,7 +3336,12 @@ namespace DxMessaging.Core.MessageBus
                 _emissionBuffer.Add(new MessageEmissionData(typedMessage, target));
             }
 
-            // Pre-freeze targeted post-processing for this emission (target-specific and without targeting)
+            // Pre-freeze targeted post-processing for this emission
+            // (target-specific and without targeting). Acquiring the snapshot
+            // here (before interceptors and handlers run) is sufficient: the
+            // snapshot's flat entry array was fully resolved at build time,
+            // so no lazy per-handler cache read remains to observe a
+            // mid-emission registration - no prefreeze stamping needed.
             DispatchSnapshot targetedPostSnapshot = DispatchSnapshot.Empty;
             DispatchSnapshot targetedWithoutTargetingPostSnapshot = DispatchSnapshot.Empty;
             if (
@@ -3365,9 +3364,9 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     targetedPostByPriority,
                     TargetedPostSlot,
-                    _scopedEmissionId
+                    _scopedEmissionId,
+                    target
                 );
-                PrefreezeTargetedPostSnapshot<TMessage>(ref target, targetedPostSnapshot);
             }
             if (
                 _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext]
@@ -3382,10 +3381,8 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     targetedWithoutTargetingHandlers,
                     TargetedWithoutContextPostSlot,
-                    _scopedEmissionId
-                );
-                PrefreezeTargetedWithoutTargetingPostSnapshot<TMessage>(
-                    targetedWithoutTargetingPostSnapshot
+                    _scopedEmissionId,
+                    default
                 );
             }
 
@@ -3630,74 +3627,15 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     sortedHandlers,
                     TargetedHandleSlot,
-                    _scopedEmissionId
+                    _scopedEmissionId,
+                    target
                 );
-                // Pre-freeze the typed-handler caches across every priority bucket so
-                // deregistrations performed by an earlier priority's handler cannot
-                // empty a later priority's stack mid-emission.
-                PrefreezeTargetedSnapshot<TMessage>(ref target, snapshot);
-                DispatchBucket[] buckets = snapshot.buckets;
-                int bucketCount = snapshot.bucketCount;
-                for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
+                // Flat dispatch; see DispatchFlatSnapshot for the
+                // frozen-array semantics that replace the legacy
+                // cross-priority prefreeze pass.
+                if (DispatchFlatSnapshot(snapshot, ref typedMessage))
                 {
-                    DispatchBucket bucket = buckets[bucketIndex];
-                    DispatchEntry[] entries = bucket.entries;
-                    int entryCount = bucket.entryCount;
-                    if (entryCount == 0)
-                    {
-                        continue;
-                    }
-
                     foundAnyHandlers = true;
-                    int priority = bucket.priority;
-                    switch (entryCount)
-                    {
-                        case 1:
-                        {
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[0]);
-                            continue;
-                        }
-                        case 2:
-                        {
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[0]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[1]);
-                            continue;
-                        }
-                        case 3:
-                        {
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[0]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[1]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[2]);
-                            continue;
-                        }
-                        case 4:
-                        {
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[0]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[1]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[2]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[3]);
-                            continue;
-                        }
-                        case 5:
-                        {
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[0]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[1]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[2]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[3]);
-                            InvokeTargetedEntry(ref target, ref typedMessage, priority, entries[4]);
-                            continue;
-                        }
-                    }
-
-                    for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                    {
-                        InvokeTargetedEntry(
-                            ref target,
-                            ref typedMessage,
-                            priority,
-                            entries[entryIndex]
-                        );
-                    }
                 }
             }
 
@@ -3717,11 +3655,11 @@ namespace DxMessaging.Core.MessageBus
                 // interceptor rewrote the id, the pre-frozen snapshot is keyed by the
                 // ORIGINAL target and must not be dispatched against the new one;
                 // re-resolve for the rewritten target instead, mirroring the
-                // handle-phase re-resolution above (Acquire + Prefreeze). Like that
-                // path, this exposes registrations made mid-emission for the
-                // REWRITTEN id (its cache had no snapshot pinned at emission start);
-                // the pre-frozen snapshot - and its mid-emission registration
-                // gating - is preferred only when the target is unchanged.
+                // handle-phase re-resolution above. Like that path, this exposes
+                // registrations made mid-emission for the REWRITTEN id (its cache
+                // had no snapshot pinned at emission start); the pre-frozen
+                // snapshot - and its mid-emission registration gating - is
+                // preferred only when the target is unchanged.
                 DispatchSnapshot snapshot;
                 if (target != preInterceptorTarget)
                 {
@@ -3729,9 +3667,9 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         sortedHandlers,
                         TargetedPostSlot,
-                        _scopedEmissionId
+                        _scopedEmissionId,
+                        target
                     );
-                    PrefreezeTargetedPostSnapshot<TMessage>(ref target, snapshot);
                 }
                 else if (targetedPostSnapshot.IsEmpty)
                 {
@@ -3739,150 +3677,17 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         sortedHandlers,
                         TargetedPostSlot,
-                        _scopedEmissionId
+                        _scopedEmissionId,
+                        target
                     );
                 }
                 else
                 {
                     snapshot = targetedPostSnapshot;
                 }
-                DispatchBucket[] buckets = snapshot.buckets;
-                int bucketCount = snapshot.bucketCount;
-                for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
+                if (DispatchFlatSnapshot(snapshot, ref typedMessage))
                 {
-                    DispatchBucket bucket = buckets[bucketIndex];
-                    DispatchEntry[] entries = bucket.entries;
-                    int entryCount = bucket.entryCount;
-                    if (entryCount == 0)
-                    {
-                        continue;
-                    }
-
                     foundAnyHandlers = true;
-                    int priority = bucket.priority;
-                    switch (entryCount)
-                    {
-                        case 1:
-                        {
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            continue;
-                        }
-                        case 2:
-                        {
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            continue;
-                        }
-                        case 3:
-                        {
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            continue;
-                        }
-                        case 4:
-                        {
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[3]
-                            );
-                            continue;
-                        }
-                        case 5:
-                        {
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[3]
-                            );
-                            InvokeTargetedPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[4]
-                            );
-                            continue;
-                        }
-                    }
-
-                    for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                    {
-                        InvokeTargetedPostEntry(
-                            ref target,
-                            ref typedMessage,
-                            priority,
-                            entries[entryIndex]
-                        );
-                    }
                 }
             }
 
@@ -3897,146 +3702,13 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         postTwt,
                         TargetedWithoutContextPostSlot,
-                        _scopedEmissionId
+                        _scopedEmissionId,
+                        default
                     )
                     : targetedWithoutTargetingPostSnapshot;
-                DispatchBucket[] buckets = snapshot.buckets;
-                int bucketCount = snapshot.bucketCount;
-                for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
+                if (DispatchContextFlatSnapshot(snapshot, ref target, ref typedMessage))
                 {
-                    DispatchBucket bucket = buckets[bucketIndex];
-                    DispatchEntry[] entries = bucket.entries;
-                    int entryCount = bucket.entryCount;
-                    if (entryCount == 0)
-                    {
-                        continue;
-                    }
-
                     foundAnyHandlers = true;
-                    int priority = bucket.priority;
-                    switch (entryCount)
-                    {
-                        case 1:
-                        {
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            continue;
-                        }
-                        case 2:
-                        {
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            continue;
-                        }
-                        case 3:
-                        {
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            continue;
-                        }
-                        case 4:
-                        {
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[3]
-                            );
-                            continue;
-                        }
-                        case 5:
-                        {
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[3]
-                            );
-                            InvokeTargetedWithoutTargetingPostEntry(
-                                ref target,
-                                ref typedMessage,
-                                priority,
-                                entries[4]
-                            );
-                            continue;
-                        }
-                    }
-
-                    for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                    {
-                        InvokeTargetedWithoutTargetingPostEntry(
-                            ref target,
-                            ref typedMessage,
-                            priority,
-                            entries[entryIndex]
-                        );
-                    }
                 }
             }
 
@@ -4048,308 +3720,6 @@ namespace DxMessaging.Core.MessageBus
                     target,
                     typedMessage
                 );
-            }
-        }
-
-        private void RunTargetedWithoutTargetingPostProcessing<TMessage>(
-            ref InstanceId target,
-            ref TMessage typedMessage,
-            int priority,
-            HandlerCache cache
-        )
-            where TMessage : ITargetedMessage
-        {
-            // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
-                cache,
-                _scopedEmissionId
-            );
-            int messageHandlersCount = messageHandlers.Count;
-            if (messageHandlersCount == 0)
-            {
-                return;
-            }
-            switch (messageHandlersCount)
-            {
-                case 1:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 2:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 3:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 4:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[3]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 5:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[3]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[4]
-                        .HandleTargetedWithoutTargetingPostProcessing(
-                            ref target,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-            }
-
-            for (int i = 0; i < messageHandlersCount; ++i)
-            {
-                MessageHandler handler = messageHandlers[i];
-                handler.HandleTargetedWithoutTargetingPostProcessing(
-                    ref target,
-                    ref typedMessage,
-                    this,
-                    priority
-                );
-            }
-        }
-
-        private void RunTargetedPostProcessing<TMessage>(
-            ref InstanceId target,
-            ref TMessage typedMessage,
-            int priority,
-            HandlerCache cache
-        )
-            where TMessage : ITargetedMessage
-        {
-            // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
-                cache,
-                _scopedEmissionId
-            );
-            int messageHandlersCount = messageHandlers.Count;
-            if (messageHandlersCount == 0)
-            {
-                return;
-            }
-            switch (messageHandlersCount)
-            {
-                case 1:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-                case 2:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[1]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-                case 3:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[1]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[2]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-                case 4:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[1]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[2]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[3]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-                case 5:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[1]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[2]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[3]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    messageHandlers[4]
-                        .HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-            }
-
-            for (int i = 0; i < messageHandlersCount; ++i)
-            {
-                MessageHandler handler = messageHandlers[i];
-                handler.HandleTargetedPostProcessing(ref target, ref typedMessage, this, priority);
-            }
-        }
-
-        private void RunTargetedBroadcast<TMessage>(
-            ref InstanceId target,
-            ref TMessage typedMessage,
-            int priority,
-            HandlerCache cache
-        )
-            where TMessage : ITargetedMessage
-        {
-            // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
-                cache,
-                _scopedEmissionId
-            );
-            int messageHandlersCount = messageHandlers.Count;
-            if (messageHandlersCount == 0)
-            {
-                return;
-            }
-            switch (messageHandlersCount)
-            {
-                case 1:
-                {
-                    messageHandlers[0].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-                case 2:
-                {
-                    messageHandlers[0].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[1].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-                case 3:
-                {
-                    messageHandlers[0].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[1].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[2].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-                case 4:
-                {
-                    messageHandlers[0].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[1].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[2].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[3].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-                case 5:
-                {
-                    messageHandlers[0].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[1].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[2].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[3].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    messageHandlers[4].HandleTargeted(ref target, ref typedMessage, this, priority);
-                    return;
-                }
-            }
-
-            for (int i = 0; i < messageHandlersCount; ++i)
-            {
-                MessageHandler handler = messageHandlers[i];
-                handler.HandleTargeted(ref target, ref typedMessage, this, priority);
             }
         }
 
@@ -4404,7 +3774,12 @@ namespace DxMessaging.Core.MessageBus
                 _emissionBuffer.Add(new MessageEmissionData(typedMessage, source));
             }
 
-            // Pre-freeze broadcast post-processing for this emission (source-specific and without source)
+            // Pre-freeze broadcast post-processing for this emission
+            // (source-specific and without source). Acquiring the snapshot
+            // here (before interceptors and handlers run) is sufficient: the
+            // snapshot's flat entry array was fully resolved at build time,
+            // so no lazy per-handler cache read remains to observe a
+            // mid-emission registration - no prefreeze stamping needed.
             DispatchSnapshot broadcastPostSnapshot = DispatchSnapshot.Empty;
             DispatchSnapshot broadcastWithoutSourcePostSnapshot = DispatchSnapshot.Empty;
             if (
@@ -4427,9 +3802,9 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     broadcastPostByPriority,
                     BroadcastPostSlot,
-                    _scopedEmissionId
+                    _scopedEmissionId,
+                    source
                 );
-                PrefreezeBroadcastPostSnapshot<TMessage>(ref source, broadcastPostSnapshot);
             }
             if (
                 _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext]
@@ -4444,10 +3819,8 @@ namespace DxMessaging.Core.MessageBus
                     this,
                     broadcastWithoutSourceHandlers,
                     BroadcastWithoutContextPostSlot,
-                    _scopedEmissionId
-                );
-                PrefreezeBroadcastWithoutSourcePostSnapshot<TMessage>(
-                    broadcastWithoutSourcePostSnapshot
+                    _scopedEmissionId,
+                    default
                 );
             }
 
@@ -4465,10 +3838,13 @@ namespace DxMessaging.Core.MessageBus
                 BroadcastGlobalSourcedBroadcast(ref source, ref broadcastMessage);
             }
 
-            // Pre-freeze broadcast-without-source handler stacks for this emission.
-            // Skip the prefreeze pass entirely when there is exactly one priority
-            // bucket with at most one MessageHandler entry; see the rationale on
-            // the snapshot-level Prefreeze*Snapshot fast-path short-circuit.
+            // Pre-freeze the broadcast-without-source HANDLE snapshot at the
+            // point the legacy per-handler prefreeze pass ran (after
+            // interceptors and the global walk, before the source-keyed
+            // handle phase), so registrations made by a source-keyed handler
+            // this emission are not observed - acquisition alone freezes the
+            // fully-resolved flat array.
+            DispatchSnapshot broadcastWithoutSourceHandleSnapshot = DispatchSnapshot.Empty;
             if (
                 _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
                     .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> bwsHandlers)
@@ -4476,41 +3852,13 @@ namespace DxMessaging.Core.MessageBus
             )
             {
                 Touch(bwsHandlers, touchTick);
-                List<KeyValuePair<int, HandlerCache>> frozen = GetOrAddMessageHandlerStack(
+                broadcastWithoutSourceHandleSnapshot = AcquireDispatchSnapshot<TMessage>(
+                    this,
                     bwsHandlers,
-                    _scopedEmissionId
+                    BroadcastWithoutContextHandleSlot,
+                    _scopedEmissionId,
+                    default
                 );
-                int frozenCount = frozen.Count;
-                bool needsBwsPrefreeze = frozenCount > 1;
-                List<MessageHandler> singleBucketBwsHandlers = null;
-                if (!needsBwsPrefreeze && frozenCount == 1)
-                {
-                    singleBucketBwsHandlers = GetOrAddMessageHandlerStack(
-                        frozen[0].Value,
-                        _scopedEmissionId
-                    );
-                    needsBwsPrefreeze = singleBucketBwsHandlers.Count > 1;
-                }
-                if (needsBwsPrefreeze)
-                {
-                    for (int i = 0; i < frozenCount; ++i)
-                    {
-                        KeyValuePair<int, HandlerCache> entry = frozen[i];
-                        List<MessageHandler> mhList =
-                            (i == 0 && singleBucketBwsHandlers != null)
-                                ? singleBucketBwsHandlers
-                                : GetOrAddMessageHandlerStack(entry.Value, _scopedEmissionId);
-                        for (int h = 0; h < mhList.Count; ++h)
-                        {
-                            mhList[h]
-                                .PrefreezeBroadcastWithoutSourceHandlersForEmission<TMessage>(
-                                    entry.Key,
-                                    _scopedEmissionId,
-                                    this
-                                );
-                        }
-                    }
-                }
             }
 
             bool foundAnyHandlers = false;
@@ -4528,162 +3876,38 @@ namespace DxMessaging.Core.MessageBus
             )
             {
                 Touch(sortedHandlers, touchTick);
+                // Legacy reporting: the live per-source gate above passing
+                // counts as "found", regardless of how many frozen delegates
+                // fire below.
                 foundAnyHandlers = true;
-                List<KeyValuePair<int, HandlerCache>> handlerList = GetOrAddMessageHandlerStack(
+                DispatchSnapshot snapshot = AcquireDispatchSnapshot<TMessage>(
+                    this,
                     sortedHandlers,
-                    _scopedEmissionId
+                    BroadcastHandleSlot,
+                    _scopedEmissionId,
+                    source
                 );
-                int handlerListCount = handlerList.Count;
-                // Pre-freeze the typed-handler caches across every priority bucket so
-                // deregistrations performed by an earlier priority's handler cannot
-                // empty a later priority's stack mid-emission. The prefreeze pass is
-                // only required when at least one later-running handler reads from a
-                // cache that an earlier-running handler can mutate. That is the case
-                // when there are multiple priority buckets, OR when the single bucket
-                // holds more than one MessageHandler (each MessageHandler owns its
-                // own typed-handler cache, so a removal in one can blank another).
-                // Single-priority single-MessageHandler dispatch is already protected
-                // by the lazy GetOrAddNewHandlerStack inside the dispatch path;
-                // multiple delegate registrations within the same priority on the
-                // same MessageHandler share a HandlerActionCache that is frozen on
-                // first read by RunFastHandlersWithContext / RunHandlersWithContext.
-                bool needsPrefreeze = handlerListCount > 1;
-                List<MessageHandler> singleBucketFrozenHandlers = null;
-                if (!needsPrefreeze && handlerListCount == 1)
-                {
-                    // For the single-bucket case, count entries in the FROZEN
-                    // MessageHandler stack (not the live dict, which a concurrent
-                    // global/interceptor deregistration could shrink between snapshot
-                    // acquisition and this read). Reusing the frozen list also avoids
-                    // re-acquiring it inside the prefreeze loop below.
-                    singleBucketFrozenHandlers = GetOrAddMessageHandlerStack(
-                        handlerList[0].Value,
-                        _scopedEmissionId
-                    );
-                    needsPrefreeze = singleBucketFrozenHandlers.Count > 1;
-                }
-                if (needsPrefreeze)
-                {
-                    for (int i = 0; i < handlerListCount; ++i)
-                    {
-                        KeyValuePair<int, HandlerCache> prefreezeEntry = handlerList[i];
-                        List<MessageHandler> prefreezeHandlers =
-                            (i == 0 && singleBucketFrozenHandlers != null)
-                                ? singleBucketFrozenHandlers
-                                : GetOrAddMessageHandlerStack(
-                                    prefreezeEntry.Value,
-                                    _scopedEmissionId
-                                );
-                        int prefreezeHandlerCount = prefreezeHandlers.Count;
-                        for (int h = 0; h < prefreezeHandlerCount; ++h)
-                        {
-                            prefreezeHandlers[h]
-                                .PrefreezeBroadcastHandlersForEmission<TMessage>(
-                                    source,
-                                    prefreezeEntry.Key,
-                                    _scopedEmissionId,
-                                    this
-                                );
-                        }
-                    }
-                }
-                // The unrolled cases COPY every KeyValuePair out of the live
-                // handlerList BEFORE invoking any handler. handlerList is the
-                // shared per-cache snapshot list that a NESTED (reentrant)
-                // emission rebuilds IN PLACE when a handler mutates the
-                // same-type registration set and then re-emits; indexing it
-                // lazily between invocations would read shifted entries - or
-                // throw ArgumentOutOfRangeException when a deregistration
-                // shrank it - instead of honoring this emission's frozen
-                // priority walk. The copies are stack-resident value types:
-                // zero allocation, identical steady-state cost.
-                switch (handlerListCount)
-                {
-                    case 1:
-                    {
-                        KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                        RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        break;
-                    }
-                    case 2:
-                    {
-                        KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
-                        KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
-                        RunBroadcast(ref source, ref typedMessage, entry0.Key, entry0.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry1.Key, entry1.Value);
-                        break;
-                    }
-                    case 3:
-                    {
-                        KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
-                        KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
-                        KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
-                        RunBroadcast(ref source, ref typedMessage, entry0.Key, entry0.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry1.Key, entry1.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry2.Key, entry2.Value);
-                        break;
-                    }
-                    case 4:
-                    {
-                        KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
-                        KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
-                        KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
-                        KeyValuePair<int, HandlerCache> entry3 = handlerList[3];
-                        RunBroadcast(ref source, ref typedMessage, entry0.Key, entry0.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry1.Key, entry1.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry2.Key, entry2.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry3.Key, entry3.Value);
-                        break;
-                    }
-                    case 5:
-                    {
-                        KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
-                        KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
-                        KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
-                        KeyValuePair<int, HandlerCache> entry3 = handlerList[3];
-                        KeyValuePair<int, HandlerCache> entry4 = handlerList[4];
-                        RunBroadcast(ref source, ref typedMessage, entry0.Key, entry0.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry1.Key, entry1.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry2.Key, entry2.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry3.Key, entry3.Value);
-                        RunBroadcast(ref source, ref typedMessage, entry4.Key, entry4.Value);
-                        break;
-                    }
-                    default:
-                    {
-                        for (int i = 0; i < handlerListCount; ++i)
-                        {
-                            // Live-count guard for the 6+ bucket fallback: a
-                            // nested emission may have rebuilt handlerList in
-                            // place (see the case comment above). Bounding by
-                            // the live Count prevents an out-of-range crash;
-                            // the rare 6+-priorities + mid-emission-removal +
-                            // reentrant-emit corner degrades to best-effort
-                            // ordering instead of throwing.
-                            if (handlerList.Count <= i)
-                            {
-                                break;
-                            }
-
-                            KeyValuePair<int, HandlerCache> entry = handlerList[i];
-                            RunBroadcast(ref source, ref typedMessage, entry.Key, entry.Value);
-                        }
-
-                        break;
-                    }
-                }
+                // Flat dispatch; see DispatchFlatSnapshot for the
+                // frozen-array semantics that replace the legacy
+                // cross-priority prefreeze pass and the reentrant-rebuild
+                // copy/live-count guards.
+                _ = DispatchFlatSnapshot(snapshot, ref typedMessage);
             }
 
-            bool bwsFound = InternalBroadcastWithoutSource(ref source, ref typedMessage);
+            bool bwsFound = InternalBroadcastWithoutSource(
+                broadcastWithoutSourceHandleSnapshot,
+                ref source,
+                ref typedMessage
+            );
 
             // Post-processors follow the FINAL (post-interceptor) source. The
             // pre-frozen snapshot above is keyed by the ORIGINAL source; when an
             // interceptor rewrote it, re-resolve the snapshot for the new source,
-            // mirroring the targeted handle-phase re-resolution (Acquire +
-            // Prefreeze). Like that path, this exposes registrations made
-            // mid-emission for the REWRITTEN id (its cache had no snapshot pinned
-            // at emission start); the pre-frozen snapshot - and its mid-emission
-            // registration gating - applies only when the source is unchanged.
+            // mirroring the targeted post-phase re-resolution. Like that path,
+            // this exposes registrations made mid-emission for the REWRITTEN id
+            // (its cache had no snapshot pinned at emission start); the
+            // pre-frozen snapshot - and its mid-emission registration gating -
+            // applies only when the source is unchanged.
             if (source != preInterceptorSource)
             {
                 broadcastPostSnapshot = DispatchSnapshot.Empty;
@@ -4698,294 +3922,31 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         broadcastPostByPriority,
                         BroadcastPostSlot,
-                        _scopedEmissionId
+                        _scopedEmissionId,
+                        source
                     );
-                    PrefreezeBroadcastPostSnapshot<TMessage>(ref source, broadcastPostSnapshot);
                 }
             }
 
             if (!broadcastPostSnapshot.IsEmpty)
             {
+                // Legacy reporting: a non-empty pre-frozen snapshot counts as
+                // "found" even if every frozen delegate is skipped below.
                 foundAnyHandlers = true;
-                DispatchBucket[] buckets = broadcastPostSnapshot.buckets;
-                int bucketCount = broadcastPostSnapshot.bucketCount;
-                for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-                {
-                    DispatchBucket bucket = buckets[bucketIndex];
-                    DispatchEntry[] entries = bucket.entries;
-                    int entryCount = bucket.entryCount;
-                    if (entryCount == 0)
-                    {
-                        continue;
-                    }
-
-                    foundAnyHandlers = true;
-                    int priority = bucket.priority;
-                    switch (entryCount)
-                    {
-                        case 1:
-                        {
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            continue;
-                        }
-                        case 2:
-                        {
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            continue;
-                        }
-                        case 3:
-                        {
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            continue;
-                        }
-                        case 4:
-                        {
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[3]
-                            );
-                            continue;
-                        }
-                        case 5:
-                        {
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[3]
-                            );
-                            InvokeBroadcastPostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[4]
-                            );
-                            continue;
-                        }
-                    }
-
-                    for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                    {
-                        InvokeBroadcastPostEntry(
-                            ref source,
-                            ref typedMessage,
-                            priority,
-                            entries[entryIndex]
-                        );
-                    }
-                }
+                _ = DispatchFlatSnapshot(broadcastPostSnapshot, ref typedMessage);
             }
 
             if (!broadcastWithoutSourcePostSnapshot.IsEmpty)
             {
-                DispatchBucket[] buckets = broadcastWithoutSourcePostSnapshot.buckets;
-                int bucketCount = broadcastWithoutSourcePostSnapshot.bucketCount;
-                for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
+                if (
+                    DispatchContextFlatSnapshot(
+                        broadcastWithoutSourcePostSnapshot,
+                        ref source,
+                        ref typedMessage
+                    )
+                )
                 {
-                    DispatchBucket bucket = buckets[bucketIndex];
-                    DispatchEntry[] entries = bucket.entries;
-                    int entryCount = bucket.entryCount;
-                    if (entryCount == 0)
-                    {
-                        continue;
-                    }
-
                     bwsFound = true;
-                    int priority = bucket.priority;
-                    switch (entryCount)
-                    {
-                        case 1:
-                        {
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            continue;
-                        }
-                        case 2:
-                        {
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            continue;
-                        }
-                        case 3:
-                        {
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            continue;
-                        }
-                        case 4:
-                        {
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[3]
-                            );
-                            continue;
-                        }
-                        case 5:
-                        {
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[0]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[1]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[2]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[3]
-                            );
-                            InvokeBroadcastWithoutSourcePostEntry(
-                                ref source,
-                                ref typedMessage,
-                                priority,
-                                entries[4]
-                            );
-                            continue;
-                        }
-                    }
-
-                    for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                    {
-                        InvokeBroadcastWithoutSourcePostEntry(
-                            ref source,
-                            ref typedMessage,
-                            priority,
-                            entries[entryIndex]
-                        );
-                    }
                 }
             }
 
@@ -4997,250 +3958,6 @@ namespace DxMessaging.Core.MessageBus
                     source,
                     typedMessage
                 );
-            }
-        }
-
-        private void RunBroadcastPostProcessing<TMessage>(
-            ref InstanceId source,
-            ref TMessage typedMessage,
-            int priority,
-            HandlerCache cache
-        )
-            where TMessage : IBroadcastMessage
-        {
-            // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
-                cache,
-                _scopedEmissionId
-            );
-            int messageHandlersCount = messageHandlers.Count;
-            if (messageHandlersCount == 0)
-            {
-                return;
-            }
-            switch (messageHandlersCount)
-            {
-                case 1:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 2:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 3:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 4:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[3]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 5:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[3]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    messageHandlers[4]
-                        .HandleSourcedBroadcastPostProcessing(
-                            ref source,
-                            ref typedMessage,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-            }
-
-            for (int i = 0; i < messageHandlersCount; ++i)
-            {
-                MessageHandler handler = messageHandlers[i];
-                handler.HandleSourcedBroadcastPostProcessing(
-                    ref source,
-                    ref typedMessage,
-                    this,
-                    priority
-                );
-            }
-        }
-
-        private void RunBroadcast<TMessage>(
-            ref InstanceId source,
-            ref TMessage typedMessage,
-            int priority,
-            HandlerCache cache
-        )
-            where TMessage : IBroadcastMessage
-        {
-            // Snapshot semantics: dispatch must respect the per-emission frozen
-            // MessageHandler list, even if a handler running earlier in the same
-            // emission has emptied the live cache.handlers dictionary by removing
-            // its own (or a sibling priority's) registration. Reading the live
-            // dict here would skip handlers that the snapshot still includes.
-            // GetOrAddMessageHandlerStack returns the snapshot list; bail only
-            // when that snapshot is empty.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
-                cache,
-                _scopedEmissionId
-            );
-            int messageHandlersCount = messageHandlers.Count;
-            if (messageHandlersCount == 0)
-            {
-                return;
-            }
-            switch (messageHandlersCount)
-            {
-                case 1:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    return;
-                }
-                case 2:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[1]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    return;
-                }
-                case 3:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[1]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[2]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    return;
-                }
-                case 4:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[1]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[2]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[3]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    return;
-                }
-                case 5:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[1]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[2]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[3]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    messageHandlers[4]
-                        .HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
-                    return;
-                }
-            }
-
-            for (int i = 0; i < messageHandlersCount; ++i)
-            {
-                MessageHandler handler = messageHandlers[i];
-                handler.HandleSourcedBroadcast(ref source, ref typedMessage, this, priority);
             }
         }
 
@@ -5686,67 +4403,16 @@ namespace DxMessaging.Core.MessageBus
                 this,
                 sortedHandlers,
                 UntargetedHandleSlot,
-                _scopedEmissionId
+                _scopedEmissionId,
+                default
             );
 
-            // Flat dispatch: every registration was resolved to its final
-            // invocable delegate at snapshot-build time, so the steady-state
-            // loop is one live `active` check plus a direct delegate call per
-            // entry. The array is frozen for this emission (mutations mark
-            // the DispatchState dirty and surface on the NEXT emission's
-            // rebuild), which preserves the mid-emission contracts the old
-            // link path enforced via prefreeze stamping:
-            //   - a handler deregistered mid-emission still fires (its entry
-            //     is already in the frozen array);
-            //   - a handler registered mid-emission does not fire (it is not
-            //     in the frozen array);
-            //   - a destroyed/disabled component never fires (live per-entry
-            //     `active` check).
-            // No prefreeze pass and no per-invocation live-count guards are
-            // needed: the frozen array is never mutated mid-emission.
-            FlatDispatchArray flatBase = snapshot.flat;
-            if (flatBase == null)
-            {
-                return false;
-            }
-
-            UntargetedFlatDispatch<TMessage> flat = DxUnsafe.As<UntargetedFlatDispatch<TMessage>>(
-                flatBase
-            );
-            UntargetedFlatEntry<TMessage>[] entries = flat.entries;
-            int count = flat.count;
-            // Reset-generation guard: ResetState() invoked from inside a
-            // handler must halt the remaining in-flight dispatch (the
-            // documented mid-dispatch reset contract; the legacy link path
-            // enforced it via per-link _outerGeneration guards). The check
-            // runs only after an actual invocation - a reset can only happen
-            // inside user code - so steady-state cost is one field re-read
-            // and a predictable branch per fired entry.
-            long resetGeneration = _resetGeneration;
-            for (int i = 0; i < count; ++i)
-            {
-                ref UntargetedFlatEntry<TMessage> entry = ref entries[i];
-                if (entry.handler.active)
-                {
-                    entry.invoker(ref message);
-                    if (_resetGeneration != resetGeneration)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            if (0 < count)
-            {
-                return true;
-            }
-
-            // No resolved delegates. Bus-level registrations may still exist
-            // (e.g. IMessageBus.RegisterUntargeted called without a paired
-            // typed-handler delegate); report them as "found" to match the
-            // legacy link path, which counted bucket entries rather than
-            // delegate invocations.
-            return HasAnyDispatchEntries(snapshot);
+            // Flat dispatch; see DispatchFlatSnapshot for the frozen-array
+            // semantics, the reset-generation guard, and the
+            // "found any handlers" reporting (delegates fired OR bus-level
+            // bucket entries exist, matching the legacy link path's
+            // bucket-count behavior).
+            return DispatchFlatSnapshot(snapshot, ref message);
         }
 
         private bool InternalTargetedWithoutTargetingBroadcast<TMessage>(
@@ -5768,292 +4434,19 @@ namespace DxMessaging.Core.MessageBus
                 this,
                 sortedHandlers,
                 TargetedWithoutContextHandleSlot,
-                _scopedEmissionId
+                _scopedEmissionId,
+                default
             );
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            bool invoked = false;
 
-            // Hoist per-MessageHandler prefreeze across ALL priority buckets
-            // when there is more than one bucket. A handler running in an
-            // earlier bucket can deregister a delegate that lives in a later
-            // bucket's typed cache; if the later bucket's snapshot is taken
-            // lazily inside its own dispatch (after the deregistration), the
-            // rebuild will observe the mutation and the handler will be
-            // skipped, violating snapshot semantics. The single-bucket case
-            // is unchanged; no later bucket exists to be polluted, and the
-            // inline per-bucket prefreeze below covers it.
-            if (bucketCount > 1)
-            {
-                for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-                {
-                    DispatchBucket prefreezeBucket = buckets[bucketIndex];
-                    DispatchEntry[] prefreezeEntries = prefreezeBucket.entries;
-                    int prefreezeEntryCount = prefreezeBucket.entryCount;
-                    if (prefreezeEntryCount == 0)
-                    {
-                        continue;
-                    }
-
-                    if (
-                        prefreezeEntries[0].prefreeze.kind
-                        == PrefreezeKindTargetedWithoutTargetingHandlers
-                    )
-                    {
-                        PrefreezeTargetedWithoutTargetingEntries<TMessage>(
-                            prefreezeEntries,
-                            prefreezeEntryCount,
-                            prefreezeBucket.priority
-                        );
-                    }
-                }
-            }
-
-            for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-            {
-                DispatchBucket bucket = buckets[bucketIndex];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
-                {
-                    continue;
-                }
-
-                invoked = true;
-                int priority = bucket.priority;
-                // Inline per-bucket prefreeze for the single-bucket case only.
-                // When bucketCount > 1 the hoisted pass above has already
-                // prefrozen every bucket; running it again here would be
-                // harmless but redundant.
-                if (
-                    bucketCount == 1
-                    && entries[0].prefreeze.kind == PrefreezeKindTargetedWithoutTargetingHandlers
-                )
-                {
-                    PrefreezeTargetedWithoutTargetingEntries<TMessage>(
-                        entries,
-                        entryCount,
-                        priority
-                    );
-                }
-                switch (entryCount)
-                {
-                    case 1:
-                    {
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[0]
-                        );
-                        continue;
-                    }
-                    case 2:
-                    {
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[0]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[1]
-                        );
-                        continue;
-                    }
-                    case 3:
-                    {
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[0]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[1]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[2]
-                        );
-                        continue;
-                    }
-                    case 4:
-                    {
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[0]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[1]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[2]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[3]
-                        );
-                        continue;
-                    }
-                    case 5:
-                    {
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[0]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[1]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[2]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[3]
-                        );
-                        InvokeTargetedWithoutTargetingEntry(
-                            ref target,
-                            ref message,
-                            priority,
-                            entries[4]
-                        );
-                        continue;
-                    }
-                }
-
-                for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                {
-                    InvokeTargetedWithoutTargetingEntry(
-                        ref target,
-                        ref message,
-                        priority,
-                        entries[entryIndex]
-                    );
-                }
-            }
-
-            return invoked;
-        }
-
-        private void RunTargetedWithoutTargeting<TMessage>(
-            ref InstanceId target,
-            ref TMessage message,
-            int priority,
-            HandlerCache cache
-        )
-            where TMessage : ITargetedMessage
-        {
-            // Snapshot semantics: see comment on RunBroadcast.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
-                cache,
-                _scopedEmissionId
-            );
-            int messageHandlersCount = messageHandlers.Count;
-            if (messageHandlersCount == 0)
-            {
-                return;
-            }
-            // Freeze each handler's typed caches for this emission/priority to ensure snapshot semantics
-            for (int j = 0; j < messageHandlersCount; ++j)
-            {
-                messageHandlers[j]
-                    .PrefreezeTargetedWithoutTargetingHandlersForEmission<TMessage>(
-                        priority,
-                        _scopedEmissionId,
-                        this
-                    );
-            }
-            switch (messageHandlersCount)
-            {
-                case 1:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    return;
-                }
-                case 2:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[1]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    return;
-                }
-                case 3:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[1]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[2]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    return;
-                }
-                case 4:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[1]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[2]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[3]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    return;
-                }
-                case 5:
-                {
-                    messageHandlers[0]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[1]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[2]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[3]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    messageHandlers[4]
-                        .HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-                    return;
-                }
-            }
-
-            for (int i = 0; i < messageHandlersCount; ++i)
-            {
-                MessageHandler handler = messageHandlers[i];
-                handler.HandleTargetedWithoutTargeting(ref target, ref message, this, priority);
-            }
+            // Flat dispatch; see DispatchContextFlatSnapshot for the
+            // frozen-array semantics that replace the legacy prefreeze hoist
+            // (the resolved array cannot observe a mid-emission
+            // deregistration, so no per-bucket prefreeze pass is needed).
+            return DispatchContextFlatSnapshot(snapshot, ref target, ref message);
         }
 
         private bool InternalBroadcastWithoutSource<TMessage>(
+            DispatchSnapshot prefrozenSnapshot,
             ref InstanceId source,
             ref TMessage message
         )
@@ -6068,288 +4461,28 @@ namespace DxMessaging.Core.MessageBus
                 return false;
             }
 
-            List<KeyValuePair<int, HandlerCache>> handlerList = GetOrAddMessageHandlerStack(
-                sortedHandlers,
-                _scopedEmissionId
-            );
-            int handlerListCount = handlerList.Count;
-            // Hoist per-MessageHandler prefreeze across ALL priority buckets
-            // when there is more than one bucket. A handler running in an
-            // earlier bucket can deregister a delegate that lives in a later
-            // bucket's typed cache; if the later bucket's snapshot is taken
-            // lazily inside RunBroadcastWithoutSource (after the
-            // deregistration), the rebuild will observe the mutation and
-            // skip the handler, violating snapshot semantics. The
-            // single-bucket case is unchanged; RunBroadcastWithoutSource's
-            // inline prefreeze covers it.
-            if (handlerListCount > 1)
-            {
-                for (int i = 0; i < handlerListCount; ++i)
-                {
-                    KeyValuePair<int, HandlerCache> prefreezeEntry = handlerList[i];
-                    List<MessageHandler> mhList = GetOrAddMessageHandlerStack(
-                        prefreezeEntry.Value,
-                        _scopedEmissionId
-                    );
-                    int mhCount = mhList.Count;
-                    for (int h = 0; h < mhCount; ++h)
-                    {
-                        mhList[h]
-                            .PrefreezeBroadcastWithoutSourceHandlersForEmission<TMessage>(
-                                prefreezeEntry.Key,
-                                _scopedEmissionId,
-                                this
-                            );
-                    }
-                }
-            }
-            // Copy every KeyValuePair out of the live handlerList BEFORE
-            // invoking any handler; a nested (reentrant) emission rebuilds
-            // the shared list in place after a same-type mutation. See the
-            // matching comment on the SourcedBroadcast priority walk.
-            switch (handlerListCount)
-            {
-                case 1:
-                {
-                    KeyValuePair<int, HandlerCache> entry = handlerList[0];
-                    RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-                    return true;
-                }
-                case 2:
-                {
-                    KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
-                    KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
-                    RunBroadcastWithoutSource(ref source, ref message, entry0.Key, entry0.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry1.Key, entry1.Value);
-                    return true;
-                }
-                case 3:
-                {
-                    KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
-                    KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
-                    KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
-                    RunBroadcastWithoutSource(ref source, ref message, entry0.Key, entry0.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry1.Key, entry1.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry2.Key, entry2.Value);
-                    return true;
-                }
-                case 4:
-                {
-                    KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
-                    KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
-                    KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
-                    KeyValuePair<int, HandlerCache> entry3 = handlerList[3];
-                    RunBroadcastWithoutSource(ref source, ref message, entry0.Key, entry0.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry1.Key, entry1.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry2.Key, entry2.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry3.Key, entry3.Value);
-                    return true;
-                }
-                case 5:
-                {
-                    KeyValuePair<int, HandlerCache> entry0 = handlerList[0];
-                    KeyValuePair<int, HandlerCache> entry1 = handlerList[1];
-                    KeyValuePair<int, HandlerCache> entry2 = handlerList[2];
-                    KeyValuePair<int, HandlerCache> entry3 = handlerList[3];
-                    KeyValuePair<int, HandlerCache> entry4 = handlerList[4];
-                    RunBroadcastWithoutSource(ref source, ref message, entry0.Key, entry0.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry1.Key, entry1.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry2.Key, entry2.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry3.Key, entry3.Value);
-                    RunBroadcastWithoutSource(ref source, ref message, entry4.Key, entry4.Value);
-                    return true;
-                }
-            }
-
-            for (int i = 0; i < handlerListCount; ++i)
-            {
-                // Live-count guard for the 6+ bucket fallback; see the
-                // SourcedBroadcast priority walk for the rationale.
-                if (handlerList.Count <= i)
-                {
-                    break;
-                }
-
-                KeyValuePair<int, HandlerCache> entry = handlerList[i];
-                RunBroadcastWithoutSource(ref source, ref message, entry.Key, entry.Value);
-            }
-
-            return true;
-        }
-
-        private void RunBroadcastWithoutSource<TMessage>(
-            ref InstanceId source,
-            ref TMessage message,
-            int priority,
-            HandlerCache cache
-        )
-            where TMessage : IBroadcastMessage
-        {
-            // Snapshot semantics: dispatch must respect the per-emission frozen
-            // MessageHandler list, even if a handler running earlier in the same
-            // emission has emptied the live cache.handlers dictionary by removing
-            // its own (or a sibling priority's) registration. Reading the live
-            // dict here would skip handlers that the snapshot still includes.
-            // GetOrAddMessageHandlerStack returns the snapshot list; bail only
-            // when that snapshot is empty.
-            List<MessageHandler> messageHandlers = GetOrAddMessageHandlerStack(
-                cache,
-                _scopedEmissionId
-            );
-            int messageHandlersCount = messageHandlers.Count;
-            if (messageHandlersCount == 0)
-            {
-                return;
-            }
-            // Ensure each handler's typed no-source caches are frozen for this emission/priority
-            for (int j = 0; j < messageHandlersCount; ++j)
-            {
-                messageHandlers[j]
-                    .PrefreezeBroadcastWithoutSourceHandlersForEmission<TMessage>(
-                        priority,
-                        _scopedEmissionId,
-                        this
-                    );
-            }
-            switch (messageHandlersCount)
-            {
-                case 1:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 2:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 3:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 4:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[3]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-                case 5:
-                {
-                    messageHandlers[0]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[1]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[2]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[3]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    messageHandlers[4]
-                        .HandleSourcedBroadcastWithoutSource(
-                            ref source,
-                            ref message,
-                            this,
-                            priority
-                        );
-                    return;
-                }
-            }
-
-            for (int i = 0; i < messageHandlersCount; ++i)
-            {
-                MessageHandler handler = messageHandlers[i];
-                handler.HandleSourcedBroadcastWithoutSource(
-                    ref source,
-                    ref message,
+            // The handle-phase snapshot is acquired at emission start (where
+            // the legacy per-handler prefreeze pass ran, after interceptors
+            // and the global walk but before the source-keyed handle phase),
+            // so registrations made by a source-keyed handler this emission
+            // are not observed - matching the legacy emission-start freeze.
+            // When the sink was EMPTY at emission start (prefrozenSnapshot is
+            // Empty), acquire lazily here: the legacy path took its first
+            // freeze at this point in that case, so a registration made
+            // earlier in this emission into a previously-empty sink fires.
+            DispatchSnapshot snapshot = prefrozenSnapshot.IsEmpty
+                ? AcquireDispatchSnapshot<TMessage>(
                     this,
-                    priority
-                );
-            }
+                    sortedHandlers,
+                    BroadcastWithoutContextHandleSlot,
+                    _scopedEmissionId,
+                    default
+                )
+                : prefrozenSnapshot;
+            _ = DispatchContextFlatSnapshot(snapshot, ref source, ref message);
+            // Legacy reporting: the live-sink gate above passing counts as
+            // "found", regardless of how many frozen delegates fired.
+            return true;
         }
 
         private Action InternalRegisterUntargeted<T>(
@@ -6793,7 +4926,8 @@ namespace DxMessaging.Core.MessageBus
             MessageBus messageBus,
             HandlerCache<int, HandlerCache> handlers,
             SlotKey slotKey,
-            long emissionId
+            long emissionId,
+            InstanceId context
         )
             where TMessage : IMessage
         {
@@ -6818,7 +4952,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     ReleaseSnapshot(ref state.pending);
                     state.pending = hasHandlers
-                        ? BuildDispatchSnapshot<TMessage>(messageBus, handlers, slotKey)
+                        ? BuildDispatchSnapshot<TMessage>(messageBus, handlers, slotKey, context)
                         : DispatchSnapshot.Empty;
 
                     state.pendingDirty = false;
@@ -6827,7 +4961,12 @@ namespace DxMessaging.Core.MessageBus
             else if (state.active.IsEmpty && hasHandlers)
             {
                 ReleaseSnapshot(ref state.pending);
-                state.pending = BuildDispatchSnapshot<TMessage>(messageBus, handlers, slotKey);
+                state.pending = BuildDispatchSnapshot<TMessage>(
+                    messageBus,
+                    handlers,
+                    slotKey,
+                    context
+                );
                 state.hasPending = true;
                 state.pendingDirty = false;
             }
@@ -6846,7 +4985,12 @@ namespace DxMessaging.Core.MessageBus
                     {
                         ReleaseSnapshot(ref state.pending);
                         state.pending = hasHandlers
-                            ? BuildDispatchSnapshot<TMessage>(messageBus, handlers, slotKey)
+                            ? BuildDispatchSnapshot<TMessage>(
+                                messageBus,
+                                handlers,
+                                slotKey,
+                                context
+                            )
                             : DispatchSnapshot.Empty;
 
                         state.pendingDirty = false;
@@ -6871,7 +5015,8 @@ namespace DxMessaging.Core.MessageBus
         private static DispatchSnapshot BuildDispatchSnapshot<TMessage>(
             MessageBus messageBus,
             HandlerCache<int, HandlerCache> handlers,
-            SlotKey slotKey
+            SlotKey slotKey,
+            InstanceId context
         )
             where TMessage : IMessage
         {
@@ -6910,40 +5055,127 @@ namespace DxMessaging.Core.MessageBus
             }
 
             DispatchSnapshot snapshot = new DispatchSnapshot(buckets, priorityCount, pooled: true);
-            if (
-                slotKey.Kind == DispatchKind.Untargeted
-                && slotKey.Variant == DispatchVariant.Default
-            )
-            {
-                snapshot.flat = BuildUntargetedFlatDispatch<TMessage>(
-                    messageBus,
-                    handlers,
-                    postProcessing: slotKey.Phase == DispatchPhase.PostProcess
-                );
-            }
-
+            snapshot.flat = BuildFlatDispatch<TMessage>(messageBus, handlers, slotKey, context);
             return snapshot;
         }
 
         /// <summary>
-        /// Resolves every untargeted registration reachable from the bus-side
-        /// priority buckets into a single pooled flat array of
-        /// {MessageHandler, FastHandler} pairs, in exact dispatch order:
-        /// priority ascending, then bus-bucket insertion order per priority,
-        /// then per MessageHandler all fast entries (registration order)
-        /// followed by all default entries (registration order). Runs only at
-        /// snapshot-build time (registration churn); steady-state emission
-        /// walks the result with one live <c>active</c> check per entry and a
-        /// direct delegate invocation - no dispatch links, generation guards,
-        /// per-priority dictionary lookups, or delegate-shape type tests.
-        /// Creates zero closures: default Action handlers were adapted to
-        /// FastHandler form once at registration time
-        /// (HandlerActionCache.Entry.flatInvoker).
+        /// Selects the typed-handler slot pair for the snapshot's
+        /// (kind, phase, variant) coordinate and builds the resolved flat
+        /// dispatch array. Every bus-side slot that reaches
+        /// <see cref="BuildDispatchSnapshot{TMessage}"/> is flattened:
+        /// untargeted handle/post, targeted/broadcast Default handle/post
+        /// (context-keyed; <paramref name="context"/> selects the per-target
+        /// or per-source typed caches), and targeted/broadcast WithoutContext
+        /// handle/post (whose delegates receive the routing InstanceId, so
+        /// they resolve into <see cref="ContextFlatDispatch{TMessage}"/>
+        /// entries instead).
         /// </summary>
-        private static FlatDispatchArray BuildUntargetedFlatDispatch<TMessage>(
+        private static FlatDispatchArray BuildFlatDispatch<TMessage>(
             MessageBus messageBus,
             HandlerCache<int, HandlerCache> handlers,
-            bool postProcessing
+            SlotKey slotKey,
+            InstanceId context
+        )
+            where TMessage : IMessage
+        {
+            bool postProcessing = slotKey.Phase == DispatchPhase.PostProcess;
+            DispatchKind kind = slotKey.Kind;
+            int fastIndex;
+            int defaultIndex;
+            if (slotKey.Variant == DispatchVariant.WithoutContext)
+            {
+                if (kind == DispatchKind.Targeted)
+                {
+                    fastIndex = postProcessing
+                        ? TypedSlotIndex.TargetedPostProcessWithoutContextFast
+                        : TypedSlotIndex.TargetedHandleWithoutContextFast;
+                    defaultIndex = postProcessing
+                        ? TypedSlotIndex.TargetedPostProcessWithoutContext
+                        : TypedSlotIndex.TargetedHandleWithoutContext;
+                }
+                else
+                {
+                    fastIndex = postProcessing
+                        ? TypedSlotIndex.BroadcastPostProcessWithoutContextFast
+                        : TypedSlotIndex.BroadcastHandleWithoutContextFast;
+                    defaultIndex = postProcessing
+                        ? TypedSlotIndex.BroadcastPostProcessWithoutContext
+                        : TypedSlotIndex.BroadcastHandleWithoutContext;
+                }
+
+                return BuildWithContextFlatDispatch<TMessage>(
+                    messageBus,
+                    handlers,
+                    fastIndex,
+                    defaultIndex
+                );
+            }
+
+            if (kind == DispatchKind.Untargeted)
+            {
+                fastIndex = postProcessing
+                    ? TypedSlotIndex.UntargetedPostProcessFast
+                    : TypedSlotIndex.UntargetedHandleFast;
+                defaultIndex = postProcessing
+                    ? TypedSlotIndex.UntargetedPostProcessDefault
+                    : TypedSlotIndex.UntargetedHandleDefault;
+                return BuildMessageFlatDispatch<TMessage>(
+                    messageBus,
+                    handlers,
+                    fastIndex,
+                    defaultIndex
+                );
+            }
+
+            if (kind == DispatchKind.Targeted)
+            {
+                fastIndex = postProcessing
+                    ? TypedSlotIndex.TargetedPostProcessFast
+                    : TypedSlotIndex.TargetedHandleFast;
+                defaultIndex = postProcessing
+                    ? TypedSlotIndex.TargetedPostProcessDefault
+                    : TypedSlotIndex.TargetedHandleDefault;
+            }
+            else
+            {
+                fastIndex = postProcessing
+                    ? TypedSlotIndex.BroadcastPostProcessFast
+                    : TypedSlotIndex.BroadcastHandleFast;
+                defaultIndex = postProcessing
+                    ? TypedSlotIndex.BroadcastPostProcessDefault
+                    : TypedSlotIndex.BroadcastHandleDefault;
+            }
+
+            return BuildContextFlatDispatch<TMessage>(
+                messageBus,
+                handlers,
+                context,
+                fastIndex,
+                defaultIndex
+            );
+        }
+
+        /// <summary>
+        /// Resolves every registration reachable from the bus-side priority
+        /// buckets of a non-context-keyed FastHandler-shaped slot into a
+        /// single pooled flat array of {MessageHandler, FastHandler} pairs,
+        /// in exact dispatch order: priority ascending, then bus-bucket
+        /// insertion order per priority, then per MessageHandler all fast
+        /// entries (registration order) followed by all default entries
+        /// (registration order). Runs only at snapshot-build time
+        /// (registration churn); steady-state emission walks the result with
+        /// one live <c>active</c> check per entry and a direct delegate
+        /// invocation - no dispatch links, generation guards, per-priority
+        /// dictionary lookups, or delegate-shape type tests. Creates zero
+        /// closures: default Action handlers were adapted to FastHandler form
+        /// once at registration time (HandlerActionCache.Entry.flatInvoker).
+        /// </summary>
+        private static FlatDispatchArray BuildMessageFlatDispatch<TMessage>(
+            MessageBus messageBus,
+            HandlerCache<int, HandlerCache> handlers,
+            int fastIndex,
+            int defaultIndex
         )
             where TMessage : IMessage
         {
@@ -6967,21 +5199,17 @@ namespace DxMessaging.Core.MessageBus
                 for (int j = 0; j < orderedCount; ++j)
                 {
                     total += ordered[j]
-                        .CountUntargetedFlatHandlers<TMessage>(
-                            messageBus,
-                            priority,
-                            postProcessing
-                        );
+                        .CountFlatHandlers<TMessage>(messageBus, priority, fastIndex, defaultIndex);
                 }
             }
 
-            UntargetedFlatDispatch<TMessage> flat = UntargetedFlatDispatch<TMessage>.Rent(total);
+            FlatDispatch<TMessage> flat = FlatDispatch<TMessage>.Rent(total);
             if (total == 0)
             {
                 return flat;
             }
 
-            UntargetedFlatEntry<TMessage>[] flatEntries = flat.entries;
+            FlatDispatchEntry<TMessage>[] flatEntries = flat.entries;
             int write = 0;
             for (int i = 0; i < priorityCount; ++i)
             {
@@ -6999,10 +5227,11 @@ namespace DxMessaging.Core.MessageBus
                 for (int j = 0; j < orderedCount; ++j)
                 {
                     write = ordered[j]
-                        .FillUntargetedFlatHandlers<TMessage>(
+                        .FillFlatHandlers<TMessage>(
                             messageBus,
                             priority,
-                            postProcessing,
+                            fastIndex,
+                            defaultIndex,
                             flatEntries,
                             write
                         );
@@ -7011,6 +5240,311 @@ namespace DxMessaging.Core.MessageBus
 
             flat.count = write;
             return flat;
+        }
+
+        /// <summary>
+        /// Context-keyed sibling of
+        /// <see cref="BuildMessageFlatDispatch{TMessage}"/> for the
+        /// Default-variant targeted/broadcast slots: the bus-side priority
+        /// buckets are already per-context (the HandlerCache is keyed by
+        /// target/source), and each MessageHandler's typed caches are
+        /// resolved through its per-context map for
+        /// <paramref name="context"/>. Same ordering and zero-closure
+        /// guarantees.
+        /// </summary>
+        private static FlatDispatchArray BuildContextFlatDispatch<TMessage>(
+            MessageBus messageBus,
+            HandlerCache<int, HandlerCache> handlers,
+            InstanceId context,
+            int fastIndex,
+            int defaultIndex
+        )
+            where TMessage : IMessage
+        {
+            List<int> orderedPriorities = handlers.order;
+            int priorityCount = orderedPriorities.Count;
+            int total = 0;
+            for (int i = 0; i < priorityCount; ++i)
+            {
+                int priority = orderedPriorities[i];
+                if (
+                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                    || cache == null
+                )
+                {
+                    continue;
+                }
+
+                DebugAssertBusInsertionOrderInSync(cache);
+                List<MessageHandler> ordered = cache.insertionOrder;
+                int orderedCount = ordered.Count;
+                for (int j = 0; j < orderedCount; ++j)
+                {
+                    total += ordered[j]
+                        .CountContextFlatHandlers<TMessage>(
+                            messageBus,
+                            context,
+                            priority,
+                            fastIndex,
+                            defaultIndex
+                        );
+                }
+            }
+
+            FlatDispatch<TMessage> flat = FlatDispatch<TMessage>.Rent(total);
+            if (total == 0)
+            {
+                return flat;
+            }
+
+            FlatDispatchEntry<TMessage>[] flatEntries = flat.entries;
+            int write = 0;
+            for (int i = 0; i < priorityCount; ++i)
+            {
+                int priority = orderedPriorities[i];
+                if (
+                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                    || cache == null
+                )
+                {
+                    continue;
+                }
+
+                List<MessageHandler> ordered = cache.insertionOrder;
+                int orderedCount = ordered.Count;
+                for (int j = 0; j < orderedCount; ++j)
+                {
+                    write = ordered[j]
+                        .FillContextFlatHandlers<TMessage>(
+                            messageBus,
+                            context,
+                            priority,
+                            fastIndex,
+                            defaultIndex,
+                            flatEntries,
+                            write
+                        );
+                }
+            }
+
+            flat.count = write;
+            return flat;
+        }
+
+        /// <summary>
+        /// WithoutContext sibling of
+        /// <see cref="BuildMessageFlatDispatch{TMessage}"/> for the
+        /// targeted/broadcast slots whose delegates receive the routing
+        /// InstanceId: entries resolve to FastHandlerWithContext delegates
+        /// (fast registrations directly; default Action&lt;InstanceId, T&gt;
+        /// registrations via the registration-time adapter). Same ordering
+        /// and zero-closure guarantees.
+        /// </summary>
+        private static FlatDispatchArray BuildWithContextFlatDispatch<TMessage>(
+            MessageBus messageBus,
+            HandlerCache<int, HandlerCache> handlers,
+            int fastIndex,
+            int defaultIndex
+        )
+            where TMessage : IMessage
+        {
+            List<int> orderedPriorities = handlers.order;
+            int priorityCount = orderedPriorities.Count;
+            int total = 0;
+            for (int i = 0; i < priorityCount; ++i)
+            {
+                int priority = orderedPriorities[i];
+                if (
+                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                    || cache == null
+                )
+                {
+                    continue;
+                }
+
+                DebugAssertBusInsertionOrderInSync(cache);
+                List<MessageHandler> ordered = cache.insertionOrder;
+                int orderedCount = ordered.Count;
+                for (int j = 0; j < orderedCount; ++j)
+                {
+                    total += ordered[j]
+                        .CountWithContextFlatHandlers<TMessage>(
+                            messageBus,
+                            priority,
+                            fastIndex,
+                            defaultIndex
+                        );
+                }
+            }
+
+            ContextFlatDispatch<TMessage> flat = ContextFlatDispatch<TMessage>.Rent(total);
+            if (total == 0)
+            {
+                return flat;
+            }
+
+            ContextFlatDispatchEntry<TMessage>[] flatEntries = flat.entries;
+            int write = 0;
+            for (int i = 0; i < priorityCount; ++i)
+            {
+                int priority = orderedPriorities[i];
+                if (
+                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                    || cache == null
+                )
+                {
+                    continue;
+                }
+
+                List<MessageHandler> ordered = cache.insertionOrder;
+                int orderedCount = ordered.Count;
+                for (int j = 0; j < orderedCount; ++j)
+                {
+                    write = ordered[j]
+                        .FillWithContextFlatHandlers<TMessage>(
+                            messageBus,
+                            priority,
+                            fastIndex,
+                            defaultIndex,
+                            flatEntries,
+                            write
+                        );
+                }
+            }
+
+            flat.count = write;
+            return flat;
+        }
+
+        /// <summary>
+        /// Walks a flat snapshot whose entries carry message-only
+        /// (FastHandler) delegates: one live <c>active</c> check per entry,
+        /// then a direct delegate invocation. The array is frozen for this
+        /// emission (mutations mark the DispatchState dirty and surface on
+        /// the NEXT emission's rebuild), which preserves the mid-emission
+        /// contracts the legacy link path enforced via prefreeze stamping:
+        /// a handler deregistered mid-emission still fires (its entry is
+        /// already in the frozen array); a handler registered mid-emission
+        /// does not fire (it is not in the frozen array); a
+        /// destroyed/disabled component never fires (live per-entry
+        /// <c>active</c> check, at per-delegate granularity). The
+        /// reset-generation re-read after each invocation halts in-flight
+        /// dispatch when a handler calls ResetState() (the documented
+        /// mid-dispatch reset contract).
+        /// Returns the legacy "found any handlers" semantics: delegates were
+        /// resolved, OR bus-level bucket entries exist for the slot.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool DispatchFlatSnapshot<TMessage>(DispatchSnapshot snapshot, ref TMessage message)
+            where TMessage : IMessage
+        {
+            FlatDispatchArray flatBase = snapshot.flat;
+            if (flatBase == null)
+            {
+                return false;
+            }
+
+            DebugAssertFlatShape<FlatDispatch<TMessage>>(flatBase);
+            FlatDispatch<TMessage> flat = DxUnsafe.As<FlatDispatch<TMessage>>(flatBase);
+            FlatDispatchEntry<TMessage>[] entries = flat.entries;
+            int count = flat.count;
+            long resetGeneration = _resetGeneration;
+            for (int i = 0; i < count; ++i)
+            {
+                ref FlatDispatchEntry<TMessage> entry = ref entries[i];
+                if (entry.handler.active)
+                {
+                    entry.invoker(ref message);
+                    if (_resetGeneration != resetGeneration)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (0 < count)
+            {
+                return true;
+            }
+
+            return HasAnyDispatchEntries(snapshot);
+        }
+
+        /// <summary>
+        /// Sibling of <see cref="DispatchFlatSnapshot{TMessage}"/> for the
+        /// WithoutContext targeted/broadcast slots: entries carry
+        /// FastHandlerWithContext delegates that receive the routing
+        /// InstanceId alongside the message. Same frozen-array and
+        /// reset-generation semantics.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool DispatchContextFlatSnapshot<TMessage>(
+            DispatchSnapshot snapshot,
+            ref InstanceId context,
+            ref TMessage message
+        )
+            where TMessage : IMessage
+        {
+            FlatDispatchArray flatBase = snapshot.flat;
+            if (flatBase == null)
+            {
+                return false;
+            }
+
+            DebugAssertFlatShape<ContextFlatDispatch<TMessage>>(flatBase);
+            ContextFlatDispatch<TMessage> flat = DxUnsafe.As<ContextFlatDispatch<TMessage>>(
+                flatBase
+            );
+            ContextFlatDispatchEntry<TMessage>[] entries = flat.entries;
+            int count = flat.count;
+            long resetGeneration = _resetGeneration;
+            for (int i = 0; i < count; ++i)
+            {
+                ref ContextFlatDispatchEntry<TMessage> entry = ref entries[i];
+                if (entry.handler.active)
+                {
+                    entry.invoker(ref context, ref message);
+                    if (_resetGeneration != resetGeneration)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (0 < count)
+            {
+                return true;
+            }
+
+            return HasAnyDispatchEntries(snapshot);
+        }
+
+        // Asserts the snapshot's flat array is the concrete closed-generic
+        // holder the dispatch site is about to DxUnsafe.As-cast it to. A
+        // mismatch means a slot-key/build-shape wiring bug (e.g. a
+        // WithoutContext slot built a message-shape array); the unchecked
+        // cast would otherwise corrupt the dispatch. Stripped in Release.
+        [Conditional("DEBUG")]
+        private static void DebugAssertFlatShape<TExpected>(FlatDispatchArray flat)
+            where TExpected : FlatDispatchArray
+        {
+            // Early return on the expected (always-taken) path so the failure
+            // message is only materialized on an actual mismatch; building it
+            // eagerly would allocate strings on every dispatch in DEBUG
+            // (editor) runs and trip the zero-alloc steady-state gates.
+            if (flat is TExpected)
+            {
+                return;
+            }
+
+            System.Diagnostics.Debug.Assert(
+                false,
+                "Flat dispatch shape mismatch: snapshot.flat is "
+                    + flat.GetType().Name
+                    + " but the dispatch site expects "
+                    + typeof(TExpected).Name
+                    + ". Check BuildFlatDispatch's slot-key routing."
+            );
         }
 
         // Asserts the bus-side per-priority insertionOrder list stays in
@@ -7299,145 +5833,6 @@ namespace DxMessaging.Core.MessageBus
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeTargetedEntry<TMessage>(
-            ref InstanceId target,
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : ITargetedMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.TargetedDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.TargetedDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref target, ref message, priority, _scopedEmissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeTargetedPostEntry<TMessage>(
-            ref InstanceId target,
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : ITargetedMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.TargetedPostDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.TargetedPostDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref target, ref message, priority, _scopedEmissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PrefreezeTargetedPostSnapshot<TMessage>(
-            ref InstanceId target,
-            DispatchSnapshot snapshot
-        )
-            where TMessage : ITargetedMessage
-        {
-            if (snapshot.IsEmpty)
-            {
-                return;
-            }
-
-            // No fast-path short-circuit for post-processor prefreeze. See the
-            // detailed rationale formerly on PrefreezeUntargetedPostSnapshot (the
-            // untargeted path now uses fully-resolved flat snapshots and no longer
-            // prefreezes); a regular
-            // handler can register a new post-processor (same MessageHandler,
-            // same priority) during its own execution, and the lazy first-read
-            // inside post-processor dispatch would otherwise capture that newly
-            // added entry. Always prefreezing pins the emission-start snapshot.
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-            {
-                DispatchBucket bucket = buckets[bucketIndex];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
-                {
-                    continue;
-                }
-
-                int priority = bucket.priority;
-                for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                {
-                    entries[entryIndex]
-                        .handler.PrefreezeTargetedPostProcessorsForEmission<TMessage>(
-                            target,
-                            priority,
-                            _scopedEmissionId,
-                            this
-                        );
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PrefreezeTargetedSnapshot<TMessage>(
-            ref InstanceId target,
-            DispatchSnapshot snapshot
-        )
-            where TMessage : ITargetedMessage
-        {
-            if (snapshot.IsEmpty)
-            {
-                return;
-            }
-
-            // Prefreeze fast-path short-circuit: if there is exactly one priority
-            // bucket with at most one MessageHandler entry, no later handler can
-            // observe a removal performed by an earlier one, so the inline lazy
-            // freeze inside the dispatch path is sufficient. Note: a single
-            // MessageHandler may still register multiple delegates at the same
-            // priority; those share a HandlerActionCache that is frozen on first
-            // read by the per-priority RunFastHandlers/RunHandlers, so the lazy
-            // freeze covers same-priority same-MessageHandler removals correctly.
-            // See the longer rationale on the broadcast inline prefreeze block
-            // in SourcedBroadcast.
-            if (snapshot.bucketCount == 1 && snapshot.buckets[0].entryCount <= 1)
-            {
-                return;
-            }
-
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-            {
-                DispatchBucket bucket = buckets[bucketIndex];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
-                {
-                    continue;
-                }
-
-                int priority = bucket.priority;
-                for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                {
-                    entries[entryIndex]
-                        .handler.PrefreezeTargetedHandlersForEmission<TMessage>(
-                            target,
-                            priority,
-                            _scopedEmissionId,
-                            this
-                        );
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void InvokeGlobalUntargetedEntry<TMessage>(
             ref TMessage message,
             DispatchEntry entry
@@ -7509,351 +5904,6 @@ namespace DxMessaging.Core.MessageBus
                 ref message
             );
             handler.HandleGlobalSourcedBroadcastMessage(ref source, ref interfaceMessage, this);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PrefreezeTargetedWithoutTargetingEntries<TMessage>(
-            DispatchEntry[] entries,
-            int entryCount,
-            int priority
-        )
-            where TMessage : ITargetedMessage
-        {
-            for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-            {
-                entries[entryIndex]
-                    .handler.PrefreezeTargetedWithoutTargetingHandlersForEmission<TMessage>(
-                        priority,
-                        _scopedEmissionId,
-                        this
-                    );
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeTargetedWithoutTargetingEntry<TMessage>(
-            ref InstanceId target,
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : ITargetedMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.TargetedWithoutTargetingDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.TargetedWithoutTargetingDispatchLink<TMessage>>(
-                    entry.dispatch
-                );
-            link.Invoke(handler, ref target, ref message, priority, _scopedEmissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeTargetedWithoutTargetingPostEntry<TMessage>(
-            ref InstanceId target,
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : ITargetedMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.TargetedWithoutTargetingPostDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.TargetedWithoutTargetingPostDispatchLink<TMessage>>(
-                    entry.dispatch
-                );
-            link.Invoke(handler, ref target, ref message, priority, _scopedEmissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PrefreezeTargetedWithoutTargetingPostSnapshot<TMessage>(
-            DispatchSnapshot snapshot
-        )
-            where TMessage : ITargetedMessage
-        {
-            if (snapshot.IsEmpty)
-            {
-                return;
-            }
-
-            // No fast-path short-circuit for post-processor prefreeze. See the
-            // detailed rationale formerly on PrefreezeUntargetedPostSnapshot (the
-            // untargeted path now uses fully-resolved flat snapshots and no longer
-            // prefreezes); a regular
-            // handler can register a new post-processor (same MessageHandler,
-            // same priority) during its own execution, and the lazy first-read
-            // inside post-processor dispatch would otherwise capture that newly
-            // added entry. Always prefreezing pins the emission-start snapshot.
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-            {
-                DispatchBucket bucket = buckets[bucketIndex];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
-                {
-                    continue;
-                }
-
-                int priority = bucket.priority;
-                for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                {
-                    entries[entryIndex]
-                        .handler.PrefreezeTargetedWithoutTargetingPostProcessorsForEmission<TMessage>(
-                            priority,
-                            _scopedEmissionId,
-                            this
-                        );
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeBroadcastEntry<TMessage>(
-            ref InstanceId source,
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : IBroadcastMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.BroadcastDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.BroadcastDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref source, ref message, priority, _scopedEmissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeBroadcastPostEntry<TMessage>(
-            ref InstanceId source,
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : IBroadcastMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.BroadcastPostDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.BroadcastPostDispatchLink<TMessage>>(entry.dispatch);
-            link.Invoke(handler, ref source, ref message, priority, _scopedEmissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PrefreezeBroadcastPostSnapshot<TMessage>(
-            ref InstanceId source,
-            DispatchSnapshot snapshot
-        )
-            where TMessage : IBroadcastMessage
-        {
-            if (snapshot.IsEmpty)
-            {
-                return;
-            }
-
-            // No fast-path short-circuit for post-processor prefreeze. See the
-            // detailed rationale formerly on PrefreezeUntargetedPostSnapshot (the
-            // untargeted path now uses fully-resolved flat snapshots and no longer
-            // prefreezes); a regular
-            // handler can register a new post-processor (same MessageHandler,
-            // same priority) during its own execution, and the lazy first-read
-            // inside post-processor dispatch would otherwise capture that newly
-            // added entry. Always prefreezing pins the emission-start snapshot.
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-            {
-                DispatchBucket bucket = buckets[bucketIndex];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
-                {
-                    continue;
-                }
-
-                int priority = bucket.priority;
-                for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                {
-                    entries[entryIndex]
-                        .handler.PrefreezeBroadcastPostProcessorsForEmission<TMessage>(
-                            source,
-                            priority,
-                            _scopedEmissionId,
-                            this
-                        );
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeBroadcastWithoutSourceEntry<TMessage>(
-            ref InstanceId source,
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : IBroadcastMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (entry.prefreeze.kind == PrefreezeKindBroadcastWithoutSourceHandlers)
-            {
-                handler.PrefreezeBroadcastWithoutSourceHandlersForEmission<TMessage>(
-                    entry.prefreeze.priority,
-                    _scopedEmissionId,
-                    this
-                );
-            }
-
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.BroadcastWithoutSourceDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.BroadcastWithoutSourceDispatchLink<TMessage>>(
-                    entry.dispatch
-                );
-            link.Invoke(handler, ref source, ref message, priority, _scopedEmissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeBroadcastWithoutSourcePostEntry<TMessage>(
-            ref InstanceId source,
-            ref TMessage message,
-            int priority,
-            DispatchEntry entry
-        )
-            where TMessage : IBroadcastMessage
-        {
-            MessageHandler handler = entry.handler;
-            if (!handler.active)
-            {
-                return;
-            }
-
-            MessageHandler.BroadcastWithoutSourcePostDispatchLink<TMessage> link =
-                DxUnsafe.As<MessageHandler.BroadcastWithoutSourcePostDispatchLink<TMessage>>(
-                    entry.dispatch
-                );
-            link.Invoke(handler, ref source, ref message, priority, _scopedEmissionId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PrefreezeBroadcastWithoutSourcePostSnapshot<TMessage>(
-            DispatchSnapshot snapshot
-        )
-            where TMessage : IBroadcastMessage
-        {
-            if (snapshot.IsEmpty)
-            {
-                return;
-            }
-
-            // No fast-path short-circuit for post-processor prefreeze. See the
-            // detailed rationale formerly on PrefreezeUntargetedPostSnapshot (the
-            // untargeted path now uses fully-resolved flat snapshots and no longer
-            // prefreezes); a regular
-            // handler can register a new post-processor (same MessageHandler,
-            // same priority) during its own execution, and the lazy first-read
-            // inside post-processor dispatch would otherwise capture that newly
-            // added entry. Always prefreezing pins the emission-start snapshot.
-
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            for (int bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
-            {
-                DispatchBucket bucket = buckets[bucketIndex];
-                DispatchEntry[] entries = bucket.entries;
-                int entryCount = bucket.entryCount;
-                if (entryCount == 0)
-                {
-                    continue;
-                }
-
-                int priority = bucket.priority;
-                for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
-                {
-                    entries[entryIndex]
-                        .handler.PrefreezeBroadcastWithoutSourcePostProcessorsForEmission<TMessage>(
-                            priority,
-                            _scopedEmissionId,
-                            this
-                        );
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static List<KeyValuePair<int, HandlerCache>> GetOrAddMessageHandlerStack(
-            HandlerCache<int, HandlerCache> cache,
-            long emissionId
-        )
-        {
-            if (cache.lastSeenEmissionId != emissionId)
-            {
-                if (cache.version != cache.lastSeenVersion)
-                {
-                    List<KeyValuePair<int, HandlerCache>> list = cache.cache;
-                    list.Clear();
-                    List<int> keys = cache.order;
-                    for (int i = 0; i < keys.Count; i++)
-                    {
-                        int key = keys[i];
-                        if (cache.handlers.TryGetValue(key, out HandlerCache value))
-                        {
-                            list.Add(new KeyValuePair<int, HandlerCache>(key, value));
-                        }
-                    }
-                    cache.lastSeenVersion = cache.version;
-                }
-                cache.lastSeenEmissionId = emissionId;
-            }
-            return cache.cache;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static List<MessageHandler> GetOrAddMessageHandlerStack(
-            HandlerCache cache,
-            long emissionId
-        )
-        {
-            if (cache.lastSeenEmissionId != emissionId)
-            {
-                if (cache.version != cache.lastSeenVersion)
-                {
-                    List<MessageHandler> list = cache.cache;
-                    list.Clear();
-                    // Rebuild from insertionOrder, NOT from handlers.Keys:
-                    // Dictionary key enumeration permutes after Remove/Add
-                    // churn (freed slots are reused LIFO), which would break
-                    // the documented same-priority cross-component
-                    // registration order. List.AddRange over a List<T> is a
-                    // single Array.Copy with no enumerator allocation.
-                    list.AddRange(cache.insertionOrder);
-                    cache.lastSeenVersion = cache.version;
-                }
-                cache.lastSeenEmissionId = emissionId;
-            }
-            return cache.cache;
         }
 
         [Conditional("ENABLE_IL2CPP")]

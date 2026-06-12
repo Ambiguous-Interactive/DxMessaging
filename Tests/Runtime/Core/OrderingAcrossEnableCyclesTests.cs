@@ -205,17 +205,15 @@ namespace DxMessaging.Tests.Runtime.Core
         /// D registered LAST and must run LAST.
         /// </summary>
         /// <remarks>
-        /// EXPECTED PRODUCTION GAP (this test is written red-first): the
-        /// bus-side per-priority buckets enumerate a
-        /// Dictionary&lt;MessageHandler, int&gt;
-        /// (<c>MessageBus.FillDispatchEntries</c>'s foreach over
-        /// <c>handlerLookup</c>, and <c>GetOrAddMessageHandlerStack</c>'s
-        /// <c>list.AddRange(cache.handlers.Keys)</c> in
-        /// <c>Runtime/Core/MessageBus/MessageBus.cs</c>). Removing B's
-        /// MessageHandler frees a Dictionary slot; adding D's MessageHandler
-        /// reuses that freed slot, so enumeration yields A, D, C - D is
-        /// dispatched into B's old position, violating the documented
-        /// cross-component registration order.
+        /// HISTORICAL (this test was written red-first against a real gap):
+        /// the bus-side per-priority buckets used to enumerate a
+        /// Dictionary&lt;MessageHandler, int&gt; directly, so removing B's
+        /// MessageHandler freed a Dictionary slot that D's MessageHandler
+        /// then reused, dispatching D in B's old position and violating the
+        /// documented cross-component registration order. Bucket/flat builds
+        /// now iterate the bus-side <c>insertionOrder</c> list
+        /// (<c>MessageBus.FillDispatchEntries</c> and the
+        /// <c>BuildFlatDispatch</c> family), which this test pins.
         /// </remarks>
         [UnityTest]
         public IEnumerator SamePriorityCrossComponentOrderPreservedAfterHandlerChurn(
