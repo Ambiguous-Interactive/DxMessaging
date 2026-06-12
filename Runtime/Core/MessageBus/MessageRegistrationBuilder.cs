@@ -1,8 +1,44 @@
 namespace DxMessaging.Core.MessageBus
 {
     using System;
+    using System.Runtime.ExceptionServices;
     using System.Threading;
     using DxMessaging.Core;
+
+    /// <summary>
+    /// Exception thrown when <see cref="MessageRegistrationBuildOptions.ActivateOnBuild"/> fails and
+    /// the builder cannot fully clean up the partially constructed lease before returning control.
+    /// </summary>
+    public sealed class MessageRegistrationBuildException : Exception
+    {
+        internal MessageRegistrationBuildException(
+            string message,
+            MessageRegistrationLease lease,
+            Exception activationException,
+            Exception cleanupException
+        )
+            : base(message, activationException)
+        {
+            Lease = lease ?? throw new ArgumentNullException(nameof(lease));
+            ActivationException = activationException;
+            CleanupException = cleanupException;
+        }
+
+        /// <summary>
+        /// Lease that still owns retryable token cleanup. Dispose it after resolving the cleanup failure.
+        /// </summary>
+        public MessageRegistrationLease Lease { get; }
+
+        /// <summary>
+        /// Original exception raised while activating the lease.
+        /// </summary>
+        public Exception ActivationException { get; }
+
+        /// <summary>
+        /// Exception raised while attempting to clean up the partially constructed lease.
+        /// </summary>
+        public Exception CleanupException { get; }
+    }
 
     /// <summary>
     /// Options controlling how <see cref="MessageRegistrationBuilder"/> constructs registration tokens.
@@ -144,6 +180,8 @@ namespace DxMessaging.Core.MessageBus
         private readonly MessageRegistrationLifecycle _lifecycle;
         private bool _isActive;
         private bool _disposed;
+        private bool _deactivateHookInvoked;
+        private bool _disposeHookInvoked;
 
         internal MessageRegistrationLease(
             MessageRegistrationToken token,
@@ -159,6 +197,8 @@ namespace DxMessaging.Core.MessageBus
             _lifecycle = lifecycle;
             _isActive = false;
             _disposed = false;
+            _deactivateHookInvoked = false;
+            _disposeHookInvoked = false;
         }
 
         /// <summary>
@@ -199,7 +239,18 @@ namespace DxMessaging.Core.MessageBus
             }
 
             _messageHandler.active = true;
-            _token.Enable();
+            _deactivateHookInvoked = false;
+            try
+            {
+                _token.Enable();
+            }
+            catch
+            {
+                _messageHandler.active = _token.Enabled;
+                _isActive = _token.Enabled;
+                throw;
+            }
+
             // _isActive is set BEFORE the user callback runs so the lease's
             // state matches the registrations even if OnActivate throws:
             // Deactivate()/Dispose() can then always release the live
@@ -221,14 +272,43 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            if (_lifecycle.OnDeactivate != null)
+            Exception deactivateFailure = null;
+            try
             {
-                _lifecycle.OnDeactivate(_token);
+                if (!_deactivateHookInvoked && _lifecycle.OnDeactivate != null)
+                {
+                    _deactivateHookInvoked = true;
+                    _lifecycle.OnDeactivate(_token);
+                }
+            }
+            catch (Exception exception)
+            {
+                deactivateFailure = exception;
+            }
+            finally
+            {
+                try
+                {
+                    try
+                    {
+                        _token.Disable();
+                    }
+                    catch (Exception exception)
+                    {
+                        deactivateFailure ??= exception;
+                    }
+                }
+                finally
+                {
+                    _messageHandler.active = _token.Enabled;
+                    _isActive = _token.Enabled;
+                }
             }
 
-            _token.Disable();
-            _messageHandler.active = false;
-            _isActive = false;
+            if (deactivateFailure != null)
+            {
+                ExceptionDispatchInfo.Capture(deactivateFailure).Throw();
+            }
         }
 
         /// <summary>
@@ -241,13 +321,58 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            Deactivate();
-            if (_lifecycle.OnDispose != null)
+            Exception disposeFailure = null;
+            bool tokenCleanupFailed = false;
+            try
             {
-                _lifecycle.OnDispose(_token);
+                try
+                {
+                    Deactivate();
+                }
+                catch (Exception exception)
+                {
+                    disposeFailure = exception;
+                }
+
+                if (!_disposeHookInvoked && _lifecycle.OnDispose != null)
+                {
+                    _disposeHookInvoked = true;
+                    try
+                    {
+                        _lifecycle.OnDispose(_token);
+                    }
+                    catch (Exception exception)
+                    {
+                        disposeFailure ??= exception;
+                    }
+                }
+            }
+            finally
+            {
+                try
+                {
+                    try
+                    {
+                        _token.Dispose();
+                    }
+                    catch (Exception exception)
+                    {
+                        tokenCleanupFailed = true;
+                        disposeFailure ??= exception;
+                    }
+                }
+                finally
+                {
+                    _messageHandler.active = _token.Enabled;
+                    _isActive = _token.Enabled;
+                    _disposed = !tokenCleanupFailed;
+                }
             }
 
-            _disposed = true;
+            if (disposeFailure != null)
+            {
+                ExceptionDispatchInfo.Capture(disposeFailure).Throw();
+            }
         }
 
         internal void InvokeBuildHook()
@@ -308,6 +433,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="options">Options controlling bus selection, diagnostics, and lifecycle behavior.</param>
         /// <returns>A lease that wraps the created <see cref="MessageRegistrationToken"/>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is <see langword="null"/>.</exception>
+        /// <exception cref="MessageRegistrationBuildException">Thrown when ActivateOnBuild activation fails and automatic cleanup remains retryable.</exception>
         public MessageRegistrationLease Build(MessageRegistrationBuildOptions options)
         {
             if (options == null)
@@ -341,10 +467,54 @@ namespace DxMessaging.Core.MessageBus
 
             if (options.ActivateOnBuild)
             {
-                lease.Activate();
+                try
+                {
+                    lease.Activate();
+                }
+                catch (Exception exception)
+                {
+                    HandleActivateOnBuildFailure(lease, exception);
+                }
             }
 
             return lease;
+        }
+
+        private static void HandleActivateOnBuildFailure(
+            MessageRegistrationLease lease,
+            Exception activationException
+        )
+        {
+            Exception cleanupException = null;
+            try
+            {
+                lease.Dispose();
+            }
+            catch (Exception exception)
+            {
+                cleanupException = exception;
+            }
+
+            if (lease.Token.Enabled)
+            {
+                throw new MessageRegistrationBuildException(
+                    "ActivateOnBuild failed and automatic lease cleanup did not complete. Dispose the Lease property after resolving the cleanup failure.",
+                    lease,
+                    activationException,
+                    cleanupException
+                );
+            }
+
+            if (cleanupException != null && MessagingDebug.enabled)
+            {
+                MessagingDebug.Log(
+                    LogLevel.Error,
+                    "ActivateOnBuild cleanup failed after activation failure: {0}",
+                    cleanupException
+                );
+            }
+
+            ExceptionDispatchInfo.Capture(activationException).Throw();
         }
 
         private static InstanceId ResolveOwner(MessageRegistrationBuildOptions options)

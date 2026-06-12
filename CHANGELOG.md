@@ -65,6 +65,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Token cleanup now clears token-local diagnostics and stale teardown state:
+  `UnregisterAll()`, `Dispose()`, final-handle removal, released
+  `MessagingComponent` tokens, and disposed registration leases no longer
+  retain metadata, call counts, emission history, or stale deregistration
+  closures that could report old registrations or over-deregister later.
+  Failed `Enable()` replays now roll back partial registrations before
+  throwing the original failure; failed active `RetargetMessageBus()` replays
+  roll back partial new-bus registrations and restore previous-bus
+  registrations that are not still live behind a failed rollback cleanup.
+  Deregistration actions that throw before cleanup remain retryable instead
+  of being forgotten, including through owning registration leases and
+  `MessagingComponent.Release()` retries. `ActivateOnBuild` failures now
+  clean up the partially built lease before throwing again; if cleanup cannot
+  complete, `MessageRegistrationBuildException` exposes the retryable lease
+  so callers can dispose it after resolving the cleanup failure.
 - Interceptors registered through a `MessageRegistrationToken` bound to a
   custom bus (`MessageRegistrationToken.Create(handler, customBus)`) now land
   on that bus. `RegisterUntargetedInterceptor`, `RegisterTargetedInterceptor`,
@@ -135,7 +150,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provider-backed emit helpers now route sourced, targeted, and untargeted messages through the resolved `IMessageBus`, so custom bus and DI-provider callers no longer fall back to the global bus for interface-shaped message dispatch.
 - Standalone and IL2CPP player builds now compile. The dispatch hot path performs reinterpret casts that previously used `System.Runtime.CompilerServices.Unsafe`; the Unity Editor supplies that type, but player builds under the .NET Standard 2.0 profile do not, so editmode and playmode passed while standalone IL2CPP failed to build with `CS0103: The name 'Unsafe' does not exist in the current context`. Those calls now route through Unity's built-in `UnsafeUtility` (in `UnityEngine.CoreModule`), which resolves identically in the Editor and every player scripting backend. The change preserves the existing zero-allocation dispatch behavior and adds no package dependency or shipped assembly.
 - Shipped source generators now compile against Unity 2021-compatible Roslyn 3.8 APIs and use the classic `ISourceGenerator` entry point, preventing Unity 2021.3 analyzer-host load failures (`CS8032`) while preserving the generated message-id and auto-constructor output for newer Unity editors.
-- Unity CI editor provisioning now self-heals managed partial or manually copied installs through explicit provisioning profiles: edit/play/release/benchmark jobs verify only the editor, standalone jobs verify `windows-il2cpp`, Android tooling is opt-in, and missing profile-required module groups trigger quarantine plus fresh Unity CLI reinstall instead of failing later in setup.
 - `MessageRegistrationToken.RemoveRegistration(handle)` now compiles cleanly on Unity 2021 while preserving the existing behavior of removing the active deregistration, staged registration, metadata, and diagnostic call-count entries.
 - Unity 2021.3 no longer aborts compilation with _Multiple precompiled assemblies with the same name_ (`PrecompiledAssemblyException`). The shipped Roslyn analyzer and source-generator DLLs are now excluded from every build platform (the Editor included) and activated solely by the `RoslynAnalyzer` asset label, so Unity treats them as compiler analyzers rather than managed precompiled assemblies that collide with the copy placed in the consuming project's `Assets/`. Generated message-id and auto-constructor output is unchanged.
 - The dependency-injection sample README (`Samples~/DI`) now links to the real `Runtime/Unity/Integrations/VContainer/VContainerRegistrationExtensions.cs`; the previous link dropped the `VContainer/` folder and resolved to a missing file.

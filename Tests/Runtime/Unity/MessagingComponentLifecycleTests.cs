@@ -1,9 +1,13 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Unity
 {
+    using System;
     using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
+    using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Core;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
@@ -350,17 +354,48 @@ namespace DxMessaging.Tests.Runtime.Unity
             using (LeakWatcher watcher = LeakWatcher.Watch(label: "DoubleRelease"))
             {
                 MessageRegistrationToken token = listener.RequestToken(messaging);
+                token.DiagnosticMode = true;
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++originalCount);
                 token.Enable();
 
                 message.EmitUntargeted();
                 Assert.AreEqual(1, originalCount, "Positive control: listener should receive.");
+                Assert.AreEqual(1, token._metadata.Count, "Control failed: metadata must exist.");
+                Assert.AreEqual(
+                    1,
+                    token._callCounts.Count,
+                    "Control failed: call count must exist."
+                );
+                Assert.AreEqual(
+                    1,
+                    token._emissionBuffer.Count,
+                    "Control failed: emission history must exist."
+                );
 
                 Assert.IsTrue(messaging.Release(listener), "First release should succeed.");
                 Assert.IsFalse(token.Enabled, "First release must disable the token.");
+                Assert.AreEqual(0, token._metadata.Count, "Release must clear token metadata.");
+                Assert.AreEqual(
+                    0,
+                    token._callCounts.Count,
+                    "Release must clear token call counts."
+                );
+                Assert.AreEqual(
+                    0,
+                    token._emissionBuffer.Count,
+                    "Release must clear token emission history."
+                );
 
                 message.EmitUntargeted();
                 Assert.AreEqual(1, originalCount, "Released listener must stop receiving.");
+
+                token.Enable();
+                message.EmitUntargeted();
+                Assert.AreEqual(
+                    1,
+                    originalCount,
+                    "A released token reference must not resurrect old registrations."
+                );
 
                 Assert.IsFalse(
                     messaging.Release(listener),
@@ -392,6 +427,96 @@ namespace DxMessaging.Tests.Runtime.Unity
                 "Release should succeed again after re-creating the token."
             );
             yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator ReleaseFailureKeepsListenerRegisteredForRetry()
+        {
+            GameObject host = new(
+                nameof(ReleaseFailureKeepsListenerRegisteredForRetry),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
+            MessageBus innerBus = new();
+            FailingDeregistrationBus failingBus = new(innerBus);
+            messaging.Configure(failingBus, MessageBusRebindMode.RebindActive);
+
+            int count = 0;
+            SimpleUntargetedMessage message = new();
+
+            using (
+                LeakWatcher watcher = new(
+                    bus: failingBus,
+                    throwOnLeak: true,
+                    label: nameof(ReleaseFailureKeepsListenerRegisteredForRetry)
+                )
+            )
+            {
+                MessageRegistrationToken token = listener.RequestToken(messaging);
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
+                token.Enable();
+
+                message.EmitUntargeted(failingBus);
+                Assert.AreEqual(1, count, "Control failed: listener should receive.");
+
+                Assert.Throws<InvalidOperationException>(
+                    () => messaging.Release(listener),
+                    "The failing bus must surface the token disposal failure."
+                );
+                Assert.IsTrue(
+                    token.Enabled,
+                    "Failed release must leave the token active for cleanup retry."
+                );
+                Assert.AreEqual(
+                    1,
+                    failingBus.RegisteredUntargeted,
+                    "Failed release must not forget the live registration."
+                );
+
+                failingBus.AllowDeregistrations();
+                Assert.IsTrue(messaging.Release(listener), "Release retry must succeed.");
+                Assert.IsFalse(token.Enabled, "Release retry must disable the token.");
+                Assert.AreEqual(0, failingBus.RegisteredUntargeted, "Retry must deregister.");
+                Assert.IsFalse(
+                    messaging.Release(listener),
+                    "A second release after successful retry must report failure."
+                );
+            }
+
+            yield break;
+        }
+
+        private sealed class FailingDeregistrationBus : DelegatingMessageBus
+        {
+            private bool _throwOnDeregistration = true;
+
+            internal FailingDeregistrationBus(IMessageBus inner)
+                : base(inner) { }
+
+            internal void AllowDeregistrations()
+            {
+                _throwOnDeregistration = false;
+            }
+
+            public override Action RegisterUntargeted<T>(
+                MessageHandler messageHandler,
+                int priority = 0
+            )
+            {
+                Action innerDeregister = base.RegisterUntargeted<T>(messageHandler, priority);
+                return () =>
+                {
+                    if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
+                    {
+                        throw new InvalidOperationException("Deregistration failure.");
+                    }
+
+                    innerDeregister();
+                };
+            }
         }
     }
 }
