@@ -24,8 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Registering or deregistering a handler mid-emission and then reentrantly
-  emitting the same message type no longer corrupts the in-flight dispatch.
+- Interceptors registered through a `MessageRegistrationToken` bound to a
+  custom bus (`MessageRegistrationToken.Create(handler, customBus)`) now land
+  on that bus. `RegisterUntargetedInterceptor`, `RegisterTargetedInterceptor`,
+  and `RegisterBroadcastInterceptor` previously dropped the token's bus and
+  registered on the handler's default (typically global) bus, so they never
+  saw custom-bus emissions and silently intercepted global traffic instead.
+  The fix also covers registrations staged while disabled (they activate on
+  the token's bus at `Enable()` time) and `RetargetMessageBus`, which now
+  re-routes interceptors along with every other registration kind.
+- Registering or deregistering a handler mid-emission and then emitting the
+  same message type reentrant-style from inside a handler no longer corrupts
+  the in-flight dispatch.
   The nested emission's snapshot rebuild previously released the pooled
   arrays the outer emission was still iterating
   (`NullReferenceException` / `ArgumentOutOfRangeException`, or silent

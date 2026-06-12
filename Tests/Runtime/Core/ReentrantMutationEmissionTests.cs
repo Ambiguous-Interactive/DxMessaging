@@ -15,7 +15,7 @@ namespace DxMessaging.Tests.Runtime.Core
     /// <summary>
     /// Regression coverage for the displaced-snapshot release hazard: a
     /// handler that mutates the same-type registration set (register OR
-    /// deregister) and then REENTRANTLY emits the same message type forces
+    /// deregister) and then REENTRANT re-emit of emits the same message type forces
     /// the nested emission's snapshot promotion to displace the snapshot the
     /// OUTER dispatch loop is still iterating. Before the fix the displaced
     /// snapshot was released (cleared and returned to the array pools)
@@ -41,7 +41,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>
         /// A priority-0 handler registers a NEW same-type handler on the same
-        /// bus and then reentrantly emits the same message type (guarded to a
+        /// bus and then re-emits the same type reentrant-style the same message type (guarded to a
         /// single nesting level). A priority-1 peer exists for the whole
         /// test. The outer emission must complete without throwing, the peer
         /// must fire on BOTH emissions (frozen outer snapshot + rebuilt
@@ -99,7 +99,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         priority: 0
                     );
 
-                    // ...then reentrantly emit the same type, forcing the
+                    // ...then in a reentrant emission emit the same type, forcing the
                     // nested acquire to promote the staged snapshot under a
                     // new emission id while the outer loop is mid-iteration.
                     ++depth;
@@ -250,7 +250,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(peerHandle);
                     peerHandle = default;
 
-                    // ...then reentrantly emit the same type.
+                    // ...then in a reentrant emission emit the same type.
                     ++depth;
                     try
                     {

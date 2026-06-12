@@ -1729,7 +1729,12 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ => _messageHandler.RegisterUntargetedInterceptor(interceptor, priority),
+                _ =>
+                    _messageHandler.RegisterUntargetedInterceptor(
+                        interceptor,
+                        priority: priority,
+                        messageBus: _messageBus
+                    ),
                 () =>
                     new MessageRegistrationMetadata(
                         null,
@@ -1759,7 +1764,12 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ => _messageHandler.RegisterBroadcastInterceptor(interceptor, priority),
+                _ =>
+                    _messageHandler.RegisterBroadcastInterceptor(
+                        interceptor,
+                        priority: priority,
+                        messageBus: _messageBus
+                    ),
                 () =>
                     new MessageRegistrationMetadata(
                         null,
@@ -1789,7 +1799,12 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ => _messageHandler.RegisterTargetedInterceptor(interceptor, priority),
+                _ =>
+                    _messageHandler.RegisterTargetedInterceptor(
+                        interceptor,
+                        priority: priority,
+                        messageBus: _messageBus
+                    ),
                 () =>
                     new MessageRegistrationMetadata(
                         null,

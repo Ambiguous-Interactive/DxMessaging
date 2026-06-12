@@ -1138,7 +1138,7 @@ namespace DxMessaging.Core.MessageBus
         // snapshots DISPLACED out of DispatchState.active by a nested
         // emission's snapshot promotion (see ReleaseDisplacedSnapshot): a
         // handler that mutates the same-type registration set and then
-        // reentrantly emits the same message type promotes the staged pending
+        // in a reentrant emission emits the same message type promotes the staged pending
         // snapshot under a new emission id, displacing the snapshot the OUTER
         // dispatch loop is still iterating. Releasing it inline would clear
         // and pool the frozen arrays mid-iteration (NRE / silent handler
@@ -6838,7 +6838,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     // Displacement, not plain release: an OUTER emission may
                     // still be iterating state.active (handler mutated the
-                    // registration set, then reentrantly emitted this type).
+                    // registration set, then in a reentrant emission emitted this type).
                     // ReleaseDisplacedSnapshot defers the release to the
                     // outermost dispatch-lease exit when one is in flight.
                     messageBus.ReleaseDisplacedSnapshot(ref state.active);
