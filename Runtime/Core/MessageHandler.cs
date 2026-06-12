@@ -2375,7 +2375,7 @@ namespace DxMessaging.Core
                 public readonly int count;
 
                 // Pre-resolved invoker consumed by the bus-side flat dispatch
-                // snapshot (MessageBus.BuildUntargetedFlatDispatch). For
+                // snapshot (MessageBus.BuildMessageFlatDispatch). For
                 // default Action<TMessage> registrations this holds a
                 // FastHandler<TMessage> adapter wrapping the AUGMENTED
                 // handler, created exactly ONCE at registration time so

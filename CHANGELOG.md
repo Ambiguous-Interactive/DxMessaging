@@ -23,7 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refinement: a handler that deactivates itself mid-emission now skips its
   own remaining delegates in that emission for every kind (the active check
   runs per delegate instead of once per handler), matching the documented
-  immediate-deactivation semantics.
+  immediate-deactivation semantics. Mid-emission registration gating is
+  also now uniform: a delegate registered during an emission never fires in
+  that emission, for every kind and every registration shape. Previously a
+  handler registering a different-shaped delegate for the same type on its
+  own MessageHandler could fire it in the same emission, depending on
+  unrelated handler counts.
 
 ### Fixed
 

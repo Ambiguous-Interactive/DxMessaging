@@ -107,6 +107,133 @@ namespace DxMessaging.Tests.Runtime.Core
             yield break;
         }
 
+        /// <summary>
+        /// A handler that registers a NEW delegate of a DIFFERENT shape
+        /// (default <see cref="Action{T}"/> from inside a fast handler) on the
+        /// SAME <see cref="MessageHandler"/> for the same message type
+        /// mid-emission: the new delegate must NOT fire in the current
+        /// emission and MUST fire in the next one. The flattened dispatch
+        /// gates this uniformly for every kind; the legacy per-handler
+        /// prefreeze could leak this exact shape through caches that did not
+        /// exist (or were not stamped) at emission start, firing it
+        /// same-emission depending on unrelated handler counts.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator SameHandlerCrossShapeRegistrationDoesNotFireSameEmission(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            GameObject host = new(
+                nameof(SameHandlerCrossShapeRegistrationDoesNotFireSameEmission) + "_" + scenario,
+                typeof(EmptyMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
+            MessageRegistrationToken token = GetToken(component);
+            InstanceId hostId = host;
+
+            int fastCount = 0;
+            int defaultCount = 0;
+            bool added = false;
+            MessageRegistrationHandle defaultHandle = default;
+
+            // RegisterCounter registers a FAST handler; from inside it,
+            // register a DEFAULT (Action<T>) delegate for the same type on
+            // the same MessageHandler - the previously leaking shape.
+            MessageRegistrationHandle fastHandle = RegisterCounter(
+                scenario,
+                token,
+                hostId,
+                () =>
+                {
+                    ++fastCount;
+                    if (!added)
+                    {
+                        added = true;
+                        defaultHandle = RegisterDefaultShapeCounter(
+                            scenario,
+                            token,
+                            hostId,
+                            () => ++defaultCount
+                        );
+                    }
+                }
+            );
+
+            EmitForScenario(scenario, hostId);
+            Assert.AreEqual(
+                1,
+                fastCount,
+                "[{0}] The registering fast handler must run on the first emission.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                0,
+                defaultCount,
+                "[{0}] A default-shape delegate registered mid-emission on the SAME "
+                    + "MessageHandler must NOT fire in the emission that registered it.",
+                scenario.Kind
+            );
+
+            EmitForScenario(scenario, hostId);
+            Assert.AreEqual(
+                2,
+                fastCount,
+                "[{0}] The fast handler must run again on the second emission.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                1,
+                defaultCount,
+                "[{0}] The mid-emission registration must fire starting with the "
+                    + "next emission.",
+                scenario.Kind
+            );
+
+            token.RemoveRegistration(fastHandle);
+            if (defaultHandle != default)
+            {
+                token.RemoveRegistration(defaultHandle);
+            }
+            yield break;
+        }
+
+        private static MessageRegistrationHandle RegisterDefaultShapeCounter(
+            MessageScenario scenario,
+            MessageRegistrationToken token,
+            InstanceId target,
+            Action onInvoked
+        )
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                {
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>(_ => onInvoked());
+                }
+                case MessageKind.Targeted:
+                {
+                    return token.RegisterTargeted<SimpleTargetedMessage>(target, _ => onInvoked());
+                }
+                case MessageKind.Broadcast:
+                {
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
+                        target,
+                        _ => onInvoked()
+                    );
+                }
+                default:
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(scenario),
+                        scenario.Kind,
+                        "Unsupported message kind."
+                    );
+                }
+            }
+        }
+
         [UnityTest]
         [Category("Stress")]
         public IEnumerator UntargetedRemoveSelfMany()
