@@ -54,7 +54,7 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "B");
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "C");
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 new[] { "A", "B", "C" },
                 order.ToArray(),
@@ -63,11 +63,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             order.Clear();
             token.Disable();
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(0, order.Count, "No handler may run while the token is disabled.");
 
             token.Enable();
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 new[] { "A", "B", "C" },
                 order.ToArray(),
@@ -80,7 +80,7 @@ namespace DxMessaging.Tests.Runtime.Core
             order.Clear();
             token.Disable();
             token.Enable();
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 new[] { "A", "B", "C" },
                 order.ToArray(),
@@ -117,7 +117,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "C");
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 new[] { "A", "B", "C" },
                 order.ToArray(),
@@ -128,7 +128,7 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "D");
 
             order.Clear();
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 new[] { "A", "C", "D" },
                 order.ToArray(),
@@ -166,7 +166,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             _ = RegisterOrderedHandler(scenario, token, hostId, order, "C");
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 new[] { "A", "B", "C" },
                 order.ToArray(),
@@ -180,7 +180,7 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
 
             order.Clear();
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 new[] { "A", "C", "D" },
                 order.ToArray(),
@@ -271,7 +271,7 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = RegisterOrderedHandler(scenario, tokenB, contextId, order, "B");
             _ = RegisterOrderedHandler(scenario, tokenC, contextId, order, "C");
 
-            EmitForScenario(scenario, contextId);
+            ScenarioCallbacks.EmitForKind(scenario, contextId);
             Assert.AreEqual(
                 new[] { "A", "B", "C" },
                 order.ToArray(),
@@ -300,7 +300,7 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = RegisterOrderedHandler(scenario, tokenD, contextId, order, "D");
 
             order.Clear();
-            EmitForScenario(scenario, contextId);
+            ScenarioCallbacks.EmitForKind(scenario, contextId);
             Assert.AreEqual(
                 new[] { "A", "C", "D" },
                 order.ToArray(),
@@ -314,7 +314,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // The post-churn order must be stable on every emission, not
             // merely the first one after churn.
             order.Clear();
-            EmitForScenario(scenario, contextId);
+            ScenarioCallbacks.EmitForKind(scenario, contextId);
             Assert.AreEqual(
                 new[] { "A", "C", "D" },
                 order.ToArray(),
@@ -325,6 +325,10 @@ namespace DxMessaging.Tests.Runtime.Core
             yield break;
         }
 
+        /// <summary>
+        /// Registers a counting handler that appends <paramref name="label"/> to
+        /// <paramref name="order"/> so emission order can be asserted.
+        /// </summary>
         private static MessageRegistrationHandle RegisterOrderedHandler(
             MessageScenario scenario,
             MessageRegistrationToken token,
@@ -333,79 +337,12 @@ namespace DxMessaging.Tests.Runtime.Core
             string label
         )
         {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => order.Add(label),
-                        priority: 0
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (ref SimpleTargetedMessage _) => order.Add(label),
-                        priority: 0
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        context,
-                        (ref SimpleBroadcastMessage _) => order.Add(label),
-                        priority: 0
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static void EmitForScenario(MessageScenario scenario, InstanceId context)
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    SimpleUntargetedMessage message = new();
-                    ScenarioHarness.EmitUntargeted(scenario, ref message);
-                    return;
-                }
-                case MessageKind.Targeted:
-                {
-                    SimpleTargetedMessage message = new();
-                    ScenarioHarness.EmitTargeted(scenario, ref message, context);
-                    return;
-                }
-                case MessageKind.Broadcast:
-                {
-                    SimpleBroadcastMessage message = new();
-                    ScenarioHarness.EmitBroadcast(scenario, ref message, context);
-                    return;
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
+            return ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                context,
+                () => order.Add(label)
+            );
         }
     }
 }

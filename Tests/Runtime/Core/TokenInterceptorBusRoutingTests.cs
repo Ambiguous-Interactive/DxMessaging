@@ -75,13 +75,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
             )
             {
-                MessageRegistrationHandle handle = RegisterCountingInterceptor(
+                MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingInterceptor(
                     scenario,
                     scope.Token,
+                    () => true,
                     () => ++intercepted
                 );
 
-                EmitForKind(scenario, scope.Bus, context);
+                ScenarioCallbacks.EmitForKind(scenario, scope.Bus, context);
                 Assert.AreEqual(
                     1,
                     intercepted,
@@ -90,7 +91,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                EmitForKind(scenario, messageBus: null, context);
+                ScenarioCallbacks.EmitForKind(scenario, messageBus: null, context);
                 Assert.AreEqual(
                     1,
                     intercepted,
@@ -100,113 +101,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
 
                 scope.Token.RemoveRegistration(handle);
-            }
-        }
-
-        private static MessageRegistrationHandle RegisterCountingInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Action onIntercepted
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) =>
-                        {
-                            onIntercepted();
-                            return true;
-                        }
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return token.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        (ref InstanceId _, ref SimpleTargetedMessage _) =>
-                        {
-                            onIntercepted();
-                            return true;
-                        }
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return token.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        (ref InstanceId _, ref SimpleBroadcastMessage _) =>
-                        {
-                            onIntercepted();
-                            return true;
-                        }
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static void EmitForKind(
-            MessageScenario scenario,
-            IMessageBus messageBus,
-            InstanceId context
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    SimpleUntargetedMessage message = new();
-                    if (messageBus != null)
-                    {
-                        message.EmitUntargeted(messageBus);
-                    }
-                    else
-                    {
-                        message.EmitUntargeted();
-                    }
-                    return;
-                }
-                case MessageKind.Targeted:
-                {
-                    SimpleTargetedMessage message = new();
-                    if (messageBus != null)
-                    {
-                        message.EmitTargeted(context, messageBus);
-                    }
-                    else
-                    {
-                        message.EmitTargeted(context);
-                    }
-                    return;
-                }
-                case MessageKind.Broadcast:
-                {
-                    SimpleBroadcastMessage message = new();
-                    if (messageBus != null)
-                    {
-                        message.EmitBroadcast(context, messageBus);
-                    }
-                    else
-                    {
-                        message.EmitBroadcast(context);
-                    }
-                    return;
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
             }
         }
 

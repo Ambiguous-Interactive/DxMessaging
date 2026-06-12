@@ -72,7 +72,7 @@ namespace DxMessaging.Tests.Runtime.Core
             bool newcomerRegistered = false;
             List<string> trace = new List<string>(8);
 
-            MessageRegistrationHandle mutatorHandle = RegisterCountingHandler(
+            MessageRegistrationHandle mutatorHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -87,7 +87,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     // Mutation: stage a same-type pending snapshot...
                     newcomerRegistered = true;
-                    _ = RegisterCountingHandler(
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
                         scenario,
                         token,
                         hostId,
@@ -105,7 +105,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     ++depth;
                     try
                     {
-                        EmitForScenario(scenario, hostId);
+                        ScenarioCallbacks.EmitForKind(scenario, hostId);
                     }
                     finally
                     {
@@ -114,7 +114,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            MessageRegistrationHandle peerHandle = RegisterCountingHandler(
+            MessageRegistrationHandle peerHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -127,7 +127,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Register-then-reentrant-emit of the same type must not corrupt the outer dispatch snapshot. trace=[{1}]",
                 scenario.Kind,
                 string.Join(",", trace)
@@ -175,7 +175,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // handlers fire exactly once (pool-reuse sanity after the
             // displaced snapshot was released at lease exit).
             trace.Clear();
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 3,
                 mutatorCount,
@@ -232,7 +232,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle peerHandle = default;
             List<string> trace = new List<string>(8);
 
-            MessageRegistrationHandle mutatorHandle = RegisterCountingHandler(
+            MessageRegistrationHandle mutatorHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -254,7 +254,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     ++depth;
                     try
                     {
-                        EmitForScenario(scenario, hostId);
+                        ScenarioCallbacks.EmitForKind(scenario, hostId);
                     }
                     finally
                     {
@@ -263,7 +263,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            peerHandle = RegisterCountingHandler(
+            peerHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -276,7 +276,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Deregister-then-reentrant-emit of the same type must not corrupt the outer dispatch snapshot. trace=[{1}]",
                 scenario.Kind,
                 string.Join(",", trace)
@@ -309,7 +309,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // Follow-up emission: the peer is gone for good; only the mutator
             // fires (which performs no further mutation).
             trace.Clear();
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 3,
                 mutatorCount,
@@ -367,7 +367,7 @@ namespace DxMessaging.Tests.Runtime.Core
             bool[] registeredAtLevel = new bool[DeepNestingLevels];
             List<string> trace = new List<string>(16);
 
-            MessageRegistrationHandle driverHandle = RegisterCountingHandler(
+            MessageRegistrationHandle driverHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -382,7 +382,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     int level = depth;
                     registeredAtLevel[level] = true;
-                    _ = RegisterCountingHandler(
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
                         scenario,
                         token,
                         hostId,
@@ -397,7 +397,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     ++depth;
                     try
                     {
-                        EmitForScenario(scenario, hostId);
+                        ScenarioCallbacks.EmitForKind(scenario, hostId);
                     }
                     finally
                     {
@@ -408,7 +408,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Three-deep mutate+re-emit must not corrupt any in-flight snapshot. trace=[{1}]",
                 scenario.Kind,
                 string.Join(",", trace)
@@ -467,7 +467,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // Follow-up emission: no further mutation/recursion; the rebuilt
             // steady-state snapshot fires every handler exactly once.
             trace.Clear();
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 DeepNestingLevels + 2,
                 driverCount,
@@ -499,89 +499,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
             token.RemoveRegistration(driverHandle);
             yield break;
-        }
-
-        private static MessageRegistrationHandle RegisterCountingHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked,
-            int priority = 0
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static void EmitForScenario(MessageScenario scenario, InstanceId target)
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    SimpleUntargetedMessage message = new();
-                    ScenarioHarness.EmitUntargeted(scenario, ref message);
-                    return;
-                }
-                case MessageKind.Targeted:
-                {
-                    SimpleTargetedMessage message = new();
-                    ScenarioHarness.EmitTargeted(scenario, ref message, target);
-                    return;
-                }
-                case MessageKind.Broadcast:
-                {
-                    SimpleBroadcastMessage message = new();
-                    ScenarioHarness.EmitBroadcast(scenario, ref message, target);
-                    return;
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
         }
     }
 }

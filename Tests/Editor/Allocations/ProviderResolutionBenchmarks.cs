@@ -9,6 +9,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Editor.Benchmarks;
+    using DxMessaging.Tests.Runtime;
     using NUnit.Framework;
 
     [Category("Performance")]
@@ -18,19 +19,19 @@ namespace DxMessaging.Tests.Editor.Allocations
         private const double SampleSeconds = 0.5d;
         private const double TargetSlowdown = 1.15d;
 
-        private IMessageBus _originalBus;
+        private GlobalBusScope _globalBusScope;
 
         [SetUp]
         public void CaptureGlobalBus()
         {
-            _originalBus = MessageHandler.MessageBus;
-            MessageHandler.ResetGlobalMessageBus();
+            _globalBusScope = GlobalBusScope.CaptureAndReset();
         }
 
         [TearDown]
         public void RestoreGlobalBus()
         {
-            MessageHandler.SetGlobalMessageBus(_originalBus);
+            _globalBusScope?.Dispose();
+            _globalBusScope = null;
         }
 
         [Test]

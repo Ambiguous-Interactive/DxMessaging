@@ -53,13 +53,8 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTest]
         public IEnumerator MessageBusDiagnosticsRespectBufferSize()
         {
-            DiagnosticsTarget originalDiagnostics = IMessageBus.GlobalDiagnosticsTargets;
-            int originalBufferSize = IMessageBus.GlobalMessageBufferSize;
-            try
+            using (new DiagnosticsScope(DiagnosticsTarget.All, messageBufferSize: 2))
             {
-                IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
-                IMessageBus.GlobalMessageBufferSize = 2;
-
                 GameObject host = new(nameof(MessageBusDiagnosticsRespectBufferSize));
                 _spawned.Add(host);
                 MessageHandler handler = new(host) { active = true };
@@ -89,11 +84,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.RemoveRegistration(handle);
                 token.Disable();
                 handler.active = false;
-            }
-            finally
-            {
-                IMessageBus.GlobalDiagnosticsTargets = originalDiagnostics;
-                IMessageBus.GlobalMessageBufferSize = originalBufferSize;
             }
 
             yield break;
@@ -133,7 +123,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void RuntimeSettingsMessageBufferSizeResizesExistingAndNewBuses()
         {
-            int originalBufferSize = IMessageBus.GlobalMessageBufferSize;
+            using DiagnosticsScope bufferScope = new();
             DxMessagingRuntimeSettings settings =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             IDisposable overrideToken = null;
@@ -160,20 +150,14 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 overrideToken?.Dispose();
                 UnityEngine.Object.DestroyImmediate(settings);
-                IMessageBus.GlobalMessageBufferSize = originalBufferSize;
             }
         }
 
         [UnityTest]
         public IEnumerator ZeroBufferSizeDiscardsEmissions()
         {
-            DiagnosticsTarget originalDiagnostics = IMessageBus.GlobalDiagnosticsTargets;
-            int originalBufferSize = IMessageBus.GlobalMessageBufferSize;
-            try
+            using (new DiagnosticsScope(DiagnosticsTarget.All, messageBufferSize: 0))
             {
-                IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
-                IMessageBus.GlobalMessageBufferSize = 0;
-
                 GameObject host = new(nameof(ZeroBufferSizeDiscardsEmissions));
                 _spawned.Add(host);
                 MessageHandler handler = new(host) { active = true };
@@ -214,11 +198,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.RemoveRegistration(handle);
                 token.Disable();
                 handler.active = false;
-            }
-            finally
-            {
-                IMessageBus.GlobalDiagnosticsTargets = originalDiagnostics;
-                IMessageBus.GlobalMessageBufferSize = originalBufferSize;
             }
 
             yield break;

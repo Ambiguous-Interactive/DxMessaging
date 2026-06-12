@@ -56,14 +56,14 @@ namespace DxMessaging.Tests.Runtime.Core
             int secondCount = 0;
             int thirdCount = 0;
 
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
                 priority: 0,
                 onInvoked: () => ++firstCount
             );
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -74,7 +74,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new InvalidOperationException(ThrowingHandlerMessage);
                 }
             );
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -83,7 +83,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
+                ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
 
             Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
@@ -118,14 +118,14 @@ namespace DxMessaging.Tests.Runtime.Core
             int safeCount = 0;
             int throwingCount = 0;
 
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
                 priority: 0,
                 onInvoked: () => ++safeCount
             );
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -141,7 +141,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < Iterations; ++i)
             {
                 InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                    EmitForScenario(scenario, hostId)
+                    ScenarioCallbacks.EmitForKind(scenario, hostId)
                 );
                 Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
             }
@@ -183,7 +183,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerCount = 0;
             int postProcessorCount = 0;
 
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -194,7 +194,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new InvalidOperationException(ThrowingHandlerMessage);
                 }
             );
-            RegisterCountingPostProcessor(
+            ScenarioCallbacks.RegisterCountingPostProcessor(
                 scenario,
                 token,
                 hostId,
@@ -203,7 +203,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
+                ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
 
             Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
@@ -235,7 +235,7 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId hostId = host;
 
             int throwingCount = 0;
-            MessageRegistrationHandle handle = RegisterCountingHandler(
+            MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -248,14 +248,14 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             InvalidOperationException firstCaptured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
+                ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
             Assert.AreEqual(ThrowingHandlerMessage, firstCaptured.Message);
             Assert.AreEqual(1, throwingCount);
 
             token.RemoveRegistration(handle);
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 1,
                 throwingCount,
@@ -266,7 +266,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // non-throwing handler must produce a clean dispatch with no residue
             // from the previous failure.
             int replacementCount = 0;
-            MessageRegistrationHandle replacementHandle = RegisterCountingHandler(
+            MessageRegistrationHandle replacementHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -274,7 +274,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 onInvoked: () => ++replacementCount
             );
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 1,
                 replacementCount,
@@ -308,7 +308,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerCount = 0;
             int interceptorCount = 0;
 
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -318,7 +318,7 @@ namespace DxMessaging.Tests.Runtime.Core
             RegisterThrowingInterceptor(scenario, token, onInvoked: () => ++interceptorCount);
 
             InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
+                ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
 
             Assert.AreEqual(ThrowingInterceptorMessage, captured.Message);
@@ -339,7 +339,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // proving no infinite loop or NullReferenceException is masked behind the throw.
             InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(
                 () =>
-                    EmitForScenario(scenario, hostId)
+                    ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
             Assert.AreEqual(ThrowingInterceptorMessage, secondCaptured.Message);
             Assert.AreEqual(2, interceptorCount);
@@ -366,7 +366,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int throwingPostProcessorCount = 0;
             int trailingPostProcessorCount = 0;
 
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -378,7 +378,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // on order). To force a deterministic order where the throwing PP runs
             // first and skips the trailing one, register the throwing PP at the
             // earlier priority and the trailing PP at a later priority.
-            RegisterCountingPostProcessor(
+            ScenarioCallbacks.RegisterCountingPostProcessor(
                 scenario,
                 token,
                 hostId,
@@ -389,7 +389,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new InvalidOperationException(ThrowingPostProcessorMessage);
                 }
             );
-            RegisterCountingPostProcessor(
+            ScenarioCallbacks.RegisterCountingPostProcessor(
                 scenario,
                 token,
                 hostId,
@@ -398,7 +398,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             InvalidOperationException firstCaptured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
+                ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
             Assert.AreEqual(ThrowingPostProcessorMessage, firstCaptured.Message);
             Assert.AreEqual(1, handlerCount, "Handler must run before throwing post-processor.");
@@ -411,7 +411,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(
                 () =>
-                    EmitForScenario(scenario, hostId)
+                    ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
             Assert.AreEqual(ThrowingPostProcessorMessage, secondCaptured.Message);
             Assert.AreEqual(
@@ -462,14 +462,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 token,
                 onInvoked: () => ++globalCount
             );
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
                 priority: 0,
                 onInvoked: () => ++handlerCount
             );
-            RegisterCountingPostProcessor(
+            ScenarioCallbacks.RegisterCountingPostProcessor(
                 scenario,
                 token,
                 hostId,
@@ -478,7 +478,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
+                ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
 
             Assert.AreEqual(ThrowingGlobalAcceptAllMessage, captured.Message);
@@ -506,7 +506,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // throwing global must restore a clean dispatch for the same message type.
             token.RemoveRegistration(globalHandle);
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 1,
                 globalCount,
@@ -556,7 +556,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int specificCount = 0;
             int withoutContextCount = 0;
 
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -574,7 +574,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
+                ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
 
             Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
@@ -627,7 +627,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int specificPostProcessorCount = 0;
             int withoutContextPostProcessorCount = 0;
 
-            RegisterCountingHandler(
+            ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -643,7 +643,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new InvalidOperationException(ThrowingWithoutContextMessage);
                 }
             );
-            RegisterCountingPostProcessor(
+            ScenarioCallbacks.RegisterCountingPostProcessor(
                 scenario,
                 token,
                 hostId,
@@ -657,7 +657,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
-                EmitForScenario(scenario, hostId)
+                ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
 
             Assert.AreEqual(ThrowingWithoutContextMessage, captured.Message);
@@ -688,7 +688,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(
                 () =>
-                    EmitForScenario(scenario, hostId)
+                    ScenarioCallbacks.EmitForKind(scenario, hostId)
             );
             Assert.AreEqual(ThrowingWithoutContextMessage, secondCaptured.Message);
             Assert.AreEqual(
@@ -801,192 +801,23 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static MessageRegistrationHandle RegisterCountingHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            int priority,
-            Action onInvoked
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static MessageRegistrationHandle RegisterCountingPostProcessor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            int priority,
-            Action onInvoked
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
+        /// <summary>
+        /// Registers an interceptor that runs <paramref name="onInvoked"/> and then
+        /// throws <see cref="InvalidOperationException"/> with
+        /// <see cref="ThrowingInterceptorMessage"/>.
+        /// </summary>
         private static MessageRegistrationHandle RegisterThrowingInterceptor(
             MessageScenario scenario,
             MessageRegistrationToken token,
             Action onInvoked
         )
         {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) =>
-                        {
-                            onInvoked();
-                            throw new InvalidOperationException(ThrowingInterceptorMessage);
-                        }
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleTargetedMessage _) =>
-                        {
-                            onInvoked();
-                            throw new InvalidOperationException(ThrowingInterceptorMessage);
-                        }
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleBroadcastMessage _) =>
-                        {
-                            onInvoked();
-                            throw new InvalidOperationException(ThrowingInterceptorMessage);
-                        }
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static void EmitForScenario(MessageScenario scenario, InstanceId target)
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    SimpleUntargetedMessage message = new();
-                    ScenarioHarness.EmitUntargeted(scenario, ref message);
-                    return;
-                }
-                case MessageKind.Targeted:
-                {
-                    SimpleTargetedMessage message = new();
-                    ScenarioHarness.EmitTargeted(scenario, ref message, target);
-                    return;
-                }
-                case MessageKind.Broadcast:
-                {
-                    SimpleBroadcastMessage message = new();
-                    ScenarioHarness.EmitBroadcast(scenario, ref message, target);
-                    return;
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
+            return ScenarioCallbacks.RegisterCountingInterceptor(
+                scenario,
+                token,
+                result: () => throw new InvalidOperationException(ThrowingInterceptorMessage),
+                onIntercepted: onInvoked
+            );
         }
     }
 }

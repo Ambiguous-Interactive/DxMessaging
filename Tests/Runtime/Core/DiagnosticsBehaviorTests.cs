@@ -33,11 +33,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            int originalBufferSize = IMessageBus.GlobalMessageBufferSize;
-            try
+            using (new DiagnosticsScope(messageBufferSize: TestBufferSize))
             {
-                IMessageBus.GlobalMessageBufferSize = TestBufferSize;
-
                 MessageBus bus = new() { DiagnosticsMode = true };
                 MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus)
                 {
@@ -87,10 +84,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Dispose();
                 handler.active = false;
             }
-            finally
-            {
-                IMessageBus.GlobalMessageBufferSize = originalBufferSize;
-            }
 
             yield break;
         }
@@ -98,11 +91,8 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTest]
         public IEnumerator EnablingDiagnosticsModeInsideHandlerTakesEffectNextEmission()
         {
-            int originalBufferSize = IMessageBus.GlobalMessageBufferSize;
-            try
+            using (new DiagnosticsScope(messageBufferSize: TestBufferSize))
             {
-                IMessageBus.GlobalMessageBufferSize = TestBufferSize;
-
                 MessageBus bus = new() { DiagnosticsMode = false };
                 MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus)
                 {
@@ -147,10 +137,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Dispose();
                 handler.active = false;
             }
-            finally
-            {
-                IMessageBus.GlobalMessageBufferSize = originalBufferSize;
-            }
 
             yield break;
         }
@@ -158,11 +144,8 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTest]
         public IEnumerator DisablingDiagnosticsModeInsideHandlerKeepsCurrentEmissionRecorded()
         {
-            int originalBufferSize = IMessageBus.GlobalMessageBufferSize;
-            try
+            using (new DiagnosticsScope(messageBufferSize: TestBufferSize))
             {
-                IMessageBus.GlobalMessageBufferSize = TestBufferSize;
-
                 MessageBus bus = new() { DiagnosticsMode = true };
                 MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus)
                 {
@@ -206,10 +189,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 token.Dispose();
                 handler.active = false;
-            }
-            finally
-            {
-                IMessageBus.GlobalMessageBufferSize = originalBufferSize;
             }
 
             yield break;

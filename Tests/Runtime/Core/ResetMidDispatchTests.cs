@@ -75,7 +75,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int resettingCount = 0;
             int trailingCount = 0;
 
-            _ = RegisterCountingHandler(
+            _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -89,7 +89,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = RegisterCountingHandler(
+            _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 auxToken,
                 hostId,
@@ -98,7 +98,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Reset from inside a handler must not throw mid-dispatch.",
                 scenario.Kind
             );
@@ -122,7 +122,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // Post-reset emissions are silent no-ops: nothing is registered,
             // nothing may fire, nothing may throw.
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Emitting after the mid-dispatch Reset must not throw.",
                 scenario.Kind
             );
@@ -182,14 +182,14 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId rebornId = rebornHost;
 
             int rebornCount = 0;
-            MessageRegistrationHandle rebornHandle = RegisterCountingHandler(
+            MessageRegistrationHandle rebornHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 rebornToken,
                 rebornId,
                 () => ++rebornCount
             );
 
-            EmitForScenario(scenario, rebornId);
+            ScenarioCallbacks.EmitForKind(scenario, rebornId);
             Assert.AreEqual(
                 1,
                 rebornCount,
@@ -255,7 +255,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int resettingCount = 0;
             int peerCount = 0;
 
-            _ = RegisterCountingHandler(
+            _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -269,7 +269,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = RegisterCountingHandler(
+            _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 peerToken,
                 hostId,
@@ -278,7 +278,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Reset from inside a handler must not throw even when a same-priority peer entry follows it in the same dispatch bucket.",
                 scenario.Kind
             );
@@ -301,7 +301,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             // The bus must remain usable afterwards.
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Emitting after the mid-dispatch Reset must not throw.",
                 scenario.Kind
             );
@@ -366,7 +366,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // priority for the SAME message type, so they land in the same
             // per-handler typed-handler list. Registration order makes the
             // resetting delegate run first within that list.
-            _ = RegisterCountingHandler(
+            _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -380,10 +380,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = RegisterCountingHandler(scenario, token, hostId, () => ++peerCount, priority: 0);
+            _ = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                hostId,
+                () => ++peerCount,
+                priority: 0
+            );
 
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Reset from inside a handler must not throw even when a same-component, same-priority peer delegate follows it in the same typed-handler list.",
                 scenario.Kind
             );
@@ -407,7 +413,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // The bus must remain usable afterwards: post-reset emissions are
             // silent no-ops for the pre-reset delegates.
             Assert.DoesNotThrow(
-                () => EmitForScenario(scenario, hostId),
+                () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Emitting after the mid-dispatch Reset must not throw.",
                 scenario.Kind
             );
@@ -429,89 +435,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             yield break;
-        }
-
-        private static MessageRegistrationHandle RegisterCountingHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked,
-            int priority = 0
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static void EmitForScenario(MessageScenario scenario, InstanceId target)
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    SimpleUntargetedMessage message = new();
-                    ScenarioHarness.EmitUntargeted(scenario, ref message);
-                    return;
-                }
-                case MessageKind.Targeted:
-                {
-                    SimpleTargetedMessage message = new();
-                    ScenarioHarness.EmitTargeted(scenario, ref message, target);
-                    return;
-                }
-                case MessageKind.Broadcast:
-                {
-                    SimpleBroadcastMessage message = new();
-                    ScenarioHarness.EmitBroadcast(scenario, ref message, target);
-                    return;
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
         }
     }
 }

@@ -22,7 +22,7 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </list>
     /// </summary>
     /// <remarks>
-    /// Uses a hand-rolled <see cref="StubCountingMessageBus"/> that returns
+    /// Uses a <see cref="StubCountingMessageBus"/> that returns
     /// hardcoded counts. The stub throws <see cref="NotImplementedException"/>
     /// for every method the helper does not exercise so any future drift in
     /// the helper that starts touching unrelated bus surface fails loudly.
@@ -211,12 +211,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
         /// <summary>
         /// Minimal <see cref="IMessageBus"/> stub that returns hardcoded
-        /// counter values. Throws <see cref="NotImplementedException"/> for
-        /// every method the helper does not invoke so a future refactor that
-        /// starts touching additional bus surface fails loudly instead of
-        /// silently passing the wrong default value through.
+        /// counter values. Derives from <see cref="DelegatingMessageBus"/>
+        /// without an inner bus, so every member the helper does not invoke
+        /// throws <see cref="NotImplementedException"/> and a future refactor
+        /// that starts touching additional bus surface fails loudly instead
+        /// of silently passing the wrong default value through.
         /// </summary>
-        private sealed class StubCountingMessageBus : IMessageBus
+        private sealed class StubCountingMessageBus : DelegatingMessageBus
         {
             public StubCountingMessageBus(int untargeted, int targeted, int broadcast)
             {
@@ -225,139 +226,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 RegisteredBroadcast = broadcast;
             }
 
-            public int RegisteredUntargeted { get; }
+            public override int RegisteredUntargeted { get; }
 
-            public int RegisteredTargeted { get; }
+            public override int RegisteredTargeted { get; }
 
-            public int RegisteredBroadcast { get; }
-
-            public bool DiagnosticsMode => throw new NotImplementedException();
-
-            public int RegisteredGlobalSequentialIndex => throw new NotImplementedException();
-
-            public int OccupiedTypeSlots => throw new NotImplementedException();
-
-            public int OccupiedTargetSlots => throw new NotImplementedException();
-
-            public int RegisteredInterceptors => throw new NotImplementedException();
-
-            public int RegisteredPostProcessors => throw new NotImplementedException();
-
-            public int RegisteredGlobalAcceptAll => throw new NotImplementedException();
-
-            public RegistrationLog Log => throw new NotImplementedException();
-
-            public long EmissionId => throw new NotImplementedException();
-
-            public IMessageBus.TrimResult Trim(bool force = false) =>
-                throw new NotImplementedException();
-
-            public Action RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
-                where T : IUntargetedMessage => throw new NotImplementedException();
-
-            public Action RegisterUntargetedPostProcessor<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IUntargetedMessage => throw new NotImplementedException();
-
-            public Action RegisterTargeted<T>(
-                InstanceId target,
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : ITargetedMessage => throw new NotImplementedException();
-
-            public Action RegisterTargetedPostProcessor<T>(
-                InstanceId target,
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : ITargetedMessage => throw new NotImplementedException();
-
-            public Action RegisterTargetedWithoutTargeting<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : ITargetedMessage => throw new NotImplementedException();
-
-            public Action RegisterTargetedWithoutTargetingPostProcessor<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : ITargetedMessage => throw new NotImplementedException();
-
-            public Action RegisterSourcedBroadcast<T>(
-                InstanceId source,
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IBroadcastMessage => throw new NotImplementedException();
-
-            public Action RegisterBroadcastPostProcessor<T>(
-                InstanceId source,
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IBroadcastMessage => throw new NotImplementedException();
-
-            public Action RegisterSourcedBroadcastWithoutSource<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IBroadcastMessage => throw new NotImplementedException();
-
-            public Action RegisterBroadcastWithoutSourcePostProcessor<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
-                where T : IBroadcastMessage => throw new NotImplementedException();
-
-            public Action RegisterGlobalAcceptAll(MessageHandler messageHandler) =>
-                throw new NotImplementedException();
-
-            public Action RegisterUntargetedInterceptor<T>(
-                IMessageBus.UntargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
-                where T : IUntargetedMessage => throw new NotImplementedException();
-
-            public Action RegisterTargetedInterceptor<T>(
-                IMessageBus.TargetedInterceptor<T> interceptor,
-                int priority = 0
-            )
-                where T : ITargetedMessage => throw new NotImplementedException();
-
-            public Action RegisterBroadcastInterceptor<T>(
-                IMessageBus.BroadcastInterceptor<T> interceptor,
-                int priority = 0
-            )
-                where T : IBroadcastMessage => throw new NotImplementedException();
-
-            public void UntypedUntargetedBroadcast(IUntargetedMessage typedMessage) =>
-                throw new NotImplementedException();
-
-            public void UntargetedBroadcast<TMessage>(ref TMessage typedMessage)
-                where TMessage : IUntargetedMessage => throw new NotImplementedException();
-
-            public void UntypedTargetedBroadcast(
-                InstanceId target,
-                ITargetedMessage typedMessage
-            ) => throw new NotImplementedException();
-
-            public void TargetedBroadcast<TMessage>(
-                ref InstanceId target,
-                ref TMessage typedMessage
-            )
-                where TMessage : ITargetedMessage => throw new NotImplementedException();
-
-            public void UntypedSourcedBroadcast(
-                InstanceId source,
-                IBroadcastMessage typedMessage
-            ) => throw new NotImplementedException();
-
-            public void SourcedBroadcast<TMessage>(ref InstanceId source, ref TMessage typedMessage)
-                where TMessage : IBroadcastMessage => throw new NotImplementedException();
+            public override int RegisteredBroadcast { get; }
         }
     }
 }

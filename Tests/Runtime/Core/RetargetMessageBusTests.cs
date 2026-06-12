@@ -66,7 +66,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
             )
             {
-                _ = RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
+                _ = ScenarioCallbacks.RegisterCountingHandler(
+                    scenario,
+                    token,
+                    hostId,
+                    () => ++handlerCount
+                );
 
                 Assert.AreEqual(
                     1,
@@ -81,7 +86,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                EmitForScenario(scenario, hostId, oldBus);
+                ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId);
                 Assert.AreEqual(
                     1,
                     handlerCount,
@@ -104,7 +109,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                EmitForScenario(scenario, hostId, oldBus);
+                ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId);
                 Assert.AreEqual(
                     1,
                     handlerCount,
@@ -113,7 +118,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     handlerCount
                 );
 
-                EmitForScenario(scenario, hostId, newBus);
+                ScenarioCallbacks.EmitForKind(scenario, newBus, hostId);
                 Assert.AreEqual(
                     2,
                     handlerCount,
@@ -163,7 +168,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
             )
             {
-                _ = RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
+                _ = ScenarioCallbacks.RegisterCountingHandler(
+                    scenario,
+                    token,
+                    hostId,
+                    () => ++handlerCount
+                );
                 Assert.AreEqual(
                     1,
                     RegisteredCountForKind(oldBus, scenario.Kind),
@@ -209,7 +219,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                EmitForScenario(scenario, hostId, oldBus);
+                ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId);
                 Assert.AreEqual(
                     0,
                     handlerCount,
@@ -217,7 +227,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                EmitForScenario(scenario, hostId, newBus);
+                ScenarioCallbacks.EmitForKind(scenario, newBus, hostId);
                 Assert.AreEqual(
                     1,
                     handlerCount,
@@ -252,7 +262,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 LeakWatcher watcher = new(bus: bus, throwOnLeak: true, label: scenario.DisplayName)
             )
             {
-                _ = RegisterCountingHandler(scenario, token, hostId, () => ++handlerCount);
+                _ = ScenarioCallbacks.RegisterCountingHandler(
+                    scenario,
+                    token,
+                    hostId,
+                    () => ++handlerCount
+                );
                 Assert.AreEqual(
                     1,
                     RegisteredCountForKind(bus, scenario.Kind),
@@ -273,7 +288,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     "[{0}] Same-bus retarget (PreserveRegistrations) must leave the registration count unchanged.",
                     scenario.Kind
                 );
-                EmitForScenario(scenario, hostId, bus);
+                ScenarioCallbacks.EmitForKind(scenario, bus, hostId);
                 Assert.AreEqual(
                     1,
                     handlerCount,
@@ -295,7 +310,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     "[{0}] Same-bus retarget (RebindActive) must leave the registration count unchanged.",
                     scenario.Kind
                 );
-                EmitForScenario(scenario, hostId, bus);
+                ScenarioCallbacks.EmitForKind(scenario, bus, hostId);
                 Assert.AreEqual(
                     2,
                     handlerCount,
@@ -363,7 +378,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 // Handler A (priority 0) retargets the token mid-dispatch;
                 // handler B (priority 1) observes whether the in-flight
                 // snapshot still completes.
-                _ = RegisterCountingHandler(
+                _ = ScenarioCallbacks.RegisterCountingHandler(
                     scenario,
                     token,
                     hostId,
@@ -378,7 +393,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     },
                     priority: 0
                 );
-                _ = RegisterCountingHandler(
+                _ = ScenarioCallbacks.RegisterCountingHandler(
                     scenario,
                     token,
                     hostId,
@@ -387,7 +402,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
 
                 Assert.DoesNotThrow(
-                    () => EmitForScenario(scenario, hostId, oldBus),
+                    () => ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId),
                     "[{0}] Retargeting from inside a handler must not throw mid-dispatch.",
                     scenario.Kind
                 );
@@ -421,7 +436,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                EmitForScenario(scenario, hostId, oldBus);
+                ScenarioCallbacks.EmitForKind(scenario, oldBus, hostId);
                 Assert.AreEqual(
                     1,
                     retargetingCount,
@@ -435,7 +450,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                EmitForScenario(scenario, hostId, newBus);
+                ScenarioCallbacks.EmitForKind(scenario, newBus, hostId);
                 Assert.AreEqual(
                     2,
                     retargetingCount,
@@ -477,93 +492,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new ArgumentOutOfRangeException(
                         nameof(kind),
                         kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static MessageRegistrationHandle RegisterCountingHandler(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked,
-            int priority = 0
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static void EmitForScenario(
-            MessageScenario scenario,
-            InstanceId target,
-            IMessageBus bus
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    SimpleUntargetedMessage message = new();
-                    ScenarioHarness.EmitUntargeted(scenario, ref message, bus);
-                    return;
-                }
-                case MessageKind.Targeted:
-                {
-                    SimpleTargetedMessage message = new();
-                    ScenarioHarness.EmitTargeted(scenario, ref message, target, bus);
-                    return;
-                }
-                case MessageKind.Broadcast:
-                {
-                    SimpleBroadcastMessage message = new();
-                    ScenarioHarness.EmitBroadcast(scenario, ref message, target, bus);
-                    return;
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
                         "Unsupported message kind."
                     );
                 }

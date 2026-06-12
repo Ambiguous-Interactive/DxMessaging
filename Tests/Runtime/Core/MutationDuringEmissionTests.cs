@@ -53,7 +53,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     if (!added && idx == 0)
                     {
                         added = true;
-                        handles[ManyCount] = RegisterCounter(
+                        handles[ManyCount] = ScenarioCallbacks.RegisterCountingHandler(
                             scenario,
                             token,
                             hostId,
@@ -61,10 +61,15 @@ namespace DxMessaging.Tests.Runtime.Core
                         );
                     }
                 };
-                handles[idx] = RegisterCounter(scenario, token, hostId, onInvoke);
+                handles[idx] = ScenarioCallbacks.RegisterCountingHandler(
+                    scenario,
+                    token,
+                    hostId,
+                    onInvoke
+                );
             }
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             int expected = ManyCount;
             int total = 0;
             for (int i = 0; i < ManyCount; i++)
@@ -79,7 +84,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Newly added handler must not run in the same emission."
             );
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             total = 0;
             for (int i = 0; i < ManyCount; i++)
             {
@@ -138,10 +143,10 @@ namespace DxMessaging.Tests.Runtime.Core
             bool added = false;
             MessageRegistrationHandle defaultHandle = default;
 
-            // RegisterCounter registers a FAST handler; from inside it,
+            // RegisterCountingHandler registers a FAST handler; from inside it,
             // register a DEFAULT (Action<T>) delegate for the same type on
             // the same MessageHandler - the previously leaking shape.
-            MessageRegistrationHandle fastHandle = RegisterCounter(
+            MessageRegistrationHandle fastHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
                 hostId,
@@ -151,7 +156,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     if (!added)
                     {
                         added = true;
-                        defaultHandle = RegisterDefaultShapeCounter(
+                        defaultHandle = ScenarioCallbacks.RegisterDefaultHandler(
                             scenario,
                             token,
                             hostId,
@@ -161,7 +166,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             );
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 1,
                 fastCount,
@@ -176,7 +181,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind
             );
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 2,
                 fastCount,
@@ -197,41 +202,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.RemoveRegistration(defaultHandle);
             }
             yield break;
-        }
-
-        private static MessageRegistrationHandle RegisterDefaultShapeCounter(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return token.RegisterUntargeted<SimpleUntargetedMessage>(_ => onInvoked());
-                }
-                case MessageKind.Targeted:
-                {
-                    return token.RegisterTargeted<SimpleTargetedMessage>(target, _ => onInvoked());
-                }
-                case MessageKind.Broadcast:
-                {
-                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
-                        target,
-                        _ => onInvoked()
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
         }
 
         [UnityTest]
@@ -345,16 +315,17 @@ namespace DxMessaging.Tests.Runtime.Core
                         EmptyMessageAwareComponent extraComp =
                             extra.GetComponent<EmptyMessageAwareComponent>();
                         MessageRegistrationToken extraToken = GetToken(extraComp);
-                        MessageRegistrationHandle extraHandle = RegisterCounter(
-                            scenario,
-                            extraToken,
-                            targetId,
-                            () => counts[ManyCount]++
-                        );
+                        MessageRegistrationHandle extraHandle =
+                            ScenarioCallbacks.RegisterCountingHandler(
+                                scenario,
+                                extraToken,
+                                targetId,
+                                () => counts[ManyCount]++
+                            );
                         handles.Add((extraToken, extraHandle));
                     }
                 };
-                MessageRegistrationHandle handle = RegisterCounter(
+                MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(
                     scenario,
                     listenerToken,
                     targetId,
@@ -363,7 +334,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 handles.Add((listenerToken, handle));
             }
 
-            EmitForScenario(scenario, targetId);
+            ScenarioCallbacks.EmitForKind(scenario, targetId);
 
             int total = 0;
             for (int i = 0; i < ManyCount; i++)
@@ -382,7 +353,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Newly added MessageHandler must not run in the same emission."
             );
 
-            EmitForScenario(scenario, targetId);
+            ScenarioCallbacks.EmitForKind(scenario, targetId);
             total = 0;
             for (int i = 0; i < ManyCount; i++)
             {
@@ -848,7 +819,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int secondCount = 0;
             MessageRegistrationHandle? second = null;
 
-            MessageRegistrationHandle first = RegisterInterceptor(
+            MessageRegistrationHandle first = ScenarioCallbacks.RegisterCountingInterceptor(
                 scenario,
                 token,
                 () =>
@@ -856,7 +827,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     firstCount++;
                     if (second == null)
                     {
-                        second = RegisterInterceptor(
+                        second = ScenarioCallbacks.RegisterCountingInterceptor(
                             scenario,
                             token,
                             () =>
@@ -871,7 +842,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             );
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 1,
                 firstCount,
@@ -879,7 +850,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.AreEqual(0, secondCount, "New interceptor should not run in the same emission.");
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
                 2,
                 firstCount,
@@ -924,7 +895,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyCount; i++)
             {
                 int idx = i;
-                handlerHandles[idx] = RegisterCounter(
+                handlerHandles[idx] = ScenarioCallbacks.RegisterCountingHandler(
                     scenario,
                     token,
                     hostId,
@@ -934,7 +905,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         if (!added && idx == 0)
                         {
                             added = true;
-                            ppHandle = RegisterPostProcessor(
+                            ppHandle = ScenarioCallbacks.RegisterCountingPostProcessor(
                                 scenario,
                                 token,
                                 hostId,
@@ -943,10 +914,15 @@ namespace DxMessaging.Tests.Runtime.Core
                         }
                     }
                 );
-                _ = RegisterPostProcessor(scenario, token, hostId, () => ppCounts[idx]++);
+                _ = ScenarioCallbacks.RegisterCountingPostProcessor(
+                    scenario,
+                    token,
+                    hostId,
+                    () => ppCounts[idx]++
+                );
             }
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
 
             int handlerTotal = 0;
             for (int i = 0; i < ManyCount; i++)
@@ -977,7 +953,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Newly added post-processor must not run in the same emission."
             );
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             ppTotal = 0;
             for (int i = 0; i < ManyCount; i++)
             {
@@ -1028,13 +1004,18 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle[] ppHandles = new MessageRegistrationHandle[ManyCount + 1];
 
             // Ensure there is at least one handler so post-processors will run
-            MessageRegistrationHandle hdl = RegisterCounter(scenario, token, hostId, () => { });
+            MessageRegistrationHandle hdl = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                hostId,
+                () => { }
+            );
 
             bool added = false;
             for (int i = 0; i < ManyCount; i++)
             {
                 int idx = i;
-                ppHandles[idx] = RegisterPostProcessor(
+                ppHandles[idx] = ScenarioCallbacks.RegisterCountingPostProcessor(
                     scenario,
                     token,
                     hostId,
@@ -1044,7 +1025,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         if (!added && idx == 0)
                         {
                             added = true;
-                            ppHandles[ManyCount] = RegisterPostProcessor(
+                            ppHandles[ManyCount] = ScenarioCallbacks.RegisterCountingPostProcessor(
                                 scenario,
                                 token,
                                 hostId,
@@ -1055,7 +1036,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
             }
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             int total = 0;
             for (int i = 0; i < ManyCount; i++)
             {
@@ -1073,7 +1054,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Newly added post-processor must not run in the same emission."
             );
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             total = 0;
             for (int i = 0; i < ManyCount; i++)
             {
@@ -1389,14 +1370,14 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId hostId = host;
 
             // Ensure processing stage reached
-            _ = RegisterCounter(scenario, token, hostId, () => { });
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => { });
 
             MessageRegistrationHandle[] pp = new MessageRegistrationHandle[ManyCount];
             int[] counts = new int[ManyCount];
             for (int i = 0; i < ManyCount; i++)
             {
                 int idx = i;
-                pp[idx] = RegisterPostProcessor(
+                pp[idx] = ScenarioCallbacks.RegisterCountingPostProcessor(
                     scenario,
                     token,
                     hostId,
@@ -1411,11 +1392,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
             }
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(1, counts[0]);
             Assert.AreEqual(1, counts[1]);
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(2, counts[0]);
             Assert.AreEqual(1, counts[1]);
 
@@ -1452,7 +1433,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyCount; i++)
             {
                 int idx = i;
-                handles[idx] = RegisterCounter(
+                handles[idx] = ScenarioCallbacks.RegisterCountingHandler(
                     scenario,
                     token,
                     hostId,
@@ -1467,11 +1448,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
             }
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(1, counts[0]);
             Assert.AreEqual(1, counts[1]);
 
-            EmitForScenario(scenario, hostId);
+            ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(2, counts[0]);
             Assert.AreEqual(1, counts[1]);
 
@@ -1567,186 +1548,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.RemoveRegistration(lowHandle);
             }
             yield break;
-        }
-
-        private static MessageRegistrationHandle RegisterCounter(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked,
-            int priority = 0
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static MessageRegistrationHandle RegisterPostProcessor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            InstanceId target,
-            Action onInvoked,
-            int priority = 0
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
-                        priority
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static MessageRegistrationHandle RegisterInterceptor(
-            MessageScenario scenario,
-            MessageRegistrationToken token,
-            Func<bool> body,
-            int priority = 0
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    return ScenarioHarness.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
-                        scenario,
-                        token,
-                        (ref SimpleUntargetedMessage _) => body(),
-                        priority
-                    );
-                }
-                case MessageKind.Targeted:
-                {
-                    return ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleTargetedMessage __) => body(),
-                        priority
-                    );
-                }
-                case MessageKind.Broadcast:
-                {
-                    return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                        scenario,
-                        token,
-                        (ref InstanceId _, ref SimpleBroadcastMessage __) => body(),
-                        priority
-                    );
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
-        }
-
-        private static void EmitForScenario(MessageScenario scenario, InstanceId target)
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    SimpleUntargetedMessage message = new();
-                    ScenarioHarness.EmitUntargeted(scenario, ref message);
-                    return;
-                }
-                case MessageKind.Targeted:
-                {
-                    SimpleTargetedMessage message = new();
-                    ScenarioHarness.EmitTargeted(scenario, ref message, target);
-                    return;
-                }
-                case MessageKind.Broadcast:
-                {
-                    SimpleBroadcastMessage message = new();
-                    ScenarioHarness.EmitBroadcast(scenario, ref message, target);
-                    return;
-                }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(scenario),
-                        scenario.Kind,
-                        "Unsupported message kind."
-                    );
-                }
-            }
         }
     }
 }
