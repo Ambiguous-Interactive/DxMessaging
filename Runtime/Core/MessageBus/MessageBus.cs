@@ -18,6 +18,11 @@ namespace DxMessaging.Core.MessageBus
     using Messages;
     using Pooling;
     using static IMessageBus;
+    // global:: is required: inside the DxMessaging.* namespace the bare name
+    // "Unity" binds to DxMessaging.Unity (the bridge namespace), not the
+    // global Unity.IL2CPP.CompilerServices namespace il2cpp matches.
+    using Il2CppSetOption = global::Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute;
+    using Option = global::Unity.IL2CPP.CompilerServices.Option;
 #if UNITY_2021_3_OR_NEWER
     using Configuration;
     using UnityEngine;
@@ -4560,6 +4565,10 @@ namespace DxMessaging.Core.MessageBus
             plan.version = _dispatchPlanVersion;
         }
 
+        // IL2CPP check elision on the frozen global bucket walk; entries and
+        // handlers are non-null by snapshot construction (see DispatchFlatSnapshot).
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         private void BroadcastGlobalUntargeted(ref IUntargetedMessage message, long emissionId)
         {
             DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IUntargetedMessage>(
@@ -4631,6 +4640,9 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        // IL2CPP check elision: see BroadcastGlobalUntargeted.
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         private void BroadcastGlobalTargeted(
             ref InstanceId target,
             ref ITargetedMessage message,
@@ -4706,6 +4718,9 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        // IL2CPP check elision: see BroadcastGlobalUntargeted.
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         private void BroadcastGlobalSourcedBroadcast(
             ref InstanceId source,
             ref IBroadcastMessage message,
@@ -6108,6 +6123,16 @@ namespace DxMessaging.Core.MessageBus
         /// Returns the legacy "found any handlers" semantics: delegates were
         /// resolved, OR bus-level bucket entries exist for the slot.
         /// </summary>
+        // IL2CPP: the generated null/bounds checks are elided on this loop (and its
+        // siblings below). The invariants are guaranteed by construction and pinned
+        // by tests: BuildFlatDispatch fills `entries[0..count)` with non-null
+        // handler + invoker pairs and never publishes count > entries.Length; the
+        // array is frozen for the emission, so no concurrent shrink exists
+        // (single-threaded bus, mutations surface on the NEXT emission's rebuild).
+        // Under Mono the attributes are inert. Rig builds keep the
+        // DXMESSAGING_INTERNAL_CHECKS shape assert immediately below.
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool DispatchFlatSnapshot<TMessage>(DispatchSnapshot snapshot, ref TMessage message)
             where TMessage : IMessage
@@ -6151,6 +6176,9 @@ namespace DxMessaging.Core.MessageBus
         /// InstanceId alongside the message. Same frozen-array and
         /// reset-generation semantics.
         /// </summary>
+        // IL2CPP check elision: same proven invariants as DispatchFlatSnapshot.
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool DispatchContextFlatSnapshot<TMessage>(
             DispatchSnapshot snapshot,
@@ -6244,6 +6272,10 @@ namespace DxMessaging.Core.MessageBus
             );
         }
 
+        // IL2CPP check elision: buckets[0..bucketCount) is non-null by snapshot
+        // construction; same justification as DispatchFlatSnapshot.
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool HasAnyDispatchEntries(DispatchSnapshot snapshot)
         {
@@ -6370,6 +6402,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [Il2CppSetOption(Option.NullChecks, false)]
         private void InvokeGlobalUntargetedEntry<TMessage>(
             ref TMessage message,
             DispatchEntry entry
@@ -6390,6 +6423,7 @@ namespace DxMessaging.Core.MessageBus
             handler.HandleGlobalUntargetedMessage(ref interfaceMessage, this);
         }
 
+        [Il2CppSetOption(Option.NullChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void InvokeGlobalTargetedEntry<TMessage>(
             ref InstanceId target,
@@ -6412,6 +6446,7 @@ namespace DxMessaging.Core.MessageBus
             handler.HandleGlobalTargetedMessage(ref target, ref interfaceMessage, this);
         }
 
+        [Il2CppSetOption(Option.NullChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void InvokeGlobalBroadcastEntry<TMessage>(
             ref InstanceId source,

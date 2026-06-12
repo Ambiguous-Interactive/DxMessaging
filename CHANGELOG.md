@@ -64,6 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The internal flat-dispatch shape assertion (`DebugAssertFlatShape`) moved
   from `DEBUG` builds to the opt-in `DXMESSAGING_INTERNAL_CHECKS` scripting
   define; it cost a type test per dispatch on Editor hot paths.
+- On IL2CPP players, the dispatch hot loops (flat snapshot walks, global
+  accept-all bucket walks, and global entry invokers) now opt out of the
+  generated per-iteration null and array-bounds checks via a vendored
+  internal `Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute`. The
+  elided checks guard invariants the snapshot builder already guarantees
+  (frozen arrays, non-null handler/invoker pairs, `count` never exceeding
+  the array length), all pinned by tests; rig/diagnostic builds keep the
+  `DXMESSAGING_INTERNAL_CHECKS` shape assertions. No behavior change under
+  Mono or in the editor.
 - Dispatch for every message kind (untargeted, targeted, and broadcast;
   handle and post-process phases) now resolves handlers to flat, pooled
   delegate arrays at snapshot-build time instead of walking per-handler
