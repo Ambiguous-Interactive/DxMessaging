@@ -35,8 +35,7 @@
   <PropertyGroup>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\</SolutionDir>
     <ArtifactsRoot Condition="'$(ArtifactsRoot)' == ''"
-      >$(SolutionDir).artifacts/$(MSBuildProjectName)/</ArtifactsRoot
-    >
+      >$(SolutionDir).artifacts/$(MSBuildProjectName)/</ArtifactsRoot>
     <!-- Set BaseIntermediateOutputPath early so NuGet restore's obj/ (and
          project.assets.json) is written under .artifacts/, never in-tree. The
          trailing slash is required by the SDK's path-joining logic. -->
@@ -52,7 +51,6 @@
     <DebugSymbols>false</DebugSymbols>
     <CopyAnalyzerPayload Condition="'$(CopyAnalyzerPayload)' == ''">true</CopyAnalyzerPayload>
     <AnalyzerPayloadOutputDir Condition="'$(AnalyzerPayloadOutputDir)' == ''"
-      >$([System.IO.Path]::Combine('$(SolutionDir)', 'Editor', 'Analyzers'))</AnalyzerPayloadOutputDir
-    >
+      >$([System.IO.Path]::Combine('$(SolutionDir)', 'Editor', 'Analyzers'))</AnalyzerPayloadOutputDir>
   </PropertyGroup>
 </Project>
