@@ -9,18 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Untargeted dispatch now resolves handlers to flat, pooled delegate arrays
-  at snapshot-build time instead of walking per-handler dictionaries and
-  dispatch links per message. Measured on Editor PlayMode Mono x64: one
-  handler 17.5M to 27.9M emits/sec, four handlers at one priority 3.9M to
-  24.1M, four post-processors 3.3M to 14.6M, all with zero steady-state
-  allocations and unchanged dispatch semantics (snapshot freezing, priority
-  and registration order, mid-emission registration visibility, immediate
-  deactivation). One deliberate refinement: a handler that deactivates
-  itself mid-emission now skips its own remaining untargeted delegates in
-  that emission (the active check runs per delegate instead of once per
-  handler), matching the documented immediate-deactivation semantics.
-  Targeted and broadcast dispatch are unchanged and will be migrated next.
+- Dispatch for every message kind (untargeted, targeted, and broadcast;
+  handle and post-process phases) now resolves handlers to flat, pooled
+  delegate arrays at snapshot-build time instead of walking per-handler
+  dictionaries and dispatch links per message. Measured on Editor PlayMode
+  Mono x64 versus the previous release: one untargeted handler 17.5M to
+  22.1M emits/sec, four untargeted handlers 3.9M to 20.0M, one targeted
+  listener 11.4M to 15.7M, sixteen targeted listeners 0.73M to 8.7M, one
+  broadcast handler 8.0M to 15.6M, four post-processors 3.3M to 12.6M -
+  all with zero steady-state allocations, an 8% faster cold registration
+  flood, and unchanged dispatch semantics (snapshot freezing, priority and
+  registration order, mid-emission registration visibility). One deliberate
+  refinement: a handler that deactivates itself mid-emission now skips its
+  own remaining delegates in that emission for every kind (the active check
+  runs per delegate instead of once per handler), matching the documented
+  immediate-deactivation semantics.
 
 ### Fixed
 
