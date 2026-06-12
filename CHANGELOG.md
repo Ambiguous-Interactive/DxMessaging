@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Removed the internal per-handler dispatch-link machinery (the ten
+  `*DispatchLink` wrapper classes, their lazily-populated slot array, and
+  the outer-generation guard) plus the vestigial non-global prefreeze
+  descriptors that the flattened dispatch had already stopped consuming:
+  snapshots for non-global slots no longer build per-handler bucket entry
+  arrays at all (they dispatch exclusively through the resolved flat
+  delegate arrays and keep count-only buckets for the legacy "found any
+  handlers" reporting), which removes one pooled array rent/fill/return
+  per priority bucket from every snapshot rebuild. No public API or
+  dispatch semantics change (verified emission-for-emission against the
+  previous implementation, including global accept-all mid-emission
+  mutation ordering, trim-then-re-register staleness, reset-mid-dispatch,
+  and zero steady-state allocations).
 - Each emission now consults a cached per-(bus, message-type, kind) dispatch
   plan instead of re-resolving interceptor, global accept-all, and
   post-processor sinks with multiple type-cache lookups per emit. When the

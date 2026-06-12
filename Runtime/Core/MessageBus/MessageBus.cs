@@ -35,7 +35,7 @@ namespace DxMessaging.Core.MessageBus
         // saved/restored by DispatchLease, so when a nested (reentrant)
         // emission completes, the OUTER emission resumes reading ITS OWN id
         // rather than the bumped live counter. Every per-emission freeze key
-        // (handler-side GetOrAddNewHandlerStack via dispatch links / the
+        // (handler-side GetOrAddNewHandlerStack via the
         // EmissionId property, global prefreeze stamps, snapshot
         // acquisition) compares against
         // this scoped value; using the live counter instead would make the
@@ -55,25 +55,6 @@ namespace DxMessaging.Core.MessageBus
         public long EmissionId => 0 < _dispatchDepth ? _scopedEmissionId : _emissionId;
         internal long TickCounter => _tickCounter;
 
-        internal readonly struct PrefreezeDescriptor
-        {
-            public PrefreezeDescriptor(byte kind, int priority)
-            {
-                this.kind = kind;
-                this.priority = priority;
-            }
-
-            public static readonly PrefreezeDescriptor Empty = new PrefreezeDescriptor(0, 0);
-            public readonly byte kind;
-            public readonly int priority;
-        }
-
-        private const byte PrefreezeKindNone = 0;
-        private const byte PrefreezeKindTargetedWithoutTargetingHandlers = 1;
-        private const byte PrefreezeKindBroadcastWithoutSourceHandlers = 2;
-        private const byte PrefreezeKindGlobalUntargetedHandlers = 3;
-        private const byte PrefreezeKindGlobalTargetedHandlers = 4;
-        private const byte PrefreezeKindGlobalBroadcastHandlers = 5;
         private const long DefaultIdleEvictionTicks = 30;
         private const double DefaultEvictionTickIntervalSeconds = 5d;
         internal const int SweepGateSampleSize = 16;
@@ -206,22 +187,19 @@ namespace DxMessaging.Core.MessageBus
             return ContextHandlerByTargetDicts.Trim(0);
         }
 
+        // One bucket entry per registered MessageHandler. Entry arrays are
+        // populated only for the GLOBAL accept-all snapshots (the only
+        // remaining bucket-walking dispatch path); non-global snapshots carry
+        // count-only buckets (see BuildDispatchSnapshot) because their
+        // dispatch happens exclusively through the resolved flat arrays.
         internal readonly struct DispatchEntry
         {
-            public DispatchEntry(
-                MessageHandler handler,
-                object dispatch,
-                PrefreezeDescriptor prefreeze
-            )
+            public DispatchEntry(MessageHandler handler)
             {
                 this.handler = handler;
-                this.dispatch = dispatch;
-                this.prefreeze = prefreeze;
             }
 
             public readonly MessageHandler handler;
-            public readonly object dispatch;
-            public readonly PrefreezeDescriptor prefreeze;
         }
 
         internal struct DispatchBucket
@@ -5736,10 +5714,18 @@ namespace DxMessaging.Core.MessageBus
                     continue;
                 }
 
-                int entryCount = handlerLookup.Count;
-                DispatchEntry[] entries = DispatchEntryPool.Rent(entryCount);
-                FillDispatchEntries<TMessage>(messageBus, cache, slotKey, priority, entries);
-                buckets[i] = new DispatchBucket(priority, entries, entryCount, pooledEntries: true);
+                // Count-only bucket: non-global dispatch walks the resolved
+                // flat array exclusively, so the bucket carries the handler
+                // count (consumed by IsEmpty / HasAnyDispatchEntries for the
+                // legacy "found any handlers" reporting) without renting or
+                // filling a DispatchEntry array.
+                DebugAssertBusInsertionOrderInSync(cache);
+                buckets[i] = new DispatchBucket(
+                    priority,
+                    Array.Empty<DispatchEntry>(),
+                    handlerLookup.Count,
+                    pooledEntries: false
+                );
             }
 
             DispatchSnapshot snapshot = new DispatchSnapshot(buckets, priorityCount, pooled: true);
@@ -6274,42 +6260,6 @@ namespace DxMessaging.Core.MessageBus
             return false;
         }
 
-        private static void FillDispatchEntries<TMessage>(
-            MessageBus messageBus,
-            HandlerCache cache,
-            SlotKey slotKey,
-            int priority,
-            DispatchEntry[] entries
-        )
-            where TMessage : IMessage
-        {
-            if (cache == null)
-            {
-                return;
-            }
-
-            DebugAssertBusInsertionOrderInSync(cache);
-            PrefreezeDescriptor prefreeze = CreatePrefreezeDescriptor(slotKey, priority);
-            int index = 0;
-            // Iterate insertionOrder, NOT the handlers dictionary: Dictionary
-            // enumeration order permutes after Remove/Add churn (freed slots
-            // are reused LIFO), which would seat a newly-registered
-            // MessageHandler in a destroyed one's position and break the
-            // documented same-priority cross-component registration order.
-            List<MessageHandler> ordered = cache.insertionOrder;
-            int orderedCount = ordered.Count;
-            for (int i = 0; i < orderedCount && index < entries.Length; ++i)
-            {
-                MessageHandler messageHandler = ordered[i];
-                object dispatch = GetDispatchLink<TMessage>(messageBus, messageHandler, slotKey);
-                entries[index++] = new DispatchEntry(messageHandler, dispatch, prefreeze);
-            }
-            if (index < entries.Length)
-            {
-                Array.Clear(entries, index, entries.Length - index);
-            }
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static DispatchSnapshot AcquireGlobalDispatchSnapshot<TMessage>(
             MessageBus messageBus,
@@ -6409,119 +6359,14 @@ namespace DxMessaging.Core.MessageBus
             Dictionary<MessageHandler, int> handlerLookup = handlers.sharedHandlers;
             int entryCount = handlerLookup.Count;
             DispatchEntry[] entries = DispatchEntryPool.Rent(entryCount);
-            PrefreezeDescriptor prefreeze = CreateGlobalPrefreezeDescriptor(kind, 0);
             int index = 0;
             foreach (KeyValuePair<MessageHandler, int> kvp in handlerLookup)
             {
-                MessageHandler messageHandler = kvp.Key;
-                // Global dispatch paths intentionally pass null for the
-                // dispatch-link argument. GetDispatchLink is no longer reached
-                // from this code path; inlining null here matches what the
-                // legacy switch returned for all three Global cases and avoids
-                // a per-entry call.
-                object dispatch = null;
-                entries[index++] = new DispatchEntry(messageHandler, dispatch, prefreeze);
+                entries[index++] = new DispatchEntry(kvp.Key);
             }
 
             buckets[0] = new DispatchBucket(0, entries, entryCount, pooledEntries: true);
             return new DispatchSnapshot(buckets, 1, pooled: true);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static PrefreezeDescriptor CreatePrefreezeDescriptor(SlotKey slotKey, int priority)
-        {
-            if (
-                slotKey.Phase != DispatchPhase.Handle
-                || slotKey.Variant != DispatchVariant.WithoutContext
-            )
-            {
-                return PrefreezeDescriptor.Empty;
-            }
-            switch (slotKey.Kind)
-            {
-                case DispatchKind.Targeted:
-                    return new PrefreezeDescriptor(
-                        PrefreezeKindTargetedWithoutTargetingHandlers,
-                        priority
-                    );
-                case DispatchKind.Broadcast:
-                    return new PrefreezeDescriptor(
-                        PrefreezeKindBroadcastWithoutSourceHandlers,
-                        priority
-                    );
-                default:
-                    return PrefreezeDescriptor.Empty;
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static PrefreezeDescriptor CreateGlobalPrefreezeDescriptor(
-            DispatchKind kind,
-            int priority
-        )
-        {
-            switch (kind)
-            {
-                case DispatchKind.Untargeted:
-                    return new PrefreezeDescriptor(PrefreezeKindGlobalUntargetedHandlers, priority);
-                case DispatchKind.Targeted:
-                    return new PrefreezeDescriptor(PrefreezeKindGlobalTargetedHandlers, priority);
-                case DispatchKind.Broadcast:
-                    return new PrefreezeDescriptor(PrefreezeKindGlobalBroadcastHandlers, priority);
-                default:
-                    throw new ArgumentOutOfRangeException(
-                        nameof(kind),
-                        kind,
-                        "CreateGlobalPrefreezeDescriptor only supports Untargeted, Targeted, Broadcast."
-                    );
-            }
-        }
-
-        private static object GetDispatchLink<TMessage>(
-            MessageBus messageBus,
-            MessageHandler handler,
-            SlotKey slotKey
-        )
-            where TMessage : IMessage
-        {
-            DispatchKind kind = slotKey.Kind;
-            DispatchPhase phase = slotKey.Phase;
-            DispatchVariant variant = slotKey.Variant;
-            if (kind == DispatchKind.Untargeted)
-            {
-                return phase == DispatchPhase.PostProcess
-                    ? handler.GetOrCreateUntargetedPostDispatchLink<TMessage>(messageBus)
-                    : handler.GetOrCreateUntargetedDispatchLink<TMessage>(messageBus);
-            }
-            if (kind == DispatchKind.Targeted)
-            {
-                if (phase == DispatchPhase.PostProcess)
-                {
-                    return variant == DispatchVariant.WithoutContext
-                        ? handler.GetOrCreateTargetedWithoutTargetingPostDispatchLink<TMessage>(
-                            messageBus
-                        )
-                        : handler.GetOrCreateTargetedPostDispatchLink<TMessage>(messageBus);
-                }
-                return variant == DispatchVariant.WithoutContext
-                    ? handler.GetOrCreateTargetedWithoutTargetingDispatchLink<TMessage>(messageBus)
-                    : handler.GetOrCreateTargetedDispatchLink<TMessage>(messageBus);
-            }
-            if (kind == DispatchKind.Broadcast)
-            {
-                if (phase == DispatchPhase.PostProcess)
-                {
-                    return variant == DispatchVariant.WithoutContext
-                        ? handler.GetOrCreateBroadcastWithoutSourcePostDispatchLink<TMessage>(
-                            messageBus
-                        )
-                        : handler.GetOrCreateBroadcastPostDispatchLink<TMessage>(messageBus);
-                }
-                return variant == DispatchVariant.WithoutContext
-                    ? handler.GetOrCreateBroadcastWithoutSourceDispatchLink<TMessage>(messageBus)
-                    : handler.GetOrCreateBroadcastDispatchLink<TMessage>(messageBus);
-            }
-            return handler.GetOrCreateUntargetedDispatchLink<TMessage>(messageBus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -6532,10 +6377,7 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : IUntargetedMessage
         {
             MessageHandler handler = entry.handler;
-            if (entry.prefreeze.kind == PrefreezeKindGlobalUntargetedHandlers)
-            {
-                handler.PrefreezeGlobalUntargetedForEmission(_scopedEmissionId, this);
-            }
+            handler.PrefreezeGlobalUntargetedForEmission(_scopedEmissionId, this);
 
             if (!handler.active)
             {
@@ -6557,10 +6399,7 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : ITargetedMessage
         {
             MessageHandler handler = entry.handler;
-            if (entry.prefreeze.kind == PrefreezeKindGlobalTargetedHandlers)
-            {
-                handler.PrefreezeGlobalTargetedForEmission(_scopedEmissionId, this);
-            }
+            handler.PrefreezeGlobalTargetedForEmission(_scopedEmissionId, this);
 
             if (!handler.active)
             {
@@ -6582,10 +6421,7 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : IBroadcastMessage
         {
             MessageHandler handler = entry.handler;
-            if (entry.prefreeze.kind == PrefreezeKindGlobalBroadcastHandlers)
-            {
-                handler.PrefreezeGlobalBroadcastForEmission(_scopedEmissionId, this);
-            }
+            handler.PrefreezeGlobalBroadcastForEmission(_scopedEmissionId, this);
 
             if (!handler.active)
             {

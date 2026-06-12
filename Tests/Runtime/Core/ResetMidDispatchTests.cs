@@ -21,14 +21,11 @@ namespace DxMessaging.Tests.Runtime.Core
     /// <remarks>
     /// <para>
     /// Investigated semantics (see <c>MessageBus.ResetState</c> in
-    /// <c>Runtime/Core/MessageBus/MessageBus.cs</c>): the reset first walks
-    /// every referenced <see cref="MessageHandler"/> and resets its typed
-    /// slots, which increments the per-handler dispatch-link generation
-    /// (<c>TypedHandler._outerGeneration</c>). Every dispatch link captured by
-    /// the in-flight emission's frozen snapshot guards on that generation
-    /// (and the untargeted flat dispatch loop checks the bus reset
-    /// generation after each invocation), so the remaining handlers of the
-    /// current emission short-circuit silently:
+    /// <c>Runtime/Core/MessageBus/MessageBus.cs</c>): the reset bumps the
+    /// bus reset generation (<c>MessageBus._resetGeneration</c>), and every
+    /// flat dispatch loop re-reads that generation after each handler
+    /// invocation, so the remaining handlers of the current emission
+    /// short-circuit silently:
     /// the in-flight emission STOPS cleanly at the resetting handler rather
     /// than completing the snapshot. After the reset, the bus's reset
     /// generation has been bumped, all sinks are empty, and emissions are
@@ -41,7 +38,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// Reset mid-dispatch with the resetting handler and a trailing peer
         /// at DIFFERENT priorities (separate dispatch buckets). The emission
         /// must not throw, the trailing peer must NOT run (the reset halts the
-        /// remaining in-flight dispatch via the generation guard), post-reset
+        /// remaining in-flight dispatch via the reset-generation check), post-reset
         /// emissions are silent no-ops, and a freshly created component can
         /// register and receive again afterwards.
         /// </summary>
@@ -113,7 +110,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 0,
                 trailingCount,
-                "[{0}] Reset mid-dispatch halts the remaining in-flight dispatch: the trailing handler's dispatch link short-circuits on the bumped generation and must NOT run. resetting={1}, trailing={2}.",
+                "[{0}] Reset mid-dispatch halts the remaining in-flight dispatch: the flat dispatch loop short-circuits on the bumped reset generation and the trailing handler must NOT run. resetting={1}, trailing={2}.",
                 scenario.Kind,
                 resettingCount,
                 trailingCount

@@ -14,10 +14,9 @@ namespace DxMessaging.Tests.Editor.Contract
     /// <summary>
     /// Contract guardrails for the per-message-type slot-index tables:
     /// <see cref="TypedSlotIndex"/> (20-slot
-    /// <c>TypedSlot&lt;T&gt;[]</c> on <c>TypedHandler&lt;T&gt;</c>),
+    /// <c>TypedSlot&lt;T&gt;[]</c> on <c>TypedHandler&lt;T&gt;</c>) and
     /// <see cref="TypedGlobalSlotIndex"/> (6-slot
-    /// <c>TypedGlobalSlot[]</c>), and <see cref="TypedDispatchLinkIndex"/>
-    /// (10-slot <c>object[]</c> for the per-kind dispatch links).
+    /// <c>TypedGlobalSlot[]</c>).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -114,8 +113,13 @@ namespace DxMessaging.Tests.Editor.Contract
             "_globalBroadcastFastHandlers",
         };
 
+        // Dispatch links were deleted outright by the stage-3 flattening
+        // cleanup (the resolved flat dispatch arrays replaced them), so
+        // neither the legacy named link fields nor the interim
+        // _dispatchLinks slot array may ever be redeclared.
         private static readonly string[] LegacyDispatchLinkFieldNames =
         {
+            "_dispatchLinks",
             "_untargetedLink",
             "_untargetedPostLink",
             "_targetedLink",
@@ -150,14 +154,6 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void DispatchLinkIndexLengthMatchesArrayLengthOnFreshTypedHandler()
-        {
-            object handler = MakeFreshTypedHandler();
-            Array slots = ReadArrayField(handler, "_dispatchLinks");
-            Assert.AreEqual(TypedDispatchLinkIndex.Length, slots.Length);
-        }
-
-        [Test]
         public void TypedSlotIndexConstantsAreUniqueAndContiguousZeroBased()
         {
             int[] values = ReadConstantValues(typeof(TypedSlotIndex));
@@ -189,19 +185,6 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void TypedDispatchLinkIndexConstantsAreUniqueAndContiguousZeroBased()
-        {
-            int[] values = ReadConstantValues(typeof(TypedDispatchLinkIndex));
-            Assert.AreEqual(
-                values.Length,
-                values.Distinct().Count(),
-                $"TypedDispatchLinkIndex constants must have unique values; got [{string.Join(",", values)}]"
-            );
-            int[] expected = Enumerable.Range(0, TypedDispatchLinkIndex.Length).ToArray();
-            CollectionAssert.AreEqual(expected, values);
-        }
-
-        [Test]
         public void AllTypedSlotsAreNullOnFreshTypedHandler()
         {
             object handler = MakeFreshTypedHandler();
@@ -222,12 +205,6 @@ namespace DxMessaging.Tests.Editor.Contract
             for (int i = 0; i < globalSlots.Length; ++i)
             {
                 Assert.IsNull(globalSlots.GetValue(i), "_globalSlots[" + i + "] must be null.");
-            }
-
-            Array dispatchLinks = ReadArrayField(handler, "_dispatchLinks");
-            for (int i = 0; i < dispatchLinks.Length; ++i)
-            {
-                Assert.IsNull(dispatchLinks.GetValue(i), "_dispatchLinks[" + i + "] must be null.");
             }
         }
 
@@ -794,58 +771,6 @@ namespace DxMessaging.Tests.Editor.Contract
 
             newDeregistration();
             Assert.AreEqual(0, newUntargetedSlot.liveCount);
-        }
-
-        [Test]
-        public void DispatchLinksPopulateExpectedSlots()
-        {
-            object handler = MakeFreshTypedHandler();
-            Type handlerType = handler.GetType();
-            (string MethodName, int Index)[] links =
-            {
-                ("GetOrCreateUntargetedLink", TypedDispatchLinkIndex.UntargetedHandle),
-                ("GetOrCreateUntargetedPostLink", TypedDispatchLinkIndex.UntargetedPostProcess),
-                ("GetOrCreateTargetedLink", TypedDispatchLinkIndex.TargetedHandle),
-                ("GetOrCreateTargetedPostLink", TypedDispatchLinkIndex.TargetedPostProcess),
-                (
-                    "GetOrCreateTargetedWithoutTargetingLink",
-                    TypedDispatchLinkIndex.TargetedHandleWithoutContext
-                ),
-                (
-                    "GetOrCreateTargetedWithoutTargetingPostLink",
-                    TypedDispatchLinkIndex.TargetedPostProcessWithoutContext
-                ),
-                ("GetOrCreateBroadcastLink", TypedDispatchLinkIndex.BroadcastHandle),
-                ("GetOrCreateBroadcastPostLink", TypedDispatchLinkIndex.BroadcastPostProcess),
-                (
-                    "GetOrCreateBroadcastWithoutSourceLink",
-                    TypedDispatchLinkIndex.BroadcastHandleWithoutContext
-                ),
-                (
-                    "GetOrCreateBroadcastWithoutSourcePostLink",
-                    TypedDispatchLinkIndex.BroadcastPostProcessWithoutContext
-                ),
-            };
-
-            Array dispatchLinks = ReadArrayField(handler, "_dispatchLinks");
-            foreach ((string methodName, int index) in links)
-            {
-                MethodInfo method = handlerType.GetMethod(
-                    methodName,
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                );
-                Assert.IsNotNull(method, methodName + " must exist.");
-
-                object first = method.Invoke(handler, Array.Empty<object>());
-                object second = method.Invoke(handler, Array.Empty<object>());
-
-                Assert.AreSame(first, second, methodName + " must return a stable link.");
-                Assert.AreSame(
-                    first,
-                    dispatchLinks.GetValue(index),
-                    methodName + " must store the link in its indexed slot."
-                );
-            }
         }
 
         private static object MakeFreshTypedHandler()

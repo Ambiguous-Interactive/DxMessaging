@@ -2243,104 +2243,6 @@ namespace DxMessaging.Core
             return writeIndex;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal UntargetedDispatchLink<T> GetOrCreateUntargetedDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateUntargetedLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal UntargetedPostDispatchLink<T> GetOrCreateUntargetedPostDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateUntargetedPostLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TargetedDispatchLink<T> GetOrCreateTargetedDispatchLink<T>(IMessageBus messageBus)
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateTargetedLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TargetedPostDispatchLink<T> GetOrCreateTargetedPostDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateTargetedPostLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TargetedWithoutTargetingDispatchLink<T> GetOrCreateTargetedWithoutTargetingDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateTargetedWithoutTargetingLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TargetedWithoutTargetingPostDispatchLink<T> GetOrCreateTargetedWithoutTargetingPostDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateTargetedWithoutTargetingPostLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal BroadcastDispatchLink<T> GetOrCreateBroadcastDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateBroadcastLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal BroadcastPostDispatchLink<T> GetOrCreateBroadcastPostDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateBroadcastPostLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal BroadcastWithoutSourceDispatchLink<T> GetOrCreateBroadcastWithoutSourceDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateBroadcastWithoutSourceLink();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal BroadcastWithoutSourcePostDispatchLink<T> GetOrCreateBroadcastWithoutSourcePostDispatchLink<T>(
-            IMessageBus messageBus
-        )
-            where T : IMessage
-        {
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
-            return typedHandler.GetOrCreateBroadcastWithoutSourcePostLink();
-        }
-
         internal sealed class HandlerActionCache<T> : DxMessaging.Core.Internal.IHandlerActionCache
         {
             // Uses outer T as a field type -- reflection callers must close
@@ -2405,7 +2307,6 @@ namespace DxMessaging.Core
             public long version;
             public long lastSeenVersion = -1;
             public long lastSeenEmissionId = -1;
-            internal int prefreezeInvocationCount;
 
             /// <summary>Monotonic version field, read-only on the interface surface.</summary>
             long DxMessaging.Core.Internal.IHandlerActionCache.Version
@@ -2432,13 +2333,6 @@ namespace DxMessaging.Core
                 set => lastSeenEmissionId = value;
             }
 
-            /// <summary>Prefreeze invocation counter mirror; maintained by the dispatchers.</summary>
-            int DxMessaging.Core.Internal.IHandlerActionCache.PrefreezeInvocationCount
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => prefreezeInvocationCount;
-            }
-
             /// <summary>True iff the entries dictionary holds zero handlers.</summary>
             bool DxMessaging.Core.Internal.IHandlerActionCache.IsEmpty
             {
@@ -2457,406 +2351,10 @@ namespace DxMessaging.Core
                 cache.Clear();
                 lastSeenVersion = -1;
                 lastSeenEmissionId = -1;
-                prefreezeInvocationCount = 0;
                 unchecked
                 {
                     ++version;
                 }
-            }
-        }
-
-        internal sealed class UntargetedDispatchLink<T>
-            where T : IMessage
-        {
-            private readonly TypedHandler<T> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal UntargetedDispatchLink(TypedHandler<T> typedHandler, long capturedGeneration)
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref T message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                if (!messageHandler.active)
-                {
-                    return;
-                }
-
-                typedHandler.HandleUntargeted(ref message, priority, emissionId);
-            }
-        }
-
-        internal sealed class UntargetedPostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal UntargetedPostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                if (!messageHandler.active)
-                {
-                    return;
-                }
-
-                typedHandler.HandleUntargetedPostProcessing(ref message, priority, emissionId);
-            }
-        }
-
-        internal sealed class TargetedDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal TargetedDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId target,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleTargeted(ref target, ref message, priority, emissionId);
-            }
-        }
-
-        internal sealed class TargetedPostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal TargetedPostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId target,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleTargetedPostProcessing(
-                    ref target,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class TargetedWithoutTargetingDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal TargetedWithoutTargetingDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId target,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleTargetedWithoutTargeting(
-                    ref target,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class TargetedWithoutTargetingPostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal TargetedWithoutTargetingPostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId target,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleTargetedWithoutTargetingPostProcessing(
-                    ref target,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class BroadcastDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal BroadcastDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId source,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleSourcedBroadcast(ref source, ref message, priority, emissionId);
-            }
-        }
-
-        internal sealed class BroadcastPostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal BroadcastPostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId source,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleSourcedBroadcastPostProcessing(
-                    ref source,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class BroadcastWithoutSourceDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal BroadcastWithoutSourceDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId source,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleSourcedBroadcastWithoutSource(
-                    ref source,
-                    ref message,
-                    priority,
-                    emissionId
-                );
-            }
-        }
-
-        internal sealed class BroadcastWithoutSourcePostDispatchLink<TMessage>
-            where TMessage : IMessage
-        {
-            private readonly TypedHandler<TMessage> typedHandler;
-            internal readonly long capturedGeneration;
-
-            internal BroadcastWithoutSourcePostDispatchLink(
-                TypedHandler<TMessage> typedHandler,
-                long capturedGeneration
-            )
-            {
-                this.typedHandler = typedHandler;
-                this.capturedGeneration = capturedGeneration;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Invoke(
-                MessageHandler messageHandler,
-                ref InstanceId source,
-                ref TMessage message,
-                int priority,
-                long emissionId
-            )
-            {
-                // Generation guard: 1 field read + 1 compare per dispatch on the hot path.
-                // Sits at the top of Invoke so reclaimed wrappers return before handler-slot
-                // walks when the outer wrapper has been reclaimed.
-                if (typedHandler._outerGeneration != capturedGeneration)
-                {
-                    return;
-                }
-
-                typedHandler.HandleBroadcastWithoutSourcePostProcessing(
-                    ref source,
-                    ref message,
-                    priority,
-                    emissionId
-                );
             }
         }
 
@@ -2867,14 +2365,13 @@ namespace DxMessaging.Core
         internal sealed class TypedHandler<T> : ITypedHandlerSlotSweeper
             where T : IMessage
         {
-            // Typed storage: 20 typed slots + 6 global slots + 10 dispatch
-            // links. The legacy named fields were deleted so new handler
-            // variants must pick an explicit axis-indexed slot.
+            // Typed storage: 20 typed slots + 6 global slots. The legacy
+            // named fields were deleted so new handler variants must pick an
+            // explicit axis-indexed slot.
             internal readonly TypedSlot<T>[] _slots = new TypedSlot<T>[TypedSlotIndex.Length];
             internal readonly TypedGlobalSlot[] _globalSlots = new TypedGlobalSlot[
                 TypedGlobalSlotIndex.Length
             ];
-            internal readonly object[] _dispatchLinks = new object[TypedDispatchLinkIndex.Length];
 
             // Constructor exists solely so the [Conditional("DEBUG")]
             // validator below runs at construction time. In Release builds
@@ -2887,7 +2384,6 @@ namespace DxMessaging.Core
                 ValidateSlotArrays();
             }
 
-            internal long _outerGeneration;
             internal bool _markedForOuterRemoval;
 
             int ITypedHandlerSlotSweeper.MessageTypeIndex
@@ -2917,12 +2413,6 @@ namespace DxMessaging.Core
                         $"_globalSlots length is {_globalSlots.Length} but TypedGlobalSlotIndex.Length is {TypedGlobalSlotIndex.Length}."
                     );
                 }
-                if (_dispatchLinks.Length != TypedDispatchLinkIndex.Length)
-                {
-                    throw new InvalidOperationException(
-                        $"_dispatchLinks length is {_dispatchLinks.Length} but TypedDispatchLinkIndex.Length is {TypedDispatchLinkIndex.Length}."
-                    );
-                }
                 // Lazy registration writers update the slot arrays; this assertion still
                 // holds at construction (slots populate on first register,
                 // not on construction). The invariant flips meaning -- not
@@ -2942,15 +2432,6 @@ namespace DxMessaging.Core
                     {
                         throw new InvalidOperationException(
                             $"_globalSlots[{i}] is non-null at construction; expected null per TypedGlobalSlotIndex because slots populate lazily on first registration."
-                        );
-                    }
-                }
-                for (int i = 0; i < _dispatchLinks.Length; ++i)
-                {
-                    if (_dispatchLinks[i] != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"_dispatchLinks[{i}] is non-null at construction; expected null per TypedDispatchLinkIndex because links populate lazily on first dispatch-link request."
                         );
                     }
                 }
@@ -3111,11 +2592,6 @@ namespace DxMessaging.Core
                     }
                 }
 
-                ClearDispatchLinks();
-                unchecked
-                {
-                    ++_outerGeneration;
-                }
                 return resetCount;
             }
 
@@ -3151,12 +2627,7 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                ClearDispatchLinks();
                 _markedForOuterRemoval = true;
-                unchecked
-                {
-                    ++_outerGeneration;
-                }
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -3179,166 +2650,6 @@ namespace DxMessaging.Core
                 }
 
                 return false;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void ClearDispatchLinks()
-            {
-                for (int i = 0; i < _dispatchLinks.Length; ++i)
-                {
-                    _dispatchLinks[i] = null;
-                }
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal UntargetedDispatchLink<T> GetOrCreateUntargetedLink()
-            {
-                UntargetedDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.UntargetedHandle]
-                    as UntargetedDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new UntargetedDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.UntargetedHandle] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal UntargetedPostDispatchLink<T> GetOrCreateUntargetedPostLink()
-            {
-                UntargetedPostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.UntargetedPostProcess]
-                    as UntargetedPostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new UntargetedPostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.UntargetedPostProcess] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal TargetedDispatchLink<T> GetOrCreateTargetedLink()
-            {
-                TargetedDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedHandle]
-                    as TargetedDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new TargetedDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedHandle] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal TargetedPostDispatchLink<T> GetOrCreateTargetedPostLink()
-            {
-                TargetedPostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedPostProcess]
-                    as TargetedPostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new TargetedPostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedPostProcess] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal TargetedWithoutTargetingDispatchLink<T> GetOrCreateTargetedWithoutTargetingLink()
-            {
-                TargetedWithoutTargetingDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedHandleWithoutContext]
-                    as TargetedWithoutTargetingDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new TargetedWithoutTargetingDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedHandleWithoutContext] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal TargetedWithoutTargetingPostDispatchLink<T> GetOrCreateTargetedWithoutTargetingPostLink()
-            {
-                TargetedWithoutTargetingPostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedPostProcessWithoutContext]
-                    as TargetedWithoutTargetingPostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new TargetedWithoutTargetingPostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.TargetedPostProcessWithoutContext] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal BroadcastDispatchLink<T> GetOrCreateBroadcastLink()
-            {
-                BroadcastDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastHandle]
-                    as BroadcastDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new BroadcastDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastHandle] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal BroadcastPostDispatchLink<T> GetOrCreateBroadcastPostLink()
-            {
-                BroadcastPostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastPostProcess]
-                    as BroadcastPostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new BroadcastPostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastPostProcess] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal BroadcastWithoutSourceDispatchLink<T> GetOrCreateBroadcastWithoutSourceLink()
-            {
-                BroadcastWithoutSourceDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastHandleWithoutContext]
-                    as BroadcastWithoutSourceDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new BroadcastWithoutSourceDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastHandleWithoutContext] = link;
-                }
-
-                return link;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal BroadcastWithoutSourcePostDispatchLink<T> GetOrCreateBroadcastWithoutSourcePostLink()
-            {
-                BroadcastWithoutSourcePostDispatchLink<T> link =
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastPostProcessWithoutContext]
-                    as BroadcastWithoutSourcePostDispatchLink<T>;
-                if (link == null)
-                {
-                    link = new BroadcastWithoutSourcePostDispatchLink<T>(this, _outerGeneration);
-                    _dispatchLinks[TypedDispatchLinkIndex.BroadcastPostProcessWithoutContext] =
-                        link;
-                }
-
-                return link;
             }
 
             /// <summary>
