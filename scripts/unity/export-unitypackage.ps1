@@ -339,9 +339,26 @@ New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
 Write-Host "::group::npm pack the shipped payload"
 Push-Location $RepoRoot
 try {
-    $packJsonText = (& npm pack --json --pack-destination $stagingPath | Out-String)
-    if ($LASTEXITCODE -ne 0) {
-        throw "npm pack failed with exit code $LASTEXITCODE."
+    $npmPackStdoutPath = Join-Path $ArtifactsPath 'npm-pack.stdout.json'
+    $npmPackStderrPath = Join-Path $ArtifactsPath 'npm-pack.stderr.log'
+    $packJsonText = (& npm pack --json --pack-destination $stagingPath 2> $npmPackStderrPath | Out-String)
+    $packExitCode = $LASTEXITCODE
+    Set-Content -LiteralPath $npmPackStdoutPath -Encoding UTF8 -NoNewline -Value $packJsonText
+    if ($packExitCode -ne 0) {
+        $stderrTail = ''
+        if (Test-Path -LiteralPath $npmPackStderrPath -PathType Leaf) {
+            $stderrTail = (Get-Content -LiteralPath $npmPackStderrPath -Tail 40 | Out-String).Trim()
+        }
+        $stdoutTail = ($packJsonText -split "`r?`n" | Select-Object -Last 40 | Out-String).Trim()
+        $detail = @()
+        if (-not [string]::IsNullOrWhiteSpace($stderrTail)) {
+            $detail += "stderr tail:`n$stderrTail"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($stdoutTail)) {
+            $detail += "stdout tail:`n$stdoutTail"
+        }
+        $detailText = if ($detail.Count -gt 0) { "`n$($detail -join "`n")" } else { '' }
+        throw "npm pack failed with exit code $packExitCode. See $npmPackStdoutPath and $npmPackStderrPath.$detailText"
     }
 } finally {
     Pop-Location

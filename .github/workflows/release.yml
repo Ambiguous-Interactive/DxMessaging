@@ -566,10 +566,13 @@ jobs:
     # Run even when the unitypackage export failed: npm + .tgz remain the
     # primary distribution channel and must not be blocked by the optional
     # .unitypackage asset. The hard gates (verify-tag, validate, unity-checks)
-    # must all have succeeded; !cancelled() keeps this job alive when
-    # unitypackage failed (a plain `needs` would skip it).
+    # must all have succeeded. always() is required because GitHub skips a job
+    # after any failed dependency unless the job condition opts back in; the
+    # explicit hard-gate checks below still keep validate/tag/Unity test
+    # failures from publishing.
     if: >-
       ${{
+        always() &&
         !cancelled() &&
         needs.verify-tag.result == 'success' &&
         needs.validate.result == 'success' &&

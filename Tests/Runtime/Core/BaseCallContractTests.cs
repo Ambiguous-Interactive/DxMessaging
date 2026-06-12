@@ -31,8 +31,9 @@ namespace DxMessaging.Tests.Runtime.Core
     /// untargeted, targeted, and broadcast registration paths. A few tests
     /// (the ones that exercise base-class default handlers directly) run
     /// once without scenario parameterization. The breadcrumb log assertion
-    /// is gated on <c>UNITY_EDITOR || DEBUG</c> on the runtime side; this
-    /// fixture runs in the Unity editor so that condition holds.
+    /// is gated on <c>UNITY_EDITOR || DEBUG</c> on the runtime side, so
+    /// standalone Release players assert the token and dispatch consequences
+    /// without expecting a log branch that was compiled out.
     /// </para>
     /// <para>
     /// The leak tests
@@ -89,8 +90,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // Expect the self-check breadcrumb BEFORE the action that triggers it.
-            LogAssert.Expect(LogType.Error, MissingBaseAwakeBreadcrumbPattern);
+            // Expect the self-check breadcrumb BEFORE the action that triggers it
+            // in builds that compile the runtime breadcrumb branch.
+            ExpectMissingBaseAwakeBreadcrumbIfCompiled();
 
             GameObject host = new(
                 nameof(OmitBaseAwakeYieldsNoTokenAndNoDispatch) + scenario.Kind,
@@ -833,9 +835,10 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTest]
         public IEnumerator MultipleSubclassesDoNotCrossContaminate()
         {
-            // A broken Awake means we will see one breadcrumb when the broken
-            // host enables; declare the expectation up front.
-            LogAssert.Expect(LogType.Error, MissingBaseAwakeBreadcrumbPattern);
+            // A broken Awake emits one breadcrumb when the broken host enables
+            // in builds that compile the runtime breadcrumb branch; declare
+            // the expectation up front.
+            ExpectMissingBaseAwakeBreadcrumbIfCompiled();
 
             GameObject correctHost = new(
                 nameof(MultipleSubclassesDoNotCrossContaminate) + "_Correct",
@@ -916,6 +919,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                 }
             }
+        }
+
+        private static void ExpectMissingBaseAwakeBreadcrumbIfCompiled()
+        {
+#if UNITY_EDITOR || DEBUG
+            LogAssert.Expect(LogType.Error, MissingBaseAwakeBreadcrumbPattern);
+#endif
         }
 
         private static void EmitDirectly(MessageScenario scenario, InstanceId target)

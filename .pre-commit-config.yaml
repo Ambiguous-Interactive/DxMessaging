@@ -117,6 +117,18 @@ repos:
           Fail when a package asmdef populates precompiledReferences while
           overrideReferences is false (compiles in the Editor but breaks
           standalone/IL2CPP player builds).
+      - id: validate-csharp-metas
+        name: Validate Unity C# .meta files
+        entry: node scripts/validate-npm-meta.js --repo-cs-metas-only
+        language: system
+        pass_filenames: false
+        files: '(?i)\.cs\.meta$'
+        stages:
+          - pre-commit
+          - pre-push
+        description: >-
+          Fail when tracked C# .meta files are missing Unity's standard
+          MonoImporter block.
       - id: script-tests
         name: Run fast JavaScript script tests (node --test)
         # Curated unit/mocked subset only. Real subprocess/archive integration

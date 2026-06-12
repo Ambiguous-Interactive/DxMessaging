@@ -179,11 +179,11 @@ jobs:
       - name: Generate the auto-commit GitHub App token
         id: app-token
         if: ${{ !inputs.dry-run }}
-        # client-id accepts the numeric App ID; the app-id input name is
-        # deprecated in v3 (mirrors perf-numbers.yml).
+        # The action's v3 metadata requires app-id; keep this name aligned
+        # with actionlint instead of using legacy aliases.
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
           private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
 
       - name: Push the release branch and open the PR

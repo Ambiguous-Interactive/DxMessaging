@@ -10,12 +10,15 @@ const validateNpmMeta = require("../validate-npm-meta.js");
 
 const {
   buildLocalTarArchiveSpec,
+  buildStandardCsharpMetaContent,
   collectTarballEntries,
   computeRequiredMetaPaths,
   findForbiddenTarballPaths,
+  getCsharpMetaShapeViolation,
   normalizePackEntry,
   parsePackJsonEntries,
   runValidation,
+  validateCsharpMetaFiles,
   validatePackEntries,
   validatePublishedFilesArePairedWithMetas
 } = validateNpmMeta;
@@ -80,11 +83,75 @@ function withQuietValidation(callback) {
   }
 }
 
+const VALID_CSHARP_META = buildStandardCsharpMetaContent("0123456789abcdef0123456789abcdef");
+const VALID_CSHARP_META_HEADER = "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\n";
+
 test("normalizePackEntry strips package prefix and trailing slash", () => {
   assert.equal(normalizePackEntry("package/Runtime/Core/Foo.cs"), "Runtime/Core/Foo.cs");
   assert.equal(normalizePackEntry("./package/Editor/"), "Editor");
   assert.equal(normalizePackEntry("package"), "");
   assert.equal(normalizePackEntry(""), "");
+});
+
+test("getCsharpMetaShapeViolation validates Unity C# MonoImporter shape", () => {
+  const withTrailingSpaces = VALID_CSHARP_META.replace("  userData:\n", "  userData: \n")
+    .replace("  assetBundleName:\n", "  assetBundleName: \n")
+    .replace("  assetBundleVariant:\n", "  assetBundleVariant: \n");
+  const withLegacyMetadata = VALID_CSHARP_META.replace(
+    "guid: 0123456789abcdef0123456789abcdef\n",
+    "guid: 0123456789abcdef0123456789abcdef\ntimeCreated: 1745161457\n"
+  );
+
+  for (const [relativePath, content, expected] of [
+    ["Runtime/Foo.cs.meta", VALID_CSHARP_META, ""],
+    ["Runtime/Foo.asmdef.meta", VALID_CSHARP_META_HEADER, ""],
+    ["Runtime/Foo.cs.meta", VALID_CSHARP_META_HEADER, /missing the standard MonoImporter/],
+    ["Runtime/Foo.cs.meta", `${VALID_CSHARP_META_HEADER}timeCreated: 1745161457\n`, /missing the standard MonoImporter/],
+    ["Runtime/Foo.cs.meta", VALID_CSHARP_META.replace("  defaultReferences: []\n", ""), /defaultReferences/],
+    ["Runtime/Foo.cs.meta", withTrailingSpaces, ""],
+    ["Runtime/Foo.cs.meta", withLegacyMetadata, ""]
+  ]) {
+    const violation = getCsharpMetaShapeViolation(relativePath, content);
+    if (expected instanceof RegExp) {
+      assert.match(violation, expected);
+    } else {
+      assert.equal(violation, expected);
+    }
+  }
+});
+
+test("validateCsharpMetaFiles aggregates invalid tracked C# meta diagnostics", () => {
+  const contents = {
+    "Valid.cs.meta": VALID_CSHARP_META,
+    "TwoLine.cs.meta": VALID_CSHARP_META_HEADER,
+    "Foo.asmdef.meta": "ignored"
+  };
+  const result = validateCsharpMetaFiles(Object.keys(contents), {
+    readFileSync: (filePath) => contents[path.basename(filePath)]
+  });
+
+  assert.equal(result.checked, 2);
+  assert.deepEqual(result.invalid, [
+    {
+      path: "TwoLine.cs.meta",
+      reason: "is missing the standard MonoImporter block for Unity C# scripts"
+    }
+  ]);
+});
+
+test("runValidation --repo-cs-metas-only reports invalid tracked C# metas", () => {
+  const result = withQuietValidation(() =>
+    runValidation({
+      repoCsharpMetasOnly: true,
+      relativePaths: ["TwoLine.cs.meta"],
+      readFileSync: () => VALID_CSHARP_META_HEADER
+    })
+  );
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.invalidCsharpMetas, [
+    { path: "TwoLine.cs.meta", reason: "is missing the standard MonoImporter block for Unity C# scripts" }
+  ]);
 });
 
 test("parsePackJsonEntries loads npm --json file entries", () => {

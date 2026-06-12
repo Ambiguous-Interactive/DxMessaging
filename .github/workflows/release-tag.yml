@@ -133,7 +133,7 @@ jobs:
           }}
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
           private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
 
       - name: Create and push the annotated release tag

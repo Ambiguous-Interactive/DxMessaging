@@ -907,11 +907,11 @@ jobs:
         # The App must have Contents + Pull requests read-and-write, be installed
         # on this repo, and (for the fast path) be allowed to bypass the
         # master/main branch protection. The job `if` above already proved both
-        # secrets are present. client-id accepts the numeric App ID too; the
-        # app-id input name is deprecated in v3.
+        # secrets are present. The action's v3 metadata requires app-id; keep
+        # this name aligned with actionlint instead of using legacy aliases.
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
           private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
 
       - name: Checkout default branch

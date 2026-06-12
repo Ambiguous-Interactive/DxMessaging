@@ -49,7 +49,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 - Unity asmdef reference integrity: `npm run validate:asmdef-references`
 - Unity version matrix consistency: `npm run validate:unity-versions`
 - JS LOC budget: `npm run validate:js-loc-budget`
-- npm tarball hygiene + Unity .meta pairing: `npm run validate:npm-meta`
+- npm tarball hygiene + Unity .meta pairing + tracked C# `.meta` `MonoImporter` shape: `npm run validate:npm-meta`
 - Everything: `npm run validate:all`
 - Hooks (one-time setup): `pipx install pre-commit && pre-commit install`; normal hooks run on changed files. Use targeted `pre-commit run <hook-id> --files ...` during development. Reserve `pre-commit run --all-files` / `pre-commit run --all-files --hook-stage pre-push` for hook-config changes or release audits; they are whole-repo audits, not the routine agent loop. For release audits, run the direct heavy checks (`npm test`, `npm run check:spelling`, `npm run validate:all`) alongside the all-files hook audits. Pre-push is intentionally sub-second as hook body work and excludes heavier checks such as spelling and npm pack validation; agents must run those directly when relevant.
 
@@ -80,6 +80,7 @@ For Unity-side tests in `Tests/Editor/` or `Tests/Runtime/` (excludes Benchmarks
   - `old-linux`: `self-hosted, Linux, X64, RAM-16GB, old`
   - `ubuntu-latest-large`: GitHub-hosted large runner
 - Workflow YAML is linted by actionlint (CI) plus yamllint via pre-commit; there is no bespoke workflow validator.
+- `actions/create-github-app-token@v3` requires `app-id` + `private-key`; do not use legacy `client-id` in workflows.
 - Never use a single shared `concurrency.group` across multiple matrix entries without mitigation (expand the group with a `${{ matrix.* }}` token, declare `queue: max` with `cancel-in-progress: false`, or set `strategy.max-parallel: 1`).
 - Do not use native GitHub `concurrency.group: wallstop-organization-builds`; the organization lock name belongs only in the central `Ambiguous-Interactive/ambiguous-organization-build-lock` acquire/release action inputs.
 - Unity is activated with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`); the floating licensing server is RETIRED (`UNITY_LICENSING_SERVER` removed). Every Unity-credential-using job must validate the serial secrets, provision the editor (`scripts/unity/ensure-editor.ps1 -CiManagedOnly` with an explicit `-ProvisioningProfile`) BEFORE the org lock, acquire `wallstop-organization-builds` immediately before `scripts/unity/run-ci-tests.ps1`, and release it with `if: always()`. The license is returned on every exit path (defensive return-at-start, `finally` return, `if: always()` `return-unity-license` step). See [Unity License Return Guarantee](./skills/unity/unity-license-return-guarantee.md) and [Unity CI Matrix](./skills/unity/unity-ci-matrix.md).
