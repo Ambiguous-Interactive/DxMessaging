@@ -45,6 +45,7 @@ function createReleaseFixture(t, options = {}) {
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (tar.error && tar.error.code === "ENOENT") {
+    fs.rmSync(tempDir, { recursive: true, force: true });
     t.skip("tar is not available");
     return null;
   }
