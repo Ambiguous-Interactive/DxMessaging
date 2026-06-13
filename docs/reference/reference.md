@@ -297,14 +297,16 @@ Base component for objects that emit messages.
 ```csharp
 public class MessagingComponent : MonoBehaviour
 {
-    // When true, messages can be emitted even when component is disabled
+    // When true, messages can be emitted even when component is disabled:
+    // OnEnable/OnDisable leave the handler untouched while this is set
     public bool emitMessagesWhenDisabled;
 
     // Create a registration token for a listener on this GameObject
     public MessageRegistrationToken Create(MonoBehaviour listener);
 
-    // Toggle the message handler on/off
-    public void ToggleMessageHandler(bool enabled);
+    // Toggle the message handler on/off; explicit calls always win,
+    // even while emitMessagesWhenDisabled is true
+    public void ToggleMessageHandler(bool newActive);
 }
 ```
 
@@ -313,13 +315,18 @@ public class MessagingComponent : MonoBehaviour
 Base component for objects that both emit and receive messages.
 
 ```csharp
-public abstract class MessageAwareComponent : MessagingComponent
+// Requires a MessagingComponent on the same GameObject ([RequireComponent]).
+public abstract class MessageAwareComponent : MonoBehaviour
 {
     // The registration token for this component
     public MessageRegistrationToken Token { get; }
 
     // When true, registrations are enabled/disabled with OnEnable/OnDisable
     protected virtual bool MessageRegistrationTiedToEnableStatus { get; }
+
+    // When true (default false), enabling after MessagingComponent.Release
+    // re-creates the token and replays RegisterMessageHandlers
+    protected virtual bool ReregisterOnEnableAfterRelease { get; }
 
     // When true, registers for string messages automatically
     protected virtual bool RegisterForStringMessages { get; }

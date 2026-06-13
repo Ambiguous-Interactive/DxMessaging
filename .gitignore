@@ -36,6 +36,8 @@ unity-provisioning-*.zip
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
+# Unity build-output convention above must not swallow the release tooling.
+!scripts/release/
 [Rr]eleases/
 x64/
 x86/

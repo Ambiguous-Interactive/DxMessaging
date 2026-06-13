@@ -37,6 +37,9 @@ on:
       # validate:all runs validate:asmdef-references, which reads every
       # tracked .asmdef — so asmdef-only PRs must trigger this workflow.
       - "**/*.asmdef"
+      # validate:all runs validate:npm-meta, which checks every tracked C#
+      # script .meta file for Unity's standard MonoImporter block.
+      - "**/*.cs.meta"
   push:
     branches:
       - main
@@ -73,6 +76,8 @@ on:
       - "**/*.mjs"
       # validate:all runs validate:asmdef-references: see the pull_request note.
       - "**/*.asmdef"
+      # validate:all runs validate:npm-meta: see the pull_request note.
+      - "**/*.cs.meta"
   workflow_dispatch:
 
 concurrency:

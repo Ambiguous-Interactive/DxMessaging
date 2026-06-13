@@ -4,7 +4,7 @@ id: "benchmark-methodology-total-over-window"
 category: "performance"
 version: "1.3.0"
 created: "2026-06-07"
-updated: "2026-06-08"
+updated: "2026-06-12"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -64,7 +64,7 @@ aliases:
 
 related:
   - "dispatch-hot-path"
-  - "perf-config-mono-netstandard21-release"
+  - "perf-config-il2cpp-release-netstandard21"
   - "benchmarks-run-in-highest-fidelity-scope"
 
 status: "stable"
@@ -226,7 +226,7 @@ measured interval, not estimated.
 ## See Also
 
 - [DxMessaging Dispatch Hot Path](./dispatch-hot-path.md)
-- [Perf Config: Mono, .NET Standard 2.1, Release](./perf-config-mono-netstandard21-release.md)
+- [Perf Config: IL2CPP Release, .NET Standard 2.1](./perf-config-il2cpp-release-netstandard21.md)
 - [Benchmarks Run in the Highest-Fidelity Scope](../testing/benchmarks-run-in-highest-fidelity-scope.md)
 
 ## References

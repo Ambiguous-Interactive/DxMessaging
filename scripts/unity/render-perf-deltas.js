@@ -33,7 +33,7 @@ const REGISTRATION_SCENARIOS = new Set([
 const DXMESSAGING_TECH_KEY = "DxMessaging";
 
 const DEFAULT_TOLERANCE = 0.02;
-const DEFAULT_SCOPE = "PlayMode";
+const DEFAULT_SCOPE = "Standalone";
 
 // The redesigned CI regression gate fires when a throughput scenario drops by more
 // than this fraction (relative) OR allocates more bytes than its baseline. It is

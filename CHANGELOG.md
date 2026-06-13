@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `MessageAwareComponent.ReregisterOnEnableAfterRelease`: opt-in virtual property
+  (default `false`, preserving existing behavior). When overridden to return
+  `true`, a component whose registration token was released (for example via
+  `MessagingComponent.Release`) re-creates its token and replays
+  `RegisterMessageHandlers` the next time it is enabled, instead of staying
+  permanently unregistered. The replay runs exactly once per release; plain
+  enable/disable cycles without a release never re-stage registrations.
+
 ### Changed
+
+- `MessagingComponent.ToggleMessageHandler(false)` is no longer silently ignored
+  while `emitMessagesWhenDisabled` is true: explicit toggle calls now always win,
+  in both directions. Instead, the Unity enable/disable lifecycle itself now skips
+  the handler toggle while `emitMessagesWhenDisabled` is true, so disabling the
+  component still keeps emission alive (the flag's documented purpose) AND an
+  explicit `ToggleMessageHandler(false)` is no longer reverted by a later
+  enable/disable cycle. Previously the veto made explicit deactivation requests
+  silent no-ops and `OnEnable` force-reactivated the handler. One consequence:
+  setting the flag while the handler is lifecycle-deactivated (disabled with the
+  flag clear) means a later enable no longer auto-reactivates - call
+  `ToggleMessageHandler(true)` to resume.
 
 - Removed the internal per-handler dispatch-link machinery (the ten
   `*DispatchLink` wrapper classes, their lazily-populated slot array, and
@@ -42,6 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The internal flat-dispatch shape assertion (`DebugAssertFlatShape`) moved
   from `DEBUG` builds to the opt-in `DXMESSAGING_INTERNAL_CHECKS` scripting
   define; it cost a type test per dispatch on Editor hot paths.
+- On IL2CPP players, the dispatch hot loops (flat snapshot walks, global
+  accept-all bucket walks, and global entry invokers) now opt out of the
+  generated per-iteration null and array-bounds checks via a vendored
+  internal `Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute`. The
+  elided checks guard invariants the snapshot builder already guarantees
+  (frozen arrays, non-null handler/invoker pairs, `count` never exceeding
+  the array length), all pinned by tests; rig/diagnostic builds keep the
+  `DXMESSAGING_INTERNAL_CHECKS` shape assertions. No behavior change under
+  Mono or in the editor.
 - Dispatch for every message kind (untargeted, targeted, and broadcast;
   handle and post-process phases) now resolves handlers to flat, pooled
   delegate arrays at snapshot-build time instead of walking per-handler

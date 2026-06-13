@@ -68,16 +68,39 @@ organization password manager.
 
 ## Release Model
 
-The release trigger is a pushed tag named `vX.Y.Z`. The tag must exactly match
-`package.json.version` with a leading `v`. For example, package version `3.0.1`
-must be released from tag `v3.0.1`.
+The release pipeline runs dispatch, PR, tag, publish:
 
-There is no manual `workflow_dispatch` release path. A tag such as `3.0.1` or
-`v3.0.1-rc.1` does not pass the release verifier.
+1. An operator dispatches `.github/workflows/release-prepare.yml` from the
+   default branch with a bump kind (`patch`/`minor`/`major`) or an explicit
+   version. It runs `scripts/release/prepare-release.js` (package.json bump
+   plus CHANGELOG rotation), syncs the banner SVG, regenerates `llms.txt`
+   (both embed the package version), re-runs `npm test` and
+   `npm run validate:all` against the bumped tree, and opens a
+   `release/vX.Y.Z` pull request with the auto-commit GitHub App
+   (`AUTO_COMMIT_APP_ID` / `AUTO_COMMIT_APP_PRIVATE_KEY`). The `dry-run`
+   input prints the prepared diff and stops without pushing.
+1. A maintainer reviews the release PR and squash-merges it, keeping the
+   default `release: vX.Y.Z` title.
+1. `.github/workflows/release-tag.yml` sees the release commit on the default
+   branch (subject `release: vX.Y.Z`, package.json version `X.Y.Z`, exact
+   `## [X.Y.Z]` changelog heading, tag absent) and pushes the annotated tag
+   `vX.Y.Z` with the App token. When the App secrets are absent it prints the
+   manual `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
+   commands as a warning instead.
+1. The tag fires `.github/workflows/release.yml`, which performs the gates
+   below.
+
+The tag must exactly match `package.json.version` with a leading `v`. For
+example, package version `3.0.1` must be released from tag `v3.0.1`.
+
+`release.yml` itself has no manual `workflow_dispatch` path; the manual entry
+point is `release-prepare.yml`. A tag such as `3.0.1` or `v3.0.1-rc.1` does
+not pass the release verifier. Pushing a valid tag by hand remains a
+supported fallback when the App is unavailable.
 
 The release workflow performs these gates:
 
-1. Verify the semver tag and package version.
+1. Verify the semver tag, the package version, and the changelog heading.
 1. Run script tests (`node --test scripts/`) and `npm run validate:all`
    (asmdef references, Unity version matrix, JS LoC budget, analyzer payload,
    `llms.txt` freshness). Repository identity checks are now the manual
@@ -86,11 +109,22 @@ The release workflow performs these gates:
 1. Attest the packed `.tgz` with GitHub artifact attestations.
 1. Run the trusted Unity release check on the Ambiguous self-hosted Windows
    runner.
-1. Create or update the GitHub Release with the `.tgz` and checksum.
+1. Export a classic `.unitypackage` from the npm payload on the self-hosted
+   Windows runner (`scripts/unity/export-unitypackage.ps1`); the job follows
+   the same Unity license and organization-lock discipline as the test jobs.
 1. Publish to npm with Trusted Publishing and provenance.
+1. Create or update the GitHub Release with the `.tgz`, its `.sha256`, and,
+   when the export succeeded, the `.unitypackage` plus its `.sha256`.
+1. Assemble the `asset-store-submission` workflow artifact (the
+   `.unitypackage`, the `.tgz`, checksums, and a generated
+   `SUBMISSION-CHECKLIST.md`) for the manual Unity Asset Store upload; see
+   [Unity Asset Store UPM](./unity-asset-store-upm.md).
 
-Release assets are currently npm `.tgz` plus `.sha256`. The workflow does not
-build or upload a `.unitypackage`.
+Release assets are npm `.tgz` plus `.sha256` and, when the export job
+succeeds, a `.unitypackage` plus `.sha256`. The `.unitypackage` is optional:
+a failed export emits a warning and the npm assets still publish, because npm
+is the primary distribution channel. The Unity Asset Store upload is manual;
+no sanctioned CLI exists for it.
 
 ## Public References
 

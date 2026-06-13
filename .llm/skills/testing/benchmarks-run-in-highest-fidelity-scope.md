@@ -2,9 +2,9 @@
 title: "Benchmarks Run in the Highest-Fidelity Scope"
 id: "benchmarks-run-in-highest-fidelity-scope"
 category: "testing"
-version: "2.0.0"
+version: "3.0.0"
 created: "2026-06-07"
-updated: "2026-06-07"
+updated: "2026-06-12"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -24,7 +24,7 @@ tags:
 
 complexity:
   level: "intermediate"
-  reasoning: "Requires understanding that scope is just a test-DLL container and that the headline scope must match the shipped runtime backend."
+  reasoning: "Requires understanding that scope is just a test-DLL container and that the published scope must be the highest shipping-fidelity build: a Release IL2CPP player."
 
 impact:
   performance:
@@ -56,13 +56,13 @@ applies_to:
     unity: ">=2021.3"
 
 aliases:
-  - "Shipped-runtime scope"
-  - "PlayMode Mono headline, Standalone IL2CPP alongside"
+  - "Shipping-fidelity scope"
+  - "Standalone IL2CPP Release headline"
   - "Scope-agnostic benchmarks"
 
 related:
   - "benchmark-methodology-total-over-window"
-  - "perf-config-mono-netstandard21-release"
+  - "perf-config-il2cpp-release-netstandard21"
   - "comparison-parity-and-package-single-source"
 
 status: "stable"
@@ -71,26 +71,29 @@ status: "stable"
 # Benchmarks Run in the Highest-Fidelity Scope
 
 > **One-line summary**: Benchmark code is scope-agnostic; EditMode, PlayMode,
-> and Standalone are just test-DLL scopes. The headline is the shipped-runtime
-> scope (PlayMode Mono); Standalone IL2CPP is published alongside for AOT
-> coverage; do NOT publish EditMode as the headline.
+> and Standalone are just test-DLL scopes. The headline and only published
+> scope is Standalone IL2CPP in a true Release player, the highest shipping
+> fidelity. PlayMode and EditMode are iteration scopes and are NOT published;
+> EditMode must never be treated as representative.
 > `scripts/unity/render-perf-doc.js` renders one labeled table per scope.
 
 ## Overview
 
 A benchmark scenario does not care which scope runs it. The same emit loop runs
 in EditMode, in PlayMode, and in a built Standalone player; the scope is just
-the container that loads the test DLL. What differs is the runtime backend each
-scope exercises, and that difference decides which scope becomes the headline
-number.
+the container that loads the test DLL. What differs is how closely each scope
+matches a shipped game build, and that difference decides which scope is
+published.
 
-DxMessaging publishes two scopes. PlayMode runs Mono, the backend the library
-ships with for most targets, so it is the headline. Standalone runs IL2CPP and
-provides ahead-of-time (AOT) coverage on the backend some platforms require, so
-it is published alongside. EditMode runs under the editor's own hosting
-environment and is never the headline. The renderer prints one labeled table per
-scope present and draws the headline numbers and the comparison matrices from
-the shipped-runtime scope (PlayMode when present).
+DxMessaging publishes one scope. Standalone runs the benchmark inside a real
+IL2CPP Release player (`BuildOptions.Development` stripped, Release IL2CPP C++
+configuration), which is what shipped titles actually execute, so it is the
+headline and the only published scope. PlayMode runs in-editor under Mono and
+is the fast scope for local and CI iteration; EditMode runs under the editor's
+own hosting environment and is the least representative. Neither in-editor
+scope is published. The renderer prints one labeled table per scope present
+and draws the headline numbers and the comparison matrices from the first
+scope present in headline order (Standalone when available).
 
 ## Problem Statement
 
@@ -99,10 +102,10 @@ Two mistakes misrepresent performance:
 - **Forking the benchmark per scope.** Writing a separate EditMode body and a
   separate PlayMode body lets the two drift and stops the numbers from being
   comparable. The body must be scope-agnostic.
-- **Publishing EditMode as the headline.** EditMode runs under the editor's
-  domain and compilation settings; its numbers do not represent a shipped
-  runtime. Reporting EditMode as the headline overstates or understates real
-  behavior.
+- **Publishing an in-editor scope as the headline.** PlayMode and EditMode run
+  inside the editor's domain and compilation settings; their numbers do not
+  represent a shipped Release player. Reporting either as the headline
+  overstates or understates real behavior.
 
 ## Solution
 
@@ -119,50 +122,58 @@ BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(Warmup, EmitBatch);
 WriteRow(target, scenario, measurement);
 ```
 
-### Renderer headlines the shipped-runtime scope
+### Renderer headlines the shipping-fidelity scope
 
-`scripts/unity/render-perf-doc.js` orders scopes with PlayMode first and uses
-the shipped-runtime scope present for the headline and the comparison matrices:
+`scripts/unity/render-perf-doc.js` orders scopes with Standalone first and
+uses the first scope present in headline order for the headline and the
+comparison matrices:
 
 ```javascript
-const SCOPE_ORDER = ["PlayMode", "Standalone", "EditMode"];
+const SCOPE_ORDER = ["Standalone", "PlayMode", "EditMode"];
 ```
 
-The renderer emits one dispatch table per scope present, in that order, and the
-cross-library matrices use the first scope present (PlayMode when available). The
-section heading derives its backend label (Mono or IL2CPP) from the platform
-string in each scope's rows, so the heading follows the data rather than a
-hard-coded assumption. If only EditMode ran, the renderer still labels it
-honestly rather than passing it off as a shipped-runtime number.
+The renderer emits one dispatch table per scope present, in that order, and
+the cross-library matrices use the first scope present (Standalone when
+available). The section heading derives its backend label (Mono or IL2CPP)
+from the platform string in each scope's rows, so the heading follows the data
+rather than a hard-coded assumption. If only an in-editor scope ran, the
+renderer still labels it honestly rather than passing it off as a Release
+player number.
 
 ## Scope Fidelity Ranking
 
-| Scope      | Backend / fidelity to shipping | Published as headline?          |
-| ---------- | ------------------------------ | ------------------------------- |
-| PlayMode   | Mono (shipped runtime)         | Yes, when present               |
-| Standalone | IL2CPP / AOT (built player)    | No; published alongside for AOT |
-| EditMode   | Mono, editor host (lowest)     | No, never the headline          |
+| Scope      | Build / fidelity to shipping    | Published?                       |
+| ---------- | ------------------------------- | -------------------------------- |
+| Standalone | IL2CPP Release player (highest) | Yes; headline and only published |
+| PlayMode   | Mono, in-editor (iteration)     | No; local/CI iteration scope     |
+| EditMode   | Mono, editor host (lowest)      | No; never representative         |
 
 The Performance Numbers workflow (`.github/workflows/perf-numbers.yml`)
-publishes the `playmode` and `standalone` legs for this reason: PlayMode Mono is
-the shipped-runtime headline and Standalone IL2CPP is the AOT leg.
+publishes only the `standalone` leg for this reason: a Release IL2CPP player
+is the highest shipping fidelity. The weekly `unity-benchmarks.yml` still runs
+the EditMode and PlayMode benchmark tests across Unity versions, as coverage
+rather than published numbers.
 
 ## Common Pitfalls
 
 - "I will write a PlayMode-only benchmark." Keep the body scope-agnostic so the
-  same scenario runs everywhere, including the Standalone IL2CPP leg.
-- "EditMode is fastest to run, so I will publish it." EditMode runs in the
-  editor host; never make it the headline.
-- "Standalone is a built player, so it must be the headline." Standalone runs
-  IL2CPP, not the Mono backend the library ships with for most targets; it is the
-  AOT companion leg, and PlayMode Mono is the headline.
+  same scenario runs everywhere, including the published Standalone IL2CPP leg.
+- "Publishing an in-editor scope as the headline." PlayMode and EditMode are
+  iteration scopes; the published headline is the Standalone IL2CPP Release
+  player.
+- "Benchmarking a development-build player." The Unity Test Framework injects
+  `BuildOptions.Development` by default; `Debug.isDebugBuild` must be false in
+  published runs, and a published `x64 Debug` platform string is a
+  configuration bug.
+- "EditMode is fastest to run, so it is good enough to report." EditMode runs
+  in the editor host; never treat it as representative.
 - "I will hardcode the scope label in the row." Encode the resolved target so
   the renderer derives the scope and backend and orders tables correctly.
 
 ## See Also
 
 - [Benchmark Methodology: Total Over One Window](../performance/benchmark-methodology-total-over-window.md)
-- [Perf Config: Mono, .NET Standard 2.1, Release](../performance/perf-config-mono-netstandard21-release.md)
+- [Perf Config: IL2CPP Release, .NET Standard 2.1](../performance/perf-config-il2cpp-release-netstandard21.md)
 - [Comparison Parity and Package Single Source](./comparison-parity-and-package-single-source.md)
 
 ## References

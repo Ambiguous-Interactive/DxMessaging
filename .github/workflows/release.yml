@@ -136,6 +136,9 @@ jobs:
           name: release-package
           path: .artifacts/release/
           if-no-files-found: error
+          # Artifacts are immutable per name within a run; a "re-run all jobs"
+          # recovery would 409 against the first attempt's upload without this.
+          overwrite: true
 
       - name: Attest release package
         uses: actions/attest-build-provenance@v4
@@ -404,12 +407,177 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  unitypackage:
+    name: Export .unitypackage
+    # Runs AFTER unity-checks so the licensed editmode gate has already proven
+    # the payload compiles before we spend another licensed editor session on
+    # the export. NON-BLOCKING for npm: publish tolerates this job failing and
+    # ships the .tgz regardless (npm remains the primary distribution channel).
+    needs:
+      - verify-tag
+      - runner-preflight
+      - unity-checks
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    permissions:
+      contents: read
+    timeout-minutes: 660
+    steps:
+      - name: Enable Git long paths
+        shell: pwsh
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        with:
+          lfs: true
+          persist-credentials: false
+
+      - name: Print runner diagnostics
+        # Composite action runs PowerShell internally; never use plain
+        # `shell: bash` on self-hosted Windows runners (see unity-checks).
+        uses: ./.github/actions/print-self-hosted-runner-diagnostics
+
+      - name: Setup Node.js
+        # export-unitypackage.ps1 stages the payload with `npm pack`, so the
+        # shipped bytes are identical to the npm/UPM artifact.
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
+      - name: Validate Unity license secrets
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      # Editor install/repair does NOT take the paid Unity seat, so it runs
+      # BEFORE the org lock (mirrors unity-checks). The export only needs the
+      # editor itself; EditorOnly is the same profile unity-checks provisions,
+      # so on the runner that ran unity-checks this is a fast health check.
+      - name: Provision Unity Editor
+        timeout-minutes: 180
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/release-unitypackage'
+          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '2022.3.45f1' `
+            -CiManagedOnly `
+            -RequireHealthyExisting `
+            -ProvisioningProfile EditorOnly `
+            -DiagnosticsPath $diagnosticsFile
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload Unity provisioning diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unity-release-provisioning-unitypackage
+          path: .artifacts/unity/release-unitypackage/provisioning
+          if-no-files-found: warn
+          retention-days: 14
+          # The documented recovery for a failed export is re-running this
+          # job; the if: always() uploads from the failed attempt would 409
+          # against immutable artifact names without overwrite.
+          overwrite: true
+
+      - name: Acquire organization Unity lock
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: release-unitypackage
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+
+      - name: Export the .unitypackage
+        timeout-minutes: 120
+        shell: pwsh
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          PACKAGE_VERSION: ${{ needs.verify-tag.outputs.package-version }}
+        run: |
+          $dist = '.artifacts/unity/release-unitypackage-dist'
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          $output = Join-Path $dist "com.wallstop-studios.dxmessaging-$env:PACKAGE_VERSION.unitypackage"
+          ./scripts/unity/export-unitypackage.ps1 `
+            -UnityVersion '2022.3.45f1' `
+            -OutputPath $output `
+            -ArtifactsPath '.artifacts/unity/release-unitypackage'
+
+      - name: Return Unity license
+        if: always()
+        uses: ./.github/actions/return-unity-license
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Release organization Unity lock
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: release-unitypackage
+        env:
+          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+
+      - name: Dump Unity log tail on failure or cancellation
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/dump-unity-log-tail
+        with:
+          results-dir: .artifacts/unity/release-unitypackage
+          label: Unity release unitypackage export
+
+      - name: Upload the .unitypackage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-unitypackage
+          path: .artifacts/unity/release-unitypackage-dist/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+
+      - name: Upload export diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unity-release-unitypackage
+          path: .artifacts/unity/release-unitypackage
+          if-no-files-found: warn
+          retention-days: 14
+          overwrite: true
+
   publish:
     name: Publish npm package and GitHub Release
     needs:
       - verify-tag
       - validate
       - unity-checks
+      - unitypackage
+    # Run even when the unitypackage export failed: npm + .tgz remain the
+    # primary distribution channel and must not be blocked by the optional
+    # .unitypackage asset. The hard gates (verify-tag, validate, unity-checks)
+    # must all have succeeded. always() is required because GitHub skips a job
+    # after any failed dependency unless the job condition opts back in; the
+    # explicit hard-gate checks below still keep validate/tag/Unity test
+    # failures from publishing.
+    if: >-
+      ${{
+        always() &&
+        !cancelled() &&
+        needs.verify-tag.result == 'success' &&
+        needs.validate.result == 'success' &&
+        needs.unity-checks.result == 'success'
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -433,6 +601,46 @@ jobs:
         with:
           name: release-package
           path: .artifacts/release
+
+      - name: Download the .unitypackage artifact
+        # Only when the export job succeeded; a missing artifact would fail
+        # this action and needlessly block the npm publish below.
+        if: ${{ needs.unitypackage.result == 'success' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: release-unitypackage
+          path: .artifacts/unitypackage
+
+      - name: Stage the .unitypackage release asset
+        id: unitypackage_asset
+        # Emits empty outputs (and a loud warning) when the export job failed,
+        # so every later consumer degrades to the tgz-only release shape.
+        env:
+          UNITYPACKAGE_RESULT: ${{ needs.unitypackage.result }}
+        run: |
+          set -euo pipefail
+          unitypackage_file=""
+          unitypackage_checksum=""
+          if [ "${UNITYPACKAGE_RESULT}" = "success" ]; then
+            mapfile -t unitypackage_files < <(find .artifacts/unitypackage -maxdepth 1 -type f -name '*.unitypackage' | sort)
+            if [ "${#unitypackage_files[@]}" -ge 1 ] && [ -s "${unitypackage_files[0]}" ]; then
+              unitypackage_file="${unitypackage_files[0]}"
+              # Same checksum pattern as the npm tarball in the validate job.
+              (cd .artifacts/unitypackage && sha256sum "$(basename "${unitypackage_file}")" > "$(basename "${unitypackage_file}").sha256")
+              unitypackage_checksum="${unitypackage_file}.sha256"
+            else
+              echo "::warning::The unitypackage job succeeded but no .unitypackage file was found in its artifact; the GitHub Release ships without it."
+            fi
+          else
+            message="The unitypackage job result was '${UNITYPACKAGE_RESULT}'; the GitHub Release ships "
+            message+="only the npm .tgz assets (npm remains the primary distribution channel). "
+            message+="Re-run the release workflow to attach the .unitypackage."
+            echo "::warning::${message}"
+          fi
+          {
+            echo "unitypackage-file=${unitypackage_file}"
+            echo "unitypackage-checksum=${unitypackage_checksum}"
+          } >> "${GITHUB_OUTPUT}"
 
       # ORDERING INVARIANT: a published GitHub Release must never exist
       # without the matching npm version. The IRREVERSIBLE npm publish runs
@@ -477,19 +685,25 @@ jobs:
 
       # Runs only AFTER npm publish above succeeds (or confirmed the version
       # already exists), preserving the ordering invariant: no published
-      # GitHub Release without the matching npm version.
+      # GitHub Release without the matching npm version. The optional
+      # .unitypackage (+ .sha256) rides along when the export job produced it.
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UNITYPACKAGE_FILE: ${{ steps.unitypackage_asset.outputs.unitypackage-file }}
+          UNITYPACKAGE_CHECKSUM: ${{ steps.unitypackage_asset.outputs.unitypackage-checksum }}
         run: |
           set -euo pipefail
           tag="${{ needs.verify-tag.outputs.tag }}"
           package_file="${{ steps.release_package.outputs.package-file }}"
           checksum_file="${{ steps.release_package.outputs.checksum-file }}"
+          assets=("${package_file}" "${checksum_file}")
+          if [ -n "${UNITYPACKAGE_FILE}" ]; then
+            assets+=("${UNITYPACKAGE_FILE}" "${UNITYPACKAGE_CHECKSUM}")
+          fi
           if gh release view "${tag}" >/dev/null 2>&1; then
             gh release upload "${tag}" \
-              "${package_file}" \
-              "${checksum_file}" \
+              "${assets[@]}" \
               --clobber
             gh release edit "${tag}" \
               --title "${tag}" \
@@ -497,9 +711,69 @@ jobs:
               --draft=false
           else
             gh release create "${tag}" \
-              "${package_file}" \
-              "${checksum_file}" \
+              "${assets[@]}" \
               --title "${tag}" \
               --notes-file .artifacts/release/release-notes.md \
               --verify-tag
           fi
+
+      - name: Assemble the Asset Store submission staging artifact
+        # There is NO sanctioned CLI/API for Unity Asset Store uploads
+        # (verified 2026-06): this STAGES the submission inputs and the
+        # checklist; the upload itself is manual via publisher.unity.com with
+        # the Asset Store Publishing Tools package. See
+        # docs/ops/unity-asset-store-upm.md.
+        env:
+          PACKAGE_VERSION: ${{ needs.verify-tag.outputs.package-version }}
+          TAG: ${{ needs.verify-tag.outputs.tag }}
+          UNITYPACKAGE_FILE: ${{ steps.unitypackage_asset.outputs.unitypackage-file }}
+          UNITYPACKAGE_CHECKSUM: ${{ steps.unitypackage_asset.outputs.unitypackage-checksum }}
+        run: |
+          set -euo pipefail
+          staging=.artifacts/asset-store-submission
+          mkdir -p "${staging}"
+          cp "${{ steps.release_package.outputs.package-file }}" "${staging}/"
+          cp "${{ steps.release_package.outputs.checksum-file }}" "${staging}/"
+          unitypackage_note="MISSING: the unitypackage job did not produce one; re-run the release workflow before submitting."
+          if [ -n "${UNITYPACKAGE_FILE}" ]; then
+            cp "${UNITYPACKAGE_FILE}" "${staging}/"
+            cp "${UNITYPACKAGE_CHECKSUM}" "${staging}/"
+            unitypackage_note="$(basename "${UNITYPACKAGE_FILE}")"
+          fi
+          {
+            echo "# Asset Store Submission Checklist (${TAG})"
+            echo
+            echo "Generated by release.yml for com.wallstop-studios.dxmessaging ${PACKAGE_VERSION}."
+            echo "Built from Unity 2022.3.45f1 (the pinned release editor version)."
+            echo
+            echo "## Contents"
+            echo
+            echo "- .unitypackage (Assets-form payload; Samples~ renamed to Samples, generator sources replaced by the shipped analyzer DLLs): ${unitypackage_note}"
+            echo "- npm tarball (the exact UPM payload, for reference and diffing): $(basename "${{ steps.release_package.outputs.package-file }}")"
+            echo "- SHA-256 checksums for both."
+            echo
+            echo "## Manual upload steps"
+            echo
+            echo "There is NO sanctioned CLI or API for Unity Asset Store uploads; the upload is manual."
+            echo
+            echo "1. Sign in to https://publisher.unity.com with the Ambiguous publisher account."
+            echo "1. Open a Unity project, install the Asset Store Publishing Tools package, and import"
+            echo "   the .unitypackage from this artifact (or upload package content drawn from this exact payload)."
+            echo "1. Update the draft package metadata (version ${PACKAGE_VERSION}, changelog from CHANGELOG.md's ## [${PACKAGE_VERSION}] section)."
+            echo "1. Submit for review."
+            echo
+            echo "Full runbook: docs/ops/unity-asset-store-upm.md in the repository."
+          } > "${staging}/SUBMISSION-CHECKLIST.md"
+
+      - name: Upload the Asset Store submission staging artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: asset-store-submission
+          path: .artifacts/asset-store-submission/
+          if-no-files-found: error
+          # overwrite: the documented unitypackage-failure recovery is a workflow
+          # re-run, and attempt 1 already uploaded this artifact; without
+          # overwrite the re-run 409s here AFTER npm publish + the GitHub
+          # release succeeded, leaving a misleading red run.
+          overwrite: true
+          retention-days: 30

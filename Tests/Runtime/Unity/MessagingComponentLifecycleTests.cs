@@ -71,12 +71,10 @@ namespace DxMessaging.Tests.Runtime.Unity
         }
 
         [UnityTest]
-        public IEnumerator ToggleMessageHandlerFalseIsSilentlyIgnoredWhileEmitMessagesWhenDisabledIsTrue()
+        public IEnumerator ToggleMessageHandlerFalseWinsOverEmitMessagesWhenDisabled()
         {
             GameObject host = new(
-                nameof(
-                    ToggleMessageHandlerFalseIsSilentlyIgnoredWhileEmitMessagesWhenDisabledIsTrue
-                ),
+                nameof(ToggleMessageHandlerFalseWinsOverEmitMessagesWhenDisabled),
                 typeof(MessagingComponent),
                 typeof(SimpleMessageAwareComponent)
             );
@@ -92,33 +90,76 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
-            // Pins ACTUAL behavior: while emitMessagesWhenDisabled is true, an explicit
-            // ToggleMessageHandler(false) request is silently ignored - the caller receives no
-            // return value, exception, or log, and messages keep flowing. The flag is documented
-            // as keeping emission alive while the component is DISABLED, but it also vetoes
-            // explicit deactivation requests made through the public toggle API.
+            // emitMessagesWhenDisabled only opts the Unity enable/disable lifecycle out of
+            // touching the handler. An EXPLICIT ToggleMessageHandler(false) call is a direct
+            // user decision and must always win, flag or no flag.
             messaging.ToggleMessageHandler(false);
             message.EmitUntargeted();
             Assert.AreEqual(
-                2,
+                1,
                 count,
-                "ToggleMessageHandler(false) is a silent no-op while emitMessagesWhenDisabled is true."
-            );
-
-            // The veto is evaluated at call time, not latched: clearing the flag makes the same
-            // call suspend delivery.
-            messaging.emitMessagesWhenDisabled = false;
-            messaging.ToggleMessageHandler(false);
-            message.EmitUntargeted();
-            Assert.AreEqual(
-                2,
-                count,
-                "Once emitMessagesWhenDisabled is false, ToggleMessageHandler(false) suspends delivery."
+                "An explicit ToggleMessageHandler(false) must suspend delivery even while "
+                    + "emitMessagesWhenDisabled is true."
             );
 
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
-            Assert.AreEqual(3, count, "ToggleMessageHandler(true) should resume delivery.");
+            Assert.AreEqual(2, count, "ToggleMessageHandler(true) should resume delivery.");
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator EnableCycleDoesNotOverrideExplicitToggleWhileEmitMessagesWhenDisabledIsTrue()
+        {
+            GameObject host = new(
+                nameof(EnableCycleDoesNotOverrideExplicitToggleWhileEmitMessagesWhenDisabledIsTrue),
+                typeof(MessagingComponent),
+                typeof(SimpleMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            messaging.emitMessagesWhenDisabled = true;
+            SimpleMessageAwareComponent listener = host.GetComponent<SimpleMessageAwareComponent>();
+
+            int count = 0;
+            listener.untargetedHandler = () => ++count;
+
+            SimpleUntargetedMessage message = new();
+            message.EmitUntargeted();
+            Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
+
+            messaging.ToggleMessageHandler(false);
+            message.EmitUntargeted();
+            Assert.AreEqual(1, count, "Explicit deactivation must suspend delivery.");
+
+            // While emitMessagesWhenDisabled is true the Unity lifecycle must leave the handler
+            // alone in BOTH directions: OnDisable must not deactivate it, and OnEnable must not
+            // reactivate it behind the user's back. The explicit choice above survives a full
+            // enabled=false/true cycle.
+            messaging.enabled = false;
+            message.EmitUntargeted();
+            Assert.AreEqual(
+                1,
+                count,
+                "Disabling the MessagingComponent must not disturb the explicitly suspended handler."
+            );
+
+            messaging.enabled = true;
+            message.EmitUntargeted();
+            Assert.AreEqual(
+                1,
+                count,
+                "Re-enabling the MessagingComponent must not silently reactivate a handler the "
+                    + "user explicitly toggled off while emitMessagesWhenDisabled is true."
+            );
+
+            messaging.ToggleMessageHandler(true);
+            message.EmitUntargeted();
+            Assert.AreEqual(
+                2,
+                count,
+                "An explicit ToggleMessageHandler(true) remains the way to resume delivery."
+            );
             yield break;
         }
 
@@ -141,9 +182,9 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
-            // Suspend with the flag clear, then set the flag while suspended. The
-            // emitMessagesWhenDisabled veto only guards deactivation; reactivation must
-            // still be honored.
+            // Suspend with the flag clear, then set the flag while suspended. Explicit
+            // toggle calls are never gated by emitMessagesWhenDisabled in either
+            // direction, so reactivation works with the flag set.
             messaging.ToggleMessageHandler(false);
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Handler should be suspended while the flag is false.");
@@ -156,6 +197,47 @@ namespace DxMessaging.Tests.Runtime.Unity
                 count,
                 "ToggleMessageHandler(true) must reactivate regardless of emitMessagesWhenDisabled."
             );
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator FlagEnabledWhileLifecycleSuspendedRequiresExplicitReactivation()
+        {
+            GameObject host = new(
+                nameof(FlagEnabledWhileLifecycleSuspendedRequiresExplicitReactivation),
+                typeof(MessagingComponent),
+                typeof(SimpleMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            SimpleMessageAwareComponent listener = host.GetComponent<SimpleMessageAwareComponent>();
+            listener.enabled = false; // isolate the handler gate from the listener token
+
+            int count = 0;
+            listener.untargetedHandler = () => ++count;
+
+            // Pins the documented edge of the lifecycle-skip model: with the flag
+            // clear, disabling deactivates the handler via the lifecycle. Setting
+            // emitMessagesWhenDisabled WHILE suspended then re-enabling does NOT
+            // reactivate (the lifecycle no longer touches the handler once the flag
+            // is set); an explicit ToggleMessageHandler(true) is the way to resume.
+            messaging.enabled = false;
+            messaging.emitMessagesWhenDisabled = true;
+            messaging.enabled = true;
+
+            listener.enabled = true;
+            SimpleUntargetedMessage message = new();
+            message.EmitUntargeted();
+            Assert.AreEqual(
+                0,
+                count,
+                "Enabling with the flag newly set must not silently reactivate a handler "
+                    + "the lifecycle previously deactivated."
+            );
+
+            messaging.ToggleMessageHandler(true);
+            message.EmitUntargeted();
+            Assert.AreEqual(1, count, "An explicit ToggleMessageHandler(true) resumes delivery.");
             yield break;
         }
 
