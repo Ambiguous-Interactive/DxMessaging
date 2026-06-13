@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Editor
     using System;
     using System.Collections.Generic;
     using System.Reflection;
+    using DxMessaging.Editor;
     using DxMessaging.Editor.Settings;
     using NUnit.Framework;
     using UnityEditor;
@@ -27,6 +28,7 @@ namespace DxMessaging.Tests.Editor
     public sealed class DxMessagingBaseCallIgnoreSyncTests
     {
         private Action<Action> _originalScheduler;
+        private Func<bool> _originalCanMutateAssetDatabase;
         private Action<DxMessagingSettings> _originalApplier;
         private readonly List<Action> _scheduled = new();
         private readonly List<DxMessagingSettings> _createdSettings = new();
@@ -36,6 +38,7 @@ namespace DxMessaging.Tests.Editor
         public void SetUp()
         {
             _originalScheduler = DxMessagingBaseCallIgnoreSync.DeferralScheduler;
+            _originalCanMutateAssetDatabase = DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase;
             _originalApplier = DxMessagingBaseCallIgnoreSync.SidecarApplier;
             _scheduled.Clear();
             _applyCount = 0;
@@ -44,6 +47,7 @@ namespace DxMessaging.Tests.Editor
             // applies instead of touching the AssetDatabase. This makes "synchronous vs deferred"
             // observable and keeps the tests filesystem-free and deterministic.
             DxMessagingBaseCallIgnoreSync.DeferralScheduler = work => _scheduled.Add(work);
+            DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase = () => true;
             DxMessagingBaseCallIgnoreSync.SidecarApplier = _ => _applyCount++;
         }
 
@@ -66,6 +70,8 @@ namespace DxMessaging.Tests.Editor
                 // Restore in finally so a throw while destroying objects can never leak the
                 // substituted seams into the rest of the editor session.
                 DxMessagingBaseCallIgnoreSync.DeferralScheduler = _originalScheduler;
+                DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase =
+                    _originalCanMutateAssetDatabase;
                 DxMessagingBaseCallIgnoreSync.SidecarApplier = _originalApplier;
             }
         }
@@ -147,6 +153,54 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void RegenerateSidecarDeferredRequeuesUntilEditorCanMutateAssets()
+        {
+            bool editorIdle = false;
+            DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase = () => editorIdle;
+            DxMessagingSettings settings = NewSettings();
+
+            DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
+
+            Assert.That(
+                _applyCount,
+                Is.EqualTo(0),
+                "Deferred regeneration must not apply synchronously."
+            );
+            Assert.That(
+                _scheduled.Count,
+                Is.EqualTo(1),
+                "Pre-condition: the first deferred tick must be scheduled."
+            );
+
+            _scheduled[0].Invoke();
+
+            Assert.That(
+                _applyCount,
+                Is.EqualTo(0),
+                "A deferred tick that fires while Unity is compiling/updating must not import the sidecar."
+            );
+            Assert.That(
+                _scheduled.Count,
+                Is.EqualTo(2),
+                "A deferred tick that fires while Unity is compiling/updating must requeue itself."
+            );
+
+            editorIdle = true;
+            _scheduled[1].Invoke();
+
+            Assert.That(
+                _applyCount,
+                Is.EqualTo(1),
+                "Once Unity is idle, the requeued callback must apply exactly once."
+            );
+            Assert.That(
+                _scheduled.Count,
+                Is.EqualTo(2),
+                "The idle apply must not keep rescheduling itself."
+            );
+        }
+
+        [Test]
         public void RegenerateSidecarAppliesSynchronouslyOutsideUpdateAndCompile()
         {
             // Add/Remove ignored-type actions are explicit user edits (button clicks, Project
@@ -170,6 +224,36 @@ namespace DxMessaging.Tests.Editor
                 _scheduled.Count,
                 Is.EqualTo(0),
                 "RegenerateSidecar must not defer when Unity is idle."
+            );
+        }
+
+        [Test]
+        public void RegenerateSidecarDefersWhenEditorCannotMutateAssets()
+        {
+            bool editorIdle = false;
+            DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase = () => editorIdle;
+            DxMessagingSettings settings = NewSettings();
+
+            DxMessagingBaseCallIgnoreSync.RegenerateSidecar(settings);
+
+            Assert.That(
+                _applyCount,
+                Is.EqualTo(0),
+                "RegenerateSidecar must not apply synchronously while Unity is compiling/updating."
+            );
+            Assert.That(
+                _scheduled.Count,
+                Is.EqualTo(1),
+                "RegenerateSidecar must defer while Unity is compiling/updating."
+            );
+
+            editorIdle = true;
+            _scheduled[0].Invoke();
+
+            Assert.That(
+                _applyCount,
+                Is.EqualTo(1),
+                "The deferred regeneration must apply once Unity becomes idle."
             );
         }
 
@@ -225,6 +309,44 @@ namespace DxMessaging.Tests.Editor
                     + "test (OnValidate/OnEnable are the #210-relevant deserialization callbacks)."
             );
             method.Invoke(settings, null);
+        }
+    }
+
+    [TestFixture]
+    public sealed class DxMessagingEditorIdleTests
+    {
+        [Test]
+        public void ScheduleAssetDatabaseMutationRequeuesUntilIdle()
+        {
+            List<Action> scheduled = new();
+            bool editorIdle = false;
+            int runCount = 0;
+
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
+                () => runCount++,
+                work => scheduled.Add(work),
+                () => editorIdle
+            );
+
+            Assert.That(scheduled.Count, Is.EqualTo(1));
+            scheduled[0].Invoke();
+
+            Assert.That(
+                runCount,
+                Is.EqualTo(0),
+                "AssetDatabase work must not run while the editor reports a compile/update window."
+            );
+            Assert.That(
+                scheduled.Count,
+                Is.EqualTo(2),
+                "Busy callbacks must requeue the asset mutation for a later editor tick."
+            );
+
+            editorIdle = true;
+            scheduled[1].Invoke();
+
+            Assert.That(runCount, Is.EqualTo(1));
+            Assert.That(scheduled.Count, Is.EqualTo(2));
         }
     }
 

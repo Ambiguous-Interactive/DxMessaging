@@ -81,7 +81,7 @@ namespace DxMessaging.Editor
             // the AssetDatabase (CreateAsset/SaveAssets on first run, legacy migration), which
             // re-enters the importer and crashes there (#210). Re-defer until the editor is idle,
             // mirroring DxMessagingConsoleHarvester.DrainScheduledRescan.
-            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            if (!DxMessagingEditorIdle.CanMutateAssetDatabase())
             {
                 EditorApplication.delayCall += EnsureSettingsAssetThenApplyGlobals;
                 return;
@@ -96,9 +96,9 @@ namespace DxMessaging.Editor
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] Deferred settings initialization failed; will retry on the next "
-                        + $"editor settings refresh: {ex.Message}"
+                DxMessagingEditorLog.LogWarning(
+                    "Deferred settings initialization failed; will retry on the next editor settings refresh.",
+                    ex
                 );
             }
         }

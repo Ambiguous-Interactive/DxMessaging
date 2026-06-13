@@ -128,8 +128,8 @@ namespace DxMessaging.Editor.Settings
         /// </para>
         /// <para>
         /// Toggling this property is observable via a deferred
-        /// <see cref="DxMessaging.Editor.Analyzers.DxMessagingConsoleHarvester.RescanNow"/> so the
-        /// inspector overlay refreshes without waiting for the next compile.
+        /// <see cref="DxMessaging.Editor.Analyzers.DxMessagingConsoleHarvester.ScheduleRescanWhenIdle"/>
+        /// so the inspector overlay refreshes without waiting for the next compile.
         /// </para>
         /// </remarks>
         public bool UseConsoleBridge
@@ -143,11 +143,7 @@ namespace DxMessaging.Editor.Settings
                 }
                 _useConsoleBridge = value;
                 EditorUtility.SetDirty(this);
-                EditorApplication.delayCall += DxMessaging
-                    .Editor
-                    .Analyzers
-                    .DxMessagingConsoleHarvester
-                    .RescanNow;
+                DxMessaging.Editor.Analyzers.DxMessagingConsoleHarvester.ScheduleRescanWhenIdle();
             }
         }
 
@@ -325,8 +321,9 @@ namespace DxMessaging.Editor.Settings
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] Failed to regenerate base-call ignore sidecar: {ex.Message}"
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
+                    "Failed to regenerate base-call ignore sidecar.",
+                    ex
                 );
             }
         }

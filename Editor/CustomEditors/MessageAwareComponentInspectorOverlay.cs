@@ -76,8 +76,9 @@ namespace DxMessaging.Editor.CustomEditors
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] Failed to repaint inspectors after analyzer report update: {ex.Message}"
+                DxMessagingEditorLog.LogWarning(
+                    "Failed to repaint inspectors after analyzer report update.",
+                    ex
                 );
             }
         }
@@ -183,9 +184,7 @@ namespace DxMessaging.Editor.CustomEditors
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] Inspector overlay could not load settings: {ex.Message}"
-                );
+                DxMessagingEditorLog.LogWarning("Inspector overlay could not load settings.", ex);
                 return false;
             }
 
@@ -369,7 +368,7 @@ namespace DxMessaging.Editor.CustomEditors
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"[DxMessaging] Failed to open script: {ex.Message}");
+                DxMessagingEditorLog.LogWarning("Failed to open script.", ex);
             }
         }
 
@@ -381,19 +380,24 @@ namespace DxMessaging.Editor.CustomEditors
             // frame, corrupting Unity's per-window layout cache. delayCall fires AFTER the
             // current GUI cycle, so the next frame's Layout pass sees the new state and
             // both passes emit consistent control counts.
-            EditorApplication.delayCall += () =>
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
             {
+                if (settings == null)
+                {
+                    return;
+                }
                 try
                 {
                     settings.AddIgnoredType(fullName);
                 }
                 catch (System.Exception ex)
                 {
-                    Debug.LogWarning(
-                        $"[DxMessaging] Failed to add ignored type '{fullName}': {ex.Message}"
+                    DxMessagingEditorLog.LogWarning(
+                        $"Failed to add ignored type '{fullName}'.",
+                        ex
                     );
                 }
-            };
+            });
         }
 
         private static void TryRemoveIgnoredType(DxMessagingSettings settings, string fullName)
@@ -401,19 +405,24 @@ namespace DxMessaging.Editor.CustomEditors
             // Same reasoning as TryAddIgnoredType: defer mutation past the current GUI cycle so
             // the overlay's shape gating remains identical on Layout and Repaint passes of THIS
             // frame. The next frame's Layout pass observes the new state; both passes agree.
-            EditorApplication.delayCall += () =>
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
             {
+                if (settings == null)
+                {
+                    return;
+                }
                 try
                 {
                     settings.RemoveIgnoredType(fullName);
                 }
                 catch (System.Exception ex)
                 {
-                    Debug.LogWarning(
-                        $"[DxMessaging] Failed to remove ignored type '{fullName}': {ex.Message}"
+                    DxMessagingEditorLog.LogWarning(
+                        $"Failed to remove ignored type '{fullName}'.",
+                        ex
                     );
                 }
-            };
+            });
         }
     }
 #endif

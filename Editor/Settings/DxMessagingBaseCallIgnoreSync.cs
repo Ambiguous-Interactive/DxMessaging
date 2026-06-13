@@ -41,6 +41,13 @@ namespace DxMessaging.Editor.Settings
             work => EditorApplication.delayCall += () => work();
 
         /// <summary>
+        /// Test seam for Unity editor state. Production uses Unity's update/compile flags; tests
+        /// substitute a deterministic busy/idle predicate to prove deferred work requeues.
+        /// </summary>
+        internal static Func<bool> CanMutateAssetDatabase { get; set; } =
+            DxMessaging.Editor.DxMessagingEditorIdle.CanMutateAssetDatabase;
+
+        /// <summary>
         /// Test seam controlling WHAT regeneration does. Production performs the real
         /// write + <see cref="AssetDatabase.ImportAsset"/> via <see cref="RegenerateSidecarCore"/>;
         /// tests substitute a recorder so they can observe whether the apply happens synchronously
@@ -74,7 +81,7 @@ namespace DxMessaging.Editor.Settings
                 return;
             }
 
-            if (EditorApplication.isUpdating || EditorApplication.isCompiling)
+            if (!CanCurrentlyMutateAssetDatabase())
             {
                 RegenerateSidecarDeferred(settings);
                 return;
@@ -111,14 +118,26 @@ namespace DxMessaging.Editor.Settings
                 return;
             }
 
-            DeferralScheduler(() =>
-            {
-                if (settings == null)
+            DxMessaging.Editor.DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
+                () =>
                 {
-                    return;
-                }
-                SidecarApplier(settings);
-            });
+                    if (settings == null)
+                    {
+                        return;
+                    }
+                    SidecarApplier(settings);
+                },
+                DeferralScheduler,
+                CanCurrentlyMutateAssetDatabase
+            );
+        }
+
+        private static bool CanCurrentlyMutateAssetDatabase()
+        {
+            Func<bool> canMutateAssetDatabase =
+                CanMutateAssetDatabase
+                ?? DxMessaging.Editor.DxMessagingEditorIdle.CanMutateAssetDatabase;
+            return canMutateAssetDatabase();
         }
 
         private static void RegenerateSidecarCore(DxMessagingSettings settings)
@@ -148,8 +167,9 @@ namespace DxMessaging.Editor.Settings
             }
             catch (Exception ex)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] Failed to write base-call ignore sidecar at '{SidecarAssetPath}': {ex.Message}"
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
+                    $"Failed to write base-call ignore sidecar at '{SidecarAssetPath}'.",
+                    ex
                 );
             }
         }
@@ -186,8 +206,9 @@ namespace DxMessaging.Editor.Settings
             }
             catch (Exception ex)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] Failed to read base-call ignore sidecar at '{SidecarAssetPath}': {ex.Message}"
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
+                    $"Failed to read base-call ignore sidecar at '{SidecarAssetPath}'.",
+                    ex
                 );
                 return Array.Empty<string>();
             }
