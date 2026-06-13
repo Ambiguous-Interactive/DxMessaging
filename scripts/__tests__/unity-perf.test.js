@@ -74,6 +74,10 @@ function dispatchRow(scenario, emitsPerSecond) {
   };
 }
 
+function standaloneRows(entries) {
+  return new Map([["Standalone", new Map(entries)]]);
+}
+
 test("scenario filters keep only dispatch and DxMessaging comparison rows", () => {
   const cases = [
     [isKeptScenario, "UntargetedFlood_OneHandler", true],
@@ -234,19 +238,34 @@ test("render-perf-deltas CLI failures preserve non-gating diagnostic output", ()
   assert.match(result.stderr, /workflow decides whether the regressed= signal fails CI/);
 });
 
+test("comparison-enabled Unity workflows run comparison contracts", () => {
+  const workflowDir = path.join(REPO_ROOT, ".github", "workflows");
+  const offenders = fs.readdirSync(workflowDir).flatMap((name) => {
+    if (!name.endsWith(".yml") && !name.endsWith(".yaml")) {
+      return [];
+    }
+    const text = fs.readFileSync(path.join(workflowDir, name), "utf8");
+    if (!/include-comparisons:\s*["']?true["']?/i.test(text)) {
+      return [];
+    }
+    const filters = [...text.matchAll(/DXM_UNITY_TEST_CATEGORY:\s*["']?([^"'\r\n#]+)/g)].map(
+      (match) => match[1].trim()
+    );
+    return filters.length > 0 && !filters.some((filter) => filter.split(";").includes("Comparison"))
+      ? [`${name}: include-comparisons=true but DXM_UNITY_TEST_CATEGORY=[${filters.join(", ")}]`]
+      : [];
+  });
+  assert.deepEqual(offenders, []);
+});
+
 test("buildComparisonSections bolds per-scenario throughput winners only", () => {
   const sections = buildComparisonSections(
-    new Map([
-      [
-        "Standalone",
-        new Map([
-          ["DxMessaging|GlobalToOne", comparisonRow("30000000.000")],
-          ["MessagePipe|GlobalToOne", comparisonRow("90000000.000")],
-          ["CsEvent|GlobalToOne", comparisonRow("90000000.000")],
-          ["DxMessaging|KeyedToOne", comparisonRow("12000000.000", "64")],
-          ["MessagePipe|KeyedToOne", comparisonRow("9000000.000")]
-        ])
-      ]
+    standaloneRows([
+      ["DxMessaging|GlobalToOne", comparisonRow("30000000.000")],
+      ["MessagePipe|GlobalToOne", comparisonRow("90000000.000")],
+      ["CsEvent|GlobalToOne", comparisonRow("90000000.000")],
+      ["DxMessaging|KeyedToOne", comparisonRow("12000000.000", "64")],
+      ["MessagePipe|KeyedToOne", comparisonRow("9000000.000")]
     ])
   );
   const throughput = sections[0].join("\n");
@@ -263,19 +282,14 @@ test("buildComparisonSections bolds per-scenario throughput winners only", () =>
 
 test("buildComparisonSections bolds a sole present tech and display-precision ties", () => {
   const sole = buildComparisonSections(
-    new Map([["Standalone", new Map([["UnityAtoms|Filtered", comparisonRow("5000000.000")]])]])
+    standaloneRows([["UnityAtoms|Filtered", comparisonRow("5000000.000")]])
   )[0].join("\n");
   assert.ok(sole.includes("**5.00 M emits/sec**"));
 
   const tied = buildComparisonSections(
-    new Map([
-      [
-        "Standalone",
-        new Map([
-          ["DxMessaging|GlobalToOne", comparisonRow("5001000.000")],
-          ["MessagePipe|GlobalToOne", comparisonRow("5004000.000")]
-        ])
-      ]
+    standaloneRows([
+      ["DxMessaging|GlobalToOne", comparisonRow("5001000.000")],
+      ["MessagePipe|GlobalToOne", comparisonRow("5004000.000")]
     ])
   )[0].join("\n");
   assert.equal((tied.match(/\*\*5\.00 M emits\/sec\*\*/g) || []).length, 2);
@@ -315,13 +329,8 @@ test("a winner flip within tolerance does not defeat table idempotence", () => {
 });
 
 test("rendered perf-doc region uses MD001-safe h3 headings", () => {
-  const dispatchByScope = new Map([
-    [
-      "Standalone",
-      new Map([
-        ["UntargetedFlood_OneHandler", dispatchRow("UntargetedFlood_OneHandler", "37690000.000")]
-      ])
-    ]
+  const dispatchByScope = standaloneRows([
+    ["UntargetedFlood_OneHandler", dispatchRow("UntargetedFlood_OneHandler", "37690000.000")]
   ]);
   const heading = buildDispatchSections(dispatchByScope, ["Standalone"])[0][0];
   assert.ok(heading.startsWith("### "), `expected h3, got: ${heading}`);
