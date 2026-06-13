@@ -102,6 +102,7 @@ The agent runs from inside the slim devcontainer (.NET 9/10 base + docker-outsid
 - Avoid regions.
 - Editor `delayCall` callbacks that mutate assets must re-check editor idle state inside the callback and requeue until safe; prefer `DxMessagingEditorIdle.ScheduleAssetDatabaseMutation`.
 - Editor callback catches that swallow an exception should log the full exception through `DxMessagingEditorLog`, not only `Exception.Message`.
+- Generated Editor sidecars or config files consumed through `csc.rsp` must trigger the response-file sync from the producer path after deferred writes complete; do not rely only on `[InitializeOnLoad]` startup setup.
 - Use PascalCase for all method names with no underscores (including test methods); auto-enforced by the `fix-csharp-underscore-methods` pre-commit hook.
 - For base-call analyzer suppression parity, method-level `[DxIgnoreMissingBaseCall]` suppresses only the annotated guarded method; class-level attribute or project ignore list suppresses the entire type.
 - Keep test names descriptive and readable.

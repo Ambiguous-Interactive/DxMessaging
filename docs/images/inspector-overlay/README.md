@@ -79,10 +79,10 @@ The HelpBox in its **info** state for a type that is currently in the
 project ignore list. The HelpBox text reads `<FQN> is excluded from
 the DxMessaging base-call check.` The single button below it is
 **Stop ignoring**. To reproduce: pick a `MessageAwareComponent`
-subclass that actually emits a warning, then add its FQN to
-`Assets/Editor/DxMessaging.BaseCallIgnore.txt` (or click "Ignore this
-type" once). The HelpBox icon should be the blue info glyph, not the
-yellow warning glyph. Recommended dimensions: 720px wide.
+subclass that actually emits a warning, then add its FQN to the ignore
+list in `Assets/Editor/DxMessagingSettings.asset` (or click "Ignore
+this type" once). The HelpBox icon should be the blue info glyph, not
+the yellow warning glyph. Recommended dimensions: 720px wide.
 
 ### `project-settings-panel.png`
 

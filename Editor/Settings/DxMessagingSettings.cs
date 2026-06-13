@@ -148,8 +148,8 @@ namespace DxMessaging.Editor.Settings
         }
 
         /// <summary>
-        /// Fully-qualified type names excluded from the base-call check. Editable via the Project Settings UI
-        /// or via the Inspector overlay's "Ignore this type" button.
+        /// Fully-qualified type names excluded from the base-call check. Editable on the settings
+        /// asset Inspector or via the Inspector overlay's "Ignore this type" button.
         /// </summary>
         public IReadOnlyList<string> BaseCallIgnoredTypes => _baseCallIgnoredTypes;
 

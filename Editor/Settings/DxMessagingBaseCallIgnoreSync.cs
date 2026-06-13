@@ -57,6 +57,14 @@ namespace DxMessaging.Editor.Settings
             RegenerateSidecarCore;
 
         /// <summary>
+        /// Test seam for the follow-up <c>csc.rsp</c> sync. Production schedules the
+        /// <c>-additionalfile</c> normalization after sidecar regeneration, which covers deferred
+        /// <c>OnValidate</c> writes that finish after <see cref="SetupCscRsp"/>'s startup pass.
+        /// </summary>
+        internal static Action CscRspAdditionalFileSyncScheduler { get; set; } =
+            ScheduleDefaultCscRspAdditionalFileSync;
+
+        /// <summary>
         /// Regenerates the sidecar text file from the supplied settings asset. Writes only when
         /// the on-disk content differs from what would be written, matching the
         /// <c>FilesDiffer</c>-style policy used elsewhere in this Editor assembly to avoid
@@ -65,7 +73,7 @@ namespace DxMessaging.Editor.Settings
         /// <param name="settings">The settings asset. May be <c>null</c> -- no-op in that case.</param>
         /// <remarks>
         /// This is the entry point for explicit, user-driven edits (the "Ignore this type" button,
-        /// the Project Settings UI) and for EditMode tests: when Unity is idle the regen runs
+        /// settings asset Inspector edits) and for EditMode tests: when Unity is idle the regen runs
         /// synchronously for immediate feedback, and when Unity is mid-compile or mid-asset-import
         /// it falls back to <see cref="RegenerateSidecarDeferred"/>. It MUST NOT be called from a
         /// deserialization callback such as <c>ScriptableObject.OnValidate</c> -- those callbacks
@@ -87,7 +95,7 @@ namespace DxMessaging.Editor.Settings
                 return;
             }
 
-            SidecarApplier(settings);
+            ApplySidecarAndScheduleCscRspSync(settings);
         }
 
         /// <summary>
@@ -125,7 +133,7 @@ namespace DxMessaging.Editor.Settings
                     {
                         return;
                     }
-                    SidecarApplier(settings);
+                    ApplySidecarAndScheduleCscRspSync(settings);
                 },
                 DeferralScheduler,
                 CanCurrentlyMutateAssetDatabase
@@ -138,6 +146,40 @@ namespace DxMessaging.Editor.Settings
                 CanMutateAssetDatabase
                 ?? DxMessaging.Editor.DxMessagingEditorIdle.CanMutateAssetDatabase;
             return canMutateAssetDatabase();
+        }
+
+        private static void ApplySidecarAndScheduleCscRspSync(DxMessagingSettings settings)
+        {
+            try
+            {
+                SidecarApplier(settings);
+            }
+            finally
+            {
+                ScheduleCscRspAdditionalFileSync();
+            }
+        }
+
+        private static void ScheduleCscRspAdditionalFileSync()
+        {
+            try
+            {
+                Action scheduler =
+                    CscRspAdditionalFileSyncScheduler ?? ScheduleDefaultCscRspAdditionalFileSync;
+                scheduler();
+            }
+            catch (Exception ex)
+            {
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
+                    "Failed to schedule csc.rsp base-call ignore additionalfile sync.",
+                    ex
+                );
+            }
+        }
+
+        private static void ScheduleDefaultCscRspAdditionalFileSync()
+        {
+            DxMessaging.Editor.SetupCscRsp.ScheduleAdditionalFileForIgnoreListSync();
         }
 
         private static void RegenerateSidecarCore(DxMessagingSettings settings)

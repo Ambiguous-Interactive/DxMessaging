@@ -30,9 +30,11 @@ namespace DxMessaging.Tests.Editor
         private Action<Action> _originalScheduler;
         private Func<bool> _originalCanMutateAssetDatabase;
         private Action<DxMessagingSettings> _originalApplier;
+        private Action _originalCscRspAdditionalFileSyncScheduler;
         private readonly List<Action> _scheduled = new();
         private readonly List<DxMessagingSettings> _createdSettings = new();
         private int _applyCount;
+        private int _cscRspSyncCount;
 
         [SetUp]
         public void SetUp()
@@ -40,15 +42,21 @@ namespace DxMessaging.Tests.Editor
             _originalScheduler = DxMessagingBaseCallIgnoreSync.DeferralScheduler;
             _originalCanMutateAssetDatabase = DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase;
             _originalApplier = DxMessagingBaseCallIgnoreSync.SidecarApplier;
+            _originalCscRspAdditionalFileSyncScheduler =
+                DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler;
             _scheduled.Clear();
             _applyCount = 0;
+            _cscRspSyncCount = 0;
 
             // Capture deferred work instead of routing it to EditorApplication.delayCall, and count
             // applies instead of touching the AssetDatabase. This makes "synchronous vs deferred"
-            // observable and keeps the tests filesystem-free and deterministic.
+            // observable and keeps the tests filesystem-free and deterministic. The csc.rsp follow-up
+            // is captured for the same reason.
             DxMessagingBaseCallIgnoreSync.DeferralScheduler = work => _scheduled.Add(work);
             DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase = () => true;
             DxMessagingBaseCallIgnoreSync.SidecarApplier = _ => _applyCount++;
+            DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler = () =>
+                _cscRspSyncCount++;
         }
 
         [TearDown]
@@ -73,6 +81,8 @@ namespace DxMessaging.Tests.Editor
                 DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase =
                     _originalCanMutateAssetDatabase;
                 DxMessagingBaseCallIgnoreSync.SidecarApplier = _originalApplier;
+                DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler =
+                    _originalCscRspAdditionalFileSyncScheduler;
             }
         }
 
@@ -104,6 +114,12 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(1),
                 "OnValidate's deferred work must apply the sidecar exactly once when the editor "
                     + "tick runs (it must defer the real regeneration, not silently drop it)."
+            );
+            Assert.That(
+                _cscRspSyncCount,
+                Is.EqualTo(1),
+                "Once OnValidate's deferred sidecar write runs, csc.rsp must be resynchronized so "
+                    + "the analyzer receives the generated sidecar during the same editor session."
             );
         }
 
@@ -150,6 +166,12 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(1),
                 "The deferred work must apply the sidecar exactly once when the editor tick runs."
             );
+            Assert.That(
+                _cscRspSyncCount,
+                Is.EqualTo(1),
+                "Deferred sidecar regeneration must schedule a csc.rsp sync after the sidecar "
+                    + "apply runs."
+            );
         }
 
         [Test]
@@ -180,6 +202,11 @@ namespace DxMessaging.Tests.Editor
                 "A deferred tick that fires while Unity is compiling/updating must not import the sidecar."
             );
             Assert.That(
+                _cscRspSyncCount,
+                Is.EqualTo(0),
+                "A busy deferred tick must not resync csc.rsp before the sidecar apply runs."
+            );
+            Assert.That(
                 _scheduled.Count,
                 Is.EqualTo(2),
                 "A deferred tick that fires while Unity is compiling/updating must requeue itself."
@@ -192,6 +219,11 @@ namespace DxMessaging.Tests.Editor
                 _applyCount,
                 Is.EqualTo(1),
                 "Once Unity is idle, the requeued callback must apply exactly once."
+            );
+            Assert.That(
+                _cscRspSyncCount,
+                Is.EqualTo(1),
+                "Once the requeued sidecar apply succeeds, csc.rsp must be resynchronized exactly once."
             );
             Assert.That(
                 _scheduled.Count,
@@ -225,6 +257,11 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(0),
                 "RegenerateSidecar must not defer when Unity is idle."
             );
+            Assert.That(
+                _cscRspSyncCount,
+                Is.EqualTo(1),
+                "Synchronous sidecar regeneration must also schedule csc.rsp resynchronization."
+            );
         }
 
         [Test]
@@ -255,6 +292,11 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(1),
                 "The deferred regeneration must apply once Unity becomes idle."
             );
+            Assert.That(
+                _cscRspSyncCount,
+                Is.EqualTo(1),
+                "The deferred regeneration must schedule csc.rsp resynchronization after applying."
+            );
         }
 
         [Test]
@@ -283,6 +325,11 @@ namespace DxMessaging.Tests.Editor
                 "Deferred regeneration must skip the apply when the captured settings asset has "
                     + "been destroyed (Unity's lifetime-aware null check)."
             );
+            Assert.That(
+                _cscRspSyncCount,
+                Is.EqualTo(0),
+                "Destroyed settings must not trigger a csc.rsp sync because no sidecar apply ran."
+            );
         }
 
         private DxMessagingSettings NewSettings()
@@ -293,6 +340,7 @@ namespace DxMessaging.Tests.Editor
             // starts from a clean slate.
             _scheduled.Clear();
             _applyCount = 0;
+            _cscRspSyncCount = 0;
             return settings;
         }
 

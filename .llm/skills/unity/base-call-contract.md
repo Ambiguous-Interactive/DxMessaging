@@ -204,10 +204,10 @@ diagnostic on a specific class or method:
   for every guarded method on the type, or at method scope to suppress for
   one method only. The analyzer emits DXMSG008 (Info) so the suppression is
   visible in the build log.
-- Project ignore list - `Assets/Editor/DxMessaging.BaseCallIgnore.txt` (or
-  whatever path `IgnoreListReader.IgnoreFileName` resolves to). One
-  fully-qualified type name per line. Same DXMSG008 behavior as the
-  attribute.
+- Project ignore list - managed on `Assets/Editor/DxMessagingSettings.asset`
+  and mirrored to the generated sidecar
+  `Assets/Editor/DxMessaging.BaseCallIgnore.txt` for the analyzer. Same
+  DXMSG008 behavior as the attribute.
 - `.editorconfig` severity override - e.g.
   `dotnet_diagnostic.DXMSG006.severity = none` to silence the analyzer
   globally. Still leaves DXMSG009/010 etc. firing under their own ids.
