@@ -332,13 +332,15 @@ The script always exits 0 itself; the workflow decides whether to fail from the
 
 A scenario regresses when its throughput drops by more than the regression
 threshold (default `0.33`, looser than the comment tolerance) OR its allocation
-exceeds the baseline. Only throughput scenarios participate, so the wall-clock
-rows (the cold/warm-JIT registration floods and the cold first-dispatch scenarios,
-all zero throughput) never trip the gate. The comparison is DxMessaging-only: the
-delta comment keeps the dispatch scenarios plus the DxMessaging comparison rows
-and drops every other library's rows. A
-missing or header-only baseline yields `changed=false` and `regressed=false`,
-which skips both the delta comment and gate for a graceful first-rollout pass.
+exceeds the baseline. Only canonical dispatch scenarios participate in the hard
+gate, so the wall-clock rows (the cold/warm-JIT registration floods and the cold
+first-dispatch scenarios, all zero throughput) never trip the gate. The delta
+comment is still broader diagnostic output: it keeps the dispatch scenarios plus
+the DxMessaging comparison rows and drops every other library's rows. Comparison
+rows are report-only because a single cross-library comparison sample is too
+noisy for required CI. A missing or header-only baseline yields `changed=false`
+and `regressed=false`, which skips both the delta comment and gate for a graceful
+first-rollout pass.
 
 ## Local-only C# smoke gate
 
