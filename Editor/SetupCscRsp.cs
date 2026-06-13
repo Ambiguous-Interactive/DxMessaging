@@ -73,9 +73,31 @@ namespace DxMessaging.Editor
 
         static SetupCscRsp()
         {
-            EditorApplication.delayCall += EnsureDLLsExistInAssets;
-            EditorApplication.delayCall += EnsureCscRsp;
-            EditorApplication.delayCall += EnsureAdditionalFileForIgnoreList;
+            ScheduleSetupStep(EnsureDLLsExistInAssets, "copy analyzer DLLs into Assets");
+            ScheduleSetupStep(EnsureCscRsp, "clean csc.rsp analyzer entries");
+            ScheduleSetupStep(
+                EnsureAdditionalFileForIgnoreList,
+                "sync csc.rsp base-call ignore additionalfile entry"
+            );
+        }
+
+        private static void ScheduleSetupStep(Action work, string description)
+        {
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
+                RunSetupStep(work, description)
+            );
+        }
+
+        private static void RunSetupStep(Action work, string description)
+        {
+            try
+            {
+                work();
+            }
+            catch (Exception ex)
+            {
+                DxMessagingEditorLog.LogError($"SetupCscRsp failed to {description}.", ex);
+            }
         }
 
         private static void EnsureDLLsExistInAssets()
@@ -183,10 +205,11 @@ namespace DxMessaging.Editor
                         DllNames.Add(requiredDllName);
                         break;
                     }
-                    catch (Exception e)
+                    catch (Exception ex)
                     {
-                        Debug.LogError(
-                            $"Failed to copy {requiredDllName} to Assets, failed with {e}."
+                        DxMessagingEditorLog.LogError(
+                            $"Failed to copy {requiredDllName} to Assets.",
+                            ex
                         );
                     }
                 }
@@ -261,7 +284,7 @@ namespace DxMessaging.Editor
             }
             catch (IOException ex)
             {
-                Debug.LogError($"Failed to modify csc.rsp: {ex}");
+                DxMessagingEditorLog.LogError("Failed to modify csc.rsp.", ex);
             }
         }
 
@@ -412,7 +435,7 @@ namespace DxMessaging.Editor
             }
             catch (IOException ex)
             {
-                Debug.LogError($"Failed to update csc.rsp additionalfile entry: {ex}");
+                DxMessagingEditorLog.LogError("Failed to update csc.rsp additionalfile entry.", ex);
             }
         }
     }
