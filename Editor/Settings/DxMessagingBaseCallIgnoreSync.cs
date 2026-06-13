@@ -32,6 +32,24 @@ namespace DxMessaging.Editor.Settings
             "# One fully-qualified type name per line. Lines starting with # are comments.";
 
         /// <summary>
+        /// Test seam controlling WHEN deferred regeneration runs. Production schedules the work on
+        /// the next editor tick via <see cref="EditorApplication.delayCall"/>; tests substitute a
+        /// capturing scheduler so they can assert no synchronous AssetDatabase import happens and
+        /// then drive the deferred work deterministically without touching the filesystem.
+        /// </summary>
+        internal static Action<Action> DeferralScheduler { get; set; } =
+            work => EditorApplication.delayCall += () => work();
+
+        /// <summary>
+        /// Test seam controlling WHAT regeneration does. Production performs the real
+        /// write + <see cref="AssetDatabase.ImportAsset"/> via <see cref="RegenerateSidecarCore"/>;
+        /// tests substitute a recorder so they can observe whether the apply happens synchronously
+        /// or only after the deferred tick, without writing the on-disk sidecar.
+        /// </summary>
+        internal static Action<DxMessagingSettings> SidecarApplier { get; set; } =
+            RegenerateSidecarCore;
+
+        /// <summary>
         /// Regenerates the sidecar text file from the supplied settings asset. Writes only when
         /// the on-disk content differs from what would be written, matching the
         /// <c>FilesDiffer</c>-style policy used elsewhere in this Editor assembly to avoid
@@ -39,11 +57,15 @@ namespace DxMessaging.Editor.Settings
         /// </summary>
         /// <param name="settings">The settings asset. May be <c>null</c> -- no-op in that case.</param>
         /// <remarks>
-        /// When called while Unity is mid-compile or mid-asset-import (e.g., from a
-        /// <c>ScriptableObject.OnValidate</c> that fires during a domain reload), the actual
-        /// regen is deferred via <see cref="EditorApplication.delayCall"/> so we don't trip
-        /// AssetDatabase reentrancy guards. Direct calls from EditMode tests run synchronously
-        /// because tests don't execute during update/compile.
+        /// This is the entry point for explicit, user-driven edits (the "Ignore this type" button,
+        /// the Project Settings UI) and for EditMode tests: when Unity is idle the regen runs
+        /// synchronously for immediate feedback, and when Unity is mid-compile or mid-asset-import
+        /// it falls back to <see cref="RegenerateSidecarDeferred"/>. It MUST NOT be called from a
+        /// deserialization callback such as <c>ScriptableObject.OnValidate</c> -- those callbacks
+        /// can fire during the domain-load asset-import-worker window where
+        /// <see cref="EditorApplication.isUpdating"/> and <see cref="EditorApplication.isCompiling"/>
+        /// are both <c>false</c>, so this method would import synchronously and crash the editor
+        /// (issue #210). Use <see cref="RegenerateSidecarDeferred"/> from those callbacks instead.
         /// </remarks>
         public static void RegenerateSidecar(DxMessagingSettings settings)
         {
@@ -54,11 +76,49 @@ namespace DxMessaging.Editor.Settings
 
             if (EditorApplication.isUpdating || EditorApplication.isCompiling)
             {
-                EditorApplication.delayCall += () => RegenerateSidecarCore(settings);
+                RegenerateSidecarDeferred(settings);
                 return;
             }
 
-            RegenerateSidecarCore(settings);
+            SidecarApplier(settings);
+        }
+
+        /// <summary>
+        /// Schedules sidecar regeneration for the next editor tick, NEVER writing or importing
+        /// synchronously. This is the only safe entry point from
+        /// <see cref="ScriptableObject.OnValidate"/> and other asset-deserialization callbacks.
+        /// </summary>
+        /// <param name="settings">The settings asset. May be <c>null</c> -- no-op in that case.</param>
+        /// <remarks>
+        /// A synchronous <see cref="AssetDatabase.ImportAsset"/> issued from within asset
+        /// deserialization re-enters the asset importer and hard-crashes the native editor
+        /// (<c>GuidReservations::Reserve</c> abort, issue #210, observed on Unity 6000.4+). The
+        /// dangerous window includes the domain-load asset-import worker, during which
+        /// <see cref="EditorApplication.isUpdating"/> and <see cref="EditorApplication.isCompiling"/>
+        /// are both <c>false</c> -- so the flag-based guard in <see cref="RegenerateSidecar"/> is
+        /// not sufficient on its own and this method defers unconditionally. The captured
+        /// <paramref name="settings"/> reference is safe to hold: <see cref="EditorApplication.delayCall"/>
+        /// is cleared on domain reload, so the callback never outlives its domain, and the
+        /// lifetime-aware null check covers the asset being destroyed (deleted) within the domain.
+        /// Scheduling here cannot throw, and the deferred regeneration self-guards via
+        /// <see cref="RegenerateSidecarCore"/>'s internal try/catch, so callers such as
+        /// <c>OnValidate</c> need no surrounding exception guard.
+        /// </remarks>
+        internal static void RegenerateSidecarDeferred(DxMessagingSettings settings)
+        {
+            if (settings == null)
+            {
+                return;
+            }
+
+            DeferralScheduler(() =>
+            {
+                if (settings == null)
+                {
+                    return;
+                }
+                SidecarApplier(settings);
+            });
         }
 
         private static void RegenerateSidecarCore(DxMessagingSettings settings)
