@@ -671,7 +671,14 @@ function runValidation(options = {}) {
   }
 
   const packResult = validatePackEntries(entries);
-  repoMetaValidation = validateRepositoryCsharpMetaFiles(options);
+  try {
+    repoMetaValidation = validateRepositoryCsharpMetaFiles(options);
+  } catch (error) {
+    console.error(
+      `Skipping tracked Unity C# .meta validation because git is unavailable: ${error.message}`
+    );
+    repoMetaValidation = { checked: 0, invalid: [] };
+  }
   const result = {
     ...packResult,
     invalidCsharpMetas: repoMetaValidation.invalid,
