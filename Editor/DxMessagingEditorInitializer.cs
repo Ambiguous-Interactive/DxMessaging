@@ -1,6 +1,7 @@
 namespace DxMessaging.Editor
 {
 #if UNITY_EDITOR
+    using System;
     using Core;
     using Core.MessageBus;
     using Settings;
@@ -15,6 +16,14 @@ namespace DxMessaging.Editor
     {
         private static bool s_playModeWarningIssued;
         private static bool s_ensureSettingsAssetScheduled;
+
+        internal static Action StaticStateResetter { get; set; } = DxMessagingStaticState.Reset;
+        internal static Func<DxMessagingSettings> PassiveSettingsLoader { get; set; } =
+            DxMessagingSettings.LoadSettingsPassive;
+        internal static Func<DxMessagingSettings> SettingsAssetEnsurer { get; set; } =
+            DxMessagingSettings.GetOrCreateSettings;
+        internal static Action<Action> AssetDatabaseMutationScheduler { get; set; } =
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
 
         static DxMessagingEditorInitializer()
         {
@@ -46,9 +55,9 @@ namespace DxMessaging.Editor
             ApplyEditorSettings();
         }
 
-        private static void ApplyEditorSettings()
+        internal static void ApplyEditorSettings()
         {
-            DxMessagingStaticState.Reset();
+            (StaticStateResetter ?? DxMessagingStaticState.Reset)();
 
             // Issue #210: ApplyEditorSettings is reachable from the [InitializeOnLoad] static
             // constructor during the domain-load asset-import window, where a synchronous
@@ -57,7 +66,9 @@ namespace DxMessaging.Editor
             // (GuidReservations::Reserve abort on Unity 6000.4+). Read current values via a
             // mutation-free passive load now; ensure the asset exists/migrates on the next editor
             // tick, off the import window.
-            ApplyGlobals(DxMessagingSettings.LoadSettingsPassive());
+            Func<DxMessagingSettings> passiveSettingsLoader =
+                PassiveSettingsLoader ?? DxMessagingSettings.LoadSettingsPassive;
+            ApplyGlobals(passiveSettingsLoader());
             ScheduleEnsureSettingsAsset();
         }
 
@@ -71,30 +82,26 @@ namespace DxMessaging.Editor
                 return;
             }
             s_ensureSettingsAssetScheduled = true;
-            EditorApplication.delayCall += EnsureSettingsAssetThenApplyGlobals;
+            Action<Action> scheduler =
+                AssetDatabaseMutationScheduler
+                ?? DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
+            scheduler(EnsureSettingsAssetThenApplyGlobals);
         }
 
         private static void EnsureSettingsAssetThenApplyGlobals()
         {
-            // EditorApplication.delayCall is NOT guaranteed to land outside the dangerous window --
-            // it can fire while the editor is still mid-compile/import. GetOrCreateSettings mutates
-            // the AssetDatabase (CreateAsset/SaveAssets on first run, legacy migration), which
-            // re-enters the importer and crashes there (#210). Re-defer until the editor is idle,
-            // mirroring DxMessagingConsoleHarvester.DrainScheduledRescan.
-            if (!DxMessagingEditorIdle.CanMutateAssetDatabase())
-            {
-                EditorApplication.delayCall += EnsureSettingsAssetThenApplyGlobals;
-                return;
-            }
             // Clear the latch BEFORE the work so a throw still leaves the next ApplyEditorSettings
             // free to reschedule (self-healing). GetOrCreateSettings touches the AssetDatabase, so
-            // guard defensively rather than letting an exception escape this editor callback.
+            // this callback must only be scheduled through DxMessagingEditorIdle's idle gate. Guard
+            // defensively rather than letting an exception escape this editor callback.
             s_ensureSettingsAssetScheduled = false;
             try
             {
-                ApplyGlobals(DxMessagingSettings.GetOrCreateSettings());
+                Func<DxMessagingSettings> settingsAssetEnsurer =
+                    SettingsAssetEnsurer ?? DxMessagingSettings.GetOrCreateSettings;
+                ApplyGlobals(settingsAssetEnsurer());
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 DxMessagingEditorLog.LogWarning(
                     "Deferred settings initialization failed; will retry on the next editor settings refresh.",
@@ -111,6 +118,15 @@ namespace DxMessaging.Editor
             }
             IMessageBus.GlobalDiagnosticsTargets = settings.DiagnosticsTargets;
             IMessageBus.GlobalMessageBufferSize = settings.MessageBufferSize;
+        }
+
+        internal static void ResetTestSeams()
+        {
+            s_ensureSettingsAssetScheduled = false;
+            StaticStateResetter = DxMessagingStaticState.Reset;
+            PassiveSettingsLoader = DxMessagingSettings.LoadSettingsPassive;
+            SettingsAssetEnsurer = DxMessagingSettings.GetOrCreateSettings;
+            AssetDatabaseMutationScheduler = DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
         }
 
         private static void WarnIfDomainReloadDisabled()

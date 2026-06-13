@@ -4,12 +4,243 @@ namespace DxMessaging.Tests.Editor
     using System;
     using System.Collections.Generic;
     using System.Reflection;
+    using DxMessaging.Core.MessageBus;
     using DxMessaging.Editor;
     using DxMessaging.Editor.Settings;
     using NUnit.Framework;
     using UnityEditor;
     using UnityEngine;
     using Object = UnityEngine.Object;
+
+    [TestFixture]
+    public sealed class DxMessagingSettingsLegacyDiagnosticsTests
+    {
+        private readonly List<DxMessagingSettings> _createdSettings = new();
+
+        [TearDown]
+        public void TearDown()
+        {
+            foreach (DxMessagingSettings settings in _createdSettings)
+            {
+                if (settings != null)
+                {
+                    Object.DestroyImmediate(settings);
+                }
+            }
+            _createdSettings.Clear();
+        }
+
+        [Test]
+        public void DiagnosticsTargetsReflectsLegacyEditorDiagnosticsBeforeDurableMigration()
+        {
+            DxMessagingSettings settings = NewSettings();
+            settings._diagnosticsTargets = DiagnosticsTarget.Off;
+            settings._legacyEnableDiagnosticsInEditor = true;
+
+            Assert.That(
+                settings.DiagnosticsTargets,
+                Is.EqualTo(DiagnosticsTarget.Editor),
+                "Passive settings loads must expose the legacy enable-diagnostics intent "
+                    + "immediately so globals never briefly fall back to Off before the deferred "
+                    + "asset migration runs."
+            );
+            Assert.That(
+                settings._legacyEnableDiagnosticsInEditor,
+                Is.True,
+                "Reading the effective diagnostics target must remain mutation-free; durable "
+                    + "migration is performed only by GetOrCreateSettings on an idle editor tick."
+            );
+        }
+
+        [Test]
+        public void ApplyLegacyDiagnosticsMigrationClearsLegacyFlagAndPromotesOffToEditor()
+        {
+            DxMessagingSettings settings = NewSettings();
+            settings._diagnosticsTargets = DiagnosticsTarget.Off;
+            settings._legacyEnableDiagnosticsInEditor = true;
+
+            bool migrated = settings.ApplyLegacyDiagnosticsMigration();
+
+            Assert.That(migrated, Is.True);
+            Assert.That(settings._diagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Editor));
+            Assert.That(settings.DiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Editor));
+            Assert.That(settings._legacyEnableDiagnosticsInEditor, Is.False);
+        }
+
+        [Test]
+        public void ApplyLegacyDiagnosticsMigrationPreservesNonOffDiagnosticsTargets()
+        {
+            DxMessagingSettings settings = NewSettings();
+            settings._diagnosticsTargets = DiagnosticsTarget.All;
+            settings._legacyEnableDiagnosticsInEditor = true;
+
+            bool migrated = settings.ApplyLegacyDiagnosticsMigration();
+
+            Assert.That(migrated, Is.True);
+            Assert.That(settings._diagnosticsTargets, Is.EqualTo(DiagnosticsTarget.All));
+            Assert.That(settings.DiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.All));
+            Assert.That(settings._legacyEnableDiagnosticsInEditor, Is.False);
+        }
+
+        [Test]
+        public void DiagnosticsTargetsSetterClearsPendingLegacyDiagnosticsFlag()
+        {
+            DxMessagingSettings settings = NewSettings();
+            settings._diagnosticsTargets = DiagnosticsTarget.Off;
+            settings._legacyEnableDiagnosticsInEditor = true;
+
+            settings.DiagnosticsTargets = DiagnosticsTarget.Off;
+
+            Assert.That(settings.DiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Off));
+            Assert.That(settings._legacyEnableDiagnosticsInEditor, Is.False);
+        }
+
+        private DxMessagingSettings NewSettings()
+        {
+            DxMessagingSettings settings = ScriptableObject.CreateInstance<DxMessagingSettings>();
+            _createdSettings.Add(settings);
+            return settings;
+        }
+    }
+
+    [TestFixture]
+    public sealed class DxMessagingEditorInitializerTests
+    {
+        private readonly List<Action> _scheduled = new();
+        private readonly List<DxMessagingSettings> _createdSettings = new();
+        private DiagnosticsTarget _previousDiagnosticsTargets;
+        private int _previousMessageBufferSize;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _previousDiagnosticsTargets = IMessageBus.GlobalDiagnosticsTargets;
+            _previousMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
+            _scheduled.Clear();
+
+            DxMessagingEditorInitializer.ResetTestSeams();
+            DxMessagingEditorInitializer.StaticStateResetter = () =>
+            {
+                IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
+                IMessageBus.GlobalMessageBufferSize = IMessageBus.DefaultMessageBufferSize;
+            };
+            DxMessagingEditorInitializer.AssetDatabaseMutationScheduler = work =>
+                _scheduled.Add(work);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            try
+            {
+                foreach (DxMessagingSettings settings in _createdSettings)
+                {
+                    if (settings != null)
+                    {
+                        Object.DestroyImmediate(settings);
+                    }
+                }
+                _createdSettings.Clear();
+            }
+            finally
+            {
+                DxMessagingEditorInitializer.ResetTestSeams();
+                IMessageBus.GlobalDiagnosticsTargets = _previousDiagnosticsTargets;
+                IMessageBus.GlobalMessageBufferSize = _previousMessageBufferSize;
+            }
+        }
+
+        [Test]
+        public void ApplyEditorSettingsUsesPassiveLegacyDiagnosticsValueImmediately()
+        {
+            DxMessagingSettings settings = NewSettings();
+            settings._diagnosticsTargets = DiagnosticsTarget.Off;
+            settings._legacyEnableDiagnosticsInEditor = true;
+            settings._messageBufferSize = 37;
+            DxMessagingEditorInitializer.PassiveSettingsLoader = () => settings;
+
+            DxMessagingEditorInitializer.ApplyEditorSettings();
+
+            Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Editor));
+            Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(37));
+            Assert.That(
+                settings._legacyEnableDiagnosticsInEditor,
+                Is.True,
+                "The passive initializer path must not perform durable asset migration; it only "
+                    + "applies effective values and schedules the idle mutation."
+            );
+            Assert.That(
+                _scheduled.Count,
+                Is.EqualTo(1),
+                "ApplyEditorSettings must schedule exactly one deferred settings ensure."
+            );
+        }
+
+        [Test]
+        public void DeferredSettingsEnsureUsesSharedIdleSchedulerAndRequeuesUntilIdle()
+        {
+            bool editorIdle = false;
+            int ensureCount = 0;
+            DxMessagingSettings ensuredSettings = NewSettings();
+            ensuredSettings._diagnosticsTargets = DiagnosticsTarget.Runtime;
+            ensuredSettings._messageBufferSize = 19;
+
+            DxMessagingEditorInitializer.PassiveSettingsLoader = () => null;
+            DxMessagingEditorInitializer.SettingsAssetEnsurer = () =>
+            {
+                ensureCount++;
+                return ensuredSettings;
+            };
+            DxMessagingEditorInitializer.AssetDatabaseMutationScheduler = work =>
+                DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
+                    work,
+                    scheduledWork => _scheduled.Add(scheduledWork),
+                    () => editorIdle
+                );
+
+            DxMessagingEditorInitializer.ApplyEditorSettings();
+
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
+            _scheduled[0].Invoke();
+
+            Assert.That(
+                ensureCount,
+                Is.EqualTo(0),
+                "The deferred settings ensure must not run while the editor is compiling/updating."
+            );
+            Assert.That(
+                _scheduled.Count,
+                Is.EqualTo(2),
+                "A busy deferred tick must requeue through DxMessagingEditorIdle."
+            );
+
+            editorIdle = true;
+            _scheduled[1].Invoke();
+
+            Assert.That(ensureCount, Is.EqualTo(1));
+            Assert.That(
+                IMessageBus.GlobalDiagnosticsTargets,
+                Is.EqualTo(DiagnosticsTarget.Runtime)
+            );
+            Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(19));
+            Assert.That(_scheduled.Count, Is.EqualTo(2));
+
+            DxMessagingEditorInitializer.ApplyEditorSettings();
+            Assert.That(
+                _scheduled.Count,
+                Is.EqualTo(3),
+                "A completed deferred ensure must clear its debounce latch so a later settings "
+                    + "refresh can schedule another migration/create pass."
+            );
+        }
+
+        private DxMessagingSettings NewSettings()
+        {
+            DxMessagingSettings settings = ScriptableObject.CreateInstance<DxMessagingSettings>();
+            _createdSettings.Add(settings);
+            return settings;
+        }
+    }
 
     /// <summary>
     /// Regression coverage for issue #210: a synchronous <c>AssetDatabase.ImportAsset</c> issued

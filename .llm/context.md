@@ -101,6 +101,7 @@ The agent runs from inside the slim devcontainer (.NET 9/10 base + docker-outsid
 - Keep braces explicit.
 - Avoid regions.
 - Editor `delayCall` callbacks that mutate assets must re-check editor idle state inside the callback and requeue until safe; prefer `DxMessagingEditorIdle.ScheduleAssetDatabaseMutation`.
+- Passive Editor settings reads used during domain load must surface effective legacy-migrated values in memory while deferring durable asset migration/saves through `DxMessagingEditorIdle.ScheduleAssetDatabaseMutation`.
 - Editor callback catches that swallow an exception should log the full exception through `DxMessagingEditorLog`, not only `Exception.Message`.
 - Generated Editor sidecars or config files consumed through `csc.rsp` must trigger the response-file sync from the producer path after deferred writes complete; do not rely only on `[InitializeOnLoad]` startup setup.
 - Use PascalCase for all method names with no underscores (including test methods); auto-enforced by the `fix-csharp-underscore-methods` pre-commit hook.

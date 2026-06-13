@@ -25,7 +25,7 @@ namespace DxMessaging.Editor.Settings
         [SerializeField]
         [HideInInspector]
         [FormerlySerializedAs("_enableDiagnosticsInEditor")]
-        private bool _legacyEnableDiagnosticsInEditor;
+        internal bool _legacyEnableDiagnosticsInEditor;
 
         [SerializeField]
         internal int _messageBufferSize = IMessageBus.DefaultMessageBufferSize;
@@ -47,8 +47,12 @@ namespace DxMessaging.Editor.Settings
         /// </summary>
         public DiagnosticsTarget DiagnosticsTargets
         {
-            get => _diagnosticsTargets;
-            set => _diagnosticsTargets = value;
+            get => EffectiveDiagnosticsTargets;
+            set
+            {
+                _diagnosticsTargets = value;
+                _legacyEnableDiagnosticsInEditor = false;
+            }
         }
 
         /// <summary>
@@ -154,17 +158,38 @@ namespace DxMessaging.Editor.Settings
         public IReadOnlyList<string> BaseCallIgnoredTypes => _baseCallIgnoredTypes;
 
         /// <summary>
+        /// Diagnostics target value after applying legacy serialized fields in memory. This does
+        /// not mark the settings asset dirty or persist the migration.
+        /// </summary>
+        internal DiagnosticsTarget EffectiveDiagnosticsTargets
+        {
+            get
+            {
+                if (
+                    _diagnosticsTargets == DiagnosticsTarget.Off
+                    && _legacyEnableDiagnosticsInEditor
+                )
+                {
+                    return DiagnosticsTarget.Editor;
+                }
+                return _diagnosticsTargets;
+            }
+        }
+
+        /// <summary>
         /// Loads the settings asset without creating, saving, or migrating it. Returns
         /// <c>null</c> when no asset exists.
         /// </summary>
         /// <remarks>
         /// Unlike <see cref="GetOrCreateSettings"/>, this performs NO <c>AssetDatabase</c> mutation
-        /// (<c>CreateAsset</c>/<c>SaveAssets</c>/legacy migration), so it is safe to call during the
-        /// domain-load asset-import window -- e.g. from an <c>[InitializeOnLoad]</c> static
-        /// constructor -- where a synchronous mutation re-enters the importer and crashes the native
-        /// editor (issue #210). Callers that need the asset created/migrated must schedule
-        /// <see cref="GetOrCreateSettings"/> off that window (e.g. via
-        /// <see cref="EditorApplication.delayCall"/>).
+        /// (<c>CreateAsset</c>/<c>SaveAssets</c>/durable legacy migration), so it is safe to call
+        /// during the domain-load asset-import window -- e.g. from an <c>[InitializeOnLoad]</c>
+        /// static constructor -- where a synchronous mutation re-enters the importer and crashes
+        /// the native editor (issue #210). Legacy serialized fields are still reflected through
+        /// effective property getters so passive callers see the intended value while the durable
+        /// migration waits for a safe editor-idle tick. Callers that need the asset
+        /// created/migrated must schedule <see cref="GetOrCreateSettings"/> off that window (e.g.
+        /// via <see cref="DxMessaging.Editor.DxMessagingEditorIdle.ScheduleAssetDatabaseMutation"/>).
         /// </remarks>
         internal static DxMessagingSettings LoadSettingsPassive()
         {
@@ -212,18 +237,28 @@ namespace DxMessaging.Editor.Settings
                 AssetDatabase.SaveAssets();
             }
 
-            if (
-                settings._diagnosticsTargets == DiagnosticsTarget.Off
-                && settings._legacyEnableDiagnosticsInEditor
-            )
+            if (settings.ApplyLegacyDiagnosticsMigration())
             {
-                settings._diagnosticsTargets = DiagnosticsTarget.Editor;
-                settings._legacyEnableDiagnosticsInEditor = false;
                 EditorUtility.SetDirty(settings);
                 AssetDatabase.SaveAssets();
             }
 
             return settings;
+        }
+
+        internal bool ApplyLegacyDiagnosticsMigration()
+        {
+            if (!_legacyEnableDiagnosticsInEditor)
+            {
+                return false;
+            }
+
+            if (_diagnosticsTargets == DiagnosticsTarget.Off)
+            {
+                _diagnosticsTargets = DiagnosticsTarget.Editor;
+            }
+            _legacyEnableDiagnosticsInEditor = false;
+            return true;
         }
 
         /// <summary>
