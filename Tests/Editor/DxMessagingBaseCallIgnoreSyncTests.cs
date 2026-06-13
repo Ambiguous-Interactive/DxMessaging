@@ -108,6 +108,7 @@ namespace DxMessaging.Tests.Editor
     {
         private readonly List<Action> _scheduled = new();
         private readonly List<DxMessagingSettings> _createdSettings = new();
+        private readonly List<string> _warnings = new();
         private DiagnosticsTarget _previousDiagnosticsTargets;
         private int _previousMessageBufferSize;
 
@@ -117,6 +118,7 @@ namespace DxMessaging.Tests.Editor
             _previousDiagnosticsTargets = IMessageBus.GlobalDiagnosticsTargets;
             _previousMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
             _scheduled.Clear();
+            _warnings.Clear();
 
             DxMessagingEditorInitializer.ResetTestSeams();
             DxMessagingEditorInitializer.StaticStateResetter = () =>
@@ -126,6 +128,9 @@ namespace DxMessaging.Tests.Editor
             };
             DxMessagingEditorInitializer.AssetDatabaseMutationScheduler = work =>
                 _scheduled.Add(work);
+            DxMessagingEditorInitializer.DomainReloadDisabledDetector = () => false;
+            DxMessagingEditorInitializer.DomainReloadWarningLogger = message =>
+                _warnings.Add(message);
         }
 
         [TearDown]
@@ -173,6 +178,73 @@ namespace DxMessaging.Tests.Editor
                 _scheduled.Count,
                 Is.EqualTo(1),
                 "ApplyEditorSettings must schedule exactly one deferred settings ensure."
+            );
+        }
+
+        [Test]
+        public void ApplyEditorSettingsWhenPassiveSettingsMissingDefersEnsureWithoutCreatingSynchronously()
+        {
+            int ensureCount = 0;
+            DxMessagingEditorInitializer.PassiveSettingsLoader = () => null;
+            DxMessagingEditorInitializer.SettingsAssetEnsurer = () =>
+            {
+                ensureCount++;
+                return NewSettings();
+            };
+            IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
+            IMessageBus.GlobalMessageBufferSize = 3;
+
+            DxMessagingEditorInitializer.ApplyEditorSettings();
+
+            Assert.That(
+                ensureCount,
+                Is.EqualTo(0),
+                "The domain-load path must stay passive and defer settings asset creation."
+            );
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
+            Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Off));
+            Assert.That(
+                IMessageBus.GlobalMessageBufferSize,
+                Is.EqualTo(IMessageBus.DefaultMessageBufferSize)
+            );
+            Assert.That(
+                _warnings,
+                Is.Empty,
+                "A missing passive settings asset cannot decide the warning preference; the "
+                    + "deferred ensure callback re-checks with the realized settings."
+            );
+        }
+
+        [Test]
+        public void ApplyEditorSettingsWarnsImmediatelyWhenPassiveSettingsUnsuppressedAndDomainReloadDisabled()
+        {
+            int ensureCount = 0;
+            DxMessagingSettings settings = NewSettings();
+            settings._suppressDomainReloadWarning = false;
+            DxMessagingEditorInitializer.PassiveSettingsLoader = () => settings;
+            DxMessagingEditorInitializer.SettingsAssetEnsurer = () =>
+            {
+                ensureCount++;
+                return settings;
+            };
+            DxMessagingEditorInitializer.DomainReloadDisabledDetector = () => true;
+
+            DxMessagingEditorInitializer.ApplyEditorSettings();
+
+            Assert.That(
+                _warnings,
+                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage })
+            );
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
+
+            _scheduled[0].Invoke();
+
+            Assert.That(ensureCount, Is.EqualTo(1));
+            Assert.That(
+                _warnings,
+                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }),
+                "The deferred ensure must not duplicate a warning already emitted from the "
+                    + "domain-load passive settings read."
             );
         }
 
@@ -231,6 +303,72 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(3),
                 "A completed deferred ensure must clear its debounce latch so a later settings "
                     + "refresh can schedule another migration/create pass."
+            );
+        }
+
+        [Test]
+        public void DeferredSettingsEnsureWarnsOnceWhenDomainReloadIsDisabledAndWarningUnsuppressed()
+        {
+            int ensureCount = 0;
+            DxMessagingSettings ensuredSettings = NewSettings();
+            ensuredSettings._diagnosticsTargets = DiagnosticsTarget.Runtime;
+            ensuredSettings._messageBufferSize = 23;
+            ensuredSettings._suppressDomainReloadWarning = false;
+
+            DxMessagingEditorInitializer.PassiveSettingsLoader = () => null;
+            DxMessagingEditorInitializer.SettingsAssetEnsurer = () =>
+            {
+                ensureCount++;
+                return ensuredSettings;
+            };
+            DxMessagingEditorInitializer.DomainReloadDisabledDetector = () => true;
+
+            DxMessagingEditorInitializer.ApplyEditorSettings();
+
+            Assert.That(_warnings, Is.Empty);
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
+
+            _scheduled[0].Invoke();
+
+            Assert.That(ensureCount, Is.EqualTo(1));
+            Assert.That(
+                IMessageBus.GlobalDiagnosticsTargets,
+                Is.EqualTo(DiagnosticsTarget.Runtime)
+            );
+            Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(23));
+            Assert.That(
+                _warnings,
+                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage })
+            );
+
+            DxMessagingEditorInitializer.ApplyEditorSettings();
+            Assert.That(_scheduled.Count, Is.EqualTo(2));
+            _scheduled[1].Invoke();
+
+            Assert.That(ensureCount, Is.EqualTo(2));
+            Assert.That(
+                _warnings,
+                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }),
+                "The warning must be re-evaluated after deferred settings ensure, but only emitted "
+                    + "once per editor domain."
+            );
+        }
+
+        [Test]
+        public void DeferredSettingsEnsureKeepsDefaultSuppressedDomainReloadWarningQuiet()
+        {
+            DxMessagingEditorInitializer.PassiveSettingsLoader = () => null;
+            DxMessagingEditorInitializer.SettingsAssetEnsurer = NewSettings;
+            DxMessagingEditorInitializer.DomainReloadDisabledDetector = () => true;
+
+            DxMessagingEditorInitializer.ApplyEditorSettings();
+            _scheduled[0].Invoke();
+
+            Assert.That(
+                _warnings,
+                Is.Empty,
+                "Fresh settings assets default to suppressing this advisory warning unless the "
+                    + "user clears the suppression setting."
             );
         }
 

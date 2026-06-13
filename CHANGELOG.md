@@ -96,6 +96,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Domain-reload advisory warnings are now re-evaluated after deferred Editor
+  settings creation/migration, so an initial passive load with no settings asset
+  cannot permanently skip an unsuppressed warning for that editor domain.
 - Token cleanup now clears token-local diagnostics and stale teardown state:
   `UnregisterAll()`, `Dispose()`, final-handle removal, released
   `MessagingComponent` tokens, and disposed registration leases no longer

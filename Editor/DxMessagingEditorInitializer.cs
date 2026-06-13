@@ -14,6 +14,11 @@ namespace DxMessaging.Editor
     [InitializeOnLoad]
     public static class DxMessagingEditorInitializer
     {
+        internal const string DomainReloadWarningMessage =
+            "[DxMessaging] Enter Play Mode Options are disabling domain reload. "
+            + "DxMessaging resets its internal statics, but third-party static state will persist. "
+            + "Audit integration code or re-enable domain reload if inconsistent behaviour occurs.";
+
         private static bool s_playModeWarningIssued;
         private static bool s_ensureSettingsAssetScheduled;
 
@@ -24,12 +29,15 @@ namespace DxMessaging.Editor
             DxMessagingSettings.GetOrCreateSettings;
         internal static Action<Action> AssetDatabaseMutationScheduler { get; set; } =
             DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
+        internal static Func<bool> DomainReloadDisabledDetector { get; set; } =
+            IsDomainReloadDisabled;
+        internal static Action<string> DomainReloadWarningLogger { get; set; } =
+            message => Debug.LogWarning(message);
 
         static DxMessagingEditorInitializer()
         {
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             ApplyEditorSettings();
-            WarnIfDomainReloadDisabled();
         }
 
         private static void OnPlayModeStateChanged(PlayModeStateChange stateChange)
@@ -40,7 +48,6 @@ namespace DxMessaging.Editor
             )
             {
                 ApplyEditorSettings();
-                WarnIfDomainReloadDisabled();
             }
         }
 
@@ -68,7 +75,7 @@ namespace DxMessaging.Editor
             // tick, off the import window.
             Func<DxMessagingSettings> passiveSettingsLoader =
                 PassiveSettingsLoader ?? DxMessagingSettings.LoadSettingsPassive;
-            ApplyGlobals(passiveSettingsLoader());
+            ApplySettingsAndDiagnostics(passiveSettingsLoader());
             ScheduleEnsureSettingsAsset();
         }
 
@@ -99,7 +106,7 @@ namespace DxMessaging.Editor
             {
                 Func<DxMessagingSettings> settingsAssetEnsurer =
                     SettingsAssetEnsurer ?? DxMessagingSettings.GetOrCreateSettings;
-                ApplyGlobals(settingsAssetEnsurer());
+                ApplySettingsAndDiagnostics(settingsAssetEnsurer());
             }
             catch (Exception ex)
             {
@@ -108,6 +115,12 @@ namespace DxMessaging.Editor
                     ex
                 );
             }
+        }
+
+        private static void ApplySettingsAndDiagnostics(DxMessagingSettings settings)
+        {
+            ApplyGlobals(settings);
+            WarnIfDomainReloadDisabled(settings);
         }
 
         private static void ApplyGlobals(DxMessagingSettings settings)
@@ -122,36 +135,41 @@ namespace DxMessaging.Editor
 
         internal static void ResetTestSeams()
         {
+            s_playModeWarningIssued = false;
             s_ensureSettingsAssetScheduled = false;
             StaticStateResetter = DxMessagingStaticState.Reset;
             PassiveSettingsLoader = DxMessagingSettings.LoadSettingsPassive;
             SettingsAssetEnsurer = DxMessagingSettings.GetOrCreateSettings;
             AssetDatabaseMutationScheduler = DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
+            DomainReloadDisabledDetector = IsDomainReloadDisabled;
+            DomainReloadWarningLogger = message => Debug.LogWarning(message);
         }
 
-        private static void WarnIfDomainReloadDisabled()
+        private static void WarnIfDomainReloadDisabled(DxMessagingSettings settings)
         {
-            // Passive, mutation-free load: this is also reachable from the cctor (see #210 above).
-            // A missing asset defaults to suppressing the warning, so treat null as "suppressed".
-            DxMessagingSettings settings = DxMessagingSettings.LoadSettingsPassive();
+            // Missing settings cannot be created from the domain-load passive path. The deferred
+            // ensure callback re-enters this method with the realized asset, so an initial null
+            // never permanently suppresses an explicitly unsuppressed settings asset.
             if (
                 s_playModeWarningIssued
                 || settings == null
                 || settings.SuppressDomainReloadWarning
-                || !EditorSettings.enterPlayModeOptionsEnabled
-                || (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload)
-                    == 0
+                || !(DomainReloadDisabledDetector ?? IsDomainReloadDisabled)()
             )
             {
                 return;
             }
 
             s_playModeWarningIssued = true;
-            Debug.LogWarning(
-                "[DxMessaging] Enter Play Mode Options are disabling domain reload. "
-                    + "DxMessaging resets its internal statics, but third-party static state will persist. "
-                    + "Audit integration code or re-enable domain reload if inconsistent behaviour occurs."
-            );
+            Action<string> warningLogger = DomainReloadWarningLogger ?? Debug.LogWarning;
+            warningLogger(DomainReloadWarningMessage);
+        }
+
+        private static bool IsDomainReloadDisabled()
+        {
+            return EditorSettings.enterPlayModeOptionsEnabled
+                && (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload)
+                    != 0;
         }
     }
 #endif
