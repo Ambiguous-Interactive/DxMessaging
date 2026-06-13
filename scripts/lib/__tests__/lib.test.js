@@ -33,6 +33,30 @@ function fakeRealpathSync(mapping) {
   return realpathSync;
 }
 
+function readCallArguments(text, openParenIndex) {
+  let depth = 1;
+  let quote = "";
+  for (let index = openParenIndex + 1; index < text.length; index++) {
+    const char = text[index];
+    if (quote) {
+      if (char === "\\") {
+        index++;
+      } else if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+    } else if (char === "(") {
+      depth++;
+    } else if (char === ")" && --depth === 0) {
+      return text.slice(openParenIndex + 1, index);
+    }
+  }
+  return "";
+}
+
 test("normalizeToLf converts CRLF and lone CR to LF", () => {
   assert.equal(normalizeToLf("a\r\nb\rc\nd"), "a\nb\nc\nd");
   assert.equal(normalizeToLf(""), "");
@@ -87,6 +111,27 @@ test("PowerShell scripts avoid bare Node shim commands", () => {
       violations.push(`${file}:${line}:${match[0].trim()}`);
     }
   }
+  assert.deepEqual(violations, []);
+});
+
+test("Node script tests create temporary directories under os.tmpdir", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  const files = execFileSync("git", ["ls-files", "scripts"], { cwd: repoRoot, encoding: "utf8" })
+    .split(/\r?\n/)
+    .filter((file) => file.includes("/__tests__/") && file.endsWith(".js"));
+  const mkdtempPattern = /\bmkdtemp(?:Sync)?\s*\(/g;
+  const requiredPrefixPattern = /\bpath\.join\s*\(\s*os\.tmpdir\s*\(\s*\)/;
+  const violations = files.flatMap((file) => {
+    const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    return [...text.matchAll(mkdtempPattern)].flatMap((match) => {
+      const line = text.slice(0, match.index).split(/\r\n|\r|\n/).length;
+      const args = readCallArguments(text, match.index + match[0].length - 1);
+      return requiredPrefixPattern.test(args)
+        ? []
+        : [`${file}:${line}: use fs.mkdtempSync(path.join(os.tmpdir(), "<prefix>-"))`];
+    });
+  });
+
   assert.deepEqual(violations, []);
 });
 

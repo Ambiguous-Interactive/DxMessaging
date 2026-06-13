@@ -367,7 +367,8 @@ if (require.main === module) {
   try {
     process.exitCode = main();
   } catch (error) {
-    // Delta rendering is diagnostic; fail closed to "no gate" on parser crashes.
+    // Delta rendering is diagnostic. Keep stdout stable on crashes, but emit
+    // false signals so CI does not gate without a computed regression.
     process.stderr.write(`${error.message}\n\n${usage()}`);
     process.stdout.write("changed=false\n");
     process.stdout.write("regressed=false\n");

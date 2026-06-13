@@ -2,7 +2,10 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const {
   CSV_HEADER,
@@ -34,6 +37,7 @@ const { buildComparisonScenarioId } = require("../unity/perf-scenarios.js");
 
 const PLATFORM = "Unity 6000.3.16f1 Linux PlayMode Mono";
 const STANDALONE_PLATFORM = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)";
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 function row(scenario, emitsPerSecond, allocatedBytesDelta = "0", wallClockMs = "10.000") {
   return {
@@ -181,10 +185,10 @@ test("computeRegressed and buildDeltaTable only use overlapping scenarios", () =
 test("comparison rows stay diagnostic and do not trip the hard gate", () => {
   const dispatchScenario = "UntargetedFlood_OneHandler";
   const scenario = buildComparisonScenarioId("DxMessaging", "GlobalToMany");
-  const dir = fs.mkdtempSync("dxm-perf-");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-perf-"));
   try {
-    const currentPath = `${dir}/current.log`;
-    const baselinePath = `${dir}/baseline.csv`;
+    const currentPath = path.join(dir, "current.log");
+    const baselinePath = path.join(dir, "baseline.csv");
     fs.writeFileSync(
       currentPath,
       buildCsv([row(dispatchScenario, "1000000.000"), row(scenario, "1000000.000")])
@@ -213,6 +217,21 @@ test("comparison rows stay diagnostic and do not trip the hard gate", () => {
 test("readBaselineRows degrades gracefully when the baseline is absent", () => {
   assert.equal(readBaselineRows(""), null);
   assert.equal(readBaselineRows("/nonexistent/baseline.csv"), null);
+});
+
+test("render-perf-deltas CLI failures preserve non-gating diagnostic output", () => {
+  const script = path.join(REPO_ROOT, "scripts", "unity", "render-perf-deltas.js");
+  const result = spawnSync(process.execPath, [script, "--bogus"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "changed=false\nregressed=false\n");
+  assert.match(result.stderr, /Unknown argument: --bogus/);
+  assert.match(result.stderr, /workflow decides whether the regressed= signal fails CI/);
 });
 
 test("buildComparisonSections bolds per-scenario throughput winners only", () => {

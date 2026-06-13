@@ -61,8 +61,9 @@ test("TEST_COUNT_PATTERN matches the banner test-count text element", () => {
   assert.ok(!'<text x="21" y="13" fill="#00d9ff">500+ Tests</text>'.match(TEST_COUNT_PATTERN));
 });
 
-test("readPackageVersion returns semver and rejects invalid versions", () => {
+test("readPackageVersion returns semver and rejects invalid versions", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "banner-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const good = path.join(dir, "package.json");
   fs.writeFileSync(good, JSON.stringify({ version: "1.4.2" }), "utf8");
   assert.equal(readPackageVersion(good), "1.4.2");
@@ -70,7 +71,6 @@ test("readPackageVersion returns semver and rejects invalid versions", () => {
   const bad = path.join(dir, "bad.json");
   fs.writeFileSync(bad, JSON.stringify({ version: "not-a-version" }), "utf8");
   assert.throws(() => readPackageVersion(bad), /Invalid version format/);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("syncBanner updates the SVG badge, never stages, and is idempotent", () => {

@@ -41,14 +41,15 @@ const FULL_CHANGELOG = [
   ""
 ].join("\n");
 
-function makeFixture({ packageJson, changelog }) {
+function makeFixture(t, { packageJson, changelog }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-prepare-release-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, "package.json"), packageJson, "utf8");
   fs.writeFileSync(path.join(root, "CHANGELOG.md"), changelog, "utf8");
   return root;
 }
 
-function makeDefaultFixture() {
+function makeDefaultFixture(t) {
   const packageJson = [
     "{",
     '  "name": "com.example.fixture",',
@@ -57,7 +58,7 @@ function makeDefaultFixture() {
     "}",
     ""
   ].join("\n");
-  return makeFixture({ packageJson, changelog: FULL_CHANGELOG });
+  return makeFixture(t, { packageJson, changelog: FULL_CHANGELOG });
 }
 
 test("computeNextVersion bumps patch, minor, and major with resets", () => {
@@ -257,8 +258,8 @@ test("rotateChangelog keeps fenced ## lines inside the Unreleased block", () => 
   }
 });
 
-test("prepareRelease writes package.json and CHANGELOG.md", () => {
-  const root = makeDefaultFixture();
+test("prepareRelease writes package.json and CHANGELOG.md", (t) => {
+  const root = makeDefaultFixture(t);
   const result = prepareRelease({ repoRoot: root, bump: "minor" });
   assert.equal(result.currentVersion, "3.0.1");
   assert.equal(result.nextVersion, "3.1.0");
@@ -270,8 +271,8 @@ test("prepareRelease writes package.json and CHANGELOG.md", () => {
   assert.ok(changelog.includes("## [Unreleased]"));
 });
 
-test("prepareRelease --dry-run leaves both files untouched", () => {
-  const root = makeDefaultFixture();
+test("prepareRelease --dry-run leaves both files untouched", (t) => {
+  const root = makeDefaultFixture(t);
   const beforePackage = fs.readFileSync(path.join(root, "package.json"), "utf8");
   const beforeChangelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
   const result = prepareRelease({ repoRoot: root, bump: "patch", dryRun: true });
@@ -280,17 +281,17 @@ test("prepareRelease --dry-run leaves both files untouched", () => {
   assert.equal(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), beforeChangelog);
 });
 
-test("prepareRelease fails before writing anything when the changelog refuses", () => {
+test("prepareRelease fails before writing anything when the changelog refuses", (t) => {
   const packageJson = '{\n  "version": "3.0.1"\n}\n';
   const changelog = "# Changelog\n\n## [Unreleased]\n\n## [3.0.1]\n\n- Old.\n";
-  const root = makeFixture({ packageJson, changelog });
+  const root = makeFixture(t, { packageJson, changelog });
   assert.throws(() => prepareRelease({ repoRoot: root, bump: "patch" }), /no content/);
   assert.equal(fs.readFileSync(path.join(root, "package.json"), "utf8"), packageJson);
   assert.equal(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), changelog);
 });
 
 test("prepareRelease writes CHANGELOG.md before package.json", (t) => {
-  const root = makeDefaultFixture();
+  const root = makeDefaultFixture(t);
   const realWriteFileSync = fs.writeFileSync;
   const writes = [];
   t.mock.method(fs, "writeFileSync", (file, data, encoding) => {
@@ -301,8 +302,8 @@ test("prepareRelease writes CHANGELOG.md before package.json", (t) => {
   assert.deepEqual(writes, ["CHANGELOG.md", "package.json"]);
 });
 
-test("prepareRelease re-run self-heals a crash between the two writes", () => {
-  const root = makeDefaultFixture();
+test("prepareRelease re-run self-heals a crash between the two writes", (t) => {
+  const root = makeDefaultFixture(t);
   // Crash state: CHANGELOG.md already rotated, package.json still 3.0.1.
   const rotated = rotateChangelog(FULL_CHANGELOG, "3.1.0");
   fs.writeFileSync(path.join(root, "CHANGELOG.md"), rotated, "utf8");
@@ -314,8 +315,8 @@ test("prepareRelease re-run self-heals a crash between the two writes", () => {
   assert.equal(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), rotated);
 });
 
-test("prepareRelease still refuses true duplicates after a completed release", () => {
-  const root = makeDefaultFixture();
+test("prepareRelease still refuses true duplicates after a completed release", (t) => {
+  const root = makeDefaultFixture(t);
   prepareRelease({ repoRoot: root, bump: "minor" });
   // Same explicit version again: caught by the strictly-greater check.
   assert.throws(() => prepareRelease({ repoRoot: root, version: "3.1.0" }), /strictly greater/);

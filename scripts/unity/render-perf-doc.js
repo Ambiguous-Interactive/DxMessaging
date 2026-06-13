@@ -846,8 +846,8 @@ if (require.main === module) {
   }
 }
 
-// Export only the symbols consumed externally
-// (scripts/unity/render-perf-deltas.js).
+// Export pure helpers consumed by render-perf-deltas.js and the node:test suite.
+// Keep I/O-heavy entry points behind main()/render() instead of exporting them.
 module.exports = {
   deriveScope,
   alignTable,
