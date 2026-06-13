@@ -62,11 +62,57 @@ the repo-settings prerequisite that lets CI push to the default branch.
 <!-- Do not edit by hand. Rewritten by scripts/unity/render-perf-doc.js from
      the latest Unity version's benchmark run. See perf-numbers.yml. -->
 
-The dispatch throughput table populates after the first default-branch CI benchmark run.
+Latest CI benchmark run: Unity 6000.3.16f1, commit `d7d0ef6dcb32fd6c61b4625a2ce5f188fe7f5f6b`.
 
-| Scenario                       | Throughput / Wall clock | Allocated bytes |
-| ------------------------------ | ----------------------- | --------------- |
-| Pending first CI benchmark run | -                       | -               |
+Runner: 13th Gen Intel(R) Core(TM) i9-13900KF, 24C/32T @ 3000MHz; 64GB DDR5@4200; NVIDIA GeForce RTX 3060; Microsoft Windows 11 Pro N (10.0.26200)
+
+#### Dispatch throughput - Standalone (IL2CPP)
+
+Platform: Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1).
+
+| Scenario                                          | Throughput / Wall clock | Allocated bytes |
+| ------------------------------------------------- | ----------------------- | --------------- |
+| Untargeted Flood (One Handler)                    | 37.69 M emits/sec       | 0 B             |
+| Untargeted Flood (Four Handlers, One Priority)    | 22.72 M emits/sec       | 0 B             |
+| Untargeted Flood (Four Handlers, Four Priorities) | 21.86 M emits/sec       | 0 B             |
+| Untargeted First Dispatch (Cold, Distinct Types)  | 0.229 ms                | 0 B             |
+| Targeted Flood (One Listener)                     | 8.86 M emits/sec        | 0 B             |
+| Targeted Flood (Sixteen Listeners)                | 5.70 M emits/sec        | 0 B             |
+| Targeted First Dispatch (Cold, Distinct Types)    | 0.295 ms                | 0 B             |
+| Broadcast Flood (One Handler)                     | 20.72 M emits/sec       | 0 B             |
+| Broadcast First Dispatch (Cold, Distinct Types)   | 0.234 ms                | 0 B             |
+| Interceptor Heavy (Four Interceptors)             | 3.33 M emits/sec        | 0 B             |
+| Post-Processing Heavy (Four Post-Processors)      | 11.79 M emits/sec       | 0 B             |
+| Registration Flood (1000 Types, Cold Bus)         | 668.192 ms              | 0 B             |
+| Registration Flood (1000 Types, Warm JIT)         | 16.524 ms               | 0 B             |
+
+#### Library comparison - throughput (Standalone (IL2CPP))
+
+| Technology               | Global -> 1 subscriber | Global -> 16 subscribers | Keyed/targeted -> 1 of many | Priority-ordered dispatch | Filtered/intercepted dispatch | Post-processing dispatch | Subscribe/unsubscribe churn | Struct message (zero-copy) |
+| ------------------------ | ---------------------- | ------------------------ | --------------------------- | ------------------------- | ----------------------------- | ------------------------ | --------------------------- | -------------------------- |
+| DxMessaging              | 28.71 M emits/sec      | 18.02 M emits/sec        | 10.55 M emits/sec           | **30.66 M emits/sec**     | 7.63 M emits/sec              | **11.86 M emits/sec**    | 0.49 M emits/sec            | 29.07 M emits/sec          |
+| MessagePipe              | 69.68 M emits/sec      | 14.01 M emits/sec        | 10.10 M emits/sec           | N/A                       | **70.37 M emits/sec**         | N/A                      | 2.08 M emits/sec            | 83.93 M emits/sec          |
+| UniRx MessageBroker      | 4.54 M emits/sec       | 2.48 M emits/sec         | N/A                         | N/A                       | N/A                           | N/A                      | 0.82 M emits/sec            | 4.37 M emits/sec           |
+| Zenject SignalBus        | 2.22 M emits/sec       | 1.09 M emits/sec         | N/A                         | N/A                       | N/A                           | N/A                      | 1.68 M emits/sec            | 2.29 M emits/sec           |
+| Unity Atoms              | 89.32 M emits/sec      | 35.35 M emits/sec        | 93.42 M emits/sec           | N/A                       | N/A                           | N/A                      | 12.34 M emits/sec           | N/A                        |
+| ScriptableObject channel | 118.69 M emits/sec     | 27.73 M emits/sec        | **138.79 M emits/sec**      | N/A                       | N/A                           | N/A                      | **28.86 M emits/sec**       | 148.50 M emits/sec         |
+| UnityEvent               | 79.35 M emits/sec      | 8.63 M emits/sec         | 89.51 M emits/sec           | N/A                       | N/A                           | N/A                      | 3.48 M emits/sec            | 87.78 M emits/sec          |
+| C# event                 | **265.06 M emits/sec** | **42.16 M emits/sec**    | 59.22 M emits/sec           | N/A                       | N/A                           | N/A                      | 10.86 M emits/sec           | **260.91 M emits/sec**     |
+| Unity SendMessage        | 8.93 M emits/sec       | 0.78 M emits/sec         | 10.99 M emits/sec           | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
+
+#### Library comparison - allocations, bytes per op (Standalone (IL2CPP))
+
+| Technology               | Global -> 1 subscriber | Global -> 16 subscribers | Keyed/targeted -> 1 of many | Priority-ordered dispatch | Filtered/intercepted dispatch | Post-processing dispatch | Subscribe/unsubscribe churn | Struct message (zero-copy) |
+| ------------------------ | ---------------------- | ------------------------ | --------------------------- | ------------------------- | ----------------------------- | ------------------------ | --------------------------- | -------------------------- |
+| DxMessaging              | 0                      | 0                        | 0                           | 0                         | 0                             | 0                        | 0                           | 0                          |
+| MessagePipe              | 0                      | 0                        | 0                           | N/A                       | 0                             | N/A                      | 0                           | 0                          |
+| UniRx MessageBroker      | 0                      | 0                        | N/A                         | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
+| Zenject SignalBus        | 0                      | 0                        | N/A                         | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
+| Unity Atoms              | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 0                           | N/A                        |
+| ScriptableObject channel | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
+| UnityEvent               | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
+| C# event                 | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
+| Unity SendMessage        | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
 
 <!-- AUTOGENERATED:DISPATCH-THROUGHPUT END -->
 
