@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 const { normalizeToLf } = require("../line-endings.js");
 const { buildSpawnInvocation, spawnPlatformCommandSync } = require("../shell-command.js");
@@ -66,6 +67,27 @@ test("spawnPlatformCommandSync forwards the buildSpawnInvocation triple", () => 
   assert.equal(result.status, 0);
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], buildSpawnInvocation("npx", ["prettier"], {}, "win32"));
+});
+
+test("PowerShell scripts avoid bare Node shim commands", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  const command = String.raw`['"]?(?:npm|npx)['"]?`;
+  const pattern = new RegExp(
+    String.raw`(?:^\s*|[=({;|]\s*)(?:&\s*)?${command}(?=$|\s+(?![})]))|\bGet-Command\s+(?:-Name\s+)?${command}(?=\s|$)|\bStart-Process\s+(?:-FilePath\s+)?${command}(?=\s|$)`,
+    "gmi"
+  );
+  const violations = [];
+  const files = execFileSync("git", ["ls-files", "*.ps1"], { cwd: repoRoot, encoding: "utf8" })
+    .split(/\r?\n/)
+    .filter(Boolean);
+  for (const file of files) {
+    const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    for (const match of text.matchAll(pattern)) {
+      const line = text.slice(0, match.index).split(/\r\n|\r|\n/).length;
+      violations.push(`${file}:${line}:${match[0].trim()}`);
+    }
+  }
+  assert.deepEqual(violations, []);
 });
 
 test("isOutsideRelative flags traversal, parent, and absolute results", () => {

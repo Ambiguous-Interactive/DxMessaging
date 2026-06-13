@@ -66,7 +66,26 @@ if (-not $McpPath.StartsWith('/')) {
     $McpPath = "/$McpPath"
 }
 
-$null = Get-Command npx -ErrorAction Stop
+function Test-IsWindowsHost {
+    return [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+}
+
+function Resolve-NpxCommand {
+    # On Windows, prefer the cmd shim explicitly so pwsh does not resolve a
+    # different Node shim when the caller inherited Git Bash or CI PATH state.
+    $commandName = if (Test-IsWindowsHost) { "npx.cmd" } else { "npx" }
+    $command = Get-Command -Name $commandName -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -eq $command) {
+        throw "Unable to find $commandName on PATH; install Node.js before starting the Unity MCP bridge."
+    }
+    if ([string]::IsNullOrWhiteSpace($command.Source)) {
+        return $commandName
+    }
+    return $command.Source
+}
+
+$npxCommand = Resolve-NpxCommand
 
 $supergatewayArgs = @(
     "-y",
@@ -85,5 +104,6 @@ if ($Stateful.IsPresent) {
 Write-Host "Starting Unity MCP bridge with supergateway..."
 Write-Host "Relay command: $RelayCommand"
 Write-Host "Bridge URL: http://0.0.0.0:$Port$McpPath"
+Write-Host "Using npx command: $npxCommand"
 
-& npx @supergatewayArgs
+& $npxCommand @supergatewayArgs

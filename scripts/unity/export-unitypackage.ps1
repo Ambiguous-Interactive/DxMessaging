@@ -74,6 +74,26 @@ function Resolve-FullPath {
     return [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path))
 }
 
+function Test-IsWindowsHost {
+    return [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+}
+
+function Resolve-NpmPackCommand {
+    # On Windows, setup-node installs both npm.ps1 and npm.cmd. Calling bare
+    # `npm` from pwsh can resolve through a shim that mangles arguments when
+    # inherited from Git Bash CI, so choose the batch shim explicitly.
+    $commandName = if (Test-IsWindowsHost) { 'npm.cmd' } else { 'npm' }
+    $command = Get-Command -Name $commandName -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -eq $command) {
+        throw "Unable to find $commandName on PATH; setup Node.js before running the Unity package exporter."
+    }
+    if ([string]::IsNullOrWhiteSpace($command.Source)) {
+        return $commandName
+    }
+    return $command.Source
+}
+
 function Invoke-UnityEditor {
     # Mirrors run-ci-tests.ps1 Invoke-UnityEditor: `-logFile -` + Tee-Object so
     # PowerShell waits for the GUI-subsystem Unity.exe and $LASTEXITCODE is set;
@@ -341,7 +361,10 @@ Push-Location $RepoRoot
 try {
     $npmPackStdoutPath = Join-Path $ArtifactsPath 'npm-pack.stdout.json'
     $npmPackStderrPath = Join-Path $ArtifactsPath 'npm-pack.stderr.log'
-    $packJsonText = (& npm pack --json --pack-destination $stagingPath 2> $npmPackStderrPath | Out-String)
+    $npmCommand = Resolve-NpmPackCommand
+    $npmPackArgs = @('pack', '--json', '--pack-destination', $stagingPath)
+    Write-Host "Using npm command: $npmCommand"
+    $packJsonText = (& $npmCommand @npmPackArgs 2> $npmPackStderrPath | Out-String)
     $packExitCode = $LASTEXITCODE
     Set-Content -LiteralPath $npmPackStdoutPath -Encoding UTF8 -NoNewline -Value $packJsonText
     if ($packExitCode -ne 0) {
@@ -357,6 +380,7 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($stdoutTail)) {
             $detail += "stdout tail:`n$stdoutTail"
         }
+        $detail += "command: $npmCommand $($npmPackArgs -join ' ')"
         $detailText = if ($detail.Count -gt 0) { "`n$($detail -join "`n")" } else { '' }
         throw "npm pack failed with exit code $packExitCode. See $npmPackStdoutPath and $npmPackStderrPath.$detailText"
     }
