@@ -24,50 +24,17 @@ const {
 } = validateNpmMeta;
 
 const FORBIDDEN_PATH_CASES = [
-  {
-    path: "Runtime/bin/Debug/Foo.dll",
-    rule: "bin-dir"
-  },
-  {
-    path: "Runtime/obj/Release/Foo.dll",
-    rule: "obj-dir"
-  },
-  {
-    path: "Editor/cache.tmp",
-    rule: "tmp"
-  },
-  {
-    path: "Editor/Project.suo",
-    rule: "suo"
-  },
-  {
-    path: "Editor/UserSettings.csproj.user",
-    rule: "csproj-user"
-  },
-  {
-    path: "Editor/Team.user",
-    rule: "generic-user"
-  },
-  {
-    path: "Editor/.vs/config",
-    rule: "vs-dir"
-  },
-  {
-    path: "Editor/.idea/workspace.xml",
-    rule: "idea-dir"
-  },
-  {
-    path: "Editor/ignore.pdb",
-    rule: "pdb"
-  },
-  {
-    path: "Editor/cache.lscache",
-    rule: "lscache"
-  },
-  {
-    path: "Editor/Project.DotSettings.user",
-    rule: "dotsettings-user"
-  }
+  ["Runtime/bin/Debug/Foo.dll", "bin-dir"],
+  ["Runtime/obj/Release/Foo.dll", "obj-dir"],
+  ["Editor/cache.tmp", "tmp"],
+  ["Editor/Project.suo", "suo"],
+  ["Editor/UserSettings.csproj.user", "csproj-user"],
+  ["Editor/Team.user", "generic-user"],
+  ["Editor/.vs/config", "vs-dir"],
+  ["Editor/.idea/workspace.xml", "idea-dir"],
+  ["Editor/ignore.pdb", "pdb"],
+  ["Editor/cache.lscache", "lscache"],
+  ["Editor/Project.DotSettings.user", "dotsettings-user"]
 ];
 
 function withQuietValidation(callback) {
@@ -172,15 +139,15 @@ test("parsePackJsonEntries rejects malformed pack JSON payloads", () => {
 });
 
 test("findForbiddenTarballPaths catches issue-204 style artifact leaks", () => {
-  const violations = findForbiddenTarballPaths(FORBIDDEN_PATH_CASES.map((entry) => entry.path));
+  const violations = findForbiddenTarballPaths(FORBIDDEN_PATH_CASES.map(([path]) => path));
 
   assert.deepEqual(
     violations.map((violation) => violation.path),
-    FORBIDDEN_PATH_CASES.map((entry) => entry.path)
+    FORBIDDEN_PATH_CASES.map(([path]) => path)
   );
   assert.deepEqual(
     violations.map((violation) => violation.rule),
-    FORBIDDEN_PATH_CASES.map((entry) => entry.rule)
+    FORBIDDEN_PATH_CASES.map(([, rule]) => rule)
   );
 });
 
@@ -280,28 +247,28 @@ test("parses real-world pack JSON from a temporary file", () => {
 test("runValidation rejects forbidden paths from npm pack JSON output", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-json-validation-test-"));
   try {
-    for (const entry of FORBIDDEN_PATH_CASES) {
-      const jsonFile = path.join(tempDir, `${entry.rule}.json`);
+    for (const [forbiddenPath, rule] of FORBIDDEN_PATH_CASES) {
+      const jsonFile = path.join(tempDir, `${rule}.json`);
       fs.writeFileSync(
         jsonFile,
         JSON.stringify([
           {
             filename: "pkg.tgz",
-            files: [{ path: `package/${entry.path}` }]
+            files: [{ path: `package/${forbiddenPath}` }]
           }
         ]),
         "utf8"
       );
 
       const result = withQuietValidation(() => runValidation({ packJson: jsonFile }));
-      assert.equal(result.valid, false, `${entry.path} should make pack validation fail`);
+      assert.equal(result.valid, false, `${forbiddenPath} should make pack validation fail`);
       assert.deepEqual(
         result.forbidden.map((violation) => violation.rule),
-        [entry.rule]
+        [rule]
       );
       assert.deepEqual(
         result.forbidden.map((violation) => violation.path),
-        [entry.path]
+        [forbiddenPath]
       );
     }
   } finally {

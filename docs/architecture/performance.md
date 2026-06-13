@@ -66,7 +66,7 @@ Latest CI benchmark run: Unity 6000.3.16f1, commit `d7d0ef6dcb32fd6c61b4625a2ce5
 
 Runner: 13th Gen Intel(R) Core(TM) i9-13900KF, 24C/32T @ 3000MHz; 64GB DDR5@4200; NVIDIA GeForce RTX 3060; Microsoft Windows 11 Pro N (10.0.26200)
 
-#### Dispatch throughput - Standalone (IL2CPP)
+### Dispatch throughput - Standalone (IL2CPP)
 
 Platform: Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1).
 
@@ -86,7 +86,7 @@ Platform: Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1).
 | Registration Flood (1000 Types, Cold Bus)         | 668.192 ms              | 0 B             |
 | Registration Flood (1000 Types, Warm JIT)         | 16.524 ms               | 0 B             |
 
-#### Library comparison - throughput (Standalone (IL2CPP))
+### Library comparison - throughput (Standalone (IL2CPP))
 
 | Technology               | Global -> 1 subscriber | Global -> 16 subscribers | Keyed/targeted -> 1 of many | Priority-ordered dispatch | Filtered/intercepted dispatch | Post-processing dispatch | Subscribe/unsubscribe churn | Struct message (zero-copy) |
 | ------------------------ | ---------------------- | ------------------------ | --------------------------- | ------------------------- | ----------------------------- | ------------------------ | --------------------------- | -------------------------- |
@@ -100,7 +100,7 @@ Platform: Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1).
 | C# event                 | **265.06 M emits/sec** | **42.16 M emits/sec**    | 59.22 M emits/sec           | N/A                       | N/A                           | N/A                      | 10.86 M emits/sec           | **260.91 M emits/sec**     |
 | Unity SendMessage        | 8.93 M emits/sec       | 0.78 M emits/sec         | 10.99 M emits/sec           | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
 
-#### Library comparison - allocations, bytes per op (Standalone (IL2CPP))
+### Library comparison - allocations, bytes per op (Standalone (IL2CPP))
 
 | Technology               | Global -> 1 subscriber | Global -> 16 subscribers | Keyed/targeted -> 1 of many | Priority-ordered dispatch | Filtered/intercepted dispatch | Post-processing dispatch | Subscribe/unsubscribe churn | Struct message (zero-copy) |
 | ------------------------ | ---------------------- | ------------------------ | --------------------------- | ------------------------- | ----------------------------- | ------------------------ | --------------------------- | -------------------------- |
