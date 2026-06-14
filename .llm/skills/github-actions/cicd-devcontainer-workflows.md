@@ -61,7 +61,7 @@ aliases:
 
 related:
   - "devcontainer-cache-contract"
-  - "headless-test-runner"
+  - "mcp-test-loop"
   - "unity-ci-matrix"
 
 status: "stable"
@@ -245,7 +245,7 @@ When verifying a pushed image, include diagnostics:
 ## Related Skills
 
 - [Devcontainer Cache Contract](../unity/devcontainer-cache-contract.md)
-- [Headless Test Runner](../unity/headless-test-runner.md)
+- [Unity MCP Test Loop](../unity/mcp-test-loop.md)
 - [Unity CI Matrix](../unity/unity-ci-matrix.md)
 
 ## References

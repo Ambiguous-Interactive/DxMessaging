@@ -213,10 +213,9 @@ jobs:
         with:
           node-version: "22.18.0"
 
-      # Single source of truth for the assembly include list: the same
-      # asmdef-discovery.js module the local run-tests scripts use. For
-      # benchmarks we OPT IN to the perf assemblies (Benchmarks/Allocations)
-      # via include-perf -- this mirrors the old runner's include-perf flag.
+      # Single source of truth for the assembly include list: the canonical
+      # asmdef-discovery.js module. For benchmarks we OPT IN to the perf
+      # assemblies (Benchmarks/Allocations) via the include-perf input.
       # Extracted into a composite action shared by all three Unity workflows;
       # shell: pwsh is enforced inside the composite.
       - name: Compute benchmark assembly list

@@ -11,9 +11,9 @@
 #   4. dxm-python-cache         -> pip wheel/download cache
 #   5. dxm-node-modules         -> Linux devcontainer node_modules tree
 #
-# Unity Library caches are owned by scripts/unity/run-tests.sh and
-# scripts/unity/run-tests.ps1 because they must be keyed by Unity image tag and
-# test mode. Do not add a static .unity-test-project/Library mount here.
+# This container runs no local Unity build. Local Unity verification goes
+# through the unity-mcp-remote MCP server (the host editor), which owns its own
+# Library cache on the host. Do not add a Unity Library mount here.
 
 # Re-source guard: this file is sourced by post-create.sh, post-start.sh,
 # and validate-caching.sh. Multiple sources in the same shell would

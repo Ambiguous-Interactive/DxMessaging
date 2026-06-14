@@ -19,7 +19,6 @@ source:
 
 tags:
   - "devcontainer"
-  - "docker"
   - "cache"
   - "volumes"
   - "ownership"
@@ -46,7 +45,7 @@ prerequisites:
 dependencies:
   packages: []
   skills:
-    - "headless-test-runner"
+    - "mcp-test-loop"
 
 applies_to:
   languages:
@@ -61,7 +60,7 @@ aliases:
   - "Volume ownership"
 
 related:
-  - "headless-test-runner"
+  - "mcp-test-loop"
   - "upm-test-harness"
   - "cicd-devcontainer-workflows"
 
@@ -72,7 +71,7 @@ status: "stable"
 
 # Devcontainer Cache Contract
 
-> **One-line summary**: `.devcontainer/cache-contract.sh` is the single source of truth for the four devcontainer named-volume mounts; the same file is sourced by `post-create.sh`, `post-start.sh`, and `validate-caching.sh` so the four surfaces (Dockerfile, devcontainer.json, lifecycle scripts, validator) cannot drift.
+> **One-line summary**: `.devcontainer/cache-contract.sh` is the single source of truth for the five non-Unity devcontainer named-volume mounts (nuget, dotnet-tools, powershell, pip, node_modules); the same file is sourced by `post-create.sh`, `post-start.sh`, and `validate-caching.sh` so the four surfaces (Dockerfile, devcontainer.json, lifecycle scripts, validator) cannot drift.
 
 ## When to Use
 
@@ -90,15 +89,17 @@ status: "stable"
 
 Docker named volumes have a subtle ownership rule: when a volume is attached to a target directory for the first time, Docker copies the target's owner UID/GID onto the empty volume. Subsequent attaches keep that initial UID/GID regardless of the running container's user. If the first container that mounts the volume runs as root (which most build steps do), every later attach as `vscode` (uid 1000) sees an unwritable directory.
 
-The fix has three parts:
+The fix has two parts:
 
 1. The Dockerfile pre-creates each target with `vscode:vscode` ownership before any volume can attach.
 1. `post-start.sh` re-runs `chown` on every container start, so an ownership drift (rare but possible after host upgrades) self-heals on the next attach.
-1. `scripts/unity/run-tests.sh` installs an `EXIT` trap inside each root-run `unityci/editor` container to return `/workspace/.artifacts` and `/workspace/.unity-test-project/Library` ownership to the invoking UID/GID even when Unity exits non-zero. Each `chown` is suffixed `|| true` so it never overwrites the editor's exit code.
 
 `cache-contract.sh` is the table the devcontainer prongs read from. If a target is missing from the contract or misaligned by index, the validator fails loud rather than the developer hitting "permission denied" three minutes into a build.
 
-Unity `Library/` is intentionally not in this devcontainer contract. The headless runner owns that cache with a Docker volume name derived from the Unity image tag and test mode, so switching between Editor versions or IL2CPP/editor modes cannot reuse an incompatible `Library/`.
+Unity `Library/` is intentionally not in this devcontainer contract. The
+container ships no local Unity build; local Unity verification runs on the host
+editor through the MCP loop (see [Unity MCP Test Loop](./mcp-test-loop.md)), and
+the host editor owns its own `Library/` cache outside any container volume.
 
 ## The Contract
 
@@ -195,7 +196,7 @@ Remove in the inverse order: devcontainer.json first (so a fresh build does not 
 
 ## See Also
 
-- [Headless Test Runner](./headless-test-runner.md)
+- [Unity MCP Test Loop](./mcp-test-loop.md)
 - [UPM Test Harness](./upm-test-harness.md)
 - [Unity Version Single Source of Truth](../github-actions/unity-version-single-source.md)
 - [CI/CD Devcontainer Workflows](../github-actions/cicd-devcontainer-workflows.md)

@@ -150,32 +150,6 @@ fix_volume_permissions() {
 }
 
 # -----------------------------------------------------------------------------
-# Docker Socket Verification (warn-only — DooD is optional for .NET-only flow)
-# -----------------------------------------------------------------------------
-
-verify_docker_socket() {
-    log_header "Verifying Docker Socket (DooD)"
-
-    if ! command -v docker >/dev/null 2>&1; then
-        log_warning "docker CLI not found in container."
-        log_warning "  Remediation: ensure host Docker is running and the devcontainer was built"
-        log_warning "  with the 'docker-outside-of-docker' feature enabled (see devcontainer.json)."
-        return 0
-    fi
-
-    if docker info >/dev/null 2>&1; then
-        log_success "Docker socket reachable; Phase 2+ Unity test runner can spawn containers."
-    else
-        log_warning "docker info failed — socket not accessible from inside the container."
-        log_warning "  Remediation: ensure host Docker is running and the devcontainer was built"
-        log_warning "  with the 'docker-outside-of-docker' feature enabled (see devcontainer.json)."
-        log_warning "  .NET-only workflows will continue; Unity test workflows will fail in Phase 2+."
-    fi
-
-    return 0
-}
-
-# -----------------------------------------------------------------------------
 # .NET Configuration
 # -----------------------------------------------------------------------------
 
@@ -319,7 +293,6 @@ print_summary() {
     echo "    Node.js:         $(node --version 2>/dev/null || echo 'N/A')"
     echo "    GitHub CLI:      $(gh --version 2>/dev/null | head -n1 | cut -d' ' -f3 || echo 'N/A')"
     echo "    Git LFS:         $(git lfs version 2>/dev/null | cut -d' ' -f1-2 || echo 'N/A')"
-    echo "    Docker (DooD):   $(docker --version 2>/dev/null || echo 'N/A — DooD not active')"
     echo ""
     echo "  Quick Commands:"
     echo "    dotnet test                          # Run .NET tests"
@@ -328,7 +301,7 @@ print_summary() {
     echo "    pre-commit run --all-files           # Run commit-stage hooks"
     echo "    pre-commit run --all-files --hook-stage pre-push  # Run pre-push hooks (cspell, asmdef, script tests)"
     echo "    bash .devcontainer/validate-caching.sh   # Validate cache mount contract"
-    echo "    # bash scripts/unity/run-tests.sh --platform editmode  (Phase 2)"
+    echo "    # Local Unity tests run via the unity-mcp-remote MCP server (host editor)"
     echo ""
     log_success "Environment setup complete!"
     echo ""
@@ -356,10 +329,7 @@ main() {
         return 1
     fi
 
-    # Step 2: warn (don't fail) if the docker socket isn't accessible.
-    verify_docker_socket || true
-
-    # Step 3: configure npm prefix for non-root global installs.
+    # Step 2: configure npm prefix for non-root global installs.
     log_header "Configuring npm Global Prefix"
     mkdir -p "$HOME/.local/bin"
     log_info "Setting npm prefix to $HOME/.local"
@@ -376,7 +346,7 @@ main() {
     ensure_path_line "$HOME/.bashrc"
     ensure_path_line "$HOME/.zshrc"
 
-    # Step 4: workspace bootstrap.
+    # Step 3: workspace bootstrap.
     log_header "Bootstrapping Workspace"
     local workspace_dir
     workspace_dir="${containerWorkspaceFolder:-${WORKSPACE_DIR}}"
@@ -394,11 +364,11 @@ main() {
     fi
     run_optional "Installing pre-commit hooks" pre-commit install --install-hooks
 
-    # Step 5: make the SDK pinned by SourceGenerators/global.json resolvable
+    # Step 4: make the SDK pinned by SourceGenerators/global.json resolvable
     # so `npm run validate:all` (check:analyzers) works out of the box.
     ensure_pinned_sdk
 
-    # Step 6: validate environment (warn-only, never blocking).
+    # Step 5: validate environment (warn-only, never blocking).
     validate_dotnet || { log_error ".NET validation failed"; exit_code=1; }
     validate_workspace || { log_error "Workspace validation failed"; exit_code=1; }
 

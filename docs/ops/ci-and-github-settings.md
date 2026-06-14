@@ -230,11 +230,13 @@ is returned on every exit path (defensive return-at-start, a PowerShell
 `try`/`finally` return, an `if: always()` workflow return step, and the next
 run's return-at-start on the persistent runner). The floating licensing server is
 RETIRED: `UNITY_LICENSING_SERVER` is removed from all workflows and the
-`validate-unity-license` action fails the run if it is still set. A `.ulf`
-(`UNITY_LICENSE` / `UNITY_LICENSE_B64`) is kept ONLY as a local development
-fallback for `scripts/unity/run-tests.sh` and `scripts/unity/run-tests.ps1`,
-never in CI. Never echo or log the serial or password; license logs go to
-`RUNNER_TEMP`, never to uploaded artifacts.
+`validate-unity-license` action fails the run if it is still set. The classic
+serial is the single CI activation path; there is no local license. LOCAL Unity
+verification runs on the host editor through the MCP loop
+(`unity-mcp-remote`), and that editor supplies its own license -- no `.ulf`, no
+`UNITY_LICENSE` / `UNITY_LICENSE_B64`, and no local serial are needed. Never echo
+or log the serial or password; license logs go to `RUNNER_TEMP`, never to
+uploaded artifacts.
 
 Do not record secret existence, rotation status, the serial, or account
 credential state in tracked files or the local ignored runbook. Keep that

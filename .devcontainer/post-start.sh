@@ -55,10 +55,3 @@ if [[ -x "${SCRIPT_DIR}/install-codex-cli.sh" ]]; then
 else
     echo "[post-start] WARN: install-codex-cli.sh missing or not executable; skipping codex CLI install"
 fi
-
-# Verify the docker socket is reachable (Phase 2+ Unity test runner depends on
-# docker-outside-of-docker). Don't fail the post-start on socket absence so a
-# pure .NET-only workflow still degrades gracefully.
-if ! docker info >/dev/null 2>&1; then
-    echo "[post-start] WARN: docker socket not accessible — Unity test runner will fail in Phase 2+"
-fi

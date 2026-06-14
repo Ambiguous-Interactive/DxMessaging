@@ -183,8 +183,8 @@ tracked file or generated artifact.
       activation path; the single CI activation path).
 - [ ] Confirm the retired `UNITY_LICENSING_SERVER` secret is removed from the
       workflows. The `validate-unity-license` action fails the run if it is still
-      set; a `.ulf` (`UNITY_LICENSE` / `UNITY_LICENSE_B64`) remains only as a
-      local development fallback.
+      set. No local Unity license is needed: local verification runs on the host
+      editor via the MCP loop, which supplies its own license.
 - [ ] Confirm `.github/workflows/release.yml` does not require `NPM_TOKEN`; npm
       publishing should use Trusted Publishing and OIDC.
 - [ ] Confirm the release workflow grants `id-token: write` only to jobs that

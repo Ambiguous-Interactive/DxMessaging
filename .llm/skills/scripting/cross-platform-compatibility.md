@@ -186,10 +186,10 @@ Run your scripts in a case-sensitive environment before committing:
 ```bash
 # Option 1: Use Docker with Linux
 docker run --rm -v "$PWD:/workspace" -w /workspace mcr.microsoft.com/powershell:latest \
-    pwsh -File scripts/unity/run-tests.ps1
+    pwsh -File scripts/unity/export-unitypackage.ps1
 
 # Option 2: Use WSL on Windows
-wsl pwsh -File scripts/unity/run-tests.ps1
+wsl pwsh -File scripts/unity/export-unitypackage.ps1
 
 # Option 3: Create a case-sensitive volume on macOS
 # (requires disk utility to create APFS case-sensitive volume)

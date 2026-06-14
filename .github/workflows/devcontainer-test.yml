@@ -4,18 +4,16 @@
 # Purpose:
 #   Builds the .devcontainer image (with the GHCR-cached layers) and runs an
 #   in-container smoke test verifying:
-#     - .NET SDK (9 + 10 side-by-side, per Phase 1) is present and runnable
+#     - .NET SDK (9 + 10 side-by-side) is present and runnable
 #     - git LFS is installed (Unity LFS workflow)
 #     - PowerShell is installed (parity with .ps1 entry points)
-#     - The host docker socket is reachable inside the container
-#       (docker-outside-of-docker — the linchpin for Unity headless runs)
 #     - The asmdef-discovery node module loads and self-tests cleanly
 #     - The cache-mount contract still holds (validate-caching.sh)
-#     - The Unity test runner script's --help is wired up (smoke test only;
-#       a real Unity run requires the UNITY_SERIAL / UNITY_EMAIL / UNITY_PASSWORD
-#       secrets (or a local ULF fallback) which this gate does not exercise)
 #     - The script-test node:test suite (node --test scripts/) passes inside
 #       the devcontainer image
+#
+# Local Unity verification is NOT exercised here: it runs through the
+# unity-mcp-remote MCP server (the host editor), not inside this container.
 #
 # Triggers:
 #   - PRs to master that touch the devcontainer / workflows / Unity scripts
@@ -124,18 +122,11 @@ jobs:
             dotnet --list-runtimes | grep -E '^Microsoft\.NETCore\.App 10\.0' \
               || (echo "ERROR: .NET 10 runtime not found" >&2 && exit 1)
 
-            echo "=== Docker-outside-of-docker reachability ==="
-            docker info >/dev/null \
-              || (echo "ERROR: docker socket not reachable from inside container" >&2 && exit 1)
-
             echo "=== asmdef-discovery self-test ==="
             node scripts/unity/lib/asmdef-discovery.js | tail -n 30
 
             echo "=== Cache-mount contract ==="
             bash .devcontainer/validate-caching.sh
-
-            echo "=== Unity runner help ==="
-            bash scripts/unity/run-tests.sh --help >/dev/null
 
             echo "=== Node script tests ==="
             node --test scripts/

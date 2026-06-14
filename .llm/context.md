@@ -55,19 +55,19 @@ This file is intentionally concise. It contains only critical, high-signal guida
 
 ## Running Unity Tests
 
-For Unity-side tests in `Tests/Editor/` or `Tests/Runtime/` (excludes Benchmarks/Allocations/Comparisons by default):
+Local Unity verification runs through the **unity-mcp-remote MCP server** (the host
+editor), NOT inside the devcontainer. The container ships no local Unity build. See
+[Unity MCP Test Loop](./skills/unity/mcp-test-loop.md) for the full loop.
 
-- EditMode: `bash scripts/unity/run-tests.sh --platform editmode`
-- PlayMode: `bash scripts/unity/run-tests.sh --platform playmode`
-- IL2CPP standalone: `bash scripts/unity/run-tests.sh --platform standalone`
-- Filter: `--filter <regex>` (passed to `-testFilter`)
-- Include perf: `--include-perf` (off by default; the active `unity-benchmarks.yml` opts in via the `compute-unity-assemblies` action's `include-perf` input)
-- Include comparisons: `--include-comparisons` (off by default; requires MessagePipe/UniRx/UniTask/Zenject packages plus their Unity built-in module packages in the harness)
-- Include DI integrations (Reflex/Zenject/VContainer): `--include-integrations` (off by default)
-- Realtime log streams to stdout; XML written to `.artifacts/unity/results.xml` unless `--results` overrides it
-- CI host project: generated under `.artifacts/unity/projects/<version>-<mode>/` by `scripts/unity/run-ci-tests.ps1` -- see [UPM Test Harness](./skills/unity/upm-test-harness.md)
-- License: see [Unity License Bootstrap](./skills/unity/unity-license-bootstrap.md). CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and guarantees a `-returnlicense` on every exit path; a `.ulf` (`UNITY_LICENSE` / `UNITY_LICENSE_B64`) remains only as the LOCAL fallback for `run-tests.sh` / `run-tests.ps1`.
-- ARM Mac (Apple Silicon): not supported locally -- use a non-ARM local shell or Codespace, or rely on the active Unity GitHub workflows (direct Unity on self-hosted Windows)
+- The devcontainer workspace IS the embedded package inside the host Unity project,
+  so edits in-container are instantly visible to the editor.
+- Compile: trigger `AssetDatabase.Refresh()` via `Unity_RunCommand`.
+- Run tests: call the host bridge `DxMcpTestRunner.Run(testMode, assemblies, tests, categories, resultPath)` via `Unity_RunCommand`; poll the `.status` sidecar under `.artifacts/unity-mcp/` from the container.
+- EditMode assemblies: `WallstopStudios.DxMessaging.Tests.Editor`, `...Tests.Editor.Allocations`, `...Tests.00.Editor.Benchmarks`. PlayMode: `...Tests.Runtime`, `...Tests.00.Runtime.Benchmarks` (category `PerfBench`), `...Tests.00.Runtime.Comparisons`, DI integrations (Reflex/VContainer/Zenject).
+- Perf baselines: the benchmark CSV defaults to `.artifacts/perf-baseline.csv` (override env `DX_PERF_BASELINE`; `DX_PERF_COMMIT` stamps the commit column).
+- Sandbox restriction: `using System.Reflection;` is rejected in `Unity_RunCommand` snippets -- fully qualify (`System.Reflection.Assembly`) instead.
+- The published IL2CPP-Release headline comes from the CI leg (self-hosted Windows, `scripts/unity/run-ci-tests.ps1`), not the local MCP loop; the MCP loop is the local Mono/editor signal. The CI host project is generated under `.artifacts/unity/projects/<version>-<mode>/` -- see [UPM Test Harness](./skills/unity/upm-test-harness.md).
+- License (CI only): see [Unity License Bootstrap](./skills/unity/unity-license-bootstrap.md). CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and guarantees a `-returnlicense` on every exit path.
 - For source-generator tests (no Unity), use `dotnet test SourceGenerators/...Tests`
 
 ## GitHub Actions / CI Runners
@@ -91,7 +91,7 @@ For Unity-side tests in `Tests/Editor/` or `Tests/Runtime/` (excludes Benchmarks
 
 ## Devcontainer Workflow
 
-The agent runs from inside the slim devcontainer (.NET 9/10 base + docker-outside-of-docker). Local Unity tests spawn ephemeral `unityci/editor` containers via the host docker socket; the image is pulled lazily on first use, and the local `.unity-test-project/Library` cache is preserved in a named volume across runs. CI uses `scripts/unity/run-ci-tests.ps1` on self-hosted Windows instead. See [Devcontainer Cache Contract](./skills/unity/devcontainer-cache-contract.md) and [Headless Test Runner](./skills/unity/headless-test-runner.md).
+The agent runs from inside the slim devcontainer (.NET 9/10 base + Node + docs toolchain). It runs NO local Unity build: local Unity verification goes through the unity-mcp-remote MCP server (the host editor) -- see [Unity MCP Test Loop](./skills/unity/mcp-test-loop.md). CI uses `scripts/unity/run-ci-tests.ps1` on self-hosted Windows. See [Devcontainer Cache Contract](./skills/unity/devcontainer-cache-contract.md).
 
 - `.devcontainer/cache-contract.sh` derives `CACHE_WORKSPACE_ROOT` from the script's own location (parent of `.devcontainer/`, equals `${containerWorkspaceFolder}`) when `WORKSPACE_FOLDER` is unset (e.g. during `postCreateCommand`); never hardcode an absolute fallback.
 
@@ -177,7 +177,7 @@ Use the index above and then select the most relevant skill pages. Frequently us
 - Script reliability and parsing guidance under `./skills/scripting/`
 - Test quality and investigation guidance under `./skills/testing/`
 - Workflow robustness under `./skills/github-actions/`
-- Unity headless test workflow under `./skills/unity/` (see headless-test-runner, unity-license-bootstrap, unity-license-return-guarantee, upm-test-harness, devcontainer-cache-contract, unity-ci-matrix, unity-perf-test-isolation)
+- Unity test workflow under `./skills/unity/` (see mcp-test-loop, unity-license-bootstrap, unity-license-return-guarantee, upm-test-harness, devcontainer-cache-contract, unity-ci-matrix, unity-perf-test-isolation)
 
 ## Split File Maintenance
 
@@ -198,7 +198,7 @@ Use the index above and then select the most relevant skill pages. Frequently us
 - [Memory Reclaim Coverage](./skills/testing/memory-reclaim-coverage.md)
 - [DxMessaging Memory Reclamation](./skills/performance/memory-reclamation.md)
 - [MessageAwareComponent Base-Call Contract](./skills/unity/base-call-contract.md)
-- [Headless Unity Test Runner](./skills/unity/headless-test-runner.md)
+- [Unity MCP Test Loop](./skills/unity/mcp-test-loop.md)
 - [Unity License Bootstrap](./skills/unity/unity-license-bootstrap.md)
 - [Unity License Return Guarantee](./skills/unity/unity-license-return-guarantee.md)
 - [UPM Test Harness](./skills/unity/upm-test-harness.md)

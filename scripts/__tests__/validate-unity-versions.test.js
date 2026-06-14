@@ -91,7 +91,7 @@ test("checkConsumer enforces the no-literals policy", () => {
 });
 
 test("checkConsumer enforces the mirror-release policy", () => {
-  const base = { relativePath: "scripts/unity/run-tests.sh", policy: "mirror-release", ...VALID };
+  const base = { relativePath: ".github/workflows/release.yml", policy: "mirror-release", ...VALID };
   assert.equal(checkConsumer({ ...base, literals: [] }).length, 1);
   assert.deepEqual(checkConsumer({ ...base, literals: [{ version: "2022.3.45f1", line: 2 }] }), []);
   const drift = checkConsumer({ ...base, literals: [{ version: "6000.3.16f1", line: 2 }] });
@@ -124,7 +124,10 @@ test("checkConsumer throws on unknown policies", () => {
 
 test("resolveWorkflowPolicy honors explicit table and workflow default", () => {
   assert.equal(resolveWorkflowPolicy(".github/workflows/release.yml"), "mirror-release");
-  assert.equal(resolveWorkflowPolicy("scripts/unity/run-tests.ps1"), "mirror-release");
+  assert.equal(
+    resolveWorkflowPolicy("scripts/unity/maintain-windows-runner.ps1"),
+    "mirror-all"
+  );
   assert.equal(resolveWorkflowPolicy(".github/workflows/brand-new.yml"), "no-literals");
   assert.equal(resolveWorkflowPolicy("docs/page.md"), null);
   assert.equal(resolveWorkflowPolicy(".github/workflows-disabled/old.yml"), null);
