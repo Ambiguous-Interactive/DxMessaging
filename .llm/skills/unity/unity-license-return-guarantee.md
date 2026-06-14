@@ -46,7 +46,6 @@ dependencies:
   packages: []
   skills:
     - "unity-license-bootstrap"
-    - "headless-test-runner"
     - "unity-ci-matrix"
 
 applies_to:
@@ -67,7 +66,6 @@ aliases:
 
 related:
   - "unity-license-bootstrap"
-  - "headless-test-runner"
   - "unity-ci-matrix"
   - "cicd-devcontainer-workflows"
 
@@ -258,7 +256,6 @@ The cutover removed `UNITY_LICENSING_SERVER`. Re-wiring it is rejected by
 ## See Also
 
 - [Unity License Bootstrap](./unity-license-bootstrap.md) [[unity-license-bootstrap]]
-- [Headless Test Runner](./headless-test-runner.md) [[headless-test-runner]]
 - [Unity CI Matrix](./unity-ci-matrix.md) [[unity-ci-matrix]]
 - [CI/CD Devcontainer Workflows](../github-actions/cicd-devcontainer-workflows.md)
 

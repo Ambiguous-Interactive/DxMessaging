@@ -1899,8 +1899,7 @@ function Invoke-UnityEditor {
     # $LASTEXITCODE. Callers therefore pass `-logFile -` (Unity logs to stdout) so
     # that consuming the process's stdout via the pipeline forces PowerShell to
     # BLOCK until the process exits AND reliably sets $LASTEXITCODE. Tee-Object both
-    # streams the log live to the CI console and persists it to $LogPath. This is
-    # the proven idiom from scripts/unity/run-tests.ps1.
+    # streams the log live to the CI console and persists it to $LogPath.
     $logDir = Split-Path -Parent $LogPath
     if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
         New-Item -ItemType Directory -Force -Path $logDir | Out-Null

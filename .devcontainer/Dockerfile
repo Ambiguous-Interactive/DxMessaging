@@ -3,8 +3,8 @@
 # DxMessaging Development Container
 # Base image: .NET 9.0 on Debian Bookworm
 # Note: .NET 10 SDK is installed alongside .NET 9 to support C# Dev Kit.
-# Note: docker-outside-of-docker (DooD) is enabled via devcontainer feature so
-#       Phase 2+ can spawn ephemeral unityci/editor containers from inside.
+# Local Unity verification runs through the unity-mcp-remote MCP server (the host
+# editor), so this image ships only the .NET / Node / docs toolchain.
 FROM mcr.microsoft.com/devcontainers/dotnet:1-9.0-bookworm
 
 # Build argument for target architecture (amd64 or arm64)
@@ -14,8 +14,7 @@ ARG TARGETARCH=amd64
 LABEL org.opencontainers.image.source="https://github.com/Ambiguous-Interactive/DxMessaging"
 LABEL org.opencontainers.image.description="DxMessaging development container"
 LABEL org.opencontainers.image.licenses="MIT"
-LABEL unity.support="docker-outside-of-docker"
-LABEL unity.note="Unity tests spawn ephemeral unityci/editor containers via DooD"
+LABEL unity.note="Local Unity verification runs via the unity-mcp-remote MCP server (host editor)"
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive

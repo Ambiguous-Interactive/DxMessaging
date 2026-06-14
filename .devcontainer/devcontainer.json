@@ -3,8 +3,8 @@
 // =============================================================================
 // For format details, see https://aka.ms/devcontainer.json
 // Project: DxMessaging | Language: C# (.NET 9 / .NET 10 SDKs side-by-side)
-// Phase 1: docker-outside-of-docker (DooD) feature added so Phase 2+ can spawn
-//          ephemeral unityci/editor containers from inside this devcontainer.
+// Local Unity verification runs through the unity-mcp-remote MCP server (the
+// host editor), so this container ships only the .NET / Node / docs toolchain.
 // =============================================================================
 {
   "name": "DxMessaging Dev",
@@ -24,14 +24,7 @@
       "configureZshAsDefaultShell": false,
       "upgradePackages": false
     },
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    // Docker-outside-of-docker: installs the docker CLI inside the
-    // container and mounts /var/run/docker.sock from the host so we can
-    // spawn ephemeral unityci/editor containers in Phase 2+.
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-      "version": "latest",
-      "moby": true
-    }
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   // -------------------------------------------------------------------------
   // Mount Configuration
@@ -58,15 +51,8 @@
   // the host value (or empty string) is captured at attach time.
   "remoteEnv": {
     "WORKSPACE_FOLDER": "${containerWorkspaceFolder}",
-    "UNITY_PROJECT_PATH": "${containerWorkspaceFolder}",
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
     "GH_TOKEN": "${localEnv:GH_TOKEN}",
-    "UNITY_LICENSE": "${localEnv:UNITY_LICENSE}",
-    "UNITY_LICENSE_B64": "${localEnv:UNITY_LICENSE_B64}",
-    "UNITY_SERIAL": "${localEnv:UNITY_SERIAL}",
-    "UNITY_EMAIL": "${localEnv:UNITY_EMAIL}",
-    "UNITY_PASSWORD": "${localEnv:UNITY_PASSWORD}",
-    "UNITY_VERSION": "${localEnv:UNITY_VERSION}",
     "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
   // -------------------------------------------------------------------------
@@ -75,15 +61,6 @@
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "postStartCommand": "bash .devcontainer/post-start.sh",
   "waitFor": "postCreateCommand",
-  // -------------------------------------------------------------------------
-  // Port Forwarding
-  // -------------------------------------------------------------------------
-  "forwardPorts": [
-    // Unity Profiler
-    34999,
-    // Unity Remote debugging
-    56000, 56001
-  ],
   // -------------------------------------------------------------------------
   // Host Requirements
   // -------------------------------------------------------------------------

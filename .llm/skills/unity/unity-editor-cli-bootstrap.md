@@ -58,7 +58,7 @@ aliases:
 
 related:
   - "unity-ci-matrix"
-  - "headless-test-runner"
+  - "mcp-test-loop"
   - "unity-license-bootstrap"
   - "unity-runner-host-prereqs"
 
@@ -207,7 +207,7 @@ The `0xC0000135` failure mode has its own short-circuit: both probe sites emit a
 
 - [Unity Runner Host Prerequisites](./unity-runner-host-prereqs.md)
 - [Unity CI Matrix](./unity-ci-matrix.md)
-- [Headless Test Runner](./headless-test-runner.md)
+- [Unity MCP Test Loop](./mcp-test-loop.md)
 - [Unity License Bootstrap](./unity-license-bootstrap.md)
 
 ## References

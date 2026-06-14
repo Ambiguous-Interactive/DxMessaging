@@ -20,9 +20,7 @@
  * carry ZERO version literals in their own YAML. The self-hosted / pwsh / static
  * consumers cannot easily read the JSON at runtime, so they keep literal version
  * strings; THIS validator is what keeps those literals honest -- it fails CI if
- * any consumer drifts from the canonical file. That set includes the two LOCAL
- * test runners (scripts/unity/run-tests.ps1 and scripts/unity/run-tests.sh),
- * which default to the release Unity version and are policed `mirror-release`.
+ * any consumer drifts from the canonical file.
  *
  * Per-file policies (see CONSUMER_POLICIES):
  *   - `no-literals`   : the file must contain NO code version literal. Applied to
@@ -75,11 +73,6 @@ const VERSION_LITERAL_ANCHORED_REGEX = /^[0-9]+\.[0-9]+\.[0-9]+[abfp][0-9]+$/;
  * `.github/workflows/*.yml` files NOT listed here default to `no-literals`
  * (see resolveWorkflowPolicy), so a hardcoded version in a new workflow is
  * caught. The disabled-archive directory is excluded entirely.
- *
- * The two LOCAL test runners (scripts/unity/run-tests.ps1 and
- * scripts/unity/run-tests.sh) hardcode the release Unity version as their
- * default; they are policed `mirror-release` so a release bump cannot silently
- * leave them behind.
  */
 const CONSUMER_POLICIES = Object.freeze({
   ".github/workflows/perf-numbers.yml": "no-literals",
@@ -89,9 +82,7 @@ const CONSUMER_POLICIES = Object.freeze({
   "scripts/unity/maintain-windows-runner.ps1": "mirror-all",
   "scripts/unity/install-runner-maintenance-task.ps1": "mirror-all",
   ".github/workflows/release.yml": "mirror-release",
-  ".github/workflows/unity-gameci-experiment.yml": "mirror-release",
-  "scripts/unity/run-tests.ps1": "mirror-release",
-  "scripts/unity/run-tests.sh": "mirror-release"
+  ".github/workflows/unity-gameci-experiment.yml": "mirror-release"
 });
 
 /**

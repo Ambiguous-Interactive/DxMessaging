@@ -43,7 +43,7 @@ prerequisites:
 dependencies:
   packages: []
   skills:
-    - "headless-test-runner"
+    - "mcp-test-loop"
     - "unity-perf-test-isolation"
 
 applies_to:
@@ -60,7 +60,7 @@ aliases:
   - "IL2CPP gate"
 
 related:
-  - "headless-test-runner"
+  - "mcp-test-loop"
   - "unity-license-bootstrap"
   - "unity-license-return-guarantee"
   - "unity-perf-test-isolation"
@@ -168,11 +168,10 @@ Add a version to the canonical `.github/unity-versions.json` `all` array when on
 
 1. Verify the Unity standalone CLI can install the requested version on the self-hosted Windows runner, or that the version already exists under `UNITY_EDITOR_INSTALL_ROOT` / `C:\Unity\Editors` / Unity Hub's install path.
 
-1. Run the runner locally to validate the new version:
-
-   ```bash
-   bash scripts/unity/run-tests.sh --platform editmode --unity-version <new-version>
-   ```
+1. Validate the new version locally via the MCP loop against the host editor.
+   The host editor must be running that exact Unity version; then run the EditMode
+   suite through `DxMcpTestRunner.Run` over `Unity_RunCommand`. See
+   [Unity MCP Test Loop](./mcp-test-loop.md).
 
 1. Push the workflow change. The first CI run will pull the new image (slow); subsequent runs hit the cache.
 
@@ -209,7 +208,7 @@ For `standalone` runs, the direct runner first configures the generated project 
 
 - [Unity Editor CLI Bootstrap](./unity-editor-cli-bootstrap.md)
 - [Unity Version Single Source of Truth](../github-actions/unity-version-single-source.md)
-- [Headless Test Runner](./headless-test-runner.md)
+- [Unity MCP Test Loop](./mcp-test-loop.md)
 - [Unity License Bootstrap](./unity-license-bootstrap.md)
 - [Unity Perf Test Isolation](./unity-perf-test-isolation.md)
 - [CI/CD Devcontainer Workflows](../github-actions/cicd-devcontainer-workflows.md)

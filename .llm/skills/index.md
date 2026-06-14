@@ -69,7 +69,7 @@
 | [GitHub Actions Workflow Consistency Part 1](./github-actions/workflow-consistency-part-1.md)          | [ok] 197   | [intermediate] | [stable] | [risk: low]    | migration, split      |
 | [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [warn] 299 | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
 | [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 81 | [intermediate] | [stable] | [risk: low]    | migration, split      |
-| [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 209   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
+| [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 198   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
 
 ## Packaging
 
@@ -210,14 +210,14 @@
 | Skill                                                                       | Lines      | Complexity     | Status   | Performance  | Tags                 |
 | --------------------------------------------------------------------------- | ---------- | -------------- | -------- | ------------ | -------------------- |
 | [Devcontainer Cache Contract](./unity/devcontainer-cache-contract.md)       | [ok] 208   | [intermediate] | [stable] | [risk: high] | devcontainer, docker |
-| [Headless Unity Test Runner](./unity/headless-test-runner.md)               | [ok] 238   | [intermediate] | [stable] | [risk: none] | unity, testing       |
-| [MessageAwareComponent Base-Call Contract](./unity/base-call-contract.md)   | [warn] 267 | [intermediate] | [stable] | [risk: none] | unity, analyzer      |
-| [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 224   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
-| [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 220   | [intermediate] | [stable] | [risk: none] | unity, cli           |
-| [Unity License Bootstrap](./unity/unity-license-bootstrap.md)               | [ok] 240   | [basic]        | [stable] | [risk: none] | unity, license       |
-| [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 290 | [intermediate] | [stable] | [risk: none] | unity, serial        |
-| [Unity Perf Test Isolation](./unity/unity-perf-test-isolation.md)           | [ok] 223   | [intermediate] | [stable] | [risk: high] | unity, performance   |
-| [Unity Runner Host Prerequisites](./unity/unity-runner-host-prereqs.md)     | [ok] 259   | [intermediate] | [stable] | [risk: none] | unity, windows       |
-| [UPM Test Harness](./unity/upm-test-harness.md)                             | [ok] 193   | [basic]        | [stable] | [risk: none] | unity, upm           |
+| [MessageAwareComponent Base-Call Contract](./unity/base-call-contract.md)   | [warn] 266 | [intermediate] | [stable] | [risk: none] | unity, analyzer      |
+| [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 222   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
+| [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 219   | [intermediate] | [stable] | [risk: none] | unity, cli           |
+| [Unity License Bootstrap](./unity/unity-license-bootstrap.md)               | [ok] 194   | [basic]        | [stable] | [risk: none] | unity, license       |
+| [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 273 | [intermediate] | [stable] | [risk: none] | unity, serial        |
+| [Unity MCP Test Loop](./unity/mcp-test-loop.md)                             | [ok] 172   | [intermediate] | [stable] | [risk: none] | unity, mcp           |
+| [Unity Perf Test Isolation](./unity/unity-perf-test-isolation.md)           | [ok] 208   | [intermediate] | [stable] | [risk: high] | unity, performance   |
+| [Unity Runner Host Prerequisites](./unity/unity-runner-host-prereqs.md)     | [ok] 251   | [intermediate] | [stable] | [risk: none] | unity, windows       |
+| [UPM Test Harness](./unity/upm-test-harness.md)                             | [ok] 190   | [basic]        | [stable] | [risk: none] | unity, upm           |
 
 ---

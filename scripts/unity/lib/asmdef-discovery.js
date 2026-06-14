@@ -7,8 +7,6 @@
  *
  * Used by:
  *   - .github/actions/compute-unity-assemblies (primary CI consumer)
- *   - scripts/unity/run-tests.sh (default include / exclude assembly list)
- *   - scripts/unity/run-tests.ps1 (PowerShell parity)
  *   - .github/workflows-disabled/unity-tests.yml (customParameters template)
  *
  * No filesystem mutation. Pure functions only.
@@ -367,8 +365,8 @@ function defaultExcludeAssemblies(repoRoot, options) {
 }
 
 // Only defaultIncludeAssemblies has external consumers
-// (compute-unity-assemblies/action.yml, run-tests.sh, run-tests.ps1). The
-// other helpers are internal; the self-test block below uses them directly.
+// (compute-unity-assemblies/action.yml). The other helpers are internal; the
+// self-test block below uses them directly.
 module.exports = {
   defaultIncludeAssemblies
 };

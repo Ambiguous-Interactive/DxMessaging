@@ -144,8 +144,6 @@ validator tells you precisely which mirror, if any, went stale.
   least one.
   - `.github/workflows/release.yml`
   - `.github/workflows/unity-gameci-experiment.yml`
-  - `scripts/unity/run-tests.ps1`
-  - `scripts/unity/run-tests.sh`
 
 Excluded from scanning: the canonical file itself, and everything under
 `.github/workflows-disabled/` (an intentionally unchecked archive). The

@@ -43,7 +43,7 @@ prerequisites:
 dependencies:
   packages: []
   skills:
-    - "headless-test-runner"
+    - "mcp-test-loop"
 
 applies_to:
   languages:
@@ -60,7 +60,7 @@ aliases:
   - "Test harness"
 
 related:
-  - "headless-test-runner"
+  - "mcp-test-loop"
   - "unity-ci-matrix"
   - "unity-perf-test-isolation"
 
@@ -161,11 +161,9 @@ The `testables` field exposes every asmdef under the package's `Tests/` director
    node scripts/unity/lib/asmdef-discovery.js
    ```
 
-1. Re-run the headless runner to confirm the new tests execute:
-
-   ```bash
-   bash scripts/unity/run-tests.sh --platform editmode
-   ```
+1. Confirm the new tests execute locally via the MCP loop: run the EditMode suite
+   through `DxMcpTestRunner.Run` over `Unity_RunCommand` against the host editor
+   (see [Unity MCP Test Loop](./mcp-test-loop.md)).
 
 If the new asmdef is a perf or DI-integration suite, name it accordingly (`*Benchmarks*`, `*Allocations*`, `*Comparisons*`, `*VContainer*`, `*Zenject*`, `*Reflex*`). The classification regex in `scripts/unity/lib/asmdef-discovery.js` will excluded it from the default include list. See [unity-perf-test-isolation](./unity-perf-test-isolation.md).
 
@@ -181,7 +179,7 @@ Avoid adding heavyweight runtime dependencies unless the corresponding tests can
 
 ## See Also
 
-- [Headless Test Runner](./headless-test-runner.md)
+- [Unity MCP Test Loop](./mcp-test-loop.md)
 - [Unity CI Matrix](./unity-ci-matrix.md)
 - [Unity Perf Test Isolation](./unity-perf-test-isolation.md)
 

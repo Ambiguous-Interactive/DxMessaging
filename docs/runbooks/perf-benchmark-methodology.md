@@ -259,12 +259,14 @@ missing or header-only baseline makes both the gate and the delta comment skip
 gracefully. The committed baseline is therefore CI-owned and Standalone-scoped;
 the regression gate compares `--scope Standalone` rows against it.
 
-[`scripts/unity/capture-perf-baseline.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/capture-perf-baseline.ps1)
-(`-Commit <ref>`, `-Output <csv>`, `-Replace` to overwrite) remains a local
-tool: it runs the explicit baseline-update benchmark in PlayMode and writes the
-normalized CSV. Because baseline rows match on scenario + platform, a locally
-captured PlayMode CSV serves local within-scope comparison (for example the
-local smoke gate), not the published Standalone baseline.
+To capture a baseline locally, run the explicit `DispatchThroughputBenchmarks`
+baseline-update test in PlayMode through the MCP loop against the host editor (run
+the benchmark assembly via `DxMcpTestRunner.Run`; see the Unity MCP Test Loop
+skill). The benchmark CSV defaults to `.artifacts/perf-baseline.csv` (override
+with the `DX_PERF_BASELINE` env var), and `DX_PERF_COMMIT` stamps the commit
+column. Because baseline rows match on scenario + platform, a locally captured
+PlayMode CSV serves local within-scope comparison (for example the local smoke
+gate), not the published Standalone baseline.
 
 ### Ad-hoc baselines for regression work
 
