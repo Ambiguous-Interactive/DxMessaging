@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-/*
-  Fix C# method names containing underscores by converting them to PascalCase.
-  - Converts names like Parse_Line_Bare -> ParseLineBare.
-  - Skips names that start with op_ (operator overload metadata names).
-  - By default, processes staged C# files; accepts explicit file paths.
-*/
+// Convert underscored C# method names to PascalCase (skipping op_ operator
+// metadata names); defaults to staged C# files, accepts explicit file paths.
 
 "use strict";
 

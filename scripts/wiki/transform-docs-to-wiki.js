@@ -18,6 +18,7 @@
 const fs = require("fs");
 const path = require("path");
 const { normalizeToLf } = require("../lib/line-endings");
+const { walkFiles } = require("../lib/repo-files");
 
 const DOCS_DIR = path.join(__dirname, "..", "..", "docs");
 
@@ -119,11 +120,10 @@ function findMarkdownLinks(line) {
       if (endTick !== -1) {
         i = endTick + backtickCount;
         continue;
-      } else {
-        // No matching closing delimiter, skip the opening backticks
-        i = j;
-        continue;
       }
+      // No matching closing delimiter, skip the opening backticks
+      i = j;
+      continue;
     }
 
     const isImage = line[i] === "!" && line[i + 1] === "[";
@@ -285,27 +285,12 @@ function transformFile(content, filePath) {
 }
 
 function getAllMarkdownFiles(dir) {
-  const files = [];
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch (error) {
-    console.warn(`Warning: Unable to read directory ${dir}: ${error.message}`);
-    return files;
-  }
-
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (!entry.name.startsWith(".") && entry.name !== "includes") {
-        files.push(...getAllMarkdownFiles(fullPath));
-      }
-    } else if (entry.name.endsWith(".md")) {
-      files.push(fullPath);
-    }
-  }
-
-  return files;
+  return walkFiles(dir, {
+    match: (fullPath) => fullPath.endsWith(".md"),
+    excludeDir: (fullPath, entry) => entry.name.startsWith(".") || entry.name === "includes",
+    onError: (error, failedDir) =>
+      console.warn(`Warning: Unable to read directory ${failedDir}: ${error.message}`)
+  });
 }
 
 function copyImages(sourceDir, targetDir, copiedImages = new Map()) {

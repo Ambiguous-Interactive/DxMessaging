@@ -256,21 +256,30 @@ function checkPayload() {
 
   const first = payloadHashes(firstPayload);
   const second = payloadHashes(secondPayload);
-  const reproducibilityFailures = compareHashMaps(first, second);
-  if (reproducibilityFailures.length > 0) {
+
+  // Emit diagnostics for the failing DLLs and signal a check failure. `rowFor`
+  // maps each DLL to the hash fields printPayloadDiagnostics renders; the
+  // metadata path pair compares the first build against `secondBase`.
+  const reportFailure = (title, failures, rowFor, secondBase) => {
     printPayloadDiagnostics(
-      "Analyzer payload is not reproducible across two clean builds.",
-      reproducibilityFailures.map((dllName) => ({
-        dllName,
-        firstHash: first.get(dllName),
-        secondHash: second.get(dllName)
-      })),
-      reproducibilityFailures.flatMap((dllName) => [
+      title,
+      failures.map((dllName) => ({ dllName, ...rowFor(dllName) })),
+      failures.flatMap((dllName) => [
         path.join(firstPayload, dllName),
-        path.join(secondPayload, dllName)
+        path.join(secondBase, dllName)
       ])
     );
     return 1;
+  };
+
+  const reproducibilityFailures = compareHashMaps(first, second);
+  if (reproducibilityFailures.length > 0) {
+    return reportFailure(
+      "Analyzer payload is not reproducible across two clean builds.",
+      reproducibilityFailures,
+      (dllName) => ({ firstHash: first.get(dllName), secondHash: second.get(dllName) }),
+      secondPayload
+    );
   }
 
   const committed = new Map();
@@ -287,19 +296,12 @@ function checkPayload() {
     (dllName) => first.get(dllName) !== committed.get(dllName)
   );
   if (freshnessFailures.length > 0) {
-    printPayloadDiagnostics(
+    return reportFailure(
       "Committed Editor/Analyzers payload is stale.",
-      freshnessFailures.map((dllName) => ({
-        dllName,
-        generatedHash: first.get(dllName),
-        committedHash: committed.get(dllName)
-      })),
-      freshnessFailures.flatMap((dllName) => [
-        path.join(firstPayload, dllName),
-        path.join(EDITOR_ANALYZERS_DIR, dllName)
-      ])
+      freshnessFailures,
+      (dllName) => ({ generatedHash: first.get(dllName), committedHash: committed.get(dllName) }),
+      EDITOR_ANALYZERS_DIR
     );
-    return 1;
   }
 
   console.log("Analyzer payload is reproducible and matches committed Editor/Analyzers DLLs.");

@@ -272,8 +272,6 @@ function main() {
 
 module.exports = {
   computeNextVersion,
-  compareSemver,
-  parseSemver,
   replacePackageVersion,
   rotateChangelog,
   prepareRelease,

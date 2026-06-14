@@ -1,19 +1,14 @@
 name: Spellcheck
 
 on:
+  # No pull_request paths filter: the workflow must always start so its required
+  # check reports on every PR shape. The `changes` job decides whether to do the
+  # real work; when nothing relevant changed it skips to success. See
+  # docs/runbooks/required-checks.md.
   pull_request:
-    paths:
-      - "**/*.md"
-      - "**/*.cs"
-      - "**/*.json"
-      - "**/*.yaml"
-      - "**/*.yml"
-      - "**/*.ps1"
-      - "**/*.js"
-      - ".github/**"
-      - ".llm/**"
-      - ".cspell.json"
-      - ".gitignore"
+    branches:
+      - main
+      - master
   push:
     branches:
       - main
@@ -40,8 +35,41 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect spellcheck-affecting changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Determine whether relevant files changed
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! files="$(gh api \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename')"; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if printf '%s\n' "$files" | grep -qE '(\.md$|\.cs$|\.json$|\.yaml$|\.yml$|\.ps1$|\.js$|^\.github/|^\.llm/|^\.cspell\.json$|^\.gitignore$)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   spellcheck:
     name: Check spelling
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

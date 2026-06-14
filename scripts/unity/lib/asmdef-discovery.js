@@ -323,47 +323,6 @@ function defaultIncludeAssemblies(repoRoot, options) {
     .map((entry) => entry.name);
 }
 
-/**
- * Names of test asmdefs excluded from the default Unity Test Runner suite.
- * Mirror of `defaultIncludeAssemblies` — anything not selected by the include
- * options is returned here. With no options, returns all perf + integration
- * asmdefs.
- *
- * @param {string} repoRoot - Absolute path to the repository root
- * @param {IncludeOptions} [options] - Opt-in flags (default: all false)
- * @returns {string[]} Sorted asmdef names (no extension)
- */
-function defaultExcludeAssemblies(repoRoot, options) {
-  const opts = options || {};
-  const includePerf = opts.includePerf === true;
-  const includeComparisons = opts.includeComparisons === true;
-  const includeIntegrations = opts.includeIntegrations === true;
-  const target = opts.target || (opts.runtimeOnly === true ? "standalone" : "editmode");
-
-  return enumerateTestAsmdefs(repoRoot)
-    .filter((entry) => {
-      // Mirror of defaultIncludeAssemblies. Foreign (non-DxMessaging-owned)
-      // asmdefs are never included, so they are always "excluded" here too.
-      if (entry.isForeign) {
-        return true;
-      }
-      if (!isAsmdefCompatibleWithTarget(entry.includePlatforms, entry.excludePlatforms, target)) {
-        return true;
-      }
-      if (entry.isPerf) {
-        return !includePerf;
-      }
-      if (entry.isComparison) {
-        return !includeComparisons;
-      }
-      if (entry.isInteg) {
-        return !includeIntegrations;
-      }
-      return false;
-    })
-    .map((entry) => entry.name);
-}
-
 // Only defaultIncludeAssemblies has external consumers
 // (compute-unity-assemblies/action.yml). The other helpers are internal; the
 // self-test block below uses them directly.
@@ -376,7 +335,6 @@ if (require.main === module) {
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const all = enumerateTestAsmdefs(repoRoot);
   const include = defaultIncludeAssemblies(repoRoot);
-  const exclude = defaultExcludeAssemblies(repoRoot);
 
   process.stdout.write(`repoRoot: ${repoRoot}\n`);
   process.stdout.write(`discovered ${all.length} asmdef(s):\n`);
@@ -396,12 +354,6 @@ if (require.main === module) {
   );
   for (const name of include) {
     process.stdout.write(`  + ${name}\n`);
-  }
-  process.stdout.write(
-    `\ndefault exclude (${exclude.length}, perf + comparison + integration suites):\n`
-  );
-  for (const name of exclude) {
-    process.stdout.write(`  - ${name}\n`);
   }
 
   // Diagnostic: runtime-only include list (used by the standalone player flow,

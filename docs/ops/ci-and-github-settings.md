@@ -263,8 +263,12 @@ For each environment, verify:
 Protect the default branch and release tags:
 
 1. Require pull requests for `master` and `main` if both are active.
-1. Require status checks for script tests, docs checks, package metadata, and
-   workflow validation.
+1. Require status checks. A required check must report on every pull request
+   shape, or auto-merge hangs waiting for an absent check. Today only the Unity
+   Tests legs satisfy that; the other gates path-filter themselves out and need
+   an always-report job first. See the
+   [Required Status Checks runbook](../runbooks/required-checks.md) for the
+   exact required set, the remediation pattern, and the ruleset commands.
 1. Require signed tags or limit tag creation to release maintainers if the
    organization supports it.
 1. Protect `v*` tags from deletion or force updates.
