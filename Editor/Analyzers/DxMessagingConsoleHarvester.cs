@@ -340,10 +340,11 @@ namespace DxMessaging.Editor.Analyzers
 
                 LoadFromDisk();
 
-                // AssetDatabase isn't fully ready inside the static ctor; defer the first scan one
-                // editor tick so settings load doesn't fight a transitional asset-import state.
-                EditorApplication.delayCall += SafeRescanFromCallback;
-                AssemblyReloadEvents.afterAssemblyReload += SafeRescanFromCallback;
+                // AssetDatabase isn't fully ready inside the static ctor; defer the first scan
+                // until Unity is idle so settings load doesn't fight a transitional asset-import
+                // state.
+                ScheduleRescanWhenIdle();
+                AssemblyReloadEvents.afterAssemblyReload += ScheduleRescanWhenIdle;
                 CompilationPipeline.assemblyCompilationFinished += OnAssemblyCompilationFinished;
                 if (!_logEntriesDisabled)
                 {
@@ -352,8 +353,9 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] DxMessagingConsoleHarvester failed to initialize: {ex.Message}"
+                DxMessagingEditorLog.LogWarning(
+                    "DxMessagingConsoleHarvester failed to initialize.",
+                    ex
                 );
                 _logEntriesDisabled = true;
                 IsAvailable = false;
@@ -428,7 +430,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("scanner", $"BaseCallTypeScanner.Scan threw: {ex.Message}");
+                LogExceptionOnce("scanner", "BaseCallTypeScanner.Scan threw.", ex);
                 scannerEntries = new Dictionary<string, BaseCallReportEntry>(
                     StringComparer.Ordinal
                 );
@@ -492,7 +494,7 @@ namespace DxMessaging.Editor.Analyzers
                 }
                 catch (Exception ex)
                 {
-                    LogOnce("aggregate", $"Snapshot merge failed: {ex.Message}");
+                    LogExceptionOnce("aggregate", "Snapshot merge failed.", ex);
                     // Fall through with the scanner-only snapshot; partial data is better than
                     // wiping the snapshot when the bridge half misbehaves.
                 }
@@ -616,7 +618,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("getcount", $"GetCount invocation failed: {ex.Message}");
+                LogExceptionOnce("getcount", "GetCount invocation failed.", ex);
                 return new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal);
             }
 
@@ -633,7 +635,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("start", $"StartGettingEntries invocation failed: {ex.Message}");
+                LogExceptionOnce("start", "StartGettingEntries invocation failed.", ex);
                 return new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal);
             }
 
@@ -652,8 +654,13 @@ namespace DxMessaging.Editor.Analyzers
                     {
                         harvestedCount = (int)_getCount.Invoke(null, null);
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        LogExceptionOnce(
+                            "getcount-after-start",
+                            "GetCount after StartGettingEntries failed.",
+                            ex
+                        );
                         // Retain the previous count.
                     }
                 }
@@ -670,9 +677,10 @@ namespace DxMessaging.Editor.Analyzers
                     }
                     catch (Exception ex)
                     {
-                        LogOnce(
+                        LogExceptionOnce(
                             "getentry",
-                            $"GetEntryInternal invocation failed at index {j}: {ex.Message}"
+                            $"GetEntryInternal invocation failed at index {j}.",
+                            ex
                         );
                         continue;
                     }
@@ -684,9 +692,10 @@ namespace DxMessaging.Editor.Analyzers
                     }
                     catch (Exception ex)
                     {
-                        LogOnce(
+                        LogExceptionOnce(
                             "getmessage",
-                            $"LogEntry.message read failed at index {j}: {ex.Message}"
+                            $"LogEntry.message read failed at index {j}.",
+                            ex
                         );
                         continue;
                     }
@@ -699,7 +708,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("harvest", $"Harvest loop failed: {ex.Message}");
+                LogExceptionOnce("harvest", "Harvest loop failed.", ex);
             }
             finally
             {
@@ -709,7 +718,7 @@ namespace DxMessaging.Editor.Analyzers
                 }
                 catch (Exception ex)
                 {
-                    LogOnce("end", $"EndGettingEntries invocation failed: {ex.Message}");
+                    LogExceptionOnce("end", "EndGettingEntries invocation failed.", ex);
                 }
             }
 
@@ -720,9 +729,10 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce(
+                LogExceptionOnce(
                     "aggregate-logentries",
-                    $"Aggregating LogEntries lines failed: {ex.Message}"
+                    "Aggregating LogEntries lines failed.",
+                    ex
                 );
                 return new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal);
             }
@@ -770,11 +780,7 @@ namespace DxMessaging.Editor.Analyzers
             // LogEntries is unavailable, Tick is not registered, so we fall back to delayCall.
             if (_logEntriesDisabled)
             {
-                if (!_rescanScheduled)
-                {
-                    _rescanScheduled = true;
-                    EditorApplication.delayCall += DrainScheduledRescan;
-                }
+                ScheduleRescanWhenIdle();
                 return;
             }
             _lastSeenCount = -1;
@@ -816,7 +822,7 @@ namespace DxMessaging.Editor.Analyzers
                 }
                 catch (Exception ex)
                 {
-                    LogOnce("tick-count", $"GetCount during Tick failed: {ex.Message}");
+                    LogExceptionOnce("tick-count", "GetCount during Tick failed.", ex);
                     return;
                 }
 
@@ -827,7 +833,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("tick", $"Tick failed: {ex.Message}");
+                LogExceptionOnce("tick", "Tick failed.", ex);
             }
         }
 
@@ -841,27 +847,13 @@ namespace DxMessaging.Editor.Analyzers
             // are still compiling; the compiler holds its log-buffer lock and our reflection
             // call blocks waiting for it. Combined with AssetDatabase touches inside RescanNow,
             // this caused permanent script-compilation freezes on Unity startup.
-            //
-            // S4: when the legacy console-bridge is OFF, we don't need to parse CompilerMessage
-            // payloads at all; the IL-reflection scanner is the sole data source and it runs
-            // off the AssemblyReloadEvents.afterAssemblyReload hook that fires once per build,
-            // not per-assembly. Bail out early so a 30-assembly build doesn't burn CPU running
-            // the regex-heavy parser 30 times for output we'll never read. Read the setting once
-            // up-front so the gate decision is consistent for the whole callback (settings can
-            // be edited concurrently by the Project Settings page on the main thread).
-            DxMessagingSettings settingsForGate = TryLoadSettings();
-            bool bridgeEnabled = settingsForGate != null && settingsForGate._useConsoleBridge;
-            if (!bridgeEnabled)
-            {
-                return;
-            }
-
             // We DO parse the per-assembly CompilerMessage payload here (cheap, pure-CPU work,
-            // no AssetDatabase / LogEntries contact) and stash it in the cross-thread channel.
-            // DrainScheduledRescan (on a delayCall) folds the channel into the live snapshot
-            // once the compile burst is complete. This is the primary data path on Unity 2021,
-            // where Roslyn-analyzer warnings DO arrive in CompilerMessage[] but do NOT reliably
-            // appear in the LogEntries store.
+            // no AssetDatabase / LogEntries contact) and stash it in the cross-thread channel
+            // without checking settings here. The settings gate requires AssetDatabase access, so
+            // RescanNow applies it later after DrainScheduledRescan has requeued until Unity is
+            // idle; if the bridge is disabled, RescanNow clears this pending buffer. This is the
+            // primary bridge data path on Unity 2021, where Roslyn-analyzer warnings DO arrive in
+            // CompilerMessage[] but do NOT reliably appear in the LogEntries store.
             try
             {
                 if (!string.IsNullOrEmpty(assemblyPath) && messages != null)
@@ -899,17 +891,21 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce(
+                LogExceptionOnce(
                     "compilation-parse",
-                    $"Failed to parse CompilerMessage payload for {assemblyPath}: {ex.Message}"
+                    $"Failed to parse CompilerMessage payload for {assemblyPath}.",
+                    ex
                 );
             }
 
-            // Fix: schedule a single delayCall. delayCall fires AFTER the current event chain
-            // unwinds and AFTER `EditorApplication.isCompiling` flips back to false. Multiple
-            // delayCall registrations from the same compile burst are debounced by the
-            // _rescanScheduled latch; only one deferred RescanNow runs per build.
-            if (_rescanScheduled)
+            // Schedule a single delayed drain. The callback rechecks editor state and requeues if
+            // Unity is still compiling/updating, so this never drops the final rescan.
+            ScheduleRescanWhenIdle();
+        }
+
+        internal static void ScheduleRescanWhenIdle()
+        {
+            if (!IsAvailable || _rescanScheduled)
             {
                 return;
             }
@@ -942,7 +938,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("rescan-callback", $"RescanNow callback threw: {ex.Message}");
+                LogExceptionOnce("rescan-callback", "RescanNow callback threw.", ex);
             }
         }
 
@@ -971,7 +967,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("settings", $"Could not load DxMessagingSettings: {ex.Message}");
+                LogExceptionOnce("settings", "Could not load DxMessagingSettings.", ex);
                 return null;
             }
         }
@@ -984,9 +980,10 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce(
+                LogExceptionOnce(
                     $"resolve-{name}",
-                    $"Failed to resolve static method '{name}' on {type.FullName}: {ex.Message}"
+                    $"Failed to resolve static method '{name}' on {type.FullName}.",
+                    ex
                 );
                 return null;
             }
@@ -1000,9 +997,10 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce(
+                LogExceptionOnce(
                     $"resolve-field-{name}",
-                    $"Failed to resolve instance field '{name}' on {type.FullName}: {ex.Message}"
+                    $"Failed to resolve instance field '{name}' on {type.FullName}.",
+                    ex
                 );
                 return null;
             }
@@ -1017,6 +1015,15 @@ namespace DxMessaging.Editor.Analyzers
             Debug.LogWarning($"[DxMessaging] {message}");
         }
 
+        private static void LogExceptionOnce(string key, string message, Exception exception)
+        {
+            if (!AlreadyWarned.Add(key))
+            {
+                return;
+            }
+            DxMessagingEditorLog.LogWarning(message, exception);
+        }
+
         private static void RaiseReportUpdated()
         {
             try
@@ -1025,7 +1032,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[DxMessaging] ReportUpdated subscriber threw: {ex.Message}");
+                LogExceptionOnce("report-updated", "ReportUpdated subscriber threw.", ex);
             }
         }
 
@@ -1057,7 +1064,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("persist", $"Failed to persist analyzer diagnostics report: {ex.Message}");
+                LogExceptionOnce("persist", "Failed to persist analyzer diagnostics report.", ex);
             }
         }
 
@@ -1097,7 +1104,7 @@ namespace DxMessaging.Editor.Analyzers
             }
             catch (Exception ex)
             {
-                LogOnce("load", $"Failed to load analyzer diagnostics report: {ex.Message}");
+                LogExceptionOnce("load", "Failed to load analyzer diagnostics report.", ex);
             }
         }
 

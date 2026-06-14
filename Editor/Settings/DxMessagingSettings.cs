@@ -25,7 +25,7 @@ namespace DxMessaging.Editor.Settings
         [SerializeField]
         [HideInInspector]
         [FormerlySerializedAs("_enableDiagnosticsInEditor")]
-        private bool _legacyEnableDiagnosticsInEditor;
+        internal bool _legacyEnableDiagnosticsInEditor;
 
         [SerializeField]
         internal int _messageBufferSize = IMessageBus.DefaultMessageBufferSize;
@@ -47,8 +47,12 @@ namespace DxMessaging.Editor.Settings
         /// </summary>
         public DiagnosticsTarget DiagnosticsTargets
         {
-            get => _diagnosticsTargets;
-            set => _diagnosticsTargets = value;
+            get => EffectiveDiagnosticsTargets;
+            set
+            {
+                _diagnosticsTargets = value;
+                _legacyEnableDiagnosticsInEditor = false;
+            }
         }
 
         /// <summary>
@@ -128,8 +132,8 @@ namespace DxMessaging.Editor.Settings
         /// </para>
         /// <para>
         /// Toggling this property is observable via a deferred
-        /// <see cref="DxMessaging.Editor.Analyzers.DxMessagingConsoleHarvester.RescanNow"/> so the
-        /// inspector overlay refreshes without waiting for the next compile.
+        /// <see cref="DxMessaging.Editor.Analyzers.DxMessagingConsoleHarvester.ScheduleRescanWhenIdle"/>
+        /// so the inspector overlay refreshes without waiting for the next compile.
         /// </para>
         /// </remarks>
         public bool UseConsoleBridge
@@ -143,24 +147,51 @@ namespace DxMessaging.Editor.Settings
                 }
                 _useConsoleBridge = value;
                 EditorUtility.SetDirty(this);
-                EditorApplication.delayCall += DxMessaging
-                    .Editor
-                    .Analyzers
-                    .DxMessagingConsoleHarvester
-                    .RescanNow;
+                DxMessaging.Editor.Analyzers.DxMessagingConsoleHarvester.ScheduleRescanWhenIdle();
             }
         }
 
         /// <summary>
-        /// Fully-qualified type names excluded from the base-call check. Editable via the Project Settings UI
-        /// or via the Inspector overlay's "Ignore this type" button.
+        /// Fully-qualified type names excluded from the base-call check. Editable on the settings
+        /// asset Inspector or via the Inspector overlay's "Ignore this type" button.
         /// </summary>
         public IReadOnlyList<string> BaseCallIgnoredTypes => _baseCallIgnoredTypes;
 
         /// <summary>
-        /// Loads the settings asset if present, otherwise creates it with sensible defaults.
+        /// Diagnostics target value after applying legacy serialized fields in memory. This does
+        /// not mark the settings asset dirty or persist the migration.
         /// </summary>
-        internal static DxMessagingSettings GetOrCreateSettings()
+        internal DiagnosticsTarget EffectiveDiagnosticsTargets
+        {
+            get
+            {
+                if (
+                    _diagnosticsTargets == DiagnosticsTarget.Off
+                    && _legacyEnableDiagnosticsInEditor
+                )
+                {
+                    return DiagnosticsTarget.Editor;
+                }
+                return _diagnosticsTargets;
+            }
+        }
+
+        /// <summary>
+        /// Loads the settings asset without creating, saving, or migrating it. Returns
+        /// <c>null</c> when no asset exists.
+        /// </summary>
+        /// <remarks>
+        /// Unlike <see cref="GetOrCreateSettings"/>, this performs NO <c>AssetDatabase</c> mutation
+        /// (<c>CreateAsset</c>/<c>SaveAssets</c>/durable legacy migration), so it is safe to call
+        /// during the domain-load asset-import window -- e.g. from an <c>[InitializeOnLoad]</c>
+        /// static constructor -- where a synchronous mutation re-enters the importer and crashes
+        /// the native editor (issue #210). Legacy serialized fields are still reflected through
+        /// effective property getters so passive callers see the intended value while the durable
+        /// migration waits for a safe editor-idle tick. Callers that need the asset
+        /// created/migrated must schedule <see cref="GetOrCreateSettings"/> off that window (e.g.
+        /// via <see cref="DxMessaging.Editor.DxMessagingEditorIdle.ScheduleAssetDatabaseMutation"/>).
+        /// </remarks>
+        internal static DxMessagingSettings LoadSettingsPassive()
         {
             DxMessagingSettings settings = AssetDatabase.LoadAssetAtPath<DxMessagingSettings>(
                 SettingsPath
@@ -174,6 +205,21 @@ namespace DxMessaging.Editor.Settings
                     .Select(AssetDatabase.LoadAssetAtPath<DxMessagingSettings>)
                     .FirstOrDefault(asset => asset != null);
             }
+
+            return settings;
+        }
+
+        /// <summary>
+        /// Loads the settings asset if present, otherwise creates it with sensible defaults.
+        /// </summary>
+        /// <remarks>
+        /// Performs <c>AssetDatabase</c> mutations (create on first run, legacy-field migration), so
+        /// it MUST NOT be called synchronously during the domain-load asset-import window (issue
+        /// #210). Use <see cref="LoadSettingsPassive"/> for mutation-free reads in that context.
+        /// </remarks>
+        internal static DxMessagingSettings GetOrCreateSettings()
+        {
+            DxMessagingSettings settings = LoadSettingsPassive();
 
             if (settings == null)
             {
@@ -191,18 +237,28 @@ namespace DxMessaging.Editor.Settings
                 AssetDatabase.SaveAssets();
             }
 
-            if (
-                settings._diagnosticsTargets == DiagnosticsTarget.Off
-                && settings._legacyEnableDiagnosticsInEditor
-            )
+            if (settings.ApplyLegacyDiagnosticsMigration())
             {
-                settings._diagnosticsTargets = DiagnosticsTarget.Editor;
-                settings._legacyEnableDiagnosticsInEditor = false;
                 EditorUtility.SetDirty(settings);
                 AssetDatabase.SaveAssets();
             }
 
             return settings;
+        }
+
+        internal bool ApplyLegacyDiagnosticsMigration()
+        {
+            if (!_legacyEnableDiagnosticsInEditor)
+            {
+                return false;
+            }
+
+            if (_diagnosticsTargets == DiagnosticsTarget.Off)
+            {
+                _diagnosticsTargets = DiagnosticsTarget.Editor;
+            }
+            _legacyEnableDiagnosticsInEditor = false;
+            return true;
         }
 
         /// <summary>
@@ -216,10 +272,7 @@ namespace DxMessaging.Editor.Settings
         private void OnEnable()
         {
             // Defensive: the field can be null if the asset was saved before this field existed.
-            if (_baseCallIgnoredTypes == null)
-            {
-                _baseCallIgnoredTypes = new List<string>();
-            }
+            EnsureIgnoreListInitialized();
             // Intentionally NOT regenerating the sidecar here. OnEnable fires on every domain reload
             // and play-mode entry; the sidecar on disk is already consistent with what we'd write
             // (RegenerateSidecar is idempotent, but ImportAsset still produces churn). Regen runs
@@ -228,11 +281,21 @@ namespace DxMessaging.Editor.Settings
 
         private void OnValidate()
         {
+            EnsureIgnoreListInitialized();
+            // Issue #210: OnValidate fires during asset deserialization, including the domain-load
+            // asset-import-worker window where EditorApplication.isUpdating/isCompiling are both
+            // false. Writing + importing the sidecar synchronously there re-enters the asset
+            // importer and hard-crashes the native editor (GuidReservations::Reserve abort on Unity
+            // 6000.4+). Always defer to the next editor tick; never import synchronously from here.
+            DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(this);
+        }
+
+        private void EnsureIgnoreListInitialized()
+        {
             if (_baseCallIgnoredTypes == null)
             {
                 _baseCallIgnoredTypes = new List<string>();
             }
-            TryRegenerateSidecar();
         }
 
         /// <summary>
@@ -245,10 +308,7 @@ namespace DxMessaging.Editor.Settings
             {
                 return;
             }
-            if (_baseCallIgnoredTypes == null)
-            {
-                _baseCallIgnoredTypes = new List<string>();
-            }
+            EnsureIgnoreListInitialized();
             if (
                 _baseCallIgnoredTypes.Any(entry =>
                     string.Equals(entry, fullyQualifiedTypeName, System.StringComparison.Ordinal)
@@ -296,8 +356,9 @@ namespace DxMessaging.Editor.Settings
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning(
-                    $"[DxMessaging] Failed to regenerate base-call ignore sidecar: {ex.Message}"
+                DxMessaging.Editor.DxMessagingEditorLog.LogWarning(
+                    "Failed to regenerate base-call ignore sidecar.",
+                    ex
                 );
             }
         }

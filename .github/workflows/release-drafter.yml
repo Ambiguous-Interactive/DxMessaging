@@ -74,9 +74,29 @@ jobs:
           echo "changelog_section=Unreleased" >> "$GITHUB_OUTPUT"
           echo "Extracted Unreleased changelog bytes: $(wc -c < /tmp/changelog_section.md)"
 
+      # release-drafter intermittently trips a transient GitHub API timeout ("We couldn't respond
+      # to your request in time") while diffing commits between the last tag and the default branch.
+      # The action is idempotent -- it finds and updates the SAME draft release each run -- so a
+      # single backed-off retry clears the flake without masking a genuine outage: the retry has no
+      # continue-on-error, so a second failure fails the job. continue-on-error on the first attempt
+      # keeps its real result observable via steps.<id>.outcome while letting the retry proceed.
       - name: Run Release Drafter
         uses: release-drafter/release-drafter@v7
         id: release_drafter
+        continue-on-error: true
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backoff before Release Drafter retry
+        if: steps.release_drafter.outcome == 'failure'
+        run: sleep 15
+
+      - name: Run Release Drafter (retry)
+        if: steps.release_drafter.outcome == 'failure'
+        uses: release-drafter/release-drafter@v7
+        id: release_drafter_retry
         with:
           config-name: release-drafter.yml
         env:
@@ -85,8 +105,11 @@ jobs:
       - name: Update release body with changelog
         uses: actions/github-script@v9
         env:
-          RELEASE_ID: ${{ steps.release_drafter.outputs.id }}
-          DRAFTER_BODY: ${{ steps.release_drafter.outputs.body }}
+          # Whichever attempt succeeded supplies the outputs; a failed attempt yields empty strings,
+          # so the || falls through to the retry's outputs. If both attempts failed, the job already
+          # stopped at the retry step and this step never runs.
+          RELEASE_ID: ${{ steps.release_drafter.outputs.id || steps.release_drafter_retry.outputs.id }}
+          DRAFTER_BODY: ${{ steps.release_drafter.outputs.body || steps.release_drafter_retry.outputs.body }}
           CHANGELOG_FILE: ${{ steps.changelog.outputs.changelog_file }}
           CHANGELOG_SECTION: ${{ steps.changelog.outputs.changelog_section }}
         with:

@@ -31,10 +31,9 @@ namespace DxMessaging.Editor
         private static readonly string SourceGeneratorDllName =
             "WallstopStudios.DxMessaging.SourceGenerators.dll";
 
-        // The analyzer DLL is a SEPARATE assembly compiled against Roslyn 3.8.0 because Unity 2021's
-        // analyzer loader silently rejects analyzer DLLs built against Roslyn 4.x. The source-
-        // generator DLL above stays at Roslyn 4.x because it uses IIncrementalGenerator (4.0+).
-        // Both DLLs ship side-by-side and both need the RoslynAnalyzer label.
+        // The analyzer DLL is a SEPARATE assembly, but both compiler-host DLLs are pinned to
+        // Unity 2021-compatible Roslyn 3.8.0. They ship side-by-side and both need the
+        // RoslynAnalyzer label.
         private static readonly string AnalyzerDllName = "WallstopStudios.DxMessaging.Analyzer.dll";
 
         // The analyzer DLLs and shared Roslyn surface ship unconditionally; they're light enough
@@ -73,9 +72,36 @@ namespace DxMessaging.Editor
 
         static SetupCscRsp()
         {
-            EditorApplication.delayCall += EnsureDLLsExistInAssets;
-            EditorApplication.delayCall += EnsureCscRsp;
-            EditorApplication.delayCall += EnsureAdditionalFileForIgnoreList;
+            ScheduleSetupStep(EnsureDLLsExistInAssets, "copy analyzer DLLs into Assets");
+            ScheduleSetupStep(EnsureCscRsp, "clean csc.rsp analyzer entries");
+            ScheduleAdditionalFileForIgnoreListSync();
+        }
+
+        internal static void ScheduleAdditionalFileForIgnoreListSync()
+        {
+            ScheduleSetupStep(
+                EnsureAdditionalFileForIgnoreList,
+                "sync csc.rsp base-call ignore additionalfile entry"
+            );
+        }
+
+        private static void ScheduleSetupStep(Action work, string description)
+        {
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
+                RunSetupStep(work, description)
+            );
+        }
+
+        private static void RunSetupStep(Action work, string description)
+        {
+            try
+            {
+                work();
+            }
+            catch (Exception ex)
+            {
+                DxMessagingEditorLog.LogError($"SetupCscRsp failed to {description}.", ex);
+            }
         }
 
         private static void EnsureDLLsExistInAssets()
@@ -183,10 +209,11 @@ namespace DxMessaging.Editor
                         DllNames.Add(requiredDllName);
                         break;
                     }
-                    catch (Exception e)
+                    catch (Exception ex)
                     {
-                        Debug.LogError(
-                            $"Failed to copy {requiredDllName} to Assets, failed with {e}."
+                        DxMessagingEditorLog.LogError(
+                            $"Failed to copy {requiredDllName} to Assets.",
+                            ex
                         );
                     }
                 }
@@ -261,7 +288,7 @@ namespace DxMessaging.Editor
             }
             catch (IOException ex)
             {
-                Debug.LogError($"Failed to modify csc.rsp: {ex}");
+                DxMessagingEditorLog.LogError("Failed to modify csc.rsp.", ex);
             }
         }
 
@@ -273,12 +300,40 @@ namespace DxMessaging.Editor
             List<string> newLines = new();
             foundStaleEntries = false;
 
-            foreach (string line in lines)
+            foreach (string line in lines ?? Array.Empty<string>())
             {
-                string trimmedLine = line.Trim();
-                if (IsDxMessagingAnalyzerArgument(trimmedLine))
+                string trimmedLine = line?.Trim();
+                if (string.IsNullOrEmpty(trimmedLine))
                 {
-                    foundStaleEntries = true;
+                    continue;
+                }
+
+                if (IsResponseFileComment(trimmedLine))
+                {
+                    newLines.Add(trimmedLine);
+                    continue;
+                }
+
+                List<string> retainedArguments = new();
+                bool removedFromLine = false;
+                foreach (string argument in SplitResponseFileArguments(trimmedLine))
+                {
+                    if (IsDxMessagingAnalyzerArgument(argument))
+                    {
+                        foundStaleEntries = true;
+                        removedFromLine = true;
+                        continue;
+                    }
+
+                    retainedArguments.Add(argument);
+                }
+
+                if (removedFromLine)
+                {
+                    if (retainedArguments.Count > 0)
+                    {
+                        newLines.Add(string.Join(" ", retainedArguments));
+                    }
                     continue;
                 }
 
@@ -290,7 +345,10 @@ namespace DxMessaging.Editor
 
         private static bool IsDxMessagingAnalyzerArgument(string trimmedLine)
         {
-            return trimmedLine.StartsWith("-a:", StringComparison.OrdinalIgnoreCase)
+            return (
+                    TryGetCompilerOptionValue(trimmedLine, "a", out string _)
+                    || TryGetCompilerOptionValue(trimmedLine, "analyzer", out string _)
+                )
                 && (
                     trimmedLine.Contains(
                         "com.wallstop-studios.dxmessaging",
@@ -309,8 +367,9 @@ namespace DxMessaging.Editor
         /// entries pointing at moved or deleted sidecar paths are removed.
         /// </summary>
         /// <remarks>
-        /// The sidecar is generated by <see cref="DxMessagingBaseCallIgnoreSync"/> only when there
-        /// is content to write. csc happily runs without it, so this method does NOT auto-create.
+        /// The sidecar is generated by <see cref="DxMessagingBaseCallIgnoreSync"/>. csc happily
+        /// runs without it, so this method does NOT auto-create; sidecar writes schedule this sync
+        /// again after deferred regeneration completes.
         /// </remarks>
         private static void EnsureAdditionalFileForIgnoreList()
         {
@@ -329,74 +388,12 @@ namespace DxMessaging.Editor
                     .Replace("\\", "/");
 
                 bool sidecarExists = File.Exists(sidecarAbsolutePath);
-                string desiredLine = $"-additionalfile:\"{sidecarRelativePath}\"";
-
-                string rspContent = File.ReadAllText(RspFilePath);
-                List<string> newLines = new();
-                bool foundDesired = false;
-                bool foundStale = false;
-
-                foreach (
-                    string line in rspContent.Split(
-                        new[] { '\r', '\n' },
-                        StringSplitOptions.RemoveEmptyEntries
-                    )
-                )
-                {
-                    string trimmedLine = line.Trim();
-
-                    bool isDxMessagingAdditionalFile =
-                        trimmedLine.StartsWith(
-                            "-additionalfile:",
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                        && trimmedLine.Contains("DxMessaging.", StringComparison.OrdinalIgnoreCase)
-                        && trimmedLine.Contains(
-                            "BaseCallIgnore",
-                            StringComparison.OrdinalIgnoreCase
-                        );
-
-                    if (isDxMessagingAdditionalFile)
-                    {
-                        if (
-                            sidecarExists
-                            && string.Equals(
-                                trimmedLine,
-                                desiredLine,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                        )
-                        {
-                            if (!foundDesired)
-                            {
-                                newLines.Add(trimmedLine);
-                                foundDesired = true;
-                            }
-                            else
-                            {
-                                // Drop duplicate.
-                                foundStale = true;
-                            }
-                        }
-                        else
-                        {
-                            // Stale entry pointing at a moved/renamed/deleted sidecar; drop it.
-                            foundStale = true;
-                        }
-                    }
-                    else
-                    {
-                        newLines.Add(trimmedLine);
-                    }
-                }
-
-                bool needsAppend = sidecarExists && !foundDesired;
-                if (needsAppend)
-                {
-                    newLines.Add(desiredLine);
-                }
-
-                bool modified = foundStale || needsAppend;
+                string[] newLines = SynchronizeAdditionalFileForIgnoreListLines(
+                    File.ReadAllLines(RspFilePath),
+                    sidecarRelativePath,
+                    sidecarExists,
+                    out bool modified
+                );
 
                 if (modified)
                 {
@@ -412,8 +409,225 @@ namespace DxMessaging.Editor
             }
             catch (IOException ex)
             {
-                Debug.LogError($"Failed to update csc.rsp additionalfile entry: {ex}");
+                DxMessagingEditorLog.LogError("Failed to update csc.rsp additionalfile entry.", ex);
             }
+        }
+
+        internal static string[] SynchronizeAdditionalFileForIgnoreListLines(
+            IEnumerable<string> lines,
+            string sidecarRelativePath,
+            bool sidecarExists,
+            out bool modified
+        )
+        {
+            string desiredLine = FormatAdditionalFileArgument(sidecarRelativePath);
+            List<string> newLines = new();
+            bool foundDesired = false;
+            bool foundStale = false;
+
+            foreach (string line in lines ?? Array.Empty<string>())
+            {
+                string trimmedLine = line?.Trim();
+                if (string.IsNullOrEmpty(trimmedLine))
+                {
+                    continue;
+                }
+
+                if (IsResponseFileComment(trimmedLine))
+                {
+                    newLines.Add(trimmedLine);
+                    continue;
+                }
+
+                List<string> retainedArguments = new();
+                bool removedFromLine = false;
+                foreach (string argument in SplitResponseFileArguments(trimmedLine))
+                {
+                    if (!IsDxMessagingBaseCallIgnoreAdditionalFile(argument))
+                    {
+                        retainedArguments.Add(argument);
+                        continue;
+                    }
+
+                    bool isDesired =
+                        sidecarExists
+                        && IsAdditionalFileArgumentForPath(argument, sidecarRelativePath);
+                    if (!isDesired)
+                    {
+                        // Stale entry pointing at a moved/renamed/deleted sidecar; drop it.
+                        foundStale = true;
+                        removedFromLine = true;
+                        continue;
+                    }
+
+                    if (foundDesired)
+                    {
+                        // Drop duplicate.
+                        foundStale = true;
+                        removedFromLine = true;
+                        continue;
+                    }
+
+                    retainedArguments.Add(desiredLine);
+                    foundDesired = true;
+                    if (!string.Equals(argument, desiredLine, StringComparison.Ordinal))
+                    {
+                        foundStale = true;
+                        removedFromLine = true;
+                    }
+                }
+
+                if (retainedArguments.Count > 0)
+                {
+                    newLines.Add(string.Join(" ", retainedArguments));
+                    continue;
+                }
+
+                if (!removedFromLine)
+                {
+                    newLines.Add(trimmedLine);
+                }
+            }
+
+            bool needsAppend = sidecarExists && !foundDesired;
+            if (needsAppend)
+            {
+                newLines.Add(desiredLine);
+            }
+
+            modified = foundStale || needsAppend;
+            return newLines.ToArray();
+        }
+
+        private static string FormatAdditionalFileArgument(string sidecarRelativePath)
+        {
+            return $"-additionalfile:\"{sidecarRelativePath}\"";
+        }
+
+        private static bool IsResponseFileComment(string trimmedLine)
+        {
+            return trimmedLine.StartsWith("#", StringComparison.Ordinal);
+        }
+
+        private static bool IsDxMessagingBaseCallIgnoreAdditionalFile(string trimmedLine)
+        {
+            return TryGetCompilerOptionValue(trimmedLine, "additionalfile", out string value)
+                && value.Contains("DxMessaging.", StringComparison.OrdinalIgnoreCase)
+                && value.Contains("BaseCallIgnore", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsAdditionalFileArgumentForPath(
+            string argument,
+            string sidecarRelativePath
+        )
+        {
+            if (!TryGetCompilerOptionValue(argument, "additionalfile", out string value))
+            {
+                return false;
+            }
+
+            string unquotedValue = UnquoteWholeArgument(value.Trim());
+            return string.Equals(
+                unquotedValue.Replace("\\", "/"),
+                sidecarRelativePath,
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+
+        private static bool TryGetCompilerOptionValue(
+            string argument,
+            string optionName,
+            out string value
+        )
+        {
+            value = string.Empty;
+            if (string.IsNullOrEmpty(argument) || string.IsNullOrEmpty(optionName))
+            {
+                return false;
+            }
+
+            string unquotedArgument = UnquoteWholeArgument(argument.Trim());
+            if (unquotedArgument.Length <= optionName.Length + 1)
+            {
+                return false;
+            }
+
+            if (unquotedArgument[0] != '-' && unquotedArgument[0] != '/')
+            {
+                return false;
+            }
+
+            if (unquotedArgument[optionName.Length + 1] != ':')
+            {
+                return false;
+            }
+
+            if (
+                string.Compare(
+                    unquotedArgument,
+                    1,
+                    optionName,
+                    0,
+                    optionName.Length,
+                    StringComparison.OrdinalIgnoreCase
+                ) != 0
+            )
+            {
+                return false;
+            }
+
+            value = unquotedArgument.Substring(optionName.Length + 2);
+            return true;
+        }
+
+        private static string UnquoteWholeArgument(string argument)
+        {
+            if (argument.Length >= 2 && argument[0] == '"' && argument[argument.Length - 1] == '"')
+            {
+                return argument.Substring(1, argument.Length - 2).Replace("\"\"", "\"");
+            }
+
+            return argument;
+        }
+
+        private static List<string> SplitResponseFileArguments(string line)
+        {
+            List<string> arguments = new();
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return arguments;
+            }
+
+            System.Text.StringBuilder current = new();
+            bool inQuotes = false;
+            foreach (char character in line)
+            {
+                if (character == '"')
+                {
+                    inQuotes = !inQuotes;
+                    current.Append(character);
+                    continue;
+                }
+
+                if (char.IsWhiteSpace(character) && !inQuotes)
+                {
+                    if (current.Length > 0)
+                    {
+                        arguments.Add(current.ToString());
+                        current.Clear();
+                    }
+                    continue;
+                }
+
+                current.Append(character);
+            }
+
+            if (current.Length > 0)
+            {
+                arguments.Add(current.ToString());
+            }
+
+            return arguments;
         }
     }
 }

@@ -359,7 +359,7 @@ When DxMessaging suppresses a base-call check, it consults the following sources
 
 1. **Method-level attribute** -- `[DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]` placed directly on the override.
 1. **Class-level attribute** -- `[DxIgnoreMissingBaseCall]` placed on the type declaration; suppresses all guarded overrides inside that type.
-1. **Project ignore list** -- fully-qualified type names listed in `Assets/Editor/DxMessaging.BaseCallIgnore.txt` (one per line). Manage entries via **Project Settings -> DxMessaging -> Base-Call Check -> Ignored Types**.
+1. **Project ignore list** -- fully-qualified type names mirrored to the generated `Assets/Editor/DxMessaging.BaseCallIgnore.txt` sidecar (one per line). Manage entries with the Inspector overlay's **Ignore this type** / **Stop ignoring** actions, or by editing the ignore-list field on `Assets/Editor/DxMessagingSettings.asset`.
 1. **`.editorconfig` rule** -- `dotnet_diagnostic.DXMSG006.severity = none` (or `DXMSG007.severity = none`, `DXMSG009.severity = none`, `DXMSG010.severity = none`) disables the diagnostic project-wide.
 
 ```csharp
@@ -392,7 +392,7 @@ The Inspector overlay's data source is the **`BaseCallTypeScanner`** -- a determ
 
 **DXMSG009 classified as DXMSG007 in the cache.** The scanner's IL-only probe cannot distinguish DXMSG007 (`new` modifier) from DXMSG009 (missing `override` / CS0114) -- Roslyn emits the same IL for both. The cached snapshot conservatively classifies both as `DXMSG007`. The compile-time analyzer remains authoritative for the precise classification -- see the [DXMSG009: Editor inspector overlay subsection](#editor-inspector-overlay) above.
 
-**Legacy console-scrape bridge (opt-in).** A toggle at **Project Settings -> DxMessaging -> Also Scrape Console (Legacy)** (`DxMessagingSettings.UseConsoleBridge`) re-enables the old data sources (`UnityEditor.LogEntries` reflection + `CompilationPipeline.assemblyCompilationFinished` `CompilerMessage[]`) and unions them INTO the IL scanner's snapshot -- never overrides it. Default off. Enable only if you want the union of both data sources, e.g. to surface a regression in the IL byte-walker that is correctly captured by the compile-time analyzer's console output.
+**Legacy console-scrape bridge (opt-in).** The `DxMessagingSettings.UseConsoleBridge` field on `Assets/Editor/DxMessagingSettings.asset` re-enables the old data sources (`UnityEditor.LogEntries` reflection + `CompilationPipeline.assemblyCompilationFinished` `CompilerMessage[]`) and unions them INTO the IL scanner's snapshot -- never overrides it. Default off. Enable only if you want the union of both data sources, e.g. to surface a regression in the IL byte-walker that is correctly captured by the compile-time analyzer's console output.
 
 The unified per-FQN snapshot is persisted to `Library/DxMessaging/baseCallReport.json` so the overlay has data to render before the first post-load rescan completes; it is rewritten on every successful rescan. A manual `Tools -> DxMessaging -> Rescan Base-Call Warnings` menu is available for force-rescan.
 
@@ -406,10 +406,10 @@ The overlay itself uses two complementary editor-injection paths, each with its 
 Components that emit DXMSG006, DXMSG007, DXMSG009, or DXMSG010 show a HelpBox at the top of their Inspector with three actions:
 
 - **Open Script** -- jumps to the offending override in your IDE of choice.
-- **Ignore this type** -- appends the type's fully-qualified name to `Assets/Editor/DxMessaging.BaseCallIgnore.txt`.
+- **Ignore this type** -- appends the type's fully-qualified name to the ignore list in `Assets/Editor/DxMessagingSettings.asset`; the generated sidecar is refreshed for the analyzer.
 - **Stop ignoring** -- appears instead of "Ignore this type" when the type is already in the ignore list; removes it.
 
-The HelpBox respects the per-project master toggle in **Project Settings -> DxMessaging -> Base-Call Check Enabled**. When this toggle is off, the Inspector overlay is silenced; the underlying DXMSG006/DXMSG007/DXMSG009 compile-time warnings still emit unless you suppress them via `.editorconfig` (e.g. `dotnet_diagnostic.DXMSG006.severity = none`).
+The HelpBox respects the per-project master toggle in `DxMessagingSettings.BaseCallCheckEnabled` on `Assets/Editor/DxMessagingSettings.asset`. When this toggle is off, the Inspector overlay is silenced; the underlying DXMSG006/DXMSG007/DXMSG009 compile-time warnings still emit unless you suppress them via `.editorconfig` (e.g. `dotnet_diagnostic.DXMSG006.severity = none`).
 
 A snapshot of the latest harvest is also persisted to `Library/DxMessaging/baseCallReport.json` so the overlay has data to show on first open before the post-load rescan completes.
 
@@ -417,19 +417,30 @@ A snapshot of the latest harvest is also persisted to `Library/DxMessaging/baseC
 
 ---
 
-## `csc.rsp` wiring
+## Analyzer Activation And `csc.rsp` Wiring
 
-`Editor/SetupCscRsp.cs` automatically writes (and keeps in sync) the lines that hand the analyzer/source-generator DLLs and the ignore-list to the C# compiler:
+`Editor/SetupCscRsp.cs` activates the analyzer/source-generator DLLs by copying
+them into `Assets/Plugins/Editor/WallstopStudios.DxMessaging/`, tagging the
+compiler-host DLLs with Unity's `RoslynAnalyzer` asset label, and excluding
+those DLLs from every build platform. Unity feeds `RoslynAnalyzer`-labeled DLLs
+to the C# compiler as analyzers without requiring `-a:` entries in `csc.rsp`.
+
+`csc.rsp` is still used for the base-call ignore sidecar. `SetupCscRsp` keeps
+that response file in sync by removing stale DxMessaging analyzer entries and
+ensuring there is at most one ignore-list entry when the sidecar exists:
 
 ```text
--a:"Packages/com.wallstop-studios.dxmessaging/Editor/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll"
--a:"Packages/com.wallstop-studios.dxmessaging/Editor/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll"
 -additionalfile:"Assets/Editor/DxMessaging.BaseCallIgnore.txt"
 ```
 
-When the package is consumed via Unity's Package Manager cache rather than embedded under `Packages/`, the analyzer paths instead resolve under `Library/PackageCache/com.wallstop-studios.dxmessaging/Editor/Analyzers/...`. The `-additionalfile:` line is only emitted when the ignore-list sidecar physically exists.
+The `-additionalfile:` line is only emitted when the ignore-list sidecar
+physically exists. Sidecar regeneration also schedules a follow-up `csc.rsp`
+sync, so deferred `OnValidate` writes and the Inspector overlay's ignore-list
+buttons repair missing response-file wiring during the same editor session.
 
-Manual edits to `csc.rsp` are rarely necessary; the setup helper detects existing lines and only appends what's missing.
+Manual edits to `csc.rsp` are rarely necessary; the setup helper detects
+existing lines and only appends or removes the DxMessaging lines that need
+normalization.
 
 ---
 
@@ -440,7 +451,15 @@ DxMessaging ships **two** Roslyn DLLs because Unity 2021's analyzer loader has a
 - `WallstopStudios.DxMessaging.Analyzer.dll` -- the base-call analyzer (DXMSG006/007/008/009/010). Pinned to **Roslyn 3.8.0**. Unity 2021 rejects analyzer DLLs built against Roslyn 4.x; Microsoft's `Microsoft.Unity.Analyzers` package pins 3.8.0 for the same reason.
 - `WallstopStudios.DxMessaging.SourceGenerators.dll` -- the source generators (DXMSG002/003/004/005). Also pinned to **Roslyn 3.8.0** and implemented with classic `ISourceGenerator` APIs so Unity 2021 can instantiate the generators.
 
-Both DLLs are tagged `RoslynAnalyzer`, excluded from every build platform (the Editor included), and registered in `csc.rsp`. They live side-by-side in `Editor/Analyzers/`. Excluding every platform is what keeps Unity from treating them as managed precompiled assemblies: a `RoslynAnalyzer`-labeled DLL is fed to the C# compiler as an analyzer regardless of platform inclusion, and an Editor-enabled copy would instead be registered as a precompiled assembly that collides with the same-named copy Unity places under the consuming project's `Assets/`, aborting Unity 2021.3 with _Multiple precompiled assemblies with the same name_.
+Both DLLs are copied into the consuming project's
+`Assets/Plugins/Editor/WallstopStudios.DxMessaging/` folder, tagged
+`RoslynAnalyzer`, and excluded from every build platform (the Editor included).
+Excluding every platform is what keeps Unity from treating them as managed
+precompiled assemblies: a `RoslynAnalyzer`-labeled DLL is fed to the C# compiler
+as an analyzer regardless of platform inclusion, and an Editor-enabled copy would
+instead be registered as a precompiled assembly that collides with the same-named
+package copy, aborting Unity 2021.3 with _Multiple precompiled assemblies with
+the same name_.
 
 If you are upgrading from a prior version and DXMSG warnings stop appearing on Unity 2021:
 

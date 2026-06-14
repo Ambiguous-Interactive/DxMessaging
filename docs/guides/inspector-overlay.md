@@ -33,10 +33,10 @@ two things happen in parallel:
    that has at least one missing base call.
 
 You see both surfaces by default. The Console warning is authoritative
-for CI builds (the analyzer is registered for the C# compiler via
-`csc.rsp`, so it runs on every Unity-driven compile); the Inspector
-overlay is the in-Editor reminder you cannot ignore while wiring a
-prefab.
+for CI builds (the analyzer is activated for Unity's C# compiler through
+the `RoslynAnalyzer` label, so it runs on every Unity-driven compile);
+the Inspector overlay is the in-Editor reminder you cannot ignore while
+wiring a prefab.
 
 !!! tip
 Severity is per-project tunable. Add lines like `dotnet_diagnostic.DXMSG006.severity = error` to your `.editorconfig` to upgrade missing base calls into a build break, or `severity = none` to silence one project-wide. See [Suppression precedence](../reference/analyzers.md#suppression-precedence) for the full ordering.
@@ -106,10 +106,11 @@ When the component is **not** ignored, you see two buttons:
   top; when the legacy console bridge is enabled and a line number is
   available, the file opens at that line.
 - **Ignore this type** -- appends the component's fully-qualified type
-  name to `Assets/Editor/DxMessaging.BaseCallIgnore.txt`. The next
+  name to the ignore list in `Assets/Editor/DxMessagingSettings.asset`;
+  the generated sidecar is refreshed for the analyzer. The next
   Inspector repaint flips the HelpBox into its info shape (below).
-  The mutation is deferred to the next editor frame so the current
-  GUI cycle completes cleanly -- there is no perceptible delay.
+  The mutation is deferred to the next editor frame so the current GUI
+  cycle completes cleanly -- there is no perceptible delay.
 
 ### Ignored state
 
@@ -126,7 +127,17 @@ single button:
   apply.
 
 !!! warning
-Adding a type to the ignore list silences the **overlay**, but it does not change the runtime behaviour. If the override genuinely never reaches `base.OnEnable()`, the messaging system on that component is still dead. The compile-time analyzer also continues to emit `DXMSG006/007/009/010` to the Console unless you suppress them via `.editorconfig` (see [Suppression precedence](../reference/analyzers.md#suppression-precedence)). For finer-grained control, the source-level `[DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]` attribute suppresses the analyzer at the class or method level and is checked **before** the project ignore list -- see the [Suppression precedence ordering](../reference/analyzers.md#suppression-precedence) for the full priority. Use either suppression path only when the silencing is genuinely intentional (for example, a deliberate adapter that should not participate in messaging) and document the reason somewhere your team can find it.
+Adding a type to the ignore list silences the **overlay** and the compile-time
+base-call analyzer for that type, but it does not change the runtime behaviour.
+If the override genuinely never reaches `base.OnEnable()`, the messaging system
+on that component is still dead. For finer-grained control, the source-level
+`[DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]` attribute suppresses the
+analyzer at the class or method level and is checked **before** the project
+ignore list -- see the [Suppression precedence ordering](../reference/analyzers.md#suppression-precedence)
+for the full priority. Use either suppression path only when the silencing is
+genuinely intentional (for example, a deliberate adapter that should not
+participate in messaging) and document the reason somewhere your team can find
+it.
 
 ## Project Settings Panel
 
