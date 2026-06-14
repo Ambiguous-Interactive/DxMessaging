@@ -44,6 +44,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 - Spelling: `npm run check:spelling`
 - Sync banner SVG version/test-count: `npm run sync:banner`
 - Regenerate llms.txt: `npm run update:llms-txt` (check-only: `npm run check:llms-txt`)
+- Regenerate the skills-index Lines column + counts: `npm run update:skills-index` (check-only: `npm run check:skills-index`, gated in `validate:all`)
 - Analyzer payload: `npm run check:analyzers` (refresh: `npm run refresh:analyzers`)
 - C# method naming auto-fix: `npm run fix:csharp-underscores`
 - Unity asmdef reference integrity: `npm run validate:asmdef-references`
@@ -87,6 +88,7 @@ editor), NOT inside the devcontainer. The container ships no local Unity build. 
 - Per-runner Unity-cache safety comes from each runner agent's exclusive workspace. CI caches the generated project's `Library` under `.artifacts/unity/projects/<version>-<mode>/Library` and Unity package caches under `.artifacts/unity/cache/<version>`; do not add broad restore keys for Unity `Library`.
 - Unity diagnostic scanners must inspect every `*.log` under the results directory, with `unity.log` first but retry logs such as `unity.first-attempt.log` included. UPM retry failures often keep the actionable cancellation signal only in the preserved first-attempt log.
 - Unity versions are single-sourced in `.github/unity-versions.json` (`all` = full CI set, `latest` = last `all` entry, `release` = pinned release version); bump ONLY that file. `npm run validate:unity-versions` enforces zero drift. See [Unity Version Single Source of Truth](./skills/github-actions/unity-version-single-source.md).
+- Required status checks (branch protection / auto-merge gate): a required check must report (run or skip-to-success) on EVERY PR shape or auto-merge hangs on an absent check. Path-sensitive required gates keep an unfiltered `pull_request` trigger, use a `changes` job, and fail closed unless detection succeeds with explicit `relevant=false`; skipped jobs pass branch protection. Required-check names are literal strings, so renames silently break the gate, and the `Unity <version> <mode>` legs are data-driven from `.github/unity-versions.json` (update the ruleset in the same change that bumps versions). See [Required Status Checks runbook](../docs/runbooks/required-checks.md).
 - Comparison-benchmark packages (OpenUPM registry + PINNED versions + required Unity built-in packages) are single-sourced in `.github/comparison-packages.json`; bump ONLY that file and keep the gated comparison asmdef `versionDefines` / `defineConstraints` plus `.unity-test-project/Packages/manifest.json` + `packages-lock.json` in sync. See [Comparison Parity and Package Single Source](./skills/testing/comparison-parity-and-package-single-source.md).
 
 ## Devcontainer Workflow

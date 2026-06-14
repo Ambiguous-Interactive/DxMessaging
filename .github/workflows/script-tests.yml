@@ -1,45 +1,14 @@
 name: Script Tests
 
 on:
+  # No pull_request paths filter: the workflow must always start so its required
+  # check reports on every PR shape. The `changes` job decides whether to do the
+  # real work; when nothing relevant changed it skips to success. See
+  # docs/runbooks/required-checks.md.
   pull_request:
-    paths:
-      - .github/workflows/script-tests.yml
-      - .github/workflows/release.yml
-      - .github/actions/**/action.yml
-      - .github/unity-versions.json
-      - .github/workflows/unity-*.yml
-      - package.json
-      - .npmignore
-      - CHANGELOG.md
-      - CHANGELOG.md.meta
-      - LICENSE.md
-      - LICENSE.md.meta
-      - README.md
-      - README.md.meta
-      - "Third Party Notices.md"
-      - "Third Party Notices.md.meta"
-      - package.json.meta
-      - Editor.meta
-      - Editor/**
-      - Runtime.meta
-      - Runtime/**
-      - Samples~/**
-      - SourceGenerators.meta
-      - SourceGenerators/**
-      - scripts/**/*.ps1
-      - scripts/**/*.sh
-      # All tracked JS (not just scripts/): validate:all runs the JS LoC
-      # budget gate, which counts every tracked *.js/*.cjs/*.mjs (including
-      # docs/javascripts/), so JS added anywhere must trigger this workflow.
-      - "**/*.js"
-      - "**/*.cjs"
-      - "**/*.mjs"
-      # validate:all runs validate:asmdef-references, which reads every
-      # tracked .asmdef — so asmdef-only PRs must trigger this workflow.
-      - "**/*.asmdef"
-      # validate:all runs validate:npm-meta, which checks every tracked C#
-      # script .meta file for Unity's standard MonoImporter block.
-      - "**/*.cs.meta"
+    branches:
+      - main
+      - master
   push:
     branches:
       - main
@@ -88,8 +57,56 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect script-affecting changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Determine whether relevant files changed
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! files="$(gh api \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename')"; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Faithful translation of this workflow's original pull_request paths,
+          # built across lines to stay under the yamllint line-length limit.
+          # The trailing **/*.js|cjs|mjs / **/*.asmdef / **/*.cs.meta alternatives
+          # exist because validate:all gates the JS LoC budget, asmdef-references,
+          # and npm-meta over every tracked file of those types, regardless of dir.
+          pattern='(^\.github/workflows/script-tests\.yml$|^\.github/workflows/release\.yml$'
+          pattern="$pattern"'|^\.github/actions/.*/action\.yml$|^\.github/unity-versions\.json$'
+          pattern="$pattern"'|^\.github/workflows/unity-[^/]*\.yml$|^package\.json$|^\.npmignore$'
+          pattern="$pattern"'|^CHANGELOG\.md$|^CHANGELOG\.md\.meta$|^LICENSE\.md$|^LICENSE\.md\.meta$'
+          pattern="$pattern"'|^README\.md$|^README\.md\.meta$|^Third Party Notices\.md$'
+          pattern="$pattern"'|^Third Party Notices\.md\.meta$|^package\.json\.meta$'
+          pattern="$pattern"'|^Editor\.meta$|^Editor/|^Runtime\.meta$|^Runtime/|^Samples~/'
+          pattern="$pattern"'|^SourceGenerators\.meta$|^SourceGenerators/'
+          pattern="$pattern"'|^scripts/.*\.ps1$|^scripts/.*\.sh$'
+          pattern="$pattern"'|\.js$|\.cjs$|\.mjs$|\.asmdef$|\.cs\.meta$)'
+          if printf '%s\n' "$files" | grep -qE "$pattern"; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   script-tests:
     name: Script tests (${{ matrix.os }})
+    needs: changes
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     permissions:
@@ -109,6 +126,13 @@ jobs:
           - windows-latest
 
     steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.relevant != 'true' && needs.changes.outputs.relevant != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with relevant='${{ needs.changes.outputs.relevant }}'."
+          echo "::error::Required gates only skip after successful detection emits relevant=false."
+          exit 1
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:

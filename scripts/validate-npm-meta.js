@@ -153,6 +153,13 @@ function parsePackJsonEntries(packJsonText) {
   return uniqSortedPaths(entries);
 }
 
+// Normalize a subprocess stderr value into a trimmed, single-line-ending
+// detail string, falling back to `fallback` when stderr is empty.
+function describeProcessFailure(rawStderr, fallback) {
+  const stderr = normalizeToLf(String(rawStderr || "")).trim();
+  return stderr.length > 0 ? stderr : fallback;
+}
+
 function collectDryRunEntries() {
   const result = spawnPlatformCommandSync(
     "npm",
@@ -168,8 +175,7 @@ function collectDryRunEntries() {
     throw result.error;
   }
   if (result.status !== 0) {
-    const stderr = normalizeToLf(String(result.stderr || "")).trim();
-    const detail = stderr.length > 0 ? stderr : `exit code ${result.status}`;
+    const detail = describeProcessFailure(result.stderr, `exit code ${result.status}`);
     throw new Error(`npm pack --dry-run failed: ${detail}`);
   }
 
@@ -202,8 +208,7 @@ function collectTarballEntries(tarballPath, execFileSyncImpl = execFileSync) {
       stdio: ["ignore", "pipe", "pipe"]
     });
   } catch (error) {
-    const stderr = normalizeToLf(String(error.stderr || "")).trim();
-    const detail = stderr.length > 0 ? stderr : error.message;
+    const detail = describeProcessFailure(error.stderr, error.message);
     throw new Error(`Unable to list tarball entries for '${toPosixPath(tarballPath)}': ${detail}`);
   }
 
@@ -220,8 +225,7 @@ function readTarballPackageJson(tarballPath, execFileSyncImpl = execFileSync) {
       stdio: ["ignore", "pipe", "pipe"]
     });
   } catch (error) {
-    const stderr = normalizeToLf(String(error.stderr || "")).trim();
-    const detail = stderr.length > 0 ? stderr : error.message;
+    const detail = describeProcessFailure(error.stderr, error.message);
     throw new Error(
       `Unable to read package/package.json from '${toPosixPath(tarballPath)}': ${detail}`
     );
@@ -304,8 +308,7 @@ function collectTrackedCsharpMetaPaths(execFileSyncImpl = execFileSync) {
     });
     return String(output || "").split("\0").filter(Boolean).sort();
   } catch (error) {
-    const stderr = normalizeToLf(String(error.stderr || "")).trim();
-    const detail = stderr.length > 0 ? stderr : error.message;
+    const detail = describeProcessFailure(error.stderr, error.message);
     throw new Error(`Unable to list tracked C# .meta files with git: ${detail}`);
   }
 }
@@ -314,10 +317,7 @@ function validateRepositoryCsharpMetaFiles(options = {}) {
   const relativePaths = Array.isArray(options.relativePaths)
     ? options.relativePaths
     : collectTrackedCsharpMetaPaths(options.execFileSync);
-  return validateCsharpMetaFiles(
-    relativePaths,
-    options
-  );
+  return validateCsharpMetaFiles(relativePaths, options);
 }
 
 function computeFileSha256(filePath) {
@@ -514,8 +514,7 @@ function hasEntryOrDescendant(entrySet, target) {
   return false;
 }
 
-function validatePublishedFilesArePairedWithMetas(entries) {
-  const options = arguments.length > 1 ? arguments[1] : {};
+function validatePublishedFilesArePairedWithMetas(entries, options = {}) {
   const excludedPaths =
     options && options.excludedPaths instanceof Set ? options.excludedPaths : new Set();
 

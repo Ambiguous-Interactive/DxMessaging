@@ -57,9 +57,6 @@ function isCountedSkillPath(fullPath) {
   return !pathSegments.some((segment) => NON_SKILL_DIRECTORIES.has(segment));
 }
 
-/**
- * Count markdown files in .llm/skills directory
- */
 function countSkillFiles() {
   if (!fs.existsSync(LLM_SKILLS_DIR)) {
     return 0;
@@ -91,9 +88,6 @@ function hasValidLastUpdatedLine(content) {
   return isoDatePattern.test(line);
 }
 
-/**
- * Get skill categories from .llm/skills directory
- */
 function getSkillCategories() {
   const categories = [];
 
@@ -115,9 +109,6 @@ function getSkillCategories() {
   return categories.sort();
 }
 
-/**
- * Extract version and description from package.json
- */
 function getPackageInfo() {
   const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8"));
   return {
@@ -128,9 +119,6 @@ function getPackageInfo() {
   };
 }
 
-/**
- * Generate llms.txt content
- */
 function generateLlmsTxt() {
   const pkg = getPackageInfo();
   const skillCount = countSkillFiles();
@@ -458,9 +446,6 @@ function normalizeForComparison(str) {
   return normalized.replace(/^\*\*Last Updated:\*\*.*$/m, "**Last Updated:** <DATE>").trim();
 }
 
-/**
- * Main execution
- */
 function main() {
   const args = process.argv.slice(2);
   const checkMode = args.includes("--check");

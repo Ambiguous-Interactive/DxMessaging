@@ -106,7 +106,7 @@ The Banned Categories lists above are the canonical set; apply them when writing
 
 - **Skill files about the policy.** Files under `.llm/skills/documentation/` are wholly exempt.
 - **`CHANGELOG.md` and `comprehensive`.** Release notes legitimately use the term. The exemption is matched case-insensitively on the basename.
-- **Auto-generated files.** `llms.txt` is exempt because it is regenerated mechanically by `scripts/update-llms-txt.js`. (`.llm/skills/index.md` is a hand-maintained catalog and follows the policy like any other doc.)
+- **Auto-generated files.** `llms.txt` is exempt because it is regenerated mechanically by `scripts/update-llms-txt.js`. (`.llm/skills/index.md` has a generated Lines column and counts, but its prose and titles are hand-authored, so it follows the policy like any other doc.)
 - **YAML frontmatter.** A leading `---\n...\n---\n` block at the top of `.md` files is out of scope. Schema strings inside frontmatter (such as `complexity` reasoning fields) are not prose.
 - **Genuinely-right words.** When a banned term is the right word for a specific sentence (for example, quoting an error message or naming an upstream feature), keep it and be ready to defend it in review. Historical `<!-- prose-allow* -->` HTML comments in older docs were markers for a deleted validator; no tool processes them anymore, so do not add new ones. The default answer to a banned term is still to rewrite the sentence.
 

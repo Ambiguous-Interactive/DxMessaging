@@ -13,6 +13,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { walkFiles } = require("./lib/repo-files");
 
 const VERSION_PATTERN =
   /<!-- Version badge \(top right\).*?-->\s*<g[^>]*>\s*<rect[^>]*\/>\s*<text[^>]*>v\d+\.\d+\.\d+[^<]*<\/text>\s*<\/g>/s;
@@ -35,19 +36,6 @@ function countTestMarkers(filePath, content) {
     .length;
 }
 
-function collectTestFiles(dir, results) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      collectTestFiles(fullPath, results);
-      continue;
-    }
-    if (entry.isFile() && TEST_FILE_NAME_PATTERN.test(entry.name)) {
-      results.push(fullPath);
-    }
-  }
-}
-
 function getRepositoryTestFiles(repoRoot) {
   const results = [];
   for (const relativeRoot of TEST_ROOTS) {
@@ -55,7 +43,15 @@ function getRepositoryTestFiles(repoRoot) {
     if (!fs.existsSync(absoluteRoot)) {
       continue;
     }
-    collectTestFiles(absoluteRoot, results);
+    results.push(
+      ...walkFiles(absoluteRoot, {
+        match: (fullPath, entry) => TEST_FILE_NAME_PATTERN.test(entry.name),
+        // Preserve the prior fail-hard behavior for unreadable directories.
+        onError: (error) => {
+          throw error;
+        }
+      })
+    );
   }
   return results;
 }

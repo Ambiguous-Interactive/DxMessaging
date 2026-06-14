@@ -1,14 +1,14 @@
 name: Validate Banner
 
 on:
+  # No pull_request paths filter: the workflow must always start so its required
+  # check reports on every PR shape. The `changes` job decides whether to do the
+  # real work; when nothing relevant changed it skips to success. See
+  # docs/runbooks/required-checks.md.
   pull_request:
-    paths:
-      - "docs/images/DxMessaging-banner.svg"
-      - "scripts/sync-banner-version.js"
-      - "package.json"
-      - "Tests/**"
-      - "SourceGenerators/**"
-      - ".github/workflows/validate-banner.yml"
+    branches:
+      - main
+      - master
   push:
     branches:
       - main
@@ -30,11 +30,56 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect banner-affecting changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Determine whether relevant files changed
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! files="$(gh api \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename')"; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Faithful translation of this workflow's original pull_request paths.
+          # Built across lines to stay under the yamllint line-length limit.
+          pattern='(^docs/images/DxMessaging-banner\.svg$|^scripts/sync-banner-version\.js$'
+          pattern="$pattern"'|^package\.json$|^Tests/|^SourceGenerators/'
+          pattern="$pattern"'|^\.github/workflows/validate-banner\.yml$)'
+          if printf '%s\n' "$files" | grep -qE "$pattern"; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   validate-banner:
     name: Validate banner SVG
+    needs: changes
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.relevant != 'true' && needs.changes.outputs.relevant != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with relevant='${{ needs.changes.outputs.relevant }}'."
+          echo "::error::Required gates only skip after successful detection emits relevant=false."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v6
         with:

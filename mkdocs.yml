@@ -223,4 +223,5 @@ nav:
   - Runbooks:
       - Perf Benchmark Methodology: runbooks/perf-benchmark-methodology.md
       - Perf-Numbers Auto-Commit: runbooks/perf-numbers-auto-commit.md
+      - Required Status Checks: runbooks/required-checks.md
       - Unity Runners After Transfer: runbooks/unity-runners-after-transfer.md

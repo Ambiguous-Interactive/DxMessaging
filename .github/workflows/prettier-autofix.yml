@@ -4,24 +4,56 @@ on:
   pull_request:
     paths:
       - "**/*.md"
+      - "**/*.markdown"
       - "**/*.json"
       - "**/*.asmdef"
+      - "**/*.asmref"
       - "**/*.yml"
       - "**/*.yaml"
       - ".github/workflows/**"
       - ".prettierrc*"
+      - "**/.prettierrc*"
+      - "prettier.config.*"
+      - "**/prettier.config.*"
+      - ".prettierignore"
+      - "**/.prettierignore"
+      - ".editorconfig"
+      - "**/.editorconfig"
+      - ".gitignore"
+      - "**/.gitignore"
+      - "package.yaml"
+      - "**/package.yaml"
       - ".markdownlint*"
+      - "**/.markdownlint*"
+      - ".markdownlintignore"
+      - "**/.markdownlintignore"
       - "package.json"
   pull_request_target:
     paths:
       - "**/*.md"
+      - "**/*.markdown"
       - "**/*.json"
       - "**/*.asmdef"
+      - "**/*.asmref"
       - "**/*.yml"
       - "**/*.yaml"
       - ".github/workflows/**"
       - ".prettierrc*"
+      - "**/.prettierrc*"
+      - "prettier.config.*"
+      - "**/prettier.config.*"
+      - ".prettierignore"
+      - "**/.prettierignore"
+      - ".editorconfig"
+      - "**/.editorconfig"
+      - ".gitignore"
+      - "**/.gitignore"
+      - "package.yaml"
+      - "**/package.yaml"
       - ".markdownlint*"
+      - "**/.markdownlint*"
+      - ".markdownlintignore"
+      - "**/.markdownlintignore"
       - "package.json"
   workflow_dispatch:
 
@@ -79,7 +111,7 @@ jobs:
           # Renormalize each extension separately to avoid "pathspec did not match" failures
           # when certain file types don't exist or aren't accessible in this checkout context
           # yaml excluded: dotfiles (.pre-commit-config.yaml) match git ls-files but not git add globs
-          for ext in md json asmdef yml; do
+          for ext in md markdown json asmdef asmref yml; do
             if git ls-files "*.$ext" "**/*.$ext" | grep -q .; then
               git add --renormalize -- "*.$ext" "**/*.$ext"
             fi
@@ -102,8 +134,10 @@ jobs:
           # NOTE: yaml excluded - all .yaml files are dotfiles, which git add patterns don't match
           file_pattern: |
             **/*.md
+            **/*.markdown
             **/*.json
             **/*.asmdef
+            **/*.asmref
             **/*.yml
 
       - name: Clear push credentials
@@ -175,7 +209,7 @@ jobs:
           # Renormalize each extension separately to avoid "pathspec did not match" failures
           # when certain file types don't exist or aren't accessible in this checkout context
           # yaml excluded: dotfiles (.pre-commit-config.yaml) match git ls-files but not git add globs
-          for ext in md json asmdef yml; do
+          for ext in md markdown json asmdef asmref yml; do
             if git ls-files "*.$ext" "**/*.$ext" | grep -q .; then
               git add --renormalize -- "*.$ext" "**/*.$ext"
             fi
@@ -207,7 +241,7 @@ jobs:
           # Use --renormalize to ensure line endings in git index per .gitattributes
           # Renormalize each extension separately to avoid "pathspec did not match" failures
           # yaml excluded: dotfiles (.pre-commit-config.yaml) match git ls-files but not git add globs
-          for ext in md json asmdef yml; do
+          for ext in md markdown json asmdef asmref yml; do
             if git ls-files "*.$ext" "**/*.$ext" | grep -q .; then
               git add --renormalize -- "*.$ext" "**/*.$ext"
             fi
