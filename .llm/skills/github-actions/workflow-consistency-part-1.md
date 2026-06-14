@@ -4,7 +4,7 @@ id: "workflow-consistency-part-1"
 category: "github-actions"
 version: "1.0.0"
 created: "2026-01-28"
-updated: "2026-03-16"
+updated: "2026-06-14"
 status: "stable"
 tags:
   - migration
@@ -53,13 +53,13 @@ on:
 
 ### Common Path Filter Patterns
 
-| Workflow Type | Required Paths                                                                                                                                                                                                           |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| YAML lint     | `**/*.yml`, `**/*.yaml`, `.github/workflows/**`, `.yamllint.yaml`, `.prettierrc*`, `**/.prettierrc*`, `prettier.config.*`, `**/prettier.config.*`, `.prettierignore`, `.editorconfig`, `.gitignore`, `package.json/yaml` |
-| Markdown lint | `**/*.md`, `**/*.markdown`, `.markdownlint*`, `.markdownlintignore`, `package.json`, the workflow file                                                                                                                   |
-| JSON format   | `**/*.json`, `**/*.asmdef`, `**/*.asmref`, `.prettierrc*`, `**/.prettierrc*`, `prettier.config.*`, `**/prettier.config.*`, `.prettierignore`, `.editorconfig`, `.gitignore`, `package.json/yaml`, the workflow file      |
-| C# build      | `**/*.cs`, `**/*.csproj`, `**/*.sln`, `.csharpierrc*`, `**/.csharpierrc*`, `.csharpierignore`, `.editorconfig`, `.config/dotnet-tools.json`, `Directory.Build.props`                                                     |
-| Tests         | Source paths + test paths + workflow config                                                                                                                                                                              |
+| Workflow Type | Required Paths                                                                                                                                                                                                                      |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| YAML lint     | `**/*.yml`, `**/*.yaml`, `.github/workflows/**`, `.yamllint.yaml`, `.prettierrc*`, `**/.prettierrc*`, `prettier.config.*`, `**/prettier.config.*`, `.prettierignore`, `.editorconfig`, `.gitignore`, `package.json`, `package.yaml` |
+| Markdown lint | `**/*.md`, `**/*.markdown`, `.markdownlint*`, `.markdownlintignore`, `package.json`, the workflow file                                                                                                                              |
+| JSON format   | `**/*.json`, `**/*.asmdef`, `**/*.asmref`, `.prettierrc*`, `**/.prettierrc*`, `prettier.config.*`, `**/prettier.config.*`, `.prettierignore`, `.editorconfig`, `.gitignore`, `package.json`, `package.yaml`, the workflow file      |
+| C# build      | `**/*.cs`, `**/*.csproj`, `**/*.sln`, `.csharpierrc*`, `**/.csharpierrc*`, `.csharpierignore`, `.editorconfig`, `.config/dotnet-tools.json`, `Directory.Build.props`                                                                |
+| Tests         | Source paths + test paths + workflow config                                                                                                                                                                                         |
 
 ### Required Gate Path Detection
 
@@ -105,6 +105,11 @@ on:
       # same file patterns as pull_request
   workflow_dispatch: # Allow manual triggering
 ```
+
+Keep branch allow-lists consistent between `push` and `pull_request` for the
+same validation workflow. If a workflow validates pushes to `develop`, it should
+also validate pull requests targeting `develop` unless the push-only behavior is
+intentional and documented in the workflow.
 
 ## Formatting Requirements
 

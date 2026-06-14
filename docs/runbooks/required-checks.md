@@ -207,7 +207,9 @@ gh api repos/Ambiguous-Interactive/DxMessaging/rulesets -X POST --input - <<'JSO
           { "context": "Unity 2022.3.45f1 standalone" },
           { "context": "Unity 6000.3.16f1 editmode" },
           { "context": "Unity 6000.3.16f1 playmode" },
-          { "context": "Unity 6000.3.16f1 standalone" }
+          { "context": "Unity 6000.3.16f1 standalone" },
+          { "context": "Resolve Unity test matrix" },
+          { "context": "Self-hosted runner access preflight" }
         ]
       }
     }
@@ -223,13 +225,14 @@ remediated check names to `required_status_checks` as each workflow is fixed.
 
 ## Augmenting the gate (after remediation merges)
 
-The 12 path-filtered gates were remediated to the always-report pattern (each gained
-a `changes` job that lists the PR's files via `gh api` -- failing safe to "run" if
-that call errors -- and each required gate fails closed if change detection itself
-fails or emits no valid output). **Do not add their contexts to the ruleset until
-that remediation is merged to `master` and verified on real PRs** (open one doc-only
-and one code-only PR; confirm each remediated check reports run-or-skip on both).
-Adding a context before its workflow reports it on every PR shape hangs auto-merge.
+The path-filtered gates listed above were remediated to the always-report pattern
+(each gained a `changes` job that lists the PR's files via `gh api` -- failing
+safe to "run" if that call errors -- and each required gate fails closed if
+change detection itself fails or emits no valid output). **Do not add their
+contexts to the ruleset until that remediation is merged to `master` and verified
+on real PRs** (open one doc-only and one code-only PR; confirm each remediated
+check reports run-or-skip on both). Adding a context before its workflow reports
+it on every PR shape hangs auto-merge.
 
 Once merged and verified, replace the ruleset (id from `gh api repos/OWNER/REPO/rulesets`)
 with the full set -- the 11 Unity contexts plus these remediated ones:
@@ -250,6 +253,10 @@ Script tests (windows-latest)
 Validate Documentation Build
 Lint docs links
 ```
+
+If devcontainer image changes should gate merges, also add
+`Build + smoke-test devcontainer image` after verifying its run-or-skip behavior
+on real PRs.
 
 ```bash
 # PUT the existing ruleset with the augmented contexts (keep target/conditions/

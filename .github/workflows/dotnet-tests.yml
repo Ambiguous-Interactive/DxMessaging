@@ -3,8 +3,8 @@ name: dotnet-tests
 on:
   push:
     branches:
-      - master
       - main
+      - master
       - develop
     paths:
       - "**/*.cs"
@@ -23,6 +23,7 @@ on:
     branches:
       - main
       - master
+      - develop
   workflow_dispatch:
 
 jobs:
