@@ -69,10 +69,17 @@ jobs:
   validate-banner:
     name: Validate banner SVG
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.relevant != 'true' && needs.changes.outputs.relevant != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with relevant='${{ needs.changes.outputs.relevant }}'."
+          echo "::error::Required gates only skip after successful detection emits relevant=false."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v6
         with:

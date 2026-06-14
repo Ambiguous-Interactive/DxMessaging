@@ -2,9 +2,9 @@
 
 This runbook is the reference for making CI a required gate for the default
 branch, so that auto-merge blocks a pull request until the chosen checks pass.
-It records which checks are safe to require today, which workflows must be
-changed before they can be required, how to apply the ruleset, and how to keep
-the required set from silently breaking.
+It records which checks are safe to require today, which remediated workflows
+must be verified before they can be required, how to apply the ruleset, and how
+to keep the required set from silently breaking.
 
 The brief branch-protection checklist in
 [CI and GitHub Settings](../ops/ci-and-github-settings.md#branch-and-tag-protection)
@@ -31,18 +31,18 @@ Auto-merge is enabled. The Unity Tests gate is **applied** -- repository ruleset
 the 9 `Unity <ver> <mode>` legs plus `Resolve Unity test matrix` and
 `Self-hosted runner access preflight`, with the `bot-auto-commit` App in
 `bypass_actors` (mode `always`) so the perf-doc auto-commit still pushes to
-`master`. The other gates path-filter themselves out, so they were remediated to
-report on every PR shape (see [Remediation](#remediation-make-a-gate-always-report));
-that remediation must merge and be verified on real PRs **before** its checks are
-added to the ruleset (see [Augmenting the gate](#augmenting-the-gate-after-remediation-merges)).
+`master`. The other gates have been remediated to report on every PR shape (see
+[Remediation](#remediation-make-a-gate-always-report)); that remediation must
+merge and be verified on real PRs **before** its checks are added to the ruleset
+(see [Augmenting the gate](#augmenting-the-gate-after-remediation-merges)).
 
-## Safe to require today: Unity Tests
+## Currently applied required gate: Unity Tests
 
 [`unity-tests.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-tests.yml)
-is the only correctness gate whose checks report on every pull request shape. Its
-`pull_request` trigger has no `paths:` filter, so the workflow always starts. A
-`matrix-config` job lists the changed files and, only when every changed file is
-one of the two CI-owned perf-doc artifacts
+is currently applied as the required correctness gate. Its `pull_request` trigger
+has no `paths:` filter, so the workflow always starts. A `matrix-config` job
+lists the changed files and, only when every changed file is one of the two
+CI-owned perf-doc artifacts
 (`docs/architecture/performance.md`, `docs/architecture/perf-baseline.csv`),
 sets a `ci-owned-docs-only` output that skips the licensed matrix legs. Skipped
 legs still report success, so even that fallback pull request stays mergeable.
@@ -70,27 +70,27 @@ Self-hosted runner access preflight
 run (or skip to success on forks), so they are safe anchors. The nine matrix
 names are **data-driven** -- see [Fragile check names](#fragile-check-names).
 
-## Must change before they can be required
+## Remediated gates to verify before requiring
 
-Every other correctness/style gate path-filters its whole `pull_request`
-trigger, so its check is absent on pull requests that touch none of its paths,
-and requiring it as written would hang auto-merge. Each needs an always-report
-job first (see [Remediation](#remediation-make-a-gate-always-report)).
+These correctness/style gates now keep their `pull_request` trigger unfiltered,
+use a `changes` detector job for the path decision, and fail closed if detection
+fails. They are safe to add to branch protection only after the remediation is
+merged to `master` and verified on real PRs.
 
-| Workflow                | Check name today                           | Absent on                   |
-| ----------------------- | ------------------------------------------ | --------------------------- |
-| `csharpier-check.yml`   | Check C# formatting                        | doc-only PRs                |
-| `dotnet-tests.yml`      | `test` (bare job id)                       | doc-only PRs (no job name)  |
-| `json-format-check.yml` | Check JSON/.asmdef formatting              | PRs with no JSON/asmdef     |
-| `markdownlint.yml`      | Lint repository Markdown                   | code-only PRs               |
-| `spellcheck.yml`        | Check spelling                             | PRs with no scanned types   |
-| `validate-banner.yml`   | Validate banner SVG                        | PRs off the banner paths    |
-| `validate-llms-txt.yml` | Check llms.txt is up-to-date               | PRs off the llms paths      |
-| `yaml-format-lint.yml`  | Prettier and yamllint                      | non-YAML PRs                |
-| `actionlint.yml`        | Lint GitHub Actions workflows              | non-workflow PRs            |
-| `script-tests.yml`      | Script tests (ubuntu/macos/windows-latest) | PRs off its paths           |
-| `validate-docs.yml`     | Validate Documentation Build               | code-only PRs               |
-| `lint-doc-links.yml`    | `lint` (bare job id)                       | code-only PRs (no job name) |
+| Workflow                | Stable required check name                 | Skips only after detecting no relevant files |
+| ----------------------- | ------------------------------------------ | -------------------------------------------- |
+| `csharpier-check.yml`   | Check C# formatting                        | doc-only PRs                                 |
+| `dotnet-tests.yml`      | dotnet tests                               | doc-only PRs                                 |
+| `json-format-check.yml` | Check JSON/.asmdef formatting              | PRs with no JSON/asmdef/Prettier config      |
+| `markdownlint.yml`      | Lint repository Markdown                   | code-only PRs                                |
+| `spellcheck.yml`        | Check spelling                             | PRs with no scanned types                    |
+| `validate-banner.yml`   | Validate banner SVG                        | PRs off the banner paths                     |
+| `validate-llms-txt.yml` | Check llms.txt is up-to-date               | PRs off the llms paths                       |
+| `yaml-format-lint.yml`  | Prettier and yamllint                      | non-YAML/non-Prettier-config PRs             |
+| `actionlint.yml`        | Lint GitHub Actions workflows              | non-workflow PRs                             |
+| `script-tests.yml`      | Script tests (ubuntu/macos/windows-latest) | PRs off its paths                            |
+| `validate-docs.yml`     | Validate Documentation Build               | code-only PRs                                |
+| `lint-doc-links.yml`    | Lint docs links                            | code-only PRs                                |
 
 `devcontainer-test.yml` (`Build + smoke-test devcontainer image`) is the same
 shape; require it only if devcontainer changes must gate merges.
@@ -122,7 +122,10 @@ Copy the `unity-tests.yml` pattern. Keep the workflow trigger unfiltered, and
 move the path decision into a job-level `if:` so the check is always present and
 skips to success when it has nothing to do. A first job lists the changed files
 (the way `unity-tests.yml` does, via `gh api .../files`) and sets an output that
-the gate job gates on:
+the gate job gates on. The required gate must fail closed: it may skip only when
+change detection succeeds and explicitly emits `relevant=false`. If the `changes`
+job fails, is skipped, or emits an unexpected value, the required gate runs a
+diagnostic guard step and fails instead of reporting a skipped success.
 
 ```yaml
 on:
@@ -152,15 +155,22 @@ jobs:
   gate:
     name: Check C# formatting
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
     runs-on: ubuntu-latest
     steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.relevant != 'true' && needs.changes.outputs.relevant != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with relevant='${{ needs.changes.outputs.relevant }}'. Required gates only skip after successful detection emits relevant=false."
+          exit 1
+
       - run: ./check.sh
 ```
 
-When `changes.relevant` is `false`, `gate` is skipped, reports success, and the
-required check `Check C# formatting` is still present. The job `name:` is the
-required-check string, so it must be stable and not depend on the job id.
+When `changes.relevant` is `false` and `changes` succeeded, `gate` is skipped,
+reports success, and the required check `Check C# formatting` is still present.
+The job `name:` is the required-check string, so it must be stable and not depend
+on the job id.
 
 ## Applying the ruleset
 
@@ -215,11 +225,11 @@ remediated check names to `required_status_checks` as each workflow is fixed.
 
 The 12 path-filtered gates were remediated to the always-report pattern (each gained
 a `changes` job that lists the PR's files via `gh api` -- failing safe to "run" if
-that call errors -- and gates the real job on it). **Do not add their contexts to the
-ruleset until that remediation is merged to `master` and verified on real PRs** (open
-one doc-only and one code-only PR; confirm each remediated check reports run-or-skip
-on both). Adding a context before its workflow reports it on every PR shape hangs
-auto-merge.
+that call errors -- and each required gate fails closed if change detection itself
+fails or emits no valid output). **Do not add their contexts to the ruleset until
+that remediation is merged to `master` and verified on real PRs** (open one doc-only
+and one code-only PR; confirm each remediated check reports run-or-skip on both).
+Adding a context before its workflow reports it on every PR shape hangs auto-merge.
 
 Once merged and verified, replace the ruleset (id from `gh api repos/OWNER/REPO/rulesets`)
 with the full set -- the 11 Unity contexts plus these remediated ones:
@@ -263,11 +273,9 @@ A required check is matched by literal string, so these break silently:
   `Script tests (ubuntu-latest)`, `Script tests (macos-latest)`,
   `Script tests (windows-latest)` -- so require all three by their expanded
   names, never the shorthand.
-- **Jobs with no `name:`.** Their check-run context is the bare job id -- the
-  `dotnet-tests` job reports as `test`, and `lint-doc-links`'s job as `lint`
-  (verified against a live PR's check runs). Generic ids like `test`/`lint`
-  collide across workflows and are easy to mis-type, so give those jobs a unique,
-  stable `name:` before requiring them.
+- **Jobs with no `name:`.** Their check-run context is the bare job id. Generic
+  ids like `test`/`lint` collide across workflows and are easy to mistype, so
+  every required job must keep a unique, stable `name:`.
 - **Renames.** Renaming a job's `name:` drops the old required check (which then
   never reports) without any error. Treat required-check names as an API.
 - **`pull_request_target`.** Do not require the auto-fix workflows. Their visible
@@ -280,7 +288,8 @@ A required check is matched by literal string, so these break silently:
 When the required set or a workflow changes, keep them in sync:
 
 1. Adding a required workflow: give its gating job a stable `name:`, make it
-   always-report (above), then add the name to the ruleset.
+   always-report (above), make it fail closed on change-detection failures, then
+   add the name to the ruleset.
 1. Renaming a required job's `name:`: update the ruleset name in the same change.
 1. Bumping `.github/unity-versions.json`: update the `Unity <version> <mode>`
    contexts in the ruleset in the same change.

@@ -5,10 +5,22 @@ on:
     paths:
       - "**/*.cs"
       - ".config/dotnet-tools.json"
+      - ".csharpierrc*"
+      - "**/.csharpierrc*"
+      - ".csharpierignore"
+      - "**/.csharpierignore"
+      - ".editorconfig"
+      - "**/.editorconfig"
   pull_request_target:
     paths:
       - "**/*.cs"
       - ".config/dotnet-tools.json"
+      - ".csharpierrc*"
+      - "**/.csharpierrc*"
+      - ".csharpierignore"
+      - "**/.csharpierignore"
+      - ".editorconfig"
+      - "**/.editorconfig"
   workflow_dispatch:
 
 concurrency:
@@ -24,6 +36,7 @@ jobs:
     name: Format and propose changes
     if: ${{ github.event_name != 'pull_request_target' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -84,6 +97,7 @@ jobs:
     name: Fork PR bot formatting PR (Dependabot only)
     if: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && github.event.pull_request.user.login == 'dependabot[bot]' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout fork PR HEAD
         uses: actions/checkout@v6

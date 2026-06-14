@@ -17,7 +17,10 @@ on:
       - "**/*.md"
       - "**/*.markdown"
       - ".markdownlint.json"
+      - ".markdownlint.jsonc"
       - ".markdownlint-cli2.jsonc"
+      - ".markdownlintignore"
+      - ".github/workflows/markdownlint.yml"
       - "package.json"
   workflow_dispatch:
 
@@ -54,7 +57,11 @@ jobs:
             echo "relevant=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "$files" | grep -qE '(\.md$|\.markdown$|^\.markdownlint\.json$|^\.markdownlint-cli2\.jsonc$|^package\.json$)'; then
+          pattern='(\.md$|\.markdown$|^\.markdownlint\.json$'
+          pattern="$pattern"'|^\.markdownlint\.jsonc$|^\.markdownlint-cli2\.jsonc$'
+          pattern="$pattern"'|^\.markdownlintignore$|^\.github/workflows/markdownlint\.yml$'
+          pattern="$pattern"'|^package\.json$)'
+          if printf '%s\n' "$files" | grep -qE "$pattern"; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -63,10 +70,17 @@ jobs:
   markdownlint:
     name: Lint repository Markdown
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.relevant != 'true' && needs.changes.outputs.relevant != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with relevant='${{ needs.changes.outputs.relevant }}'."
+          echo "::error::Required gates only skip after successful detection emits relevant=false."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v6
         with:

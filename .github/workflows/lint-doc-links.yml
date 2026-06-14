@@ -32,6 +32,7 @@ on:
       - ".lychee.toml"
       - ".github/scripts/check-markdown-links.ps1"
       - ".github/actions/install-pinned-lychee/action.yml"
+      - ".github/workflows/lint-doc-links.yml"
   # No pull_request paths filter: the workflow must always start so its required
   # check reports on every PR shape. The `changes` job decides whether to do the
   # real work; when nothing relevant changed it skips to success. See
@@ -71,7 +72,11 @@ jobs:
             echo "relevant=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "$files" | grep -qE '(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$)'; then
+          pattern='(\.md$|\.markdown$|^docs/|^\.lychee\.toml$'
+          pattern="$pattern"'|^\.github/scripts/check-markdown-links\.ps1$'
+          pattern="$pattern"'|^\.github/actions/install-pinned-lychee/action\.yml$'
+          pattern="$pattern"'|^\.github/workflows/lint-doc-links\.yml$)'
+          if printf '%s\n' "$files" | grep -qE "$pattern"; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -80,9 +85,17 @@ jobs:
   lint:
     name: Lint docs links
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.relevant != 'true' && needs.changes.outputs.relevant != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with relevant='${{ needs.changes.outputs.relevant }}'."
+          echo "::error::Required gates only skip after successful detection emits relevant=false."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v6
         with:

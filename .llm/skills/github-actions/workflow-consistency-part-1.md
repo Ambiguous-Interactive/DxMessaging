@@ -38,18 +38,55 @@ on:
       - "**/*.yaml"
       - ".github/workflows/**" # Critical: include workflow files
       - ".prettierrc*"
+      - "**/.prettierrc*"
+      - "prettier.config.*"
+      - "**/prettier.config.*"
+      - ".prettierignore"
+      - "**/.prettierignore"
+      - ".editorconfig"
+      - "**/.editorconfig"
+      - ".gitignore"
+      - "**/.gitignore"
       - "package.json"
+      - "package.yaml"
 ```
 
 ### Common Path Filter Patterns
 
-| Workflow Type | Required Paths                                                                    |
-| ------------- | --------------------------------------------------------------------------------- |
-| YAML lint     | `**/*.yml`, `**/*.yaml`, `.github/workflows/**`, `.yamllint.yaml`, `.prettierrc*` |
-| Markdown lint | `**/*.md`, `**/*.markdown`, `.markdownlint*`, `package.json`                      |
-| JSON format   | `**/*.json`, `**/*.asmdef`, `**/*.asmref`, `.prettierrc*`                         |
-| C# build      | `**/*.cs`, `**/*.csproj`, `**/*.sln`, `Directory.Build.props`                     |
-| Tests         | Source paths + test paths + workflow config                                       |
+| Workflow Type | Required Paths                                                                                                                                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| YAML lint     | `**/*.yml`, `**/*.yaml`, `.github/workflows/**`, `.yamllint.yaml`, `.prettierrc*`, `**/.prettierrc*`, `prettier.config.*`, `**/prettier.config.*`, `.prettierignore`, `.editorconfig`, `.gitignore`, `package.json/yaml` |
+| Markdown lint | `**/*.md`, `**/*.markdown`, `.markdownlint*`, `.markdownlintignore`, `package.json`, the workflow file                                                                                                                   |
+| JSON format   | `**/*.json`, `**/*.asmdef`, `**/*.asmref`, `.prettierrc*`, `**/.prettierrc*`, `prettier.config.*`, `**/prettier.config.*`, `.prettierignore`, `.editorconfig`, `.gitignore`, `package.json/yaml`, the workflow file      |
+| C# build      | `**/*.cs`, `**/*.csproj`, `**/*.sln`, `.csharpierrc*`, `**/.csharpierrc*`, `.csharpierignore`, `.editorconfig`, `.config/dotnet-tools.json`, `Directory.Build.props`                                                     |
+| Tests         | Source paths + test paths + workflow config                                                                                                                                                                              |
+
+### Required Gate Path Detection
+
+Required jobs that depend on a `changes` job MUST fail closed. A required job may
+skip only when `changes` succeeds and explicitly emits `relevant=false`; failed,
+skipped, or malformed change detection must run the required job and fail in an
+early guard step:
+
+```yaml
+gate:
+  name: Stable required check name
+  needs: changes
+  if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
+  runs-on: ubuntu-latest
+  steps:
+    - name: Validate change detection
+      if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.relevant != 'true' && needs.changes.outputs.relevant != 'false') }}
+      run: |
+        echo "::error::Change detection failed or emitted an invalid relevant output."
+        exit 1
+
+    - run: ./check.sh
+```
+
+This matters because GitHub treats a job skipped by a conditional as successful,
+including for required checks. A failed `changes` job would otherwise skip the
+real required job and could let a pull request merge without running the gate.
 
 ### Trigger Best Practices
 
@@ -179,6 +216,8 @@ Before committing a workflow, verify:
 - [ ] Checkout steps declare `persist-credentials`; use `false`; auto-commit
       handoffs clean up tokenized remotes immediately
 - [ ] Path filters include `.github/workflows/**` for self-referential checks
+- [ ] Required gates that use `changes` fail closed unless `relevant=false` was
+      emitted by a successful detector
 - [ ] Double quotes used for strings
 - [ ] 2-space indentation throughout
 
