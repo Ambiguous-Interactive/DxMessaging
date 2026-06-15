@@ -2,9 +2,9 @@
 title: "Comparison Parity and Package Single Source"
 id: "comparison-parity-and-package-single-source"
 category: "testing"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-06-07"
-updated: "2026-06-08"
+updated: "2026-06-15"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -15,6 +15,7 @@ source:
     - path: "Tests/Runtime/Comparisons/ComparisonHarness.cs"
     - path: "Tests/Runtime/Comparisons/IMessagingTechBridge.cs"
     - path: "Tests/Runtime/Comparisons/ComparisonBridgeContract.cs"
+    - path: "Tests/Runtime/Comparisons/ComparisonDispatchTopologyTests.cs"
     - path: "Tests/Runtime/Comparisons/ZeroDependencyComparisonTests.cs"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
@@ -25,6 +26,7 @@ tags:
   - "single-source"
   - "parity"
   - "drift"
+  - "topology"
 
 complexity:
   level: "advanced"
@@ -90,8 +92,11 @@ asmdef and both manifests cannot drift apart.
 
 The harness in `Tests/Runtime/Comparisons/ComparisonHarness.cs` runs each
 bridge through the shared benchmark protocol, so a comparison cell and a
-dispatch cell are measured identically. The package pins live in one JSON file
-that the runner, the committed local manifest, and the drift validator all read.
+dispatch cell use the same MEASUREMENT (warm-up, window, GC delta) -- but they
+deliberately measure different SHAPES, so their numbers are expected to differ
+(see [Comparison vs dispatch topology](#comparison-vs-dispatch-topology)). The
+package pins live in one JSON file that the runner, the committed local manifest,
+and the drift validator all read.
 
 ## Problem Statement
 
@@ -155,6 +160,33 @@ foreach (IMessagingTechBridge bridge in bridges)
     }
 }
 ```
+
+### Comparison vs dispatch topology
+
+The comparison matrix and the DxMessaging-only dispatch table answer different
+questions, so a comparison cell and its dispatch look-alike usually register a
+DIFFERENT topology and their DxMessaging numbers diverge -- often a lot. Only
+`GlobalToOne` and `StructNoBox` are true topology twins of a dispatch cell
+(`UntargetedFlood_OneHandler`): identical one-token / one-untargeted-handler
+shape, so their DxMessaging throughput must agree within noise. The rest differ on
+purpose: `PriorityOrdered` uses one token with four priorities where the dispatch
+twin uses four separate tokens; `GlobalToMany` fans out to 16 subscribers with no
+dispatch equivalent; `KeyedToOne` registers 16 targets and dispatches to one
+(selectivity), unlike the single-target dispatch cell. Do NOT "fix" a divergence by
+forcing the shapes equal -- that would destroy what each scenario measures. The
+relationship is a single source of truth pinned by
+`ComparisonDispatchTopologyTests`, which fails the build if the DxMessaging
+fan-out, the referenced dispatch keys, or the scenario roster drift from the
+[methodology runbook table](../../../docs/runbooks/perf-benchmark-methodology.md#comparison-vs-dispatch-deliberately-different-topologies).
+
+### Fresh state per case, not shared global state
+
+A divergence is always topology, never leaked state. `ComparisonHarness.Run`
+builds a fresh bridge per (tech, scenario) via the factory and disposes it with
+`using`, so no subscriber, GameObject, ScriptableObject, or DI container survives
+into the next case; the DxMessaging path uses a fresh `new MessageBus()` per
+scenario. The fan-out assertion below is the tripwire: a leaked cross-case
+subscriber would make a later case over-count and fail it loudly.
 
 ### Zero-dependency baselines always compile
 

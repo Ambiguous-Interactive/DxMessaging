@@ -26,15 +26,25 @@ non-matching pull requests and cannot be required as written.
 
 ## Current state
 
-Auto-merge is enabled. The Unity Tests gate is **applied** -- repository ruleset
-`Required CI - Unity Tests (default branch)` (active, `~DEFAULT_BRANCH`) requires
-the 9 `Unity <ver> <mode>` legs plus `Resolve Unity test matrix` and
-`Self-hosted runner access preflight`, with the `bot-auto-commit` App in
-`bypass_actors` (mode `always`) so the perf-doc auto-commit still pushes to
-`master`. The other gates have been remediated to report on every PR shape (see
-[Remediation](#remediation-make-a-gate-always-report)); that remediation must
-merge and be verified on real PRs **before** its checks are added to the ruleset
-(see [Augmenting the gate](#augmenting-the-gate-after-remediation-merges)).
+Auto-merge is enabled. The full CI gate is **applied and live (2026-06-15)** --
+repository ruleset `Required CI - Unity Tests (default branch)` (id `17663217`,
+active, `~DEFAULT_BRANCH`) now requires **25 contexts**: the 11 Unity contexts
+below plus the 14 remediated static/correctness gates from
+[Augmenting the gate](#augmenting-the-gate-done-2026-06-15). The
+`bot-auto-commit` App (id `3977200`) stays in `bypass_actors` (mode `always`) so
+the perf-doc auto-commit still pushes to `master`. The remediation merged via
+PR #232 (`c42f8a4`); all 14 contexts were verified present-and-reporting on a real
+PR (#232) before the augment.
+
+> **Planned follow-up (chosen 2026-06-15): collapse to a `CI Success` aggregate.**
+> The 14 individual static contexts are an interim. The agreed end state is a new
+> `ci.yml` that hosts the ubuntu static checks as jobs with a single `CI Success`
+> alls-green gate (`re-actors/alls-green`), leaving Unity as its own
+> `Unity CI Success` aggregate (it runs on self-hosted Windows). After that lands
+> on `master` and is verified run-or-skip on real PRs, the ruleset switches to
+> require just those 1-2 aggregate contexts instead of the 25. The design is
+> tracked in the local `REMAINING-WORK-PLAN.md` Workstream B. Until then the
+> 25-context set is the live gate.
 
 ## Currently applied required gate: Unity Tests
 
@@ -223,19 +233,21 @@ Add the auto-commit App to `bypass_actors` (by its integration/app id, mode
 `always`) so the perf-doc auto-commit keeps reaching the default branch. Add the
 remediated check names to `required_status_checks` as each workflow is fixed.
 
-## Augmenting the gate (after remediation merges)
+## Augmenting the gate (DONE 2026-06-15)
 
 The path-filtered gates listed above were remediated to the always-report pattern
 (each gained a `changes` job that lists the PR's files via `gh api` -- failing
 safe to "run" if that call errors -- and each required gate fails closed if
-change detection itself fails or emits no valid output). **Do not add their
-contexts to the ruleset until that remediation is merged to `master` and verified
-on real PRs** (open one doc-only and one code-only PR; confirm each remediated
-check reports run-or-skip on both). Adding a context before its workflow reports
-it on every PR shape hangs auto-merge.
+change detection itself fails or emits no valid output). The remediation merged
+via PR #232 (`c42f8a4`). **The augment is now LIVE:** ruleset `17663217` requires
+the 11 Unity contexts plus these 14 remediated ones (25 total). Each of the 14 was
+verified present-and-reporting `success` on PR #232's check-runs (a real PR that
+exercised the remediated workflows) before the augment; the skip-success path is
+structural (the real job carries `if: always() && (needs.changes.result !=
+'success' || needs.changes.outputs.relevant != 'false')`, GitHub counts a skipped
+required check as passing, and the workflows always trigger on `pull_request`).
 
-Once merged and verified, replace the ruleset (id from `gh api repos/OWNER/REPO/rulesets`)
-with the full set -- the 11 Unity contexts plus these remediated ones:
+The 14 remediated contexts (the source of the augment):
 
 ```text
 Lint repository Markdown
