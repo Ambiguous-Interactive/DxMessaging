@@ -482,3 +482,32 @@ jobs:
           path: .artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}
           if-no-files-found: warn
           retention-days: 14
+
+  # Single aggregate gate so branch protection can require ONE "Unity CI Success"
+  # context instead of the 11 individual Unity contexts (the matrix legs +
+  # matrix-config + runner-preflight). See docs/runbooks/required-checks.md.
+  unity-ci-success:
+    name: Unity CI Success
+    needs:
+      - matrix-config
+      - runner-preflight
+      - unity-tests
+    # Exactly always() -- NEVER a falsifiable job-level if. A skipped required
+    # check counts as passing and the latest run on a SHA wins, so a guard that
+    # can be false on a pull_request could launder a red/pending gate into a
+    # false green. The per-job skips (fork / docs-only / missing secrets) are
+    # tolerated via allowed-skips below, preserving the exact "skipped leg
+    # counts as success" semantics the 11 individual required contexts had.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify all Unity CI jobs succeeded (or skipped to success)
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
+          # matrix-config / runner-preflight "skip to success" on forks, and the
+          # whole unity-tests matrix skips on the docs-only / fork / no-secrets
+          # shapes; those skips must pass the gate exactly as the individual
+          # required contexts did. A real failure or cancellation still fails.
+          allowed-skips: matrix-config, runner-preflight, unity-tests

@@ -182,6 +182,43 @@ unsupported scenario renders `N/A` in the matrix and is **never faked**:
 | S7  | `SubUnsub`        | Subscribe/unsubscribe churn.          |
 | S8  | `StructNoBox`     | Struct message dispatch (zero-copy).  |
 
+### Comparison vs dispatch: deliberately different topologies
+
+The comparison matrix and the dispatch-throughput table are **two different
+measurements**, not two views of the same number. Each comparison scenario is the
+shape every library can implement idiomatically; each dispatch scenario is tuned to
+stress one DxMessaging path. Where a comparison cell and a dispatch cell look like
+"the same" scenario, they usually register a **different topology**, so their
+DxMessaging numbers are expected to differ -- often substantially. Read the two
+tables as answering different questions; do not expect a comparison cell to match
+its dispatch look-alike unless the row below says they are a true twin.
+
+The map below is pinned by
+[`ComparisonDispatchTopologyTests`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Comparisons/ComparisonDispatchTopologyTests.cs);
+that suite fails the build if the DxMessaging fan-out, the dispatch scenario keys, or
+the scenario roster drift from this table, so this documentation and the code cannot
+silently desync.
+
+| Comparison cell   | DxMessaging shape                    | Nearest dispatch cell                         | True twin? | Why they differ                                                                                                                                       |
+| ----------------- | ------------------------------------ | --------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GlobalToOne`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | **Yes**    | Identical shape; the DxMessaging numbers must agree within noise.                                                                                     |
+| `StructNoBox`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | **Yes**    | Same shape as `GlobalToOne`; this row exists to expose other libraries' boxing in the bytes/op column.                                                |
+| `GlobalToMany`    | 16 tokens, 16 untargeted handlers    | (none)                                        | No         | No dispatch scenario fans untargeted dispatch out to 16 handlers (the dispatch family caps untargeted fan-out at four).                               |
+| `KeyedToOne`      | 16 targets registered, dispatch to 1 | `TargetedFlood_OneListener`                   | No         | Measures lookup selectivity (16 registered, 1 fires); the dispatch cell registers a single target.                                                    |
+| `PriorityOrdered` | 1 token, 4 priorities                | `UntargetedFlood_FourHandlers_FourPriorities` | No         | Comparison uses one MessageHandler with four handler-store entries; the dispatch cell uses four separate tokens. Same fan-out (4), different storage. |
+| `Filtered`        | 1 interceptor + 1 handler            | `InterceptorHeavy_FourInterceptors`           | No         | Comparison runs one interceptor; the dispatch cell runs four.                                                                                         |
+| `PostProcess`     | 1 post-processor + 1 handler         | `PostProcessingHeavy_FourPostProcessors`      | No         | Comparison runs one post-processor; the dispatch cell runs four.                                                                                      |
+| `SubUnsub`        | register/unregister churn cycle      | (none)                                        | No         | The dispatch family has no subscribe/unsubscribe-throughput scenario.                                                                                 |
+
+**Fresh-state guarantee.** Every bridge is constructed fresh per (tech, scenario)
+case by `ComparisonHarness.Run` (factory + `using`), so no subscriber, GameObject,
+ScriptableObject, or DI container survives into the next case. The DxMessaging path
+uses a fresh `new MessageBus()` per scenario, mirroring the dispatch benchmarks'
+isolated bus. The harness's `ProgressMarker` assertion is a hard tripwire that fails
+loudly if any case ever fans out more (or fewer) invocations than declared, which is
+exactly what a leaked cross-case subscriber would do. So a comparison/dispatch
+divergence is always topology, never shared global state.
+
 ## How CI produces and publishes the numbers
 
 The [Performance Numbers workflow](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/perf-numbers.yml)

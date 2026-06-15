@@ -173,7 +173,7 @@
 | ------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ---------------- | ---------------------------- |
 | [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 261  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
 | [Benchmarks Run in the Highest-Fidelity Scope](./testing/benchmarks-run-in-highest-fidelity-scope.md)   | [ok] 183    | [intermediate] | [stable] | [risk: medium]   | testing, benchmarks          |
-| [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [ok] 241    | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
+| [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [warn] 273  | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Data-Driven Coverage Patterns](./testing/test-coverage-data-driven.md)                                 | [ok] 172    | [intermediate] | [stable] | [risk: none]     | testing, data-driven         |
 | [Data-Driven Test Sources](./testing/data-driven-tests-sources.md)                                      | [ok] 255    | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Test Usage Patterns](./testing/data-driven-tests-usage.md)                                 | [draft] 107 | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
