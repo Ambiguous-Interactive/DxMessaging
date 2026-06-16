@@ -60,13 +60,13 @@ jobs:
         # docs/architecture/perf-baseline.csv end to end and delivers them via a
         # fallback auto-merge PR when its direct push is rejected. A PR whose
         # ENTIRE diff is those two files has nothing for the licensed Unity
-        # matrix to test, and skipping the matrix keeps the fallback PR cheap
-        # AND mergeable (skipped required jobs report success; a never-reporting
-        # required check would block auto-merge forever). Jobs skipped via
-        # `if:` report conclusion=skipped, which branch protection treats as
-        # passing. CONTRACT mirror of runner-preflight: detection failures must
-        # never make CI more broken than the no-detection baseline, so any API
-        # error soft-fails to docs-only=false (full matrix runs).
+        # matrix to test, and skipping the matrix keeps the fallback PR cheap.
+        # Branch protection requires the always-reporting `Unity CI Success`
+        # aggregate, not these matrix legs; a skipped pre-expansion matrix job
+        # can report only the literal unevaluated matrix name. CONTRACT mirror
+        # of runner-preflight: detection failures must never make CI more
+        # broken than the no-detection baseline, so any API error soft-fails to
+        # docs-only=false (full matrix runs).
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -258,8 +258,8 @@ jobs:
       - runner-preflight
     # ci-owned-docs-only: a PR touching ONLY the CI-owned perf doc + baseline
     # (the perf-numbers fallback PR shape) skips the licensed matrix; the
-    # skipped jobs report success to branch protection so the PR stays
-    # auto-mergeable. See the matrix-config step comment.
+    # `Unity CI Success` accepts this skipped matrix as a successful intentional
+    # skip so the PR stays auto-mergeable. See the matrix-config step comment.
     if: >-
       ${{
         (github.event_name != 'pull_request' ||
@@ -506,8 +506,10 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          # matrix-config / runner-preflight "skip to success" on forks, and the
-          # whole unity-tests matrix skips on the docs-only / fork / no-secrets
-          # shapes; those skips must pass the gate exactly as the individual
-          # required contexts did. A real failure or cancellation still fails.
-          allowed-skips: matrix-config, runner-preflight, unity-tests
+          # runner-preflight can skip on forks, and the whole unity-tests matrix
+          # skips on the docs-only / fork / no-secrets shapes; those skips must
+          # pass the gate exactly as the individual required contexts did.
+          # matrix-config has no intentional skip path because it produces the
+          # matrix and skip-policy outputs. A real failure or cancellation still
+          # fails.
+          allowed-skips: runner-preflight, unity-tests
