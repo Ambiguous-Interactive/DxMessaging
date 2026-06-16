@@ -14,7 +14,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 153   |
+| Total Skills | 154   |
 | Categories   | 8     |
 
 ---
@@ -27,7 +27,7 @@
 - [Performance](#performance) (45)
 - [Scripting](#scripting) (9)
 - [Solid](#solid) (15)
-- [Testing](#testing) (38)
+- [Testing](#testing) (39)
 - [Unity](#unity) (10)
 
 ---
@@ -178,6 +178,7 @@
 | [Data-Driven Test Sources](./testing/data-driven-tests-sources.md)                                      | [ok] 255    | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Test Usage Patterns](./testing/data-driven-tests-usage.md)                                 | [draft] 107 | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Tests with TestCaseSource](./testing/data-driven-tests.md)                                 | [ok] 196    | [intermediate] | [stable] | [risk: low]      | testing, parameterized       |
+| [Fast Unity Tests: Reload, Frame Tax, and Anti-Patterns](./testing/fast-unity-tests.md)                 | [ok] 229    | [intermediate] | [stable] | [risk: none]     | testing, performance         |
 | [Git and Parser Robustness in CI/CD](./testing/git-workflow-robustness.md)                              | [ok] 213    | [intermediate] | [stable] | [risk: none]     | testing, git                 |
 | [Git and Parser Robustness in CI/CD Part 1](./testing/git-workflow-robustness-part-1.md)                | [ok] 187    | [intermediate] | [stable] | [risk: low]      | migration, split             |
 | [Inspector Overlay Invariants for MessageAwareComponent](./testing/inspector-overlay-invariants.md)     | [ok] 152    | [intermediate] | [stable] | [risk: low]      | testing, editor              |
@@ -220,7 +221,7 @@
 | [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 219   | [intermediate] | [stable] | [risk: none] | unity, cli           |
 | [Unity License Bootstrap](./unity/unity-license-bootstrap.md)               | [ok] 194   | [basic]        | [stable] | [risk: none] | unity, license       |
 | [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 273 | [intermediate] | [stable] | [risk: none] | unity, serial        |
-| [Unity MCP Test Loop](./unity/mcp-test-loop.md)                             | [ok] 172   | [intermediate] | [stable] | [risk: none] | unity, mcp           |
+| [Unity MCP Test Loop](./unity/mcp-test-loop.md)                             | [ok] 199   | [intermediate] | [stable] | [risk: none] | unity, mcp           |
 | [Unity Perf Test Isolation](./unity/unity-perf-test-isolation.md)           | [ok] 208   | [intermediate] | [stable] | [risk: high] | unity, performance   |
 | [Unity Runner Host Prerequisites](./unity/unity-runner-host-prereqs.md)     | [ok] 251   | [intermediate] | [stable] | [risk: none] | unity, windows       |
 | [UPM Test Harness](./unity/upm-test-harness.md)                             | [ok] 190   | [basic]        | [stable] | [risk: none] | unity, upm           |

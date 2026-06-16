@@ -1224,6 +1224,30 @@ function Initialize-EphemeralProject {
         Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
     "m_EditorVersion: $Version`n" |
         Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
+    # Disable enter-play-mode domain + scene reload (DisableDomainReload=1 |
+    # DisableSceneReload=2 = 3) so the PlayMode test leg skips the per-entry
+    # reload. The ephemeral project is generated minimal, so without this emit
+    # Unity falls back to the slow default (both reloads ON). Production resets
+    # its statics on play-mode entry via five [RuntimeInitializeOnLoadMethod(
+    # SubsystemRegistration)] hooks and the tests reset via
+    # DxMessagingStaticState.Reset() per test, so disabling the reload is safe
+    # (verified red-green via the MCP loop). Inert for the editmode + standalone
+    # legs (no in-editor play-mode entry). Written as a PARTIAL
+    # EditorSettings.asset: Unity fills every unset field with its built-in
+    # default, and carrying no serializedVersion means no pinned version can
+    # mismatch across the 2021.3 / 2022.3 / 6000.x matrix (the matrix legs
+    # validate it; the local MCP loop only exercises 6000.x). Written
+    # unconditionally, like ProjectVersion.txt above: EditorSettings.asset lives
+    # under ProjectSettings/, not Assets/, so a same-content rewrite does not
+    # invalidate the AssetDatabase import cache.
+    @'
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!159 &1
+EditorSettings:
+  m_EnterPlayModeOptionsEnabled: 1
+  m_EnterPlayModeOptions: 3
+'@ | Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\EditorSettings.asset') -Encoding UTF8
     New-ConfiguratorSource -Backend $Backend |
         Set-Content -LiteralPath (Join-Path $project 'Assets\Editor\DxmCiTestConfigurator.cs') -Encoding UTF8
 

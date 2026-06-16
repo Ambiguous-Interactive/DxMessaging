@@ -784,6 +784,112 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
+        /// Bans real-time waits anywhere under the <c>Tests/</c> source tree. The
+        /// suite measures deterministic frame-based and condition-based progress,
+        /// not wall-clock time, so blocking sleeps, awaited delays, the
+        /// real-seconds coroutine yields, and time-scale manipulation would trade
+        /// determinism for flake and slowness (and the common "lower the time
+        /// scale" tip does not even apply when there is no real time to compress).
+        /// </summary>
+        /// <remarks>
+        /// Source-text scan over both test subtrees (EditMode + Runtime). The
+        /// banned token list is assembled by string concatenation so this
+        /// scanner's own source never contains a banned token in its matchable
+        /// form and cannot flag itself; keep any future prose in this file the
+        /// same way. Files that cannot be located on disk (for example in a
+        /// standalone player run) leave the scan vacuously satisfied, matching the
+        /// other source-scan contract tests.
+        /// </remarks>
+        [Test]
+        public void TestSourcesAvoidRealTimeWaitAntiPatterns()
+        {
+            string[] bannedTokens =
+            {
+                "Thread" + ".Sleep(",
+                "Task" + ".Delay(",
+                "WaitForSeconds" + "(",
+                "WaitForSecondsRealtime" + "(",
+                "Time" + ".timeScale",
+            };
+
+            List<string> roots = ResolveTestsTreeRootsFallback();
+            HashSet<string> scannedFiles = new(StringComparer.OrdinalIgnoreCase);
+            List<string> offenders = new();
+
+            foreach (string root in roots)
+            {
+                if (!System.IO.Directory.Exists(root))
+                {
+                    continue;
+                }
+
+                foreach (
+                    string file in System.IO.Directory.EnumerateFiles(
+                        root,
+                        "*.cs",
+                        System.IO.SearchOption.AllDirectories
+                    )
+                )
+                {
+                    string normalized = System.IO.Path.GetFullPath(file);
+                    if (!scannedFiles.Add(normalized))
+                    {
+                        continue;
+                    }
+
+                    string text;
+                    try
+                    {
+                        text = System.IO.File.ReadAllText(file);
+                    }
+                    catch (System.IO.IOException)
+                    {
+                        continue;
+                    }
+
+                    foreach (string token in bannedTokens)
+                    {
+                        // Report EVERY occurrence (not just the first) so a fix
+                        // sees all offending lines in one pass.
+                        int searchFrom = 0;
+                        while (true)
+                        {
+                            int index = text.IndexOf(token, searchFrom, StringComparison.Ordinal);
+                            if (index < 0)
+                            {
+                                break;
+                            }
+
+                            int line = 1;
+                            for (int i = 0; i < index; ++i)
+                            {
+                                if (text[i] == '\n')
+                                {
+                                    ++line;
+                                }
+                            }
+
+                            offenders.Add(
+                                $"{System.IO.Path.GetFileName(file)}:{line} uses '{token}'"
+                            );
+                            searchFrom = index + token.Length;
+                        }
+                    }
+                }
+            }
+
+            Assert.That(
+                offenders,
+                Is.Empty,
+                "Tests must wait on deterministic frame or condition progress, never real time. "
+                    + "Replace the offending blocking-sleep / awaited-delay / real-seconds-yield / "
+                    + "time-scale usage with a frame budget or a synchronous condition check "
+                    + "(see .llm/skills/testing/fast-unity-tests.md):\n  "
+                    + string.Join("\n  ", offenders)
+            );
+        }
+
+        /// <summary>
         /// Pins that no namespace contains more than one
         /// <c>[SetUpFixture]</c>. NUnit applies a SetUpFixture's hooks to
         /// every test in the namespace and its sub-namespaces; multiple
@@ -922,6 +1028,28 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static List<string> ResolveTestSourceRootsFallback()
         {
+            return ResolveTestSubtreeRootsFallback(System.IO.Path.Combine("Tests", "Runtime"));
+        }
+
+        /// <summary>
+        /// Resolves the whole <c>Tests/</c> source tree (both the EditMode and
+        /// the Runtime subtrees) on disk, for scans that must cover every test
+        /// assembly rather than just the runtime fixtures.
+        /// </summary>
+        private static List<string> ResolveTestsTreeRootsFallback()
+        {
+            return ResolveTestSubtreeRootsFallback("Tests");
+        }
+
+        /// <summary>
+        /// Best-effort on-disk location of a subdirectory of the package's
+        /// <c>Tests/</c> tree. Returns every candidate root that exists; an empty
+        /// list (source not on disk, for example in a standalone player run)
+        /// leaves a caller's scan vacuously satisfied, matching the rest of the
+        /// source-scan contract tests.
+        /// </summary>
+        private static List<string> ResolveTestSubtreeRootsFallback(string subtree)
+        {
             List<string> roots = new List<string>();
             string[] candidates =
             {
@@ -930,15 +1058,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     "..",
                     "Packages",
                     "com.wallstop-studios.dxmessaging",
-                    "Tests",
-                    "Runtime"
+                    subtree
                 ),
-                System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "Tests", "Runtime"),
-                System.IO.Path.Combine(
-                    System.IO.Directory.GetCurrentDirectory(),
-                    "Tests",
-                    "Runtime"
-                ),
+                System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", subtree),
+                System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), subtree),
             };
 
             foreach (string candidate in candidates)
