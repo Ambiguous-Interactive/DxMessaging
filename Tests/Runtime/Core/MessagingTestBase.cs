@@ -265,6 +265,18 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTearDown]
         public IEnumerator UnityCleanup()
         {
+            // Mark every tracked object for destruction FIRST, then yield a
+            // SINGLE frame. In play mode Object.Destroy is deferred to the
+            // end-of-frame flush, and every destroy queued within the same
+            // frame flushes together, so one yield drains all of this test's
+            // OnDisable/OnDestroy callbacks (and thus every bus deregistration)
+            // at once. The prior loop yielded once PER object -- an O(n)
+            // per-test frame tax that a 128-component stress fixture paid as
+            // ~128 teardown frames. Batching it is O(1) while preserving the
+            // same drain-before-the-next-test guarantee the UnitySetup comment
+            // relies on: queued destroys must flush inside THIS teardown so
+            // their OnDisable does not fire against the next test's emptied bus.
+            bool destroyedAny = false;
             foreach (GameObject spawned in _spawned)
             {
                 if (spawned == null)
@@ -273,13 +285,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 DestroyTrackedObject(spawned);
-                if (Application.isPlaying)
-                {
-                    yield return null;
-                }
+                destroyedAny = true;
             }
 
             _spawned.Clear();
+
+            if (destroyedAny && Application.isPlaying)
+            {
+                yield return null;
+            }
 
             // Assert the bus drained fully inside this test, instead of
             // letting a stuck handler bleed into the next test's logs.

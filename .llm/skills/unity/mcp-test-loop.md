@@ -2,9 +2,9 @@
 title: "Unity MCP Test Loop"
 id: "mcp-test-loop"
 category: "unity"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-06-14"
-updated: "2026-06-14"
+updated: "2026-06-15"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -159,8 +159,35 @@ classic-serial license with a guaranteed return). The MCP loop is the LOCAL path
 only; it does not run in CI and does not need any Unity license secrets. See
 [UPM Test Harness](./upm-test-harness.md) and [Unity CI Matrix](./unity-ci-matrix.md).
 
+## Measuring Test-Suite Speed
+
+`DxMcpTestRunner.Run` writes `durationSeconds` into the result JSON, so the loop
+doubles as a stopwatch for test-suite-performance work:
+
+1. Baseline a mode (`Run("PlayMode", "<assembly>", null, null, <path>)`), record
+   `durationSeconds` + `{pass,fail,skip}`.
+1. Change ONE lever, re-run the SAME `Run(...)` call, diff the duration and the
+   counts. Keep a change only if pass counts hold and no flake appears across
+   repeated runs.
+
+Two caveats keep the numbers honest:
+
+- **Warm-editor frames are near-free.** The host editor is already warm, so the
+  local PlayMode suite finishes in tens of seconds and a structural fix (batched
+  teardown, disabled reload) can show a near-zero LOCAL delta while still paying
+  off on the cold CI legs. Per-mode `< 3 min` is a CI metric; locally, trust
+  relative deltas, not the absolute number.
+- **A script edit forces one reload.** `AssetDatabase.Refresh()` after editing a
+  `.cs` triggers a domain reload even when enter-play-mode reload is disabled, so
+  the FIRST play-mode entry after an edit is a fresh domain. Run twice
+  back-to-back to exercise the true persistent-domain (reload-off) path -- a
+  test with a latent reload dependency fails only on the SECOND, persistent run.
+
+See [Fast Unity Tests](../testing/fast-unity-tests.md) for the levers themselves.
+
 ## See Also
 
+- [Fast Unity Tests](../testing/fast-unity-tests.md)
 - [UPM Test Harness](./upm-test-harness.md)
 - [Unity Perf Test Isolation](./unity-perf-test-isolation.md)
 - [Unity CI Matrix](./unity-ci-matrix.md)

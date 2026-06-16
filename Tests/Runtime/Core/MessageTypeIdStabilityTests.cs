@@ -189,6 +189,22 @@ namespace DxMessaging.Tests.Runtime.Core
 
             DxMessagingStaticState.Reset();
 
+            // Capture the running id count immediately around the new-type
+            // registration so the delta is attributable to exactly this
+            // GetOrAdd call. MessageHelperIndexer assigns each type id once per
+            // process domain and NEVER resets it (see its xmldoc: this is the
+            // routing-stability contract that makes "Enter Play Mode with Domain
+            // Reload disabled" safe). So registering PostResetMessage either
+            // assigns the next sequential id -- first time in this domain, the
+            // count grows by exactly one and the new id equals the previous
+            // count -- or returns the id assigned on an earlier run when the
+            // domain persisted across play-mode entries, leaving the count
+            // steady. A strict "the global total grew" assertion would falsely
+            // fail in that second case (it did, once enter-play-mode domain
+            // reload was disabled for the test runner), so assert the invariants
+            // that hold in BOTH: a valid, distinct, counted id and a
+            // never-shrinking total.
+            int totalBeforeNewType = MessageHelperIndexer.TotalMessages;
             cache.GetOrAdd<PostResetMessage>();
 
             int postResetId = MessageHelperIndexer<PostResetMessage>.SequentialId;
@@ -200,10 +216,32 @@ namespace DxMessaging.Tests.Runtime.Core
                 postResetId,
                 "New message type should get a different ID than existing types"
             );
+
+            int registrationDelta = totalAfterReset - totalBeforeNewType;
+            Assert.That(
+                registrationDelta,
+                Is.EqualTo(0).Or.EqualTo(1),
+                "Registering one message type must change TotalMessages by zero "
+                    + "(already assigned in a persistent domain) or one (freshly assigned)"
+            );
+            if (registrationDelta == 1)
+            {
+                Assert.AreEqual(
+                    totalBeforeNewType,
+                    postResetId,
+                    "A freshly assigned message type must take the next sequential id"
+                );
+            }
             Assert.Greater(
                 totalAfterReset,
+                postResetId,
+                "TotalMessages must account for the new type id (ids are a 0-based "
+                    + "index below the running count)"
+            );
+            Assert.GreaterOrEqual(
+                totalAfterReset,
                 totalBeforeReset,
-                "TotalMessages should increase after registering a new message type"
+                "TotalMessages must never shrink (ids are assigned once and preserved)"
             );
 
             int preResetIdAfterNewRegistration = MessageHelperIndexer<PreResetMessage>.SequentialId;
