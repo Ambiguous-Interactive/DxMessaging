@@ -3,7 +3,8 @@ name: Script Tests
 on:
   # No pull_request paths filter: the workflow must always start so its required
   # check reports on every PR shape. The `changes` job decides whether to do the
-  # real work; when nothing relevant changed it skips to success. See
+  # real work; when nothing relevant changed the required OS jobs run only a
+  # cheap skip-notice step. See
   # docs/runbooks/required-checks.md.
   pull_request:
     branches:
@@ -106,7 +107,11 @@ jobs:
   script-tests:
     name: Script tests (${{ matrix.os }})
     needs: changes
-    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
+    # Keep the required matrix contexts present on every PR shape. If this
+    # job-level guard skips before matrix expansion, GitHub reports only the
+    # literal unevaluated matrix name and branch protection waits forever for
+    # the three expanded OS contexts.
+    if: ${{ always() }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     permissions:
@@ -133,13 +138,21 @@ jobs:
           echo "::error::Required gates only skip after successful detection emits relevant=false."
           exit 1
 
+      - name: Skip non-script changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.relevant == 'false' }}
+        shell: bash
+        run: |
+          echo "No script-affecting files changed; required context is present."
+
       - name: Checkout repository
+        if: ${{ needs.changes.outputs.relevant != 'false' }}
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Setup Node.js
+        if: ${{ needs.changes.outputs.relevant != 'false' }}
         uses: actions/setup-node@v6
         with:
           node-version: "22.18.0"
@@ -149,6 +162,7 @@ jobs:
           cache-dependency-path: package.json
 
       - name: Setup .NET
+        if: ${{ needs.changes.outputs.relevant != 'false' }}
         # validate:all runs check:analyzers, which builds the source
         # generators against the SDK pinned in SourceGenerators/global.json.
         uses: actions/setup-dotnet@v5
@@ -156,6 +170,7 @@ jobs:
           global-json-file: SourceGenerators/global.json
 
       - name: Install dependencies
+        if: ${{ needs.changes.outputs.relevant != 'false' }}
         # No tracked package-lock.json: npm ci requires a lockfile, so fall
         # back to npm install when it is absent (repo-standard pattern).
         # `shell: bash` is required for the windows-latest matrix leg, where
@@ -169,6 +184,7 @@ jobs:
           fi
 
       - name: Run script tests
+        if: ${{ needs.changes.outputs.relevant != 'false' }}
         # `shell: bash` ensures the invocation resolves consistently across
         # Linux, native macOS, and windows-latest (Git Bash), so platform-only
         # quoting or path regressions cannot pass CI unnoticed.
@@ -176,5 +192,6 @@ jobs:
         run: node --test scripts/
 
       - name: Run validators
+        if: ${{ needs.changes.outputs.relevant != 'false' }}
         shell: bash
         run: npm run validate:all
