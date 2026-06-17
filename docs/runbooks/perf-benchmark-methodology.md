@@ -15,9 +15,10 @@ window:
 1. Warm up the scenario for `DispatchBenchmarkScenarios.WarmupEmits(scenario)`
    emits so JIT and pools reach steady state. That count is
    `BenchmarkProtocol.WarmupEmits` (currently 10,000, the default) for every
-   scenario except the cold registration flood, which warms up 0 emits so it
-   measures first-touch registration cost. `ComparisonScenarios.WarmupEmits`
-   applies the same policy to the comparison bridges.
+   scenario except the registration/deregistration floods and the cold
+   first-dispatch scenarios, which warm up 0 emits so they measure one-time or
+   first-touch cost. `ComparisonScenarios.WarmupEmits` applies the same policy to
+   the comparison bridges.
 1. Sample `GC.GetAllocatedBytesForCurrentThread()` and start a stopwatch.
 1. Emit in batches until ONE continuous measurement window of `N` seconds has
    elapsed (`BenchmarkProtocol.MeasurementSeconds`, currently `N = 5`).
@@ -73,6 +74,16 @@ they are report-only -- rendered as wall clock, never gated.
   work; the warm-JIT flood isolates the data-structure cost by paying the JIT bill
   first. Under IL2CPP/AOT the generics are precompiled, so cold and warm-JIT are
   approximately equal.
+- **Deregistration floods.** `DeregistrationFlood_1000Types_Cold` and
+  `DeregistrationFlood_1000Types_WarmJit` are the teardown mirror of the
+  registration floods. Each stages the same 1000 cached flood builders on a live
+  token UNTIMED, then times `MessageRegistrationToken.UnregisterAll()` -- the
+  production deregistration path, which drains one bus deregistration per staged
+  handler. The cold variant pays the Mono JIT compile of that path on its first
+  call; the warm-JIT variant pre-pays it on a throwaway bus (register then
+  `UnregisterAll`) and times the teardown of a fresh, fully populated token, so it
+  isolates the data-structure dismantle cost. Both are wall-clock rows, symmetric
+  with the registration floods.
 
 The cold counterpart to `BenchmarkProtocol.Measure` is
 `BenchmarkProtocol.MeasureColdLatency`. It runs K trials; each trial builds fresh
@@ -143,9 +154,9 @@ apples-to-apples set every library bridge implements (or declares unsupported).
 
 ### Dispatch scenarios (DxMessaging only)
 
-The thirteen dispatch-throughput scenarios are defined in
+The fifteen dispatch-throughput scenarios are defined in
 [`DispatchThroughputBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs).
-The first eight are warm/hot throughput; the last five are cold or warm-JIT latency
+The first eight are warm/hot throughput; the last seven are cold or warm-JIT latency
 (see [Cold vs warm/hot modes](#cold-vs-warmhot-modes)):
 
 | Scenario key                                  | What it measures                                                       |
@@ -160,6 +171,8 @@ The first eight are warm/hot throughput; the last five are cold or warm-JIT late
 | `PostProcessingHeavy_FourPostProcessors`      | Four post-processors plus one handler.                                 |
 | `RegistrationFlood_1000Types_FromColdBus`     | Registering 1000 distinct message types from a cold bus (cold flood).  |
 | `RegistrationFlood_1000Types_WarmJit`         | Registering the same 1000 types after a JIT pre-warm (warm-JIT flood). |
+| `DeregistrationFlood_1000Types_Cold`          | Tearing down 1000 live registrations, JIT-inclusive (cold flood).      |
+| `DeregistrationFlood_1000Types_WarmJit`       | Tearing down the same 1000 registrations after a JIT pre-warm.         |
 | `UntargetedFirstDispatch_Cold`                | First untargeted dispatch per type, JIT-inclusive, median of 32 types. |
 | `TargetedFirstDispatch_Cold`                  | First targeted dispatch per type, JIT-inclusive, median of 32 types.   |
 | `BroadcastFirstDispatch_Cold`                 | First broadcast dispatch per type, JIT-inclusive, median of 32 types.  |
@@ -372,8 +385,9 @@ The script always exits 0 itself; the workflow decides whether to fail from the
 A scenario regresses when its throughput drops by more than the regression
 threshold (default `0.33`, looser than the comment tolerance) OR its allocation
 exceeds the baseline. Only canonical dispatch scenarios participate in the hard
-gate, so the wall-clock rows (the cold/warm-JIT registration floods and the cold
-first-dispatch scenarios, all zero throughput) never trip the gate. The delta
+gate, so the wall-clock rows (the cold/warm-JIT registration and deregistration
+floods and the cold first-dispatch scenarios, all zero throughput) never trip the
+gate. The delta
 comment is still broader diagnostic output: it keeps the dispatch scenarios plus
 the DxMessaging comparison rows and drops every other library's rows. Comparison
 rows are report-only because a single cross-library comparison sample is too

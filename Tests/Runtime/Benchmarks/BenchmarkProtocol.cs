@@ -273,15 +273,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         /// <summary>
         /// Per-scenario warm-up emit count. Every scenario keeps the shared
-        /// <see cref="BenchmarkProtocol.WarmupEmits"/> default except the cold-bus
-        /// registration flood and the four cold/warm-JIT latency scenarios, which measure
+        /// <see cref="BenchmarkProtocol.WarmupEmits"/> default except the registration and
+        /// deregistration floods and the three cold first-dispatch scenarios, which measure
         /// one-time or first-touch cost and so perform no warm-up flood (0).
         /// </summary>
         public static int WarmupEmits(DispatchBenchmarkScenario scenario)
         {
-            // The registration floods and cold-dispatch scenarios are cold/latency paths
-            // measured outside the shared warm-up helper (MeasureRegistrationFlood,
-            // MeasureRegistrationFloodWarmJit, MeasureColdFirstDispatch). The 0 branches
+            // The registration/deregistration floods and cold-dispatch scenarios are
+            // cold/latency paths measured outside the shared warm-up helper
+            // (MeasureRegistrationFlood, MeasureRegistrationFloodWarmJit,
+            // MeasureDeregistrationFlood, MeasureDeregistrationFloodWarmJit,
+            // MeasureColdFirstDispatch). The 0 branches
             // are defensive: they keep the contract correct (no warm-up flood for
             // first-touch / one-time cost) should a future caller route any of them
             // through the shared warm-up helper. The warm-JIT flood pre-warms the JIT by
@@ -290,6 +292,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus:
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
+                case DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold:
+                case DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit:
                 case DispatchBenchmarkScenario.UntargetedFirstDispatchCold:
                 case DispatchBenchmarkScenario.TargetedFirstDispatchCold:
                 case DispatchBenchmarkScenario.BroadcastFirstDispatchCold:
@@ -320,6 +324,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "RegistrationFlood_1000Types_FromColdBus",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>
                     "RegistrationFlood_1000Types_WarmJit",
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold =>
+                    "DeregistrationFlood_1000Types_Cold",
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit =>
+                    "DeregistrationFlood_1000Types_WarmJit",
                 DispatchBenchmarkScenario.UntargetedFirstDispatchCold =>
                     "UntargetedFirstDispatch_Cold",
                 DispatchBenchmarkScenario.TargetedFirstDispatchCold => "TargetedFirstDispatch_Cold",
@@ -353,6 +361,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "Registration Flood (1000 Types, Cold Bus)",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>
                     "Registration Flood (1000 Types, Warm JIT)",
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold =>
+                    "Deregistration Flood (1000 Types, Cold)",
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit =>
+                    "Deregistration Flood (1000 Types, Warm JIT)",
                 DispatchBenchmarkScenario.UntargetedFirstDispatchCold =>
                     "Untargeted First Dispatch (Cold, Distinct Types)",
                 DispatchBenchmarkScenario.TargetedFirstDispatchCold =>

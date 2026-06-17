@@ -18,7 +18,9 @@ const SCENARIO_ORDER = [
   "InterceptorHeavy_FourInterceptors",
   "PostProcessingHeavy_FourPostProcessors",
   "RegistrationFlood_1000Types_FromColdBus",
-  "RegistrationFlood_1000Types_WarmJit"
+  "RegistrationFlood_1000Types_WarmJit",
+  "DeregistrationFlood_1000Types_Cold",
+  "DeregistrationFlood_1000Types_WarmJit"
 ];
 
 const SCENARIOS = new Set(SCENARIO_ORDER);
@@ -38,7 +40,9 @@ const DISPATCH_DISPLAY_NAMES = {
   InterceptorHeavy_FourInterceptors: "Interceptor Heavy (Four Interceptors)",
   PostProcessingHeavy_FourPostProcessors: "Post-Processing Heavy (Four Post-Processors)",
   RegistrationFlood_1000Types_FromColdBus: "Registration Flood (1000 Types, Cold Bus)",
-  RegistrationFlood_1000Types_WarmJit: "Registration Flood (1000 Types, Warm JIT)"
+  RegistrationFlood_1000Types_WarmJit: "Registration Flood (1000 Types, Warm JIT)",
+  DeregistrationFlood_1000Types_Cold: "Deregistration Flood (1000 Types, Cold)",
+  DeregistrationFlood_1000Types_WarmJit: "Deregistration Flood (1000 Types, Warm JIT)"
 };
 
 // Fixed column order for the comparison matrices. Mirrors the ComparisonScenario

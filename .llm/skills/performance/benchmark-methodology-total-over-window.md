@@ -161,9 +161,10 @@ public const int BatchSize = 10_000;
    covers the same window as the elapsed time.
 
 Warm-up is per scenario. `DispatchBenchmarkScenarios.WarmupEmits(scenario)`
-returns `WarmupEmits` (10,000) for every dispatch scenario except the cold
-registration flood, which returns 0 so it measures first-touch registration
-cost rather than steady state. `ComparisonScenarios.WarmupEmits(scenario)`
+returns `WarmupEmits` (10,000) for every dispatch scenario except the
+registration and deregistration floods and the cold first-dispatch scenarios,
+which return 0 so they measure one-time or first-touch cost rather than steady
+state. `ComparisonScenarios.WarmupEmits(scenario)`
 applies the same policy to the comparison bridges. The
 `BenchmarkProtocol.WarmupEmits = 10_000` constant stays the default; the
 per-scenario function is the only place that count diverges.
