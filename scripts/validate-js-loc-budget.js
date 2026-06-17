@@ -18,7 +18,16 @@ const path = require("path");
 // sanctioned bespoke exception -- no off-the-shelf tool regenerates a markdown
 // line-count column, and the index Lines/TOC counts had drifted on ~90% of
 // rows. A reviewed decision in the change that needs it.
-const TOTAL_BUDGET = 10600;
+//
+// Session 052 (+43, 10600 -> 10650): scripts/__tests__/auto-commit-fetch-force-
+// refspec.test.js, a drift-guard pinning the `+` force prefix on the auto-commit /
+// state-branch workflows' remote-tracking fetch refspecs. Without it the shallow
+// non-fast-forward crash (run 74494500574) silently regresses the moment anyone
+// drops a `+`; no off-the-shelf tool guards workflow-YAML refspec invariants. The
+// corpus had only ~16 lines of headroom, so the guard could not be slimmed into
+// budget without gutting its explanatory comment (the guard's whole point). A
+// reviewed decision in the change that needs it.
+const TOTAL_BUDGET = 10650;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 function countLines(filePath) {

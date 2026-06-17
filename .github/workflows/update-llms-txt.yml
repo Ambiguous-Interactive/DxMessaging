@@ -78,7 +78,7 @@ jobs:
           auth_header="$(printf 'x-access-token:%s' "${GH_FETCH_TOKEN}" | base64 | tr -d '\n')"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
             fetch --no-tags --depth=1 origin \
-            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+            "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
           git checkout -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
           echo "Refreshed ${GITHUB_REF_NAME} to $(git rev-parse HEAD) before generating llms.txt."
 
@@ -121,7 +121,7 @@ jobs:
           for attempt in 1 2 3; do
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
               fetch --no-tags --depth=1 origin \
-              "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+              "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
             latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
             current_sha="$(git rev-parse HEAD)"
             if [ "${latest_sha}" != "${current_sha}" ]; then
@@ -158,7 +158,7 @@ jobs:
 
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
               fetch --no-tags --depth=1 origin \
-              "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+              "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
             latest_after_push="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
             if [ "${latest_after_push}" = "${base_sha}" ]; then
               echo "::error::llms.txt auto-commit push failed while ${GITHUB_REF_NAME} still pointed at ${base_sha}."

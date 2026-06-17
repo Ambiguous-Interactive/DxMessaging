@@ -150,7 +150,7 @@ jobs:
           fi
 
           if [[ -s "${state_branch_probe}" ]]; then
-            if ! git_auth fetch origin "${STATE_BRANCH}:refs/remotes/origin/${STATE_BRANCH}"; then
+            if ! git_auth fetch origin "+${STATE_BRANCH}:refs/remotes/origin/${STATE_BRANCH}"; then
               log_summary "WARN: state branch '${STATE_BRANCH}' exists per ls-remote but fetch failed; skipping this cycle."
               popd > /dev/null
               flush_summary_and_exit 0
@@ -201,7 +201,7 @@ jobs:
             fi
 
             log_summary "WARN: state push failed; attempting fetch + rebase + retry."
-            if git_auth fetch origin "${STATE_BRANCH}:refs/remotes/origin/${STATE_BRANCH}" \
+            if git_auth fetch origin "+${STATE_BRANCH}:refs/remotes/origin/${STATE_BRANCH}" \
                 && git rebase "refs/remotes/origin/${STATE_BRANCH}" \
                 && git_auth push origin "${STATE_BRANCH}"; then
               log_summary "State branch updated on second attempt (${reason}, after rebase)."

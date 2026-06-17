@@ -717,7 +717,7 @@ jobs:
           auth_header="$(printf 'x-access-token:%s' "${GH_FETCH_TOKEN}" | base64 | tr -d '\n')"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
             fetch --no-tags --depth=1 origin \
-            "refs/heads/master:refs/remotes/origin/master" || true
+            "+refs/heads/master:refs/remotes/origin/master" || true
           if git show origin/master:docs/architecture/perf-baseline.csv > "${baseline_out}" 2>/dev/null; then
             echo "Fetched master perf baseline to ${baseline_out}."
           else
@@ -936,7 +936,7 @@ jobs:
           auth_header="$(printf 'x-access-token:%s' "${GH_FETCH_TOKEN}" | base64 | tr -d '\n')"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
             fetch --no-tags --depth=1 origin \
-            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+            "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
           latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
           if [ "${latest_sha}" != "${GITHUB_SHA}" ]; then
             message="Default branch ${GITHUB_REF_NAME} advanced from ${GITHUB_SHA} to ${latest_sha}; "
@@ -1041,7 +1041,7 @@ jobs:
           auth_header="$(printf 'x-access-token:%s' "${GH_PUSH_TOKEN}" | base64 | tr -d '\n')"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
             fetch --no-tags --depth=1 origin \
-            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+            "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
           latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
           if [ "${latest_sha}" != "${GITHUB_SHA}" ]; then
             message="Default branch ${GITHUB_REF_NAME} advanced from ${GITHUB_SHA} to ${latest_sha}; "
@@ -1095,7 +1095,7 @@ jobs:
 
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
             fetch --no-tags --depth=1 origin \
-            "refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+            "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
           latest_after_push="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
           if [ "${latest_after_push}" != "${GITHUB_SHA}" ]; then
             message="Default branch ${GITHUB_REF_NAME} advanced from ${GITHUB_SHA} "

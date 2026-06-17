@@ -15,11 +15,10 @@ on:
       - main
       - master
     paths:
-      - .github/workflows/script-tests.yml
-      - .github/workflows/release.yml
+      - .github/workflows/*.yml
+      - .github/workflows/*.yaml
       - .github/actions/**/action.yml
       - .github/unity-versions.json
-      - .github/workflows/unity-*.yml
       - package.json
       - .npmignore
       - CHANGELOG.md
@@ -88,9 +87,9 @@ jobs:
           # The trailing **/*.js|cjs|mjs / **/*.asmdef / **/*.cs.meta alternatives
           # exist because validate:all gates the JS LoC budget, asmdef-references,
           # and npm-meta over every tracked file of those types, regardless of dir.
-          pattern='(^\.github/workflows/script-tests\.yml$|^\.github/workflows/release\.yml$'
+          pattern='(^\.github/workflows/[^/]*\.ya?ml$'
           pattern="$pattern"'|^\.github/actions/.*/action\.yml$|^\.github/unity-versions\.json$'
-          pattern="$pattern"'|^\.github/workflows/unity-[^/]*\.yml$|^package\.json$|^\.npmignore$'
+          pattern="$pattern"'|^package\.json$|^\.npmignore$'
           pattern="$pattern"'|^CHANGELOG\.md$|^CHANGELOG\.md\.meta$|^LICENSE\.md$|^LICENSE\.md\.meta$'
           pattern="$pattern"'|^README\.md$|^README\.md\.meta$|^Third Party Notices\.md$'
           pattern="$pattern"'|^Third Party Notices\.md\.meta$|^package\.json\.meta$'

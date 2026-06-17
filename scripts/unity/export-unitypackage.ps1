@@ -66,6 +66,17 @@ function Write-CiError {
     Write-Host "::error::$Message"
 }
 
+function Clear-NonFatalNativeExitCode {
+    # GitHub Actions' pwsh wrapper exits with $LASTEXITCODE after a script returns.
+    # Any native exit code that this script has already captured and deliberately
+    # downgraded to non-fatal must be scrubbed, or cleanup noise can turn a valid
+    # artifact-verified run red after the script reaches the end normally.
+    param([Parameter(Mandatory = $true)][string]$Context)
+
+    $global:LASTEXITCODE = 0
+    Write-Verbose "Cleared non-fatal native exit code after $Context."
+}
+
 function Resolve-FullPath {
     param([Parameter(Mandatory = $true)][string]$Path)
     if ([System.IO.Path]::IsPathRooted($Path)) {
@@ -114,6 +125,7 @@ function Invoke-UnityEditor {
     Write-Host "`"$EditorPath`" $($Arguments -join ' ')"
     & $EditorPath @Arguments 2>&1 | Tee-Object -FilePath $LogPath | Out-Host
     $exitCode = $LASTEXITCODE
+    Clear-NonFatalNativeExitCode -Context $Label
     Write-Host "::endgroup::"
     return $exitCode
 }
@@ -180,6 +192,8 @@ function Invoke-UnityLicenseReturn {
         }
     } catch {
         Write-Host "::warning::Unity license return failed: $($_.Exception.Message). The workflow if:always() return step and the next run's return-at-start are the backstops."
+    } finally {
+        Clear-NonFatalNativeExitCode -Context 'Unity license return cleanup'
     }
 }
 
