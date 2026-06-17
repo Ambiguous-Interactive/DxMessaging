@@ -96,7 +96,7 @@
 | [Array Pooling with ArrayPool and Custom Pools Part 1](./performance/array-pooling-part-1.md)                      | [ok] 204    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 56  | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Auto-Load Singleton Attribute](./performance/singleton-autoload.md)                                               | [draft] 111 | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
-| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [ok] 236    | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
+| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [ok] 237    | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
 | [Cache Builder Configuration](./performance/cache-eviction-builder.md)                                             | [ok] 203    | [intermediate] | [stable] | [risk: high]     | caching, builder        |
 | [Cache Eviction Implementation](./performance/cache-eviction-implementation.md)                                    | [draft] 90  | [advanced]     | [stable] | [risk: high]     | caching, eviction       |
 | [Cache Eviction Implementation Part 1](./performance/cache-eviction-implementation-part-1.md)                      | [ok] 244    | [intermediate] | [stable] | [risk: low]      | migration, split        |

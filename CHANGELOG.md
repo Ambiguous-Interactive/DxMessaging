@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Deregistration-speed benchmarks (`DeregistrationFlood_1000Types_Cold` and
+  `DeregistrationFlood_1000Types_WarmJit`): the teardown mirror of the existing
+  registration floods. Each stages 1000 live registrations untimed, then times
+  `MessageRegistrationToken.UnregisterAll()` (the production deregistration path).
+  Both are wall-clock (latency) rows alongside the registration floods in the
+  rendered dispatch tables (closes the deregistration ask in GitHub issue #31).
 - `MessageAwareComponent.ReregisterOnEnableAfterRelease`: opt-in virtual property
   (default `false`, preserving existing behavior). When overridden to return
   `true`, a component whose registration token was released (for example via

@@ -35,6 +35,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         PostProcessingHeavyFourPostProcessors,
         RegistrationFlood1000TypesFromColdBus,
         RegistrationFlood1000TypesWarmJit,
+        DeregistrationFlood1000TypesCold,
+        DeregistrationFlood1000TypesWarmJit,
         UntargetedFirstDispatchCold,
         TargetedFirstDispatchCold,
         BroadcastFirstDispatchCold,
@@ -94,8 +96,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         // Route each scenario to its measurement methodology. Most scenarios are warm/hot
-        // throughput windows (MeasureEmitScenario). The cold registration flood and its
-        // warm-JIT complement, plus the three cold first-dispatch scenarios, are latency
+        // throughput windows (MeasureEmitScenario). The cold/warm-JIT registration and
+        // deregistration floods, plus the three cold first-dispatch scenarios, are latency
         // measurements handled by dedicated helpers.
         private static DispatchBenchmarkResult MeasureScenario(DispatchBenchmarkScenario scenario)
         {
@@ -105,6 +107,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     return MeasureRegistrationFlood();
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
                     return MeasureRegistrationFloodWarmJit();
+                case DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold:
+                    return MeasureDeregistrationFlood();
+                case DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit:
+                    return MeasureDeregistrationFloodWarmJit();
                 case DispatchBenchmarkScenario.UntargetedFirstDispatchCold:
                 case DispatchBenchmarkScenario.TargetedFirstDispatchCold:
                 case DispatchBenchmarkScenario.BroadcastFirstDispatchCold:
@@ -224,6 +230,88 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 afterAllocatedBytes - beforeAllocatedBytes,
                 TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
             );
+        }
+
+        // The cold deregistration flood: the JIT-inclusive first-touch cost of DISMANTLING
+        // 1000 live registrations -- the teardown counterpart to MeasureRegistrationFlood.
+        // The 1000 registrations are staged UNTIMED on a live token (their build cost is what
+        // the registration flood measures, not this scenario), then the timed region runs
+        // token.UnregisterAll() -- the production deregistration path (InvokeDeregistrationQueue
+        // drains one deregistration per staged handler off the bus). On a fresh domain the
+        // first UnregisterAll JIT-compiles that path, so the cold flood captures the Mono JIT
+        // compile AND the data-structure teardown together; the warm-JIT complement isolates
+        // the teardown cost. The scope's own Dispose calls UnregisterAll again, but that is
+        // idempotent (the queue is already drained) and untimed.
+        private static DispatchBenchmarkResult MeasureDeregistrationFlood()
+        {
+            Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
+            using (BenchmarkRegistrationScope scope = new())
+            {
+                for (int index = 0; index < builders.Length; index++)
+                {
+                    builders[index](scope.PrimaryToken);
+                }
+
+                long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                long startTimestamp = Stopwatch.GetTimestamp();
+                scope.PrimaryToken.UnregisterAll();
+                long endTimestamp = Stopwatch.GetTimestamp();
+                long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+
+                return DispatchBenchmarkResult.ForRegistrationScenario(
+                    GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold),
+                    runIndex: -1,
+                    afterAllocatedBytes - beforeAllocatedBytes,
+                    TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+                );
+            }
+        }
+
+        // The JIT-pre-warmed complement to MeasureDeregistrationFlood. The cold flood times
+        // BOTH the Mono JIT compile of the deregistration path AND the teardown work; this
+        // scenario isolates the teardown cost by paying the JIT bill FIRST on a throwaway bus
+        // (register then UnregisterAll), then timing UnregisterAll on a fresh, fully-populated
+        // token. Only the JIT-compiled code survives the throwaway scope; its registration
+        // state is torn down, so the timed pass deregisters a genuinely fresh population --
+        // same shape as MeasureDeregistrationFlood, just warm. Under IL2CPP/AOT the generics
+        // are precompiled so warm and cold are ~equal; under Mono the warm number is the
+        // teardown cost with the JIT hitch removed.
+        private static DispatchBenchmarkResult MeasureDeregistrationFloodWarmJit()
+        {
+            Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
+
+            // JIT pre-warm: register AND deregister all 1000 builders once on a throwaway bus
+            // so the per-closed-generic Mono JIT compile of BOTH paths happens here, OUTSIDE
+            // the timed region. Dispose tears the rest down; only the compiled code persists.
+            using (BenchmarkRegistrationScope warmupScope = new())
+            {
+                for (int index = 0; index < builders.Length; index++)
+                {
+                    builders[index](warmupScope.PrimaryToken);
+                }
+                warmupScope.PrimaryToken.UnregisterAll();
+            }
+
+            using (BenchmarkRegistrationScope scope = new())
+            {
+                for (int index = 0; index < builders.Length; index++)
+                {
+                    builders[index](scope.PrimaryToken);
+                }
+
+                long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                long startTimestamp = Stopwatch.GetTimestamp();
+                scope.PrimaryToken.UnregisterAll();
+                long endTimestamp = Stopwatch.GetTimestamp();
+                long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+
+                return DispatchBenchmarkResult.ForRegistrationScenario(
+                    GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit),
+                    runIndex: -1,
+                    afterAllocatedBytes - beforeAllocatedBytes,
+                    TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+                );
+            }
         }
 
         // The cold dispatch flood: the JIT-inclusive first-touch dispatch hitch, stabilized
@@ -1101,10 +1189,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// True when this result carries a wall-clock (latency) metric rather than a
         /// throughput metric -- that is, whenever <see cref="EmitsPerSecond"/> is 0. This
         /// is the unifying predicate renderers and the regression gate use to identify
-        /// wall-clock rows (the cold/warm registration floods AND the cold first-dispatch
-        /// scenarios). <see cref="IsRegistrationScenario"/> is the narrower flag retained
-        /// for the registration floods specifically; every registration scenario is a
-        /// wall-clock scenario, but not every wall-clock scenario is a registration one.
+        /// wall-clock rows (the cold/warm registration and deregistration floods AND the
+        /// cold first-dispatch scenarios). <see cref="IsRegistrationScenario"/> is the
+        /// narrower flag retained for the registration/deregistration floods specifically;
+        /// every flood is a wall-clock scenario, but not every wall-clock scenario is a
+        /// flood (the cold first-dispatch scenarios are not).
         /// </summary>
         public bool IsWallClockScenario => EmitsPerSecond == 0;
 

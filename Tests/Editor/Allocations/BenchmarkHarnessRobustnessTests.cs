@@ -587,7 +587,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Data-driven over the four cold/warm-JIT latency scenarios. Each is a wall-clock
+        // Data-driven over the six cold/warm-JIT latency scenarios. Each is a wall-clock
         // (latency) row, so its result must report zero throughput and IsWallClockScenario.
         private static IEnumerable<TestCaseData> WallClockScenarioCases()
         {
@@ -597,6 +597,12 @@ namespace DxMessaging.Tests.Editor.Allocations
             yield return new TestCaseData(
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit
             ).SetName("WallClock_RegistrationFloodWarmJit");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold
+            ).SetName("WallClock_DeregistrationFloodCold");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit
+            ).SetName("WallClock_DeregistrationFloodWarmJit");
             yield return new TestCaseData(
                 DispatchBenchmarkScenario.UntargetedFirstDispatchCold
             ).SetName("WallClock_UntargetedFirstDispatchCold");
@@ -669,6 +675,39 @@ namespace DxMessaging.Tests.Editor.Allocations
                 warmJit.WallClockMs,
                 allowedMs,
                 $"Warm-JIT registration flood ({warmJit.WallClockMs:F3} ms) must not exceed the cold flood ({cold.WallClockMs:F3} ms) beyond {Slack:0}x slack."
+            );
+        }
+
+        // Direction sanity for the deregistration floods, mirroring the registration check:
+        // the warm-JIT flood pre-pays the Mono JIT bill (it registers AND deregisters once on
+        // a throwaway bus), so its timed UnregisterAll must not exceed the cold flood (which
+        // times the JIT compile of the deregistration path + the teardown together). Under
+        // IL2CPP/AOT the two are ~equal; this asserts DIRECTION only, with generous slack,
+        // never strict <. The cold flood runs FIRST so the shared closed generics are JIT-warm
+        // for both timed passes, keeping the comparison stable in EditMode under Mono.
+        [Test, Category("PerfBench")]
+        public void WarmJitDeregistrationFloodDoesNotExceedColdFloodWithSlack()
+        {
+            DispatchBenchmarkResult cold = DispatchThroughputBenchmarks.RunScenario(
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold,
+                logResult: false
+            );
+            DispatchBenchmarkResult warmJit = DispatchThroughputBenchmarks.RunScenario(
+                DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit,
+                logResult: false
+            );
+
+            // Generous slack absorbs run-to-run jitter on the small wall-clock numbers; the
+            // contract under test is only that warm JIT is not categorically SLOWER than
+            // cold. A tiny absolute floor avoids a near-zero cold measurement making the
+            // bound impossibly tight.
+            const double Slack = 5d;
+            const double FloorMs = 1d;
+            double allowedMs = Math.Max(cold.WallClockMs, FloorMs) * Slack;
+            Assert.LessOrEqual(
+                warmJit.WallClockMs,
+                allowedMs,
+                $"Warm-JIT deregistration flood ({warmJit.WallClockMs:F3} ms) must not exceed the cold flood ({cold.WallClockMs:F3} ms) beyond {Slack:0}x slack."
             );
         }
 
