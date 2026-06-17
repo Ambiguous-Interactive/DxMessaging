@@ -80,6 +80,17 @@ function Write-CiNotice {
     Write-Host "::notice::$Message"
 }
 
+function Clear-NonFatalNativeExitCode {
+    # GitHub Actions' pwsh wrapper exits with $LASTEXITCODE after a script returns.
+    # Any native exit code that this script has already captured and deliberately
+    # downgraded to non-fatal must be scrubbed, or cleanup noise can turn a valid
+    # artifact-verified run red after the script reaches the end normally.
+    param([Parameter(Mandatory = $true)][string]$Context)
+
+    $global:LASTEXITCODE = 0
+    Write-Verbose "Cleared non-fatal native exit code after $Context."
+}
+
 # SINGLE SOURCE OF TRUTH for the catastrophic-pattern list that both
 # Write-UnityCatastrophicErrorAnnotations (new ::error:: annotation surface)
 # AND Write-UnityResultFailureDiagnostics (older line-numbered selected-line
@@ -1559,6 +1570,8 @@ function Invoke-UnityLicenseReturn {
         }
     } catch {
         Write-Host "::warning::Unity license return failed: $($_.Exception.Message). The workflow if:always() return step and the next run's return-at-start are the backstops."
+    } finally {
+        Clear-NonFatalNativeExitCode -Context 'Unity license return cleanup'
     }
 }
 
@@ -1940,6 +1953,7 @@ function Invoke-UnityEditor {
     # BLOCK until the GUI-subsystem Unity.exe exits and to set $LASTEXITCODE.
     & $EditorPath @Arguments 2>&1 | Tee-Object -FilePath $LogPath | Out-Host
     $exitCode = $LASTEXITCODE
+    Clear-NonFatalNativeExitCode -Context $Label
     Write-Host "::endgroup::"
     if ($exitCode -ne 0) {
         # Proactively surface catastrophic compile-time failure patterns
