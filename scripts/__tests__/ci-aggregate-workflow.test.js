@@ -190,15 +190,32 @@ test("source marker scan is tracked-file scoped and cannot self-match workflow t
   const source = readCiWorkflow();
   const dotnet = getJobBlock(source, "dotnet");
   const markerScan = getStepBlock(dotnet, "Check source marker policy");
+  const includedPathspecs = [
+    "Runtime/**",
+    "Editor/**",
+    "SourceGenerators/**",
+    "Tests/**",
+    "*.cs",
+    "*.csproj",
+    "*.sln"
+  ];
+  const excludedScopes = ["--no-ignore", ".github", ".llm"];
 
-  assert.match(markerScan, /git ls-files -z/);
-  assert.match(markerScan, /'Runtime\/\*\*'/);
-  assert.match(markerScan, /'Editor\/\*\*'/);
-  assert.match(markerScan, /'SourceGenerators\/\*\*'/);
-  assert.match(markerScan, /'Tests\/\*\*'/);
-  assert.doesNotMatch(markerScan, /--no-ignore/);
-  assert.doesNotMatch(markerScan, /\.github/);
-  assert.doesNotMatch(markerScan, /\.llm/);
+  assert.match(markerScan, /source_pathspecs=\(/);
+  assert.match(markerScan, /source_file_count=\$\(git ls-files -- "\$\{source_pathspecs\[@\]\}"/);
+  assert.match(markerScan, /Scanning \$\{source_file_count\} tracked source files/);
+  assert.match(markerScan, /git grep -n -E -I "\(TODO\|FIXME\)" -- "\$\{source_pathspecs\[@\]\}"/);
+  assert.doesNotMatch(markerScan, /mapfile/);
+  assert.doesNotMatch(markerScan, /< </);
+  assert.doesNotMatch(markerScan, /\brg\b/);
+
+  for (const pathspec of includedPathspecs) {
+    assert.match(markerScan, new RegExp(`'${escapeRegExp(pathspec)}'`));
+  }
+
+  for (const scope of excludedScopes) {
+    assert.doesNotMatch(markerScan, new RegExp(escapeRegExp(scope)));
+  }
 });
 
 test("standalone static-check workflows are not reintroduced", () => {

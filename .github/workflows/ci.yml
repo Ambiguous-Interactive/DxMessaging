@@ -397,20 +397,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -d '' source_files < <(git ls-files -z \
-            'Runtime/**' \
-            'Editor/**' \
-            'SourceGenerators/**' \
-            'Tests/**' \
-            '*.cs' \
-            '*.csproj' \
-            '*.sln')
-          if [ "${#source_files[@]}" -eq 0 ]; then
+          source_pathspecs=(
+            'Runtime/**'
+            'Editor/**'
+            'SourceGenerators/**'
+            'Tests/**'
+            '*.cs'
+            '*.csproj'
+            '*.sln'
+          )
+          source_file_count=$(git ls-files -- "${source_pathspecs[@]}" | awk 'END { print NR + 0 }')
+          if [ "$source_file_count" -eq 0 ]; then
             echo "No source files found for marker scan."
             exit 0
           fi
+          echo "Scanning ${source_file_count} tracked source files for TODO/FIXME markers."
           set +e
-          rg --files-with-matches "(TODO|FIXME)" -- "${source_files[@]}"
+          git grep -n -E -I "(TODO|FIXME)" -- "${source_pathspecs[@]}"
           marker_status=$?
           set -e
           if [ "$marker_status" -eq 0 ]; then
