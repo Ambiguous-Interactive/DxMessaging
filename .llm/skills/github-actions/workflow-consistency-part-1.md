@@ -4,7 +4,7 @@ id: "workflow-consistency-part-1"
 category: "github-actions"
 version: "1.0.0"
 created: "2026-01-28"
-updated: "2026-06-14"
+updated: "2026-06-18"
 status: "stable"
 tags:
   - migration
@@ -63,10 +63,10 @@ on:
 
 ### Required Gate Path Detection
 
-Required jobs that depend on a `changes` job MUST fail closed. A required job may
-skip only when `changes` succeeds and explicitly emits `relevant=false`; failed,
-skipped, or malformed change detection must run the required job and fail in an
-early guard step:
+Required jobs that depend on a `changes` job MUST fail closed. If a job is
+required directly, it may skip only when `changes` succeeds and explicitly emits
+`relevant=false`; failed, skipped, or malformed change detection must run the
+required job and fail in an early guard step:
 
 ```yaml
 gate:
@@ -87,6 +87,9 @@ gate:
 This matters because GitHub treats a job skipped by a conditional as successful,
 including for required checks. A failed `changes` job would otherwise skip the
 real required job and could let a pull request merge without running the gate.
+For jobs covered by the static `CI Success` aggregate, keep job-level
+`if: ${{ always() }}` and skip expensive steps internally so `CI Success` can
+keep `allowed-skips` empty.
 
 ### Trigger Best Practices
 

@@ -122,10 +122,9 @@ The published numbers are measured under **Standalone IL2CPP + .NET Standard
   non-development (Release) player**. The generated build modifier actively
   clears `BuildOptions.Development` -- the Unity Test Framework's PlayerLauncher
   injects it by default, and a development player reports
-  `Debug.isDebugBuild == true` and compiles its IL2CPP C++ in Debug -- and the
-  project configurator pins the workflow-supplied IL2CPP C++ configuration:
-  `PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.<Il2CppConfiguration>)`.
-  The published workflow passes `Il2CppConfiguration = 'Release'`.
+  `Debug.isDebugBuild == true` -- and the project configurator pins the IL2CPP
+  C++ configuration to Release:
+  `PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.Release)`.
   The player uses `ApiCompatibilityLevel.NET_Standard` (the non-deprecated
   profile that targets .NET Standard 2.1) and **disabled managed code
   stripping**, so the test assemblies and the `[Preserve]` standalone test-run
@@ -355,7 +354,7 @@ For each commit and configuration:
   `GITHUB_SHA` when both are present.
 - Run the benchmarks in batchmode with the same Release configuration CI uses:
   the Standalone IL2CPP leg
-  (`-StandaloneScriptingBackend IL2CPP -ReleasePlayerBuild -ReleaseCodeOptimization -Il2CppConfiguration Release`)
+  (`-StandaloneScriptingBackend IL2CPP -ReleasePlayerBuild -ReleaseCodeOptimization`)
   for rows comparable to the published scope, or the PlayMode leg
   (`-ReleaseCodeOptimization`) for faster local iteration.
 - Extract the benchmark rows from the Unity output and append them to the local

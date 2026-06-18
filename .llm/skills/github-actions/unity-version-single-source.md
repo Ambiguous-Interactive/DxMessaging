@@ -4,7 +4,7 @@ id: "unity-version-single-source"
 category: "github-actions"
 version: "1.0.0"
 created: "2026-06-03"
-updated: "2026-06-03"
+updated: "2026-06-18"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -180,7 +180,8 @@ consumer files checked on success, so you can confirm the bump landed.
 
 ## Enforcement Points
 
-- `.github/workflows/actionlint.yml` runs it in CI, so drift blocks the merge.
+- `.github/workflows/ci.yml` runs it in the `Lint GitHub Actions workflows` job,
+  so drift blocks the merge.
 - `npm run validate:all` runs it locally.
 
 The validator is pure Node (only `fs`, `path`, `JSON.parse`, and a regex), so it

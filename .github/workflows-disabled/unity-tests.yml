@@ -141,7 +141,7 @@ jobs:
       # are defined here so the long hashFiles() expressions don't violate the
       # repo's 200-char yamllint cap (and stay readable).
       - name: Cache Unity Library
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         env:
           MANIFEST_HASH: ${{ hashFiles('.unity-test-project/Packages/manifest.json') }}
           LOCK_HASH: ${{ hashFiles('.unity-test-project/Packages/packages-lock.json') }}

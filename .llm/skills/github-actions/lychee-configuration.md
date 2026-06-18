@@ -2,15 +2,15 @@
 title: "Lychee Link Checker Configuration Management"
 id: "lychee-configuration"
 category: "github-actions"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-03-16"
-updated: "2026-06-04"
+updated: "2026-06-18"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: ".lychee.toml"
-    - path: ".github/workflows/lint-doc-links.yml"
+    - path: ".github/workflows/ci.yml"
     - path: ".github/workflows/markdown-link-validity.yml"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
@@ -35,7 +35,7 @@ impact:
     details: "Prevents silent CI failures from deprecated config fields across lychee upgrades"
   testability:
     rating: "medium"
-    details: "Enforced by the pinned lychee binary (install-pinned-lychee) plus the offline/online passes in lint-doc-links.yml"
+    details: "Enforced by the pinned lychee binary (install-pinned-lychee) plus the offline/online passes in ci.yml"
 
 prerequisites:
   - "Understanding of TOML configuration format"
@@ -141,7 +141,7 @@ fields and update `.lychee.toml` in the same change.
 Both link-checking workflows share the single `.lychee.toml`. Keep the config aligned
 with the pinned lychee version in both.
 
-- **`lint-doc-links.yml`** (blocking PR/push check) runs two passes. An OFFLINE pass
+- **`ci.yml` / `Lint docs links`** (blocking PR/push check) runs two passes. An OFFLINE pass
   validates relative/local links and in-repo `#anchor` fragments against the working
   tree with zero network, so it can never flake. A lenient external-liveness pass then
   fails only on 404/410 or a DNS/connection error; the broad `accept` list absorbs

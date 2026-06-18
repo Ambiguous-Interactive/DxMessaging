@@ -6,7 +6,7 @@
  *
  * This script only rewrites the SVG; it never stages anything. The pre-commit
  * hook relies on pre-commit's own modified-file detection, and CI
- * (validate-banner.yml) follows the sync with `git diff --exit-code`.
+ * (`Validate banner SVG` in ci.yml) follows the sync with `git diff --exit-code`.
  */
 
 "use strict";

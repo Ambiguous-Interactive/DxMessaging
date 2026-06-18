@@ -27,7 +27,14 @@ const path = require("path");
 // corpus had only ~16 lines of headroom, so the guard could not be slimmed into
 // budget without gutting its explanatory comment (the guard's whole point). A
 // reviewed decision in the change that needs it.
-const TOTAL_BUDGET = 10650;
+//
+// Session 055 (+219, 10650 -> 10890): scripts/__tests__/ci-aggregate-workflow.test.js,
+// a narrow guard for the CI aggregate migration. It prevents the required static
+// gate from drifting back into twelve standalone workflows, dropping a job from
+// `CI Success`, skipping skill-index validation on skill-only PRs, or losing the
+// fail-closed shape on aggregate child jobs. Actionlint/yamllint validate syntax,
+// but they do not enforce this repository-specific required-check topology.
+const TOTAL_BUDGET = 10890;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 function countLines(filePath) {
