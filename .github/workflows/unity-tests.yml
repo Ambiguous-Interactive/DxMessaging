@@ -397,10 +397,14 @@ jobs:
         id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         # 150 (was 120): the standalone leg builds a NON-development IL2CPP
-        # player with the Release C++ configuration, and a run-ci-tests.ps1
-        # change rotates the Library cache key, so first runs build cold. The
-        # editmode/playmode legs finish far below this; stays well under the
-        # job timeout (660) so the step clock fires first and releases the
+        # player. This correctness leg uses the Debug C++ configuration
+        # (-Il2CppConfiguration Debug below) for a far faster native compile -- it
+        # publishes NO numbers, and Debug vs Release only changes native C++
+        # optimization, not the IL2CPP transpilation/runtime semantics this leg
+        # verifies (the published Release headline still comes from perf-numbers.yml).
+        # A run-ci-tests.ps1 change rotates the Library cache key, so first runs
+        # build cold. The editmode/playmode legs finish far below this; stays well
+        # under the job timeout (660) so the step clock fires first and releases the
         # shared Unity seat.
         timeout-minutes: 150
         shell: pwsh
@@ -417,7 +421,8 @@ jobs:
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
             -ReleaseCodeOptimization `
-            -ReleasePlayerBuild
+            -ReleasePlayerBuild `
+            -Il2CppConfiguration 'Debug'
 
       - name: Return Unity license
         if: always()

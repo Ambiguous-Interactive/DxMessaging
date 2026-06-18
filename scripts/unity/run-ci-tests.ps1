@@ -32,6 +32,17 @@ param(
     [ValidateSet('IL2CPP', 'Mono2x')]
     [string]$StandaloneScriptingBackend = 'IL2CPP',
 
+    # The IL2CPP C++ compiler configuration for the standalone player build.
+    # Debug vs Release ONLY changes native C++ optimization (the cl.exe/clang
+    # flags), NOT the managed->C++ transpilation, generic sharing, AOT, or
+    # stripping that the IL2CPP leg exists to verify -- so the correctness
+    # standalone leg (unity-tests.yml, which publishes NO numbers) passes Debug
+    # for a far faster native compile, while the published perf/benchmark/release
+    # legs keep the default Release. Inert for the editmode/playmode legs (no
+    # IL2CPP player is built). Pinned by scripts/__tests__/il2cpp-compiler-config-split.test.js.
+    [ValidateSet('Debug', 'Release')]
+    [string]$Il2CppConfiguration = 'Release',
+
     [switch]$ReleasePlayerBuild,
 
     [switch]$GenerateOnly
@@ -677,17 +688,24 @@ function New-ManifestJson {
 }
 
 function New-ConfiguratorSource {
-    param([string]$Backend = 'IL2CPP')
+    param(
+        [string]$Backend = 'IL2CPP',
+        [ValidateSet('Debug', 'Release')]
+        [string]$Il2CppConfiguration = 'Release'
+    )
 
-    # NOTE: this is a DOUBLE-quoted here-string so $Backend interpolates into the
-    # generated C#. Every LITERAL C# dollar sign (the Debug.Log interpolated
-    # string) is therefore backtick-escaped (`$). The LIVE code uses the
-    # parameterized scripting backend (ScriptingImplementation.<Backend>), the
-    # non-deprecated ApiCompatibilityLevel.NET_Standard (which targets .NET Standard
-    # 2.1), CompilationPipeline.codeOptimization = Release, and disables managed
-    # stripping so the test assemblies + [Preserve] callback survive a Release Mono
-    # player build. This is an invariant of the
-    # generated configurator; no automated contract test pins it anymore.
+    # NOTE: this is a DOUBLE-quoted here-string so $Backend and
+    # $Il2CppConfiguration interpolate into the generated C#. Every LITERAL C#
+    # dollar sign (the Debug.Log interpolated string) is therefore backtick-escaped
+    # (`$). The LIVE code uses the parameterized scripting backend
+    # (ScriptingImplementation.<Backend>), the non-deprecated
+    # ApiCompatibilityLevel.NET_Standard (which targets .NET Standard 2.1),
+    # CompilationPipeline.codeOptimization = Release, disables managed stripping so
+    # the test assemblies + [Preserve] callback survive a Release Mono player build,
+    # and pins the IL2CPP C++ compiler configuration to <Il2CppConfiguration>. This
+    # is an invariant of the generated configurator; the C++-config split between
+    # the correctness leg (Debug) and the perf/release legs (Release) is pinned by
+    # scripts/__tests__/il2cpp-compiler-config-split.test.js.
     @"
 using System;
 using System.IO;
@@ -714,15 +732,20 @@ public static class DxmCiTestConfigurator
         // standalone TestRunCallback survive a NON-development (Release) Mono player
         // build; otherwise the stripper can drop the test code from the player.
         PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStrippingLevel.Disabled);
-        // Pin the IL2CPP C++ compiler configuration to Release explicitly. An
-        // ephemeral CI project has no committed default for this setting, and the
-        // published benchmark numbers must come from Release-optimized native code
-        // (matching what a shipped Release player runs), so the pin removes the
-        // variable instead of trusting any implicit default. Harmless under Mono.
-        PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.Release);
+        // Pin the IL2CPP C++ compiler configuration explicitly. An ephemeral CI
+        // project has no committed default for this setting, so the pin removes the
+        // variable instead of trusting any implicit default. The published
+        // benchmark numbers must come from Release-optimized native code (matching
+        // what a shipped Release player runs), so the perf/benchmark/release legs
+        // pass Release; the correctness standalone leg (which publishes NO numbers)
+        // passes Debug for a far faster native C++ compile -- Debug vs Release only
+        // changes native optimization, not the managed->C++ transpilation or IL2CPP
+        // runtime semantics this leg verifies. Harmless under Mono.
+        PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.$Il2CppConfiguration);
 
-        // Print the EFFECTIVE Unity config so the artifact log PROVES Mono/IL2CPP
-        // + .NET Standard 2.1 + Release for this run.
+        // Print the EFFECTIVE Unity config so the artifact log PROVES the scripting
+        // backend, .NET Standard 2.1, and the effective IL2CPP C++ config for this
+        // run (Release for the perf leg, Debug for the correctness leg).
         Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(BuildTargetGroup.Standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}, il2cppConfig={PlayerSettings.GetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone)}");
 
         // Write a success marker as the FINAL action so the runner can treat the
@@ -1210,6 +1233,8 @@ function Initialize-EphemeralProject {
         [string]$Path,
         [switch]$IncludeComparisons,
         [string]$Backend = 'IL2CPP',
+        [ValidateSet('Debug', 'Release')]
+        [string]$Il2CppConfiguration = 'Release',
         [bool]$DevelopmentBuild = $false,
         [string]$RepoRoot
     )
@@ -1259,7 +1284,7 @@ EditorSettings:
   m_EnterPlayModeOptionsEnabled: 1
   m_EnterPlayModeOptions: 3
 '@ | Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\EditorSettings.asset') -Encoding UTF8
-    New-ConfiguratorSource -Backend $Backend |
+    New-ConfiguratorSource -Backend $Backend -Il2CppConfiguration $Il2CppConfiguration |
         Set-Content -LiteralPath (Join-Path $project 'Assets\Editor\DxmCiTestConfigurator.cs') -Encoding UTF8
 
     # Pre-create the same Assets/Plugins analyzer copy SetupCscRsp makes for consumers
@@ -2579,7 +2604,7 @@ Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion
 $UseReleaseCodeOptimization = $true
 $UseReleasePlayerBuild = $true
 
-$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot
+$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -Il2CppConfiguration $Il2CppConfiguration -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot
 $LibraryPath = Join-Path $ProjectPath 'Library'
 New-Item -ItemType Directory -Force -Path $LibraryPath | Out-Null
 
@@ -2590,6 +2615,7 @@ Write-Host "LibraryPath: $LibraryPath"
 Write-Host "ArtifactsPath: $ArtifactsPath"
 Write-Host "IncludeComparisons: $IncludeComparisons"
 Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"
+Write-Host "Il2CppConfiguration: $Il2CppConfiguration"
 Write-Host "ReleasePlayerBuild: $UseReleasePlayerBuild"
 Write-Host "ReleaseCodeOptimization: $UseReleaseCodeOptimization"
 Write-Host "Manifest:"

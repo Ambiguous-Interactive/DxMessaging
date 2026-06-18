@@ -12,11 +12,11 @@ drift-guards.
 The target is **each mode under 3 minutes of wall-clock** while coverage stays at
 or above today and no anti-pattern is introduced.
 
-| Mode       | Budget                           | Notes                                                                |
-| ---------- | -------------------------------- | -------------------------------------------------------------------- |
-| EditMode   | < 3 min                          | Dominated by reflection walks + AssetDatabase/file I/O.              |
-| PlayMode   | < 3 min                          | Dominated by play-mode entry reload + per-test frame yields.         |
-| Standalone | < 3 min for the TEST-RUN portion | The IL2CPP BUILD time is a separate line item, attacked via caching. |
+| Mode       | Budget                           | Notes                                                                                                                                                                                                             |
+| ---------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EditMode   | < 3 min                          | Dominated by reflection walks + AssetDatabase/file I/O.                                                                                                                                                           |
+| PlayMode   | < 3 min                          | Dominated by play-mode entry reload + per-test frame yields.                                                                                                                                                      |
+| Standalone | < 3 min for the TEST-RUN portion | The IL2CPP native BUILD dominates the leg; the correctness leg compiles it with the Debug C++ config (the perf leg keeps Release). See [Standalone IL2CPP build wall-clock](#standalone-il2cpp-build-wall-clock). |
 
 The `< 3 min` figure is a **CI** metric (cold ephemeral project, full compile,
 domain reload, on self-hosted runners). The local MCP editor is warm and already
@@ -57,6 +57,49 @@ the code. In short:
 - **No real-time waits.** Blocking sleeps, awaited delays, real-seconds coroutine
   yields, and time-scale manipulation are banned (the cost here is frame-based, not
   wall-clock, so the "lower the time scale" tip does not apply).
+- **Standalone: Debug C++ for the correctness leg.** The native C++ compile, not
+  the test run, dominates the standalone wall-clock. The correctness leg compiles
+  it Debug; only the published perf leg pays for Release. See the next section.
+
+## Standalone IL2CPP build wall-clock
+
+The standalone leg builds a real IL2CPP player: Unity transpiles the managed
+assemblies to C++ (`il2cpp.exe`), then a native C++ compiler builds that into the
+player. The **native C++ compile dominates** the leg's wall-clock, and a Release
+(`-O2`-class) compile is far slower than a Debug (`-O0`-class) one.
+
+`scripts/unity/run-ci-tests.ps1` is shared by two standalone-building workflows:
+
+- `unity-tests.yml` -- the **correctness** leg. It excludes every perf category and
+  publishes NO numbers; it exists to prove the code is correct under IL2CPP.
+- `perf-numbers.yml` -- the **sole published Release-player** leg (the headline
+  source).
+
+So the correctness leg passes `-Il2CppConfiguration Debug` (a far faster native
+compile) while the perf leg pins `Il2CppConfiguration = 'Release'`. The script
+parameter defaults to `Release`, so every other caller (release, benchmarks) is
+unaffected; the editmode/playmode legs never build a player, so it is inert there.
+
+**Fidelity is preserved.** Debug vs Release changes ONLY the native C++ optimization
+level -- NOT the managed->C++ transpilation, generic sharing, AOT compilation, or
+managed stripping that the IL2CPP leg exists to verify. The published Release
+headline still comes from `perf-numbers.yml`, so the Release native path stays
+exercised in CI. The split is pinned by
+`scripts/__tests__/il2cpp-compiler-config-split.test.js` (see [Drift-guards](#drift-guards)).
+
+**Library cache (audited, intentionally conservative).** The per-`<version>-<mode>`
+`Library` cache key in `unity-tests.yml` hashes `run-ci-tests.ps1`, so a harness
+edit cold-busts the IL2CPP build cache. That is **by design**: the build-affecting
+configurator (scripting backend, IL2CPP config, API level, stripping) is generated
+by `run-ci-tests.ps1`, so the script genuinely affects build output, and a stale
+`Library` is a correctness hazard. The repo rule bans broad Unity `Library` restore
+keys (a fallback that would return a stale Library), so there is no safe narrowing.
+The right mitigation is making the cold build cheap -- exactly what the Debug C++
+config does -- not a riskier cache key. The correctness and perf legs cache the SAME
+per-`<version>-<mode>` `Library` path, but under distinct key prefixes (`Library-`
+vs `Library-perf-`) with no `restore-keys` and a clean checkout that wipes
+`.artifacts/` before each restore -- so each leg restores only its own exactly-keyed
+cache, and the Debug and Release players never share or contaminate one.
 
 ## Local measurement protocol (MCP loop)
 
@@ -82,6 +125,11 @@ SECOND, persistent run).
   the default correctness suite when its wall clock exceeds a per-version hard
   ceiling (300 s on 2021.3, 180 s on 2022.3 / 6000.x) and warns past a 60 s soft
   budget, so a slowdown is unmissable regardless of which lever regressed.
+- `scripts/__tests__/il2cpp-compiler-config-split.test.js` (Node) pins the IL2CPP
+  C++ compiler-configuration split: the configurator stays parameterized (no
+  hardcoded enum), the correctness leg passes `Debug`, and the perf leg pins
+  `Release`. It fails if a future edit re-hardcodes the config, flips the
+  correctness leg to Release, or lets the perf leg drift to Debug.
 
 ## Status and follow-ups
 
@@ -98,8 +146,11 @@ Open follow-ups (tracked in the remaining-work plan):
 - Migrate no-yield `[UnityTest]` methods to `[Test]` file-by-file, and add the
   companion no-yield-`[UnityTest]` drift-guard alongside that migration (it is not
   built yet: it would otherwise be red against the many existing no-yield bodies).
-- Audit CI caching (Library + package caches stay warm; no needless key rotation)
-  and evaluate within-leg sharding without breaking the org build lock.
+- Standalone IL2CPP build: the Debug C++ config (above) is the landed win. The
+  Library cache key was audited and intentionally left conservative (see
+  [Standalone IL2CPP build wall-clock](#standalone-il2cpp-build-wall-clock)).
+  Within-leg / cross-runner sharding stays open, gated on the org build lock + Unity
+  license concurrency.
 
 ## See Also
 

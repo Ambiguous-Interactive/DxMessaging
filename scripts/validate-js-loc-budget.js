@@ -27,7 +27,18 @@ const path = require("path");
 // corpus had only ~16 lines of headroom, so the guard could not be slimmed into
 // budget without gutting its explanatory comment (the guard's whole point). A
 // reviewed decision in the change that needs it.
-const TOTAL_BUDGET = 10650;
+//
+// Session 054 (+121, 10650 -> 10780; corpus 10649 -> 10770): the 110-line
+// scripts/__tests__/il2cpp-compiler-config-split.test.js plus this ~11-line comment
+// block, a drift-guard pinning the IL2CPP C++ compiler-configuration split
+// (Workstream L Task 10). run-ci-tests.ps1 is shared by the correctness standalone
+// leg (Debug C++, far faster compile, publishes no numbers) and the published perf
+// leg (Release C++); the guard fails if a future edit re-hardcodes the config,
+// flips the correctness leg to Release, or lets the perf leg drift to Debug. No
+// off-the-shelf tool pins a PowerShell/workflow build-config invariant, and the
+// corpus had 1 line of headroom, so the guard could not be slimmed into budget. A
+// reviewed decision in the change that needs it.
+const TOTAL_BUDGET = 10780;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 function countLines(filePath) {
