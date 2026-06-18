@@ -186,25 +186,18 @@ Banned anywhere in `Tests/`: `Thread.Sleep`, `Task.Delay`, `WaitForSeconds`,
 waiting for wall-clock flake and slowness. Poll a frame budget or a synchronous
 condition instead.
 
-## Lever 5: Standalone IL2CPP build -- Debug C++ for the correctness leg
+## Lever 5: Standalone IL2CPP build -- keep Release C++
 
-The standalone leg builds a real IL2CPP player, and the **native C++ compile**
-(not the test run) dominates its wall-clock; a Release (`-O2`-class) compile is far
-slower than a Debug (`-O0`-class) one. `scripts/unity/run-ci-tests.ps1` is shared by
-the **correctness** leg (`unity-tests.yml` -- excludes every perf category, publishes
-NO numbers) and the **published Release-player** leg (`perf-numbers.yml`). So the
-correctness standalone leg passes `-Il2CppConfiguration Debug` for a far faster
-compile, while the perf leg pins `Il2CppConfiguration = 'Release'`. The script
-parameter defaults to `Release`, so other callers are unaffected; the
-editmode/playmode matrix entries do not build a player and do not receive the
-IL2CPP-only argument.
+The standalone leg builds a real IL2CPP player. Release C++ optimization costs more
+during native compilation than Debug C++, but measured PR runs showed Debug makes
+the standalone player execution far slower than the compile time it saves. Keep the
+correctness leg (`unity-tests.yml`) and the published perf leg (`perf-numbers.yml`)
+on Release C++ so the total leg is faster and the correctness run matches shipped
+player behavior.
 
-**Fidelity is preserved.** Debug vs Release changes ONLY the native C++ optimization
-level -- NOT the managed->C++ transpilation, generic sharing, AOT, or stripping the
-IL2CPP leg verifies. The published Release headline still comes from
-`perf-numbers.yml`, so the Release native path stays exercised. Do NOT touch
-`Il2CppCodeGeneration` for the correctness leg: that DOES change IL2CPP codegen
-(generic sharing), which is exactly the fidelity the leg exists to verify.
+Do NOT touch `Il2CppCodeGeneration` for the correctness leg: that changes IL2CPP
+codegen and generic sharing, which is exactly the fidelity the standalone leg exists
+to verify.
 
 ## Drift-guards
 
@@ -243,7 +236,7 @@ resultPath)`; record `durationSeconds` + `{pass,fail,skip}`.
 
 ## Changelog
 
-| Version | Date       | Changes                                                                   |
-| ------- | ---------- | ------------------------------------------------------------------------- |
-| 1.0.0   | 2026-06-16 | Initial version                                                           |
-| 1.1.0   | 2026-06-18 | Add Lever 5 (standalone IL2CPP Debug C++ for the correctness leg) + guard |
+| Version | Date       | Changes                                                                     |
+| ------- | ---------- | --------------------------------------------------------------------------- |
+| 1.0.0   | 2026-06-16 | Initial version                                                             |
+| 1.1.0   | 2026-06-18 | Add Lever 5 (standalone IL2CPP Release C++ after Debug/Release measurement) |
