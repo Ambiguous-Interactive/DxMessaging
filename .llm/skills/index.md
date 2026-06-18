@@ -48,7 +48,7 @@
 | [Documentation Update Workflow](./documentation/documentation-update-workflow.md)                     | [ok] 154    | [basic]        | [stable] | [risk: none] | documentation, workflow           |
 | [Documentation Updates and Maintenance](./documentation/documentation-updates.md)                     | [ok] 148    | [basic]        | [stable] | [risk: none] | documentation, code-comments      |
 | [External URL Fragment Validation](./documentation/external-url-fragment-validation.md)               | [ok] 190    | [basic]        | [stable] | [risk: none] | documentation, links              |
-| [GitHub Actions Version Consistency](./documentation/github-actions-version-consistency.md)           | [ok] 184    | [basic]        | [stable] | [risk: none] | github-actions, ci-cd             |
+| [GitHub Actions Version Consistency](./documentation/github-actions-version-consistency.md)           | [ok] 207    | [basic]        | [stable] | [risk: none] | github-actions, ci-cd             |
 | [Human-Prose Documentation Policy](./documentation/human-prose-policy.md)                             | [ok] 138    | [basic]        | [stable] | [risk: none] | documentation, prose              |
 | [Link Quality and External URL Management](./documentation/link-quality-guidelines.md)                | [draft] 119 | [basic]        | [stable] | [risk: none] | documentation, links              |
 | [Link Quality and External URL Management Part 1](./documentation/link-quality-guidelines-part-1.md)  | [ok] 205    | [intermediate] | [stable] | [risk: low]  | migration, split                  |
@@ -217,7 +217,7 @@
 | --------------------------------------------------------------------------- | ---------- | -------------- | -------- | ------------ | -------------------- |
 | [Devcontainer Cache Contract](./unity/devcontainer-cache-contract.md)       | [ok] 208   | [intermediate] | [stable] | [risk: high] | devcontainer, docker |
 | [MessageAwareComponent Base-Call Contract](./unity/base-call-contract.md)   | [warn] 266 | [intermediate] | [stable] | [risk: none] | unity, analyzer      |
-| [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 222   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
+| [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 225   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
 | [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 219   | [intermediate] | [stable] | [risk: none] | unity, cli           |
 | [Unity License Bootstrap](./unity/unity-license-bootstrap.md)               | [ok] 194   | [basic]        | [stable] | [risk: none] | unity, license       |
 | [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 273 | [intermediate] | [stable] | [risk: none] | unity, serial        |

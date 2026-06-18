@@ -4,11 +4,14 @@ id: "unity-ci-matrix"
 category: "unity"
 version: "1.1.0"
 created: "2026-05-05"
-updated: "2026-05-20"
+updated: "2026-06-18"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
   files:
+    - path: ".github/workflows/unity-tests.yml"
+    - path: ".github/workflows/unity-benchmarks.yml"
+    - path: ".github/workflows/unity-gameci-experiment.yml"
     - path: ".github/workflows-disabled/unity-tests.yml"
     - path: ".github/workflows-disabled/unity-benchmarks.yml"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
@@ -85,7 +88,7 @@ status: "stable"
 ## When NOT to Use
 
 - Tweaking which assemblies run. That is the asmdef-discovery module's responsibility (see [unity-perf-test-isolation](./unity-perf-test-isolation.md)).
-- Adjusting cache keys. Those live in the workflow's `actions/cache@v4` block; they hash package/test inputs plus the direct CI runner script and include OS, architecture, Unity version, and mode.
+- Adjusting cache keys. Those live in the workflow's `actions/cache@v5` block; they hash package/test inputs plus the direct CI runner script and include OS, architecture, Unity version, and mode.
 
 ## Current Matrix
 
@@ -175,7 +178,7 @@ Add a version to the canonical `.github/unity-versions.json` `all` array when on
 
 1. Push the workflow change. The first CI run will pull the new image (slow); subsequent runs hit the cache.
 
-The `actions/cache@v4` keys include `${{ matrix.unity-version }}`, mode, OS, architecture, and hashes for package/test inputs plus `scripts/unity/run-ci-tests.ps1`. Do not add broad `restore-keys` for `Library/`; restoring a Library from a different Unity version or package graph can corrupt domain reloads and make failures nondeterministic. A new version should start cold and warm on the next exact-key run.
+The `actions/cache@v5` keys include `${{ matrix.unity-version }}`, mode, OS, architecture, and hashes for package/test inputs plus `scripts/unity/run-ci-tests.ps1`. Do not add broad `restore-keys` for `Library/`; restoring a Library from a different Unity version or package graph can corrupt domain reloads and make failures nondeterministic. A new version should start cold and warm on the next exact-key run.
 
 ## IL2CPP-Only Failure Patterns
 

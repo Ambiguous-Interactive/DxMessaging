@@ -134,7 +134,10 @@ test("static CI checks stay consolidated behind CI Success", () => {
 test("change detector considers current and previous paths", () => {
   const source = readCiWorkflow();
   assert.match(source, /--jq '\.\[\] \| \.filename, \(\.previous_filename \/\/ empty\)'/);
-  assert.match(source, /git diff --name-status --find-renames --diff-filter=ACDMRT/);
+  assert.match(
+    source,
+    /git diff --name-status --find-renames --diff-filter=(?=[A-Z]*A)(?=[A-Z]*C)(?=[A-Z]*D)(?=[A-Z]*M)(?=[A-Z]*R)(?=[A-Z]*T)[A-Z]+\b/
+  );
   assert.match(source, /awk -F '\\t'/);
   assert.match(source, /\$1 ~ \/\^\[RC\]\//);
   assert.match(source, /git fetch --no-tags --depth=1 origin "\$\{before\}"/);

@@ -16,6 +16,7 @@
     // Git-ignored local scratch areas
     "progress/**",
     ".artifacts/**",
-    "*PLAN.md"
+    "*PLAN.md",
+    "pr-description.md*"
   ]
 }

@@ -4,12 +4,13 @@ id: "github-actions-version-consistency"
 category: "documentation"
 version: "1.0.0"
 created: "2026-01-27"
-updated: "2026-01-27"
+updated: "2026-06-18"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: ".github/workflows/"
+    - path: ".github/workflows-disabled/"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
@@ -85,53 +86,75 @@ Version inconsistencies cause preventable issues:
 ### Version Format Standards
 
 ```yaml
-# GOOD: Use the same major version consistently
-- uses: actions/checkout@v4
-- uses: actions/setup-dotnet@v4
-- uses: actions/upload-artifact@v4
+# GOOD: Use repo-wide pinned major versions consistently.
+- uses: actions/checkout@v6
+- uses: actions/setup-node@v6
+- uses: actions/upload-artifact@v7
 
 # BAD: Mixed versions across workflows
-- uses: actions/checkout@v3 # One workflow
-- uses: actions/checkout@v4 # Another workflow
+- uses: actions/checkout@v5 # One workflow
+- uses: actions/checkout@v6 # Another workflow
 ```
 
 ### Version Update Process
 
 1. **Audit all workflows**: Find all action uses across `.github/workflows/`
+   and `.github/workflows-disabled/`
 1. **Identify inconsistencies**: List actions with different versions
+1. **Verify upstream tags**: Check official repository tags/releases before
+   accepting or rejecting a version bump
 1. **Update together**: Change all instances in a single PR
 1. **Test thoroughly**: Run all affected workflows before merging
 
 ### Common Actions to Monitor
 
-| Action                      | Current Recommended | Notes                              |
-| --------------------------- | ------------------- | ---------------------------------- |
-| `actions/checkout`          | `v4`                | Breaking changes from v3           |
-| `actions/setup-dotnet`      | `v4`                | .NET SDK setup                     |
-| `actions/upload-artifact`   | `v4`                | Breaking changes from v3           |
-| `actions/download-artifact` | `v4`                | Must match upload-artifact version |
-| `actions/cache`             | `v4`                | Caching for dependencies           |
+Do not treat a static table as permanent truth. Verify the official action tag
+before claiming that a workflow version is unpublished. As of 2026-06-18, this
+repo intentionally uses these published official-action majors in enabled and
+disabled workflow files:
+
+| Action                            | Repo Pin | Notes                               |
+| --------------------------------- | -------- | ----------------------------------- |
+| `actions/attest-build-provenance` | `v4`     | Build provenance attestations       |
+| `actions/checkout`                | `v6`     | Checkout and credential handling    |
+| `actions/cache`                   | `v5`     | Dependency and Unity project caches |
+| `actions/cache/restore`           | `v5`     | Link-check cache restore            |
+| `actions/cache/save`              | `v5`     | Link-check cache save               |
+| `actions/create-github-app-token` | `v3`     | GitHub App authentication           |
+| `actions/deploy-pages`            | `v5`     | Pages deployments                   |
+| `actions/download-artifact`       | `v8`     | Workflow artifact downloads         |
+| `actions/github-script`           | `v9`     | GitHub API scripting                |
+| `actions/setup-dotnet`            | `v5`     | .NET SDK setup                      |
+| `actions/setup-node`              | `v6`     | Node.js setup                       |
+| `actions/setup-python`            | `v6`     | Python setup                        |
+| `actions/upload-artifact`         | `v7`     | Workflow artifact uploads           |
+| `actions/upload-pages-artifact`   | `v5`     | Pages artifact uploads              |
 
 ### Audit Command
 
 ```bash
-# Find all action versions in workflows
-grep -rh "uses:" .github/workflows/ | sort | uniq
+# Find all action versions in workflows.
+rg -n "uses:\s+[^[:space:]]+@v[0-9]+" .github/workflows .github/workflows-disabled
+
+# Verify an official major tag exists before flagging it as invalid.
+git ls-remote --tags https://github.com/actions/setup-node.git refs/tags/v6
 ```
 
 ### Artifact Action Pairing
 
-Upload and download artifact actions must use compatible versions:
+Upload and download artifact actions must use compatible versions. Compatibility
+can span different major numbers, so verify release notes instead of requiring
+the numbers to match blindly:
 
 ```yaml
-# GOOD: Matching versions
-- uses: actions/upload-artifact@v4
+# GOOD: Compatible published artifact actions
+- uses: actions/upload-artifact@v7
   # ... later in workflow or different job ...
-- uses: actions/download-artifact@v4
+- uses: actions/download-artifact@v8
 
-# BAD: Mismatched versions (v4 upload with v3 download)
-- uses: actions/upload-artifact@v4
-- uses: actions/download-artifact@v3 # May not find v4 artifacts
+# BAD: Mixing an obsolete/deprecated artifact generation with current downloads
+- uses: actions/upload-artifact@v3
+- uses: actions/download-artifact@v8
 ```
 
 ## Documentation Linting Scripts
@@ -162,8 +185,8 @@ The repository deliberately uses off-the-shelf linters (markdownlint-cli2, prett
 Before committing workflow changes:
 
 - [ ] All action versions are consistent across workflows
-- [ ] Upload/download artifact versions match
-- [ ] No outdated major versions (check for v4 availability)
+- [ ] Upload/download artifact versions are compatible
+- [ ] Target major tags exist in the official upstream action repository
 - [ ] Breaking changes reviewed when upgrading major versions
 - [ ] All affected workflows tested after version updates
 
