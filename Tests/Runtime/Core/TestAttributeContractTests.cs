@@ -43,6 +43,54 @@ namespace DxMessaging.Tests.Runtime.Core
                 && namespaceName.StartsWith(TestNamespacePrefix, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// Snapshot of every reflectable type declared in a DxMessaging test
+        /// assembly (Runtime + Benchmarks + siblings), computed once per domain.
+        /// Multiple <c>[Test]</c> methods and helpers scan this same set, and the
+        /// underlying <see cref="AppDomain"/> walk plus per-assembly
+        /// <see cref="Assembly.GetTypes"/> is the dominant cost in this fixture,
+        /// so caching it collapses several full reflection sweeps into one. The
+        /// loaded test assemblies and their types are stable for the lifetime of
+        /// the test domain (all test assemblies load before any test runs); a
+        /// domain reload (recompile) resets the static and the snapshot is
+        /// rebuilt on next access.
+        /// </summary>
+        private static readonly Lazy<Type[]> DxMessagingTestTypes = new(
+            CollectDxMessagingTestTypes
+        );
+
+        private static Type[] CollectDxMessagingTestTypes()
+        {
+            List<Type> all = new();
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (!IsDxMessagingTestAssembly(assembly))
+                {
+                    continue;
+                }
+
+                Type[] types;
+                try
+                {
+                    types = assembly.GetTypes();
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    types = ex.Types.Where(t => t != null).ToArray();
+                }
+
+                foreach (Type type in types)
+                {
+                    if (type != null)
+                    {
+                        all.Add(type);
+                    }
+                }
+            }
+
+            return all.ToArray();
+        }
+
         [Test]
         public void UnityTestsDoNotUseTestCaseAttributes()
         {
@@ -620,76 +668,51 @@ namespace DxMessaging.Tests.Runtime.Core
             // siblings) so the rule applies uniformly across the test
             // surface, not just to the assembly that hosts this fixture.
             HashSet<Type> messagingBaseFixtures = new();
-            foreach (Assembly testAssembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (Type type in DxMessagingTestTypes.Value)
             {
-                if (!IsDxMessagingTestAssembly(testAssembly))
+                if (type.Namespace == null || !IsDxMessagingTestNamespace(type.Namespace))
                 {
                     continue;
                 }
 
-                Type[] assemblyTypes;
-                try
+                if (type.IsAbstract)
                 {
-                    assemblyTypes = testAssembly.GetTypes();
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    assemblyTypes = ex.Types.Where(t => t != null).ToArray();
+                    continue;
                 }
 
-                foreach (Type type in assemblyTypes)
+                if (
+                    !typeof(DxMessaging.Tests.Runtime.Core.MessagingTestBase).IsAssignableFrom(type)
+                )
                 {
-                    if (type == null)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    if (type.Namespace == null || !IsDxMessagingTestNamespace(type.Namespace))
-                    {
-                        continue;
-                    }
-
-                    if (type.IsAbstract)
-                    {
-                        continue;
-                    }
-
+                // Skip fixtures that have NO test methods (likely helper
+                // scaffolding); the rule applies to fixtures that exercise
+                // the bus.
+                bool hasTest = false;
+                foreach (
+                    MethodInfo method in type.GetMethods(
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                    )
+                )
+                {
                     if (
-                        !typeof(DxMessaging.Tests.Runtime.Core.MessagingTestBase).IsAssignableFrom(
-                            type
-                        )
+                        HasAttribute<TestAttribute>(method)
+                        || HasAttribute<UnityTestAttribute>(method)
                     )
                     {
-                        continue;
+                        hasTest = true;
+                        break;
                     }
-
-                    // Skip fixtures that have NO test methods (likely helper
-                    // scaffolding); the rule applies to fixtures that exercise
-                    // the bus.
-                    bool hasTest = false;
-                    foreach (
-                        MethodInfo method in type.GetMethods(
-                            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                        )
-                    )
-                    {
-                        if (
-                            HasAttribute<TestAttribute>(method)
-                            || HasAttribute<UnityTestAttribute>(method)
-                        )
-                        {
-                            hasTest = true;
-                            break;
-                        }
-                    }
-
-                    if (!hasTest)
-                    {
-                        continue;
-                    }
-
-                    messagingBaseFixtures.Add(type);
                 }
+
+                if (!hasTest)
+                {
+                    continue;
+                }
+
+                messagingBaseFixtures.Add(type);
             }
 
             // Source-text approximation: walk the test source roots and
@@ -902,53 +925,33 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             Dictionary<string, List<string>> fixturesByNamespace = new(StringComparer.Ordinal);
 
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (Type type in DxMessagingTestTypes.Value)
             {
-                if (!IsDxMessagingTestAssembly(assembly))
+                if (type.Namespace == null)
                 {
                     continue;
                 }
 
-                Type[] types;
-                try
+                if (!IsDxMessagingTestNamespace(type.Namespace))
                 {
-                    types = assembly.GetTypes();
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    types = ex.Types.Where(t => t != null).ToArray();
+                    continue;
                 }
 
-                foreach (Type type in types)
+                if (
+                    type.GetCustomAttributes(typeof(SetUpFixtureAttribute), inherit: false).Length
+                    == 0
+                )
                 {
-                    if (type == null || type.Namespace == null)
-                    {
-                        continue;
-                    }
-
-                    if (!IsDxMessagingTestNamespace(type.Namespace))
-                    {
-                        continue;
-                    }
-
-                    if (
-                        type.GetCustomAttributes(
-                            typeof(SetUpFixtureAttribute),
-                            inherit: false
-                        ).Length == 0
-                    )
-                    {
-                        continue;
-                    }
-
-                    if (!fixturesByNamespace.TryGetValue(type.Namespace, out List<string> bucket))
-                    {
-                        bucket = new List<string>();
-                        fixturesByNamespace[type.Namespace] = bucket;
-                    }
-
-                    bucket.Add(type.FullName);
+                    continue;
                 }
+
+                if (!fixturesByNamespace.TryGetValue(type.Namespace, out List<string> bucket))
+                {
+                    bucket = new List<string>();
+                    fixturesByNamespace[type.Namespace] = bucket;
+                }
+
+                bucket.Add(type.FullName);
             }
 
             List<string> offenders = new();
@@ -1098,53 +1101,30 @@ namespace DxMessaging.Tests.Runtime.Core
                 | BindingFlags.Public
                 | BindingFlags.NonPublic;
 
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (Type type in DxMessagingTestTypes.Value)
             {
-                if (!IsDxMessagingTestAssembly(assembly))
+                if (type.Namespace == null || !IsDxMessagingTestNamespace(type.Namespace))
                 {
                     continue;
                 }
 
-                Type[] types;
-                try
+                foreach (MethodInfo method in type.GetMethods(methodFlags))
                 {
-                    types = assembly.GetTypes();
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    types = ex.Types.Where(t => t != null).ToArray();
-                }
-
-                foreach (Type type in types)
-                {
-                    if (type == null)
+                    if (method.IsSpecialName)
                     {
                         continue;
                     }
 
-                    if (type.Namespace == null || !IsDxMessagingTestNamespace(type.Namespace))
+                    bool isTestMethod =
+                        HasAttribute<TestAttribute>(method)
+                        || HasAttribute<UnityTestAttribute>(method)
+                        || HasAttribute<TestCaseAttribute>(method)
+                        || HasAttribute<TestCaseSourceAttribute>(method);
+                    // ValueSource is parameter data only and is always paired with a test-defining attribute.
+
+                    if (isTestMethod)
                     {
-                        continue;
-                    }
-
-                    foreach (MethodInfo method in type.GetMethods(methodFlags))
-                    {
-                        if (method.IsSpecialName)
-                        {
-                            continue;
-                        }
-
-                        bool isTestMethod =
-                            HasAttribute<TestAttribute>(method)
-                            || HasAttribute<UnityTestAttribute>(method)
-                            || HasAttribute<TestCaseAttribute>(method)
-                            || HasAttribute<TestCaseSourceAttribute>(method);
-                        // ValueSource is parameter data only and is always paired with a test-defining attribute.
-
-                        if (isTestMethod)
-                        {
-                            yield return method;
-                        }
+                        yield return method;
                     }
                 }
             }

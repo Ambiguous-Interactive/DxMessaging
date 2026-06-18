@@ -434,10 +434,23 @@ namespace DxMessaging.Tests.Runtime.Core
         /// namespace are skipped. Centralizing this loop eliminates duplicated
         /// reflection try/catch blocks across the fixture.
         /// </summary>
-        private static IEnumerable<Type> EnumerateNamespaceTypes(string namespacePrefix)
-        {
-            string prefixWithDot = namespacePrefix + ".";
+        /// <summary>
+        /// Snapshot of every reflectable type across all loaded assemblies,
+        /// computed once per domain. The full <see cref="AppDomain"/> walk plus
+        /// per-assembly <see cref="Assembly.GetTypes"/> is the single most
+        /// expensive operation in this fixture; several <c>[Test]</c> methods
+        /// call <see cref="EnumerateNamespaceTypes"/>, so caching the walk
+        /// collapses N full reflection sweeps into one. The set of loaded
+        /// assemblies and their types is stable for the lifetime of the test
+        /// domain (test assemblies are all loaded before any test runs), so the
+        /// snapshot is safe to reuse; a domain reload (recompile) resets the
+        /// static and the snapshot is rebuilt on next access.
+        /// </summary>
+        private static readonly Lazy<Type[]> AllReflectableTypes = new(CollectAllReflectableTypes);
 
+        private static Type[] CollectAllReflectableTypes()
+        {
+            List<Type> all = new();
             foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 Type[] types;
@@ -452,21 +465,36 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 foreach (Type type in types)
                 {
-                    if (type.Namespace == null)
+                    if (type != null)
                     {
-                        continue;
+                        all.Add(type);
                     }
-
-                    if (
-                        !type.Namespace.Equals(namespacePrefix, StringComparison.Ordinal)
-                        && !type.Namespace.StartsWith(prefixWithDot, StringComparison.Ordinal)
-                    )
-                    {
-                        continue;
-                    }
-
-                    yield return type;
                 }
+            }
+
+            return all.ToArray();
+        }
+
+        private static IEnumerable<Type> EnumerateNamespaceTypes(string namespacePrefix)
+        {
+            string prefixWithDot = namespacePrefix + ".";
+
+            foreach (Type type in AllReflectableTypes.Value)
+            {
+                if (type.Namespace == null)
+                {
+                    continue;
+                }
+
+                if (
+                    !type.Namespace.Equals(namespacePrefix, StringComparison.Ordinal)
+                    && !type.Namespace.StartsWith(prefixWithDot, StringComparison.Ordinal)
+                )
+                {
+                    continue;
+                }
+
+                yield return type;
             }
         }
 
