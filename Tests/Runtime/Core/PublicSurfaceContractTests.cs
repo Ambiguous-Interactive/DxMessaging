@@ -425,16 +425,6 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// Yields every reflectable type in every loaded assembly whose
-        /// namespace is exactly <paramref name="namespacePrefix"/> or starts
-        /// with <c><paramref name="namespacePrefix"/> + "."</c>. Types whose
-        /// declaring assembly throws <see cref="ReflectionTypeLoadException"/>
-        /// are partially recovered (non-null entries from
-        /// <see cref="ReflectionTypeLoadException.Types"/>); types with a null
-        /// namespace are skipped. Centralizing this loop eliminates duplicated
-        /// reflection try/catch blocks across the fixture.
-        /// </summary>
-        /// <summary>
         /// Snapshot of every reflectable type across all loaded assemblies,
         /// computed once per domain. The full <see cref="AppDomain"/> walk plus
         /// per-assembly <see cref="Assembly.GetTypes"/> is the single most
@@ -475,6 +465,12 @@ namespace DxMessaging.Tests.Runtime.Core
             return all.ToArray();
         }
 
+        /// <summary>
+        /// Yields every reflectable type whose namespace is exactly
+        /// <paramref name="namespacePrefix"/> or starts with that value followed
+        /// by <c>.</c>. Types with a null namespace are skipped.
+        /// </summary>
+        /// <param name="namespacePrefix">Namespace root to enumerate.</param>
         private static IEnumerable<Type> EnumerateNamespaceTypes(string namespacePrefix)
         {
             string prefixWithDot = namespacePrefix + ".";

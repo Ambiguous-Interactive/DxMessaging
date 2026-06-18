@@ -36,10 +36,10 @@ param(
     # Debug vs Release ONLY changes native C++ optimization (the cl.exe/clang
     # flags), NOT the managed->C++ transpilation, generic sharing, AOT, or
     # stripping that the IL2CPP leg exists to verify -- so the correctness
-    # standalone leg (unity-tests.yml, which publishes NO numbers) passes Debug
-    # for a far faster native compile, while the published perf/benchmark/release
-    # legs keep the default Release. Inert for the editmode/playmode legs (no
-    # IL2CPP player is built). Pinned by scripts/__tests__/il2cpp-compiler-config-split.test.js.
+    # standalone leg (unity-tests.yml, which publishes NO numbers) gates Debug to
+    # standalone for a far faster native compile, while the published perf,
+    # benchmark, and release legs keep the default Release. Inert for the
+    # editmode/playmode legs (no IL2CPP player is built).
     [ValidateSet('Debug', 'Release')]
     [string]$Il2CppConfiguration = 'Release',
 
@@ -703,9 +703,7 @@ function New-ConfiguratorSource {
     # CompilationPipeline.codeOptimization = Release, disables managed stripping so
     # the test assemblies + [Preserve] callback survive a Release Mono player build,
     # and pins the IL2CPP C++ compiler configuration to <Il2CppConfiguration>. This
-    # is an invariant of the generated configurator; the C++-config split between
-    # the correctness leg (Debug) and the perf/release legs (Release) is pinned by
-    # scripts/__tests__/il2cpp-compiler-config-split.test.js.
+    # is an invariant of the generated configurator.
     @"
 using System;
 using System.IO;

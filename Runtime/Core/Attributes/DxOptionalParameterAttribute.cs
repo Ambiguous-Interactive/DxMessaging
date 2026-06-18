@@ -8,6 +8,8 @@ namespace DxMessaging.Core.Attributes
     /// <remarks>
     /// The source generator will emit a constructor parameter with a default value for fields annotated
     /// with this attribute. This is helpful for messages with sensible defaults.
+    /// Overloads accepting explicit default values require compile-time constants and are validated by
+    /// the source generator against the field type.
     /// </remarks>
     /// <example>
     /// <code>
@@ -27,10 +29,6 @@ namespace DxMessaging.Core.Attributes
         /// </summary>
         public DxOptionalParameterAttribute() { }
 
-        /// <summary>
-        /// Optional default value overloads. Values must be compile-time constants and
-        /// will be validated by the source generator against the field type.
-        /// </summary>
         /// <summary>
         /// Initializes the attribute with the specified default boolean value.
         /// </summary>

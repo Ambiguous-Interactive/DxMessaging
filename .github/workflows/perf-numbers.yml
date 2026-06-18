@@ -447,8 +447,7 @@ jobs:
           # Il2CppConfiguration = 'Release' is the script default, but pin it
           # EXPLICITLY here: this is the sole published Release-player leg, so its
           # native C++ must stay Release-optimized even if the correctness leg
-          # (unity-tests.yml, which uses Debug) ever changes the default. The split
-          # is enforced by scripts/__tests__/il2cpp-compiler-config-split.test.js.
+          # (unity-tests.yml, which uses Debug) ever changes the default.
           $extra = @{
               IncludeComparisons = $true
               ReleaseCodeOptimization = $true

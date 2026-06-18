@@ -75,17 +75,17 @@ player. The **native C++ compile dominates** the leg's wall-clock, and a Release
 - `perf-numbers.yml` -- the **sole published Release-player** leg (the headline
   source).
 
-So the correctness leg passes `-Il2CppConfiguration Debug` (a far faster native
-compile) while the perf leg pins `Il2CppConfiguration = 'Release'`. The script
-parameter defaults to `Release`, so every other caller (release, benchmarks) is
-unaffected; the editmode/playmode legs never build a player, so it is inert there.
+So the correctness standalone leg passes `-Il2CppConfiguration Debug` (a far
+faster native compile) while the perf leg pins `Il2CppConfiguration = 'Release'`.
+The script parameter defaults to `Release`, so every other caller (release,
+benchmarks) is unaffected; the editmode/playmode matrix entries never build a
+player and do not receive the IL2CPP-only argument.
 
 **Fidelity is preserved.** Debug vs Release changes ONLY the native C++ optimization
 level -- NOT the managed->C++ transpilation, generic sharing, AOT compilation, or
 managed stripping that the IL2CPP leg exists to verify. The published Release
 headline still comes from `perf-numbers.yml`, so the Release native path stays
-exercised in CI. The split is pinned by
-`scripts/__tests__/il2cpp-compiler-config-split.test.js` (see [Drift-guards](#drift-guards)).
+exercised in CI.
 
 **Library cache (audited, intentionally conservative).** The per-`<version>-<mode>`
 `Library` cache key in `unity-tests.yml` hashes `run-ci-tests.ps1`, so a harness
@@ -125,11 +125,6 @@ SECOND, persistent run).
   the default correctness suite when its wall clock exceeds a per-version hard
   ceiling (300 s on 2021.3, 180 s on 2022.3 / 6000.x) and warns past a 60 s soft
   budget, so a slowdown is unmissable regardless of which lever regressed.
-- `scripts/__tests__/il2cpp-compiler-config-split.test.js` (Node) pins the IL2CPP
-  C++ compiler-configuration split: the configurator stays parameterized (no
-  hardcoded enum), the correctness leg passes `Debug`, and the perf leg pins
-  `Release`. It fails if a future edit re-hardcodes the config, flips the
-  correctness leg to Release, or lets the perf leg drift to Debug.
 
 ## Status and follow-ups
 

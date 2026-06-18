@@ -14,7 +14,6 @@ source:
     - path: "Tests/Runtime/Core/SuiteWallClockBudgetTest.cs"
     - path: "scripts/unity/run-ci-tests.ps1"
     - path: "scripts/__tests__/run-ci-tests-enter-play-mode.test.js"
-    - path: "scripts/__tests__/il2cpp-compiler-config-split.test.js"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
 
 tags:
@@ -194,10 +193,11 @@ The standalone leg builds a real IL2CPP player, and the **native C++ compile**
 slower than a Debug (`-O0`-class) one. `scripts/unity/run-ci-tests.ps1` is shared by
 the **correctness** leg (`unity-tests.yml` -- excludes every perf category, publishes
 NO numbers) and the **published Release-player** leg (`perf-numbers.yml`). So the
-correctness leg passes `-Il2CppConfiguration Debug` for a far faster compile, while
-the perf leg pins `Il2CppConfiguration = 'Release'`. The script parameter defaults to
-`Release`, so other callers are unaffected, and it is inert for editmode/playmode
-(no player is built).
+correctness standalone leg passes `-Il2CppConfiguration Debug` for a far faster
+compile, while the perf leg pins `Il2CppConfiguration = 'Release'`. The script
+parameter defaults to `Release`, so other callers are unaffected; the
+editmode/playmode matrix entries do not build a player and do not receive the
+IL2CPP-only argument.
 
 **Fidelity is preserved.** Debug vs Release changes ONLY the native C++ optimization
 level -- NOT the managed->C++ transpilation, generic sharing, AOT, or stripping the
@@ -208,7 +208,7 @@ IL2CPP leg verifies. The published Release headline still comes from
 
 ## Drift-guards
 
-Four guards pin the contract so it cannot silently regress:
+Three guards pin the contract so it cannot silently regress:
 
 - `TestAttributeContractTests.TestSourcesAvoidRealTimeWaitAntiPatterns` (C#,
   runtime asmdef) scans the `Tests/` source tree and fails on any banned
@@ -222,12 +222,7 @@ Four guards pin the contract so it cannot silently regress:
   backstop: it fails the default correctness suite when its wall clock exceeds a
   per-version hard ceiling (300 s on 2021.3, 180 s on 2022.3 / 6000.x) and warns
   past a 60 s soft budget -- a slowdown is unmissable no matter which lever drifts.
-- `scripts/__tests__/il2cpp-compiler-config-split.test.js` (Node) pins Lever 5: the
-  configurator stays parameterized (no hardcoded enum), the correctness leg passes
-  `Debug`, and the perf leg pins `Release`. It fails if an edit re-hardcodes the
-  config, flips the correctness leg to Release, or lets the perf leg drift to Debug.
-
-Write the assertion RED-first where offenders exist, then keep it green.
+  Write the assertion RED-first where offenders exist, then keep it green.
 
 ## Measurement protocol (MCP loop)
 
