@@ -397,10 +397,16 @@ jobs:
         id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         # 150 (was 120): the standalone leg builds a NON-development IL2CPP
-        # player with the Release C++ configuration, and a run-ci-tests.ps1
-        # change rotates the Library cache key, so first runs build cold. The
-        # editmode/playmode legs finish far below this; stays well under the
-        # job timeout (660) so the step clock fires first and releases the
+        # player. The standalone matrix entry uses the Debug C++ configuration
+        # via $extra below for a far faster native compile -- it publishes NO
+        # numbers, and Debug vs Release only changes native C++ optimization, not
+        # the IL2CPP transpilation/runtime semantics this leg verifies (the
+        # published Release headline still comes from perf-numbers.yml). The
+        # editmode/playmode entries do not build an IL2CPP player, so they omit
+        # the IL2CPP-only argument entirely.
+        # A run-ci-tests.ps1 change rotates the Library cache key, so first runs
+        # build cold. The editmode/playmode legs finish far below this; stays well
+        # under the job timeout (660) so the step clock fires first and releases the
         # shared Unity seat.
         timeout-minutes: 150
         shell: pwsh
@@ -411,13 +417,18 @@ jobs:
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DXM_UNITY_TEST_CATEGORY: "!Stress;!Performance;!Allocation;!MemoryReclaim;!UnityRuntime;!PerfBench;!PerfGate;!PerfBaseline"
         run: |
+          $extra = @{}
+          if ('${{ matrix.test-mode }}' -eq 'standalone') {
+            $extra['Il2CppConfiguration'] = 'Debug'
+          }
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
             -ReleaseCodeOptimization `
-            -ReleasePlayerBuild
+            -ReleasePlayerBuild `
+            @extra
 
       - name: Return Unity license
         if: always()

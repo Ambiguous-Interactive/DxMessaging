@@ -42,7 +42,7 @@ function countLines(filePath) {
 function main() {
   const output = execFileSync("git", ["ls-files", "*.js", "*.cjs", "*.mjs"], {
     cwd: REPO_ROOT,
-    encoding: "utf8",
+    encoding: "utf8"
   });
   const files = output.split("\n").filter(Boolean);
   let total = 0;

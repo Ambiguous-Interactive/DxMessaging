@@ -2,9 +2,9 @@
 title: "Fast Unity Tests: Reload, Frame Tax, and Anti-Patterns"
 id: "fast-unity-tests"
 category: "testing"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-06-15"
-updated: "2026-06-16"
+updated: "2026-06-18"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -186,6 +186,26 @@ Banned anywhere in `Tests/`: `Thread.Sleep`, `Task.Delay`, `WaitForSeconds`,
 waiting for wall-clock flake and slowness. Poll a frame budget or a synchronous
 condition instead.
 
+## Lever 5: Standalone IL2CPP build -- Debug C++ for the correctness leg
+
+The standalone leg builds a real IL2CPP player, and the **native C++ compile**
+(not the test run) dominates its wall-clock; a Release (`-O2`-class) compile is far
+slower than a Debug (`-O0`-class) one. `scripts/unity/run-ci-tests.ps1` is shared by
+the **correctness** leg (`unity-tests.yml` -- excludes every perf category, publishes
+NO numbers) and the **published Release-player** leg (`perf-numbers.yml`). So the
+correctness standalone leg passes `-Il2CppConfiguration Debug` for a far faster
+compile, while the perf leg pins `Il2CppConfiguration = 'Release'`. The script
+parameter defaults to `Release`, so other callers are unaffected; the
+editmode/playmode matrix entries do not build a player and do not receive the
+IL2CPP-only argument.
+
+**Fidelity is preserved.** Debug vs Release changes ONLY the native C++ optimization
+level -- NOT the managed->C++ transpilation, generic sharing, AOT, or stripping the
+IL2CPP leg verifies. The published Release headline still comes from
+`perf-numbers.yml`, so the Release native path stays exercised. Do NOT touch
+`Il2CppCodeGeneration` for the correctness leg: that DOES change IL2CPP codegen
+(generic sharing), which is exactly the fidelity the leg exists to verify.
+
 ## Drift-guards
 
 Three guards pin the contract so it cannot silently regress:
@@ -202,8 +222,7 @@ Three guards pin the contract so it cannot silently regress:
   backstop: it fails the default correctness suite when its wall clock exceeds a
   per-version hard ceiling (300 s on 2021.3, 180 s on 2022.3 / 6000.x) and warns
   past a 60 s soft budget -- a slowdown is unmissable no matter which lever drifts.
-
-Write the assertion RED-first where offenders exist, then keep it green.
+  Write the assertion RED-first where offenders exist, then keep it green.
 
 ## Measurement protocol (MCP loop)
 
@@ -224,6 +243,7 @@ resultPath)`; record `durationSeconds` + `{pass,fail,skip}`.
 
 ## Changelog
 
-| Version | Date       | Changes         |
-| ------- | ---------- | --------------- |
-| 1.0.0   | 2026-06-16 | Initial version |
+| Version | Date       | Changes                                                                   |
+| ------- | ---------- | ------------------------------------------------------------------------- |
+| 1.0.0   | 2026-06-16 | Initial version                                                           |
+| 1.1.0   | 2026-06-18 | Add Lever 5 (standalone IL2CPP Debug C++ for the correctness leg) + guard |

@@ -27,15 +27,27 @@ namespace DxMessaging.Tests.Editor
             }
             _createdObjects.Clear();
 
+            bool deletedAnyAsset = false;
             foreach (string assetPath in _createdAssetPaths)
             {
                 if (!string.IsNullOrEmpty(assetPath))
                 {
                     AssetDatabase.DeleteAsset(assetPath);
+                    deletedAnyAsset = true;
                 }
             }
             _createdAssetPaths.Clear();
-            AssetDatabase.Refresh();
+
+            // DeleteAsset already updates the database; the Refresh is only needed
+            // to settle the import state of assets this fixture actually created on
+            // disk. Guarding it on deletedAnyAsset keeps that Refresh correct while
+            // ensuring a future test that creates no on-disk asset pays no
+            // AssetDatabase sweep. The one current test does create an asset, so the
+            // Refresh still runs for it -- this guard is defensive, not a saving today.
+            if (deletedAnyAsset)
+            {
+                AssetDatabase.Refresh();
+            }
         }
 
         [Test]

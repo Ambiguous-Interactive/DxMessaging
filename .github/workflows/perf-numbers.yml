@@ -444,11 +444,16 @@ jobs:
           # contract and -ReleasePlayerBuild is a kept-for-clarity no-op), so the
           # published numbers come from a true Release IL2CPP player
           # (Release C++ config, isDebugBuild=false).
+          # Il2CppConfiguration = 'Release' is the script default, but pin it
+          # EXPLICITLY here: this is the sole published Release-player leg, so its
+          # native C++ must stay Release-optimized even if the correctness leg
+          # (unity-tests.yml, which uses Debug) ever changes the default.
           $extra = @{
               IncludeComparisons = $true
               ReleaseCodeOptimization = $true
               ReleasePlayerBuild = $true
               StandaloneScriptingBackend = 'IL2CPP'
+              Il2CppConfiguration = 'Release'
           }
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `

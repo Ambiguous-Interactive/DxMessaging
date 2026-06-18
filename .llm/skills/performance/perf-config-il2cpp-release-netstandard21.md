@@ -129,21 +129,24 @@ three knobs:
    playerOptions.options &= ~BuildOptions.Development;
    ```
 
-1. **Release IL2CPP C++ configuration (configurator).** The project
-   configurator pins the native compiler configuration explicitly: an ephemeral
-   CI project has no committed default for the setting, and the pin removes the
-   variable regardless of how the build flags would otherwise influence it:
+1. **IL2CPP C++ configuration (configurator).** The project configurator pins the
+   native compiler configuration from `-Il2CppConfiguration`: an ephemeral CI
+   project has no committed default for the setting, and the pin removes the
+   variable regardless of how the build flags would otherwise influence it. The
+   published perf leg passes `Release`; the non-published standalone correctness
+   leg passes `Debug` to avoid paying a Release native compile for a no-numbers
+   gate:
 
    ```text
-   PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.Release);
+   PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.<Il2CppConfiguration>);
    ```
 
-| Leg                         | Profile flags                                                                     |
-| --------------------------- | --------------------------------------------------------------------------------- |
-| EditMode tests              | `-ReleaseCodeOptimization`                                                        |
-| PlayMode tests/benchmarks   | `-ReleaseCodeOptimization`                                                        |
-| Standalone perf (published) | `-StandaloneScriptingBackend IL2CPP -ReleasePlayerBuild -ReleaseCodeOptimization` |
-| Standalone tests            | `-ReleasePlayerBuild -ReleaseCodeOptimization`                                    |
+| Leg                         | Profile flags                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| EditMode tests              | `-ReleaseCodeOptimization`                                                                                     |
+| PlayMode tests/benchmarks   | `-ReleaseCodeOptimization`                                                                                     |
+| Standalone perf (published) | `-StandaloneScriptingBackend IL2CPP -ReleasePlayerBuild -ReleaseCodeOptimization -Il2CppConfiguration Release` |
+| Standalone tests            | `-ReleasePlayerBuild -ReleaseCodeOptimization -Il2CppConfiguration Debug`                                      |
 
 ## .NET Standard 2.1 and stripping
 
