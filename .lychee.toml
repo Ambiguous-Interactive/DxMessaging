@@ -1,7 +1,7 @@
 # DxMessaging link-checking configuration.
 #
 # Shared by both link-checking jobs:
-#   * lint-doc-links.yml          - blocking PR/push check (offline local pass +
+#   * ci.yml / Lint docs links    - blocking PR/push check (offline local pass +
 #                                   lenient external-liveness pass)
 #   * markdown-link-validity.yml  - scheduled advisory external scan that opens a
 #                                   tracking issue instead of failing
@@ -22,7 +22,8 @@
 #   1. `accept` treats every "the server answered but refused/throttled the bot"
 #      status and every transient server error as OK.
 #   2. The blocking external pass additionally treats a TIMEOUT as advisory by
-#      passing `--accept-timeouts=true`; see lint-doc-links.yml. That option is
+#      passing `--accept-timeouts=true`; see the `Lint docs links` job in ci.yml.
+#      That option is
 #      intentionally NOT set here, because this shared config is also used by the
 #      scheduled advisory scan, which should still report persistent slow hosts.
 #      A PR therefore fails only on a genuinely dead link -- HTTP 404/410 or a
@@ -83,7 +84,7 @@ exclude = [
   "^https?://127\\.0\\.0\\.1",
   "^https?://0\\.0\\.0\\.0",
   # Self-repo blob/tree links are validated OFFLINE against the working tree by
-  # the offline lychee pass in lint-doc-links.yml -- a live check 404s for files
-  # added in the same PR before they reach the default branch.
+  # the offline lychee pass in ci.yml -- a live check 404s for files added in
+  # the same PR before they reach the default branch.
   "^https://github\\.com/Ambiguous-Interactive/DxMessaging/(?:blob|tree)/",
 ]

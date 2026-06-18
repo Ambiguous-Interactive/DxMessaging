@@ -4,7 +4,7 @@ id: "workflow-consistency"
 category: "github-actions"
 version: "1.0.0"
 created: "2026-01-28"
-updated: "2026-06-06"
+updated: "2026-06-18"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -90,6 +90,8 @@ Apply these requirements to every workflow file:
    `git-auto-commit-action` handoff
 1. Include `.github/workflows/**` in path filters for self-referential workflows
 1. Use double quotes for strings (Prettier default)
+1. Put required static checks in `.github/workflows/ci.yml` and wire them into
+   the `CI Success` aggregate instead of creating another required workflow
 
 ## Required Property Order
 
@@ -198,6 +200,15 @@ with a command-scoped `git -c http.https://github.com/.extraheader=... push`.
 If the branch advances, regenerate safe derived files on the new head or warn and
 skip stale artifacts; do not let a non-fast-forward race become an unexplained
 red workflow.
+
+## Required Static Gate
+
+Static correctness and style checks are consolidated in `.github/workflows/ci.yml`.
+When adding a new required static check, add a job there, keep the job-level
+condition at `if: ${{ always() }}`, skip expensive steps internally when the
+shared `changes` job says the files are irrelevant, and add the job id to
+`ci-success.needs`. The final job name `CI Success` is the branch-protection API.
+Do not require the individual static job names once the aggregate ruleset is live.
 
 ## See Also
 

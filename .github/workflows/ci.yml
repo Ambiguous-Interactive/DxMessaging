@@ -1,0 +1,949 @@
+name: CI
+
+on:
+  # Required gate workflow: do not add a pull_request paths filter. The workflow
+  # must always report `CI Success`; the `changes` job decides which checks need
+  # real work and every check job emits a cheap success when it is not relevant.
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect static-check changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      actionlint: ${{ steps.filter.outputs.actionlint }}
+      banner: ${{ steps.filter.outputs.banner }}
+      csharpier: ${{ steps.filter.outputs.csharpier }}
+      docs: ${{ steps.filter.outputs.docs }}
+      docs_links: ${{ steps.filter.outputs.docs_links }}
+      dotnet: ${{ steps.filter.outputs.dotnet }}
+      json: ${{ steps.filter.outputs.json }}
+      llms: ${{ steps.filter.outputs.llms }}
+      markdown: ${{ steps.filter.outputs.markdown }}
+      scripts: ${{ steps.filter.outputs.scripts }}
+      spellcheck: ${{ steps.filter.outputs.spellcheck }}
+      yaml: ${{ steps.filter.outputs.yaml }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Determine changed file groups
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          emit_all() {
+            for name in \
+              actionlint \
+              banner \
+              csharpier \
+              docs \
+              docs_links \
+              dotnet \
+              json \
+              llms \
+              markdown \
+              scripts \
+              spellcheck \
+              yaml; do
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            done
+          }
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if ! files="$(gh api \
+              "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+              --paginate --jq '.[] | .filename, (.previous_filename // empty)')"; then
+              emit_all
+              exit 0
+            fi
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            before="${{ github.event.before }}"
+            if [ -z "$before" ] || printf '%s' "$before" | grep -qE '^0+$'; then
+              emit_all
+              exit 0
+            fi
+            if ! git cat-file -e "${before}^{commit}"; then
+              if ! git fetch --no-tags --depth=1 origin "${before}"; then
+                emit_all
+                exit 0
+              fi
+            fi
+            # cspell:ignore ACDMRT
+            if ! files="$(git diff --name-status --find-renames --diff-filter=ACDMRT "${before}" "${{ github.sha }}" |
+              awk -F '\t' '
+                $1 ~ /^[RC]/ {
+                  print $2
+                  print $3
+                  next
+                }
+                { print $2 }
+              ')"; then
+              emit_all
+              exit 0
+            fi
+          else
+            emit_all
+            exit 0
+          fi
+
+          set_output() {
+            name="$1"
+            pattern="$2"
+            if printf '%s\n' "$files" | grep -qE "$pattern"; then
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            fi
+          }
+
+          ci_workflow='^\.github/workflows/ci\.yml$'
+
+          set_output actionlint \
+            "(^\.github/workflows/|^\.github/actionlint\.yaml$|^\.github/unity-versions\.json$|^scripts/validate-unity-versions\.js$)"
+          set_output banner \
+            "(^docs/images/DxMessaging-banner\.svg$|^scripts/sync-banner-version\.js$|^package\.json$|^Tests/|^SourceGenerators/|$ci_workflow)"
+          set_output csharpier \
+            "(\.cs$|^\.config/dotnet-tools\.json$|(^|/)\.csharpierrc[^/]*$|(^|/)\.csharpierignore$|(^|/)\.editorconfig$|$ci_workflow)"
+          set_output docs \
+            "(^docs/|^mkdocs\.yml$|^requirements-docs\.txt$|$ci_workflow)"
+          set_output docs_links \
+            "(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$|$ci_workflow)"
+          set_output dotnet \
+            "(\.cs$|\.csproj$|\.sln$|^Editor/Analyzers/|^SourceGenerators/|^\.config/dotnet-tools\.json$|$ci_workflow)"
+
+          json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
+          json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'
+          json_pattern="$json_pattern"'|(^|/)\.prettierignore$|(^|/)\.editorconfig$'
+          json_pattern="$json_pattern"'|(^|/)\.gitignore$|(^|/)package\.yaml$'
+          json_pattern="$json_pattern"'|^package\.json$|'"$ci_workflow"')'
+          set_output json \
+            "$json_pattern"
+          set_output llms \
+            "(^package\.json$|^\.llm/skills/|^scripts/update-llms-txt\.js$|^llms\.txt$|$ci_workflow)"
+          set_output markdown \
+            "(\.md$|\.markdown$|^\.markdownlint\.json$|^\.markdownlint\.jsonc$|^\.markdownlint-cli2\.jsonc$|^\.markdownlintignore$|^package\.json$|$ci_workflow)"
+
+          scripts_pattern='(^\.github/workflows/[^/]*\.ya?ml$'
+          scripts_pattern="$scripts_pattern"'|^\.github/actions/.*/action\.yml$'
+          scripts_pattern="$scripts_pattern"'|^\.github/unity-versions\.json$'
+          scripts_pattern="$scripts_pattern"'|^package\.json$|^\.npmignore$'
+          scripts_pattern="$scripts_pattern"'|^CHANGELOG\.md$|^CHANGELOG\.md\.meta$'
+          scripts_pattern="$scripts_pattern"'|^\.llm/skills/'
+          scripts_pattern="$scripts_pattern"'|^LICENSE\.md$|^LICENSE\.md\.meta$'
+          scripts_pattern="$scripts_pattern"'|^README\.md$|^README\.md\.meta$'
+          scripts_pattern="$scripts_pattern"'|^Third Party Notices\.md$'
+          scripts_pattern="$scripts_pattern"'|^Third Party Notices\.md\.meta$'
+          scripts_pattern="$scripts_pattern"'|^package\.json\.meta$|^Editor\.meta$'
+          scripts_pattern="$scripts_pattern"'|^Editor/|^Runtime\.meta$|^Runtime/'
+          scripts_pattern="$scripts_pattern"'|^Samples~/|^SourceGenerators\.meta$'
+          scripts_pattern="$scripts_pattern"'|^SourceGenerators/|^scripts/.*\.ps1$'
+          scripts_pattern="$scripts_pattern"'|^scripts/.*\.sh$'
+          scripts_pattern="$scripts_pattern"'|\.js$|\.cjs$|\.mjs$|\.asmdef$|\.cs\.meta$)'
+          set_output scripts \
+            "$scripts_pattern"
+          set_output spellcheck \
+            "(\.md$|\.markdown$|\.cs$|\.json$|\.yaml$|\.yml$|\.ps1$|\.js$|^\.github/|^\.llm/|(^|/)\.cspell\.[^/]+$|(^|/)cspell\.config\.[^/]+$|^\.gitignore$)"
+
+          yaml_pattern='(\.yml$|\.yaml$|^\.github/workflows/|^\.yamllint\.yaml$'
+          yaml_pattern="$yaml_pattern"'|(^|/)\.prettierrc[^/]*$'
+          yaml_pattern="$yaml_pattern"'|(^|/)prettier\.config\.[^/]+$'
+          yaml_pattern="$yaml_pattern"'|(^|/)\.prettierignore$|(^|/)\.editorconfig$'
+          yaml_pattern="$yaml_pattern"'|(^|/)\.gitignore$|(^|/)package\.json$'
+          yaml_pattern="$yaml_pattern"'|(^|/)package\.yaml$)'
+          set_output yaml \
+            "$yaml_pattern"
+
+  actionlint:
+    name: Lint GitHub Actions workflows
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.actionlint != 'true' && needs.changes.outputs.actionlint != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with actionlint='${{ needs.changes.outputs.actionlint }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-workflow changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.actionlint == 'false' }}
+        run: echo "No workflow-affecting files changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.actionlint != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install shellcheck
+        if: ${{ needs.changes.outputs.actionlint != 'false' }}
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+
+      - name: Run actionlint
+        if: ${{ needs.changes.outputs.actionlint != 'false' }}
+        uses: rhysd/actionlint@v1.7.12
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.actionlint != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
+      - name: Validate Unity version single-source
+        if: ${{ needs.changes.outputs.actionlint != 'false' }}
+        run: node scripts/validate-unity-versions.js
+
+  markdownlint:
+    name: Lint repository Markdown
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.markdown != 'true' && needs.changes.outputs.markdown != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with markdown='${{ needs.changes.outputs.markdown }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-Markdown changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.markdown == 'false' }}
+        run: echo "No Markdown-affecting files changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.markdown != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.markdown != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: "npm"
+          cache-dependency-path: package.json
+
+      - name: Install dependencies
+        if: ${{ needs.changes.outputs.markdown != 'false' }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
+
+      - name: Run markdownlint via npm script
+        if: ${{ needs.changes.outputs.markdown != 'false' }}
+        run: npm run lint:markdown
+
+  csharpier:
+    name: Check C# formatting
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.csharpier != 'true' && needs.changes.outputs.csharpier != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with csharpier='${{ needs.changes.outputs.csharpier }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-C# changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.csharpier == 'false' }}
+        run: echo "No C# formatting inputs changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.csharpier != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Normalize line endings
+        if: ${{ needs.changes.outputs.csharpier != 'false' }}
+        run: |
+          git add --renormalize .
+          git reset --hard
+
+      - name: Setup .NET
+        if: ${{ needs.changes.outputs.csharpier != 'false' }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore .NET tools
+        if: ${{ needs.changes.outputs.csharpier != 'false' }}
+        run: dotnet tool restore
+
+      - name: Run CSharpier check
+        if: ${{ needs.changes.outputs.csharpier != 'false' }}
+        run: dotnet tool run csharpier check .
+
+  dotnet:
+    name: dotnet tests
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.dotnet != 'true' && needs.changes.outputs.dotnet != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with dotnet='${{ needs.changes.outputs.dotnet }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-.NET changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.dotnet == 'false' }}
+        run: echo "No .NET-affecting files changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: SourceGenerators/global.json
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
+      - name: Install reportgenerator tool
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Restore
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        working-directory: SourceGenerators
+        run: >
+          dotnet restore
+          WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj
+          /p:CopyAnalyzerPayload=false
+
+      - name: Run generator diagnostics tests
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        working-directory: SourceGenerators
+        run: >
+          dotnet test
+          WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj
+          --configuration Release
+          /p:CopyAnalyzerPayload=false
+          --collect:"XPlat Code Coverage"
+
+      - name: Verify committed analyzer payload is current
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        run: npm run check:analyzers
+
+      - name: Generate coverage summary
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        run: |
+          mkdir -p artifacts/coverage
+          reportgenerator \
+            -reports:".artifacts/**/TestResults/**/coverage.cobertura.xml" \
+            -targetdir:"artifacts/coverage" \
+            -reporttypes:"TextSummary;HtmlSummary;Cobertura"
+          cat artifacts/coverage/Summary.txt
+
+      - name: Upload coverage report
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: generator-coverage
+          path: artifacts/coverage
+
+      - name: Check source marker policy
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' source_files < <(git ls-files -z \
+            'Runtime/**' \
+            'Editor/**' \
+            'SourceGenerators/**' \
+            'Tests/**' \
+            '*.cs' \
+            '*.csproj' \
+            '*.sln')
+          if [ "${#source_files[@]}" -eq 0 ]; then
+            echo "No source files found for marker scan."
+            exit 0
+          fi
+          set +e
+          rg --files-with-matches "(TODO|FIXME)" -- "${source_files[@]}"
+          marker_status=$?
+          set -e
+          if [ "$marker_status" -eq 0 ]; then
+            echo "::error::Found TODO/FIXME markers in source files. Please resolve or suppress them."
+            exit 1
+          elif [ "$marker_status" -eq 1 ]; then
+            echo "No TODO/FIXME markers detected in source files."
+          else
+            echo "::error::Source marker scan failed with exit code $marker_status."
+            exit "$marker_status"
+          fi
+
+  json-format:
+    name: Check JSON/.asmdef formatting
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.json != 'true' && needs.changes.outputs.json != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with json='${{ needs.changes.outputs.json }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-JSON changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.json == 'false' }}
+        run: echo "No JSON/.asmdef formatting inputs changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.json != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.json != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: "npm"
+          cache-dependency-path: package.json
+
+      - name: Install dependencies
+        if: ${{ needs.changes.outputs.json != 'false' }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
+
+      - name: Prettier check (JSON / asmdef)
+        if: ${{ needs.changes.outputs.json != 'false' }}
+        run: npx prettier --check "**/*.{json,asmdef,asmref}"
+
+  spellcheck:
+    name: Check spelling
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.spellcheck != 'true' && needs.changes.outputs.spellcheck != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with spellcheck='${{ needs.changes.outputs.spellcheck }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-spellcheck changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.spellcheck == 'false' }}
+        run: echo "No spellcheck inputs changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.spellcheck != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.spellcheck != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: "npm"
+          cache-dependency-path: package.json
+
+      - name: Run cspell
+        if: ${{ needs.changes.outputs.spellcheck != 'false' }}
+        run: npx --yes cspell@10.0.1 --no-progress .
+
+  validate-banner:
+    name: Validate banner SVG
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.banner != 'true' && needs.changes.outputs.banner != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with banner='${{ needs.changes.outputs.banner }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-banner changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.banner == 'false' }}
+        run: echo "No banner-affecting files changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.banner != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.banner != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
+      - name: Regenerate banner and verify it is committed
+        if: ${{ needs.changes.outputs.banner != 'false' }}
+        run: |
+          node scripts/sync-banner-version.js
+          git diff --exit-code docs/images/DxMessaging-banner.svg
+
+  validate-llms-txt:
+    name: Check llms.txt is up-to-date
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.llms != 'true' && needs.changes.outputs.llms != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with llms='${{ needs.changes.outputs.llms }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-llms changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.llms == 'false' }}
+        run: echo "No llms.txt-affecting files changed; check is present."
+
+      - name: Checkout repository
+        if: ${{ needs.changes.outputs.llms != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.llms != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: "npm"
+          cache-dependency-path: package.json
+
+      - name: Install dependencies
+        if: ${{ needs.changes.outputs.llms != 'false' }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
+
+      - name: Validate llms.txt generator contract
+        if: ${{ needs.changes.outputs.llms != 'false' }}
+        run: npm run check:llms-txt
+
+  yaml-format-lint:
+    name: Prettier and yamllint
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.yaml != 'true' && needs.changes.outputs.yaml != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with yaml='${{ needs.changes.outputs.yaml }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-YAML changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.yaml == 'false' }}
+        run: echo "No YAML/Prettier config files changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.yaml != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.yaml != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: "npm"
+          cache-dependency-path: package.json
+
+      - name: Install dependencies
+        if: ${{ needs.changes.outputs.yaml != 'false' }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
+
+      - name: Prettier check (YAML)
+        if: ${{ needs.changes.outputs.yaml != 'false' }}
+        run: npx prettier --check "**/*.{yml,yaml}"
+
+      - name: yamllint
+        if: ${{ needs.changes.outputs.yaml != 'false' }}
+        uses: ibiqlik/action-yamllint@v3.1.1
+        with:
+          file_or_dir: .
+          config_file: .yamllint.yaml
+          strict: true
+
+  script-tests:
+    name: Script tests (${{ matrix.os }})
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-script-tests-${{ matrix.os }}-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.scripts != 'true' && needs.changes.outputs.scripts != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with scripts='${{ needs.changes.outputs.scripts }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-script changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.scripts == 'false' }}
+        shell: bash
+        run: echo "No script-affecting files changed; check is present."
+
+      - name: Checkout repository
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: "npm"
+          cache-dependency-path: package.json
+
+      - name: Setup .NET
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: SourceGenerators/global.json
+
+      - name: Install dependencies
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
+
+      - name: Run script tests
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        shell: bash
+        run: node --test scripts/
+
+      - name: Run validators
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        shell: bash
+        run: npm run validate:all
+
+  validate-docs:
+    name: Validate Documentation Build
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.docs != 'true' && needs.changes.outputs.docs != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with docs='${{ needs.changes.outputs.docs }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-docs changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs == 'false' }}
+        run: echo "No documentation build inputs changed; check is present."
+
+      - name: Checkout repository
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify required documentation files exist
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        run: |
+          missing_files=0
+          for file in mkdocs.yml requirements-docs.txt docs/index.md; do
+            if [ ! -e "$file" ]; then
+              echo "::error file=$file::Required file '$file' not found"
+              missing_files=$((missing_files + 1))
+            else
+              echo "Found: $file"
+            fi
+          done
+
+          for dir in docs/getting-started docs/concepts docs/reference; do
+            if [ ! -d "$dir" ]; then
+              echo "::warning::Documentation directory '$dir' not found."
+            else
+              file_count=$(find "$dir" -name '*.md' | wc -l)
+              echo "Found: $dir ($file_count markdown files)"
+            fi
+          done
+
+          if [ "$missing_files" -gt 0 ]; then
+            echo "::error::$missing_files required file(s) missing"
+            exit 1
+          fi
+
+      - name: Setup Python
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "requirements-docs.txt"
+
+      - name: Install system dependencies
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libcairo2-dev \
+            libfreetype6-dev \
+            libffi-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libz-dev
+
+      - name: Install Python dependencies
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-docs.txt
+
+      - name: Validate mkdocs.yml syntax
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        run: python -c "from mkdocs.config import load_config; load_config('mkdocs.yml')"
+
+      - name: Build documentation (strict mode)
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        run: |
+          set -o pipefail
+          mkdocs build --strict --site-dir _site 2>&1 | tee build.log
+          if grep -qi "warning" build.log; then
+            echo "::warning::Build completed with warnings; review output above."
+          fi
+
+      - name: Emit mkdocs diagnostics on failure
+        if: ${{ needs.changes.outputs.docs != 'false' && failure() }}
+        run: |
+          if [ -f build.log ]; then
+            echo "::group::Strict-mode escalation summary"
+            grep -nE "Aborted with [0-9]+ warnings in strict mode" build.log || \
+              echo "(no 'Aborted with N warnings in strict mode!' line found)"
+            echo "::endgroup::"
+            echo "::group::MkDocs warnings and errors"
+            grep -nEi "warning|error|not found|aborted" build.log || true
+            echo "::endgroup::"
+            echo "::group::Last 120 lines of build.log"
+            tail -n 120 build.log || true
+            echo "::endgroup::"
+          else
+            echo "::warning::build.log was not generated."
+          fi
+
+      - name: Validate build output
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        run: |
+          if [ ! -d "_site" ]; then
+            echo "::error::Build failed - _site directory not found"
+            exit 1
+          fi
+          if [ ! -f "_site/index.html" ]; then
+            echo "::error::Build failed - index.html not found"
+            exit 1
+          fi
+          page_count=$(find _site -name '*.html' | wc -l)
+          echo "Generated $page_count HTML pages"
+          if [ "$page_count" -lt 5 ]; then
+            echo "::warning::Low page count ($page_count) - verify all docs are being built"
+          fi
+
+      - name: Check internal link structure
+        if: ${{ needs.changes.outputs.docs != 'false' }}
+        run: |
+          link_count=$(grep -roc 'href="[^"]*"' _site --include='*.html' | awk -F: '{sum+=$NF} END {print sum}' || echo "0")
+          internal_links=$(
+            grep -roh 'href="[^"]*"' _site --include='*.html' |
+              awk '!/href="https?:\/\// && !/href="mailto:/ { count++ } END { print count + 0 }'
+          )
+          echo "Found $link_count total links ($internal_links internal)."
+
+  lint-doc-links:
+    name: Lint docs links
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.docs_links != 'true' && needs.changes.outputs.docs_links != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with docs_links='${{ needs.changes.outputs.docs_links }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-link-check changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_links == 'false' }}
+        run: echo "No docs-link-affecting files changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.docs_links != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check markdown link text is human-readable
+        if: ${{ needs.changes.outputs.docs_links != 'false' }}
+        shell: pwsh
+        run: ./.github/scripts/check-markdown-links.ps1 -Root .
+
+      - name: Collect tracked docs
+        if: ${{ needs.changes.outputs.docs_links != 'false' }}
+        run: |
+          git ls-files -z '*.md' '*.markdown' | tr '\0' '\n' \
+            > "${RUNNER_TEMP}/doc-files.txt"
+          echo "Checking $(wc -l < "${RUNNER_TEMP}/doc-files.txt") tracked doc(s)."
+
+      - name: Install pinned lychee
+        if: ${{ needs.changes.outputs.docs_links != 'false' }}
+        uses: ./.github/actions/install-pinned-lychee
+        with:
+          version: v0.24.2
+
+      - name: Check internal links and anchors (offline)
+        if: ${{ needs.changes.outputs.docs_links != 'false' }}
+        run: |
+          lychee \
+            -c .lychee.toml \
+            --offline \
+            --include-fragments \
+            --files-from "${RUNNER_TEMP}/doc-files.txt"
+
+      - name: Probe external link liveness
+        if: ${{ needs.changes.outputs.docs_links != 'false' }}
+        run: |
+          lychee \
+            -c .lychee.toml \
+            --scheme https \
+            --scheme http \
+            --accept-timeouts=true \
+            --files-from "${RUNNER_TEMP}/doc-files.txt"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Explain link-check failures
+        if: ${{ needs.changes.outputs.docs_links != 'false' && failure() }}
+        run: |
+          cat >> "${GITHUB_STEP_SUMMARY}" <<'EOF'
+          ## How to read a link-check failure
+
+          This job fails for broken internal links or genuinely dead external
+          links. Bot-detection, throttling, transient responses, and timeouts are
+          accepted by this gate; do not add per-domain excludes for those cases.
+          EOF
+
+  ci-success:
+    name: CI Success
+    needs:
+      - changes
+      - actionlint
+      - markdownlint
+      - csharpier
+      - dotnet
+      - json-format
+      - spellcheck
+      - validate-banner
+      - validate-llms-txt
+      - yaml-format-lint
+      - script-tests
+      - validate-docs
+      - lint-doc-links
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify all static CI jobs succeeded
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
+          allowed-skips: ""
+          allowed-failures: ""

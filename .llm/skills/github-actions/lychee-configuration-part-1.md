@@ -2,9 +2,9 @@
 title: "Lychee Link Checker Configuration Management Part 1"
 id: "lychee-configuration-part-1"
 category: "github-actions"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-03-16"
-updated: "2026-06-04"
+updated: "2026-06-18"
 status: "stable"
 tags:
   - migration
@@ -43,7 +43,7 @@ Before modifying `.lychee.toml`:
 - [ ] All field names are valid for the pinned lychee version (diff the upstream
       example config when unsure)
 - [ ] `accept_timeouts` remains absent from `.lychee.toml`; timeout acceptance is CLI-only
-      in `lint-doc-links.yml`
+      in the `Lint docs links` job in `ci.yml`
 - [ ] No deprecated field names used (check the mapping table above)
 - [ ] Boolean fields use `true`/`false`, not integers; `verbose` uses a string enum value
 
