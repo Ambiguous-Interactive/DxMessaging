@@ -106,7 +106,9 @@ jobs:
       - name: Check for changes
         id: git-check
         run: |
-          git diff --exit-code llms.txt || echo "changed=true" >> "$GITHUB_OUTPUT"
+          # update:llms-txt regenerates llms.txt and syncs the skill-count claim in
+          # README.md; both are committed so neither can drift on the default branch.
+          git diff --exit-code -- llms.txt README.md || echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push changes
         if: steps.git-check.outputs.changed == 'true' && steps.check-autocommit-app.outputs.has-app == 'true'
@@ -134,15 +136,15 @@ jobs:
               npm run check:llms-txt
             fi
 
-            if git diff --quiet -- llms.txt; then
-              echo "llms.txt is already current; nothing to commit."
+            if git diff --quiet -- llms.txt README.md; then
+              echo "llms.txt and README are already current; nothing to commit."
               exit 0
             fi
 
             base_sha="$(git rev-parse HEAD)"
-            git add -- llms.txt
-            if git diff --cached --quiet -- llms.txt; then
-              echo "No staged llms.txt changes remain; nothing to commit."
+            git add -- llms.txt README.md
+            if git diff --cached --quiet -- llms.txt README.md; then
+              echo "No staged llms.txt/README changes remain; nothing to commit."
               exit 0
             fi
             git commit -m "chore: update llms.txt"

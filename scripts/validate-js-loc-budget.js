@@ -34,7 +34,17 @@ const path = require("path");
 // `CI Success`, skipping skill-index validation on skill-only PRs, or losing the
 // fail-closed shape on aggregate child jobs. Actionlint/yamllint validate syntax,
 // but they do not enforce this repository-specific required-check topology.
-const TOTAL_BUDGET = 10890;
+//
+// Session 056 (+295, 10890 -> 11185): hardening scripts/update-llms-txt.js against
+// the recurring "skill count is out of date" failure class (runs 74913516377 and
+// the long trail of `chore: update llms.txt` follow-ups). The skill-count claim is
+// now a floored "at least N" promise validated for *no overstatement* instead of an
+// exact match, so adding a skill never reddens CI; the same guard is extended to
+// README.md (previously unchecked and stale at 140 vs 155), update mode keeps both
+// docs in sync, and --check now prints the drifting lines. The bulk is the bespoke
+// validator + its data-driven node:test coverage; no off-the-shelf tool enforces a
+// repo-specific "docs may understate but never overstate the skill count" invariant.
+const TOTAL_BUDGET = 11185;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 function countLines(filePath) {
