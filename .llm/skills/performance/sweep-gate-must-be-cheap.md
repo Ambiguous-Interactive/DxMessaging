@@ -95,7 +95,10 @@ The current gate uses a power-of-two mask to skip the clock read on most
 emissions:
 
 ```csharp
-if ((_emissionCounter++ & SweepGateMask) == 0)
+// _emissionId is the per-emit counter; the gate samples the next id so the
+// read lands once per SweepGateMask + 1 emissions. The production gate writes
+// the inverse (early-return when the masked value is non-zero).
+if ((unchecked(_emissionId + 1) & SweepGateMask) == 0)
 {
     double nowSeconds = _clock.NowSeconds;
     if (nowSeconds - _lastSweepSeconds >= _evictionTickIntervalSeconds)
@@ -117,12 +120,12 @@ just less frequently.
 1. **Wall-clock semantics preserved.** The comparison against
    `_evictionTickIntervalSeconds` must remain -- the public configuration
    surface must continue to mean what it says.
-1. **Sealed clock type.** `StopwatchClock` is sealed; `NowSeconds` is
-   `[MethodImpl(AggressiveInlining)]`. Both are load-bearing.
-1. **No interface dispatch in the gate body.** The clock is read through a
-   field of concrete type when reached; the `IDxMessagingClock` interface is
-   used only for test injection. The compiler must be able to inline the
-   sealed property getter.
+1. **The read is an interface call -- keep it rare, not free.** `_clock` is an
+   `IDxMessagingClock` field (constructor-injected; the default is the sealed
+   `StopwatchClock` whose `NowSeconds` is `[MethodImpl(AggressiveInlining)]`).
+   Unity Mono does not reliably devirtualize the interface call, so the gate's
+   value is the 1-in-16 sampling rate (property 1), not an inlined-away getter.
+   Do not redesign the gate on the assumption the read is free.
 
 ## Headless / non-Unity host guidance
 
@@ -145,13 +148,22 @@ constructor-injected.
 
 ## Per-emit clock-read budget
 
-<!-- to be measured by Week 1b T0.3 baseline runs and updated in Week 5 -->
+When idle eviction is enabled, the gate reads the clock at most **once per
+`SweepGateSampleSize` (16) emissions**: the mask gate
+(`(unchecked(_emissionId + 1)) & SweepGateMask`) short-circuits the other 15 of
+every 16 emits before any `_clock.NowSeconds` read. So the steady-state
+clock-read rate is at or below 6.25% of emits, and exactly 0% when idle eviction
+is disabled. The read the 1-in-16 sampling does reach is a single
+`_clock.NowSeconds` fetch through the constructor-injected `IDxMessagingClock`
+(default `StopwatchClock`, sealed); it allocates nothing. The budget is that
+1-in-16 sampling rate -- keeping the read rare -- not an assumption that the
+per-read interface call is itself free.
 
-`EmitGateClockReadIsRare` asserts the per-emission clock-read rate stays
-below `(emitCount / SweepGateMaskSampleSize) + 1` over a 10k-emit run. A PR
-that increases the gate's clock-read rate will surface in the dispatch
-throughput numbers CI regenerates per PR (`perf-numbers.yml`); justify any
-regression in the PR description.
+`EmitGateClockReadIsRare` asserts the per-emission clock-read count stays at or
+below `ceil(emitCount / SweepGateSampleSize) + 1` -- 626 over the 10k-emit run it
+exercises. A PR that increases the gate's clock-read rate will surface in the
+dispatch throughput numbers CI regenerates per PR (`perf-numbers.yml`); justify
+any regression in the PR description.
 
 ## Enforcement
 
@@ -175,8 +187,9 @@ regression in the PR description.
   measurement.
 - "I'll add a per-emit `_tickCounter++` increment for diagnostics." That
   field already exists and is incremented inside `AdvanceTick`; do NOT add
-  duplicate increments. Splitting `_emissionCounter` from `_tickCounter`
-  has been considered and rejected (it broke `CounterBasedTouchTests`).
+  duplicate increments. Giving the sweep gate its own counter rather than
+  reusing the per-emit `_emissionId` was considered and rejected (it broke
+  `CounterBasedTouchTests`).
 
 ## See also
 

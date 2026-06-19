@@ -14,7 +14,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 154   |
+| Total Skills | 155   |
 | Categories   | 8     |
 
 ---
@@ -24,7 +24,7 @@
 - [Documentation](#documentation) (27)
 - [GitHub Actions](#github-actions) (7)
 - [Packaging](#packaging) (2)
-- [Performance](#performance) (45)
+- [Performance](#performance) (46)
 - [Scripting](#scripting) (9)
 - [Solid](#solid) (15)
 - [Testing](#testing) (39)
@@ -104,10 +104,11 @@
 | [Collection Pooling with RAII Pattern](./performance/collection-pooling.md)                                        | [draft] 118 | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
 | [Collection Pooling with RAII Pattern Part 1](./performance/collection-pooling-part-1.md)                          | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Collection Pooling with RAII Pattern Part 2](./performance/collection-pooling-part-2.md)                          | [draft] 56  | [intermediate] | [stable] | [risk: low]      | migration, split        |
-| [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [ok] 260    | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path      |
+| [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [warn] 296  | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path      |
 | [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 197    | [advanced]     | [stable] | [risk: critical] | memory, reclamation     |
-| [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 185    | [advanced]     | [stable] | [risk: critical] | sweep, eviction         |
+| [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 198    | [advanced]     | [stable] | [risk: critical] | sweep, eviction         |
 | [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 176    | [advanced]     | [stable] | [risk: high]     | caching, memory         |
+| [Mono vs IL2CPP Optimization Split](./performance/mono-vs-il2cpp-optimization-split.md)                            | [ok] 216    | [advanced]     | [stable] | [risk: high]     | performance, mono       |
 | [Object Pooling Anti-Patterns](./performance/object-pooling-anti-patterns.md)                                      | [ok] 144    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
 | [Object Pooling for Zero-Allocation Messaging](./performance/object-pooling.md)                                    | [ok] 123    | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
 | [Object Pooling for Zero-Allocation Messaging Part 1](./performance/object-pooling-part-1.md)                      | [ok] 190    | [intermediate] | [stable] | [risk: low]      | migration, split        |

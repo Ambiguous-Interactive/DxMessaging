@@ -3343,7 +3343,6 @@ namespace DxMessaging.Core.MessageBus
         public void UntargetedBroadcast<TMessage>(ref TMessage typedMessage)
             where TMessage : IUntargetedMessage
         {
-            EnsureAotUntargetedBridge<TMessage>();
             // TrySweepIdle runs BEFORE the plan is validated: a sweep can
             // evict sink slots (and bumps the plan version), so validating
             // afterwards guarantees the plan's cached references are live
@@ -3352,6 +3351,19 @@ namespace DxMessaging.Core.MessageBus
             if (!_untargetedDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
             {
                 plan = _untargetedDispatchPlans.GetOrAdd<TMessage>();
+                // Root the IL2CPP AOT untyped-dispatch bridge for TMessage on the
+                // FIRST typed emit per bus (plan creation), not on every emit.
+                // EnsureAotUntargetedBridge is [Conditional("ENABLE_IL2CPP")] (inert
+                // under Mono) and flips a process-global one-way latch, so it need
+                // only run once before the first untyped dispatch of TMessage. Every
+                // Register*<TMessage> path roots it independently, and untyped
+                // dispatch is reachable only for a type already registered or
+                // typed-emitted first (otherwise it throws, unchanged) - so this
+                // first-touch placement preserves the invariant while removing a
+                // per-emit generic-static-init check + call from the IL2CPP
+                // steady-state hot path. Guarded by UntypedDispatchTests
+                // .TypedDispatchSeedsBridgeForPrivateManualMessageBeforeUntypedDispatch.
+                EnsureAotUntargetedBridge<TMessage>();
             }
 
             long planVersion = _dispatchPlanVersion;
@@ -3585,13 +3597,15 @@ namespace DxMessaging.Core.MessageBus
         public void TargetedBroadcast<TMessage>(ref InstanceId target, ref TMessage typedMessage)
             where TMessage : ITargetedMessage
         {
-            EnsureAotTargetedBridge<TMessage>();
             // TrySweepIdle runs BEFORE the plan is validated; see
             // UntargetedBroadcast for the ordering rationale.
             TrySweepIdle();
             if (!_targetedDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
             {
                 plan = _targetedDispatchPlans.GetOrAdd<TMessage>();
+                // Root the AOT bridge on the first typed emit per bus; see
+                // UntargetedBroadcast for the full rationale and invariant.
+                EnsureAotTargetedBridge<TMessage>();
             }
 
             long planVersion = _dispatchPlanVersion;
@@ -4212,13 +4226,15 @@ namespace DxMessaging.Core.MessageBus
         public void SourcedBroadcast<TMessage>(ref InstanceId source, ref TMessage typedMessage)
             where TMessage : IBroadcastMessage
         {
-            EnsureAotSourcedBridge<TMessage>();
             // TrySweepIdle runs BEFORE the plan is validated; see
             // UntargetedBroadcast for the ordering rationale.
             TrySweepIdle();
             if (!_broadcastDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
             {
                 plan = _broadcastDispatchPlans.GetOrAdd<TMessage>();
+                // Root the AOT bridge on the first typed emit per bus; see
+                // UntargetedBroadcast for the full rationale and invariant.
+                EnsureAotSourcedBridge<TMessage>();
             }
 
             long planVersion = _dispatchPlanVersion;

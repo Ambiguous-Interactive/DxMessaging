@@ -27,10 +27,33 @@ const { walkFiles } = require("./lib/repo-files");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const LLMS_TXT_PATH = path.join(ROOT_DIR, "llms.txt");
+const README_PATH = path.join(ROOT_DIR, "README.md");
 const PACKAGE_JSON_PATH = path.join(ROOT_DIR, "package.json");
-const LLM_SKILLS_DIR = path.join(ROOT_DIR, ".llm", "skills");
+// DX_SKILLS_DIR, like DX_LLMS_TXT / DX_README (guardedClaimFiles), exists only so
+// the CLI exit-code paths are testable against a temp fixture -- set them in the
+// child process's env for CLI tests; production runs always use the repo defaults.
+const LLM_SKILLS_DIR = process.env.DX_SKILLS_DIR || path.join(ROOT_DIR, ".llm", "skills");
 const NON_SKILL_FILES = new Set(["index.md", "specification.md"]);
 const NON_SKILL_DIRECTORIES = new Set(["templates"]);
+
+// The "N+ specialized skill documents" claim is duplicated across human-facing
+// docs (llms.txt, README.md). It is a floored "at least N" promise, so the only
+// way it can be wrong is to overstate; understating is conservatively true. We
+// therefore normalize the number out of structural comparison (like the date)
+// and separately assert no claim overstates the real count. That kills the
+// entire "forgot to bump the skill count" failure class while still catching
+// genuinely false claims. See validateSkillCountClaim.
+const SKILL_CLAIM_REGEX = /(\d+)\+ specialized skill documents/g;
+
+// Docs whose skill-count claim is guarded (missing files are skipped). Resolved
+// per run so the CLI exit-code paths stay testable against a temp fixture via the
+// DX_LLMS_TXT / DX_README env overrides; production runs use the repo defaults.
+function guardedClaimFiles() {
+  return [
+    { label: "llms.txt", filePath: process.env.DX_LLMS_TXT || LLMS_TXT_PATH },
+    { label: "README.md", filePath: process.env.DX_README || README_PATH }
+  ];
+}
 
 function isCountedSkillPath(fullPath) {
   const relativePath = path.relative(LLM_SKILLS_DIR, fullPath).split(path.sep).join("/");
@@ -68,6 +91,106 @@ function countSkillFiles() {
     onError: (error, dir) =>
       console.warn(`Warning: Unable to read directory ${dir}: ${error.message}`)
   }).length;
+}
+
+/**
+ * Extract every "N+ specialized skill documents" claim from content as integers,
+ * in document order.
+ */
+function parseSkillCountClaims(content) {
+  return [...normalizeToLf(content).matchAll(SKILL_CLAIM_REGEX)].map((match) =>
+    Number.parseInt(match[1], 10)
+  );
+}
+
+/**
+ * Validate a document's skill-count claim against the real number of skill
+ * files. The claim is a floored "at least N" promise, so understating is
+ * allowed (conservative) and only overstating is an error. Requires exactly one
+ * claim so a doc cannot silently drop or duplicate it.
+ *
+ * @returns {{ ok: boolean, claimed: number | null, reason?: string }}
+ */
+function validateSkillCountClaim(content, actualCount, label) {
+  const claims = parseSkillCountClaims(content);
+
+  if (claims.length !== 1) {
+    return {
+      ok: false,
+      claimed: null,
+      reason: `${label}: expected exactly one "N+ specialized skill documents" claim, found ${claims.length}`
+    };
+  }
+
+  const claimed = claims[0];
+  if (!Number.isInteger(claimed) || claimed < 1) {
+    return { ok: false, claimed, reason: `${label}: skill-count claim must be a positive integer` };
+  }
+
+  if (claimed > actualCount) {
+    return {
+      ok: false,
+      claimed,
+      reason: `${label}: claims ${claimed}+ specialized skill documents but only ${actualCount} exist (overstated). Run: node scripts/update-llms-txt.js`
+    };
+  }
+
+  return { ok: true, claimed };
+}
+
+/**
+ * Rewrite a file's single "N+ specialized skill documents" claim to the exact
+ * current count. No-op (returns false) when the file is absent, has no claim, or
+ * already matches. Refuses to touch a file with multiple claims so an ambiguous
+ * edit can never mangle prose.
+ *
+ * @returns {boolean} true when the file was rewritten.
+ */
+function syncSkillCountClaim(filePath, actualCount) {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+
+  const original = fs.readFileSync(filePath, "utf8");
+  if (parseSkillCountClaims(original).length !== 1) {
+    return false;
+  }
+
+  const updated = original.replace(
+    SKILL_CLAIM_REGEX,
+    `${actualCount}+ specialized skill documents`
+  );
+  if (updated === original) {
+    return false;
+  }
+
+  fs.writeFileSync(filePath, updated, "utf8");
+  return true;
+}
+
+/**
+ * Produce a short human-readable summary of the first few line-level
+ * differences between two already-normalized strings. Used to make --check
+ * failures actionable instead of a bare "out of date".
+ */
+function summarizeDrift(expectedNormalized, actualNormalized, maxLines = 5) {
+  const expected = expectedNormalized.split("\n");
+  const actual = actualNormalized.split("\n");
+  const diffs = [];
+
+  for (let i = 0; i < Math.max(expected.length, actual.length); i++) {
+    if (expected[i] !== actual[i]) {
+      diffs.push(`  line ${i + 1}:`);
+      diffs.push(`    committed:  ${JSON.stringify(expected[i] ?? "<missing>")}`);
+      diffs.push(`    generated:  ${JSON.stringify(actual[i] ?? "<missing>")}`);
+      if (diffs.length >= maxLines * 3) {
+        diffs.push(`  ... (showing first ${maxLines} differing lines)`);
+        break;
+      }
+    }
+  }
+
+  return diffs.join("\n");
 }
 
 /**
@@ -441,51 +564,132 @@ function normalizeForComparison(str) {
   // Normalize all line endings (CRLF, LF, lone CR) to LF for stable comparison.
   const normalized = normalizeToLf(str);
 
-  // Normalize the Last Updated line by replacing the date with a fixed placeholder,
-  // while keeping the marker text so that structural differences are still detected.
-  return normalized.replace(/^\*\*Last Updated:\*\*.*$/m, "**Last Updated:** <DATE>").trim();
+  return (
+    normalized
+      // Normalize the Last Updated line by replacing the date with a fixed
+      // placeholder, while keeping the marker text so structural differences are
+      // still detected.
+      .replace(/^\*\*Last Updated:\*\*.*$/m, "**Last Updated:** <DATE>")
+      // Normalize the floored skill-count claim. The exact number is validated
+      // separately (no-overstatement, see validateSkillCountClaim); keeping it out
+      // of the structural diff means adding/removing a skill never trips --check.
+      .replace(SKILL_CLAIM_REGEX, "<COUNT>+ specialized skill documents")
+      .trim()
+  );
+}
+
+/**
+ * The single definition of "is the committed llms.txt / README state valid?",
+ * shared by BOTH --check and update mode's post-write verification. Returns an
+ * array of actionable error strings (empty == valid). One shared validator is
+ * what guarantees update mode can never exit 0 while leaving a state --check
+ * (and the pre-commit hook / CI / the auto-commit bot that run it) would reject.
+ *
+ * @param {{
+ *   newContent: string,
+ *   llmsTxtPath: string,
+ *   claimFiles: { label: string, filePath: string }[],
+ *   actualCount: number
+ * }} params
+ * @returns {string[]} validation errors in reporting order
+ */
+function collectValidationErrors({ newContent, llmsTxtPath, claimFiles, actualCount }) {
+  const errors = [];
+
+  if (!fs.existsSync(llmsTxtPath)) {
+    errors.push("llms.txt does not exist. Run: node scripts/update-llms-txt.js");
+    return errors;
+  }
+
+  const currentContent = fs.readFileSync(llmsTxtPath, "utf8");
+
+  // 1. Structural freshness: everything except the date and the floored
+  //    skill-count (both normalized away) must match a fresh generation.
+  if (!hasValidLastUpdatedLine(currentContent) || !hasValidLastUpdatedLine(newContent)) {
+    errors.push(
+      "llms.txt is missing or has an invalid '**Last Updated:**' line (expected ISO date YYYY-MM-DD)"
+    );
+  }
+
+  const expected = normalizeForComparison(currentContent);
+  const generated = normalizeForComparison(newContent);
+  if (expected !== generated) {
+    errors.push(
+      "llms.txt is out of date (structure differs from a fresh generation):\n" +
+        summarizeDrift(expected, generated) +
+        "\n  Run: node scripts/update-llms-txt.js"
+    );
+  }
+
+  // 2. No-overstatement: every doc that advertises a skill count must claim no
+  //    more than the real number AND carry exactly one claim. Understating is
+  //    allowed (conservative), so adding skills never fails CI; a false
+  //    (overstated) or a missing/duplicated claim does.
+  for (const { label, filePath } of claimFiles) {
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+    const result = validateSkillCountClaim(fs.readFileSync(filePath, "utf8"), actualCount, label);
+    if (!result.ok) {
+      errors.push(result.reason);
+    }
+  }
+
+  return errors;
 }
 
 function main() {
-  const args = process.argv.slice(2);
-  const checkMode = args.includes("--check");
+  const checkMode = process.argv.slice(2).includes("--check");
+  const claimFiles = guardedClaimFiles();
+  const llmsTxtPath = claimFiles.find((doc) => doc.label === "llms.txt").filePath;
 
   try {
     const newContent = generateLlmsTxt();
+    const actualCount = countSkillFiles();
 
     if (checkMode) {
-      // Check if file exists and matches
-      if (!fs.existsSync(LLMS_TXT_PATH)) {
-        console.error("ERROR: llms.txt does not exist");
+      const errors = collectValidationErrors({ newContent, llmsTxtPath, claimFiles, actualCount });
+      if (errors.length > 0) {
+        errors.forEach((error) => console.error(`ERROR: ${error}`));
         process.exit(1);
       }
-
-      const currentContent = fs.readFileSync(LLMS_TXT_PATH, "utf8");
-
-      // Validate that both contents contain a correctly formatted "**Last Updated:**" line
-      if (!hasValidLastUpdatedLine(currentContent) || !hasValidLastUpdatedLine(newContent)) {
-        console.error(
-          "ERROR: llms.txt is missing or has an invalid '**Last Updated:**' line (expected ISO date)"
-        );
-        process.exit(1);
-      }
-
-      if (normalizeForComparison(currentContent) !== normalizeForComparison(newContent)) {
-        console.error("ERROR: llms.txt is out of date");
-        console.error("Run: node scripts/update-llms-txt.js");
-        process.exit(1);
-      }
-
-      console.log("[ok] llms.txt is up to date");
-      process.exit(0);
+      console.log(`[ok] llms.txt is up to date (${actualCount} skill documents)`);
+      return;
     }
 
-    // Update mode - write the file
-    // Normalize to LF line endings to match .gitattributes for *.txt files
-    const contentWithLF = normalizeToLf(newContent);
-    fs.writeFileSync(LLMS_TXT_PATH, contentWithLF, "utf8");
+    // Update mode: write llms.txt (LF endings, matching .gitattributes for
+    // *.txt), then keep every other doc that advertises the skill count in sync
+    // so the single documented remediation fixes the whole class of drift.
+    fs.writeFileSync(llmsTxtPath, normalizeToLf(newContent), "utf8");
     console.log("[ok] Updated llms.txt");
-    process.exit(0);
+
+    for (const { label, filePath } of claimFiles) {
+      if (filePath === llmsTxtPath) {
+        continue;
+      }
+      if (syncSkillCountClaim(filePath, actualCount)) {
+        console.log(`[ok] Synced skill count in ${label} to ${actualCount}+`);
+      }
+    }
+
+    // Verify-after-write: update must leave a state --check accepts, or fail
+    // loudly. syncSkillCountClaim deliberately refuses to touch a doc whose claim
+    // is missing or duplicated, so such a doc needs a human. Re-running the SAME
+    // validator --check uses -- against the post-write state, not the fixer's
+    // boolean self-report -- is what distinguishes "no-op because already correct"
+    // (pass) from "no-op because unfixable" (fail). Without it the fixer could
+    // report success while pre-commit / CI / the auto-commit bot reject what it
+    // left behind. newContent is what we just wrote, so the structural checks pass
+    // by construction; this only catches a sibling doc's malformed claim.
+    const errors = collectValidationErrors({ newContent, llmsTxtPath, claimFiles, actualCount });
+    if (errors.length > 0) {
+      console.error("ERROR: a skill-count claim is invalid and update cannot auto-fix it.");
+      console.error("Fix the file(s) below to carry exactly one claim, then re-run update:");
+      errors.forEach((error) => console.error(`  - ${error}`));
+      process.exit(1);
+    }
+
+    return;
   } catch (error) {
     console.error("ERROR:", error.message);
     process.exit(1);
@@ -502,5 +706,10 @@ module.exports = {
   countSkillFiles,
   getSkillCategories,
   hasValidLastUpdatedLine,
-  normalizeForComparison
+  normalizeForComparison,
+  parseSkillCountClaims,
+  validateSkillCountClaim,
+  syncSkillCountClaim,
+  summarizeDrift,
+  collectValidationErrors
 };
