@@ -2,6 +2,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -15,11 +16,13 @@ const {
   parseSkillCountClaims,
   validateSkillCountClaim,
   syncSkillCountClaim,
-  summarizeDrift
+  summarizeDrift,
+  collectValidationErrors
 } = require("../update-llms-txt.js");
 const { normalizeToLf } = require("../lib/line-endings.js");
 
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
+const SCRIPT = path.join(__dirname, "..", "update-llms-txt.js");
 const SKILL_CLAIM = (n) => `- ${n}+ specialized skill documents covering:`;
 
 test("hasValidLastUpdatedLine accepts exactly one ISO-dated line", () => {
@@ -185,5 +188,107 @@ test("shipped llms.txt and README skill claims never overstate the real count", 
     const content = fs.readFileSync(path.join(ROOT_DIR, file), "utf8");
     const result = validateSkillCountClaim(content, actualCount, file);
     assert.ok(result.ok, result.reason);
+  }
+});
+
+// --- Update/check convergence: the fixer never reports a false success ---
+// These spawn the CLI against env-pointed temp fixtures (DX_LLMS_TXT/DX_README),
+// the same exit-code testing pattern generate-skills-index.test.js uses. They
+// live in `npm test` (not the fast pre-push subset) because they fork node.
+
+test("CLI update mode fails fast (no false success) when a guarded claim is unfixable", () => {
+  // syncSkillCountClaim refuses to rewrite a doc whose claim is missing or
+  // duplicated (an ambiguous regex edit could mangle prose). Update must surface
+  // that as a non-zero exit -- never report success and let --check / pre-commit
+  // / CI reject the very state it left behind. Regression guard for the Copilot
+  // finding: update silently no-ops while --check rejects an unfixable README.
+  for (const body of ["no skill claim here at all\n", `${SKILL_CLAIM(10)}\n${SKILL_CLAIM(20)}\n`]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llms-cli-bad-"));
+    try {
+      const readme = path.join(dir, "README.md");
+      fs.writeFileSync(readme, body);
+      const before = fs.readFileSync(readme, "utf8");
+      const env = { ...process.env, DX_LLMS_TXT: path.join(dir, "llms.txt"), DX_README: readme };
+
+      let err;
+      try {
+        execFileSync("node", [SCRIPT], { env, stdio: "pipe" });
+      } catch (caught) {
+        err = caught;
+      }
+      assert.ok(err, `update must exit non-zero for ${JSON.stringify(body)}`);
+      assert.equal(err.status, 1, "update should exit with code 1, not crash with another code");
+      assert.match(String(err.stderr), /README\.md/);
+      assert.equal(
+        fs.readFileSync(readme, "utf8"),
+        before,
+        "an unfixable doc is left for a human, never mangled"
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("CLI update mode fixes a stale single claim, then --check passes (update/check converge)", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llms-cli-conv-"));
+  try {
+    // Hermetic fixture: a temp skills dir with a KNOWN count (3) so the assertion
+    // never couples to the live repo's skill count (DX_SKILLS_DIR mirrors the
+    // temp-fixture pattern in generate-skills-index.test.js).
+    const skills = path.join(dir, "skills");
+    for (const rel of ["documentation/a.md", "testing/b.md", "testing/c.md"]) {
+      fs.mkdirSync(path.join(skills, path.dirname(rel)), { recursive: true });
+      fs.writeFileSync(path.join(skills, rel), "# skill\n");
+    }
+    const llmsTxt = path.join(dir, "llms.txt");
+    const readme = path.join(dir, "README.md");
+    // A single, understated claim is the fixable case: update rewrites it to the
+    // exact count (3) and the very next --check must pass (they converge).
+    fs.writeFileSync(readme, `intro\n${SKILL_CLAIM(1)}\noutro\n`);
+    const env = { ...process.env, DX_SKILLS_DIR: skills, DX_LLMS_TXT: llmsTxt, DX_README: readme };
+
+    execFileSync("node", [SCRIPT], { env, stdio: "pipe" }); // update -> exit 0
+    assert.match(fs.readFileSync(readme, "utf8"), /\b3\+ specialized skill documents\b/);
+    assert.ok(fs.existsSync(llmsTxt), "update wrote the env-pointed llms.txt");
+
+    execFileSync("node", [SCRIPT, "--check"], { env, stdio: "pipe" }); // converged -> exit 0
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("collectValidationErrors (the shared --check/update contract) flags a malformed sibling", () => {
+  // Direct, in-process coverage of the single validator both modes consume: a
+  // duplicated sibling claim is reported (shape failure, count-independent) while
+  // a freshly generated llms.txt is accepted.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llms-cve-"));
+  try {
+    const llmsTxt = path.join(dir, "llms.txt");
+    const newContent = generateLlmsTxt();
+    fs.writeFileSync(llmsTxt, normalizeToLf(newContent));
+    const readme = path.join(dir, "README.md");
+    fs.writeFileSync(readme, `${SKILL_CLAIM(10)}\n${SKILL_CLAIM(20)}`); // duplicated -> invalid
+    const claimFiles = [
+      { label: "llms.txt", filePath: llmsTxt },
+      { label: "README.md", filePath: readme }
+    ];
+
+    const errors = collectValidationErrors({
+      newContent,
+      llmsTxtPath: llmsTxt,
+      claimFiles,
+      actualCount: countSkillFiles()
+    });
+    assert.ok(
+      errors.some((error) => /README\.md/.test(error)),
+      "a duplicated README claim must be reported"
+    );
+    assert.ok(
+      !errors.some((error) => /llms\.txt/.test(error)),
+      "a freshly generated llms.txt is valid (no structural or claim error)"
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

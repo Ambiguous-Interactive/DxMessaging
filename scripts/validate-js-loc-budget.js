@@ -44,7 +44,19 @@ const path = require("path");
 // docs in sync, and --check now prints the drifting lines. The bulk is the bespoke
 // validator + its data-driven node:test coverage; no off-the-shelf tool enforces a
 // repo-specific "docs may understate but never overstate the skill count" invariant.
-const TOTAL_BUDGET = 11185;
+//
+// Session 057 (+153, tracked JS 11181 -> 11334; ceiling 11185 -> 11350): close the
+// update/--check asymmetry in scripts/update-llms-txt.js that Copilot flagged.
+// Update mode could exit 0 while leaving a README skill-count claim (missing or
+// duplicated) that --check, the pre-commit hook, and the auto-commit bot all
+// reject and the script cannot auto-fix -- a fixer reporting a false success.
+// Update now shares one validator (collectValidationErrors) with --check and
+// verifies the post-write state, failing loudly with the offending file instead.
+// The bulk is that shared validator plus forked-process CLI regression tests
+// (env-pointed fixtures) pinning fixer/checker convergence; no off-the-shelf tool
+// enforces "a fixer must converge with its own --check or exit non-zero." A
+// reviewed decision here.
+const TOTAL_BUDGET = 11350;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 function countLines(filePath) {
