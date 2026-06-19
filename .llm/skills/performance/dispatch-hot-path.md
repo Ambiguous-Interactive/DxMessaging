@@ -2,9 +2,9 @@
 title: "DxMessaging Dispatch Hot Path"
 id: "dispatch-hot-path"
 category: "performance"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-05-05"
-updated: "2026-06-12"
+updated: "2026-06-18"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -71,6 +71,7 @@ related:
   - "sweep-gate-must-be-cheap"
   - "aggressive-inlining"
   - "array-pooling"
+  - "mono-vs-il2cpp-optimization-split"
 
 status: "stable"
 ---
@@ -99,12 +100,20 @@ and the test gates that enforce them.
 The dispatch hot path lives across:
 
 - `Runtime/Core/MessageBus/MessageBus.cs` -- `UntargetedBroadcast`,
-  `TargetedBroadcast`, `SourcedBroadcast`, `RunHandlers`, `RunPostProcessing`,
-  `AcquireDispatchSnapshot`, `EnterDispatch`, `TrySweepIdle`.
-- `Runtime/Core/MessageHandler.cs` -- `TypedHandler<T>.HandleUntargeted`,
-  `HandleTargeted`, `HandleBroadcast`, the 10 `*DispatchLink<TMessage>` classes,
-  `HandlerActionCache<T>` invocation paths.
+  `TargetedBroadcast`, `SourcedBroadcast`, the steady-state
+  `DispatchFlatSnapshot` / `DispatchContextFlatSnapshot` loops,
+  `AcquireDispatchSnapshotFast`, `AcquireDispatchSnapshot`, `EnterDispatch`,
+  `TrySweepIdle`.
+- `Runtime/Core/Internal/FlatDispatch.cs` -- `FlatDispatchEntry<TMessage>` and
+  the pooled flat entry arrays the snapshot dispatch loops walk.
+- `Runtime/Core/MessageHandler.cs` -- `RunHandlers` / `RunHandlersWithContext`,
+  the `FastHandler<TMessage>` invokers, and `HandlerActionCache<T>` invocation
+  paths.
 - `Runtime/Core/Pooling/*.cs` -- anything called from those sites.
+
+The flat-dispatch redesign replaced the older per-priority `*DispatchLink`
+virtual-hop chain with resolved `FlatDispatchEntry` arrays; steady-state
+dispatch is now a direct delegate call per entry (see `FlatDispatch.cs`).
 
 Any PR touching these files has its dispatch-throughput numbers regenerated
 automatically by the `perf-numbers.yml` workflow. It re-runs the single
@@ -123,9 +132,11 @@ for the App + bypass prerequisite. There is no manual PR-body number requirement
 
 ## Prohibited operations on the dispatch hot path
 
-The following are forbidden inside `RunHandlers`, `AcquireDispatchSnapshot`,
-`Handle*` methods on `TypedHandler<T>`, `*DispatchLink<TMessage>.Invoke`, and
-the per-priority handler iteration in `HandlerActionCache<T>`:
+The following are forbidden inside the steady-state dispatch loops
+(`DispatchFlatSnapshot`, `DispatchContextFlatSnapshot`),
+`AcquireDispatchSnapshot`, `RunHandlers` / `RunHandlersWithContext`, the
+`FastHandler<TMessage>` invokers, and the per-priority handler iteration in
+`HandlerActionCache<T>`:
 
 1. **Unconditional clock reads** (`Stopwatch.GetTimestamp`,
    `Time.realtimeSinceStartup`, any `IDxMessagingClock.NowSeconds` call).
@@ -148,39 +159,63 @@ the per-priority handler iteration in `HandlerActionCache<T>`:
 
 ## Required patterns
 
-### Per-iteration array access via `MemoryMarshal.GetReference`
+### Steady-state dispatch walks a frozen, resolved flat array
 
-Replace `entries[h]` indexing with the bounds-check-elision pattern:
+`DispatchFlatSnapshot` / `DispatchContextFlatSnapshot` iterate a
+`FlatDispatchEntry<TMessage>[]` resolved at snapshot-build time, with plain
+`entries[i]` indexing over `[0, count)`:
 
 ```csharp
-ref DispatchEntry first = ref MemoryMarshal.GetReference(entries.AsSpan(0, entryCount));
-for (int h = 0; h < entryCount; h++)
+for (int i = 0; i < count; ++i)
 {
-    ref readonly DispatchEntry e = ref Unsafe.Add(ref first, h);
-    InvokeUntargetedEntry(ref message, priority, in e);
+    ref FlatDispatchEntry<TMessage> entry = ref entries[i];
+    if (entry.handler.active)
+    {
+        entry.invoker(ref message);
+        if (_resetGeneration != resetGeneration) { break; } // mid-dispatch reset
+    }
 }
 ```
 
-`MemoryMarshal.GetReference` exists in Unity 2021.3 via the bundled
-`System.Memory` package. **Do NOT** use `MemoryMarshal.GetArrayDataReference`
-(added in .NET 5; not in Unity 2021.3).
+Two per-entry reads are load-bearing and must NOT be hoisted: `entry.handler.active`
+(handlers toggle live) and the per-iteration `_resetGeneration` re-read (a handler
+may reset the bus mid-dispatch -- the documented reentrancy contract).
 
-### Per-iteration `DispatchEntry` is passed by `in`, never by value
+### Bounds AND null checks are elided on these loops via `[Il2CppSetOption]`
 
-`DispatchEntry` is a multi-reference struct (24+ bytes). Copying per
-iteration costs cycles; passing by `in` does not.
+The shipped loops carry BOTH `[Il2CppSetOption(Option.NullChecks, false)]` and
+`[Il2CppSetOption(Option.ArrayBoundsChecks, false)]`. This intentionally
+supersedes the older "keep NullChecks on" guidance: `BuildFlatDispatch` fills
+`entries[0..count)` with non-null handler+invoker pairs and never publishes
+`count > entries.Length`, and the array is frozen for the emission (single-
+threaded bus; mutations surface on the NEXT emission's rebuild), so the elided
+checks are safe by construction. Rig builds keep a `DXMESSAGING_INTERNAL_CHECKS`
+shape assert. These attributes are IL2CPP-only; Mono keeps the JIT-emitted
+checks. Do NOT try to port the elision to Mono via `Unsafe`/`MemoryMarshal`: the
+entry struct holds managed references (GC-relocation-unsafe to pointer-walk) and
+`System.Runtime.CompilerServices.Unsafe` is absent from IL2CPP players
+(`Runtime/Core/Internal/DxUnsafe.cs` wraps `UnsafeUtility` for this reason). See
+[Mono vs IL2CPP Optimization Split](./mono-vs-il2cpp-optimization-split.md).
 
-### `[Il2CppSetOption(Option.ArrayBoundsChecks, false)]`
+### IL2CPP AOT bridge is rooted on first emit, not per emit
 
-Only on verified-safe inner loop bodies, gated by `#if ENABLE_IL2CPP`.
-**Keep `Option.NullChecks` enabled** -- silent SIGSEGV on a null delegate is
-unacceptable. Validate inputs at the public API boundary.
+`EnsureAot{Untargeted,Targeted,Sourced}Bridge<T>()` is
+`[Conditional("ENABLE_IL2CPP")]` and roots the untyped-dispatch bridge for `T`.
+It runs in the dispatch-plan-creation block (the first typed emit per bus), NOT
+on every emit, so the IL2CPP steady-state path does not pay a per-emit
+generic-static-init check + non-inlined call. Keep it there: the bridge is a
+process-global one-way latch that only must be rooted before the first UNTYPED
+dispatch of `T`, which every `Register*<T>` path and the first typed emit both
+guarantee. On Mono the calls are compiled out (a provable no-op). Guarded by the
+`UntypedDispatchTests.TypedDispatchSeedsBridgeForPrivateManualMessageBeforeUntypedDispatch`
+fixture, which runs on the standalone IL2CPP leg.
 
 ### Sealed everywhere on the dispatch chain
 
-Audit `MessageBus`, `MessageHandler.TypedHandler<T>`, every
-`*DispatchLink<TMessage>` class, and `HandlerActionCache<T>`. Mono lacks
-guarded devirtualization; sealing is load-bearing.
+Audit `MessageBus`, `MessageHandler.TypedHandler<T>`, the sealed flat-dispatch
+holders (`FlatDispatch<TMessage>` / `ContextFlatDispatch<TMessage>`), and
+`HandlerActionCache<T>`. Mono lacks guarded devirtualization; sealing is
+load-bearing.
 
 ## Per-emit budget
 
@@ -254,6 +289,7 @@ mirrors that policy for the comparison bridges. The
 
 ## See also
 
+- [Mono vs IL2CPP Optimization Split](./mono-vs-il2cpp-optimization-split.md)
 - [Sweep Gate Must Be Cheap](./sweep-gate-must-be-cheap.md)
 - [DxMessaging Memory Reclamation](./memory-reclamation.md)
 - [Aggressive Inlining](./aggressive-inlining.md)

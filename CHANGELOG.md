@@ -79,6 +79,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the array length), all pinned by tests; rig/diagnostic builds keep the
   `DXMESSAGING_INTERNAL_CHECKS` shape assertions. No behavior change under
   Mono or in the editor.
+- On IL2CPP players, the per-emit AOT untyped-dispatch bridge registration
+  (`EnsureAot*Bridge<T>`, IL2CPP-only) now runs when a message type's dispatch
+  plan is first built on a bus (the first typed emit) instead of on every emit,
+  removing a generic-static class-initialization check and a non-inlined call
+  from the steady-state IL2CPP dispatch prologue. The registration is latched
+  process-globally, so it actually executes once per type; the guarded call site
+  is simply reached at first plan build rather than on every emit. The bridge is
+  rooted before the first untyped dispatch of a type by either any registration
+  of that type or its first typed emit, so the untyped-dispatch contract is
+  unchanged (a never-touched type still throws the same missing-bridge error).
+  No behavior change under Mono or in the editor (the calls compile out there).
 - Dispatch for every message kind (untargeted, targeted, and broadcast;
   handle and post-process phases) now resolves handlers to flat, pooled
   delegate arrays at snapshot-build time instead of walking per-handler
