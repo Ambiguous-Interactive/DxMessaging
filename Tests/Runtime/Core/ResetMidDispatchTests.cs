@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Pins what happens when <see cref="DxMessagingStaticState.Reset"/> is
@@ -42,8 +40,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// emissions are silent no-ops, and a freshly created component can
         /// register and receive again afterwards.
         /// </summary>
-        [UnityTest]
-        public IEnumerator ResetFromInsideHandlerStopsInFlightEmissionCleanly(
+        [Test]
+        public void ResetFromInsideHandlerStopsInFlightEmissionCleanly(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -195,7 +193,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             rebornToken.RemoveRegistration(rebornHandle);
-            yield break;
         }
 
         /// <summary>
@@ -219,8 +216,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// dispatch itself halts at the resetting handler (reset-generation
         /// guard), so the same-bucket peer must not run.
         /// </remarks>
-        [UnityTest]
-        public IEnumerator ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow(
+        [Test]
+        public void ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -308,8 +305,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 "[{0}] Pre-reset handlers must NOT fire on post-reset emissions.",
                 scenario.Kind
             );
-
-            yield break;
         }
 
         /// <summary>
@@ -340,8 +335,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// pinned here matches the two tests above: once Reset runs, no
         /// further pre-reset delegate of the in-flight emission may fire.
         /// </remarks>
-        [UnityTest]
-        public IEnumerator ResetFromInsideHandlerWithSameComponentSamePriorityPeerDoesNotThrow(
+        [Test]
+        public void ResetFromInsideHandlerWithSameComponentSamePriorityPeerDoesNotThrow(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -430,8 +425,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 resettingCount,
                 peerCount
             );
-
-            yield break;
         }
     }
 }

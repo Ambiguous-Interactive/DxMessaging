@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using System.Linq;
     using DxMessaging.Core;
@@ -11,12 +10,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class ReflexiveMessageWarningTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator LogsWarningOncePerBus()
+        [Test]
+        public void LogsWarningOncePerBus()
         {
             List<(LogLevel level, string message)> logs = new();
             Action<LogLevel, string> previousLogFunction = MessagingDebug.LogFunction;
@@ -72,8 +70,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 MessagingDebug.LogFunction = previousLogFunction;
             }
-
-            yield break;
         }
 
         private static int CountWarnings(List<(LogLevel level, string message)> logs)

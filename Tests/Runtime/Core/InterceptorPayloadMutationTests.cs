@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Messages;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Pins the interceptor payload-transformation contract documented on
@@ -26,8 +24,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </summary>
     public sealed class InterceptorPayloadMutationTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator SingleInterceptorMutationIsObservedByHandler(
+        [Test]
+        public void SingleInterceptorMutationIsObservedByHandler(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -97,11 +95,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 originalId,
                 observedByHandler[0]
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ChainedInterceptorsMutateInPriorityOrder(
+        [Test]
+        public void ChainedInterceptorsMutateInPriorityOrder(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -199,11 +196,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 secondMutation,
                 observedByHandler[0]
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PostProcessorObservesFinalMutatedPayload(
+        [Test]
+        public void PostProcessorObservesFinalMutatedPayload(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -273,7 +269,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 firstMutation,
                 observedByPostProcessor[0]
             );
-            yield break;
         }
 
         /// <summary>
@@ -283,8 +278,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// do the same), so a global listener observes the final transformed
         /// payload and is invoked before any typed handler.
         /// </summary>
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllObservesMutatedPayloadBetweenInterceptorsAndHandlers(
+        [Test]
+        public void GlobalAcceptAllObservesMutatedPayloadBetweenInterceptorsAndHandlers(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -370,7 +365,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind,
                 string.Join(">", stageOrder)
             );
-            yield break;
         }
 
         private static void RemoveAll(

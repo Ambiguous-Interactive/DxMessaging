@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Tests.Runtime;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class MutationPriorityTests : MessagingTestBase
     {
@@ -23,8 +21,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <see cref="MessageScenarios.KindsWithComponentTarget"/>; the prior
         /// Targeted/Broadcast pair collapsed into this single method.
         /// </summary>
-        [UnityTest]
-        public IEnumerator PriorityInsertedNextEmissionOrder(
+        [Test]
+        public void PriorityInsertedNextEmissionOrder(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -89,7 +87,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(low);
             }
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterCounter(

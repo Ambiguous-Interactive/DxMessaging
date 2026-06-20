@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Tests.Runtime;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Pins that negative priorities participate in the documented "lower
@@ -37,8 +35,8 @@ namespace DxMessaging.Tests.Runtime.Core
             "100",
         };
 
-        [UnityTest]
-        public IEnumerator HandlersRunLowestPriorityFirstIncludingNegatives(
+        [Test]
+        public void HandlersRunLowestPriorityFirstIncludingNegatives(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -77,11 +75,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Handlers must run in ascending priority order (negative before zero before "
                     + "positive): lower priority is documented to run earlier."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator InterceptorsRunLowestPriorityFirstIncludingNegatives(
+        [Test]
+        public void InterceptorsRunLowestPriorityFirstIncludingNegatives(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -118,11 +115,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Interceptors must run in ascending priority order (negative before zero "
                     + "before positive): lower priority is documented to run earlier."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PostProcessorsRunLowestPriorityFirstIncludingNegatives(
+        [Test]
+        public void PostProcessorsRunLowestPriorityFirstIncludingNegatives(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -161,7 +157,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Post-processors must run in ascending priority order (negative before zero "
                     + "before positive): lower priority is documented to run earlier."
             );
-            yield break;
         }
 
         /// <summary>
@@ -170,8 +165,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// positive-priority handler, and a positive-priority interceptor must
         /// still run before a negative-priority handler.
         /// </summary>
-        [UnityTest]
-        public IEnumerator NegativePriorityDoesNotReorderPipelineStages(
+        [Test]
+        public void NegativePriorityDoesNotReorderPipelineStages(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -218,7 +213,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "handler and post-processor priorities (-100): priority orders within a "
                     + "stage, never across stages."
             );
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterHandlerAtPriority(

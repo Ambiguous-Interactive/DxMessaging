@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -10,12 +9,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class TypedShorthandTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator EmitAtTargetsGameObjectAndComponent()
+        [Test]
+        public void EmitAtTargetsGameObjectAndComponent()
         {
             GameObject go = new(
                 nameof(EmitAtTargetsGameObjectAndComponent),
@@ -35,11 +33,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, comp.gameObjectTargetedCount);
             Assert.AreEqual(1, comp.componentTargetedCount);
             Assert.AreEqual(2, comp.targetedWithoutTargetingCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitFromSourcesGameObjectAndComponent()
+        [Test]
+        public void EmitFromSourcesGameObjectAndComponent()
         {
             GameObject go = new(
                 nameof(EmitFromSourcesGameObjectAndComponent),
@@ -59,11 +56,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, comp.gameObjectBroadcastCount);
             Assert.AreEqual(1, comp.componentBroadcastCount);
             Assert.AreEqual(2, comp.broadcastWithoutSourceCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitAtMismatchDoesNotHitOtherShape()
+        [Test]
+        public void EmitAtMismatchDoesNotHitOtherShape()
         {
             GameObject go = new(
                 nameof(EmitAtMismatchDoesNotHitOtherShape),
@@ -83,11 +79,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, comp.gameObjectTargetedCount);
             Assert.AreEqual(1, comp.componentTargetedCount);
             Assert.AreEqual(2, comp.targetedWithoutTargetingCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitFromMismatchDoesNotHitOtherShape()
+        [Test]
+        public void EmitFromMismatchDoesNotHitOtherShape()
         {
             GameObject go = new(
                 nameof(EmitFromMismatchDoesNotHitOtherShape),
@@ -107,11 +102,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, comp.gameObjectBroadcastCount);
             Assert.AreEqual(1, comp.componentBroadcastCount);
             Assert.AreEqual(2, comp.broadcastWithoutSourceCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitAtEquivalentToExplicitHelpers()
+        [Test]
+        public void EmitAtEquivalentToExplicitHelpers()
         {
             GameObject go = new(
                 nameof(EmitAtEquivalentToExplicitHelpers),
@@ -131,11 +125,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, comp.componentTargetedCount);
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(2, comp.componentTargetedCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitFromEquivalentToExplicitHelpers()
+        [Test]
+        public void EmitFromEquivalentToExplicitHelpers()
         {
             GameObject go = new(
                 nameof(EmitFromEquivalentToExplicitHelpers),
@@ -155,11 +148,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, comp.componentBroadcastCount);
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(2, comp.componentBroadcastCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitAtRespectsInterceptors()
+        [Test]
+        public void EmitAtRespectsInterceptors()
         {
             GameObject go = new(
                 nameof(EmitAtRespectsInterceptors),
@@ -190,11 +182,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 dereg();
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitFromRespectsInterceptors()
+        [Test]
+        public void EmitFromRespectsInterceptors()
         {
             GameObject go = new(
                 nameof(EmitFromRespectsInterceptors),
@@ -225,7 +216,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 dereg();
             }
-            yield break;
         }
     }
 }

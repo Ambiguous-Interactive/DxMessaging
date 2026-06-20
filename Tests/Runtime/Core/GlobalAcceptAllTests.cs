@@ -29,8 +29,8 @@ namespace DxMessaging.Tests.Runtime.Core
             _spawned.Add(_test);
         }
 
-        [UnityTest]
-        public IEnumerator SimpleNormal()
+        [Test]
+        public void SimpleNormal()
         {
             int untargetedCount = 0;
             int targetedCount = 0;
@@ -81,7 +81,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.AreEqual(i + 1, broadcastCount);
                 }
             );
-            yield break;
+            return;
 
             void HandleUntargeted(IUntargetedMessage message)
             {
@@ -99,8 +99,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator SimpleNoCopy()
+        [Test]
+        public void SimpleNoCopy()
         {
             int untargetedCount = 0;
             int targetedCount = 0;
@@ -151,7 +151,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.AreEqual(i + 1, broadcastCount);
                 }
             );
-            yield break;
+            return;
 
             void HandleUntargeted(ref IUntargetedMessage message)
             {

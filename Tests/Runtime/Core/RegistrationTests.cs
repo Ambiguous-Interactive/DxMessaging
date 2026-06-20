@@ -46,8 +46,8 @@ namespace DxMessaging.Tests.Runtime.Core
             _token = GetToken(_component);
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedNormal()
+        [Test]
+        public void UntargetedNormal()
         {
             int count = 0;
 
@@ -75,7 +75,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(SimpleUntargetedMessage message)
             {
@@ -83,8 +83,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedNoCopy()
+        [Test]
+        public void UntargetedNoCopy()
         {
             int count = 0;
 
@@ -112,7 +112,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleUntargetedMessage message)
             {
@@ -120,8 +120,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedPostProcessor()
+        [Test]
+        public void UntargetedPostProcessor()
         {
             int count = 0;
 
@@ -149,7 +149,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleUntargetedMessage message)
             {
@@ -157,8 +157,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedInterceptor()
+        [Test]
+        public void UntargetedInterceptor()
         {
             int count = 0;
 
@@ -186,7 +186,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             bool Intercept(ref SimpleUntargetedMessage message)
             {
@@ -195,8 +195,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectTargetedNormal()
+        [Test]
+        public void GameObjectTargetedNormal()
         {
             int count = 0;
 
@@ -225,7 +225,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(SimpleTargetedMessage message)
             {
@@ -233,8 +233,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectTargetedNoCopy()
+        [Test]
+        public void GameObjectTargetedNoCopy()
         {
             int count = 0;
 
@@ -263,7 +263,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleTargetedMessage message)
             {
@@ -271,8 +271,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectTargetedPostProcessor()
+        [Test]
+        public void GameObjectTargetedPostProcessor()
         {
             int count = 0;
 
@@ -305,7 +305,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleTargetedMessage message)
             {
@@ -313,8 +313,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentTargetedNormal()
+        [Test]
+        public void ComponentTargetedNormal()
         {
             int count = 0;
 
@@ -343,7 +343,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(SimpleTargetedMessage message)
             {
@@ -351,8 +351,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentTargetedNoCopy()
+        [Test]
+        public void ComponentTargetedNoCopy()
         {
             int count = 0;
 
@@ -381,7 +381,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleTargetedMessage message)
             {
@@ -389,8 +389,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentTargetedPostProcessor()
+        [Test]
+        public void ComponentTargetedPostProcessor()
         {
             int count = 0;
 
@@ -423,7 +423,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleTargetedMessage message)
             {
@@ -431,8 +431,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator TargetedInterceptor()
+        [Test]
+        public void TargetedInterceptor()
         {
             int count = 0;
 
@@ -461,7 +461,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             bool Intercept(ref InstanceId target, ref SimpleTargetedMessage message)
             {
@@ -470,8 +470,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingNormal()
+        [Test]
+        public void TargetedWithoutTargetingNormal()
         {
             int count = 0;
 
@@ -500,7 +500,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(InstanceId target, SimpleTargetedMessage message)
             {
@@ -508,8 +508,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingNoCopy()
+        [Test]
+        public void TargetedWithoutTargetingNoCopy()
         {
             int count = 0;
 
@@ -538,7 +538,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref InstanceId target, ref SimpleTargetedMessage message)
             {
@@ -546,8 +546,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorNormal()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorNormal()
         {
             int count = 0;
 
@@ -579,7 +579,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(InstanceId target, SimpleTargetedMessage message)
             {
@@ -587,8 +587,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorNoCopy()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorNoCopy()
         {
             int count = 0;
 
@@ -620,7 +620,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref InstanceId target, ref SimpleTargetedMessage message)
             {
@@ -628,8 +628,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectBroadcastNormal()
+        [Test]
+        public void GameObjectBroadcastNormal()
         {
             int count = 0;
 
@@ -658,7 +658,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(SimpleBroadcastMessage message)
             {
@@ -666,8 +666,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectBroadcastNoCopy()
+        [Test]
+        public void GameObjectBroadcastNoCopy()
         {
             int count = 0;
 
@@ -696,7 +696,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleBroadcastMessage message)
             {
@@ -704,8 +704,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectBroadcastPostProcessor()
+        [Test]
+        public void GameObjectBroadcastPostProcessor()
         {
             int count = 0;
 
@@ -738,7 +738,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleBroadcastMessage message)
             {
@@ -746,8 +746,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentBroadcastNormal()
+        [Test]
+        public void ComponentBroadcastNormal()
         {
             int count = 0;
 
@@ -777,7 +777,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(SimpleBroadcastMessage message)
             {
@@ -785,8 +785,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentBroadcastNoCopy()
+        [Test]
+        public void ComponentBroadcastNoCopy()
         {
             int count = 0;
 
@@ -816,7 +816,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleBroadcastMessage message)
             {
@@ -824,8 +824,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentBroadcastPostProcessor()
+        [Test]
+        public void ComponentBroadcastPostProcessor()
         {
             int count = 0;
 
@@ -858,7 +858,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref SimpleBroadcastMessage message)
             {
@@ -866,8 +866,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastInterceptor()
+        [Test]
+        public void BroadcastInterceptor()
         {
             int count = 0;
 
@@ -896,7 +896,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             bool Intercept(ref InstanceId target, ref SimpleBroadcastMessage message)
             {
@@ -905,8 +905,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceNormal()
+        [Test]
+        public void BroadcastWithoutSourceNormal()
         {
             int count = 0;
 
@@ -935,7 +935,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(InstanceId id, SimpleBroadcastMessage message)
             {
@@ -943,8 +943,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceNoCopy()
+        [Test]
+        public void BroadcastWithoutSourceNoCopy()
         {
             int count = 0;
 
@@ -973,7 +973,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref InstanceId id, ref SimpleBroadcastMessage message)
             {
@@ -981,8 +981,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorNormal()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorNormal()
         {
             int count = 0;
 
@@ -1014,7 +1014,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(InstanceId id, SimpleBroadcastMessage message)
             {
@@ -1022,8 +1022,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorNoCopy()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorNoCopy()
         {
             int count = 0;
 
@@ -1055,7 +1055,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     count = 0;
                 }
             );
-            yield break;
+            return;
 
             void Handle(ref InstanceId id, ref SimpleBroadcastMessage message)
             {
@@ -1063,8 +1063,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllNormal()
+        [Test]
+        public void GlobalAcceptAllNormal()
         {
             int targetedCount = 0;
             int broadcastCount = 0;
@@ -1123,7 +1123,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     untargetedCount = 0;
                 }
             );
-            yield break;
+            return;
 
             void HandleUntargeted(IUntargetedMessage message)
             {
@@ -1141,8 +1141,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllNoCopy()
+        [Test]
+        public void GlobalAcceptAllNoCopy()
         {
             int targetedCount = 0;
             int broadcastCount = 0;
@@ -1201,7 +1201,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     untargetedCount = 0;
                 }
             );
-            yield break;
+            return;
 
             void HandleUntargeted(ref IUntargetedMessage message)
             {

@@ -1,19 +1,17 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class ReflexiveTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator ReflexiveSendModesRespectHierarchy()
+        [Test]
+        public void ReflexiveSendModesRespectHierarchy()
         {
             GameObject grandParent = new(
                 nameof(ReflexiveSendModesRespectHierarchy) + "_Grand",
@@ -117,7 +115,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, childCount);
             childComponent.enabled = true;
 
-            yield break;
+            return;
 
             void ResetCounters()
             {
@@ -127,8 +125,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ReflexiveHandlesMultipleParameters()
+        [Test]
+        public void ReflexiveHandlesMultipleParameters()
         {
             GameObject host = new(
                 nameof(ReflexiveHandlesMultipleParameters),
@@ -164,8 +162,6 @@ namespace DxMessaging.Tests.Runtime.Core
             threeArguments.EmitTargeted(hostId);
             Assert.AreEqual(1, twoArgCount);
             Assert.AreEqual(1, threeArgCount);
-
-            yield break;
         }
     }
 }

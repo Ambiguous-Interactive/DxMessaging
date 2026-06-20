@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class MutationPostProcessorMoreTests : MessagingTestBase
     {
@@ -44,8 +42,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator BaselineFirstEmissionFiresHandlerAndPostProcessor(
+        [Test]
+        public void BaselineFirstEmissionFiresHandlerAndPostProcessor(
             [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
         )
         {
@@ -81,11 +79,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 hostId.Id,
                 ppCount
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddPostProcessorDuringHandlerDoesNotRunInSameEmission(
+        [Test]
+        public void AddPostProcessorDuringHandlerDoesNotRunInSameEmission(
             [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
         )
         {
@@ -160,11 +157,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 originalPpCount,
                 newPpCount
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddPostProcessorAtDifferentPriorityDuringHandlerDoesNotRunInSameEmission(
+        [Test]
+        public void AddPostProcessorAtDifferentPriorityDuringHandlerDoesNotRunInSameEmission(
             [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
         )
         {
@@ -247,11 +243,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 originalPpCount,
                 newPpCount
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddManyPostProcessorsDuringHandlerNoneRunInSameEmission(
+        [Test]
+        public void AddManyPostProcessorsDuringHandlerNoneRunInSameEmission(
             [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
         )
         {
@@ -336,11 +331,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     newCounts[i]
                 );
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddPostProcessorOnDifferentMessageHandlerDuringHandler(
+        [Test]
+        public void AddPostProcessorOnDifferentMessageHandlerDuringHandler(
             [ValueSource(nameof(AllVariants))] PostProcessorVariant variant
         )
         {
@@ -427,11 +421,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 existingPpCount,
                 newPpCount
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PostProcessorIgnoresEmissionFromDifferentSource(
+        [Test]
+        public void PostProcessorIgnoresEmissionFromDifferentSource(
             [ValueSource(nameof(SourceFilteredVariants))] PostProcessorVariant variant
         )
         {
@@ -475,7 +468,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 emissionSource.Id,
                 ppCount
             );
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterHandler(

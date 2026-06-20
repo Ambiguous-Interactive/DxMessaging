@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Messages;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Functional coverage for reference-type (class) messages across all three
@@ -43,8 +41,8 @@ namespace DxMessaging.Tests.Runtime.Core
             public string label;
         }
 
-        [UnityTest]
-        public IEnumerator ClassMessageDispatchDeliversTheExactEmittedInstance(
+        [Test]
+        public void ClassMessageDispatchDeliversTheExactEmittedInstance(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -148,12 +146,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handle);
                 }
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ClassMessageWithNullFieldDispatchesWithoutThrowing(
+        [Test]
+        public void ClassMessageWithNullFieldDispatchesWithoutThrowing(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -264,12 +260,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handle);
                 }
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ClassMessageMutationsAreVisibleToLaterHandlersAndPostProcessors(
+        [Test]
+        public void ClassMessageMutationsAreVisibleToLaterHandlersAndPostProcessors(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -486,8 +480,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handle);
                 }
             }
-
-            yield break;
         }
 
         private static void AssertSingleAliasedDelivery(

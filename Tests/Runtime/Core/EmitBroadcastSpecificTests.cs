@@ -1,7 +1,6 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
-    using System.Collections;
     using System.Collections.Generic;
     using System.Linq;
     using DxMessaging.Core;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using Scripts.Components;
     using Scripts.Messages;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Broadcast-only emission tests preserved verbatim from the original
@@ -24,8 +22,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </summary>
     public sealed class EmitBroadcastSpecificTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator SimpleGameObjectBroadcastNormal()
+        [Test]
+        public void SimpleGameObjectBroadcastNormal()
         {
             GameObject test1 = new(
                 nameof(SimpleGameObjectBroadcastNormal) + "1",
@@ -87,12 +85,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(2 + i, test1ReceiveCount);
                 Assert.AreEqual(2 + i, test2ReceiveCount);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator SimpleGameObjectBroadcastNoCopy()
+        [Test]
+        public void SimpleGameObjectBroadcastNoCopy()
         {
             GameObject test1 = new(
                 nameof(SimpleGameObjectBroadcastNoCopy) + "1",
@@ -149,7 +145,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(2 + i, test1ReceiveCount);
                 Assert.AreEqual(2 + i, test2ReceiveCount);
             }
-            yield break;
+            return;
 
             void Test1Receive(ref SimpleBroadcastMessage message)
             {
@@ -162,8 +158,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator SimpleGameObjectBroadcastDualMode()
+        [Test]
+        public void SimpleGameObjectBroadcastDualMode()
         {
             GameObject test1 = new(
                 nameof(SimpleGameObjectBroadcastDualMode) + "1",
@@ -231,7 +227,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(2 + (1 + i) * 2, test1ReceiveCount);
                 Assert.AreEqual(2 + i, test2ReceiveCount);
             }
-            yield break;
+            return;
 
             void Test1Receive(ref SimpleBroadcastMessage message)
             {
@@ -244,8 +240,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator SimpleComponentBroadcastNormal()
+        [Test]
+        public void SimpleComponentBroadcastNormal()
         {
             GameObject test1 = new(
                 nameof(SimpleComponentBroadcastNormal) + "1",
@@ -308,12 +304,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(2 + i, test1ReceiveCount);
                 Assert.AreEqual(2 + i, test2ReceiveCount);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator SimpleComponentBroadcastNoCopy()
+        [Test]
+        public void SimpleComponentBroadcastNoCopy()
         {
             GameObject test1 = new(
                 nameof(SimpleComponentBroadcastNoCopy) + "1",
@@ -372,7 +366,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(2 + i, test2ReceiveCount);
             }
 
-            yield break;
+            return;
 
             void Test1Receive(ref SimpleBroadcastMessage message)
             {
@@ -385,8 +379,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator SimpleComponentBroadcastDualMode()
+        [Test]
+        public void SimpleComponentBroadcastDualMode()
         {
             GameObject test1 = new(
                 nameof(SimpleComponentBroadcastDualMode) + "1",
@@ -449,7 +443,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(2 + i, test2ReceiveCount);
             }
 
-            yield break;
+            return;
 
             void Test1Receive(ref SimpleBroadcastMessage message)
             {
@@ -462,8 +456,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator SimpleBroadcastWithoutSourceNormal()
+        [Test]
+        public void SimpleBroadcastWithoutSourceNormal()
         {
             GameObject test1 = new(
                 nameof(SimpleBroadcastWithoutSourceNormal) + "1",
@@ -522,7 +516,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(4 + ((i + 1) * 2), test2ReceiveCount);
             }
 
-            yield break;
+            return;
 
             void Test1Receive(InstanceId id, SimpleBroadcastMessage message)
             {
@@ -535,8 +529,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator SimpleBroadcastWithoutSourceNoCopy()
+        [Test]
+        public void SimpleBroadcastWithoutSourceNoCopy()
         {
             GameObject test1 = new(
                 nameof(SimpleBroadcastWithoutSourceNoCopy) + "1",
@@ -595,7 +589,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(4 + ((i + 1) * 2), test2ReceiveCount);
             }
 
-            yield break;
+            return;
 
             void Test1Receive(ref InstanceId id, ref SimpleBroadcastMessage message)
             {
@@ -608,8 +602,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator SimpleBroadcastWithoutSourceDualMode()
+        [Test]
+        public void SimpleBroadcastWithoutSourceDualMode()
         {
             GameObject test1 = new(
                 nameof(SimpleBroadcastWithoutSourceDualMode) + "1",
@@ -668,7 +662,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(4 + ((i + 1) * 2), test2ReceiveCount);
             }
 
-            yield break;
+            return;
 
             void Test1Receive(ref InstanceId id, ref SimpleBroadcastMessage message)
             {
@@ -681,8 +675,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastUntyped()
+        [Test]
+        public void BroadcastUntyped()
         {
             GameObject test = new(
                 nameof(BroadcastUntyped) + "1",
@@ -712,7 +706,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(2, componentCount);
             Assert.AreEqual(2, gameObjectCount);
 
-            yield break;
+            return;
 
             void ReceiveGameObject(ref SimpleBroadcastMessage message)
             {
@@ -725,8 +719,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator PriorityGameObject()
+        [Test]
+        public void PriorityGameObject()
         {
             GameObject test = new(
                 nameof(PriorityGameObject) + "1",
@@ -793,11 +787,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.AreEqual(numRuns * 2, received.Distinct().Single());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PriorityComponent()
+        [Test]
+        public void PriorityComponent()
         {
             GameObject test = new(
                 nameof(PriorityComponent) + "1",
@@ -865,11 +858,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.AreEqual(numRuns * 2, received.Distinct().Single());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator Interceptor()
+        [Test]
+        public void Interceptor()
         {
             GameObject test = new(nameof(Interceptor), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
@@ -915,7 +907,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             Assert.AreEqual(numRuns * 2, received.Distinct().Single());
-            yield break;
         }
     }
 }

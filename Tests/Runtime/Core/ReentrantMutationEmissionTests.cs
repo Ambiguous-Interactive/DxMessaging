@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Tests.Runtime;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Regression coverage for the displaced-snapshot release hazard: a
@@ -50,8 +48,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// snapshot; the nested emission is a new emission, so its rebuilt
         /// snapshot includes it).
         /// </summary>
-        [UnityTest]
-        public IEnumerator MutateThenReentrantEmitSameTypeDoesNotThrow(
+        [Test]
+        public void MutateThenReentrantEmitSameTypeDoesNotThrow(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -200,7 +198,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
             token.RemoveRegistration(mutatorHandle);
             token.RemoveRegistration(peerHandle);
-            yield break;
         }
 
         /// <summary>
@@ -211,8 +208,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// frozen outer snapshot); the nested emission's rebuilt snapshot
         /// must not include it.
         /// </summary>
-        [UnityTest]
-        public IEnumerator DeregisterThenReentrantEmitSameTypeDoesNotThrow(
+        [Test]
+        public void DeregisterThenReentrantEmitSameTypeDoesNotThrow(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -326,7 +323,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             token.RemoveRegistration(mutatorHandle);
-            yield break;
         }
 
         /// <summary>
@@ -346,8 +342,8 @@ namespace DxMessaging.Tests.Runtime.Core
         ///   E3: driver, N1, N2, N3 (no further recursion).
         /// Totals: driver 4, N1 3, N2 2, N3 1.
         /// </summary>
-        [UnityTest]
-        public IEnumerator DeepNestedMutateEmitDoesNotCorrupt(
+        [Test]
+        public void DeepNestedMutateEmitDoesNotCorrupt(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -498,7 +494,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             token.RemoveRegistration(driverHandle);
-            yield break;
         }
     }
 }

@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Runtime;
@@ -10,12 +9,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class InterceptorCancellationTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator InterceptorCancelsHandlersAndPostProcessors(
+        [Test]
+        public void InterceptorCancelsHandlersAndPostProcessors(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -65,7 +63,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Post-processors must not run when interceptor cancels."
             );
             Assert.AreEqual(0, laterRan, "Later interceptors must not run after cancellation.");
-            yield break;
         }
 
         /// <summary>
@@ -77,8 +74,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// proves the listener itself works so the zero-count assertion cannot
         /// pass vacuously.
         /// </summary>
-        [UnityTest]
-        public IEnumerator CancelledMessageIsHiddenFromGlobalAcceptAll(
+        [Test]
+        public void CancelledMessageIsHiddenFromGlobalAcceptAll(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -131,7 +128,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind,
                 globalCountAfterAllowedEmit
             );
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterGlobalCounter(

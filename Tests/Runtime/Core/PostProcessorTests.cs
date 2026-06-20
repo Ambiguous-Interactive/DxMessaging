@@ -2,14 +2,12 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using NUnit.Framework;
     using Scripts.Components;
     using Scripts.Messages;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     [Category("Stress")]
     public sealed class PostProcessorTests : MessagingTestBase
@@ -24,8 +22,8 @@ namespace DxMessaging.Tests.Runtime.Core
             _numRegistrations = StressRegistrations;
         }
 
-        [UnityTest]
-        public IEnumerator Untargeted()
+        [Test]
+        public void Untargeted()
         {
             GameObject test = new(nameof(Untargeted), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
@@ -125,7 +123,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 synchronizeDeregistrations: true
             );
 
-            yield break;
+            return;
 
             void ResetCount()
             {
@@ -140,8 +138,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectTargeted()
+        [Test]
+        public void GameObjectTargeted()
         {
             GameObject test = new(nameof(GameObjectTargeted), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
@@ -273,7 +271,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 token
             );
 
-            yield break;
+            return;
 
             void ResetCount()
             {
@@ -288,8 +286,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectTargetedWithoutTargeting()
+        [Test]
+        public void GameObjectTargetedWithoutTargeting()
         {
             GameObject test = new(
                 nameof(GameObjectTargetedWithoutTargeting),
@@ -392,7 +390,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 synchronizeDeregistrations: true
             );
 
-            yield break;
+            return;
 
             void ResetCount()
             {
@@ -407,8 +405,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentTargeted()
+        [Test]
+        public void ComponentTargeted()
         {
             GameObject test = new(nameof(ComponentTargeted), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
@@ -543,7 +541,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 token
             );
 
-            yield break;
+            return;
 
             void ResetCount()
             {
@@ -558,8 +556,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentTargetedWithoutTargeting()
+        [Test]
+        public void ComponentTargetedWithoutTargeting()
         {
             GameObject test = new(
                 nameof(ComponentTargetedWithoutTargeting),
@@ -667,7 +665,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             ResetCount();
 
-            yield break;
+            return;
 
             void ResetCount()
             {
@@ -682,8 +680,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectBroadcast()
+        [Test]
+        public void GameObjectBroadcast()
         {
             GameObject test = new(nameof(GameObjectBroadcast), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
@@ -831,7 +829,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 token
             );
 
-            yield break;
+            return;
 
             void ResetCount()
             {
@@ -846,8 +844,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator GameObjectBroadcastWithoutSource()
+        [Test]
+        public void GameObjectBroadcastWithoutSource()
         {
             GameObject test = new(
                 nameof(GameObjectBroadcastWithoutSource),
@@ -966,7 +964,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 synchronizeDeregistrations: true
             );
 
-            yield break;
+            return;
 
             void ResetCount()
             {
@@ -981,8 +979,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentBroadcast()
+        [Test]
+        public void ComponentBroadcast()
         {
             GameObject test = new(nameof(ComponentBroadcast), typeof(EmptyMessageAwareComponent));
             _spawned.Add(test);
@@ -1117,7 +1115,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 token
             );
 
-            yield break;
+            return;
 
             void ResetCount()
             {
@@ -1132,8 +1130,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ComponentBroadcastWithoutSource()
+        [Test]
+        public void ComponentBroadcastWithoutSource()
         {
             GameObject test = new(
                 nameof(ComponentBroadcastWithoutSource),
@@ -1239,7 +1237,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 synchronizeDeregistrations: true
             );
 
-            yield break;
+            return;
 
             void ResetCount()
             {

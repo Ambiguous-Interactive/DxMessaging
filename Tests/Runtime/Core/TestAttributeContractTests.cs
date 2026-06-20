@@ -30,6 +30,39 @@ namespace DxMessaging.Tests.Runtime.Core
             RegexOptions.Compiled | RegexOptions.CultureInvariant
         );
 
+        /// <summary>
+        /// Matches a standalone <c>[UnityTest]</c> attribute line (only leading
+        /// whitespace before it and only whitespace after). Used by
+        /// <see cref="NoYieldUnityTestsMustBePlainTest"/> to find real attribute
+        /// usages while ignoring the <c>[UnityTest]</c> tokens that appear inside
+        /// this fixture's own assertion-message strings. Trailing <c>\r</c> is
+        /// allowed because the test sources are CRLF.
+        /// </summary>
+        private static readonly Regex StandaloneUnityTestAttributePattern = new(
+            @"^[ \t]*\[UnityTest\][ \t]*\r?$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline
+        );
+
+        /// <summary>
+        /// Matches the <c>IEnumerator &lt;Name&gt;(</c> portion of a coroutine
+        /// test signature, capturing the method name. Applied only to the span
+        /// between a <c>[UnityTest]</c> attribute and its method body.
+        /// </summary>
+        private static readonly Regex UnityTestMethodNamePattern = new(
+            @"\bIEnumerator\s+(\w+)\s*\(",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant
+        );
+
+        /// <summary>
+        /// Matches a real frame-yielding <c>yield return</c> (not a bare
+        /// <c>yield break</c>, which makes a method a compiler iterator without
+        /// ever advancing a frame).
+        /// </summary>
+        private static readonly Regex YieldReturnPattern = new(
+            @"\byield\s+return\b",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant
+        );
+
         private static bool IsDxMessagingTestAssembly(Assembly assembly)
         {
             string assemblyName = assembly.GetName().Name;
@@ -910,6 +943,203 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "(see .llm/skills/testing/fast-unity-tests.md):\n  "
                     + string.Join("\n  ", offenders)
             );
+        }
+
+        /// <summary>
+        /// Bans <c>[UnityTest]</c> methods whose body never <c>yield return</c>s a
+        /// frame - a synchronous test wearing a coroutine costume. A no-yield test
+        /// must be a plain <c>[Test]</c>: it runs entirely in one frame, skips the
+        /// Unity Test Framework's per-method enumerator scheduling on the cold CI
+        /// legs, and keeps <c>[UnityTest]</c> meaningful as "this test actually
+        /// yields a frame". Fixtures that still interleave genuine-coroutine and
+        /// synchronous <c>[UnityTest]</c> methods (so they need per-method
+        /// conversion rather than a whole-file pass) are allowlisted by file name
+        /// below; convert a file's no-yield methods to <c>[Test]</c> and delete its
+        /// entry. The contract pin lives in the <c>fast-unity-tests</c> skill.
+        /// </summary>
+        /// <remarks>
+        /// Source-text scan: reflection cannot see method bodies, and a method that
+        /// only <c>yield break</c>s is still a compiler iterator
+        /// (<c>[IteratorStateMachine]</c>), so the attribute alone cannot
+        /// distinguish it from a real frame-yielding one. Only standalone
+        /// <c>[UnityTest]</c> attribute lines are matched, so the <c>[UnityTest]</c>
+        /// tokens inside this fixture's own assertion-message strings cannot
+        /// self-trip the guard.
+        /// <para>
+        /// Two heuristic limits, both dormant against every current test source and
+        /// consistent with the other text-heuristic guards in this file: (1) the
+        /// body is located by brace-counting, which assumes braces inside the body
+        /// are balanced - a future body with an unbalanced <c>{</c>/<c>}</c> inside a
+        /// string/char literal or comment could be mis-scoped (keep test-body
+        /// literals brace-balanced); (2) only a <c>[UnityTest]</c> ALONE on its line
+        /// is matched, so a same-line combined attribute such as
+        /// <c>[UnityTest, Category("x")]</c> would be missed (the codebase keeps
+        /// <c>[UnityTest]</c> on its own line - attributes on SUBSEQUENT lines are
+        /// handled correctly). A future <c>[UnityTest]</c> that returns a manually
+        /// built <see cref="IEnumerator"/> without a <c>yield</c> keyword would be
+        /// flagged even though it advances frames; convert it or allowlist it.
+        /// </para>
+        /// Files that cannot be located on disk (for example a standalone player
+        /// run) leave the scan vacuously satisfied, matching the other source-scan
+        /// contract tests.
+        /// </remarks>
+        [Test]
+        public void NoYieldUnityTestsMustBePlainTest()
+        {
+            // Fixtures still pending the [UnityTest] -> [Test] migration: each
+            // interleaves genuine-coroutine and synchronous tests in one file, so
+            // they need per-method conversion rather than the whole-file pass that
+            // converted the 45 all-synchronous fixtures. The trailing count is the
+            // no-yield methods still awaiting conversion in that file. Shrink this
+            // set as files migrate; never ADD an entry - a newly authored no-yield
+            // test must be a [Test] from the start.
+            HashSet<string> pendingMigration = new(StringComparer.Ordinal)
+            {
+                "BaseCallContractTests.cs", // 4
+                "DefaultBusFallbackTests.cs", // 2
+                "EdgeCaseTests.cs", // 14
+                "EnablementTests.cs", // 1
+                "LifecycleEdgeCasesTests.cs", // 8
+                "MessagingComponentProviderIntegrationTests.cs", // 2
+                "NominalTests.cs", // 9
+                "OrderingAcrossEnableCyclesTests.cs", // 3
+            };
+
+            List<string> roots = ResolveTestsTreeRootsFallback();
+            HashSet<string> scannedFiles = new(StringComparer.OrdinalIgnoreCase);
+            List<string> offenders = new();
+
+            foreach (string root in roots)
+            {
+                if (!System.IO.Directory.Exists(root))
+                {
+                    continue;
+                }
+
+                foreach (
+                    string file in System.IO.Directory.EnumerateFiles(
+                        root,
+                        "*.cs",
+                        System.IO.SearchOption.AllDirectories
+                    )
+                )
+                {
+                    string normalized = System.IO.Path.GetFullPath(file);
+                    if (!scannedFiles.Add(normalized))
+                    {
+                        continue;
+                    }
+
+                    if (pendingMigration.Contains(System.IO.Path.GetFileName(file)))
+                    {
+                        continue;
+                    }
+
+                    string text;
+                    try
+                    {
+                        text = System.IO.File.ReadAllText(file);
+                    }
+                    catch (System.IO.IOException)
+                    {
+                        continue;
+                    }
+
+                    foreach (Match attribute in StandaloneUnityTestAttributePattern.Matches(text))
+                    {
+                        if (UnityTestBodyHasYieldReturn(text, attribute.Index, out string method))
+                        {
+                            continue;
+                        }
+
+                        int line = 1;
+                        for (int i = 0; i < attribute.Index; ++i)
+                        {
+                            if (text[i] == '\n')
+                            {
+                                ++line;
+                            }
+                        }
+
+                        offenders.Add(
+                            $"{System.IO.Path.GetFileName(file)}:{line} [UnityTest] {method} has no 'yield return'"
+                        );
+                    }
+                }
+            }
+
+            Assert.That(
+                offenders,
+                Is.Empty,
+                "Found [UnityTest] methods whose body never 'yield return's a frame. A synchronous test "
+                    + "must be a plain [Test] (it runs in one frame and skips the coroutine scheduler); "
+                    + "reserve [UnityTest] for tests that actually yield. Convert each to [Test] (drop the "
+                    + "IEnumerator return type and the trailing 'yield break;'), or - for a fixture still "
+                    + "mid-migration - add its file to the pendingMigration allowlist with a justification. "
+                    + "See .llm/skills/testing/fast-unity-tests.md. Offenders:\n  "
+                    + string.Join("\n  ", offenders)
+            );
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if the <c>[UnityTest]</c> method whose attribute
+        /// begins at <paramref name="attributeIndex"/> contains a real
+        /// <c>yield return</c> in its body, and emits the method name via
+        /// <paramref name="methodName"/>. The body is located by brace-counting
+        /// from the attribute to its matching close brace; a method whose opening or
+        /// closing brace cannot be located is conservatively treated as yielding, so
+        /// a location FAILURE never produces a false positive (the balanced-brace
+        /// assumption for mis-location is documented on the caller's remarks).
+        /// </summary>
+        private static bool UnityTestBodyHasYieldReturn(
+            string text,
+            int attributeIndex,
+            out string methodName
+        )
+        {
+            methodName = "<unknown>";
+            int open = text.IndexOf('{', attributeIndex);
+            if (open < 0)
+            {
+                return true;
+            }
+
+            int depth = 0;
+            int end = -1;
+            for (int i = open; i < text.Length; ++i)
+            {
+                char c = text[i];
+                if (c == '{')
+                {
+                    ++depth;
+                }
+                else if (c == '}')
+                {
+                    --depth;
+                    if (depth == 0)
+                    {
+                        end = i;
+                        break;
+                    }
+                }
+            }
+
+            if (end < 0)
+            {
+                return true;
+            }
+
+            Match name = UnityTestMethodNamePattern.Match(
+                text,
+                attributeIndex,
+                open - attributeIndex
+            );
+            if (name.Success)
+            {
+                methodName = name.Groups[1].Value;
+            }
+
+            return YieldReturnPattern.IsMatch(text.Substring(open, end - open + 1));
         }
 
         /// <summary>

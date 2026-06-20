@@ -1,7 +1,6 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
-    using System.Collections;
     using System.Collections.Generic;
     using System.Linq;
     using DxMessaging.Core;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Stress exercises for mid-emission listener growth. Each scenario creates a large number of initial listeners
@@ -25,8 +23,8 @@ namespace DxMessaging.Tests.Runtime.Core
         private const int InitialListenerCount = 32;
         private const int NewListenersPerHandler = 3;
 
-        [UnityTest]
-        public IEnumerator UntargetedHandlersRegisterMultipleListeners()
+        [Test]
+        public void UntargetedHandlersRegisterMultipleListeners()
         {
             List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations =
                 new();
@@ -106,11 +104,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             RemoveRegistrations(registrations);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedInterceptorsRegisterMultipleInterceptors()
+        [Test]
+        public void UntargetedInterceptorsRegisterMultipleInterceptors()
         {
             List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations =
                 new();
@@ -199,11 +196,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             RemoveRegistrations(registrations);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalHandlersRegisterMultipleListeners()
+        [Test]
+        public void GlobalHandlersRegisterMultipleListeners()
         {
             List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations =
                 new();
@@ -367,11 +363,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             RemoveRegistrations(registrations);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedPostProcessorsRegisterMultiplePostProcessors()
+        [Test]
+        public void UntargetedPostProcessorsRegisterMultiplePostProcessors()
         {
             List<(MessageRegistrationToken token, MessageRegistrationHandle handle)> registrations =
                 new();
@@ -470,7 +465,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             RemoveRegistrations(registrations);
-            yield break;
         }
 
         private EmptyMessageAwareComponent CreateComponent(string prefix, int index)

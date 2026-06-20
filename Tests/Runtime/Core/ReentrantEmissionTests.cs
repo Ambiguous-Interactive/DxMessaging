@@ -3,14 +3,12 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Verifies the snapshot semantics that govern re-entrant emission. The bus uses a
@@ -30,8 +28,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// changes dispatch ordering, reentrancy guards, or counter semantics
         /// fails loudly with exact numbers rather than a stack overflow.
         /// </summary>
-        [UnityTest]
-        public IEnumerator EmitDuringHandlerDoesNotInfinitelyRecurse(
+        [Test]
+        public void EmitDuringHandlerDoesNotInfinitelyRecurse(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -97,11 +95,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 2 * (MaxRecursionDepth + 1),
                 totalInvocations
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RecursiveEmitTerminatesViaInterceptor(
+        [Test]
+        public void RecursiveEmitTerminatesViaInterceptor(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -172,11 +169,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 handlerInvocations,
                 interceptorInvocations
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RegisterDuringEmitIsDeferredToNextEmission(
+        [Test]
+        public void RegisterDuringEmitIsDeferredToNextEmission(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -271,12 +267,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondaryHandle.Value);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator DeregisterDuringEmitIsHonouredOnCurrentSnapshot(
+        [Test]
+        public void DeregisterDuringEmitIsHonouredOnCurrentSnapshot(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -353,11 +347,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 firstCount,
                 secondCount
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator MultipleNestedEmissionsRespectSnapshotIsolation(
+        [Test]
+        public void MultipleNestedEmissionsRespectSnapshotIsolation(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -441,7 +434,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 primaryInvocations,
                 latecomerInvocations
             );
-            yield break;
         }
 
         /// <summary>
@@ -450,8 +442,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// 0; A removes B during its own callback. B must still run on the current
         /// emission (snapshot semantics) but must NOT run on the second emission.
         /// </summary>
-        [UnityTest]
-        public IEnumerator DeregisterSamePriorityDuringEmitIsHonouredOnCurrentSnapshot(
+        [Test]
+        public void DeregisterSamePriorityDuringEmitIsHonouredOnCurrentSnapshot(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -538,7 +530,6 @@ namespace DxMessaging.Tests.Runtime.Core
             // Reference snapshot to suppress unused-variable analyzer noise across
             // future refactors. The remove above already used the live handle.
             _ = bHandleSnapshot;
-            yield break;
         }
 
         /// <summary>
@@ -549,8 +540,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// (priority 2) is untouched. All four must run on the first emission;
         /// only A and C must run on the second.
         /// </summary>
-        [UnityTest]
-        public IEnumerator DeregisterMultipleHandlersDuringEmitAcrossPriorities(
+        [Test]
+        public void DeregisterMultipleHandlersDuringEmitAcrossPriorities(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -707,7 +698,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(dHandle);
             }
-            yield break;
         }
 
         /// <summary>
@@ -717,8 +707,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// First emission: A and B run, X does NOT (registered after snapshot).
         /// Second emission: A and X run, B does NOT (removed before snapshot).
         /// </summary>
-        [UnityTest]
-        public IEnumerator RegisterAndDeregisterDuringEmitInteractsCorrectly(
+        [Test]
+        public void RegisterAndDeregisterDuringEmitInteractsCorrectly(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -835,7 +825,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(xHandle.Value);
             }
-            yield break;
         }
 
         /// <summary>
@@ -850,8 +839,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// construction: the resolved frozen array cannot observe the
         /// mid-emission removal).
         /// </summary>
-        [UnityTest]
-        public IEnumerator DeregisterCrossMessageHandlerSamePriorityIsHonouredOnCurrentSnapshot(
+        [Test]
+        public void DeregisterCrossMessageHandlerSamePriorityIsHonouredOnCurrentSnapshot(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -951,7 +940,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 tokenB.RemoveRegistration(bHandle);
             }
-            yield break;
         }
 
         /// <summary>
@@ -960,8 +948,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// emission. This pins the corner case where the deregistration closure
         /// mutates the same HandlerActionCache the in-flight dispatch is iterating.
         /// </summary>
-        [UnityTest]
-        public IEnumerator HandlerRemovingItselfDuringEmitIsHonouredOnCurrentSnapshot(
+        [Test]
+        public void HandlerRemovingItselfDuringEmitIsHonouredOnCurrentSnapshot(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -1011,7 +999,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind,
                 aCount
             );
-            yield break;
         }
 
         /// <summary>
@@ -1025,8 +1012,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <c>HandlerExceptionTests</c> which pins the propagate-don't-swallow
         /// contract for the same dispatch.
         /// </summary>
-        [UnityTest]
-        public IEnumerator HandlerThrowAfterDeregistrationStillPropagatesRemovalToNextEmit(
+        [Test]
+        public void HandlerThrowAfterDeregistrationStillPropagatesRemovalToNextEmit(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -1139,7 +1126,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(bHandle);
             }
-            yield break;
         }
 
         /// <summary>
@@ -1157,8 +1143,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// after the snapshot is frozen, so the snapshot still dispatches the
         /// removed peer.)
         /// </summary>
-        [UnityTest]
-        public IEnumerator DeregisterFromInterceptorIsObservedOnCurrentEmission(
+        [Test]
+        public void DeregisterFromInterceptorIsObservedOnCurrentEmission(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -1238,7 +1224,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 interceptorCount,
                 handlerCount
             );
-            yield break;
         }
 
         private static void RegisterRemovingInterceptor(

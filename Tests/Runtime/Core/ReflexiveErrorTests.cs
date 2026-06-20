@@ -1,19 +1,17 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class ReflexiveErrorTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator UnknownMethodDoesNotThrowOrInvoke()
+        [Test]
+        public void UnknownMethodDoesNotThrowOrInvoke()
         {
             GameObject host = new(
                 nameof(UnknownMethodDoesNotThrowOrInvoke),
@@ -35,11 +33,10 @@ namespace DxMessaging.Tests.Runtime.Core
             // Ensure nothing was called
             Assert.AreEqual(0, twoArgCount);
             Assert.AreEqual(0, threeArgCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator KnownMethodWithWrongArityDoesNotThrowOrInvoke()
+        [Test]
+        public void KnownMethodWithWrongArityDoesNotThrowOrInvoke()
         {
             GameObject host = new(
                 nameof(KnownMethodWithWrongArityDoesNotThrowOrInvoke),
@@ -94,11 +91,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 twoArgCount,
                 "Control failed: the correct-arity reflexive dispatch must invoke the method."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator KnownMethodWithWrongParameterTypesDoesNotThrowOrInvoke()
+        [Test]
+        public void KnownMethodWithWrongParameterTypesDoesNotThrowOrInvoke()
         {
             GameObject host = new(
                 nameof(KnownMethodWithWrongParameterTypesDoesNotThrowOrInvoke),
@@ -145,7 +141,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 twoArgCount,
                 "Control failed: the correctly-typed reflexive dispatch must invoke the method."
             );
-            yield break;
         }
     }
 }

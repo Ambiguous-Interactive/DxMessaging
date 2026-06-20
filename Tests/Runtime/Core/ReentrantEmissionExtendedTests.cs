@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Extends the <see cref="ReentrantEmissionTests"/> coverage. Each test in
@@ -84,8 +82,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// same-kind diagonal, which is exercised by
         /// <see cref="ReentrantEmissionTests"/>).
         /// </summary>
-        [UnityTest]
-        public IEnumerator CrossKindReentrancyChainCompletes(
+        [Test]
+        public void CrossKindReentrancyChainCompletes(
             [ValueSource(nameof(CrossKindReentrancyPairs))] CrossKindReentrancyCase pair
         )
         {
@@ -171,7 +169,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             token.RemoveRegistration(outerHandle);
-            yield break;
         }
 
         /// <summary>
@@ -184,8 +181,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// EmissionId values is a hard invariant separate from the
         /// production-side bool used to gate recursion.
         /// </summary>
-        [UnityTest]
-        public IEnumerator DeepRecursion10Levels(
+        [Test]
+        public void DeepRecursion10Levels(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -255,11 +252,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             token.RemoveRegistration(handle);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RecursionWithPriorityHandlersRespectsOrderingPerEmission(
+        [Test]
+        public void RecursionWithPriorityHandlersRespectsOrderingPerEmission(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -354,7 +350,6 @@ namespace DxMessaging.Tests.Runtime.Core
             token.RemoveRegistration(p0Handle);
             token.RemoveRegistration(p5Handle);
             token.RemoveRegistration(p10Handle);
-            yield break;
         }
 
         /// <summary>
@@ -362,8 +357,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// re-subscribed handler must NOT run on the in-flight emission
         /// (snapshot semantics) but MUST run on the next emission.
         /// </summary>
-        [UnityTest]
-        public IEnumerator ReentrantUnsubscribeThenResubscribeSelf(
+        [Test]
+        public void ReentrantUnsubscribeThenResubscribeSelf(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -444,7 +439,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(respawnedHandle.Value);
             }
-            yield break;
         }
 
         /// <summary>
@@ -454,8 +448,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// exceptions, propagation aborts the bucket walk on the outer
         /// frame too.
         /// </summary>
-        [UnityTest]
-        public IEnumerator NestedHandlerThrowsDuringReentrantEmit(
+        [Test]
+        public void NestedHandlerThrowsDuringReentrantEmit(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -548,7 +542,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
             token.RemoveRegistration(outerHandle);
             token.RemoveRegistration(trailingHandle);
-            yield break;
         }
 
         /// <summary>
@@ -560,8 +553,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// trailing handler must run AFTER the vetoed inner emission, on
         /// the outer emission's frame.
         /// </summary>
-        [UnityTest]
-        public IEnumerator ReentrantInterceptorVeto(
+        [Test]
+        public void ReentrantInterceptorVeto(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -702,7 +695,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
             token.RemoveRegistration(outerHandle);
             token.RemoveRegistration(trailingHandle);
-            yield break;
         }
 
         /// <summary>
@@ -711,8 +703,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// new emission as fresh state with no carry-over from the parent
         /// emission.
         /// </summary>
-        [UnityTest]
-        public IEnumerator InterceptorMutationDuringReemitObservesFreshState(
+        [Test]
+        public void InterceptorMutationDuringReemitObservesFreshState(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -795,7 +787,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             token.RemoveRegistration(handle);
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterCountingHandler(

@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Diagnostics;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using Scripts.Components;
     using Scripts.Messages;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// In-default-suite speed guard rail. The default Unity Edit + Play mode
@@ -70,8 +68,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// is a soft warning plus an egregiously-wide hard backstop so it
         /// cannot flake on a slow runner.
         /// </summary>
-        [UnityTest]
-        public IEnumerator RepresentativeSubsetCompletesUnderBudget()
+        [Test]
+        public void RepresentativeSubsetCompletesUnderBudget()
         {
             GameObject host = new(
                 nameof(RepresentativeSubsetCompletesUnderBudget),
@@ -146,7 +144,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     + $"indicates a genuine algorithmic regression, not runner slowness. Seed={TestSeed}. "
                     + DescribeMessageBusState(MessageHandler.MessageBus, includeLog: true)
             );
-            yield break;
         }
     }
 }

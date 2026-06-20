@@ -3,7 +3,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -11,12 +10,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class UntargetedEquivalenceTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator StructEmitEqualsEmitUntargeted()
+        [Test]
+        public void StructEmitEqualsEmitUntargeted()
         {
             GameObject go = new(
                 nameof(StructEmitEqualsEmitUntargeted),
@@ -31,11 +29,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             m.EmitUntargeted();
             Assert.AreEqual(2, comp.count);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator StructEmitAndEmitUntargetedRespectInterceptors()
+        [Test]
+        public void StructEmitAndEmitUntargetedRespectInterceptors()
         {
             GameObject go = new(
                 nameof(StructEmitAndEmitUntargetedRespectInterceptors),
@@ -65,11 +62,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 dereg();
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator StructExplicitBusParameterRoutesCorrectly()
+        [Test]
+        public void StructExplicitBusParameterRoutesCorrectly()
         {
             GameObject globalGo = new(
                 nameof(StructExplicitBusParameterRoutesCorrectly) + "_Global",
@@ -107,11 +103,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             customToken.RemoveRegistration(customHandle);
             customHandler.active = false;
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ClassEmitEqualsEmitUntargeted()
+        [Test]
+        public void ClassEmitEqualsEmitUntargeted()
         {
             GameObject go = new(
                 nameof(ClassEmitEqualsEmitUntargeted),
@@ -126,11 +121,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, comp.count);
             m.EmitUntargeted();
             Assert.AreEqual(2, comp.count);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ClassExplicitBusParameterRoutesCorrectly()
+        [Test]
+        public void ClassExplicitBusParameterRoutesCorrectly()
         {
             GameObject globalGo = new(
                 nameof(ClassExplicitBusParameterRoutesCorrectly) + "_Global",
@@ -165,7 +159,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
             customToken.RemoveRegistration(customHandle);
             customHandler.active = false;
-            yield break;
         }
     }
 }

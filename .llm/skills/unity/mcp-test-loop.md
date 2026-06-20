@@ -2,9 +2,9 @@
 title: "Unity MCP Test Loop"
 id: "mcp-test-loop"
 category: "unity"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-06-14"
-updated: "2026-06-15"
+updated: "2026-06-19"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -106,7 +106,15 @@ testNames, categoryNames, resultPath)` via `Unity_RunCommand`. Locate the type b
    scanning `AppDomain` assemblies. Arguments are semicolon-separated lists; `null`
    means "no filter".
    - `testMode`: `EditMode` or `PlayMode`.
-   - Write results under `.artifacts/unity-mcp/` (gitignored).
+   - `resultPath` resolves relative to the HOST Unity project root (the editor's
+     working directory), NOT the embedded package. To land in the container-visible,
+     gitignored `.artifacts/unity-mcp/`, prefix it with the package path:
+     `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`. A
+     bare `.artifacts/unity-mcp/<name>.json` writes to the host project root instead,
+     where the container cannot see it.
+   - `testNames` accepts a fixture's full type name (for example
+     `DxMessaging.Tests.Runtime.Core.TestAttributeContractTests`) to run just that
+     fixture -- handy for a fast red-green loop on a single contract test.
 1. **Poll**: read the `.status` sidecar next to `resultPath` from bash in the
    container. It moves `running` -> `done` (or `error: <message>`). The JSON result
    carries `{ passCount, failCount, skipCount, inconclusiveCount, durationSeconds,
