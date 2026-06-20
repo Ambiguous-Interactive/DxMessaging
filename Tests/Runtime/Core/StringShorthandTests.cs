@@ -1,18 +1,16 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class StringShorthandTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator EmitAndEmitAtTargeting()
+        [Test]
+        public void EmitAndEmitAtTargeting()
         {
             GameObject go = new(
                 nameof(EmitAndEmitAtTargeting),
@@ -42,11 +40,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(2, comp.gameObjectTargetedCount);
             Assert.AreEqual(1, comp.componentTargetedCount);
             Assert.AreEqual(3, comp.targetedWithoutTargetingCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitFromBroadcastSource()
+        [Test]
+        public void EmitFromBroadcastSource()
         {
             GameObject go = new(
                 nameof(EmitFromBroadcastSource),
@@ -71,11 +68,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, comp.gameObjectBroadcastCount);
             Assert.AreEqual(1, comp.componentBroadcastCount);
             Assert.AreEqual(2, comp.broadcastWithoutSourceCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EmitUntargetedGlobalString()
+        [Test]
+        public void EmitUntargetedGlobalString()
         {
             GameObject go = new(
                 nameof(EmitUntargetedGlobalString),
@@ -93,7 +89,6 @@ namespace DxMessaging.Tests.Runtime.Core
             // Ensure a second emission increments again
             "Saved".Emit();
             Assert.AreEqual(2, comp.untargetedGlobalCount);
-            yield break;
         }
     }
 }

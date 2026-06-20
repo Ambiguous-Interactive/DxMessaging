@@ -1,7 +1,6 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Unity
 {
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Tests.Runtime.Core;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Unity
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Covers the interplay between <see cref="MessagingComponent.emitMessagesWhenDisabled"/> and
@@ -29,8 +27,8 @@ namespace DxMessaging.Tests.Runtime.Unity
     /// </remarks>
     public sealed class MessageAwareComponentTogglingTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator EmitMessagesWhenDisabledTrueDoesNotKeepDisabledListenerReceiving()
+        [Test]
+        public void EmitMessagesWhenDisabledTrueDoesNotKeepDisabledListenerReceiving()
         {
             GameObject host = new(
                 nameof(EmitMessagesWhenDisabledTrueDoesNotKeepDisabledListenerReceiving),
@@ -67,11 +65,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 count,
                 "Re-enabling the listener must resume delivery exactly once."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator DisabledListenerResumesExactlyOnceAcrossRepeatedToggleCycles()
+        [Test]
+        public void DisabledListenerResumesExactlyOnceAcrossRepeatedToggleCycles()
         {
             GameObject host = new(
                 nameof(DisabledListenerResumesExactlyOnceAcrossRepeatedToggleCycles),
@@ -109,12 +106,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                         + "count means a toggle cycle double-registered the handlers."
                 );
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator MessagingComponentToggleCyclesWithEmitFlagFalseResumeExactlyOnce()
+        [Test]
+        public void MessagingComponentToggleCyclesWithEmitFlagFalseResumeExactlyOnce()
         {
             GameObject host = new(
                 nameof(MessagingComponentToggleCyclesWithEmitFlagFalseResumeExactlyOnce),
@@ -157,12 +152,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                         + "exactly once."
                 );
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator MessagingComponentDisabledWithEmitFlagTrueKeepsReceivingAcrossToggleCycles()
+        [Test]
+        public void MessagingComponentDisabledWithEmitFlagTrueKeepsReceivingAcrossToggleCycles()
         {
             GameObject host = new(
                 nameof(MessagingComponentDisabledWithEmitFlagTrueKeepsReceivingAcrossToggleCycles),
@@ -204,12 +197,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                         + "count means repeated OnEnable cycles accumulated registrations."
                 );
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator InactiveGameObjectKeepsReceivingWhenEmitMessagesWhenDisabledIsTrue()
+        [Test]
+        public void InactiveGameObjectKeepsReceivingWhenEmitMessagesWhenDisabledIsTrue()
         {
             GameObject host = new(
                 nameof(InactiveGameObjectKeepsReceivingWhenEmitMessagesWhenDisabledIsTrue),
@@ -257,12 +248,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                     "Releasing the registered listener should succeed."
                 );
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator InactiveGameObjectStopsReceivingWhenEmitMessagesWhenDisabledIsFalse()
+        [Test]
+        public void InactiveGameObjectStopsReceivingWhenEmitMessagesWhenDisabledIsFalse()
         {
             GameObject host = new(
                 nameof(InactiveGameObjectStopsReceivingWhenEmitMessagesWhenDisabledIsFalse),
@@ -310,8 +299,6 @@ namespace DxMessaging.Tests.Runtime.Unity
                     "Releasing the registered listener should succeed."
                 );
             }
-
-            yield break;
         }
     }
 }

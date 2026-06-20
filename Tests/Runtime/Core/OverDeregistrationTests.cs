@@ -2,19 +2,17 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class OverDeregistrationTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator MessageBusGlobalAcceptAllOverDeregistrationLogsError()
+        [Test]
+        public void MessageBusGlobalAcceptAllOverDeregistrationLogsError()
         {
             GameObject go = new(nameof(MessageBusGlobalAcceptAllOverDeregistrationLogsError));
             _spawned.Add(go);
@@ -47,12 +45,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessagingDebug.LogFunction = previous;
                 handler.active = false;
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator InterceptorOverDeregistrationLogsError()
+        [Test]
+        public void InterceptorOverDeregistrationLogsError()
         {
             List<string> logs = new();
             Action<LogLevel, string> previous = MessagingDebug.LogFunction;
@@ -81,12 +77,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 MessagingDebug.LogFunction = previous;
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedHandlerOverDeregistrationLogsError()
+        [Test]
+        public void UntargetedHandlerOverDeregistrationLogsError()
         {
             GameObject go = new(nameof(UntargetedHandlerOverDeregistrationLogsError));
             _spawned.Add(go);
@@ -119,8 +113,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessagingDebug.LogFunction = previous;
                 handler.active = false;
             }
-
-            yield break;
         }
     }
 }

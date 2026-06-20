@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Runtime;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     // Bus does not emit framework-level logs on handler/interceptor/post-processor throws; LogAssert.Expect intentionally not used.
 
@@ -37,8 +35,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// previously ordered handlers run, the throwing handler runs, and any
         /// subsequent handler scheduled after it is skipped for that emission.
         /// </summary>
-        [UnityTest]
-        public IEnumerator HandlerThrowPreventsSubsequentHandlers(
+        [Test]
+        public void HandlerThrowPreventsSubsequentHandlers(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -97,11 +95,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 thirdCount,
                 "Subsequent handler must not run once propagation begins."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator HandlerThrowDoesNotCorruptDispatchPool(
+        [Test]
+        public void HandlerThrowDoesNotCorruptDispatchPool(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -156,7 +153,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 throwingCount,
                 "Throwing handler must execute on every emission with no double-fire or skip."
             );
-            yield break;
         }
 
         /// <summary>
@@ -165,8 +161,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// any post-processors registered for the same message. If post-processors
         /// are later moved into a finally block this contract must be revisited.
         /// </summary>
-        [UnityTest]
-        public IEnumerator HandlerThrowPreventsPostProcessorsFromRunning(
+        [Test]
+        public void HandlerThrowPreventsPostProcessorsFromRunning(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -216,11 +212,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 postProcessorCount,
                 "Post-processor must not run when an earlier handler throws."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator HandlerThrowDoesNotPreventDeregistration(
+        [Test]
+        public void HandlerThrowDoesNotPreventDeregistration(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -287,11 +282,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             token.RemoveRegistration(replacementHandle);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator InterceptorThrowFallsBackGracefully(
+        [Test]
+        public void InterceptorThrowFallsBackGracefully(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -344,11 +338,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(ThrowingInterceptorMessage, secondCaptured.Message);
             Assert.AreEqual(2, interceptorCount);
             Assert.AreEqual(0, handlerCount);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PostProcessorThrowDoesNotAffectNextEmission(
+        [Test]
+        public void PostProcessorThrowDoesNotAffectNextEmission(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -425,7 +418,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 trailingPostProcessorCount,
                 "Trailing post-processor must remain skipped on every emission while the earlier one throws."
             );
-            yield break;
         }
 
         /// <summary>
@@ -439,8 +431,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// corrupted by the throw: removing the throwing global restores fully
         /// functional dispatch, which the second half of this test proves.
         /// </summary>
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllThrowAbortsTypedHandlersAndPostProcessors(
+        [Test]
+        public void GlobalAcceptAllThrowAbortsTypedHandlersAndPostProcessors(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -522,7 +514,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 postProcessorCount,
                 "Post-processor must run normally once the throwing GlobalAcceptAll sink is removed."
             );
-            yield break;
         }
 
         /// <summary>
@@ -534,8 +525,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// this for broadcast), so a throwing specific handler skips the
         /// without-context sink for that emission.
         /// </summary>
-        [UnityTest]
-        public IEnumerator SpecificHandlerThrowSkipsWithoutContextHandlersForSameEmission(
+        [Test]
+        public void SpecificHandlerThrowSkipsWithoutContextHandlersForSameEmission(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -592,7 +583,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 "WithoutTargeting/WithoutSource handler must not run when a specific handler "
                     + "throws earlier in the same emission."
             );
-            yield break;
         }
 
         /// <summary>
@@ -603,8 +593,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// skipped because they dispatch after every handler phase. The second
         /// emission proves the shape is stable, with no double-fire or skip.
         /// </summary>
-        [UnityTest]
-        public IEnumerator WithoutContextHandlerThrowStillRunsSpecificHandlersButSkipsPostProcessors(
+        [Test]
+        public void WithoutContextHandlerThrowStillRunsSpecificHandlersButSkipsPostProcessors(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -712,7 +702,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 withoutContextPostProcessorCount,
                 "Without-context post-processor must remain skipped while the without-context handler throws."
             );
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterThrowingGlobalAcceptAll(

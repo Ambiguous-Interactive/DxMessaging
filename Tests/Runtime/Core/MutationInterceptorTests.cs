@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Tests.Runtime;
@@ -10,12 +9,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class MutationInterceptorTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator AddBlockingInterceptorDuringInterceptor(
+        [Test]
+        public void AddBlockingInterceptorDuringInterceptor(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -79,7 +77,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondHandle.Value);
             }
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterInterceptor(

@@ -1,7 +1,6 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Unity
 {
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Tests.Runtime.Core;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Unity
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Covers <see cref="MessageAwareComponent.ReregisterOnEnableAfterRelease"/>: the opt-in
@@ -29,8 +27,8 @@ namespace DxMessaging.Tests.Runtime.Unity
     /// </remarks>
     public sealed class MessageAwareComponentReregistrationTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator DefaultReleasedListenerStaysUnregisteredAcrossEnableCycles()
+        [Test]
+        public void DefaultReleasedListenerStaysUnregisteredAcrossEnableCycles()
         {
             GameObject host = new(
                 nameof(DefaultReleasedListenerStaysUnregisteredAcrossEnableCycles),
@@ -76,11 +74,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 listener.registerInvocationCount,
                 "RegisterMessageHandlers must run only from Awake when the opt-in is off."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator OptInReregistersOnNextEnableAfterRelease()
+        [Test]
+        public void OptInReregistersOnNextEnableAfterRelease()
         {
             GameObject host = new(
                 nameof(OptInReregistersOnNextEnableAfterRelease),
@@ -167,11 +164,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 messaging.Release(listener),
                 "Releasing the re-registered listener should succeed."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator OptInDoesNotReplayRegistrationsWithoutARelease()
+        [Test]
+        public void OptInDoesNotReplayRegistrationsWithoutARelease()
         {
             GameObject host = new(
                 nameof(OptInDoesNotReplayRegistrationsWithoutARelease),
@@ -216,11 +212,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 listener.registerInvocationCount,
                 "RegisterMessageHandlers must run only from Awake while the token is never released."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator OptInAdoptsManuallyRecreatedTokenWithoutReplaying()
+        [Test]
+        public void OptInAdoptsManuallyRecreatedTokenWithoutReplaying()
         {
             GameObject host = new(
                 nameof(OptInAdoptsManuallyRecreatedTokenWithoutReplaying),
@@ -288,11 +283,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 messaging.Release(listener),
                 "Releasing the adopted listener should succeed."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator OptInWithRegistrationNotTiedToEnableStagesButDoesNotEnable()
+        [Test]
+        public void OptInWithRegistrationNotTiedToEnableStagesButDoesNotEnable()
         {
             GameObject host = new(
                 nameof(OptInWithRegistrationNotTiedToEnableStagesButDoesNotEnable),
@@ -349,11 +343,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 messaging.Release(listener),
                 "Releasing the recovered listener should succeed."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator OptInRecoversFromReleaseWhileDisabled()
+        [Test]
+        public void OptInRecoversFromReleaseWhileDisabled()
         {
             GameObject host = new(
                 nameof(OptInRecoversFromReleaseWhileDisabled),
@@ -398,7 +391,6 @@ namespace DxMessaging.Tests.Runtime.Unity
                 messaging.Release(listener),
                 "Releasing the recovered listener should succeed."
             );
-            yield break;
         }
     }
 }

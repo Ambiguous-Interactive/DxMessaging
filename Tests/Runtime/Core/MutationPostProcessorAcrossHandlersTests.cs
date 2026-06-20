@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
@@ -11,12 +10,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class MutationPostProcessorAcrossHandlersTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator RemoveOtherPostProcessorAcrossHandlersDuringDispatch(
+        [Test]
+        public void RemoveOtherPostProcessorAcrossHandlersDuringDispatch(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.AllKindsIncludingWithoutContext)
@@ -109,11 +107,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             tokens[0].RemoveRegistration(pp[0]);
             tokens[0].RemoveRegistration(noop);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RemoveSelfPostProcessorAcrossHandlersDuringDispatch(
+        [Test]
+        public void RemoveSelfPostProcessorAcrossHandlersDuringDispatch(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.AllKindsIncludingWithoutContext)
@@ -187,11 +184,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             tokens[1].RemoveRegistration(pp[1]);
             tokens[0].RemoveRegistration(noop);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RemoveAllPostProcessorsAcrossHandlersDuringDispatch(
+        [Test]
+        public void RemoveAllPostProcessorsAcrossHandlersDuringDispatch(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.AllKindsIncludingWithoutContext)
@@ -265,11 +261,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             tokens[0].RemoveRegistration(noop);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddNewPostProcessorAcrossHandlersDuringDispatch(
+        [Test]
+        public void AddNewPostProcessorAcrossHandlersDuringDispatch(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.AllKindsIncludingWithoutContext)
@@ -354,11 +349,10 @@ namespace DxMessaging.Tests.Runtime.Core
             tokens[1].RemoveRegistration(addedHandle);
             tokens[0].RemoveRegistration(existingHandle);
             tokens[0].RemoveRegistration(noop);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RemoveOtherHandlerAcrossHandlersDuringDispatch(
+        [Test]
+        public void RemoveOtherHandlerAcrossHandlersDuringDispatch(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.AllKindsIncludingWithoutContext)
@@ -424,7 +418,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             tokens[0].RemoveRegistration(handlers[0]);
-            yield break;
         }
 
         /// <summary>
@@ -438,8 +431,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// behavior here so a future change to the global dispatch model
         /// (upfront prefreeze) cannot land silently.
         /// </summary>
-        [UnityTest]
-        public IEnumerator RemoveOtherGlobalAcceptAllAcrossHandlersDuringDispatch()
+        [Test]
+        public void RemoveOtherGlobalAcceptAllAcrossHandlersDuringDispatch()
         {
             EmptyMessageAwareComponent[] components = new EmptyMessageAwareComponent[2];
             MessageRegistrationToken[] tokens = new MessageRegistrationToken[2];
@@ -516,7 +509,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             tokens[0].RemoveRegistration(global[0]);
-            yield break;
         }
 
         private (

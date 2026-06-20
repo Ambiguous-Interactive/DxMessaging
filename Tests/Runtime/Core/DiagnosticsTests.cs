@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Configuration;
@@ -14,12 +13,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class DiagnosticsTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator TokenDiagnosticModeTracksEmissions()
+        [Test]
+        public void TokenDiagnosticModeTracksEmissions()
         {
             GameObject host = new(
                 nameof(TokenDiagnosticModeTracksEmissions),
@@ -47,11 +45,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, emissions.Count);
 
             token.RemoveRegistration(handle);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator MessageBusDiagnosticsRespectBufferSize()
+        [Test]
+        public void MessageBusDiagnosticsRespectBufferSize()
         {
             using (new DiagnosticsScope(DiagnosticsTarget.All, messageBufferSize: 2))
             {
@@ -85,8 +82,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Disable();
                 handler.active = false;
             }
-
-            yield break;
         }
 
         private static Dictionary<MessageRegistrationHandle, int> GetCallCounts(
@@ -153,8 +148,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator ZeroBufferSizeDiscardsEmissions()
+        [Test]
+        public void ZeroBufferSizeDiscardsEmissions()
         {
             using (new DiagnosticsScope(DiagnosticsTarget.All, messageBufferSize: 0))
             {
@@ -199,8 +194,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Disable();
                 handler.active = false;
             }
-
-            yield break;
         }
     }
 }

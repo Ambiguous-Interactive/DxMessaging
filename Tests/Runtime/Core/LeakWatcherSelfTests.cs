@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Configuration;
     using DxMessaging.Core.MessageBus;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Self-tests for <see cref="LeakWatcher"/>. Confirms the watcher detects a
@@ -21,8 +19,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </summary>
     public sealed class LeakWatcherSelfTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator WatcherPassesWhenAllHandlesAreRemoved(
+        [Test]
+        public void WatcherPassesWhenAllHandlesAreRemoved(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -54,12 +52,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator WatcherDetectsLeakedRegistrationWhenNotThrowing(
+        [Test]
+        public void WatcherDetectsLeakedRegistrationWhenNotThrowing(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -118,11 +114,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(leaked);
                 }
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator WatcherThrowsOnLeakWhenConfiguredTo(
+        [Test]
+        public void WatcherThrowsOnLeakWhenConfiguredTo(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -151,12 +146,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(leaked);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator WatcherWithSlotsPassesAfterExplicitTrim(
+        [Test]
+        public void WatcherWithSlotsPassesAfterExplicitTrim(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -193,12 +186,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator WatcherWithSlotsDetectsUnreclaimedSlotWhenNotThrowing(
+        [Test]
+        public void WatcherWithSlotsDetectsUnreclaimedSlotWhenNotThrowing(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -263,12 +254,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 _ = bus.Trim(force: true);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator WatcherWithSlotsThrowsOnSlotOnlyLeak(
+        [Test]
+        public void WatcherWithSlotsThrowsOnSlotOnlyLeak(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -301,12 +290,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 _ = bus.Trim(force: true);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator DefaultWatcherIgnoresSlotOnlyFootprint(
+        [Test]
+        public void DefaultWatcherIgnoresSlotOnlyFootprint(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -351,8 +338,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 _ = bus.Trim(force: true);
             }
-
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterCountingHandler(

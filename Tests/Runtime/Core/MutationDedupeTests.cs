@@ -2,14 +2,12 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class MutationDedupeTests : MessagingTestBase
     {
@@ -25,8 +23,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// instance is registered both times (the bus dedupes on the delegate
         /// instance, so a wrapper-per-call would defeat the test).
         /// </summary>
-        [UnityTest]
-        public IEnumerator AddSameDelegateDoesNotDuplicateInvocation(
+        [Test]
+        public void AddSameDelegateDoesNotDuplicateInvocation(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -129,7 +127,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondHandle.Value);
             }
-            yield break;
         }
 
         private static void EmitForScenario(MessageScenario scenario, InstanceId target)

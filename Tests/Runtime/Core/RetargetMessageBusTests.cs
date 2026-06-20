@@ -2,14 +2,12 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Direct coverage for <see cref="MessageRegistrationToken.RetargetMessageBus"/>.
@@ -32,8 +30,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </remarks>
     public sealed class RetargetMessageBusTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator RetargetWhileEnabledMovesLiveRegistrationsToNewBus(
+        [Test]
+        public void RetargetWhileEnabledMovesLiveRegistrationsToNewBus(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -131,11 +129,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             handler.active = false;
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RetargetWhileDisabledLandsOnNewBusOnNextEnable(
+        [Test]
+        public void RetargetWhileDisabledLandsOnNewBusOnNextEnable(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -239,11 +236,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             handler.active = false;
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RetargetToSameBusIsObservableNoOp(
+        [Test]
+        public void RetargetToSameBusIsObservableNoOp(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -322,7 +318,6 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             handler.active = false;
-            yield break;
         }
 
         /// <summary>
@@ -338,8 +333,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// retarget-specific follow-ups: subsequent old-bus emissions find
         /// nothing, and new-bus emissions reach every moved handler.
         /// </summary>
-        [UnityTest]
-        public IEnumerator RetargetMidDispatchCompletesSnapshotThenMovesRouting(
+        [Test]
+        public void RetargetMidDispatchCompletesSnapshotThenMovesRouting(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -468,7 +463,6 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             handler.active = false;
-            yield break;
         }
 
         private static int RegisteredCountForKind(IMessageBus bus, MessageKind kind)

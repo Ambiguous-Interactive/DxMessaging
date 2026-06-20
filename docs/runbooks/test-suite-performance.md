@@ -53,7 +53,9 @@ the code. In short:
 - **One teardown frame, not one per object.** `MessagingTestBase.UnityCleanup`
   queues every tracked destroy, then yields a single drain frame.
 - **`[UnityTest]` only when you yield.** A no-yield coroutine test is a synchronous
-  test paying coroutine overhead; prefer `[Test]` where the lifecycle allows.
+  test paying coroutine overhead; prefer `[Test]` where the lifecycle allows
+  (a `[Test]` in a PlayMode assembly still runs in play mode). Pinned by the
+  `NoYieldUnityTestsMustBePlainTest` drift-guard.
 - **No real-time waits.** Blocking sleeps, awaited delays, real-seconds coroutine
   yields, and time-scale manipulation are banned (the cost here is frame-based, not
   wall-clock, so the "lower the time scale" tip does not apply).
@@ -120,6 +122,10 @@ SECOND, persistent run).
   are gitignored, so that copy is absent in a fresh CI checkout).
 - `TestAttributeContractTests.TestSourcesAvoidRealTimeWaitAntiPatterns` (Runtime)
   scans the whole `Tests/` tree and fails on any banned real-time-wait token.
+- `TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest` (Runtime) scans the
+  `Tests/` tree for `[UnityTest]` methods that never `yield return` a frame and fails
+  unless the file is on the shrinking `pendingMigration` allowlist, so a new
+  synchronous test cannot regress back into a coroutine costume.
 - `SuiteWallClockBudgetTest` (Runtime) is the pre-existing speed backstop: it fails
   the default correctness suite when its wall clock exceeds a per-version hard
   ceiling (300 s on 2021.3, 180 s on 2022.3 / 6000.x) and warns past a 60 s soft
@@ -137,9 +143,14 @@ Open follow-ups (tracked in the remaining-work plan):
 - EditMode is the slower mode locally; de-I/O the EditMode hotspots (cache the
   reflection walks in `[OneTimeSetUp]`, prefer in-memory `ScriptableObject` over
   `AssetDatabase.CreateAsset`).
-- Migrate no-yield `[UnityTest]` methods to `[Test]` file-by-file, and add the
-  companion no-yield-`[UnityTest]` drift-guard alongside that migration (it is not
-  built yet: it would otherwise be red against the many existing no-yield bodies).
+- The no-yield-`[UnityTest]` -> `[Test]` migration is mostly done: 45
+  all-synchronous PlayMode fixtures were converted whole-file (310 methods) and the
+  companion drift-guard
+  (`TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest`) now ships and is
+  green. Remaining: 8 fixtures that interleave genuine-coroutine and synchronous
+  tests still hold ~43 no-yield `[UnityTest]` methods awaiting per-method conversion;
+  they are the guard's shrinking per-file `pendingMigration` allowlist. Convert a
+  fixture's no-yield methods, then delete its allowlist entry.
 - Standalone IL2CPP build: Release C++ is intentionally retained after the
   Debug/Release measurement above. The Library cache key was audited and
   intentionally left conservative (see

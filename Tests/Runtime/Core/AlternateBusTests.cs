@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -11,12 +10,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class AlternateBusTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator CustomMessageBusIsolatedFromGlobalBus()
+        [Test]
+        public void CustomMessageBusIsolatedFromGlobalBus()
         {
             GameObject globalObject = new(
                 nameof(CustomMessageBusIsolatedFromGlobalBus) + "_Global",
@@ -79,11 +77,10 @@ namespace DxMessaging.Tests.Runtime.Core
             customHandler.active = false;
 
             globalToken.RemoveRegistration(globalHandle);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator CrossBusReentrantEmissionsCompleteWithoutCorruption(
+        [Test]
+        public void CrossBusReentrantEmissionsCompleteWithoutCorruption(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -194,7 +191,6 @@ namespace DxMessaging.Tests.Runtime.Core
             tokenB.Dispose();
             handlerA.active = false;
             handlerB.active = false;
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterReentrantHandler(

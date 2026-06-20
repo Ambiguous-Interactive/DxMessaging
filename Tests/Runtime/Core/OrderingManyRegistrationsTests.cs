@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
@@ -12,7 +11,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     [Category("Stress")]
     public sealed class OrderingManyRegistrationsTests : MessagingTestBase
@@ -42,8 +40,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(expected, actualCopy, message);
         }
 
-        [UnityTest]
-        public IEnumerator HandlersManyRegistrationsMaintainOrder(
+        [Test]
+        public void HandlersManyRegistrationsMaintainOrder(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -82,11 +80,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 actionOrder,
                 $"{scenario.Kind} action handlers should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedPostProcessorsManyRegistrationsMaintainOrder()
+        [Test]
+        public void UntargetedPostProcessorsManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(UntargetedPostProcessorsManyRegistrationsMaintainOrder),
@@ -113,11 +110,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 postProcessorOrder,
                 "Untargeted post-processors should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedPostProcessorsManyRegistrationsMaintainOrder()
+        [Test]
+        public void TargetedPostProcessorsManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(TargetedPostProcessorsManyRegistrationsMaintainOrder),
@@ -161,11 +157,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 actionOrder,
                 "Targeted action post-processors should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingManyRegistrationsMaintainOrder()
+        [Test]
+        public void TargetedWithoutTargetingManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(TargetedWithoutTargetingManyRegistrationsMaintainOrder),
@@ -205,11 +200,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 actionOrder,
                 "Targeted-without-targeting action handlers should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorsManyRegistrationsMaintainOrder()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorsManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(TargetedWithoutTargetingPostProcessorsManyRegistrationsMaintainOrder),
@@ -249,11 +243,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 actionOrder,
                 "Targeted-without-targeting action post-processors should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastPostProcessorsManyRegistrationsMaintainOrder()
+        [Test]
+        public void BroadcastPostProcessorsManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(BroadcastPostProcessorsManyRegistrationsMaintainOrder),
@@ -297,11 +290,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 actionOrder,
                 "Broadcast action post-processors should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceManyRegistrationsMaintainOrder()
+        [Test]
+        public void BroadcastWithoutSourceManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(BroadcastWithoutSourceManyRegistrationsMaintainOrder),
@@ -341,11 +333,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 actionOrder,
                 "Broadcast-without-source action handlers should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorsManyRegistrationsMaintainOrder()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorsManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(BroadcastWithoutSourcePostProcessorsManyRegistrationsMaintainOrder),
@@ -385,11 +376,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 actionOrder,
                 "Broadcast-without-source action post-processors should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllActionsManyRegistrationsMaintainOrder()
+        [Test]
+        public void GlobalAcceptAllActionsManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(GlobalAcceptAllActionsManyRegistrationsMaintainOrder),
@@ -434,11 +424,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 broadcastOrder,
                 "Global accept-all action handlers for broadcast messages should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllFastManyRegistrationsMaintainOrder()
+        [Test]
+        public void GlobalAcceptAllFastManyRegistrationsMaintainOrder()
         {
             GameObject host = new(
                 nameof(GlobalAcceptAllFastManyRegistrationsMaintainOrder),
@@ -483,11 +472,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 broadcastOrder,
                 "Global accept-all fast handlers for broadcast messages should run in registration order even with many entries."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator InterceptorsManyRegistrationsMaintainOrder(
+        [Test]
+        public void InterceptorsManyRegistrationsMaintainOrder(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -523,7 +511,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 order,
                 $"{scenario.Kind} interceptors should run in registration order even with many entries."
             );
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterFastHandler(

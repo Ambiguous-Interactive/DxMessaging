@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Tests.Runtime;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
     using Object = UnityEngine.Object;
 
     /// <summary>
@@ -32,8 +30,8 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         private const int DestroyerPriority = -10; // ensure it runs before default priority 0
 
-        [UnityTest]
-        public IEnumerator DestroyOtherListenerDoesNotRun(
+        [Test]
+        public void DestroyOtherListenerDoesNotRun(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -85,11 +83,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Assert.AreEqual(1, firstCount, "First handler should run exactly once.");
             Assert.AreEqual(0, secondCount, "Second handler must not act after it is destroyed.");
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedComponentDestroyOtherListenerDoesNotRun()
+        [Test]
+        public void TargetedComponentDestroyOtherListenerDoesNotRun()
         {
             GameObject a = new(
                 nameof(TargetedComponentDestroyOtherListenerDoesNotRun) + "_A",
@@ -144,11 +141,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 secondCount,
                 "Second component-targeted handler must not act after destruction."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingDestroyOtherListenerDoesNotRun()
+        [Test]
+        public void TargetedWithoutTargetingDestroyOtherListenerDoesNotRun()
         {
             GameObject a = new(
                 nameof(TargetedWithoutTargetingDestroyOtherListenerDoesNotRun) + "_A",
@@ -202,11 +198,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 secondCount,
                 "Second targeted-without-targeting handler must not act after destruction."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastComponentDestroyOtherListenerDoesNotRun()
+        [Test]
+        public void BroadcastComponentDestroyOtherListenerDoesNotRun()
         {
             GameObject a = new(
                 nameof(BroadcastComponentDestroyOtherListenerDoesNotRun) + "_A",
@@ -265,11 +260,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 secondCount,
                 "Second Component-sourced broadcast handler must not act after destruction."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceDestroyOtherListenerDoesNotRun()
+        [Test]
+        public void BroadcastWithoutSourceDestroyOtherListenerDoesNotRun()
         {
             GameObject a = new(
                 nameof(BroadcastWithoutSourceDestroyOtherListenerDoesNotRun) + "_A",
@@ -326,7 +320,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 secondCount,
                 "Second broadcast-without-source handler must not act after destruction."
             );
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterCounter(

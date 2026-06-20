@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Runtime;
@@ -10,7 +9,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class MutationGlobalAddTests : MessagingTestBase
     {
@@ -22,8 +20,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <see cref="MessageScenarios.KindsWithComponentTarget"/>; the prior
         /// Targeted/Broadcast pair collapsed into this single method.
         /// </summary>
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllAddDuringEmission(
+        [Test]
+        public void GlobalAcceptAllAddDuringEmission(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -87,7 +85,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             token.RemoveRegistration(adder);
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterCounter(

@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Tests that mutate registration state during emission and ensure snapshot semantics:
@@ -23,9 +21,9 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         private const int ManyCount = 6; // Forces default iteration paths (>5)
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator AddLocalHandlerMany(
+        public void AddLocalHandlerMany(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -109,7 +107,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handles[i]);
                 }
             }
-            yield break;
         }
 
         /// <summary>
@@ -123,8 +120,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// exist (or were not stamped) at emission start, firing it
         /// same-emission depending on unrelated handler counts.
         /// </summary>
-        [UnityTest]
-        public IEnumerator SameHandlerCrossShapeRegistrationDoesNotFireSameEmission(
+        [Test]
+        public void SameHandlerCrossShapeRegistrationDoesNotFireSameEmission(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -201,12 +198,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(defaultHandle);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator UntargetedRemoveSelfMany()
+        public void UntargetedRemoveSelfMany()
         {
             GameObject host = new(
                 nameof(UntargetedRemoveSelfMany),
@@ -258,12 +254,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 total,
                 "No handler should run again after removing itself in the previous pass."
             );
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator AddHandlerAcrossHandlersMany(
+        public void AddHandlerAcrossHandlersMany(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -377,12 +372,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 entry.token.RemoveRegistration(entry.handle);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator TargetedWithoutTargetingAddLocalHandlerMany()
+        public void TargetedWithoutTargetingAddLocalHandlerMany()
         {
             GameObject host = new(
                 nameof(TargetedWithoutTargetingAddLocalHandlerMany),
@@ -459,12 +453,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handles[i]);
                 }
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator BroadcastWithoutSourceAddLocalHandlerMany()
+        public void BroadcastWithoutSourceAddLocalHandlerMany()
         {
             GameObject host = new(
                 nameof(BroadcastWithoutSourceAddLocalHandlerMany),
@@ -541,7 +534,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handles[i]);
                 }
             }
-            yield break;
         }
 
         /// <summary>
@@ -554,8 +546,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// later-bucket snapshot was rebuilt after the earlier bucket's
         /// handler had already mutated the typed cache, dropping the entry.
         /// </summary>
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingDeregisterAcrossPrioritiesIsHonouredOnCurrentSnapshot()
+        [Test]
+        public void TargetedWithoutTargetingDeregisterAcrossPrioritiesIsHonouredOnCurrentSnapshot()
         {
             GameObject host = new(
                 nameof(
@@ -621,7 +613,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 firstCount,
                 secondCount
             );
-            yield break;
         }
 
         /// <summary>
@@ -632,8 +623,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// resolves every delegate into a frozen array at snapshot build, which
         /// makes the cross-priority removal unobservable by construction.
         /// </summary>
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceDeregisterAcrossPrioritiesIsHonouredOnCurrentSnapshot()
+        [Test]
+        public void BroadcastWithoutSourceDeregisterAcrossPrioritiesIsHonouredOnCurrentSnapshot()
         {
             GameObject host = new(
                 nameof(BroadcastWithoutSourceDeregisterAcrossPrioritiesIsHonouredOnCurrentSnapshot),
@@ -697,12 +688,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 firstCount,
                 secondCount
             );
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator GlobalAcceptAllAddDuringHandlerMany()
+        public void GlobalAcceptAllAddDuringHandlerMany()
         {
             // Create several listeners that globally accept all; add one more during handling; ensure it runs next pass only
             List<(EmptyMessageAwareComponent comp, MessageRegistrationToken token)> listeners =
@@ -797,11 +787,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 entry.token.RemoveRegistration(entry.handle);
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddInterceptorDuringInterceptorDoesNotRunInSameEmission(
+        [Test]
+        public void AddInterceptorDuringInterceptorDoesNotRunInSameEmission(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -867,12 +856,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(second.Value);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator AddPostProcessorDuringHandlerDoesNotRunInSameEmissionMany(
+        public void AddPostProcessorDuringHandlerDoesNotRunInSameEmissionMany(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -979,12 +967,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(ppHandle);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator AddPostProcessorDuringPostProcessorDoesNotRunInSameEmissionMany(
+        public void AddPostProcessorDuringPostProcessorDoesNotRunInSameEmissionMany(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -1080,12 +1067,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(ppHandles[i]);
                 }
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator TargetedWithoutTargetingAddHandlerAcrossHandlersMany()
+        public void TargetedWithoutTargetingAddHandlerAcrossHandlersMany()
         {
             List<(EmptyMessageAwareComponent comp, MessageRegistrationToken token)> listeners =
                 new();
@@ -1162,12 +1148,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 entry.token.RemoveRegistration(entry.handle);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator BroadcastWithoutSourceAddHandlerAcrossHandlersMany()
+        public void BroadcastWithoutSourceAddHandlerAcrossHandlersMany()
         {
             List<(EmptyMessageAwareComponent comp, MessageRegistrationToken token)> listeners =
                 new();
@@ -1241,12 +1226,11 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 entry.token.RemoveRegistration(entry.handle);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator TargetedWithoutTargetingRemoveOtherAcrossHandlersDuringEmissionMany()
+        public void TargetedWithoutTargetingRemoveOtherAcrossHandlersDuringEmissionMany()
         {
             List<(EmptyMessageAwareComponent comp, MessageRegistrationToken token)> listeners =
                 new();
@@ -1296,12 +1280,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 listeners[i].token.RemoveRegistration(handles[i]);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator BroadcastWithoutSourceRemoveOtherAcrossHandlersDuringEmissionMany()
+        public void BroadcastWithoutSourceRemoveOtherAcrossHandlersDuringEmissionMany()
         {
             List<(EmptyMessageAwareComponent comp, MessageRegistrationToken token)> listeners =
                 new();
@@ -1350,12 +1333,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 listeners[i].token.RemoveRegistration(handles[i]);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator PostProcessorRemoveOtherDuringPostProcessingMany(
+        public void PostProcessorRemoveOtherDuringPostProcessingMany(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -1408,12 +1390,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 token.RemoveRegistration(pp[i]);
             }
-            yield break;
         }
 
-        [UnityTest]
+        [Test]
         [Category("Stress")]
-        public IEnumerator RemoveOtherLocalHandlerDuringEmissionMany(
+        public void RemoveOtherLocalHandlerDuringEmissionMany(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -1464,11 +1445,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 token.RemoveRegistration(handles[i]);
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedAddSameDelegateDuringEmissionDoesNotDuplicateInvocation()
+        [Test]
+        public void UntargetedAddSameDelegateDuringEmissionDoesNotDuplicateInvocation()
         {
             GameObject host = new("SameDelegateHost", typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
@@ -1493,7 +1473,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondHandle.Value);
             }
-            yield break;
+            return;
 
             void Local(SimpleUntargetedMessage _)
             {
@@ -1505,8 +1485,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedAddLowerPriorityDuringEmissionRespectsNextEmissionOrder()
+        [Test]
+        public void UntargetedAddLowerPriorityDuringEmissionRespectsNextEmissionOrder()
         {
             GameObject host = new("PriorityHost", typeof(EmptyMessageAwareComponent));
             _spawned.Add(host);
@@ -1547,7 +1527,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(lowHandle);
             }
-            yield break;
         }
     }
 }

@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Unity
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -14,7 +13,6 @@ namespace DxMessaging.Tests.Runtime.Unity
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Covers <see cref="MessagingComponent"/> lifecycle surface not exercised elsewhere:
@@ -33,8 +31,8 @@ namespace DxMessaging.Tests.Runtime.Unity
     /// </remarks>
     public sealed class MessagingComponentLifecycleTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator ToggleMessageHandlerFalseSuspendsDeliveryUntilToggledTrue()
+        [Test]
+        public void ToggleMessageHandlerFalseSuspendsDeliveryUntilToggledTrue()
         {
             GameObject host = new(
                 nameof(ToggleMessageHandlerFalseSuspendsDeliveryUntilToggledTrue),
@@ -67,11 +65,10 @@ namespace DxMessaging.Tests.Runtime.Unity
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
             Assert.AreEqual(2, count, "ToggleMessageHandler(true) should resume delivery.");
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ToggleMessageHandlerFalseWinsOverEmitMessagesWhenDisabled()
+        [Test]
+        public void ToggleMessageHandlerFalseWinsOverEmitMessagesWhenDisabled()
         {
             GameObject host = new(
                 nameof(ToggleMessageHandlerFalseWinsOverEmitMessagesWhenDisabled),
@@ -105,11 +102,10 @@ namespace DxMessaging.Tests.Runtime.Unity
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
             Assert.AreEqual(2, count, "ToggleMessageHandler(true) should resume delivery.");
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EnableCycleDoesNotOverrideExplicitToggleWhileEmitMessagesWhenDisabledIsTrue()
+        [Test]
+        public void EnableCycleDoesNotOverrideExplicitToggleWhileEmitMessagesWhenDisabledIsTrue()
         {
             GameObject host = new(
                 nameof(EnableCycleDoesNotOverrideExplicitToggleWhileEmitMessagesWhenDisabledIsTrue),
@@ -160,11 +156,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 count,
                 "An explicit ToggleMessageHandler(true) remains the way to resume delivery."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ToggleMessageHandlerTrueReactivatesEvenWhenEmitMessagesWhenDisabledIsTrue()
+        [Test]
+        public void ToggleMessageHandlerTrueReactivatesEvenWhenEmitMessagesWhenDisabledIsTrue()
         {
             GameObject host = new(
                 nameof(ToggleMessageHandlerTrueReactivatesEvenWhenEmitMessagesWhenDisabledIsTrue),
@@ -197,11 +192,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 count,
                 "ToggleMessageHandler(true) must reactivate regardless of emitMessagesWhenDisabled."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator FlagEnabledWhileLifecycleSuspendedRequiresExplicitReactivation()
+        [Test]
+        public void FlagEnabledWhileLifecycleSuspendedRequiresExplicitReactivation()
         {
             GameObject host = new(
                 nameof(FlagEnabledWhileLifecycleSuspendedRequiresExplicitReactivation),
@@ -238,11 +232,10 @@ namespace DxMessaging.Tests.Runtime.Unity
             messaging.ToggleMessageHandler(true);
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "An explicit ToggleMessageHandler(true) resumes delivery.");
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ToggleMessageHandlerBeforeAwakeIsSafeNoOp()
+        [Test]
+        public void ToggleMessageHandlerBeforeAwakeIsSafeNoOp()
         {
             GameObject host = new(nameof(ToggleMessageHandlerBeforeAwakeIsSafeNoOp));
             _spawned.Add(host);
@@ -277,12 +270,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                     "Releasing the registered listener should succeed."
                 );
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator DisablingOneListenerOnSharedHostLeavesSiblingActive()
+        [Test]
+        public void DisablingOneListenerOnSharedHostLeavesSiblingActive()
         {
             GameObject host = new(
                 nameof(DisablingOneListenerOnSharedHostLeavesSiblingActive),
@@ -328,11 +319,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 "Re-enabled listener must resume receiving exactly once per emit."
             );
             Assert.AreEqual(3, secondCount, "Sibling must be unaffected by the re-enable.");
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ReleasingOneListenerOnSharedHostLeavesSiblingActive()
+        [Test]
+        public void ReleasingOneListenerOnSharedHostLeavesSiblingActive()
         {
             GameObject host = new(
                 nameof(ReleasingOneListenerOnSharedHostLeavesSiblingActive),
@@ -375,11 +365,10 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, firstCount, "Double release must not resurrect the listener.");
             Assert.AreEqual(3, secondCount, "Sibling must be unaffected by the double release.");
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ReleaseReturnsFalseForNeverRegisteredListener()
+        [Test]
+        public void ReleaseReturnsFalseForNeverRegisteredListener()
         {
             GameObject host = new(
                 nameof(ReleaseReturnsFalseForNeverRegisteredListener),
@@ -415,11 +404,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 count,
                 "Failed release calls must have no side effects on registered listeners."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator DoubleReleaseReturnsFalseAndLeavesMessagingUsable()
+        [Test]
+        public void DoubleReleaseReturnsFalseAndLeavesMessagingUsable()
         {
             GameObject host = new(
                 nameof(DoubleReleaseReturnsFalseAndLeavesMessagingUsable),
@@ -508,11 +496,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 messaging.Release(listener),
                 "Release should succeed again after re-creating the token."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator ReleaseFailureKeepsListenerRegisteredForRetry()
+        [Test]
+        public void ReleaseFailureKeepsListenerRegisteredForRetry()
         {
             GameObject host = new(
                 nameof(ReleaseFailureKeepsListenerRegisteredForRetry),
@@ -567,8 +554,6 @@ namespace DxMessaging.Tests.Runtime.Unity
                     "A second release after successful retry must report failure."
                 );
             }
-
-            yield break;
         }
 
         private sealed class FailingDeregistrationBus : DelegatingMessageBus

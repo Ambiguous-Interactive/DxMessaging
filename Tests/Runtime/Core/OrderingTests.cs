@@ -1,7 +1,6 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
@@ -10,12 +9,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class OrderingTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator UntargetedMixedFastThenActions()
+        [Test]
+        public void UntargetedMixedFastThenActions()
         {
             GameObject go = new(
                 nameof(UntargetedMixedFastThenActions),
@@ -31,11 +29,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PipelineOrderingUntargeted()
+        [Test]
+        public void PipelineOrderingUntargeted()
         {
             GameObject go = new(
                 nameof(PipelineOrderingUntargeted),
@@ -84,11 +81,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 stages.ToArray(),
                 "Untargeted pipeline must be Interceptors -> Global -> Handlers -> Post-Processors."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PipelineOrderingTargetedGameObject()
+        [Test]
+        public void PipelineOrderingTargetedGameObject()
         {
             GameObject go = new(
                 nameof(PipelineOrderingTargetedGameObject),
@@ -136,11 +132,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 stages.ToArray(),
                 "Targeted pipeline must be Interceptors -> Global -> Handlers -> Post-Processors."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PipelineOrderingBroadcastGameObject()
+        [Test]
+        public void PipelineOrderingBroadcastGameObject()
         {
             GameObject go = new(
                 nameof(PipelineOrderingBroadcastGameObject),
@@ -187,11 +182,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 stages.ToArray(),
                 "Broadcast pipeline must be Interceptors -> Global -> Handlers -> Post-Processors."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PostProcessorTargetedSamePriorityInRegistrationOrder()
+        [Test]
+        public void PostProcessorTargetedSamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(PostProcessorTargetedSamePriorityInRegistrationOrder),
@@ -225,11 +219,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Targeted post-processors at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PostProcessorBroadcastSamePriorityInRegistrationOrder()
+        [Test]
+        public void PostProcessorBroadcastSamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(PostProcessorBroadcastSamePriorityInRegistrationOrder),
@@ -263,11 +256,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Broadcast post-processors at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingHandlersSamePriorityInRegistrationOrder()
+        [Test]
+        public void TargetedWithoutTargetingHandlersSamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingHandlersSamePriorityInRegistrationOrder),
@@ -298,11 +290,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "TargetedWithoutTargeting handlers at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorsSamePriorityInRegistrationOrder()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorsSamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingPostProcessorsSamePriorityInRegistrationOrder),
@@ -333,11 +324,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "TargetedWithoutTargeting post-processors at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceHandlersSamePriorityInRegistrationOrder()
+        [Test]
+        public void BroadcastWithoutSourceHandlersSamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourceHandlersSamePriorityInRegistrationOrder),
@@ -368,11 +358,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "BroadcastWithoutSource handlers at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorsSamePriorityInRegistrationOrder()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorsSamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourcePostProcessorsSamePriorityInRegistrationOrder),
@@ -403,11 +392,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "BroadcastWithoutSource post-processors at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllUntargetedFastBeforeActions()
+        [Test]
+        public void GlobalAcceptAllUntargetedFastBeforeActions()
         {
             GameObject go = new(
                 nameof(GlobalAcceptAllUntargetedFastBeforeActions),
@@ -433,11 +421,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "GlobalAcceptAll (Untargeted) should run fast handlers before action handlers at the same logical step."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllTargetedFastBeforeActions()
+        [Test]
+        public void GlobalAcceptAllTargetedFastBeforeActions()
         {
             GameObject go = new(
                 nameof(GlobalAcceptAllTargetedFastBeforeActions),
@@ -462,11 +449,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "GlobalAcceptAll (Targeted) should run fast handlers before action handlers at the same logical step."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllBroadcastFastBeforeActions()
+        [Test]
+        public void GlobalAcceptAllBroadcastFastBeforeActions()
         {
             GameObject go = new(
                 nameof(GlobalAcceptAllBroadcastFastBeforeActions),
@@ -491,11 +477,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "GlobalAcceptAll (Broadcast) should run fast handlers before action handlers at the same logical step."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingMixedFastBeforeActions()
+        [Test]
+        public void TargetedWithoutTargetingMixedFastBeforeActions()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingMixedFastBeforeActions),
@@ -519,11 +504,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceMixedFastBeforeActions()
+        [Test]
+        public void BroadcastWithoutSourceMixedFastBeforeActions()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourceMixedFastBeforeActions),
@@ -546,11 +530,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PipelineOrderingTargetedWithWithoutTargetingHandlersAndPostProcessors()
+        [Test]
+        public void PipelineOrderingTargetedWithWithoutTargetingHandlersAndPostProcessors()
         {
             GameObject go = new(
                 nameof(PipelineOrderingTargetedWithWithoutTargetingHandlersAndPostProcessors),
@@ -593,11 +576,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 stages.ToArray(),
                 "Targeted pipeline must include WithoutTargeting handlers between specific handlers and post-processors."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PipelineOrderingBroadcastWithWithoutSourceHandlersAndPostProcessors()
+        [Test]
+        public void PipelineOrderingBroadcastWithWithoutSourceHandlersAndPostProcessors()
         {
             GameObject go = new(
                 nameof(PipelineOrderingBroadcastWithWithoutSourceHandlersAndPostProcessors),
@@ -639,11 +621,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 stages.ToArray(),
                 "Broadcast pipeline must include WithoutSource handlers between specific handlers and post-processors."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedSamePriorityActionsInRegistrationOrder()
+        [Test]
+        public void UntargetedSamePriorityActionsInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(UntargetedSamePriorityActionsInRegistrationOrder),
@@ -665,11 +646,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Untargeted action handlers at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedSamePriorityFastInRegistrationOrder()
+        [Test]
+        public void UntargetedSamePriorityFastInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(UntargetedSamePriorityFastInRegistrationOrder),
@@ -691,11 +671,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Untargeted fast handlers at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedSamePriorityMixedFastBeforeActions()
+        [Test]
+        public void UntargetedSamePriorityMixedFastBeforeActions()
         {
             GameObject go = new(
                 nameof(UntargetedSamePriorityMixedFastBeforeActions),
@@ -717,11 +696,10 @@ namespace DxMessaging.Tests.Runtime.Core
             msg.EmitUntargeted();
             // Fast handlers run before action handlers at the same priority; within each group, registration order is preserved
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedSamePriorityActionsGameObjectInRegistrationOrder()
+        [Test]
+        public void TargetedSamePriorityActionsGameObjectInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(TargetedSamePriorityActionsGameObjectInRegistrationOrder),
@@ -743,11 +721,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Targeted action handlers at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorsFastOnlySamePriorityInRegistrationOrder()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorsFastOnlySamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourcePostProcessorsFastOnlySamePriorityInRegistrationOrder),
@@ -774,11 +751,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorsFastOnlySamePriorityInRegistrationOrder()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorsFastOnlySamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(
@@ -807,11 +783,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedSamePriorityFastGameObjectInRegistrationOrder()
+        [Test]
+        public void TargetedSamePriorityFastGameObjectInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(TargetedSamePriorityFastGameObjectInRegistrationOrder),
@@ -845,11 +820,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Targeted fast handlers at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastSamePriorityActionsGameObjectInRegistrationOrder()
+        [Test]
+        public void BroadcastSamePriorityActionsGameObjectInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastSamePriorityActionsGameObjectInRegistrationOrder),
@@ -883,11 +857,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Broadcast action handlers at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastSamePriorityFastGameObjectInRegistrationOrder()
+        [Test]
+        public void BroadcastSamePriorityFastGameObjectInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastSamePriorityFastGameObjectInRegistrationOrder),
@@ -921,11 +894,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Broadcast fast handlers at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PostProcessorUntargetedSamePriorityInRegistrationOrder()
+        [Test]
+        public void PostProcessorUntargetedSamePriorityInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(PostProcessorUntargetedSamePriorityInRegistrationOrder),
@@ -956,11 +928,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 order.ToArray(),
                 "Untargeted post-processors at same priority should run by registration order."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator DisposableRemovesRegistration()
+        [Test]
+        public void DisposableRemovesRegistration()
         {
             GameObject go = new(
                 nameof(DisposableRemovesRegistration),
@@ -984,11 +955,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleUntargetedMessage msg2 = new();
             msg2.EmitUntargeted();
             Assert.AreEqual(1, count, "Disposable should remove the registration when disposed.");
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedMixedFastBeforeActionsGameObject()
+        [Test]
+        public void TargetedMixedFastBeforeActionsGameObject()
         {
             GameObject go = new(
                 nameof(TargetedMixedFastBeforeActionsGameObject),
@@ -1018,11 +988,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastMixedFastBeforeActionsGameObject()
+        [Test]
+        public void BroadcastMixedFastBeforeActionsGameObject()
         {
             GameObject go = new(
                 nameof(BroadcastMixedFastBeforeActionsGameObject),
@@ -1052,11 +1021,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedSamePriorityActionsComponentInRegistrationOrder()
+        [Test]
+        public void TargetedSamePriorityActionsComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(TargetedSamePriorityActionsComponentInRegistrationOrder),
@@ -1072,11 +1040,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedSamePriorityFastComponentInRegistrationOrder()
+        [Test]
+        public void TargetedSamePriorityFastComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(TargetedSamePriorityFastComponentInRegistrationOrder),
@@ -1104,11 +1071,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedMixedFastBeforeActionsComponent()
+        [Test]
+        public void TargetedMixedFastBeforeActionsComponent()
         {
             GameObject go = new(
                 nameof(TargetedMixedFastBeforeActionsComponent),
@@ -1136,11 +1102,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastSamePriorityActionsComponentInRegistrationOrder()
+        [Test]
+        public void BroadcastSamePriorityActionsComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastSamePriorityActionsComponentInRegistrationOrder),
@@ -1168,11 +1133,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastSamePriorityFastComponentInRegistrationOrder()
+        [Test]
+        public void BroadcastSamePriorityFastComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastSamePriorityFastComponentInRegistrationOrder),
@@ -1200,11 +1164,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastMixedFastBeforeActionsComponent()
+        [Test]
+        public void BroadcastMixedFastBeforeActionsComponent()
         {
             GameObject go = new(
                 nameof(BroadcastMixedFastBeforeActionsComponent),
@@ -1232,11 +1195,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingHandlersSamePriorityComponentInRegistrationOrder()
+        [Test]
+        public void TargetedWithoutTargetingHandlersSamePriorityComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingHandlersSamePriorityComponentInRegistrationOrder),
@@ -1261,11 +1223,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingMixedFastBeforeActionsComponent()
+        [Test]
+        public void TargetedWithoutTargetingMixedFastBeforeActionsComponent()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingMixedFastBeforeActionsComponent),
@@ -1290,11 +1251,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorsSamePriorityComponentInRegistrationOrder()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorsSamePriorityComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(
@@ -1321,11 +1281,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorsFastOnlyComponentInRegistrationOrder()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorsFastOnlyComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingPostProcessorsFastOnlyComponentInRegistrationOrder),
@@ -1350,11 +1309,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceHandlersSamePriorityComponentInRegistrationOrder()
+        [Test]
+        public void BroadcastWithoutSourceHandlersSamePriorityComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourceHandlersSamePriorityComponentInRegistrationOrder),
@@ -1379,11 +1337,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceMixedFastBeforeActionsComponent()
+        [Test]
+        public void BroadcastWithoutSourceMixedFastBeforeActionsComponent()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourceMixedFastBeforeActionsComponent),
@@ -1408,11 +1365,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorsSamePriorityComponentInRegistrationOrder()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorsSamePriorityComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(
@@ -1439,11 +1395,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorsFastOnlyComponentInRegistrationOrder()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorsFastOnlyComponentInRegistrationOrder()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourcePostProcessorsFastOnlyComponentInRegistrationOrder),
@@ -1468,11 +1423,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { 1, 2, 3 }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator OnlyGlobalAcceptAllUntargetedInvoked()
+        [Test]
+        public void OnlyGlobalAcceptAllUntargetedInvoked()
         {
             GameObject go = new(
                 nameof(OnlyGlobalAcceptAllUntargetedInvoked),
@@ -1494,11 +1448,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, gUntargeted);
             Assert.AreEqual(0, gTargeted);
             Assert.AreEqual(0, gBroadcast);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator OnlyGlobalAcceptAllTargetedInvoked()
+        [Test]
+        public void OnlyGlobalAcceptAllTargetedInvoked()
         {
             GameObject go = new(
                 nameof(OnlyGlobalAcceptAllTargetedInvoked),
@@ -1520,11 +1473,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, gUntargeted);
             Assert.AreEqual(1, gTargeted);
             Assert.AreEqual(0, gBroadcast);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator OnlyGlobalAcceptAllBroadcastInvoked()
+        [Test]
+        public void OnlyGlobalAcceptAllBroadcastInvoked()
         {
             GameObject go = new(
                 nameof(OnlyGlobalAcceptAllBroadcastInvoked),
@@ -1546,11 +1498,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, gUntargeted);
             Assert.AreEqual(0, gTargeted);
             Assert.AreEqual(1, gBroadcast);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator NoRegistrationsNoInvocation()
+        [Test]
+        public void NoRegistrationsNoInvocation()
         {
             GameObject go = new(
                 nameof(NoRegistrationsNoInvocation),
@@ -1566,11 +1517,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg3 = new();
             msg3.EmitComponentBroadcast(comp);
             Assert.Pass();
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllUntargetedMultipleFastAndActionOrder()
+        [Test]
+        public void GlobalAcceptAllUntargetedMultipleFastAndActionOrder()
         {
             GameObject go = new(
                 nameof(GlobalAcceptAllUntargetedMultipleFastAndActionOrder),
@@ -1599,11 +1549,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
             Assert.AreEqual(new[] { "F1", "F2", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllTargetedMultipleFastAndActionOrder()
+        [Test]
+        public void GlobalAcceptAllTargetedMultipleFastAndActionOrder()
         {
             GameObject go = new(
                 nameof(GlobalAcceptAllTargetedMultipleFastAndActionOrder),
@@ -1630,11 +1579,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
             Assert.AreEqual(new[] { "F1", "F2", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAllBroadcastMultipleFastAndActionOrder()
+        [Test]
+        public void GlobalAcceptAllBroadcastMultipleFastAndActionOrder()
         {
             GameObject go = new(
                 nameof(GlobalAcceptAllBroadcastMultipleFastAndActionOrder),
@@ -1661,11 +1609,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
             Assert.AreEqual(new[] { "F1", "F2", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedTwoPrioritiesFastBeforeActionWithinEachPriority()
+        [Test]
+        public void UntargetedTwoPrioritiesFastBeforeActionWithinEachPriority()
         {
             GameObject go = new(
                 nameof(UntargetedTwoPrioritiesFastBeforeActionWithinEachPriority),
@@ -1698,13 +1645,12 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
             Assert.AreEqual(new[] { "F0", "A0", "F1", "A1" }, order.ToArray());
-            yield break;
         }
 
         // Mixed tests for GameObject "without targeting/source" groups (fast registered first)
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingMixedFastThenActionsGameObject()
+        [Test]
+        public void TargetedWithoutTargetingMixedFastThenActionsGameObject()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingMixedFastThenActionsGameObject),
@@ -1729,11 +1675,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitGameObjectTargeted(go);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourceMixedFastThenActionsGameObject()
+        [Test]
+        public void BroadcastWithoutSourceMixedFastThenActionsGameObject()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourceMixedFastThenActionsGameObject),
@@ -1758,13 +1703,12 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitGameObjectBroadcast(go);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
         // Mixed tests for post-processors in "without targeting/source" groups (fast & action)
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorsMixedFastBeforeActions()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorsMixedFastBeforeActions()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingPostProcessorsMixedFastBeforeActions),
@@ -1785,11 +1729,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedWithoutTargetingPostProcessorsMixedFastThenActions()
+        [Test]
+        public void TargetedWithoutTargetingPostProcessorsMixedFastThenActions()
         {
             GameObject go = new(
                 nameof(TargetedWithoutTargetingPostProcessorsMixedFastThenActions),
@@ -1810,11 +1753,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorsMixedFastBeforeActions()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorsMixedFastBeforeActions()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourcePostProcessorsMixedFastBeforeActions),
@@ -1835,11 +1777,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastWithoutSourcePostProcessorsMixedFastThenActions()
+        [Test]
+        public void BroadcastWithoutSourcePostProcessorsMixedFastThenActions()
         {
             GameObject go = new(
                 nameof(BroadcastWithoutSourcePostProcessorsMixedFastThenActions),
@@ -1860,11 +1801,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F", "A" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TargetedMixedFastThenActionsComponent()
+        [Test]
+        public void TargetedMixedFastThenActionsComponent()
         {
             GameObject go = new(
                 nameof(TargetedMixedFastThenActionsComponent),
@@ -1892,11 +1832,10 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastMixedFastThenActionsComponent()
+        [Test]
+        public void BroadcastMixedFastThenActionsComponent()
         {
             GameObject go = new(
                 nameof(BroadcastMixedFastThenActionsComponent),
@@ -1924,7 +1863,6 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(comp);
             Assert.AreEqual(new[] { "F1", "A1", "A2" }, order.ToArray());
-            yield break;
         }
     }
 }

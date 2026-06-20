@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
@@ -10,12 +9,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     public sealed class UntypedDispatchTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator UntypedDispatchUsesKindSpecificDelegateCaches(
+        [Test]
+        public void UntypedDispatchUsesKindSpecificDelegateCaches(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -89,7 +87,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             }
 
-            yield break;
+            return;
 
             void AssertCounts(int expectedUntargeted, int expectedTargeted, int expectedBroadcast)
             {
@@ -99,8 +97,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator TypedDispatchSeedsBridgeForPrivateManualMessageBeforeUntypedDispatch(
+        [Test]
+        public void TypedDispatchSeedsBridgeForPrivateManualMessageBeforeUntypedDispatch(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -114,8 +112,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 () => DispatchUntypedPrivateManualMessage(bus, scenario.Kind, target, source),
                 "A typed dispatch should root the AOT bridge needed by later untyped dispatch."
             );
-
-            yield break;
         }
 
         public readonly struct MultiKindMessage

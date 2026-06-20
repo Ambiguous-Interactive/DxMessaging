@@ -2,9 +2,9 @@
 title: "Fast Unity Tests: Reload, Frame Tax, and Anti-Patterns"
 id: "fast-unity-tests"
 category: "testing"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-06-15"
-updated: "2026-06-18"
+updated: "2026-06-19"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -170,14 +170,26 @@ bleeds into the next test's emptied bus (the race `UnitySetup` guards). This is 
 ## Lever 3: `[UnityTest]` only when you yield
 
 A `[UnityTest]` body with no `yield return` is a synchronous test wearing a
-coroutine costume -- it still pays the coroutine and base-fixture frame overhead.
-Use `[Test]` unless the body genuinely needs a frame. The one structural reason a
-DxMessaging test stays `[UnityTest]` is that a `MessageAwareComponent` acquires its
-`MessageRegistrationToken` in `OnEnable`, which needs the play-mode lifecycle; when
-the token can be obtained synchronously, prefer `[Test]` (it can also run in the
-EditMode leg). Migrate file-by-file, preserving every assertion; the companion
-no-yield-`[UnityTest]` drift-guard ships WITH that migration (it is not built yet --
-it would otherwise be red against the many existing no-yield bodies).
+coroutine costume -- it still pays the per-method enumerator scheduling the Unity
+Test Framework runs for every `[UnityTest]`, on top of the base-fixture frame
+overhead. Use `[Test]` unless the body genuinely needs a frame.
+
+A `[Test]` in a PlayMode assembly still runs inside the play-mode session, so the
+`MessageAwareComponent.OnEnable` that acquires the `MessageRegistrationToken` still
+fires and `[UnitySetUp]`/`[UnityTearDown]` still bracket it -- converting a no-yield
+`[UnityTest]` to `[Test]` keeps the test in PlayMode and preserves every assertion;
+it only sheds the coroutine scheduling. (A `[Test]` that needs no play-mode lifecycle
+at all can additionally move to the EditMode leg, but the DxMessaging dispatch tests
+keep the play-mode `OnEnable`, so they stay `[Test]` in the PlayMode assembly.)
+
+**Migration status:** the 45 all-synchronous PlayMode fixtures were converted
+whole-file (310 methods); 8 fixtures that interleave genuine-coroutine and
+synchronous tests still hold ~43 no-yield `[UnityTest]` methods awaiting per-method
+conversion -- they are the `pendingMigration` allowlist in the drift-guard below.
+Convert a fixture's no-yield methods (drop the `IEnumerator` return type and the
+trailing `yield break;`), then delete its allowlist entry. The mechanical transform
+is "either compile-error or semantically identical" (a `void` method cannot contain
+`yield return`), so a full-suite pass-count parity check is a complete safety net.
 
 ## Lever 4: No real-time waits
 
@@ -201,11 +213,18 @@ to verify.
 
 ## Drift-guards
 
-Three guards pin the contract so it cannot silently regress:
+Four guards pin the contract so it cannot silently regress:
 
 - `TestAttributeContractTests.TestSourcesAvoidRealTimeWaitAntiPatterns` (C#,
   runtime asmdef) scans the `Tests/` source tree and fails on any banned
   real-time-wait token.
+- `TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest` (C#, runtime asmdef)
+  source-scans for `[UnityTest]` methods whose body never `yield return`s a frame
+  and fails unless the file is on the shrinking `pendingMigration` allowlist (Lever
+  3). It matches only standalone `[UnityTest]` attribute lines, so the `[UnityTest]`
+  tokens in this fixture's own assertion strings cannot self-trip it. A method that
+  only `yield break`s is still a compiler iterator, so reflection alone cannot
+  detect the no-yield case -- the source scan is required.
 - `scripts/__tests__/run-ci-tests-enter-play-mode.test.js` (Node) asserts
   `run-ci-tests.ps1` emits the reload-disable into each CI ephemeral project. The
   guard targets the runner emit, not `.unity-test-project`, because that local copy
@@ -240,3 +259,4 @@ resultPath)`; record `durationSeconds` + `{pass,fail,skip}`.
 | ------- | ---------- | --------------------------------------------------------------------------- |
 | 1.0.0   | 2026-06-16 | Initial version                                                             |
 | 1.1.0   | 2026-06-18 | Add Lever 5 (standalone IL2CPP Release C++ after Debug/Release measurement) |
+| 1.2.0   | 2026-06-19 | Lever 3 migration done (45 fixtures, 310 methods); ship the no-yield guard  |

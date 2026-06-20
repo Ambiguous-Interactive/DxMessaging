@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Messages;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Pins the redirection semantics implied by the targeted/broadcast
@@ -29,8 +27,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </summary>
     public sealed class InterceptorRetargetingTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator RewrittenContextRoutesHandlersToNewId(
+        [Test]
+        public void RewrittenContextRoutesHandlersToNewId(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -91,11 +89,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 redirectedCount,
                 originalCount
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RewrittenContextIsObservedByWithoutContextSinksAndGlobals(
+        [Test]
+        public void RewrittenContextIsObservedByWithoutContextSinksAndGlobals(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -174,7 +171,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 originalId,
                 observedByGlobal[0]
             );
-            yield break;
         }
 
         /// <summary>
@@ -185,8 +181,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// for the rewritten id after interceptors run (the pre-frozen,
         /// original-id snapshot is preferred only when the id is unchanged).
         /// </summary>
-        [UnityTest]
-        public IEnumerator RewrittenContextRoutesPostProcessorsToNewId(
+        [Test]
+        public void RewrittenContextRoutesPostProcessorsToNewId(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -241,7 +237,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind,
                 redirectedPostCount
             );
-            yield break;
         }
 
         /// <summary>
@@ -249,8 +244,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// from the original id, post-processors registered for the ORIGINAL id
         /// must not observe the message, mirroring handler routing.
         /// </summary>
-        [UnityTest]
-        public IEnumerator RewrittenContextSkipsPostProcessorsForOriginalId(
+        [Test]
+        public void RewrittenContextSkipsPostProcessorsForOriginalId(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -307,7 +302,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind,
                 originalPostCount
             );
-            yield break;
         }
 
         /// <summary>
@@ -318,8 +312,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// rewrite the id, the post-process snapshot is re-acquired for the
         /// FINAL id instead of preferring the stale pre-interceptor snapshot.
         /// </summary>
-        [UnityTest]
-        public IEnumerator RewrittenContextPostProcessorsOnDistinctComponentsFollowNewId(
+        [Test]
+        public void RewrittenContextPostProcessorsOnDistinctComponentsFollowNewId(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.KindsWithComponentTarget)
@@ -399,7 +393,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 redirectedPostCount,
                 originalPostCount
             );
-            yield break;
         }
 
         private static void RemoveAll(

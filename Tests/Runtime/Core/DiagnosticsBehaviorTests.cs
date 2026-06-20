@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Core.DataStructure;
     using DxMessaging.Core.Diagnostics;
@@ -11,7 +10,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Pins emission-history semantics of bus diagnostics: the history buffer
@@ -27,8 +25,8 @@ namespace DxMessaging.Tests.Runtime.Core
         private const int ContextInstanceId = 23;
         private const int TestBufferSize = 4;
 
-        [UnityTest]
-        public IEnumerator VetoedEmissionStillAppearsInEmissionHistory(
+        [Test]
+        public void VetoedEmissionStillAppearsInEmissionHistory(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -84,12 +82,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Dispose();
                 handler.active = false;
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator EnablingDiagnosticsModeInsideHandlerTakesEffectNextEmission()
+        [Test]
+        public void EnablingDiagnosticsModeInsideHandlerTakesEffectNextEmission()
         {
             using (new DiagnosticsScope(messageBufferSize: TestBufferSize))
             {
@@ -137,12 +133,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Dispose();
                 handler.active = false;
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator DisablingDiagnosticsModeInsideHandlerKeepsCurrentEmissionRecorded()
+        [Test]
+        public void DisablingDiagnosticsModeInsideHandlerKeepsCurrentEmissionRecorded()
         {
             using (new DiagnosticsScope(messageBufferSize: TestBufferSize))
             {
@@ -190,8 +184,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.Dispose();
                 handler.active = false;
             }
-
-            yield break;
         }
 
         private static CyclicBuffer<MessageEmissionData> GetEmissionBuffer(MessageBus bus)

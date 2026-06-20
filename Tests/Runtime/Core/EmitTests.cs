@@ -1,14 +1,12 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
-    using System.Collections;
     using DxMessaging.Core;
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
-    using UnityEngine.TestTools;
 
     /// <summary>
     /// Parameterized emit smoke tests that exercise the basic register-emit-receive
@@ -24,8 +22,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </summary>
     public sealed class EmitTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator HandlerReceivesEmittedMessage(
+        [Test]
+        public void HandlerReceivesEmittedMessage(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -101,7 +99,6 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             Assert.AreEqual(numEmissions, count);
-            yield break;
         }
     }
 }
