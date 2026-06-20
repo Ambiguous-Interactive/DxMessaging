@@ -42,8 +42,8 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         private const int PrefabPoolingCycleCount = 100;
 
-        [UnityTest]
-        public IEnumerator PrefabPoolingEnableDisableCycles(
+        [Test]
+        public void PrefabPoolingEnableDisableCycles(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -84,12 +84,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 token.RemoveRegistration(handle);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TokenDisableMidDispatch(
+        [Test]
+        public void TokenDisableMidDispatch(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -166,11 +164,10 @@ namespace DxMessaging.Tests.Runtime.Core
             token.Enable();
             token.RemoveRegistration(aHandle);
             token.RemoveRegistration(bHandle);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator TokenReEnableMidDispatch(
+        [Test]
+        public void TokenReEnableMidDispatch(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -258,7 +255,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
             token.RemoveRegistration(hostHandle);
             auxToken.RemoveRegistration(auxHandle);
-            yield break;
         }
 
         /// <summary>
@@ -273,8 +269,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// not throw or corrupt its counters, and the token must remain
         /// usable for fresh registrations afterwards.
         /// </summary>
-        [UnityTest]
-        public IEnumerator UnregisterAllMidDispatch(
+        [Test]
+        public void UnregisterAllMidDispatch(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -439,7 +435,6 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             token.Dispose();
-            yield break;
         }
 
         /// <summary>
@@ -457,8 +452,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// untargeted path that accidentally bumps the targeted counter
         /// would surface as a test failure.
         /// </remarks>
-        [UnityTest]
-        public IEnumerator EmitOnEmptyBusIsSilentNoOp(
+        [Test]
+        public void EmitOnEmptyBusIsSilentNoOp(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -534,7 +529,6 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             token.Enable();
-            yield break;
         }
 
         /// <summary>
@@ -545,8 +539,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// closures captured before the bump short-circuit silently, and the
         /// post-reset emit must therefore find no handlers to dispatch to.
         /// </summary>
-        [UnityTest]
-        public IEnumerator EmitImmediatelyAfterResetIsSilentNoOp(
+        [Test]
+        public void EmitImmediatelyAfterResetIsSilentNoOp(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -628,8 +622,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 "[{0}] GlobalAcceptAll counter must be zero after Reset.",
                 scenario.Kind
             );
-
-            yield break;
         }
 
         [UnityTest]
@@ -725,8 +717,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// path on the very next emission.
         /// </para>
         /// </remarks>
-        [UnityTest]
-        public IEnumerator RegisterFromInsideSceneLoadedClosureBecomesImmediatelyEffective(
+        [Test]
+        public void RegisterFromInsideSceneLoadedClosureBecomesImmediatelyEffective(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -830,8 +822,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(deferredHandle.Value);
                 }
             }
-
-            yield break;
         }
 
         /// <summary>
@@ -1052,9 +1042,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <c>OnApplicationQuit</c> to log/persist on shutdown; the bus
         /// should tolerate the call without surfacing errors.
         /// </summary>
-        [UnityTest]
+        [Test]
         [Category("UnityRuntime")]
-        public IEnumerator OnApplicationQuitDrainsCleanly(
+        public void OnApplicationQuitDrainsCleanly(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -1096,8 +1086,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 token.RemoveRegistration(handle);
             }
-
-            yield break;
         }
     }
 }

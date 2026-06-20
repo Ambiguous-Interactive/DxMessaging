@@ -149,8 +149,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// transitioning to the enabled state, so even though the token exists
         /// the registered handler does not fire.
         /// </summary>
-        [UnityTest]
-        public IEnumerator OmitBaseOnEnableLeavesHandlerDisabled(
+        [Test]
+        public void OmitBaseOnEnableLeavesHandlerDisabled(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -192,8 +192,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(handle);
             }
-
-            yield break;
         }
 
         /// <summary>
@@ -201,8 +199,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// never disabled, so the handler keeps firing while the component is
         /// ostensibly off.
         /// </summary>
-        [UnityTest]
-        public IEnumerator OmitBaseOnDisableLeavesHandlerLive(
+        [Test]
+        public void OmitBaseOnDisableLeavesHandlerLive(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -247,8 +245,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(handle);
             }
-
-            yield break;
         }
 
         /// <summary>
@@ -702,8 +698,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// registrations in the override still apply because the token itself
         /// was created by the untouched <c>Awake</c>.
         /// </summary>
-        [UnityTest]
-        public IEnumerator OmitBaseRegisterMessageHandlersDoesNotRegisterDefaultStringHandlers()
+        [Test]
+        public void OmitBaseRegisterMessageHandlersDoesNotRegisterDefaultStringHandlers()
         {
             GameObject host = new(
                 nameof(OmitBaseRegisterMessageHandlersDoesNotRegisterDefaultStringHandlers),
@@ -742,8 +738,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 component.userHandlerInvocations,
                 "User-registered handler in the override must still fire because the token is created."
             );
-
-            yield break;
         }
 
         /// <summary>
@@ -832,8 +826,8 @@ namespace DxMessaging.Tests.Runtime.Core
         /// correct one. Pins that a single broken component does not
         /// suppress dispatch to its siblings.
         /// </summary>
-        [UnityTest]
-        public IEnumerator MultipleSubclassesDoNotCrossContaminate()
+        [Test]
+        public void MultipleSubclassesDoNotCrossContaminate()
         {
             // A broken Awake emits one breadcrumb when the broken host enables
             // in builds that compile the runtime breadcrumb branch; declare
@@ -871,8 +865,6 @@ namespace DxMessaging.Tests.Runtime.Core
             // observe a counter increment; assert via the only public surface
             // it exposes (the null token and a fresh emit-with-no-effect).
             Assert.IsNull(broken.Token, "Broken host must remain unable to register handlers.");
-
-            yield break;
         }
 
         private static MessageRegistrationHandle RegisterCounter(

@@ -15,6 +15,7 @@ Notes
 
 - RP-agnostic: DxMessaging does not depend on rendering APIs; it works equally across Built-In, URP, and HDRP.
 - Minimum version is governed by the package manifest (`unity`: 2021.3). Newer LTS versions are expected to work.
+- Unity 6 migrates object identity to `EntityId` and deprecates `Object.GetInstanceID()` (it becomes a compile error in Unity 6.5). DxMessaging handles this internally: on Unity 6.4+ the dispatch key reads the non-deprecated `EntityId.ToULong(...)` accessor (keeping the same 32-bit value), and older Unity keeps `GetInstanceID()`. The package keeps building across the supported range, including Unity 6.5+ where the old API is removed.
 
 ## Architecture Pattern Compatibility
 

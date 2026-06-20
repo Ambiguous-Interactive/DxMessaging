@@ -15,8 +15,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
     public sealed class EdgeCaseTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator UnregisterAllClearsRegistrations()
+        [Test]
+        public void UnregisterAllClearsRegistrations()
         {
             GameObject test = new(
                 nameof(UnregisterAllClearsRegistrations),
@@ -46,11 +46,10 @@ namespace DxMessaging.Tests.Runtime.Core
             token.UnregisterAll();
             message.EmitUntargeted();
             Assert.AreEqual(0, count);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RemoveRegistrationInsideUntargetedHandler()
+        [Test]
+        public void RemoveRegistrationInsideUntargetedHandler()
         {
             GameObject test = new(
                 nameof(RemoveRegistrationInsideUntargetedHandler),
@@ -74,11 +73,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             message.EmitUntargeted();
             Assert.AreEqual(1, count);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddRegistrationDuringUntargetedEmission()
+        [Test]
+        public void AddRegistrationDuringUntargetedEmission()
         {
             GameObject test = new(
                 nameof(AddRegistrationDuringUntargetedEmission),
@@ -119,12 +117,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondaryHandle.Value);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RegisterWhileDisabledRegistersOnEnable()
+        [Test]
+        public void RegisterWhileDisabledRegistersOnEnable()
         {
             GameObject test = new(
                 nameof(RegisterWhileDisabledRegistersOnEnable),
@@ -162,11 +158,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(3, count);
 
             token.RemoveRegistration(handle);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RemoveRegistrationInsideTargetedHandler()
+        [Test]
+        public void RemoveRegistrationInsideTargetedHandler()
         {
             GameObject test = new(
                 nameof(RemoveRegistrationInsideTargetedHandler),
@@ -193,11 +188,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             message.EmitGameObjectTargeted(test);
             Assert.AreEqual(1, count);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RemoveRegistrationInsideBroadcastHandler()
+        [Test]
+        public void RemoveRegistrationInsideBroadcastHandler()
         {
             GameObject test = new(
                 nameof(RemoveRegistrationInsideBroadcastHandler),
@@ -224,11 +218,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             message.EmitGameObjectBroadcast(test);
             Assert.AreEqual(1, count);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator RemoveRegistrationInsideInterceptor()
+        [Test]
+        public void RemoveRegistrationInsideInterceptor()
         {
             GameObject test = new(
                 nameof(RemoveRegistrationInsideInterceptor),
@@ -255,11 +248,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             message.EmitUntargeted();
             Assert.AreEqual(1, count);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator MessagingComponentCreateThrowsForNullListener()
+        [Test]
+        public void MessagingComponentCreateThrowsForNullListener()
         {
             GameObject test = new(
                 nameof(MessagingComponentCreateThrowsForNullListener),
@@ -269,11 +261,10 @@ namespace DxMessaging.Tests.Runtime.Core
             MessagingComponent messagingComponent = test.GetComponent<MessagingComponent>();
 
             Assert.Throws<ArgumentNullException>(() => messagingComponent.Create(null));
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator MessagingComponentCreateThrowsForForeignListener()
+        [Test]
+        public void MessagingComponentCreateThrowsForForeignListener()
         {
             GameObject owner = new(
                 nameof(MessagingComponentCreateThrowsForForeignListener),
@@ -287,11 +278,10 @@ namespace DxMessaging.Tests.Runtime.Core
             ManualListenerComponent listener = foreign.GetComponent<ManualListenerComponent>();
 
             Assert.Throws<ArgumentException>(() => messagingComponent.Create(listener));
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator MessagingComponentCreateReturnsSameToken()
+        [Test]
+        public void MessagingComponentCreateReturnsSameToken()
         {
             GameObject test = new(
                 nameof(MessagingComponentCreateReturnsSameToken),
@@ -305,7 +295,6 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken first = messagingComponent.Create(listener);
             MessageRegistrationToken second = messagingComponent.Create(listener);
             Assert.AreSame(first, second);
-            yield break;
         }
 
         [UnityTest]
@@ -375,8 +364,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(3, count);
         }
 
-        [UnityTest]
-        public IEnumerator AddRegistrationDuringTargetedEmission()
+        [Test]
+        public void AddRegistrationDuringTargetedEmission()
         {
             GameObject test = new(
                 nameof(AddRegistrationDuringTargetedEmission),
@@ -421,11 +410,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondaryHandle.Value);
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddRegistrationDuringBroadcastEmission()
+        [Test]
+        public void AddRegistrationDuringBroadcastEmission()
         {
             GameObject test = new(
                 nameof(AddRegistrationDuringBroadcastEmission),
@@ -471,11 +459,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondaryHandle.Value);
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddRegistrationDuringTargetedWithoutTargetingEmission()
+        [Test]
+        public void AddRegistrationDuringTargetedWithoutTargetingEmission()
         {
             GameObject test = new(
                 nameof(AddRegistrationDuringTargetedWithoutTargetingEmission),
@@ -522,12 +509,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondaryHandle.Value);
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator AddRegistrationDuringBroadcastWithoutSourceEmission()
+        [Test]
+        public void AddRegistrationDuringBroadcastWithoutSourceEmission()
         {
             GameObject test = new(
                 nameof(AddRegistrationDuringBroadcastWithoutSourceEmission),
@@ -574,7 +559,6 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(secondaryHandle.Value);
             }
-            yield break;
         }
     }
 }

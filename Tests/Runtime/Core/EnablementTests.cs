@@ -11,8 +11,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
     public sealed class EnablementTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator StartsDisabled()
+        [Test]
+        public void StartsDisabled()
         {
             GameObject prefab = new("Prefab", typeof(SimpleMessageAwareComponent));
             _spawned.Add(prefab);
@@ -35,7 +35,6 @@ namespace DxMessaging.Tests.Runtime.Core
             spawnedMessaging.enabled = true;
             untargeted.EmitUntargeted();
             Assert.AreEqual(1, copyCount);
-            yield break;
         }
 
         [UnityTest]

@@ -532,7 +532,7 @@ namespace DxMessaging.Core.MessageBus
                     return component;
                 }
 
-                return new InstanceId(options.UnityOwner.GetInstanceID());
+                return new InstanceId(InstanceId.StableId(options.UnityOwner));
             }
 #endif
             if (options.Owner.HasValue)

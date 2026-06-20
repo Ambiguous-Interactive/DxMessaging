@@ -34,8 +34,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </remarks>
     public sealed class OrderingAcrossEnableCyclesTests : MessagingTestBase
     {
-        [UnityTest]
-        public IEnumerator SamePriorityOrderPreservedAcrossDisableEnableCycle(
+        [Test]
+        public void SamePriorityOrderPreservedAcrossDisableEnableCycle(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -88,11 +88,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "Disable()/Enable() cycle; order must be stable for every cycle, not "
                     + "merely restored on even-numbered cycles."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator SamePriorityOrderAfterRemovalAndReRegistrationWhileEnabled(
+        [Test]
+        public void SamePriorityOrderAfterRemovalAndReRegistrationWhileEnabled(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -136,11 +135,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "follow the registration order of the LIVE registrations (A, C, D). D was "
                     + "registered last and must not be dispatched into B's old position."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator SamePriorityOrderAfterChurnPreservedAcrossDisableEnableCycle(
+        [Test]
+        public void SamePriorityOrderAfterChurnPreservedAcrossDisableEnableCycle(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -190,7 +188,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "staged registrations from a Dictionary, so slot reuse after churn must "
                     + "not be allowed to permute the documented registration order."
             );
-            yield break;
         }
 
         /// <summary>

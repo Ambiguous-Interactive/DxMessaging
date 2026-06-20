@@ -28,9 +28,14 @@
 
 ## Performance Benchmarks
 
-The live cross-library comparison matrix is now CI-generated into [Performance Benchmarks](./performance.md) on every push (PlayMode Mono and Standalone IL2CPP); see the [comparison suite source](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) for the scenario bridges. The static tables below are kept for historical context.
+The live cross-library comparison matrix is now CI-generated into [Performance Benchmarks](./performance.md) on every push (Standalone IL2CPP Release, the build shape shipped games run); see the [comparison suite source](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) for the scenario bridges. The [live tables](./performance.md) are the source of truth; the snapshot below is retained only as dated historical context.
 
-### Comparisons (Windows)
+### Historical snapshot (early PlayMode Mono run, Windows)
+
+These figures are from an early PlayMode Mono benchmark run on Windows, kept to
+show the relative ordering at the time. They are **superseded** by the live
+[Standalone IL2CPP tables](./performance.md) -- do not cite them as current
+numbers.
 
 | Message Tech                       | Operations / Second | Allocations? |
 | ---------------------------------- | ------------------- | ------------ |
@@ -38,14 +43,6 @@ The live cross-library comparison matrix is now CI-generated into [Performance B
 | UniRx MessageBroker                | 17,919,648          | No           |
 | MessagePipe (Global)               | 94,913,633          | No           |
 | Zenject SignalBus                  | 2,495,730           | Yes          |
-
-### Comparisons (macOS)
-
-Run the PlayMode comparison benchmarks on macOS to populate this section.
-
-### Comparisons (Linux)
-
-Run the PlayMode comparison benchmarks on Linux to populate this section.
 
 ---
 
@@ -232,7 +229,7 @@ leftClick.Merge(rightClick).Subscribe(_ => Debug.Log("Any click!"));
 | **Primary Use Case**     | Stream transformations | Pub/sub messaging |
 | **Unity Compatibility**  | Built for Unity        | Built for Unity   |
 | **Dependencies**         | Standalone             | Standalone        |
-| **Performance**          | 18M ops/sec            | 14M ops/sec       |
+| **Performance**          | 4M ops/sec             | 27M ops/sec       |
 | **Allocations**          | Can allocate           | Zero (structs)    |
 | **Learning Curve**       | Steep (Rx paradigm)    | Moderate          |
 | **Setup Complexity**     | Low                    | Plug-and-play     |
@@ -382,7 +379,7 @@ public class AchievementSystem
 | **Primary Use Case**     | High-perf DI messaging | Pub/sub messaging   |
 | **Unity Compatibility**  | Built for Unity        | Built for Unity     |
 | **Dependencies**         | DI container required  | Standalone          |
-| **Performance**          | 97M ops/sec            | 14M ops/sec         |
+| **Performance**          | 74M ops/sec            | 27M ops/sec         |
 | **Allocations**          | Zero (structs)         | Zero (structs)      |
 | **Learning Curve**       | Moderate (DI)          | Moderate            |
 | **Setup Complexity**     | DI setup required      | Plug-and-play       |
@@ -403,7 +400,7 @@ public class AchievementSystem
 
 **Bottom Line:** MessagePipe is the performance king with DI-first design. DxMessaging is Unity-first with lifecycle awareness and debugging. Use MessagePipe if you have DI infrastructure and need maximum performance. Use DxMessaging if you want Unity-native messaging with automatic lifecycle management.
 
-**Note on Performance:** MessagePipe's ~95M ops/sec vs DxMessaging's ~20M ops/sec shows a significant throughput advantage. This matters primarily for high-frequency messaging scenarios (thousands of messages per frame). For typical gameplay events, both are fast enough that performance is not a distinguishing factor.
+**Note on Performance:** MessagePipe's ~74M ops/sec vs DxMessaging's ~27M ops/sec shows a significant throughput advantage. This matters primarily for high-frequency messaging scenarios (thousands of messages per frame). For typical gameplay events, both are fast enough that performance is not a distinguishing factor.
 
 > **💡 Want both?** DxMessaging integrates with DI frameworks! See [DI Integration Guides](../integrations/index.md) for Zenject, VContainer, and Reflex. Use DI for service construction, DxMessaging for event communication.
 
@@ -549,7 +546,7 @@ public class AchievementSystem
 | **Primary Use Case**     | DI-integrated messaging | Pub/sub messaging |
 | **Unity Compatibility**  | Built for Unity         | Built for Unity   |
 | **Dependencies**         | Zenject required        | Standalone        |
-| **Performance**          | 2.5M ops/sec            | 14M ops/sec       |
+| **Performance**          | 2M ops/sec              | 27M ops/sec       |
 | **Allocations**          | Can allocate            | Zero (structs)    |
 | **Learning Curve**       | Steep (Zenject+Signals) | Moderate          |
 | **Setup Complexity**     | Installers required     | Plug-and-play     |
@@ -1454,7 +1451,7 @@ public void TestAchievementSystem() {
 | ------------------------ | ------------------------- | ---------------------- | ---------------------- | ----------------------- |
 | **Primary Use Case**     | Pub/sub messaging         | Stream transformations | High-perf DI messaging | DI-integrated messaging |
 | **Unity Compatibility**  | Built for Unity           | Built for Unity        | Built for Unity        | Built for Unity         |
-| **Performance**          | Good (14M)                | Good (18M)             | Best (97M)             | Moderate (2.5M)         |
+| **Performance**          | Good (27M)                | Moderate (4M)          | Best (74M)             | Moderate (2M)           |
 | **Zero Allocations**     | (structs)                 | Can allocate           | (structs)              | Can allocate            |
 | **Unity Integration**    | Deep (lifecycle)          | Good (UI/async)        | Basic (no lifecycle)   | Good (DI-managed)       |
 | **Inspector Debugging**  | (history + stats)         | No                     | No                     | No                      |

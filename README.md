@@ -14,7 +14,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)<br/>
 [![openupm](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging?label=openupm&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.wallstop-studios.dxmessaging/)<br/>
 [![Version](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging.svg)](https://www.npmjs.com/package/com.wallstop-studios.dxmessaging)<br/>
-[![Performance: PlayMode (Mono) + Standalone (IL2CPP)](<https://img.shields.io/badge/Performance-PlayMode%20(Mono)%20%2B%20Standalone%20(IL2CPP)-blueviolet.svg>)](docs/architecture/performance.md)<br/>
+[![Performance: Standalone (IL2CPP)](<https://img.shields.io/badge/Performance-Standalone%20(IL2CPP)-blueviolet.svg>)](docs/architecture/performance.md)<br/>
 [![Markdown Link Validity](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml)
 
 > **🤖 AI Assistance Disclosure:**
@@ -339,7 +339,7 @@ flowchart TD
 
 **Rule of thumb:** If decoupling, lifecycle leaks, or handler-ordering bugs match what you're hitting today, DxMessaging fits. If none of those describe your project, start with the [Visual Guide](docs/getting-started/visual-guide.md) or stick with simpler patterns.
 
-Looking for hard numbers? See per-scope (PlayMode Mono and Standalone IL2CPP) dispatch and library-comparison [Performance Benchmarks](docs/architecture/performance.md).
+Looking for hard numbers? See the Standalone IL2CPP dispatch and library-comparison [Performance Benchmarks](docs/architecture/performance.md).
 
 ## Why DxMessaging
 
@@ -737,7 +737,7 @@ See the [DI Compatible section](#dependency-injection-di-compatible) above for a
 | ------------------- | --------------------------------- | -------------------------------- | --------------- | -------------- |
 | **DxMessaging**     | Unity pub/sub with lifecycle mgmt | Inspector debugging + control    | Built for Unity | Moderate       |
 | **UniRx**           | Complex event stream transforms   | Reactive operators (LINQ)        | Built for Unity | Easy           |
-| **MessagePipe**     | High-performance DI messaging     | Highest throughput (97M ops/sec) | Built for Unity | Steep          |
+| **MessagePipe**     | High-performance DI messaging     | Highest throughput (74M ops/sec) | Built for Unity | Steep          |
 | **Zenject Signals** | DI-integrated messaging           | Zenject ecosystem                | Built for Unity | Easy           |
 | **C# Events**       | Simple, local communication       | Minimal overhead                 | Native C#       | Steepest       |
 
@@ -831,7 +831,7 @@ public class AchievementTracker : MessageAwareComponent {
 
 See [Design & Architecture](docs/architecture/design-and-architecture.md#performance-optimizations) for details.
 
-For live, CI-generated per-scope dispatch tables (PlayMode Mono and Standalone IL2CPP) and a cross-library comparison matrix, see [Performance Benchmarks](docs/architecture/performance.md). Those numbers are auto-generated on every push with the .NET Standard 2.1 profile and a Release build; the comparison table below is a static summary, not the live data.
+For live, CI-generated Standalone IL2CPP dispatch tables and a cross-library comparison matrix, see [Performance Benchmarks](docs/architecture/performance.md). Those numbers are auto-generated on every push with the .NET Standard 2.1 profile and a Release build; the comparison table below is a static summary, not the live data.
 
 ## Comparison Table
 
@@ -850,7 +850,7 @@ For live, CI-generated per-scope dispatch tables (PlayMode Mono and Standalone I
 | **Interceptors**         | Pipeline        | No              | Filters         | No              |
 | **Post-Processing**      | Dedicated       | No              | Filters         | No              |
 | **Stream Operators**     | No              | Extensive       | No              | With UniRx      |
-| **Performance**          | Good (10-17M)   | Good (18M)      | High (97M)      | Moderate (2.5M) |
+| **Performance**          | Good (27M)      | Moderate (4M)   | High (74M)      | Moderate (2M)   |
 | **Dependencies**         | None            | UniTask         | None            | Zenject         |
 
 ### Comparison with Traditional Approaches

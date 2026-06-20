@@ -94,8 +94,8 @@ namespace DxMessaging.Tests.Runtime.Unity
             Assert.AreEqual(1, listener.ReceivedCount);
         }
 
-        [UnityTest]
-        public IEnumerator CreateRegistrationBuilderUsesConfiguredProviderBus()
+        [Test]
+        public void CreateRegistrationBuilderUsesConfiguredProviderBus()
         {
             MessageBus messageBus = new();
             TestProvider provider = new(messageBus);
@@ -114,11 +114,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 Assert.AreSame(messageBus, lease.MessageBus);
                 Assert.IsFalse(lease.Token.Enabled);
             }
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator CreateRegistrationBuilderUsesOverrideBusWhenNoProvider()
+        [Test]
+        public void CreateRegistrationBuilderUsesOverrideBusWhenNoProvider()
         {
             MessageBus messageBus = new();
 
@@ -135,7 +134,6 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 Assert.AreSame(messageBus, lease.MessageBus);
             }
-            yield break;
         }
 
         [UnityTest]
