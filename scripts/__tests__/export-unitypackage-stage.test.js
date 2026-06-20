@@ -143,3 +143,43 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }
 });
+
+// Single source of truth for the built-in module set the ephemeral export
+// project must enable; both export-unitypackage.ps1 and this guard read it.
+const MODULE_DATA_PATH = path.join(REPO_ROOT, "scripts", "unity", "unity-builtin-modules.json");
+
+test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) => {
+  if (!HAS_PWSH) {
+    t.skip("PowerShell is not available");
+    return;
+  }
+
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-manifest-"));
+  const projectPath = path.join(stagingRoot, "project");
+  try {
+    runStageOnly(stagingRoot, projectPath);
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(projectPath, "Packages", "manifest.json"), "utf8")
+    );
+    const deps = manifest.dependencies || {};
+
+    // The proven v3.1.0 failure: EditorGUIUtility's base GUIUtility lives in
+    // UnityEngine.IMGUIModule, which an empty `dependencies: {}` never enables.
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(deps, "com.unity.modules.imgui"),
+      "manifest must enable com.unity.modules.imgui (the module that broke v3.1.0)"
+    );
+
+    // Every entry in the single-source data file must reach the manifest, so the
+    // export project compiles the payload exactly like a default Unity project.
+    const required = JSON.parse(fs.readFileSync(MODULE_DATA_PATH, "utf8")).dependencies;
+    for (const id of Object.keys(required)) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(deps, id),
+        `manifest is missing required dependency ${id}`
+      );
+    }
+  } finally {
+    fs.rmSync(stagingRoot, { recursive: true, force: true });
+  }
+});

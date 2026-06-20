@@ -120,8 +120,9 @@ Do not describe npm or GitHub provenance as Unity Asset Store signing.
 - Package metadata links point to the old GitHub organization.
 - Asset Store submission asks for documentation included offline, while the
   npm package excludes `docs/**`.
-- The `.unitypackage` export job failed, so the release shipped only `.tgz`
-  assets; re-run the release workflow before submitting.
+- The `.unitypackage` export job failed. The release is atomic, so the whole
+  release (including the npm publish) is blocked rather than shipping without
+  the `.unitypackage`; fix the export and re-run the release workflow.
 - Someone scripts an Asset Store upload against an unsanctioned endpoint; no
   supported CLI exists, so the upload must stay manual.
 - Unity rejects unnecessary dependencies or files.

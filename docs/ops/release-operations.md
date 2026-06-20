@@ -113,18 +113,23 @@ The release workflow performs these gates:
    Windows runner (`scripts/unity/export-unitypackage.ps1`); the job follows
    the same Unity license and organization-lock discipline as the test jobs.
 1. Publish to npm with Trusted Publishing and provenance.
-1. Create or update the GitHub Release with the `.tgz`, its `.sha256`, and,
-   when the export succeeded, the `.unitypackage` plus its `.sha256`.
+1. Create or update the GitHub Release. The body is the matching `## [version]`
+   `CHANGELOG.md` section plus an install footer, rendered by the shared
+   `scripts/release/release-notes.js` extractor. Assets are the `.tgz`, its
+   `.sha256`, the `.unitypackage`, and its `.sha256`; a final step asserts the
+   published release carries all four.
 1. Assemble the `asset-store-submission` workflow artifact (the
    `.unitypackage`, the `.tgz`, checksums, and a generated
    `SUBMISSION-CHECKLIST.md`) for the manual Unity Asset Store upload; see
    [Unity Asset Store UPM](./unity-asset-store-upm.md).
 
-Release assets are npm `.tgz` plus `.sha256` and, when the export job
-succeeds, a `.unitypackage` plus `.sha256`. The `.unitypackage` is optional:
-a failed export emits a warning and the npm assets still publish, because npm
-is the primary distribution channel. The Unity Asset Store upload is manual;
-no sanctioned CLI exists for it.
+Release assets are the npm `.tgz` plus `.sha256` and the `.unitypackage` plus
+`.sha256`. The `.unitypackage` is a REQUIRED asset and the release is atomic: a
+failed export blocks the entire release (including the irreversible npm publish)
+rather than shipping an incomplete release. Recovery is to fix the export and
+re-run; the npm publish is idempotent (it skips a version already on the
+registry). The Unity Asset Store upload is manual; no sanctioned CLI exists for
+it.
 
 ## Public References
 

@@ -44,6 +44,8 @@
     "DxUnsafe",
     "UnsafeUtility",
     "ugui",
+    "androidjni",
+    "uielements",
     "fsmonitor",
     "greppable",
     "hermeticity",

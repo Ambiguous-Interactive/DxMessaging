@@ -59,7 +59,7 @@ Unity will notify you of version updates when using scoped registries.
 
 ### From Releases
 
-Check out the latest [Releases](https://github.com/Ambiguous-Interactive/DxMessaging/releases) to download the npm `.tgz` package and checksum. Current releases do not include a `.unitypackage` asset.
+Check out the latest [Releases](https://github.com/Ambiguous-Interactive/DxMessaging/releases) to download the npm `.tgz` package, a classic `.unitypackage`, and their `.sha256` checksums. Every release ships the `.unitypackage` as a required asset; verify a download with `sha256sum -c <file>.sha256`.
 
 ### From Source
 

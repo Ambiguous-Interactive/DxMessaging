@@ -27,13 +27,16 @@
 const fs = require("fs");
 const path = require("path");
 const { normalizeToLf } = require("../lib/line-endings.js");
-const { CodeBlockTracker } = require("../wiki/transform-docs-to-wiki.js");
+const {
+  UNRELEASED_HEADING,
+  computeFencedLineMask,
+  changelogHasVersionHeading
+} = require("./changelog.js");
 
 // Leading zeros are rejected (npm/semver reject them at publish time; letting
 // them through here would poison package.json, the changelog heading, the
 // release branch, and the tag long before npm finally failed).
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const UNRELEASED_HEADING = "## [Unreleased]";
 const BUMP_KINDS = ["major", "minor", "patch"];
 
 function parseSemver(version) {
@@ -93,26 +96,6 @@ function replacePackageVersion(rawPackageJson, currentVersion, nextVersion) {
     );
   }
   return updated;
-}
-
-/**
- * True for each line that belongs to a fenced code block (``` or ~~~),
- * including the fence delimiter lines themselves. Reuses the shared
- * CodeBlockTracker from the wiki transform so a `## ` line inside a fenced
- * example is never mistaken for a real changelog heading.
- */
-function computeFencedLineMask(lines) {
-  const tracker = new CodeBlockTracker();
-  return lines.map((line) => {
-    const wasInFence = tracker.inCodeBlock;
-    return tracker.processLine(line) || wasInFence;
-  });
-}
-
-function changelogHasVersionHeading(content, version) {
-  const lines = normalizeToLf(content).split("\n");
-  const fenced = computeFencedLineMask(lines);
-  return lines.some((line, index) => line === `## [${version}]` && !fenced[index]);
 }
 
 /**

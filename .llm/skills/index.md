@@ -14,7 +14,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 155   |
+| Total Skills | 156   |
 | Categories   | 8     |
 
 ---
@@ -22,7 +22,7 @@
 ## Table of Contents
 
 - [Documentation](#documentation) (27)
-- [GitHub Actions](#github-actions) (7)
+- [GitHub Actions](#github-actions) (8)
 - [Packaging](#packaging) (2)
 - [Performance](#performance) (46)
 - [Scripting](#scripting) (9)
@@ -66,15 +66,16 @@
 
 ## GitHub Actions
 
-| Skill                                                                                                  | Lines      | Complexity     | Status   | Performance    | Tags                  |
-| ------------------------------------------------------------------------------------------------------ | ---------- | -------------- | -------- | -------------- | --------------------- |
-| [CI/CD Devcontainer Workflows](./github-actions/cicd-devcontainer-workflows.md)                        | [ok] 255   | [intermediate] | [stable] | [risk: high]   | github-actions, ci-cd |
-| [Git Renormalize Pattern Validation](./github-actions/git-renormalize-patterns.md)                     | [ok] 225   | [intermediate] | [stable] | [risk: low]    | github-actions, git   |
-| [GitHub Actions Workflow Consistency](./github-actions/workflow-consistency.md)                        | [ok] 215   | [intermediate] | [stable] | [risk: medium] | github-actions, ci-cd |
-| [GitHub Actions Workflow Consistency Part 1](./github-actions/workflow-consistency-part-1.md)          | [ok] 243   | [intermediate] | [stable] | [risk: low]    | migration, split      |
-| [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [ok] 249   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
-| [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 66 | [intermediate] | [stable] | [risk: low]    | migration, split      |
-| [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 199   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd |
+| Skill                                                                                                  | Lines      | Complexity     | Status   | Performance    | Tags                    |
+| ------------------------------------------------------------------------------------------------------ | ---------- | -------------- | -------- | -------------- | ----------------------- |
+| [CI/CD Devcontainer Workflows](./github-actions/cicd-devcontainer-workflows.md)                        | [ok] 255   | [intermediate] | [stable] | [risk: high]   | github-actions, ci-cd   |
+| [Git Renormalize Pattern Validation](./github-actions/git-renormalize-patterns.md)                     | [ok] 225   | [intermediate] | [stable] | [risk: low]    | github-actions, git     |
+| [GitHub Actions Workflow Consistency](./github-actions/workflow-consistency.md)                        | [ok] 215   | [intermediate] | [stable] | [risk: medium] | github-actions, ci-cd   |
+| [GitHub Actions Workflow Consistency Part 1](./github-actions/workflow-consistency-part-1.md)          | [ok] 243   | [intermediate] | [stable] | [risk: low]    | migration, split        |
+| [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [ok] 249   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd   |
+| [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 66 | [intermediate] | [stable] | [risk: low]    | migration, split        |
+| [Release Asset and Notes Invariants](./github-actions/release-asset-and-notes-invariants.md)           | [ok] 134   | [intermediate] | [stable] | [risk: none]   | github-actions, release |
+| [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 199   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd   |
 
 ## Packaging
 
