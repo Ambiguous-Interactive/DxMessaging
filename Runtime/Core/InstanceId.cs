@@ -50,8 +50,32 @@ namespace DxMessaging.Core
 #if UNITY_2021_3_OR_NEWER
         private InstanceId(UnityEngine.Object unityObject)
         {
-            _id = unityObject.GetInstanceID();
+            _id = StableId(unityObject);
             Object = unityObject;
+        }
+
+        /// <summary>
+        /// Returns the stable per-object integer identity used as the dispatch key.
+        /// Unity 6 is migrating object identity to the 64-bit <c>EntityId</c>:
+        /// <c>GetInstanceID()</c> is deprecated and becomes a compile error in Unity 6.5,
+        /// and successive raw accessors (the <c>EntityId</c>-to-<c>int</c> cast, then
+        /// <c>GetRawData()</c>) have each been deprecated in turn. On Unity 6.4+ this reads
+        /// the non-deprecated <c>EntityId.ToULong(...)</c> and keeps its low 32 bits --
+        /// exactly the integer the legacy <c>GetInstanceID()</c> returned (verified on 6.4
+        /// across GameObject/Component/ScriptableObject). Older Unity keeps
+        /// <c>GetInstanceID()</c> (valid, warning-only there, never the 6.5 error). The
+        /// 32-bit dispatch key is identical either way; only the (non-deprecated) source
+        /// differs. The gate is the host-verified 6.4 rather than 6.2 because the exact
+        /// accessor that is non-deprecated has shifted across Unity 6 minors.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int StableId(UnityEngine.Object unityObject)
+        {
+#if UNITY_6000_4_OR_NEWER
+            return unchecked((int)UnityEngine.EntityId.ToULong(unityObject.GetEntityId()));
+#else
+            return unityObject.GetInstanceID();
+#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

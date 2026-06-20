@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Unity object identity backing `InstanceId` (the dispatch key) is now read
+  through a single version-gated source, `InstanceId.StableId`. On Unity 6.4+ it
+  uses the non-deprecated `EntityId.ToULong(...)` accessor and keeps its low 32
+  bits -- exactly the value the legacy `GetInstanceID()` returned (verified across
+  `GameObject`, `Component`, and `ScriptableObject`); older Unity keeps
+  `GetInstanceID()`. This keeps the package compiling on Unity 6.5+, where
+  `GetInstanceID()` becomes a compile error, and removes its deprecation warning on
+  Unity 6.4+. The 32-bit dispatch key, equality, and hashing are unchanged. Closes
+  GitHub issue #208.
 - `MessagingComponent.ToggleMessageHandler(false)` is no longer silently ignored
   while `emitMessagesWhenDisabled` is true: explicit toggle calls now always win,
   in both directions. Instead, the Unity enable/disable lifecycle itself now skips

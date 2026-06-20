@@ -225,6 +225,22 @@ runs:
             @{ Label = 'Multiple precompiled assemblies with the same name'; Pattern = 'Multiple precompiled assemblies with the same name'; UseSimple = $true }
             @{ Label = 'error CS\d+'; Pattern = 'error CS\d+'; UseSimple = $false }
             @{ Label = 'warning CS8032'; Pattern = 'warning CS8032'; UseSimple = $false }
+            # CS1069: a type was "forwarded to assembly 'UnityEngine.<X>Module'" --
+            # i.e. a test/source references an OPTIONAL engine module the minimal CI
+            # test project intentionally omits (its generated manifest lists only the
+            # package + test framework). Reported as its own labelled group with a
+            # remediation Hint so the operator does not "fix" it by adding the module
+            # (which would defeat the deliberately minimal standard legs).
+            @{
+              Label = 'Optional engine module not in the minimal CI project (CS1069 forwarded type)'
+              Pattern = 'forwarded to assembly .UnityEngine\.\w+Module'
+              UseSimple = $false
+              Hint = 'A Tests.* assembly references a type from an optional Unity engine module ' +
+                'the minimal CI test project does not include. PREFER making the test module-free ' +
+                '(e.g. use Transform, the always-present UnityEngine.CoreModule Component) instead ' +
+                'of adding the module. Only declare the module in .github/comparison-packages.json ' +
+                '(and .unity-test-project for local parity) if that module is itself under test.'
+            }
           )
 
           $logFiles = @(Get-UnityDiagnosticLogFiles -ResultsDir $ResultsDir)
@@ -267,6 +283,9 @@ runs:
                 $line = $hit.Line.Trim()
                 Write-Host "::error::Pattern detected -- $($entry.Label):: $line"
                 Write-Host "  $($hit.Path):$($hit.LineNumber): $line"
+              }
+              if ($entry.ContainsKey('Hint') -and $entry.Hint) {
+                Write-Host "::error::Remediation -- $($entry.Hint)"
               }
               Write-Host "::endgroup::"
             }

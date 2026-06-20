@@ -986,24 +986,15 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void NoYieldUnityTestsMustBePlainTest()
         {
-            // Fixtures still pending the [UnityTest] -> [Test] migration: each
-            // interleaves genuine-coroutine and synchronous tests in one file, so
-            // they need per-method conversion rather than the whole-file pass that
-            // converted the 45 all-synchronous fixtures. The trailing count is the
-            // no-yield methods still awaiting conversion in that file. Shrink this
-            // set as files migrate; never ADD an entry - a newly authored no-yield
-            // test must be a [Test] from the start.
-            HashSet<string> pendingMigration = new(StringComparer.Ordinal)
-            {
-                "BaseCallContractTests.cs", // 4
-                "DefaultBusFallbackTests.cs", // 2
-                "EdgeCaseTests.cs", // 14
-                "EnablementTests.cs", // 1
-                "LifecycleEdgeCasesTests.cs", // 8
-                "MessagingComponentProviderIntegrationTests.cs", // 2
-                "NominalTests.cs", // 9
-                "OrderingAcrossEnableCyclesTests.cs", // 3
-            };
+            // The [UnityTest] -> [Test] migration is COMPLETE: every no-yield
+            // [UnityTest] (synchronous body that never yields a frame) has been
+            // converted to a plain [Test], including the per-method conversions in
+            // the eight formerly-mixed fixtures (coroutine + synchronous interleaved
+            // in one file). This allowlist is now empty and must stay that way -
+            // never ADD an entry. A newly authored synchronous test must be a [Test]
+            // from the start; the only [UnityTest] methods left in the tree genuinely
+            // yield a frame.
+            HashSet<string> pendingMigration = new(StringComparer.Ordinal);
 
             List<string> roots = ResolveTestsTreeRootsFallback();
             HashSet<string> scannedFiles = new(StringComparer.OrdinalIgnoreCase);

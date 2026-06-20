@@ -131,7 +131,7 @@ namespace DxMessaging.Editor.CustomEditors
             {
                 return;
             }
-            int instanceId = messageAwareComponent.GetInstanceID();
+            int instanceId = DxMessaging.Core.InstanceId.StableId(messageAwareComponent);
             if (!_renderedThisRepaint.Add(instanceId))
             {
                 return;

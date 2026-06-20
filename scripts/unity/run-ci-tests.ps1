@@ -111,12 +111,26 @@ function Clear-NonFatalNativeExitCode {
 #   - error CS\d+ -- compiler errors (CS0246, CS0103, CS0117, etc).
 #   - warning CS8032 -- "An instance of analyzer cannot be created" (analyzer
 #     failed to instantiate; same class of issue).
+#   - "forwarded to assembly 'UnityEngine.<X>Module'" (CS1069) -- a test/source
+#     references an OPTIONAL engine module the minimal CI test project omits;
+#     carries a remediation Hint (kept in sync with the copy in
+#     .github/actions/verify-unity-results/action.yml).
 $script:CatastrophicPatterns = @(
     @{ Label = 'PrecompiledAssemblyException'; Pattern = 'PrecompiledAssemblyException'; UseSimple = $true }
     @{ Label = 'CompilationFailedException'; Pattern = 'CompilationFailedException'; UseSimple = $true }
     @{ Label = 'Multiple precompiled assemblies with the same name'; Pattern = 'Multiple precompiled assemblies with the same name'; UseSimple = $true }
     @{ Label = 'error CS\d+'; Pattern = 'error CS\d+'; UseSimple = $false }
     @{ Label = 'warning CS8032'; Pattern = 'warning CS8032'; UseSimple = $false }
+    @{
+        Label = 'Optional engine module not in the minimal CI project (CS1069 forwarded type)'
+        Pattern = 'forwarded to assembly .UnityEngine\.\w+Module'
+        UseSimple = $false
+        Hint = 'A Tests.* assembly references a type from an optional Unity engine module ' +
+            'the minimal CI test project does not include. PREFER making the test module-free ' +
+            '(e.g. use Transform, the always-present UnityEngine.CoreModule Component) instead ' +
+            'of adding the module. Only declare the module in .github/comparison-packages.json ' +
+            '(and .unity-test-project for local parity) if that module is itself under test.'
+    }
 )
 
 # CLASS-OF-ISSUE DIAGNOSTIC: when Unity exits non-zero, the operator's next
@@ -167,6 +181,9 @@ function Write-UnityCatastrophicErrorAnnotations {
             $line = $hit.Line.Trim()
             Write-Host "::error::Pattern detected -- $($entry.Label):: $line"
             Write-Host "  $($hit.Path):$($hit.LineNumber): $line"
+        }
+        if ($entry.ContainsKey('Hint') -and $entry.Hint) {
+            Write-Host "::error::Remediation -- $($entry.Hint)"
         }
         Write-Host "::endgroup::"
     }

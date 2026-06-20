@@ -458,8 +458,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        [UnityTest]
-        public IEnumerator NonMessagingObjects()
+        [Test]
+        public void NonMessagingObjects()
         {
             IMessageBus messageBus = MessageHandler.MessageBus;
             Assert.IsNotNull(messageBus);
@@ -493,7 +493,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 broadcast: 0,
                 context: "GameObject with SpriteRenderer + bare MessageHandler"
             );
-            yield break;
         }
 
         [UnityTest]
@@ -646,8 +645,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator Interceptors()
+        [Test]
+        public void Interceptors()
         {
             GameObject test = new(nameof(Interceptors), typeof(SimpleMessageAwareComponent));
             _spawned.Add(test);
@@ -757,12 +756,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handle);
                 }
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator PostProcessors()
+        [Test]
+        public void PostProcessors()
         {
             GameObject test = new(nameof(PostProcessors), typeof(SimpleMessageAwareComponent));
             _spawned.Add(test);
@@ -1025,12 +1022,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handle);
                 }
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator InstanceId()
+        [Test]
+        public void InstanceId()
         {
             GameObject test = new(nameof(InstanceId), typeof(SimpleMessageAwareComponent));
             _spawned.Add(test);
@@ -1073,11 +1068,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             Assert.IsTrue(caught);
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator GlobalAcceptAll()
+        [Test]
+        public void GlobalAcceptAll()
         {
             GameObject test = new(nameof(GlobalAcceptAll), typeof(SimpleMessageAwareComponent));
             _spawned.Add(test);
@@ -1252,7 +1246,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             }
 
-            yield break;
+            return;
 
             void HandleUntargeted(IUntargetedMessage message)
             {
@@ -1285,8 +1279,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator InterceptorOrder()
+        [Test]
+        public void InterceptorOrder()
         {
             GameObject test = new(nameof(InterceptorOrder), typeof(SimpleMessageAwareComponent));
             _spawned.Add(test);
@@ -1410,12 +1404,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     token.RemoveRegistration(handle);
                 }
             }
-
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator UntargetedRemoveOrder()
+        [Test]
+        public void UntargetedRemoveOrder()
         {
             GameObject test = new(
                 nameof(UntargetedRemoveOrder),
@@ -1491,7 +1483,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 token
             );
 
-            yield break;
+            return;
 
             void HandleUntargeted(SimpleUntargetedMessage message)
             {
@@ -1504,8 +1496,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator TargetedRemoveOrder()
+        [Test]
+        public void TargetedRemoveOrder()
         {
             GameObject test = new(nameof(TargetedRemoveOrder), typeof(SimpleMessageAwareComponent));
             _spawned.Add(test);
@@ -1666,7 +1658,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 token
             );
 
-            yield break;
+            return;
 
             void HandleTargeted(SimpleTargetedMessage message)
             {
@@ -1679,8 +1671,8 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [UnityTest]
-        public IEnumerator BroadcastRemoveOrder()
+        [Test]
+        public void BroadcastRemoveOrder()
         {
             GameObject test = new(
                 nameof(BroadcastRemoveOrder),
@@ -1843,7 +1835,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 token
             );
 
-            yield break;
+            return;
 
             void HandleBroadcast(SimpleBroadcastMessage message)
             {

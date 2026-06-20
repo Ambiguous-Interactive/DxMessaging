@@ -77,7 +77,8 @@ function enumerateSkillFiles(skillsDir = SKILLS_DIR) {
       const rel = path.relative(skillsDir, fullPath).split(path.sep).join("/");
       return { link: `./${rel}`, category: rel.split("/")[0], lineCount: countLines(fs.readFileSync(fullPath, "utf8")) };
     })
-    .sort((a, b) => a.link.localeCompare(b.link));
+    // Locale pinned ("en") so the byte-for-byte --check of this generated artifact stays runner-independent.
+    .sort((a, b) => a.link.localeCompare(b.link, "en"));
 }
 
 /** Parse the index into { rows, sectionCounts, summary }. Rows are link-anchored. */

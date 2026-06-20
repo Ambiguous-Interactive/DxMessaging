@@ -204,8 +204,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
-        [UnityTest]
-        public IEnumerator MessagingComponentConfigureRebindsExistingHandlerToCustomBus()
+        [Test]
+        public void MessagingComponentConfigureRebindsExistingHandlerToCustomBus()
         {
             MessageBus customBus = new();
             GameObject go = new(
@@ -243,11 +243,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 callCount,
                 "Global emissions should not reach tokens configured to use a custom bus."
             );
-            yield break;
         }
 
-        [UnityTest]
-        public IEnumerator MessagingComponentConfigurePreserveDefersRebindUntilReenabled()
+        [Test]
+        public void MessagingComponentConfigurePreserveDefersRebindUntilReenabled()
         {
             MessageBus initialBus = new();
             MessageBus newBus = new();
@@ -301,8 +300,6 @@ namespace DxMessaging.Tests.Runtime.Core
                 callCount,
                 "Re-enabling the token should rebind handlers to the new bus."
             );
-
-            yield break;
         }
 
         [UnityTest]

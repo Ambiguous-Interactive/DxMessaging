@@ -39,7 +39,7 @@ namespace DxMessaging.Editor.Testing
             }
 
             List<ListenerDiagnosticsView> listenerViews = component
-                ._registeredListeners.OrderBy(pair => pair.Key.GetInstanceID())
+                ._registeredListeners.OrderBy(pair => InstanceId.StableId(pair.Key))
                 .Select(pair => CreateListenerView(pair.Key, pair.Value))
                 .ToList();
 

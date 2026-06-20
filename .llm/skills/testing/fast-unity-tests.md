@@ -2,9 +2,9 @@
 title: "Fast Unity Tests: Reload, Frame Tax, and Anti-Patterns"
 id: "fast-unity-tests"
 category: "testing"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-06-15"
-updated: "2026-06-19"
+updated: "2026-06-20"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -182,14 +182,15 @@ it only sheds the coroutine scheduling. (A `[Test]` that needs no play-mode life
 at all can additionally move to the EditMode leg, but the DxMessaging dispatch tests
 keep the play-mode `OnEnable`, so they stay `[Test]` in the PlayMode assembly.)
 
-**Migration status:** the 45 all-synchronous PlayMode fixtures were converted
-whole-file (310 methods); 8 fixtures that interleave genuine-coroutine and
-synchronous tests still hold ~43 no-yield `[UnityTest]` methods awaiting per-method
-conversion -- they are the `pendingMigration` allowlist in the drift-guard below.
-Convert a fixture's no-yield methods (drop the `IEnumerator` return type and the
-trailing `yield break;`), then delete its allowlist entry. The mechanical transform
-is "either compile-error or semantically identical" (a `void` method cannot contain
-`yield return`), so a full-suite pass-count parity check is a complete safety net.
+**Migration status: COMPLETE.** The 45 all-synchronous PlayMode fixtures were
+converted whole-file (310 methods); the 8 fixtures that interleave genuine-coroutine
+and synchronous tests then had their 43 no-yield `[UnityTest]` methods converted
+per-method. The `pendingMigration` allowlist is now empty, so the drift-guard below
+holds the entire `Tests/` tree to the rule with no exceptions. The mechanical
+transform is "either compile-error or semantically identical" (a `void` method cannot
+contain `yield return`), so a full-suite pass-count parity check is a complete safety
+net; the per-method drain kept PlayMode at 916/0/0 parity. The only `[UnityTest]`
+methods left in the tree genuinely yield a frame.
 
 ## Lever 4: No real-time waits
 
@@ -220,8 +221,10 @@ Four guards pin the contract so it cannot silently regress:
   real-time-wait token.
 - `TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest` (C#, runtime asmdef)
   source-scans for `[UnityTest]` methods whose body never `yield return`s a frame
-  and fails unless the file is on the shrinking `pendingMigration` allowlist (Lever
-  3). It matches only standalone `[UnityTest]` attribute lines, so the `[UnityTest]`
+  and fails unless the file is on the `pendingMigration` allowlist (Lever 3), which
+  is now empty -- the migration is complete, so any new no-yield `[UnityTest]`
+  anywhere in `Tests/` fails the guard. It matches only standalone `[UnityTest]`
+  attribute lines, so the `[UnityTest]`
   tokens in this fixture's own assertion strings cannot self-trip it. A method that
   only `yield break`s is still a compiler iterator, so reflection alone cannot
   detect the no-yield case -- the source scan is required.

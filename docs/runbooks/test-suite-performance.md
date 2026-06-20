@@ -124,8 +124,9 @@ SECOND, persistent run).
   scans the whole `Tests/` tree and fails on any banned real-time-wait token.
 - `TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest` (Runtime) scans the
   `Tests/` tree for `[UnityTest]` methods that never `yield return` a frame and fails
-  unless the file is on the shrinking `pendingMigration` allowlist, so a new
-  synchronous test cannot regress back into a coroutine costume.
+  unless the file is on the `pendingMigration` allowlist -- now empty, so the rule
+  covers the whole tree and a new synchronous test cannot regress back into a
+  coroutine costume.
 - `SuiteWallClockBudgetTest` (Runtime) is the pre-existing speed backstop: it fails
   the default correctness suite when its wall clock exceeds a per-version hard
   ceiling (300 s on 2021.3, 180 s on 2022.3 / 6000.x) and warns past a 60 s soft
@@ -143,14 +144,13 @@ Open follow-ups (tracked in the remaining-work plan):
 - EditMode is the slower mode locally; de-I/O the EditMode hotspots (cache the
   reflection walks in `[OneTimeSetUp]`, prefer in-memory `ScriptableObject` over
   `AssetDatabase.CreateAsset`).
-- The no-yield-`[UnityTest]` -> `[Test]` migration is mostly done: 45
-  all-synchronous PlayMode fixtures were converted whole-file (310 methods) and the
-  companion drift-guard
-  (`TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest`) now ships and is
-  green. Remaining: 8 fixtures that interleave genuine-coroutine and synchronous
-  tests still hold ~43 no-yield `[UnityTest]` methods awaiting per-method conversion;
-  they are the guard's shrinking per-file `pendingMigration` allowlist. Convert a
-  fixture's no-yield methods, then delete its allowlist entry.
+- The no-yield-`[UnityTest]` -> `[Test]` migration is COMPLETE: 45 all-synchronous
+  PlayMode fixtures were converted whole-file (310 methods), then the 8 fixtures that
+  interleave genuine-coroutine and synchronous tests had their 43 no-yield
+  `[UnityTest]` methods converted per-method. The drift-guard
+  (`TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest`) ships green with an
+  empty `pendingMigration` allowlist, so the rule now covers the entire `Tests/` tree.
+  The per-method drain held PlayMode at 916/0/0 parity.
 - Standalone IL2CPP build: Release C++ is intentionally retained after the
   Debug/Release measurement above. The Library cache key was audited and
   intentionally left conservative (see
