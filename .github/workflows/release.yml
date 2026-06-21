@@ -113,13 +113,23 @@ jobs:
           package_file="$(printf '%s' "${pack_json}" | jq -r '.[0].filename')"
           mv "${package_file}" ".artifacts/release/${package_file}"
           (cd .artifacts/release && sha256sum "${package_file}" > "${package_file}.sha256")
-          # Single-quoted format contains literal backticks for Markdown code fences;
-          # SC2016 heuristically warns of unintended command substitution.
-          # shellcheck disable=SC2016
-          printf 'Release %s\n\nPackage: `%s`\n' \
-            "${{ needs.verify-tag.outputs.tag }}" \
-            "${package_file}" > .artifacts/release/release-notes.md
           echo "package-file=${package_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate the GitHub Release notes from CHANGELOG.md
+        # The published release body is the matching `## [version]` CHANGELOG
+        # section plus an install footer, built by the SINGLE shared extractor
+        # that release-prepare.yml and release-drafter.yml also call. Never a
+        # stub: shipping `Release vX.Y.Z` with no changelog was a v3.1.0 defect.
+        # --version takes the bare package version (the `## [X.Y.Z]` heading has
+        # no `v`), not the tag. verify-tag already proved the heading exists.
+        env:
+          PACKAGE_VERSION: ${{ needs.verify-tag.outputs.package-version }}
+        run: |
+          set -euo pipefail
+          node scripts/release/release-notes.js \
+            --version "${PACKAGE_VERSION}" \
+            --footer \
+            --out .artifacts/release/release-notes.md
 
       - name: Verify tarball packaging invariants (issue 204 guard)
         # Centralized validator checks tarball contents for forbidden
@@ -410,8 +420,9 @@ jobs:
     name: Export .unitypackage
     # Runs AFTER unity-checks so the licensed editmode gate has already proven
     # the payload compiles before we spend another licensed editor session on
-    # the export. NON-BLOCKING for npm: publish tolerates this job failing and
-    # ships the .tgz regardless (npm remains the primary distribution channel).
+    # the export. REQUIRED, release-blocking: publish needs this job, so a failed
+    # export blocks the whole release (including the irreversible npm publish);
+    # the release is atomic and never ships without the .unitypackage.
     needs:
       - verify-tag
       - runner-preflight
@@ -562,21 +573,13 @@ jobs:
       - validate
       - unity-checks
       - unitypackage
-    # Run even when the unitypackage export failed: npm + .tgz remain the
-    # primary distribution channel and must not be blocked by the optional
-    # .unitypackage asset. The hard gates (verify-tag, validate, unity-checks)
-    # must all have succeeded. always() is required because GitHub skips a job
-    # after any failed dependency unless the job condition opts back in; the
-    # explicit hard-gate checks below still keep validate/tag/Unity test
-    # failures from publishing.
-    if: >-
-      ${{
-        always() &&
-        !cancelled() &&
-        needs.verify-tag.result == 'success' &&
-        needs.validate.result == 'success' &&
-        needs.unity-checks.result == 'success'
-      }}
+    # ATOMIC RELEASE: the .unitypackage is a REQUIRED asset, so publish runs only
+    # when every upstream job -- including unitypackage -- succeeds (default
+    # needs-gating; no always() escape hatch). A failed export therefore blocks
+    # the IRREVERSIBLE npm publish too, so neither npm nor the GitHub Release can
+    # advertise a version whose .unitypackage is missing (the v3.1.0 failure
+    # mode). Recovery is to fix the export and re-run: the npm publish step below
+    # is re-runnable (it skips a version already on the registry).
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -602,9 +605,8 @@ jobs:
           path: .artifacts/release
 
       - name: Download the .unitypackage artifact
-        # Only when the export job succeeded; a missing artifact would fail
-        # this action and needlessly block the npm publish below.
-        if: ${{ needs.unitypackage.result == 'success' }}
+        # Guaranteed present: publish only runs when the unitypackage job
+        # succeeded (job-level needs), so this never blocks the npm publish.
         uses: actions/download-artifact@v8
         with:
           name: release-unitypackage
@@ -612,40 +614,23 @@ jobs:
 
       - name: Stage the .unitypackage release asset
         id: unitypackage_asset
-        # Emits empty outputs (and a loud warning) when the export job failed,
-        # so every later consumer degrades to the tgz-only release shape.
-        env:
-          UNITYPACKAGE_RESULT: ${{ needs.unitypackage.result }}
+        # The .unitypackage is a REQUIRED asset, so a missing or empty file here
+        # is a HARD error -- never a silent downgrade to a tgz-only release.
         run: |
           set -euo pipefail
-          unitypackage_file=""
-          unitypackage_checksum=""
-          if [ "${UNITYPACKAGE_RESULT}" = "success" ]; then
-            mapfile -t unitypackage_files < <(find .artifacts/unitypackage -maxdepth 1 -type f -name '*.unitypackage' | sort)
-            if [ "${#unitypackage_files[@]}" -ge 1 ] && [ -s "${unitypackage_files[0]}" ]; then
-              unitypackage_file="${unitypackage_files[0]}"
-              # Same checksum pattern as the npm tarball in the validate job.
-              (cd .artifacts/unitypackage && sha256sum "$(basename "${unitypackage_file}")" > "$(basename "${unitypackage_file}").sha256")
-              unitypackage_checksum="${unitypackage_file}.sha256"
-            else
-              echo "::warning::The unitypackage job succeeded but no .unitypackage file was found in its artifact; the GitHub Release ships without it."
-            fi
-          else
-            message="The unitypackage job result was '${UNITYPACKAGE_RESULT}'; the GitHub Release ships "
-            message+="only the npm .tgz assets (npm remains the primary distribution channel). "
-            message+="Re-run the release workflow to attach the .unitypackage."
-            echo "::warning::${message}"
+          mapfile -t unitypackage_files < <(find .artifacts/unitypackage -maxdepth 1 -type f -name '*.unitypackage' | sort)
+          if [ "${#unitypackage_files[@]}" -lt 1 ] || [ ! -s "${unitypackage_files[0]}" ]; then
+            echo "::error::No non-empty .unitypackage was found in the export artifact; refusing to publish an incomplete release."
+            exit 1
           fi
+          unitypackage_file="${unitypackage_files[0]}"
+          # Same checksum pattern as the npm tarball in the validate job.
+          (cd .artifacts/unitypackage && sha256sum "$(basename "${unitypackage_file}")" > "$(basename "${unitypackage_file}").sha256")
           {
             echo "unitypackage-file=${unitypackage_file}"
-            echo "unitypackage-checksum=${unitypackage_checksum}"
+            echo "unitypackage-checksum=${unitypackage_file}.sha256"
           } >> "${GITHUB_OUTPUT}"
 
-      # ORDERING INVARIANT: a published GitHub Release must never exist
-      # without the matching npm version. The IRREVERSIBLE npm publish runs
-      # FIRST; the GitHub Release is created/finalized only AFTER npm publish
-      # succeeds. If npm publish failed and the GitHub Release ran first, a
-      # non-draft Release would advertise a version that npm never received.
       - name: Validate downloaded release package
         id: release_package
         run: |
@@ -664,6 +649,11 @@ jobs:
             echo "checksum-file=${checksum_file}"
           } >> "${GITHUB_OUTPUT}"
 
+      # ORDERING INVARIANT: a published GitHub Release must never exist without
+      # the matching npm version. The IRREVERSIBLE npm publish runs FIRST; the
+      # GitHub Release is created/finalized only AFTER it succeeds. If the npm
+      # publish failed and the GitHub Release ran first, a non-draft Release
+      # would advertise a version that npm never received.
       - name: Publish to npm with provenance
         run: |
           set -euo pipefail
@@ -684,8 +674,8 @@ jobs:
 
       # Runs only AFTER npm publish above succeeds (or confirmed the version
       # already exists), preserving the ordering invariant: no published
-      # GitHub Release without the matching npm version. The optional
-      # .unitypackage (+ .sha256) rides along when the export job produced it.
+      # GitHub Release without the matching npm version. The required
+      # .unitypackage (+ .sha256) always rides along (guaranteed by Stage).
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -696,10 +686,8 @@ jobs:
           tag="${{ needs.verify-tag.outputs.tag }}"
           package_file="${{ steps.release_package.outputs.package-file }}"
           checksum_file="${{ steps.release_package.outputs.checksum-file }}"
-          assets=("${package_file}" "${checksum_file}")
-          if [ -n "${UNITYPACKAGE_FILE}" ]; then
-            assets+=("${UNITYPACKAGE_FILE}" "${UNITYPACKAGE_CHECKSUM}")
-          fi
+          # The .unitypackage (+ .sha256) is guaranteed by the Stage step above.
+          assets=("${package_file}" "${checksum_file}" "${UNITYPACKAGE_FILE}" "${UNITYPACKAGE_CHECKSUM}")
           if gh release view "${tag}" >/dev/null 2>&1; then
             gh release upload "${tag}" \
               "${assets[@]}" \
@@ -715,6 +703,39 @@ jobs:
               --notes-file .artifacts/release/release-notes.md \
               --verify-tag
           fi
+
+      - name: Verify the published Release has every expected asset
+        # Closes the v3.1.0 failure mode for good: assert the published release
+        # carries all four assets (tgz + .sha256, unitypackage + .sha256). Runs
+        # after npm publish + release creation, so a missing asset fails the run
+        # LOUDLY instead of shipping a silently-incomplete release.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_FILE: ${{ steps.release_package.outputs.package-file }}
+          CHECKSUM_FILE: ${{ steps.release_package.outputs.checksum-file }}
+          UNITYPACKAGE_FILE: ${{ steps.unitypackage_asset.outputs.unitypackage-file }}
+          UNITYPACKAGE_CHECKSUM: ${{ steps.unitypackage_asset.outputs.unitypackage-checksum }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.verify-tag.outputs.tag }}"
+          expected=(
+            "$(basename "${PACKAGE_FILE}")"
+            "$(basename "${CHECKSUM_FILE}")"
+            "$(basename "${UNITYPACKAGE_FILE}")"
+            "$(basename "${UNITYPACKAGE_CHECKSUM}")"
+          )
+          published="$(gh release view "${tag}" --json assets --jq '.assets[].name')"
+          missing=()
+          for name in "${expected[@]}"; do
+            if ! printf '%s\n' "${published}" | grep -Fqx "${name}"; then
+              missing+=("${name}")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Release ${tag} is missing expected assets: ${missing[*]}"
+            exit 1
+          fi
+          echo "::notice::Release ${tag} has all ${#expected[@]} expected assets."
 
       - name: Assemble the Asset Store submission staging artifact
         # There is NO sanctioned CLI/API for Unity Asset Store uploads
@@ -733,12 +754,10 @@ jobs:
           mkdir -p "${staging}"
           cp "${{ steps.release_package.outputs.package-file }}" "${staging}/"
           cp "${{ steps.release_package.outputs.checksum-file }}" "${staging}/"
-          unitypackage_note="MISSING: the unitypackage job did not produce one; re-run the release workflow before submitting."
-          if [ -n "${UNITYPACKAGE_FILE}" ]; then
-            cp "${UNITYPACKAGE_FILE}" "${staging}/"
-            cp "${UNITYPACKAGE_CHECKSUM}" "${staging}/"
-            unitypackage_note="$(basename "${UNITYPACKAGE_FILE}")"
-          fi
+          # The .unitypackage is a required release asset (guaranteed by Stage).
+          cp "${UNITYPACKAGE_FILE}" "${staging}/"
+          cp "${UNITYPACKAGE_CHECKSUM}" "${staging}/"
+          unitypackage_note="$(basename "${UNITYPACKAGE_FILE}")"
           {
             echo "# Asset Store Submission Checklist (${TAG})"
             echo

@@ -463,14 +463,45 @@ foreach ($relativeFolder in $folderMetaRelativePaths) {
     Write-Host "Wrote deterministic folder meta $relativeFolder.meta"
 }
 
-# (4) PROJECT SKELETON: empty manifest (built-in modules are enabled by
-# default; the payload has no external package dependencies), pinned editor
-# version, and the generated exporter OUTSIDE the exported root.
+# (4) PROJECT SKELETON: a manifest that ENABLES Unity's built-in modules, the
+# pinned editor version, and the generated exporter OUTSIDE the exported root.
+# An empty `dependencies: {}` does NOT enable the built-in modules -- it omits
+# UnityEngine.IMGUIModule (and the rest), so the staged payload fails to compile
+# the instant it touches an IMGUI type (e.g. EditorGUIUtility, whose base class
+# GUIUtility lives there), Unity aborts batchmode, and ExportPackage never runs.
+# That is exactly what broke the v3.1.0 export. The canonical fresh-2022.3 module
+# set is the single source of truth in scripts/unity/unity-builtin-modules.json
+# (a default consumer project lists the full set; every entry ships inside the
+# editor, so no network is needed); the package's own UPM dependencies merge on
+# top. See .llm/skills/github-actions/release-asset-and-notes-invariants.md.
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'Packages') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'ProjectSettings') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'Assets\Editor') | Out-Null
-"{`n  `"dependencies`": {}`n}`n" |
-    Set-Content -LiteralPath (Join-Path $projectPath 'Packages\manifest.json') -Encoding UTF8
+$manifestDependencies = [ordered]@{}
+$builtinModulesPath = Join-Path $PSScriptRoot 'unity-builtin-modules.json'
+$builtinModules = (Get-Content -LiteralPath $builtinModulesPath -Raw | ConvertFrom-Json).dependencies
+foreach ($module in $builtinModules.PSObject.Properties) {
+    $manifestDependencies[$module.Name] = $module.Value
+}
+# StrictMode-safe probe: package.json omits `dependencies` today, and direct
+# `.dependencies` access throws under Set-StrictMode -Version Latest.
+$packageJson = Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json
+$packageDependencies = $packageJson.PSObject.Properties['dependencies']
+if ($null -ne $packageDependencies -and $null -ne $packageDependencies.Value) {
+    foreach ($dependency in $packageDependencies.Value.PSObject.Properties) {
+        $manifestDependencies[$dependency.Name] = $dependency.Value
+    }
+}
+# Write BOM-less UTF-8: Windows PowerShell 5.1's `Set-Content -Encoding UTF8`
+# prepends a BOM, and a BOM at the head of manifest.json can make Unity's
+# package manager fail to parse it -- silently reintroducing the empty-manifest
+# failure this block exists to prevent. WriteAllText is BOM-less on 5.1 and 7.
+$manifestJson = (@{ dependencies = $manifestDependencies } | ConvertTo-Json -Depth 5) + "`n"
+[System.IO.File]::WriteAllText(
+    (Join-Path $projectPath 'Packages\manifest.json'),
+    $manifestJson,
+    (New-Object System.Text.UTF8Encoding $false)
+)
 "m_EditorVersion: $UnityVersion`n" |
     Set-Content -LiteralPath (Join-Path $projectPath 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
 New-ExporterSource |

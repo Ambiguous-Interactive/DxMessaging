@@ -96,18 +96,20 @@ The release workflow creates:
 - `.sha256` checksum
 - GitHub artifact attestation for the `.tgz`
 - a classic `.unitypackage` (plus `.sha256`) exported from the npm payload on
-  the self-hosted Windows runner; optional, with a warning when the export
-  job fails
+  the self-hosted Windows runner; a REQUIRED release asset
 - GitHub Release assets containing the `.tgz`, its checksum, and the
-  `.unitypackage` pair when present
+  `.unitypackage` pair, verified present by a final post-publish step
 - npm package version published with provenance
 - the `asset-store-submission` workflow artifact (the `.unitypackage`, the
   `.tgz`, checksums, and `SUBMISSION-CHECKLIST.md`) staged for the manual
   Unity Asset Store upload; see
   [Unity Asset Store UPM](./unity-asset-store-upm.md)
 
-The npm publish always runs before the GitHub Release update, and a failed
-`.unitypackage` export never blocks the npm publish.
+The npm publish always runs before the GitHub Release update. The
+`.unitypackage` is a required asset, so a failed export blocks the entire
+release (including the npm publish): releases are atomic. Recovery is to fix the
+export and re-run; the npm publish is idempotent (it skips a version already on
+the registry).
 
 ## Release Drafter
 
@@ -115,10 +117,11 @@ Release Drafter creates draft release notes from pull requests and changelog
 content. The tag template is `v$RESOLVED_VERSION`, matching the release
 workflow.
 
-Current `release.yml` writes minimal generated release notes during publish.
-If maintainers want rich Release Drafter notes to remain, copy the draft notes
-into `CHANGELOG.md` or update the release workflow before the first production
-release under Ambiguous.
+`release.yml` writes the published release body from `CHANGELOG.md`: the
+matching `## [version]` section plus an install footer, via the shared
+`scripts/release/release-notes.js` extractor (the same one Release Drafter and
+`release-prepare.yml` use). `CHANGELOG.md` is the source of truth for the
+release body; the Release Drafter draft is a PR-categorized preview.
 
 ## Failure Modes
 

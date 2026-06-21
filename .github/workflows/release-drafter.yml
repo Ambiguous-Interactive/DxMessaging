@@ -26,6 +26,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Setup Node.js
+        # The shared changelog extractor (scripts/release/release-notes.js) runs
+        # under Node; pin it instead of the runner's ambient version.
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
       - name: Diagnose release inputs
         run: |
           set -euo pipefail
@@ -52,26 +59,17 @@ jobs:
             exit 0
           fi
 
-          CHANGELOG_CONTENT=$(awk -v ver="Unreleased" '
-            BEGIN { found=0; content="" }
-            /^## \[/ {
-              if (found) exit
-              if (index($0, "[" ver "]") > 0) {
-                found=1
-                next
-              }
-            }
-            found { content = content $0 "\n" }
-            END { print content }
-          ' CHANGELOG.md)
-
-          if [ -z "$CHANGELOG_CONTENT" ] || [ "$CHANGELOG_CONTENT" = $'\n' ]; then
-            CHANGELOG_CONTENT="No changelog entry found under Unreleased."
+          # Single shared extractor (the same scripts/release module release.yml
+          # and release-prepare.yml use). It exits non-zero when the Unreleased
+          # section is missing or empty; fall back to a placeholder then.
+          if node scripts/release/release-notes.js --version Unreleased > /tmp/changelog_section.md; then
+            echo "changelog_section=Unreleased" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No usable '## [Unreleased]' changelog section; using a placeholder."
+            echo "No changelog entry found under Unreleased." > /tmp/changelog_section.md
+            echo "changelog_section=missing" >> "$GITHUB_OUTPUT"
           fi
-
-          echo "$CHANGELOG_CONTENT" > /tmp/changelog_section.md
           echo "changelog_file=/tmp/changelog_section.md" >> "$GITHUB_OUTPUT"
-          echo "changelog_section=Unreleased" >> "$GITHUB_OUTPUT"
           echo "Extracted Unreleased changelog bytes: $(wc -c < /tmp/changelog_section.md)"
 
       # release-drafter intermittently trips a transient GitHub API timeout ("We couldn't respond

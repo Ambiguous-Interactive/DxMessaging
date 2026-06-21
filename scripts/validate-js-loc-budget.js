@@ -56,7 +56,21 @@ const path = require("path");
 // (env-pointed fixtures) pinning fixer/checker convergence; no off-the-shelf tool
 // enforces "a fixer must converge with its own --check or exit non-zero." A
 // reviewed decision here.
-const TOTAL_BUDGET = 11350;
+//
+// Session 058 (ceiling 11350 -> 11820; tracked JS lands at 11788, ~32 headroom):
+// fix the two v3.1.0 release-pipeline defects (release.yml shipped a stub release
+// body instead of the CHANGELOG section; the .unitypackage export died on an
+// empty Unity project manifest). The additions: the shared fenced-code-block-
+// aware extractor (scripts/release/changelog.js), the release-notes.js composer
+// the three release workflows now share, their node:test coverage (the manifest
+// guard reproduces the IMGUI compile failure at the staging level; the extractor
+// test pins the fenced-`## [x]` non-boundary case), and a CommonMark info-string
+// fix to the shared CodeBlockTracker. prepare-release.js drops its duplicated
+// fenced-mask/heading helpers, partly offsetting the add. The single-source
+// module list is data (unity-builtin-modules.json), not counted here. No off-
+// the-shelf tool extracts a fence-aware changelog section or pins the export
+// project's required module set. A reviewed decision in the change that needs it.
+const TOTAL_BUDGET = 11820;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 function countLines(filePath) {

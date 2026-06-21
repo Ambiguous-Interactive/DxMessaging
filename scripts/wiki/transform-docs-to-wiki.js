@@ -33,19 +33,30 @@ class CodeBlockTracker {
 
   processLine(line) {
     const trimmed = line.trimStart();
-    const fenceMatch = trimmed.match(/^(`{3,}|~{3,})(\w*)?$/);
+    // Match the fence run plus ANY info string. An opener may carry an info
+    // string (` ```ts {1,2} `, ` ```c-sharp `); a fence-blind `\w*` regex
+    // misses those and then treats a `## ` line inside the block as a heading.
+    const fenceMatch = trimmed.match(/^(`{3,}|~{3,})(.*)$/);
 
     if (fenceMatch) {
       const delimiter = fenceMatch[1][0];
       const count = fenceMatch[1].length;
+      const info = fenceMatch[2];
 
       if (!this.inCodeBlock) {
+        // CommonMark: a backtick opener's info string may not contain a
+        // backtick (else it is inline code like ` ```x``` `, not a fence).
+        if (delimiter === "`" && info.includes("`")) {
+          return this.inCodeBlock;
+        }
         this.inCodeBlock = true;
         this.codeBlockDelimiter = { char: delimiter, count };
       } else if (
         delimiter === this.codeBlockDelimiter.char &&
-        count >= this.codeBlockDelimiter.count
+        count >= this.codeBlockDelimiter.count &&
+        info.trim() === ""
       ) {
+        // A closing fence carries no info string (only trailing whitespace).
         this.inCodeBlock = false;
         this.codeBlockDelimiter = null;
       }

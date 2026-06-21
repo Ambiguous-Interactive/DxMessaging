@@ -205,16 +205,11 @@ jobs:
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
             push origin "HEAD:refs/heads/${BRANCH}"
 
-          # Excerpt the rotated changelog section for the PR body (same awk
-          # idiom as release-drafter.yml).
-          changelog_excerpt="$(awk -v ver="${VERSION}" '
-            BEGIN { found=0 }
-            /^## \[/ {
-              if (found) exit
-              if (index($0, "[" ver "]") > 0) { found=1; next }
-            }
-            found { print }
-          ' CHANGELOG.md)"
+          # Excerpt the rotated changelog section for the PR body via the single
+          # shared extractor (the same scripts/release module release.yml and
+          # release-drafter.yml use), so the PR preview matches the published
+          # release body exactly. Node is already provisioned for prepare-release.js.
+          changelog_excerpt="$(node scripts/release/release-notes.js --version "${VERSION}")"
 
           pr_body_file="${RUNNER_TEMP}/release-pr-body.md"
           {
