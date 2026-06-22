@@ -9,7 +9,7 @@
     end with '~'. If a SourceGenerators project builds its obj/ or bin/ in-tree,
     Unity imports those build outputs. The analyzer/source-generator DLLs there
     have the SAME assembly names as the correctly-configured shipped analyzers in
-    Editor/Analyzers/, but their Unity-auto-generated .meta lack the
+    Runtime/Analyzers/, but their Unity-auto-generated .meta lack the
     RoslynAnalyzer label / validateReferences:0 / all-platforms-disabled config.
     Unity then fails to resolve their Microsoft.CodeAnalysis reference and the
     duplicate shadows the real analyzers, so the source generator never runs and
@@ -18,7 +18,7 @@
 
     Building these projects is REQUIRED by the dev workflow (the main projects'
     PostBuildCopyAnalyzers target copies the freshly-built DLL into
-    Editor/Analyzers/), so the build MUST go somewhere Unity ignores.
+    Runtime/Analyzers/), so the build MUST go somewhere Unity ignores.
 
     HOW: redirect per-project obj/ and bin/ to
     $(SolutionDir).artifacts/$(MSBuildProjectName)/{obj,bin}/$(Configuration)/.
@@ -30,7 +30,7 @@
     Configuration-scoped obj subfolder) and OutputPath (bin) are set for the
     build itself. $(TargetPath) therefore resolves under .artifacts/, and the
     PostBuildCopyAnalyzers targets still copy the built DLL into
-    Editor/Analyzers/ correctly.
+    Runtime/Analyzers/ correctly.
   -->
   <PropertyGroup>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\</SolutionDir>
@@ -51,6 +51,6 @@
     <DebugSymbols>false</DebugSymbols>
     <CopyAnalyzerPayload Condition="'$(CopyAnalyzerPayload)' == ''">true</CopyAnalyzerPayload>
     <AnalyzerPayloadOutputDir Condition="'$(AnalyzerPayloadOutputDir)' == ''"
-      >$([System.IO.Path]::Combine('$(SolutionDir)', 'Editor', 'Analyzers'))</AnalyzerPayloadOutputDir>
+      >$([System.IO.Path]::Combine('$(SolutionDir)', 'Runtime', 'Analyzers'))</AnalyzerPayloadOutputDir>
   </PropertyGroup>
 </Project>

@@ -56,15 +56,17 @@ $PackageName = 'com.wallstop-studios.dxmessaging'
 $TestFrameworkVersion = '1.4.5'
 $PerformanceFrameworkVersion = '3.4.2'
 # DxMessaging's own analyzer + source-generator assemblies. These MUST be present
-# in Editor/Analyzers/; the harness pre-copies the whole Editor/Analyzers/ roster
-# into the generated project's Assets/Plugins (see Copy-DxMessagingAnalyzersToAssets)
-# and tags these two RoslynAnalyzer, reproducing the single registration that
-# SetupCscRsp makes for real consumers. Editor/Analyzers/ ALSO ships the Roslyn
-# runtime deps (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
+# in the package's Runtime/Analyzers/; the harness just sanity-checks they ship
+# there (see Assert-DxMessagingAnalyzerDllsPresent). The generator + analyzer apply
+# NATIVELY: Unity scopes the Runtime/Analyzers/ RoslynAnalyzer-labeled DLLs to the
+# runtime assembly and EVERYTHING that references it (the test assemblies + the
+# predefined Assembly-CSharp), so the generator runs at the first compile with NO
+# in-project Assets copy and NO csc.rsp created. Runtime/Analyzers/ ALSO ships the
+# Roslyn runtime deps (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
 # System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe) the generator
-# loads at compile time; those ride along as Editor-EXCLUDED analyzer dependencies
+# loads at compile time; those ride along as platform-EXCLUDED analyzer dependencies
 # co-located with the labeled analyzers (Unity passes co-located deps to the compiler
-# alongside the analyzer; they are not loaded as managed Editor plugins).
+# alongside the analyzer; they are not loaded as managed plugins).
 $RequiredDxMessagingAnalyzerDllNames = @(
     'WallstopStudios.DxMessaging.SourceGenerators.dll',
     'WallstopStudios.DxMessaging.Analyzer.dll'
@@ -1012,159 +1014,20 @@ function New-StandaloneTestCallbackAsmdef {
 '@
 }
 
-# The two DLLs that MUST be tagged with Unity's "RoslynAnalyzer" asset label in
-# the Assets copy (mirrors SetupCscRsp.AnalyzerLabeledDllNames). The remaining
-# DLLs in Editor/Analyzers/ are the Roslyn runtime the generator loads at compile
-# time; they ride along as Editor-EXCLUDED analyzer dependencies (every platform
-# disabled), exactly as SetupCscRsp leaves them.
-$RoslynAnalyzerLabeledDllNames = @(
-    'WallstopStudios.DxMessaging.SourceGenerators.dll',
-    'WallstopStudios.DxMessaging.Analyzer.dll'
-)
-
 function Assert-DxMessagingAnalyzerDllsPresent {
     param([Parameter(Mandatory = $true)][string]$Root)
 
     $missingRequired = New-Object System.Collections.Generic.List[string]
     foreach ($dllName in $RequiredDxMessagingAnalyzerDllNames) {
-        $sourcePath = Join-Path $Root "Editor\Analyzers\$dllName"
+        $sourcePath = Join-Path $Root "Runtime\Analyzers\$dllName"
         if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
             $missingRequired.Add($sourcePath)
         }
     }
 
     if ($missingRequired.Count -gt 0) {
-        throw "Missing required DxMessaging analyzer DLL(s) in Editor/Analyzers:`n$($missingRequired.ToArray() -join "`n")"
+        throw "Missing required DxMessaging analyzer DLL(s) in Runtime/Analyzers:`n$($missingRequired.ToArray() -join "`n")"
     }
-}
-
-# Pre-create the SAME Assets/Plugins/Editor/WallstopStudios.DxMessaging/ analyzer
-# copy that the package's Editor/SetupCscRsp.cs makes at editor load, but do it
-# BEFORE Unity launches so the source generator is registered EXACTLY ONCE and is
-# present at the very first compile.
-#
-# WHY: when the package is consumed from Packages/ (the real install shape, and
-# the shape the CI manifest uses via a file: mount), SetupCscRsp copies the
-# analyzer DLLs into the project's Assets and tags the two analyzer DLLs
-# RoslynAnalyzer. The harness pre-creates the SAME copy before Unity launches so
-# the source generator is present at the very first compile.
-#
-# CRITICAL CONTRACT (the root cause of the Unity 2021 "Multiple precompiled
-# assemblies with the same name" abort): each analyzer DLL must be EXCLUDED from
-# every platform, the Editor included, and activated SOLELY by the RoslynAnalyzer
-# asset label. A platform-ENABLED managed DLL is registered as a precompiled
-# assembly. The same-named DLL is importable from BOTH the file:-mounted package
-# (its bytes ARE physically present under Packages/com.wallstop-studios.dxmessaging/
-# Editor/Analyzers/ -- a UPM file: package is NOT resolved purely virtually, proven
-# by the failing CI logs that import the analyzer DLL from that path) AND this
-# Assets copy. When BOTH copies were Editor-ENABLED, Unity 2021 aborted before
-# compile with PrecompiledAssemblyException; 2022/6000 tolerate the duplicate. The
-# Roslyn runtime dependencies in the same folder already ship excluded-from-all-
-# platforms and never collide despite the identical two-copy layout -- the analyzer
-# DLLs now match that proven-safe shape (Editor: enabled 0 in every meta -- the
-# shipped Editor/Analyzers/*.dll.meta, the template clone, AND the fallback heredoc
-# below), so the RoslynAnalyzer label still feeds them to the compiler while neither
-# copy is a precompiled assembly. The harness writes NO csc.rsp; SetupCscRsp manages
-# only the base-call ignore -additionalfile sidecar at editor load.
-function Copy-DxMessagingAnalyzersToAssets {
-    param(
-        [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string]$Project
-    )
-
-    Assert-DxMessagingAnalyzerDllsPresent -Root $Root
-
-    $analyzersDir = Join-Path $Root 'Editor\Analyzers'
-    # SourceGenerators.dll.meta already carries the RoslynAnalyzer label AND the
-    # Editor-only / Standalone-excluded PluginImporter settings SetupCscRsp
-    # converges to, so it is the template for BOTH analyzer DLLs (Analyzer.dll's
-    # own .meta lacks the label). Reusing the package's proven .meta -- changing
-    # only the GUID -- avoids hand-authoring importer YAML that could drift.
-    $analyzerTemplateMeta = Join-Path $analyzersDir 'WallstopStudios.DxMessaging.SourceGenerators.dll.meta'
-    $destDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
-    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-
-    $copied = New-Object System.Collections.Generic.List[string]
-    foreach ($dll in @(Get-ChildItem -LiteralPath $analyzersDir -Filter '*.dll' -File)) {
-        $destDll = Join-Path $destDir $dll.Name
-
-        # Copy the DLL only when missing or its bytes changed, so reruns against
-        # the cached project do not needlessly invalidate Unity's import cache.
-        $needsCopy = -not (Test-Path -LiteralPath $destDll -PathType Leaf)
-        if (-not $needsCopy) {
-            $needsCopy = (Get-Item -LiteralPath $destDll).Length -ne $dll.Length
-        }
-        if ($needsCopy) {
-            Copy-Item -LiteralPath $dll.FullName -Destination $destDll -Force
-        }
-
-        # Author the .meta only when missing so the GUID -- and thus Unity's asset
-        # identity and import cache -- stays stable across reruns. Fresh GUID so
-        # the Assets copy never collides with the package-resident asset.
-        $destMeta = "$destDll.meta"
-        if (-not (Test-Path -LiteralPath $destMeta -PathType Leaf)) {
-            $isAnalyzer = $RoslynAnalyzerLabeledDllNames -contains $dll.Name
-            $sourceMeta = if ($isAnalyzer) { $analyzerTemplateMeta } else { "$($dll.FullName).meta" }
-            $freshGuid = [guid]::NewGuid().ToString('N')
-            if (Test-Path -LiteralPath $sourceMeta -PathType Leaf) {
-                $metaContent = Get-Content -LiteralPath $sourceMeta -Raw
-                $metaContent = [regex]::Replace(
-                    $metaContent,
-                    '(?m)^guid:\s*[0-9A-Fa-f]+\s*$',
-                    "guid: $freshGuid"
-                )
-            } else {
-                # No shipped .meta to template from. Author a minimal meta that is
-                # EXCLUDED from every platform (Editor included), adding the
-                # RoslynAnalyzer label only for the two analyzer DLLs (deps are the
-                # Roslyn runtime, not analyzers). Disabling every platform keeps the DLL
-                # a compiler analyzer (activated solely by the RoslynAnalyzer label)
-                # rather than a managed precompiled assembly, so a same-named copy under
-                # the package's own Editor/Analyzers cannot trip Unity 2021's "Multiple
-                # precompiled assemblies with the same name" abort.
-                $labelBlock = if ($isAnalyzer) { "labels:`n- RoslynAnalyzer`n" } else { '' }
-                $metaContent = @"
-fileFormatVersion: 2
-guid: $freshGuid
-${labelBlock}PluginImporter:
-  externalObjects: {}
-  serializedVersion: 2
-  iconMap: {}
-  executionOrder: {}
-  defineConstraints: []
-  isPreloaded: 0
-  isOverridable: 1
-  isExplicitlyReferenced: 0
-  validateReferences: 1
-  platformData:
-  - first:
-      Any:
-    second:
-      enabled: 0
-      settings: {}
-  - first:
-      Editor: Editor
-    second:
-      enabled: 0
-      settings:
-        DefaultValueInitialized: true
-  userData:
-  assetBundleName:
-  assetBundleVariant:
-"@
-            }
-            Set-Content -LiteralPath $destMeta -Value $metaContent -Encoding UTF8
-        }
-        $copied.Add($dll.Name)
-    }
-
-    Write-Host "::group::DxMessaging analyzer Assets copy"
-    Write-Host "Pre-created the single analyzer registration under $destDir (no csc.rsp is written)."
-    foreach ($name in @($copied | Sort-Object)) {
-        $suffix = if ($RoslynAnalyzerLabeledDllNames -contains $name) { ' [RoslynAnalyzer]' } else { '' }
-        Write-Host "  $name$suffix"
-    }
-    Write-Host "::endgroup::"
 }
 
 function Write-AnalyzerSetupDiagnostics {
@@ -1174,27 +1037,14 @@ function Write-AnalyzerSetupDiagnostics {
         [Parameter(Mandatory = $true)][string]$Label
     )
 
-    $destDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
-    $sourceGeneratorDll = Join-Path $destDir 'WallstopStudios.DxMessaging.SourceGenerators.dll'
-    $analyzerDll = Join-Path $destDir 'WallstopStudios.DxMessaging.Analyzer.dll'
-
-    $sourceGeneratorLabeled = (Test-Path -LiteralPath "$sourceGeneratorDll.meta" -PathType Leaf) -and
-        ((Get-Content -LiteralPath "$sourceGeneratorDll.meta" -Raw) -match 'RoslynAnalyzer')
-    $analyzerLabeled = (Test-Path -LiteralPath "$analyzerDll.meta" -PathType Leaf) -and
-        ((Get-Content -LiteralPath "$analyzerDll.meta" -Raw) -match 'RoslynAnalyzer')
-
-    # A RoslynAnalyzer DLL must ALSO be excluded from the Editor platform (its meta's
-    # "Editor: Editor" block must be enabled: 0). An Editor-ENABLED copy is registered
-    # as a managed precompiled assembly; combined with the same-named copy under the
-    # package's own Editor/Analyzers, Unity 2021 aborts with "Multiple precompiled
-    # assemblies with the same name". Assert the EFFECTIVE excluded state here so a meta
-    # regression is caught in CI before Unity compiles, not just the label presence.
-    $editorEnabledPattern = 'Editor:\s+Editor\s+second:\s+enabled:\s*1'
-    $sourceGeneratorEditorDisabled = (Test-Path -LiteralPath "$sourceGeneratorDll.meta" -PathType Leaf) -and
-        -not ((Get-Content -LiteralPath "$sourceGeneratorDll.meta" -Raw) -match $editorEnabledPattern)
-    $analyzerEditorDisabled = (Test-Path -LiteralPath "$analyzerDll.meta" -PathType Leaf) -and
-        -not ((Get-Content -LiteralPath "$analyzerDll.meta" -Raw) -match $editorEnabledPattern)
-
+    # The generator + analyzer now apply NATIVELY from the package's Runtime/Analyzers/
+    # (Unity scopes the RoslynAnalyzer-labeled DLLs to the runtime assembly and
+    # everything referencing it). There is no in-project Assets copy or csc.rsp to
+    # inspect, so this is a best-effort log scan only: confirm the Unity compile log
+    # mentions both analyzer DLLs, proving Unity passed them to csc from
+    # Runtime/Analyzers/. No hard throw -- if the generator did NOT apply, the tests
+    # themselves fail loudly with CS0315/CS0452. $Project is unused (kept so the 3 call
+    # sites are unchanged).
     $logHasSourceGeneratorArg = $false
     $logHasAnalyzerArg = $false
     if ($LogPath -and (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
@@ -1204,20 +1054,9 @@ function Write-AnalyzerSetupDiagnostics {
     }
 
     Write-Host "::group::DxMessaging analyzer setup diagnostics ($Label)"
-    Write-Host "Assets analyzer copy: RoslynAnalyzer-labeled source generator: $sourceGeneratorLabeled"
-    Write-Host "Assets analyzer copy: RoslynAnalyzer-labeled analyzer: $analyzerLabeled"
-    Write-Host "Assets analyzer copy: source generator excluded from Editor platform: $sourceGeneratorEditorDisabled"
-    Write-Host "Assets analyzer copy: analyzer excluded from Editor platform: $analyzerEditorDisabled"
     Write-Host "Unity compile log mentioned DxMessaging source-generator arg: $logHasSourceGeneratorArg"
     Write-Host "Unity compile log mentioned DxMessaging analyzer arg: $logHasAnalyzerArg"
     Write-Host "::endgroup::"
-
-    if (-not ($sourceGeneratorLabeled -and $analyzerLabeled)) {
-        throw "Generated Assets/Plugins analyzer copy is missing the RoslynAnalyzer-labeled DxMessaging source-generator/analyzer DLLs."
-    }
-    if (-not ($sourceGeneratorEditorDisabled -and $analyzerEditorDisabled)) {
-        throw "Generated Assets/Plugins analyzer copy is Editor-ENABLED (a managed precompiled assembly). The analyzer DLLs must be excluded from every platform (Editor included) so Unity treats them as RoslynAnalyzer-only DLLs; otherwise the same-named copy under the package's Editor/Analyzers trips Unity 2021's 'Multiple precompiled assemblies with the same name' abort."
-    }
 }
 
 function Initialize-EphemeralProject {
@@ -1280,27 +1119,23 @@ EditorSettings:
     New-ConfiguratorSource -Backend $Backend |
         Set-Content -LiteralPath (Join-Path $project 'Assets\Editor\DxmCiTestConfigurator.cs') -Encoding UTF8
 
-    # Pre-create the same Assets/Plugins analyzer copy SetupCscRsp makes for consumers
-    # (see Copy-DxMessagingAnalyzersToAssets) so the source generator is registered at
-    # the very first compile. The analyzer DLLs are excluded from every platform and
-    # activated solely by the RoslynAnalyzer label, so neither this Assets copy nor the
-    # package's own Editor/Analyzers copy is a managed precompiled assembly -- the
-    # Editor-ENABLED duplicate of those same-named DLLs is what aborted Unity 2021 with
-    # "Multiple precompiled assemblies with the same name". The harness writes NO
-    # Assets/csc.rsp; for the CI file: mount SetupCscRsp emits no -a: line anyway (the
-    # package's bytes live at the repo root, outside <project>/Packages, so its
-    # File.Exists probe is false), and it manages only the base-call ignore sidecar.
-    Copy-DxMessagingAnalyzersToAssets -Root $Root -Project $project
+    # The generator + analyzer ship under the package's Runtime/Analyzers/
+    # (RoslynAnalyzer-labeled, every platform disabled), so Unity scopes them to the
+    # test assemblies + the predefined Assembly-CSharp NATIVELY -- registered at the
+    # first compile with NO in-project Assets copy and NO csc.rsp. This call only
+    # sanity-checks that the package actually ships those two DLLs where Unity expects
+    # them; the generator applies on its own once the file: package mounts.
+    Assert-DxMessagingAnalyzerDllsPresent -Root $Root
 
     # STANDALONE ONLY: generate the split-build helpers that sever the test
     # player's PlayerConnection/TCP result streaming (the 10060 hang on multi-NIC
     # self-hosted runners). The Editor-side build modifier clears the player's
     # outbound-connection BuildOptions and exits the editor after the build; the
     # player-side TestRunCallback writes NUnit XML to -dxmTestResults and quits.
-    # Written idempotently (only when missing or changed), exactly like
-    # Copy-DxMessagingAnalyzersToAssets, so reruns against the cached project do
-    # not needlessly invalidate Unity's import cache. editmode/playmode never emit
-    # these files (the local single -runTests path is untouched).
+    # Written idempotently (only when missing or changed) so reruns against the
+    # cached project do not needlessly invalidate Unity's import cache.
+    # editmode/playmode never emit these files (the local single -runTests path is
+    # untouched).
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
             @{ Path = (Join-Path $project 'Assets\Editor\DxmCiStandaloneBuildModifier.cs'); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild) },
@@ -2329,7 +2164,7 @@ function Write-UnityResultFailureDiagnostics {
 
             $logText = Get-Content -LiteralPath $LogPath -Raw
             if ($logText -match 'warning CS8032') {
-                Write-CiError "Unity could not instantiate one or more DxMessaging analyzers/source generators (CS8032). Check that Editor/Analyzers DLLs target the Roslyn version supported by this Unity editor."
+                Write-CiError "Unity could not instantiate one or more DxMessaging analyzers/source generators (CS8032). Check that Runtime/Analyzers DLLs target the Roslyn version supported by this Unity editor."
             }
             if ($logText -match 'error CS0315' -and $logText -match 'Simple(?:Untargeted|Targeted|Broadcast)Message') {
                 Write-CiError "Message fixture compile errors followed missing generated interfaces. This usually means the DxMessaging source generator did not load."
@@ -2352,8 +2187,6 @@ function Write-UnityResultFailureDiagnostics {
         }
 
         if ($Project) {
-            $analyzerCopyDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
-            Write-Host "Pre-created analyzer copy dir exists: $(Test-Path -LiteralPath $analyzerCopyDir -PathType Container)"
             $scriptAssemblies = Join-Path $Project 'Library\ScriptAssemblies'
             if (Test-Path -LiteralPath $scriptAssemblies -PathType Container) {
                 Write-Host "Script assemblies present:"
@@ -2612,10 +2445,10 @@ Write-Host "ReleasePlayerBuild: $UseReleasePlayerBuild"
 Write-Host "ReleaseCodeOptimization: $UseReleaseCodeOptimization"
 Write-Host "Manifest:"
 Get-Content -LiteralPath (Join-Path $ProjectPath 'Packages\manifest.json')
-Write-Host "Pre-created analyzer copy (Assets/Plugins/Editor/WallstopStudios.DxMessaging):"
-$analyzerCopyDir = Join-Path $ProjectPath 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
-if (Test-Path -LiteralPath $analyzerCopyDir -PathType Container) {
-    Get-ChildItem -LiteralPath $analyzerCopyDir -File |
+Write-Host "Package analyzer payload (Runtime/Analyzers - applies natively, no Assets copy):"
+$analyzerPayloadDir = Join-Path $RepoRoot 'Runtime\Analyzers'
+if (Test-Path -LiteralPath $analyzerPayloadDir -PathType Container) {
+    Get-ChildItem -LiteralPath $analyzerPayloadDir -Filter '*.dll' -File |
         Select-Object -ExpandProperty Name |
         Sort-Object |
         ForEach-Object { Write-Host "  $_" }

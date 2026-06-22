@@ -25,25 +25,26 @@
        directory selected by AnalyzerPayloadOutputDir.
 
        This target copies ONLY the freshly-built source-generator DLL.
-       The Roslyn runtime deps that this package ships alongside it
+       The pinned Roslyn dependency DLLs the analyzer host needs
        (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
        System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe)
-       are committed in Editor/Analyzers/ as fixed bytes and are NOT
-       re-copied by this build: a normal (non-clean) rebuild therefore
+       are committed co-located in Runtime/Analyzers/ as fixed bytes and are
+       NOT re-copied by this build: a normal (non-clean) rebuild therefore
        leaves those committed dep DLLs untouched. Do NOT wipe
-       Editor/Analyzers/ wholesale; the committed dep bytes are the proven,
-       Unity-validated set and are not reproduced by this 3.8.0-pinned build
-       (the committed deps were built against Roslyn 4.2.0).
+       Runtime/Analyzers/ wholesale; the committed dep bytes are the proven,
+       Unity-validated set (notably for Unity 2021's analyzer loader) and are
+       not reproduced by this 3.8.0-pinned build.
 
-       AnalyzerPayloadOutputDir defaults to Editor/Analyzers for local refresh
+       AnalyzerPayloadOutputDir defaults to Runtime/Analyzers for local refresh
        builds. CI freshness checks pass a temp directory so builds do not dirty
        the worktree. CopyAnalyzerPayload=false disables this target for tests
        that reference this project but do not validate the shipped payload.
 
-       The shipped Editor/Analyzers/*.dll.meta files for the two analyzer
-       assemblies carry the analyzer configuration directly, and SetupCscRsp
-       copies the analyzer DLLs into Assets/Plugins/Editor/ so the source
-       generator applies project-wide. -->
+       The shipped Runtime/Analyzers/*.dll.meta files for the two analyzer
+       assemblies carry the RoslynAnalyzer label directly, so Unity scopes the
+       source generator to the DxMessaging runtime assembly and every assembly
+       that references it (including the predefined Assembly-CSharp), so
+       nothing is copied into the consumer's project. -->
   <Target
     Name="PostBuildCopyAnalyzers"
     AfterTargets="Build"

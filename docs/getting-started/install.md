@@ -90,6 +90,21 @@ For ZIP downloads, extract the repository contents into
 
 - Unity 2021.3+ (LTS recommended). See [Compatibility](../reference/compatibility.md) for Unity x Render Pipeline support (Built-In, URP, HDRP).
 
+## Source Generators and Assembly Definitions
+
+DxMessaging's source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`,
+`[DxBroadcastMessage]`, `[DxAutoConstructor]`) work whether or not your project
+uses assembly definitions. The package ships the generators so they reach the
+DxMessaging assembly and every assembly that references it, including the default
+`Assembly-CSharp` used by projects without any `.asmdef` files. You do not need to
+create an assembly definition for `[Dx*Message]` types to generate.
+
+If you previously worked around an earlier version by copying the analyzer DLLs
+into your own `Assets/` folder, that is no longer necessary: the package now ships
+them, and the old copy under `Assets/Plugins/Editor/` is removed automatically when
+you upgrade. The shipped generators are compile-time only and are never included in
+player builds.
+
 ## After Installation
 
 - In your project, create a GameObject and add `MessagingComponent` to start sending/receiving.

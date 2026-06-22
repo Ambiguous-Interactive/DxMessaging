@@ -9,7 +9,7 @@
 #     Assets/ they would land in Assembly-CSharp and fail (Microsoft.CodeAnalysis
 #     is not a reference there). Assets-form consumers get the source generator
 #     and analyzer from the RoslynAnalyzer-labeled DLLs shipped under
-#     Editor/Analyzers/ (their .meta files carry the label and the
+#     Runtime/Analyzers/ (their .meta files carry the label and the
 #     all-platforms-disabled PluginImporter config).
 #   - Samples~ is renamed to Samples so the samples import visibly.
 # It then runs the provisioned Unity editor in -batchmode to

@@ -136,7 +136,7 @@ jobs:
           set_output docs_links \
             "(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$|$ci_workflow)"
           set_output dotnet \
-            "(\.cs$|\.csproj$|\.sln$|^Editor/Analyzers/|^SourceGenerators/|^\.config/dotnet-tools\.json$|$ci_workflow)"
+            "(\.cs$|\.csproj$|\.sln$|^Runtime/Analyzers/|^SourceGenerators/|^\.config/dotnet-tools\.json$|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'

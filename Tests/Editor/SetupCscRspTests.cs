@@ -219,6 +219,66 @@ namespace DxMessaging.Tests.Editor
             CollectionAssert.AreEqual(expectedLines, synchronized);
             Assert.AreEqual(expectedModified, modified);
         }
+
+        public static IEnumerable<TestCaseData> LegacyAnalyzerCopyRemovalCases()
+        {
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
+                    "WallstopStudios.DxMessaging.Analyzer.dll",
+                    "WallstopStudios.DxMessaging.Analyzer.dll.meta",
+                    "Microsoft.CodeAnalysis.dll",
+                    "Microsoft.CodeAnalysis.dll.meta",
+                },
+                true
+            ).SetName("removes a folder of only analyzer DLLs and their meta sidecars");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.Analyzer.DLL",
+                    "WallstopStudios.DxMessaging.Analyzer.DLL.META",
+                },
+                true
+            ).SetName("treats the dll and dll.meta suffixes case-insensitively");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
+                    "ConsumerNotes.cs",
+                },
+                false
+            ).SetName("preserves the folder when a consumer added a foreign file");
+
+            yield return new TestCaseData(
+                new[] { "WallstopStudios.DxMessaging.Analyzer.dll", "NestedFolder" },
+                false
+            ).SetName("preserves the folder when an entry is neither a .dll nor a .dll.meta");
+
+            yield return new TestCaseData(Array.Empty<string>(), false).SetName(
+                "does nothing for an empty folder"
+            );
+
+            yield return new TestCaseData(new[] { "orphan.dll.meta" }, false).SetName(
+                "does nothing when only orphaned meta sidecars remain (no analyzer dll)"
+            );
+        }
+
+        [TestCaseSource(nameof(LegacyAnalyzerCopyRemovalCases))]
+        public void RecognizesWhenLegacyAnalyzerCopyIsSafeToRemove(
+            string[] folderEntries,
+            bool expectedSafeToRemove
+        )
+        {
+            Assert.AreEqual(
+                expectedSafeToRemove,
+                SetupCscRsp.IsLegacyAnalyzerCopySafeToRemove(folderEntries)
+            );
+        }
     }
 }
 #endif

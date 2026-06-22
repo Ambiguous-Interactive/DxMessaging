@@ -89,7 +89,7 @@ If you need to repair line endings manually (for example, after copying files fr
 
 If you open the package in Unity and see project-wide `CS0315` / `CS0452` errors (`type ... cannot be used as type parameter ...; there is no boxing conversion to ...IMessage`), or `CS0006` errors that name a metadata file under `SourceGenerators/.../obj/...dll` or `SourceGenerators/.../bin/...dll`, the cause is stale build output rather than a code change.
 
-Cause: Unity imported the `SourceGenerators/` projects' in-tree `obj/` and `bin/` build DLLs and cached the auto-referenced-plugin registrations in its Library. Those stray DLLs shadow the two real analyzers shipped in `Editor/Analyzers/`, so the wrong assemblies feed the compiler.
+Cause: Unity imported the `SourceGenerators/` projects' in-tree `obj/` and `bin/` build DLLs and cached the auto-referenced-plugin registrations in its Library. Those stray DLLs shadow the two real analyzers shipped in `Runtime/Analyzers/`, so the wrong assemblies feed the compiler.
 
 To fix it:
 

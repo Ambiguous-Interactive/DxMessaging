@@ -66,9 +66,8 @@ namespace DxMessaging.Editor.Settings
 
         /// <summary>
         /// Regenerates the sidecar text file from the supplied settings asset. Writes only when
-        /// the on-disk content differs from what would be written, matching the
-        /// <c>FilesDiffer</c>-style policy used elsewhere in this Editor assembly to avoid
-        /// AssetDatabase churn during domain reload.
+        /// the on-disk content differs from what would be written, to avoid AssetDatabase churn
+        /// during domain reload.
         /// </summary>
         /// <param name="settings">The settings asset. May be <c>null</c> -- no-op in that case.</param>
         /// <remarks>
