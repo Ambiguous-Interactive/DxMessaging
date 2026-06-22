@@ -116,6 +116,18 @@ inside the package is sufficient, and a vendored copy under the consumer's
 `Assets/` would double-apply the generator. Projects upgrading from the old
 scheme have that stale copy removed automatically.
 
+The automatic upgrade cleanup must stay conservative. Delete the retired
+`Assets/Plugins/Editor/WallstopStudios.DxMessaging` folder only when it contains
+the first-party source-generator DLL plus exact known legacy analyzer/dependency
+DLL names, with optional matching `.dll.meta` sidecars. The analyzer companion
+DLL is optional because released 2.x payloads predate it. Preserve the folder for
+any foreign DLL, foreign `.meta`, subfolder, duplicate name, or other file so
+consumer-owned editor plugins cannot be removed during upgrade.
+
+When a folder contains a DxMessaging legacy payload fragment but is not safe to
+auto-delete, log one warning with manual cleanup guidance; do not warn for
+folders that contain only unrelated consumer content.
+
 ## Drift-guard
 
 `scripts/__tests__/analyzer-runtime-placement.test.js` enforces the placement so

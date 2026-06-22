@@ -32,8 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   import, before script compilation, so the package's copy and the old in-project copy
   never both run the generator (which would otherwise duplicate generated members). No
   manual action is required: the cleanup only removes the
-  `Assets/Plugins/Editor/WallstopStudios.DxMessaging` folder the package itself created
-  and leaves any other content untouched.
+  `Assets/Plugins/Editor/WallstopStudios.DxMessaging` folder when it contains the
+  first-party source-generator DLL plus exact known legacy analyzer/dependency DLL names
+  the package created, and leaves any foreign DLL, foreign `.meta`, subfolder, or
+  other content untouched. If a mixed or incomplete legacy payload is detected, the
+  editor logs one warning with manual cleanup guidance instead of deleting the folder
+  silently.
 
 ## [3.1.0]
 

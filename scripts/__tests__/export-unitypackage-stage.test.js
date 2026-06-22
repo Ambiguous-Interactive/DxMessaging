@@ -30,29 +30,41 @@ function commandExists(command) {
 
 const HAS_PWSH = commandExists("pwsh");
 
-function runStageOnly(stagingRoot, projectPath) {
-  const result = spawnSync(
-    "pwsh",
-    [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      SCRIPT_PATH,
-      "-UnityVersion",
-      "2022.3.45f1",
-      "-RepoRoot",
-      REPO_ROOT,
-      "-ProjectPath",
-      projectPath,
-      "-ArtifactsPath",
-      path.join(stagingRoot, "artifacts"),
-      "-StageOnly"
-    ],
-    { cwd: stagingRoot, encoding: "utf8", timeout: 600000 }
+function swapAsciiCase(value) {
+  return value.replace(/[A-Za-z]/g, (character) =>
+    character === character.toUpperCase() ? character.toLowerCase() : character.toUpperCase()
   );
+}
+
+function runStageOnlyRaw(stagingRoot, projectPath, options = {}) {
+  const artifactsPath = options.artifactsPath ?? path.join(stagingRoot, "artifacts");
+  const args = [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    SCRIPT_PATH,
+    "-UnityVersion",
+    "2022.3.45f1",
+    "-RepoRoot",
+    REPO_ROOT,
+    "-ProjectPath",
+    projectPath,
+    "-ArtifactsPath",
+    artifactsPath,
+    "-StageOnly"
+  ];
+  if (options.outputPath) {
+    args.splice(args.length - 1, 0, "-OutputPath", options.outputPath);
+  }
+
+  return spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 600000 });
+}
+
+function runStageOnly(stagingRoot, projectPath) {
+  const result = runStageOnlyRaw(stagingRoot, projectPath);
   assert.equal(result.status, 0, `stage-only run failed:\n${result.stdout}\n${result.stderr}`);
 }
 
@@ -139,6 +151,102 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
       fs.readFileSync(path.join(projectPath, relative), "utf8")
     );
     assert.deepEqual(secondMetas, firstMetas);
+  } finally {
+    fs.rmSync(stagingRoot, { recursive: true, force: true });
+  }
+});
+
+test("export-unitypackage -StageOnly refuses to delete an unowned existing ProjectPath", (t) => {
+  if (!HAS_PWSH) {
+    t.skip("PowerShell is not available");
+    return;
+  }
+
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-unsafe-"));
+  const projectPath = path.join(stagingRoot, "consumer-project");
+  const consumerFile = path.join(projectPath, "SomeOtherPlugin.dll");
+  try {
+    fs.mkdirSync(projectPath, { recursive: true });
+    fs.writeFileSync(consumerFile, "do not delete", "utf8");
+
+    const result = runStageOnlyRaw(stagingRoot, projectPath);
+    assert.notEqual(result.status, 0, "stage-only run should reject the unsafe project path");
+    assert.match(
+      `${result.stdout}\n${result.stderr}`,
+      /Refusing to delete existing ProjectPath/,
+      "failure should explain that the existing project path is not owned by the exporter"
+    );
+    assert.equal(
+      fs.readFileSync(consumerFile, "utf8"),
+      "do not delete",
+      "unsafe cleanup must not delete consumer-owned files"
+    );
+  } finally {
+    fs.rmSync(stagingRoot, { recursive: true, force: true });
+  }
+});
+
+test("export-unitypackage -StageOnly rejects destructive ProjectPath values before cleanup", (t) => {
+  if (!HAS_PWSH) {
+    t.skip("PowerShell is not available");
+    return;
+  }
+
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-paths-"));
+  const artifactRoot = path.join(stagingRoot, "artifacts");
+  const cases = [
+    {
+      name: "filesystem root",
+      projectPath: path.parse(stagingRoot).root,
+      pattern: /filesystem root/
+    },
+    {
+      name: "repository root",
+      projectPath: REPO_ROOT,
+      pattern: /repository root/
+    },
+    {
+      name: "case-variant repository root",
+      projectPath: swapAsciiCase(REPO_ROOT),
+      pattern: /repository root/
+    },
+    {
+      name: "repository parent",
+      projectPath: path.dirname(REPO_ROOT),
+      pattern: /parent of the repository root/
+    },
+    {
+      name: "artifacts directory",
+      projectPath: artifactRoot,
+      pattern: /artifacts directory/
+    },
+    {
+      name: "output directory parent",
+      projectPath: path.join(stagingRoot, "project-parent"),
+      outputPath: path.join(stagingRoot, "project-parent", "out", "package.unitypackage"),
+      pattern: /unitypackage output directory/
+    },
+    {
+      name: "repo-contained unmanaged project",
+      projectPath: path.join(REPO_ROOT, ".artifacts", "unity", "projects", "unmanaged"),
+      pattern: /Repo-contained export projects must live/
+    }
+  ];
+
+  try {
+    for (const testCase of cases) {
+      const result = runStageOnlyRaw(stagingRoot, testCase.projectPath, {
+        artifactsPath: artifactRoot,
+        outputPath: testCase.outputPath
+      });
+      assert.notEqual(result.status, 0, `${testCase.name} should be rejected`);
+      assert.match(
+        `${result.stdout}\n${result.stderr}`,
+        testCase.pattern,
+        `${testCase.name} should explain the blocked destructive path`
+      );
+    }
+    assert.ok(fs.existsSync(path.join(REPO_ROOT, "package.json")));
   } finally {
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }

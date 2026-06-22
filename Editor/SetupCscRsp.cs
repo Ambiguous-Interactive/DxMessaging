@@ -27,6 +27,39 @@ namespace DxMessaging.Editor
         internal const string LegacyAnalyzerCopyFolder =
             "Assets/Plugins/Editor/WallstopStudios.DxMessaging";
 
+        private const string LegacySourceGeneratorDllName =
+            "WallstopStudios.DxMessaging.SourceGenerators.dll";
+
+        // Released 2.x legacy folders predate the companion analyzer DLL, so the source generator
+        // is the required package-owned marker. Unknown DLLs still make the folder unsafe.
+        private static readonly HashSet<string> RequiredLegacyAnalyzerCopyDlls = new(
+            StringComparer.OrdinalIgnoreCase
+        )
+        {
+            LegacySourceGeneratorDllName,
+        };
+
+        private static readonly HashSet<string> KnownLegacyAnalyzerCopyDlls = new(
+            StringComparer.OrdinalIgnoreCase
+        )
+        {
+            LegacySourceGeneratorDllName,
+            "WallstopStudios.DxMessaging.Analyzer.dll",
+            "Microsoft.CodeAnalysis.dll",
+            "Microsoft.CodeAnalysis.CSharp.dll",
+            "System.Buffers.dll",
+            "System.Collections.Immutable.dll",
+            "System.Memory.dll",
+            "System.Numerics.Vectors.dll",
+            "System.Reflection.Metadata.dll",
+            "System.Runtime.CompilerServices.Unsafe.dll",
+            "System.Text.Encoding.CodePages.dll",
+            "System.Text.Encodings.Web.dll",
+            "System.Threading.Tasks.Extensions.dll",
+        };
+
+        private static bool loggedSkippedLegacyAnalyzerCopyCleanup;
+
         static SetupCscRsp()
         {
             // Backstop only: the primary removal happens pre-compile in LegacyAnalyzerCopyCleanup.
@@ -105,13 +138,16 @@ namespace DxMessaging.Editor
             // preserve it. The package only ever wrote a flat set of analyzer DLLs here, so the
             // safe-to-remove check below sees only files (a subfolder named "x.dll" can never be
             // mistaken for a DLL).
+            string[] files = Directory.GetFiles(absoluteFolder);
             if (Directory.GetDirectories(absoluteFolder).Length > 0)
             {
+                LogSkippedLegacyAnalyzerCopyCleanupIfNeeded(files);
                 return false;
             }
 
-            if (!IsLegacyAnalyzerCopySafeToRemove(Directory.GetFiles(absoluteFolder)))
+            if (!IsLegacyAnalyzerCopySafeToRemove(files))
             {
+                LogSkippedLegacyAnalyzerCopyCleanupIfNeeded(files);
                 return false;
             }
 
@@ -129,14 +165,38 @@ namespace DxMessaging.Editor
             return false;
         }
 
+        private static void LogSkippedLegacyAnalyzerCopyCleanupIfNeeded(IEnumerable<string> files)
+        {
+            if (
+                loggedSkippedLegacyAnalyzerCopyCleanup
+                || !ContainsKnownLegacyAnalyzerCopyEntry(files)
+            )
+            {
+                return;
+            }
+
+            loggedSkippedLegacyAnalyzerCopyCleanup = true;
+            Debug.LogWarning(
+                "DxMessaging: found a legacy in-project analyzer copy at "
+                    + LegacyAnalyzerCopyFolder
+                    + " but did not remove it because the folder contains content outside "
+                    + "the exact known package payload or is missing the required "
+                    + "DxMessaging source-generator DLL. Move consumer-owned files out of that folder, "
+                    + "then delete the stale DxMessaging analyzer DLLs manually to avoid "
+                    + "double-loading analyzers."
+            );
+        }
+
         /// <summary>
-        /// True when the legacy analyzer-copy folder is non-empty and every entry is a <c>.dll</c>
-        /// or its <c>.dll.meta</c> sidecar (the exact shape this package deployed). A subfolder or
-        /// any other file makes this false so the folder is preserved rather than deleted.
+        /// True when the legacy analyzer-copy folder contains the first-party source generator and
+        /// every entry is one of the exact analyzer/dependency DLLs this package deployed there or
+        /// a matching <c>.dll.meta</c> sidecar. A subfolder, a foreign DLL, or any other file makes
+        /// this false so the folder is preserved rather than deleted.
         /// </summary>
         internal static bool IsLegacyAnalyzerCopySafeToRemove(IEnumerable<string> folderEntries)
         {
-            bool sawAnalyzerDll = false;
+            HashSet<string> presentRequiredDlls = new(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> seenEntryNames = new(StringComparer.OrdinalIgnoreCase);
             foreach (string entry in folderEntries ?? Array.Empty<string>())
             {
                 if (string.IsNullOrEmpty(entry))
@@ -144,22 +204,81 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                string name = Path.GetFileName(entry);
+                string name = GetLegacyAnalyzerCopyEntryName(entry);
+                if (string.IsNullOrEmpty(name) || !seenEntryNames.Add(name))
+                {
+                    return false;
+                }
+
                 if (name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
                 {
-                    sawAnalyzerDll = true;
+                    if (!KnownLegacyAnalyzerCopyDlls.Contains(name))
+                    {
+                        return false;
+                    }
+
+                    if (RequiredLegacyAnalyzerCopyDlls.Contains(name))
+                    {
+                        presentRequiredDlls.Add(name);
+                    }
+
                     continue;
                 }
 
                 if (name.EndsWith(".dll.meta", StringComparison.OrdinalIgnoreCase))
                 {
+                    string dllName = name.Substring(0, name.Length - ".meta".Length);
+                    if (!KnownLegacyAnalyzerCopyDlls.Contains(dllName))
+                    {
+                        return false;
+                    }
+
                     continue;
                 }
 
                 return false;
             }
 
-            return sawAnalyzerDll;
+            return presentRequiredDlls.Count == RequiredLegacyAnalyzerCopyDlls.Count;
+        }
+
+        private static string GetLegacyAnalyzerCopyEntryName(string entry)
+        {
+            string normalizedEntry = entry.Replace("\\", "/");
+            int lastSeparator = normalizedEntry.LastIndexOf('/');
+            return lastSeparator >= 0
+                ? normalizedEntry.Substring(lastSeparator + 1)
+                : normalizedEntry;
+        }
+
+        private static bool ContainsKnownLegacyAnalyzerCopyEntry(IEnumerable<string> folderEntries)
+        {
+            foreach (string entry in folderEntries ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrEmpty(entry))
+                {
+                    continue;
+                }
+
+                string name = GetLegacyAnalyzerCopyEntryName(entry);
+                if (KnownLegacyAnalyzerCopyDlls.Contains(name))
+                {
+                    return true;
+                }
+
+                if (!name.EndsWith(".dll.meta", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string dllName = name.Substring(0, name.Length - ".meta".Length);
+                if (KnownLegacyAnalyzerCopyDlls.Contains(dllName))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

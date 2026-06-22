@@ -83,7 +83,7 @@
 | ------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ----------- | ---------------- |
 | [npm Package Configuration](./packaging/npm-package-configuration.md)                       | [ok] 245    | [intermediate] | [stable] | [risk: low] | npm, packaging   |
 | [npm Package Configuration Part 1](./packaging/npm-package-configuration-part-1.md)         | [draft] 109 | [intermediate] | [stable] | [risk: low] | migration, split |
-| [Shipping a Roslyn Analyzer in a Unity UPM Package](./packaging/unity-analyzer-shipping.md) | [ok] 159    | [intermediate] | [stable] | [risk: low] | unity, analyzer  |
+| [Shipping a Roslyn Analyzer in a Unity UPM Package](./packaging/unity-analyzer-shipping.md) | [ok] 171    | [intermediate] | [stable] | [risk: low] | unity, analyzer  |
 
 ## Performance
 

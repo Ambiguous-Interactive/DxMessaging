@@ -10,7 +10,7 @@
     Unity imports those build outputs. The analyzer/source-generator DLLs there
     have the SAME assembly names as the correctly-configured shipped analyzers in
     Runtime/Analyzers/, but their Unity-auto-generated .meta lack the
-    RoslynAnalyzer label / validateReferences:0 / all-platforms-disabled config.
+    RoslynAnalyzer label / all-platforms-disabled PluginImporter config.
     Unity then fails to resolve their Microsoft.CodeAnalysis reference and the
     duplicate shadows the real analyzers, so the source generator never runs and
     every [Dx*Message] type fails to implement its generated interface
