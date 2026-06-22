@@ -14,7 +14,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 156   |
+| Total Skills | 157   |
 | Categories   | 8     |
 
 ---
@@ -23,7 +23,7 @@
 
 - [Documentation](#documentation) (27)
 - [GitHub Actions](#github-actions) (8)
-- [Packaging](#packaging) (2)
+- [Packaging](#packaging) (3)
 - [Performance](#performance) (46)
 - [Scripting](#scripting) (9)
 - [Solid](#solid) (15)
@@ -79,10 +79,11 @@
 
 ## Packaging
 
-| Skill                                                                               | Lines       | Complexity     | Status   | Performance | Tags             |
-| ----------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ----------- | ---------------- |
-| [npm Package Configuration](./packaging/npm-package-configuration.md)               | [ok] 245    | [intermediate] | [stable] | [risk: low] | npm, packaging   |
-| [npm Package Configuration Part 1](./packaging/npm-package-configuration-part-1.md) | [draft] 109 | [intermediate] | [stable] | [risk: low] | migration, split |
+| Skill                                                                                       | Lines       | Complexity     | Status   | Performance | Tags             |
+| ------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ----------- | ---------------- |
+| [npm Package Configuration](./packaging/npm-package-configuration.md)                       | [ok] 245    | [intermediate] | [stable] | [risk: low] | npm, packaging   |
+| [npm Package Configuration Part 1](./packaging/npm-package-configuration-part-1.md)         | [draft] 109 | [intermediate] | [stable] | [risk: low] | migration, split |
+| [Shipping a Roslyn Analyzer in a Unity UPM Package](./packaging/unity-analyzer-shipping.md) | [ok] 171    | [intermediate] | [stable] | [risk: low] | unity, analyzer  |
 
 ## Performance
 

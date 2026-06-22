@@ -73,8 +73,6 @@ test("generateLlmsTxt reflects skill counts and categories", () => {
 });
 
 test("--check freshness logic: regeneration is a no-op, edits are detected", () => {
-  // The --check mode passes when the on-disk file regenerates identically
-  // (modulo the date line and line endings) and fails on any structural edit.
   const generated = generateLlmsTxt();
   const onDisk = normalizeToLf(generated).replace(
     /^\*\*Last Updated:\*\* \d{4}-\d{2}-\d{2}$/m,
@@ -87,8 +85,6 @@ test("--check freshness logic: regeneration is a no-op, edits are detected", () 
   assert.notEqual(normalizeForComparison(edited), normalizeForComparison(generated));
 });
 
-// --- Skill-count claim: floored "at least N", only overstating is an error ---
-
 test("parseSkillCountClaims extracts every claim in document order", () => {
   assert.deepEqual(parseSkillCountClaims("no claim here"), []);
   assert.deepEqual(parseSkillCountClaims(SKILL_CLAIM(155)), [155]);
@@ -99,8 +95,6 @@ test("parseSkillCountClaims extracts every claim in document order", () => {
 });
 
 test("validateSkillCountClaim allows exact and conservative claims, rejects overstatement", () => {
-  // [claimText, actualCount, expectedOk] — adding skills (claim < actual) must
-  // stay green; only claiming MORE than exist is a real, failing error.
   const cases = [
     { name: "exact", content: SKILL_CLAIM(155), actual: 155, ok: true },
     { name: "understated (skills added)", content: SKILL_CLAIM(140), actual: 155, ok: true },
@@ -124,9 +118,7 @@ test("validateSkillCountClaim allows exact and conservative claims, rejects over
 });
 
 test("normalizeForComparison ignores the skill-count number but keeps the phrase", () => {
-  // Adding/removing a skill changes the number; that must not trip --check.
   assert.equal(normalizeForComparison(SKILL_CLAIM(150)), normalizeForComparison(SKILL_CLAIM(175)));
-  // But the phrase disappearing entirely is still a structural difference.
   assert.notEqual(
     normalizeForComparison(SKILL_CLAIM(150)),
     normalizeForComparison("- removed the skills line entirely:")
@@ -159,15 +151,12 @@ test("syncSkillCountClaim rewrites exactly one claim and is otherwise a no-op", 
       return p;
     };
 
-    // Stale single claim -> rewritten to the exact count.
     const stale = writeTmp("stale.md", `intro\n${SKILL_CLAIM(140)}\noutro\n`);
     assert.equal(syncSkillCountClaim(stale, 155), true);
     assert.match(fs.readFileSync(stale, "utf8"), /155\+ specialized skill documents/);
 
-    // Already exact -> no rewrite.
     assert.equal(syncSkillCountClaim(stale, 155), false);
 
-    // No claim, multiple claims, and missing file are all safe no-ops.
     const none = writeTmp("none.md", "nothing here");
     assert.equal(syncSkillCountClaim(none, 155), false);
     const dup = writeTmp("dup.md", `${SKILL_CLAIM(1)}\n${SKILL_CLAIM(2)}`);
@@ -181,8 +170,6 @@ test("syncSkillCountClaim rewrites exactly one claim and is otherwise a no-op", 
 });
 
 test("shipped llms.txt and README skill claims never overstate the real count", () => {
-  // Integration guard: the committed docs agree with reality. This is the exact
-  // class of drift that previously only llms.txt caught and README did not.
   const actualCount = countSkillFiles();
   for (const file of ["llms.txt", "README.md"]) {
     const content = fs.readFileSync(path.join(ROOT_DIR, file), "utf8");
@@ -191,17 +178,7 @@ test("shipped llms.txt and README skill claims never overstate the real count", 
   }
 });
 
-// --- Update/check convergence: the fixer never reports a false success ---
-// These spawn the CLI against env-pointed temp fixtures (DX_LLMS_TXT/DX_README),
-// the same exit-code testing pattern generate-skills-index.test.js uses. They
-// live in `npm test` (not the fast pre-push subset) because they fork node.
-
 test("CLI update mode fails fast (no false success) when a guarded claim is unfixable", () => {
-  // syncSkillCountClaim refuses to rewrite a doc whose claim is missing or
-  // duplicated (an ambiguous regex edit could mangle prose). Update must surface
-  // that as a non-zero exit -- never report success and let --check / pre-commit
-  // / CI reject the very state it left behind. Regression guard for the Copilot
-  // finding: update silently no-ops while --check rejects an unfixable README.
   for (const body of ["no skill claim here at all\n", `${SKILL_CLAIM(10)}\n${SKILL_CLAIM(20)}\n`]) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llms-cli-bad-"));
     try {
@@ -233,9 +210,6 @@ test("CLI update mode fails fast (no false success) when a guarded claim is unfi
 test("CLI update mode fixes a stale single claim, then --check passes (update/check converge)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llms-cli-conv-"));
   try {
-    // Hermetic fixture: a temp skills dir with a KNOWN count (3) so the assertion
-    // never couples to the live repo's skill count (DX_SKILLS_DIR mirrors the
-    // temp-fixture pattern in generate-skills-index.test.js).
     const skills = path.join(dir, "skills");
     for (const rel of ["documentation/a.md", "testing/b.md", "testing/c.md"]) {
       fs.mkdirSync(path.join(skills, path.dirname(rel)), { recursive: true });
@@ -243,8 +217,6 @@ test("CLI update mode fixes a stale single claim, then --check passes (update/ch
     }
     const llmsTxt = path.join(dir, "llms.txt");
     const readme = path.join(dir, "README.md");
-    // A single, understated claim is the fixable case: update rewrites it to the
-    // exact count (3) and the very next --check must pass (they converge).
     fs.writeFileSync(readme, `intro\n${SKILL_CLAIM(1)}\noutro\n`);
     const env = { ...process.env, DX_SKILLS_DIR: skills, DX_LLMS_TXT: llmsTxt, DX_README: readme };
 
@@ -259,9 +231,6 @@ test("CLI update mode fixes a stale single claim, then --check passes (update/ch
 });
 
 test("collectValidationErrors (the shared --check/update contract) flags a malformed sibling", () => {
-  // Direct, in-process coverage of the single validator both modes consume: a
-  // duplicated sibling claim is reported (shape failure, count-independent) while
-  // a freshly generated llms.txt is accepted.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llms-cve-"));
   try {
     const llmsTxt = path.join(dir, "llms.txt");

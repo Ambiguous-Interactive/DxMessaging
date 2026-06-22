@@ -97,7 +97,7 @@ function Install-RunnerMaintenanceTask {
         Invoke-GitChecked -Arguments @('pull', '--ff-only', 'origin', $Branch) -WorkingDirectory $repoDir
     }
 
-    $scriptPath = Join-Path $repoDir 'scripts\unity\maintain-windows-runner.ps1'
+    $scriptPath = [System.IO.Path]::Combine($repoDir, 'scripts', 'unity', 'maintain-windows-runner.ps1')
     if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
         throw "Maintenance script not found at $scriptPath"
     }

@@ -219,6 +219,167 @@ namespace DxMessaging.Tests.Editor
             CollectionAssert.AreEqual(expectedLines, synchronized);
             Assert.AreEqual(expectedModified, modified);
         }
+
+        public static IEnumerable<TestCaseData> LegacyAnalyzerCopyRemovalCases()
+        {
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
+                    "WallstopStudios.DxMessaging.Analyzer.dll",
+                    "WallstopStudios.DxMessaging.Analyzer.dll.meta",
+                    "Microsoft.CodeAnalysis.dll",
+                    "Microsoft.CodeAnalysis.dll.meta",
+                    "Microsoft.CodeAnalysis.CSharp.dll",
+                    "Microsoft.CodeAnalysis.CSharp.dll.meta",
+                    "System.Buffers.dll",
+                    "System.Buffers.dll.meta",
+                    "System.Collections.Immutable.dll",
+                    "System.Collections.Immutable.dll.meta",
+                    "System.Memory.dll",
+                    "System.Memory.dll.meta",
+                    "System.Numerics.Vectors.dll",
+                    "System.Numerics.Vectors.dll.meta",
+                    "System.Reflection.Metadata.dll",
+                    "System.Reflection.Metadata.dll.meta",
+                    "System.Runtime.CompilerServices.Unsafe.dll",
+                    "System.Runtime.CompilerServices.Unsafe.dll.meta",
+                    "System.Text.Encoding.CodePages.dll",
+                    "System.Text.Encoding.CodePages.dll.meta",
+                    "System.Text.Encodings.Web.dll",
+                    "System.Text.Encodings.Web.dll.meta",
+                    "System.Threading.Tasks.Extensions.dll",
+                    "System.Threading.Tasks.Extensions.dll.meta",
+                },
+                true
+            ).SetName("removes a folder containing the full known historical analyzer payload");
+
+            yield return new TestCaseData(
+                new[] { "WallstopStudios.DxMessaging.SourceGenerators.dll" },
+                true
+            ).SetName("removes a 2.x folder containing only the first-party source generator DLL");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
+                    "Microsoft.CodeAnalysis.dll",
+                    "Microsoft.CodeAnalysis.CSharp.dll",
+                    "System.Buffers.dll",
+                    "System.Memory.dll",
+                    "System.Numerics.Vectors.dll",
+                    "System.Text.Encoding.CodePages.dll",
+                    "System.Text.Encodings.Web.dll",
+                    "System.Threading.Tasks.Extensions.dll",
+                },
+                true
+            ).SetName("removes a 2.x folder containing historical Roslyn dependency DLLs");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.Analyzer.dll",
+                },
+                true
+            ).SetName("removes a 3.x folder containing both first-party compiler DLLs");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "Assets/Plugins/Editor/WallstopStudios.DxMessaging/WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    @"Assets\Plugins\Editor\WallstopStudios.DxMessaging\WallstopStudios.DxMessaging.Analyzer.DLL",
+                    "Assets/Plugins/Editor/WallstopStudios.DxMessaging/Microsoft.CodeAnalysis.DLL.META",
+                },
+                true
+            ).SetName("matches known DLL names case-insensitively from platform paths");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
+                    "ConsumerNotes.cs",
+                },
+                false
+            ).SetName("preserves the folder when a consumer added a foreign file");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll.meta",
+                    "WallstopStudios.DxMessaging.Analyzer.dll",
+                    "WallstopStudios.DxMessaging.Analyzer.dll.meta",
+                    "SomeOtherPlugin.dll",
+                },
+                false
+            ).SetName("preserves the folder when a consumer added a foreign DLL");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.Analyzer.dll",
+                    "SomeOtherPlugin.dll.meta",
+                },
+                false
+            ).SetName("preserves the folder when a consumer added a foreign DLL meta sidecar");
+
+            yield return new TestCaseData(
+                new[] { "WallstopStudios.DxMessaging.Analyzer.dll" },
+                false
+            ).SetName("preserves the folder when the source generator marker DLL is missing");
+
+            yield return new TestCaseData(
+                new[] { "WallstopStudios.DxMessaging.Analyzer.dll", "NestedFolder" },
+                false
+            ).SetName("preserves the folder when an entry is neither a .dll nor a .dll.meta");
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.Analyzer.dll",
+                    "wallstopstudios.dxmessaging.analyzer.dll",
+                },
+                false
+            ).SetName("preserves the folder when duplicate DLL names differ only by case");
+
+            yield return new TestCaseData(Array.Empty<string>(), false).SetName(
+                "does nothing for an empty folder"
+            );
+
+            yield return new TestCaseData(
+                new[]
+                {
+                    null,
+                    string.Empty,
+                    "WallstopStudios.DxMessaging.SourceGenerators.dll",
+                    "WallstopStudios.DxMessaging.Analyzer.dll",
+                },
+                true
+            ).SetName("ignores null and empty entries from defensive callers");
+
+            yield return new TestCaseData(
+                new[] { "WallstopStudios.DxMessaging.Analyzer.dll.meta" },
+                false
+            ).SetName("does nothing when only orphaned known meta sidecars remain");
+        }
+
+        [TestCaseSource(nameof(LegacyAnalyzerCopyRemovalCases))]
+        public void RecognizesWhenLegacyAnalyzerCopyIsSafeToRemove(
+            string[] folderEntries,
+            bool expectedSafeToRemove
+        )
+        {
+            Assert.AreEqual(
+                expectedSafeToRemove,
+                SetupCscRsp.IsLegacyAnalyzerCopySafeToRemove(folderEntries)
+            );
+        }
     }
 }
 #endif

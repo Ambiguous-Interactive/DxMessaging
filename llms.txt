@@ -214,7 +214,7 @@ npm run check:spelling
 This repository includes comprehensive AI agent guidance in the `.llm/` directory:
 
 - **[.llm/context.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/context.md)** - Repository guidelines, coding standards, testing policies
-- **[.llm/skills/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills)** - 156+ specialized skill documents covering:
+- **[.llm/skills/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills)** - 157+ specialized skill documents covering:
   - **documentation/**
   - **github-actions/**
   - **packaging/**

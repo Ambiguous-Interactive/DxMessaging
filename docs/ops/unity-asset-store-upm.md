@@ -63,7 +63,7 @@ under `Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:
 `SourceGenerators/**` is excluded (the loose generator sources would compile
 into `Assembly-CSharp` under `Assets/` and fail; consumers get the source
 generator and analyzer from the RoslynAnalyzer-labeled DLLs shipped under
-`Editor/Analyzers/`), and `Samples~` is renamed to `Samples` so samples
+`Runtime/Analyzers/`), and `Samples~` is renamed to `Samples` so samples
 import visibly.
 
 There is no sanctioned CLI or API for Unity Asset Store uploads (verified

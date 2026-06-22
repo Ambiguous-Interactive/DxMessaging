@@ -12,65 +12,17 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-// Session 047 net: the skills-index generator + test (+642) less ~85 lines of
-// zero-loss cuts to existing scripts (dead code, lib/walkFiles dedup), landing
-// tracked JS near 10543. Budget set to 10600 to cover it. The generator is a
-// sanctioned bespoke exception -- no off-the-shelf tool regenerates a markdown
-// line-count column, and the index Lines/TOC counts had drifted on ~90% of
-// rows. A reviewed decision in the change that needs it.
-//
-// Session 052 (+43, 10600 -> 10650): scripts/__tests__/auto-commit-fetch-force-
-// refspec.test.js, a drift-guard pinning the `+` force prefix on the auto-commit /
-// state-branch workflows' remote-tracking fetch refspecs. Without it the shallow
-// non-fast-forward crash (run 74494500574) silently regresses the moment anyone
-// drops a `+`; no off-the-shelf tool guards workflow-YAML refspec invariants. The
-// corpus had only ~16 lines of headroom, so the guard could not be slimmed into
-// budget without gutting its explanatory comment (the guard's whole point). A
-// reviewed decision in the change that needs it.
-//
-// Session 055 (+219, 10650 -> 10890): scripts/__tests__/ci-aggregate-workflow.test.js,
-// a narrow guard for the CI aggregate migration. It prevents the required static
-// gate from drifting back into twelve standalone workflows, dropping a job from
-// `CI Success`, skipping skill-index validation on skill-only PRs, or losing the
-// fail-closed shape on aggregate child jobs. Actionlint/yamllint validate syntax,
-// but they do not enforce this repository-specific required-check topology.
-//
-// Session 056 (+295, 10890 -> 11185): hardening scripts/update-llms-txt.js against
-// the recurring "skill count is out of date" failure class (runs 74913516377 and
-// the long trail of `chore: update llms.txt` follow-ups). The skill-count claim is
-// now a floored "at least N" promise validated for *no overstatement* instead of an
-// exact match, so adding a skill never reddens CI; the same guard is extended to
-// README.md (previously unchecked and stale at 140 vs 155), update mode keeps both
-// docs in sync, and --check now prints the drifting lines. The bulk is the bespoke
-// validator + its data-driven node:test coverage; no off-the-shelf tool enforces a
-// repo-specific "docs may understate but never overstate the skill count" invariant.
-//
-// Session 057 (+153, tracked JS 11181 -> 11334; ceiling 11185 -> 11350): close the
-// update/--check asymmetry in scripts/update-llms-txt.js that Copilot flagged.
-// Update mode could exit 0 while leaving a README skill-count claim (missing or
-// duplicated) that --check, the pre-commit hook, and the auto-commit bot all
-// reject and the script cannot auto-fix -- a fixer reporting a false success.
-// Update now shares one validator (collectValidationErrors) with --check and
-// verifies the post-write state, failing loudly with the offending file instead.
-// The bulk is that shared validator plus forked-process CLI regression tests
-// (env-pointed fixtures) pinning fixer/checker convergence; no off-the-shelf tool
-// enforces "a fixer must converge with its own --check or exit non-zero." A
-// reviewed decision here.
-//
-// Session 058 (ceiling 11350 -> 11820; tracked JS lands at 11788, ~32 headroom):
-// fix the two v3.1.0 release-pipeline defects (release.yml shipped a stub release
-// body instead of the CHANGELOG section; the .unitypackage export died on an
-// empty Unity project manifest). The additions: the shared fenced-code-block-
-// aware extractor (scripts/release/changelog.js), the release-notes.js composer
-// the three release workflows now share, their node:test coverage (the manifest
-// guard reproduces the IMGUI compile failure at the staging level; the extractor
-// test pins the fenced-`## [x]` non-boundary case), and a CommonMark info-string
-// fix to the shared CodeBlockTracker. prepare-release.js drops its duplicated
-// fenced-mask/heading helpers, partly offsetting the add. The single-source
-// module list is data (unity-builtin-modules.json), not counted here. No off-
-// the-shelf tool extracts a fence-aware changelog section or pins the export
-// project's required module set. A reviewed decision in the change that needs it.
-const TOTAL_BUDGET = 11820;
+// Budget history:
+// 047: 10600 for skills-index generation after zero-loss script cuts.
+// 052: 10650 for the auto-commit force-refspec drift guard.
+// 055: 10890 for CI aggregate-workflow topology guards.
+// 056: 11185 for resilient llms.txt/README skill-count validation.
+// 057: 11350 for update/check convergence validation.
+// 058: 11820 for shared release notes, changelog extraction, and export staging
+// coverage. Each increase was reviewed with the bespoke invariant it protects.
+// 059: 11960 for cross-platform PowerShell project-path safety regression tests.
+const TOTAL_BUDGET = 11960;
+const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 function countLines(filePath) {
@@ -89,13 +41,23 @@ function main() {
   });
   const files = output.split("\n").filter(Boolean);
   let total = 0;
+  const counts = [];
   for (const file of files) {
-    total += countLines(path.join(REPO_ROOT, file));
+    const lines = countLines(path.join(REPO_ROOT, file));
+    total += lines;
+    counts.push({ file, lines });
   }
   if (total > TOTAL_BUDGET) {
+    const largest = counts
+      .sort((a, b) => b.lines - a.lines || a.file.localeCompare(b.file))
+      .slice(0, LARGEST_FILE_COUNT)
+      .map(({ file, lines }) => `  ${lines.toString().padStart(5)} ${file}`)
+      .join("\n");
     console.error(
       `validate-js-loc-budget: tracked JS is ${total} lines across ${files.length} files; ` +
-        `budget is ${TOTAL_BUDGET}. Delete or slim JS instead of raising the budget.`
+        `budget is ${TOTAL_BUDGET} (${total - TOTAL_BUDGET} over). ` +
+        "Delete or slim JS instead of raising the budget.\n" +
+        `Largest tracked JS files:\n${largest}`
     );
     process.exit(1);
   }

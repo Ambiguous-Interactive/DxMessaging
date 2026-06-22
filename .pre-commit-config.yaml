@@ -136,6 +136,7 @@ repos:
         entry: >-
           node --test
           scripts/lib/__tests__/lib.test.js
+          scripts/__tests__/analyzer-runtime-placement.test.js
           scripts/__tests__/fix-csharp-underscore-methods.test.js
           scripts/__tests__/sync-banner-version.test.js
           scripts/__tests__/unity-perf.test.js
@@ -145,6 +146,6 @@ repos:
           scripts/wiki/__tests__/transform.test.js
         language: system
         pass_filenames: false
-        files: '^(package\.json|scripts/.*\.js)$'
+        files: '^(package\.json|Runtime/Analyzers/|Editor/.*\.asmdef|Editor/Analyzers/|Runtime/.*\.asmdef|SourceGenerators/|scripts/.*\.js)$'
         stages:
           - pre-push

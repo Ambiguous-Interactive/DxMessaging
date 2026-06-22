@@ -5,12 +5,9 @@ namespace DxMessaging.Editor
     using System;
     using System.Collections.Generic;
     using System.IO;
-    using System.Linq;
-    using System.Security.Cryptography;
     using DxMessaging.Editor.Settings;
     using UnityEditor;
     using UnityEngine;
-    using Object = UnityEngine.Object;
 
     [InitializeOnLoad]
     public static class SetupCscRsp
@@ -22,57 +19,55 @@ namespace DxMessaging.Editor
             )
             .Replace("\\", "/");
 
-        private static readonly string[] AnalyzerDirectories =
-        {
-            "Packages/com.wallstop-studios.dxmessaging/Editor/Analyzers/",
-            "Library/PackageCache/com.wallstop-studios.dxmessaging/Editor/Analyzers/",
-        };
+        // Older package versions copied the analyzer + Roslyn runtime DLLs into the consumer
+        // project here so the source generator applied project-wide. The generator now ships
+        // under the package's Runtime/Analyzers folder (Unity scopes it natively to the runtime
+        // assembly and everything that references it, including the predefined Assembly-CSharp),
+        // so this in-project copy is redundant and is removed on upgrade.
+        internal const string LegacyAnalyzerCopyFolder =
+            "Assets/Plugins/Editor/WallstopStudios.DxMessaging";
 
-        private static readonly string SourceGeneratorDllName =
+        private const string LegacySourceGeneratorDllName =
             "WallstopStudios.DxMessaging.SourceGenerators.dll";
 
-        // The analyzer DLL is a SEPARATE assembly, but both compiler-host DLLs are pinned to
-        // Unity 2021-compatible Roslyn 3.8.0. They ship side-by-side and both need the
-        // RoslynAnalyzer label.
-        private static readonly string AnalyzerDllName = "WallstopStudios.DxMessaging.Analyzer.dll";
-
-        // The analyzer DLLs and shared Roslyn surface ship unconditionally; they're light enough
-        // and required for DXMSG002–DXMSG009 to function at all. The list intentionally references
-        // a few transitive Roslyn deps that may or may not physically ship with the package; the
-        // copy loop below silently skips any name that isn't on disk.
-        private static readonly string[] RequiredDllNames =
-        {
-            SourceGeneratorDllName,
-            AnalyzerDllName,
-            "Microsoft.CodeAnalysis.dll",
-            "Microsoft.CodeAnalysis.CSharp.dll",
-            "System.Text.Encodings.Web.dll",
-            "System.Reflection.Metadata.dll",
-            "System.Runtime.CompilerServices.Unsafe.dll",
-            "System.Collections.Immutable.dll",
-            "System.Memory.dll",
-            "System.Buffers.dll",
-            "System.Threading.Tasks.Extensions.dll",
-            "System.Numerics.Vectors.dll",
-            "System.Text.Encoding.CodePages.dll",
-        };
-
-        // DLLs that must be tagged with Unity's "RoslynAnalyzer" asset label so Unity's compiler
-        // pipeline picks them up as analyzer/source-generator hosts. Other DLLs in the same folder
-        // (Roslyn runtime, immutable collections) are plain Editor-only plugin DLLs.
-        private static readonly HashSet<string> AnalyzerLabeledDllNames = new(
+        // Released 2.x legacy folders predate the companion analyzer DLL, so the source generator
+        // is the required package-owned marker. Unknown DLLs still make the folder unsafe.
+        private static readonly HashSet<string> RequiredLegacyAnalyzerCopyDlls = new(
             StringComparer.OrdinalIgnoreCase
         )
         {
-            SourceGeneratorDllName,
-            AnalyzerDllName,
+            LegacySourceGeneratorDllName,
         };
 
-        private static readonly HashSet<string> DllNames = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> KnownLegacyAnalyzerCopyDlls = new(
+            StringComparer.OrdinalIgnoreCase
+        )
+        {
+            LegacySourceGeneratorDllName,
+            "WallstopStudios.DxMessaging.Analyzer.dll",
+            "Microsoft.CodeAnalysis.dll",
+            "Microsoft.CodeAnalysis.CSharp.dll",
+            "System.Buffers.dll",
+            "System.Collections.Immutable.dll",
+            "System.Memory.dll",
+            "System.Numerics.Vectors.dll",
+            "System.Reflection.Metadata.dll",
+            "System.Runtime.CompilerServices.Unsafe.dll",
+            "System.Text.Encoding.CodePages.dll",
+            "System.Text.Encodings.Web.dll",
+            "System.Threading.Tasks.Extensions.dll",
+        };
+
+        private static bool loggedSkippedLegacyAnalyzerCopyCleanup;
 
         static SetupCscRsp()
         {
-            ScheduleSetupStep(EnsureDLLsExistInAssets, "copy analyzer DLLs into Assets");
+            // Backstop only: the primary removal happens pre-compile in LegacyAnalyzerCopyCleanup.
+            // This catches projects whose legacy copy predates the upgrade and triggers no import.
+            ScheduleSetupStep(
+                () => TryRemoveLegacyAnalyzerCopy(),
+                "remove redundant in-project analyzer copy"
+            );
             ScheduleSetupStep(EnsureCscRsp, "clean csc.rsp analyzer entries");
             ScheduleAdditionalFileForIgnoreListSync();
         }
@@ -104,147 +99,186 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static void EnsureDLLsExistInAssets()
+        /// <summary>
+        /// Deletes the redundant in-project analyzer copy that older package versions deployed to
+        /// <see cref="LegacyAnalyzerCopyFolder"/>. The source generator now ships under the
+        /// package's <c>Runtime/Analyzers</c> folder and applies automatically, so the copy is no
+        /// longer needed -- and, critically, leaving it in place makes BOTH copies generate into
+        /// every DxMessaging-referencing assembly, emitting each member twice (CS0102). Removing it
+        /// is therefore an upgrade requirement, not just cleanup.
+        /// </summary>
+        /// <remarks>
+        /// Called from <see cref="LegacyAnalyzerCopyCleanup"/> (an <c>AssetPostprocessor</c>) so the
+        /// removal lands during the asset import that PRECEDES script compilation -- before the two
+        /// copies can both feed the compiler -- and again from the <c>[InitializeOnLoad]</c> static
+        /// constructor as a post-compile backstop. Idempotent (a no-op once the folder is gone) and
+        /// conservative: it leaves the folder untouched if it holds anything other than the analyzer
+        /// DLLs this package deployed there. Returns <c>true</c> only when it actually deleted the
+        /// folder.
+        /// </remarks>
+        internal static bool TryRemoveLegacyAnalyzerCopy()
         {
-            DllNames.Clear();
-            foreach (
-                string dllGuid in AssetDatabase.FindAssets("t:DefaultAsset", new[] { "Assets" })
-            )
+            if (!AssetDatabase.IsValidFolder(LegacyAnalyzerCopyFolder))
             {
-                string dllPath = AssetDatabase.GUIDToAssetPath(dllGuid);
-                if (!dllPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (!dllPath.Contains("Assets/Plugins", StringComparison.OrdinalIgnoreCase))
-                {
-                    string dllName = Path.GetFileName(dllPath);
-                    DllNames.Add(dllName);
-                }
+                return false;
             }
 
-            foreach (string requiredDllName in RequiredDllNames)
+            // The only shape this package ever created here is a flat set of analyzer / Roslyn
+            // DLLs plus their auto-generated .meta sidecars. Inspect the on-disk folder and bail
+            // out if a consumer repurposed it for anything else.
+            string absoluteFolder = Path.GetFullPath(
+                Path.Combine(Application.dataPath, "..", LegacyAnalyzerCopyFolder)
+            );
+            if (!Directory.Exists(absoluteFolder))
             {
-                if (DllNames.Contains(requiredDllName))
-                {
-                    continue;
-                }
-
-                foreach (string relativeDirectory in AnalyzerDirectories)
-                {
-                    try
-                    {
-                        string sourceFile = $"{relativeDirectory}{requiredDllName}";
-                        if (!File.Exists(sourceFile))
-                        {
-                            continue;
-                        }
-
-                        const string pluginsDirectory =
-                            "Assets/Plugins/Editor/WallstopStudios.DxMessaging/";
-                        string outputAsset = $"{pluginsDirectory}{requiredDllName}";
-                        if (!Directory.Exists(pluginsDirectory))
-                        {
-                            Directory.CreateDirectory(pluginsDirectory);
-                            AssetDatabase.Refresh();
-                        }
-                        bool needsCopy = FilesDiffer(sourceFile, outputAsset);
-                        if (needsCopy)
-                        {
-                            File.Copy(sourceFile, outputAsset, true);
-                            AssetDatabase.ImportAsset(outputAsset);
-                        }
-
-                        if (AnalyzerLabeledDllNames.Contains(requiredDllName))
-                        {
-                            Object loadedDll = AssetDatabase.LoadMainAssetAtPath(outputAsset);
-                            if (loadedDll != null)
-                            {
-                                string[] existingLabels = AssetDatabase.GetLabels(loadedDll);
-                                if (!existingLabels.Contains("RoslynAnalyzer"))
-                                {
-                                    List<string> newLabels = existingLabels.ToList();
-                                    newLabels.Add("RoslynAnalyzer");
-                                    AssetDatabase.SetLabels(loadedDll, newLabels.ToArray());
-                                }
-                            }
-                        }
-
-                        if (AssetImporter.GetAtPath(outputAsset) is PluginImporter importer)
-                        {
-                            bool importerDirty = false;
-
-                            // A RoslynAnalyzer-labeled DLL must be EXCLUDED from every
-                            // build platform, including the Editor, so Unity treats it as a
-                            // C# compiler analyzer rather than a managed precompiled
-                            // assembly. The same-named DLL is importable from two locations
-                            // (the package's own Editor/Analyzers copy and this Assets
-                            // copy); if either is an Editor-enabled precompiled assembly,
-                            // Unity 2021 aborts with "Multiple precompiled assemblies with
-                            // the same name". The Roslyn runtime dependencies in the same
-                            // folder already ship Editor-disabled and never collide -- this
-                            // converges the analyzer DLLs onto that proven-safe shape.
-                            // NOTE: SetExcludeFromAnyPlatform is a no-op once
-                            // CompatibleWithAnyPlatform is false, so the Editor platform is
-                            // disabled through the effective SetCompatibleWithEditor API.
-                            if (importer.GetCompatibleWithAnyPlatform())
-                            {
-                                importer.SetCompatibleWithAnyPlatform(false);
-                                importerDirty = true;
-                            }
-
-                            if (importer.GetCompatibleWithEditor())
-                            {
-                                importer.SetCompatibleWithEditor(false);
-                                importerDirty = true;
-                            }
-
-                            if (importerDirty || needsCopy)
-                            {
-                                importer.SaveAndReimport();
-                            }
-                        }
-
-                        DllNames.Add(requiredDllName);
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        DxMessagingEditorLog.LogError(
-                            $"Failed to copy {requiredDllName} to Assets.",
-                            ex
-                        );
-                    }
-                }
+                return false;
             }
 
-            if (DllNames.Count > 0)
+            // A real subdirectory means a consumer repurposed this folder for their own content;
+            // preserve it. The package only ever wrote a flat set of analyzer DLLs here, so the
+            // safe-to-remove check below sees only files (a subfolder named "x.dll" can never be
+            // mistaken for a DLL).
+            string[] files = Directory.GetFiles(absoluteFolder);
+            if (Directory.GetDirectories(absoluteFolder).Length > 0)
             {
-                AssetDatabase.Refresh();
+                LogSkippedLegacyAnalyzerCopyCleanupIfNeeded(files);
+                return false;
             }
+
+            if (!IsLegacyAnalyzerCopySafeToRemove(files))
+            {
+                LogSkippedLegacyAnalyzerCopyCleanupIfNeeded(files);
+                return false;
+            }
+
+            if (AssetDatabase.DeleteAsset(LegacyAnalyzerCopyFolder))
+            {
+                Debug.Log(
+                    "DxMessaging: removed the redundant in-project analyzer copy at "
+                        + LegacyAnalyzerCopyFolder
+                        + ". The source generator now ships under the package's Runtime/Analyzers "
+                        + "folder and applies automatically; nothing needs to live under Assets."
+                );
+                return true;
+            }
+
+            return false;
         }
 
-        private static bool FilesDiffer(string sourcePath, string destinationPath)
+        private static void LogSkippedLegacyAnalyzerCopyCleanupIfNeeded(IEnumerable<string> files)
         {
-            if (!File.Exists(destinationPath))
+            if (
+                loggedSkippedLegacyAnalyzerCopyCleanup
+                || !ContainsKnownLegacyAnalyzerCopyEntry(files)
+            )
             {
-                return true;
+                return;
             }
 
-            FileInfo sourceInfo = new(sourcePath);
-            FileInfo destinationInfo = new(destinationPath);
-            if (sourceInfo.Length != destinationInfo.Length)
+            loggedSkippedLegacyAnalyzerCopyCleanup = true;
+            Debug.LogWarning(
+                "DxMessaging: found a legacy in-project analyzer copy at "
+                    + LegacyAnalyzerCopyFolder
+                    + " but did not remove it because the folder contains content outside "
+                    + "the exact known package payload or is missing the required "
+                    + "DxMessaging source-generator DLL. Move consumer-owned files out of that folder, "
+                    + "then delete the stale DxMessaging analyzer DLLs manually to avoid "
+                    + "double-loading analyzers."
+            );
+        }
+
+        /// <summary>
+        /// True when the legacy analyzer-copy folder contains the first-party source generator and
+        /// every entry is one of the exact analyzer/dependency DLLs this package deployed there or
+        /// a matching <c>.dll.meta</c> sidecar. A subfolder, a foreign DLL, or any other file makes
+        /// this false so the folder is preserved rather than deleted.
+        /// </summary>
+        internal static bool IsLegacyAnalyzerCopySafeToRemove(IEnumerable<string> folderEntries)
+        {
+            HashSet<string> presentRequiredDlls = new(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> seenEntryNames = new(StringComparer.OrdinalIgnoreCase);
+            foreach (string entry in folderEntries ?? Array.Empty<string>())
             {
-                return true;
+                if (string.IsNullOrEmpty(entry))
+                {
+                    continue;
+                }
+
+                string name = GetLegacyAnalyzerCopyEntryName(entry);
+                if (string.IsNullOrEmpty(name) || !seenEntryNames.Add(name))
+                {
+                    return false;
+                }
+
+                if (name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!KnownLegacyAnalyzerCopyDlls.Contains(name))
+                    {
+                        return false;
+                    }
+
+                    if (RequiredLegacyAnalyzerCopyDlls.Contains(name))
+                    {
+                        presentRequiredDlls.Add(name);
+                    }
+
+                    continue;
+                }
+
+                if (name.EndsWith(".dll.meta", StringComparison.OrdinalIgnoreCase))
+                {
+                    string dllName = name.Substring(0, name.Length - ".meta".Length);
+                    if (!KnownLegacyAnalyzerCopyDlls.Contains(dllName))
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+
+                return false;
             }
 
-            using FileStream sourceStream = File.OpenRead(sourcePath);
-            using FileStream destinationStream = File.OpenRead(destinationPath);
-            using SHA256 sha256 = SHA256.Create();
-            byte[] sourceHash = sha256.ComputeHash(sourceStream);
-            byte[] destinationHash = sha256.ComputeHash(destinationStream);
-            return !sourceHash.AsSpan().SequenceEqual(destinationHash);
+            return presentRequiredDlls.Count == RequiredLegacyAnalyzerCopyDlls.Count;
+        }
+
+        private static string GetLegacyAnalyzerCopyEntryName(string entry)
+        {
+            string normalizedEntry = entry.Replace("\\", "/");
+            int lastSeparator = normalizedEntry.LastIndexOf('/');
+            return lastSeparator >= 0
+                ? normalizedEntry.Substring(lastSeparator + 1)
+                : normalizedEntry;
+        }
+
+        private static bool ContainsKnownLegacyAnalyzerCopyEntry(IEnumerable<string> folderEntries)
+        {
+            foreach (string entry in folderEntries ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrEmpty(entry))
+                {
+                    continue;
+                }
+
+                string name = GetLegacyAnalyzerCopyEntryName(entry);
+                if (KnownLegacyAnalyzerCopyDlls.Contains(name))
+                {
+                    return true;
+                }
+
+                if (!name.EndsWith(".dll.meta", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string dllName = name.Substring(0, name.Length - ".meta".Length);
+                if (KnownLegacyAnalyzerCopyDlls.Contains(dllName))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -252,9 +286,12 @@ namespace DxMessaging.Editor
         /// </summary>
         /// <remarks>
         /// DxMessaging analyzers are activated solely through the RoslynAnalyzer-labeled
-        /// <c>Assets/Plugins/Editor/WallstopStudios.DxMessaging</c> copy. A second
-        /// <c>-a:</c> registration here double-loads the analyzer/source-generator, and
-        /// registering dependency DLLs as analyzers makes Unity's compiler path fragile.
+        /// DLLs shipped under the package's <c>Runtime/Analyzers</c> folder, which Unity
+        /// scopes to the runtime assembly and every assembly that references it (including
+        /// the predefined Assembly-CSharp). A stray <c>-a:</c> registration here (for
+        /// example, one left behind by an older package version that copied analyzers into
+        /// the project) double-loads the source generator, and registering dependency DLLs
+        /// as analyzers makes Unity's compiler path fragile, so this method strips them.
         /// </remarks>
         private static void EnsureCscRsp()
         {
@@ -262,8 +299,7 @@ namespace DxMessaging.Editor
             {
                 if (!File.Exists(RspFilePath))
                 {
-                    File.WriteAllText(RspFilePath, string.Empty);
-                    AssetDatabase.ImportAsset("csc.rsp");
+                    return;
                 }
 
                 string rspContent = File.ReadAllText(RspFilePath);
@@ -375,12 +411,6 @@ namespace DxMessaging.Editor
         {
             try
             {
-                if (!File.Exists(RspFilePath))
-                {
-                    File.WriteAllText(RspFilePath, string.Empty);
-                    AssetDatabase.ImportAsset("csc.rsp");
-                }
-
                 string sidecarRelativePath = DxMessagingBaseCallIgnoreSync.SidecarAssetPath;
                 string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."))
                     .Replace("\\", "/");
@@ -388,6 +418,22 @@ namespace DxMessaging.Editor
                     .Replace("\\", "/");
 
                 bool sidecarExists = File.Exists(sidecarAbsolutePath);
+                if (!File.Exists(RspFilePath))
+                {
+                    if (!sidecarExists)
+                    {
+                        return;
+                    }
+
+                    File.WriteAllText(
+                        RspFilePath,
+                        FormatAdditionalFileArgument(sidecarRelativePath) + Environment.NewLine
+                    );
+                    AssetDatabase.ImportAsset("csc.rsp");
+                    Debug.Log("Updated csc.rsp additionalfile entries.");
+                    return;
+                }
+
                 string[] newLines = SynchronizeAdditionalFileForIgnoreListLines(
                     File.ReadAllLines(RspFilePath),
                     sidecarRelativePath,
@@ -628,6 +674,29 @@ namespace DxMessaging.Editor
             }
 
             return arguments;
+        }
+    }
+
+    /// <summary>
+    /// Removes the legacy in-project analyzer copy (via
+    /// <see cref="SetupCscRsp.TryRemoveLegacyAnalyzerCopy"/>) during the asset import that PRECEDES
+    /// script compilation. This is the primary upgrade path: deleting the redundant copy before the
+    /// compiler runs prevents it and the package's Runtime/Analyzers copy from both generating into
+    /// the same assembly (which would emit each member twice -- CS0102). It is a cheap no-op in the
+    /// steady state: once the folder is gone, <c>AssetDatabase.IsValidFolder</c> short-circuits on
+    /// every subsequent import.
+    /// </summary>
+    internal sealed class LegacyAnalyzerCopyCleanup : AssetPostprocessor
+    {
+        // Classic four-argument signature so this compiles on every supported Unity (2021.3+).
+        private static void OnPostprocessAllAssets(
+            string[] importedAssets,
+            string[] deletedAssets,
+            string[] movedAssets,
+            string[] movedFromAssetPaths
+        )
+        {
+            SetupCscRsp.TryRemoveLegacyAnalyzerCopy();
         }
     }
 }

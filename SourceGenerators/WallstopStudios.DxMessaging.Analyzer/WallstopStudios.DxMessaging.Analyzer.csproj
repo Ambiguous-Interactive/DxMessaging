@@ -9,9 +9,12 @@
     pins 3.8.0 and uses classic `ISourceGenerator` instead of Roslyn 4.x-only
     incremental generator APIs so Unity 2021 can instantiate it.
 
-    Both DLLs ship to `Editor/Analyzers/`; `SetupCscRsp.cs` copies them into the
-    consuming project's `Assets/Plugins/Editor/WallstopStudios.DxMessaging/` folder
-    with Unity's `RoslynAnalyzer` label.
+    Both DLLs ship under `Runtime/Analyzers/` with Unity's `RoslynAnalyzer` label.
+    Unity scopes a folder-resident analyzer to the assembly defined by the nearest
+    enclosing .asmdef plus every assembly that references it, so shipping under the
+    all-platforms runtime asmdef reaches the DxMessaging runtime assembly and
+    everything referencing it (including the predefined Assembly-CSharp). Nothing is
+    copied into the consuming project.
   -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
@@ -47,25 +50,26 @@
   <!-- Post-build copy of the analyzer DLL into the analyzer payload directory
        selected by AnalyzerPayloadOutputDir.
 
-       This target copies ONLY the freshly-built analyzer DLL. The Roslyn
-       runtime deps that the package ships alongside it
+       This target copies ONLY the freshly-built analyzer DLL. The pinned
+       Roslyn dependency DLLs the analyzer host needs
        (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
        System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe)
-       are committed in Editor/Analyzers/ as fixed bytes; the PrivateAssets=all
-       PackageReferences below keep this project's build from emitting its own
-       (3.8.0-pinned) copies of those deps, so a normal rebuild leaves the
-       committed dep DLLs untouched. Do NOT wipe Editor/Analyzers/ wholesale;
-       the committed dep bytes are the proven, Unity-validated set.
+       are committed co-located in Runtime/Analyzers/ as fixed bytes; the
+       PrivateAssets=all PackageReferences below keep this project's build from
+       emitting its own (3.8.0-pinned) copies of those deps, so a normal rebuild
+       leaves the committed dep DLLs untouched. Do NOT wipe Runtime/Analyzers/
+       wholesale; the committed dep bytes are the proven, Unity-validated set.
 
-       AnalyzerPayloadOutputDir defaults to Editor/Analyzers for local refresh
+       AnalyzerPayloadOutputDir defaults to Runtime/Analyzers for local refresh
        builds. CI freshness checks pass a temp directory so builds do not dirty
        the worktree. CopyAnalyzerPayload=false disables this target for tests
        that reference this project but do not validate the shipped payload.
 
-       The shipped Editor/Analyzers/*.dll.meta files for the two analyzer
-       assemblies carry the analyzer configuration directly, and SetupCscRsp
-       copies the analyzer DLLs into Assets/Plugins/Editor/ so the analyzer
-       applies project-wide. -->
+       The shipped Runtime/Analyzers/*.dll.meta files for the two analyzer
+       assemblies carry the RoslynAnalyzer label directly, so Unity scopes the
+       analyzer to the DxMessaging runtime assembly and every assembly that
+       references it (including the predefined Assembly-CSharp), so nothing is
+       copied into the consumer's project. -->
   <Target
     Name="PostBuildCopyAnalyzers"
     AfterTargets="Build"

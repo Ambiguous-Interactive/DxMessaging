@@ -11,7 +11,15 @@ const { toRepoPosixRelative } = require("../lib/path-classifier");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SOURCE_GENERATORS_DIR = path.join(REPO_ROOT, "SourceGenerators");
-const EDITOR_ANALYZERS_DIR = path.join(REPO_ROOT, "Editor", "Analyzers");
+// The two first-party RoslynAnalyzer-labeled DLLs ship under Runtime/Analyzers so Unity
+// scopes the source generator to the DxMessaging runtime assembly and every assembly that
+// references it (including the predefined Assembly-CSharp), without copying anything into
+// consumer projects. Their co-located Roslyn runtime dependency DLLs (Microsoft.CodeAnalysis*,
+// System.*) are committed in the SAME folder so Unity's analyzer host can resolve the
+// analyzer's reference closure on every supported Unity (notably 2021's loader). This
+// script rebuilds and byte-verifies only the two first-party DLLs; the committed dependency
+// bytes are left untouched.
+const COMMITTED_ANALYZERS_DIR = path.join(REPO_ROOT, "Runtime", "Analyzers");
 const ARTIFACT_ROOT = path.join(REPO_ROOT, ".artifacts", "analyzer-payload");
 const CONFIGURATION = "Release";
 const REMEDIATION = "npm run refresh:analyzers";
@@ -142,9 +150,9 @@ function compareHashMaps(left, right) {
 }
 
 function copyGeneratedPayload(payloadDir) {
-  ensureDir(EDITOR_ANALYZERS_DIR);
+  ensureDir(COMMITTED_ANALYZERS_DIR);
   for (const dllName of FIRST_PARTY_ANALYZER_DLLS) {
-    fs.copyFileSync(path.join(payloadDir, dllName), path.join(EDITOR_ANALYZERS_DIR, dllName));
+    fs.copyFileSync(path.join(payloadDir, dllName), path.join(COMMITTED_ANALYZERS_DIR, dllName));
   }
 }
 
@@ -284,7 +292,7 @@ function checkPayload() {
 
   const committed = new Map();
   for (const dllName of FIRST_PARTY_ANALYZER_DLLS) {
-    const committedPath = path.join(EDITOR_ANALYZERS_DIR, dllName);
+    const committedPath = path.join(COMMITTED_ANALYZERS_DIR, dllName);
     if (!fs.existsSync(committedPath)) {
       committed.set(dllName, null);
     } else {
@@ -297,14 +305,14 @@ function checkPayload() {
   );
   if (freshnessFailures.length > 0) {
     return reportFailure(
-      "Committed Editor/Analyzers payload is stale.",
+      "Committed Runtime/Analyzers payload is stale.",
       freshnessFailures,
       (dllName) => ({ generatedHash: first.get(dllName), committedHash: committed.get(dllName) }),
-      EDITOR_ANALYZERS_DIR
+      COMMITTED_ANALYZERS_DIR
     );
   }
 
-  console.log("Analyzer payload is reproducible and matches committed Editor/Analyzers DLLs.");
+  console.log("Analyzer payload is reproducible and matches committed Runtime/Analyzers DLLs.");
   return 0;
 }
 
@@ -314,7 +322,7 @@ function writePayload() {
   buildAnalyzerPayload("write", payloadDir);
   copyGeneratedPayload(payloadDir);
   for (const dllName of FIRST_PARTY_ANALYZER_DLLS) {
-    console.log(`Updated ${repoRelative(path.join(EDITOR_ANALYZERS_DIR, dllName))}`);
+    console.log(`Updated ${repoRelative(path.join(COMMITTED_ANALYZERS_DIR, dllName))}`);
   }
   return 0;
 }

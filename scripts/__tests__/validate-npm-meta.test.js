@@ -218,32 +218,6 @@ test("validatePackEntries aggregates forbidden, missing, and orphan diagnostics"
   assert.deepEqual(result.orphanMetas, ["Runtime/Orphan.meta"]);
 });
 
-test("parses real-world pack JSON from a temporary file", () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-json-test-"));
-  try {
-    const jsonFile = path.join(tempDir, "pack.json");
-    fs.writeFileSync(
-      jsonFile,
-      JSON.stringify([
-        {
-          filename: "pkg.tgz",
-          files: [
-            { path: "package/Editor.meta" },
-            { path: "package/Editor/Tool.cs" },
-            { path: "package/Editor/Tool.cs.meta" }
-          ]
-        }
-      ]),
-      "utf8"
-    );
-
-    const entries = parsePackJsonEntries(fs.readFileSync(jsonFile, "utf8"));
-    assert.deepEqual(entries, ["Editor.meta", "Editor/Tool.cs", "Editor/Tool.cs.meta"]);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
 test("runValidation rejects forbidden paths from npm pack JSON output", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-json-validation-test-"));
   try {

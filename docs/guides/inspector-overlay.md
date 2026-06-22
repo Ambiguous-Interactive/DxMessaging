@@ -24,7 +24,7 @@ or [DXMSG010](../reference/analyzers.md#dxmsg010-broken-transitive-base-call-cha
 two things happen in parallel:
 
 1. **At compile time**, the Roslyn analyzer (`WallstopStudios.DxMessaging.Analyzer.dll`,
-   shipped under `Editor/Analyzers/`) emits a warning into Unity's
+   shipped under `Runtime/Analyzers/`) emits a warning into Unity's
    Console with the corresponding `DXMSG###` id and a message that
    names the offending type and method.
 1. **At Inspector time**, the overlay reads the cached scan from

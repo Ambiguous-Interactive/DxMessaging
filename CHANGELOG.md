@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`,
+  `[DxBroadcastMessage]`, `[DxAutoConstructor]`) now work in projects that do not use
+  assembly definitions. The generator and analyzer DLLs previously shipped under the
+  editor-only `Editor/Analyzers/` folder, which Unity scopes to the package's editor
+  assembly and assemblies that reference it -- so a consumer's runtime code in
+  `Assembly-CSharp` (or a runtime asmdef referencing only the runtime assembly) never
+  received the generator, and `[Dx*Message]` types failed to implement their generated
+  interface with cryptic `CS0315`/`CS0452` errors. The labeled DLLs now ship under
+  `Runtime/Analyzers/` (governed by the all-platforms runtime assembly), so Unity
+  applies the generator to the DxMessaging runtime assembly and every assembly that
+  references it, including the predefined `Assembly-CSharp`. No assembly definition is
+  required. Closes GitHub issue #229.
+
+### Changed
+
+- The Roslyn source generator no longer copies its DLLs into the consumer's
+  `Assets/Plugins/Editor/` folder on editor load; it (with its pinned Roslyn dependency
+  DLLs) ships ready-to-use under the package's `Runtime/Analyzers/` folder
+  (RoslynAnalyzer-labeled, excluded from player builds). Projects upgrading from an
+  earlier version have the redundant in-project copy removed automatically during asset
+  import, before script compilation, so the package's copy and the old in-project copy
+  never both run the generator (which would otherwise duplicate generated members). No
+  manual action is required: the cleanup only removes the
+  `Assets/Plugins/Editor/WallstopStudios.DxMessaging` folder when it contains the
+  first-party source-generator DLL plus exact known legacy analyzer/dependency DLL names
+  the package created, and leaves any foreign DLL, foreign `.meta`, subfolder, or
+  other content untouched. If a mixed or incomplete legacy payload is detected, the
+  editor logs one warning with manual cleanup guidance instead of deleting the folder
+  silently.
+
 ## [3.1.0]
 
 ### Added

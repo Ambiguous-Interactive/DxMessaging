@@ -15,7 +15,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ArtifactsPath,
 
-    [string]$RepoRoot = $(if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }),
+    [string]$RepoRoot = $(if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve-Path ([System.IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path }),
 
     [string]$ProjectPath,
 
@@ -56,19 +56,23 @@ $PackageName = 'com.wallstop-studios.dxmessaging'
 $TestFrameworkVersion = '1.4.5'
 $PerformanceFrameworkVersion = '3.4.2'
 # DxMessaging's own analyzer + source-generator assemblies. These MUST be present
-# in Editor/Analyzers/; the harness pre-copies the whole Editor/Analyzers/ roster
-# into the generated project's Assets/Plugins (see Copy-DxMessagingAnalyzersToAssets)
-# and tags these two RoslynAnalyzer, reproducing the single registration that
-# SetupCscRsp makes for real consumers. Editor/Analyzers/ ALSO ships the Roslyn
-# runtime deps (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
+# in the package's Runtime/Analyzers/; the harness just sanity-checks they ship
+# there (see Assert-DxMessagingAnalyzerDllsPresent). The generator + analyzer apply
+# NATIVELY: Unity scopes the Runtime/Analyzers/ RoslynAnalyzer-labeled DLLs to the
+# runtime assembly and EVERYTHING that references it (the test assemblies + the
+# predefined Assembly-CSharp), so the generator runs at the first compile with NO
+# in-project Assets copy and NO csc.rsp created. Runtime/Analyzers/ ALSO ships the
+# Roslyn runtime deps (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
 # System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe) the generator
-# loads at compile time; those ride along as Editor-EXCLUDED analyzer dependencies
+# loads at compile time; those ride along as platform-EXCLUDED analyzer dependencies
 # co-located with the labeled analyzers (Unity passes co-located deps to the compiler
-# alongside the analyzer; they are not loaded as managed Editor plugins).
+# alongside the analyzer; they are not loaded as managed plugins).
 $RequiredDxMessagingAnalyzerDllNames = @(
     'WallstopStudios.DxMessaging.SourceGenerators.dll',
     'WallstopStudios.DxMessaging.Analyzer.dll'
 )
+$ProjectOwnershipMarkerName = '.dxmessaging-ci-project'
+$ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci ephemeral project'
 
 function Write-CiError {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -247,8 +251,8 @@ function Write-UnityPackageManagerTransientFailureWarnings {
 function Clear-UnityPackageManagerRetryState {
     param([Parameter(Mandatory = $true)][string]$Project)
 
-    $packageCachePath = Join-Path $Project 'Library\PackageCache'
-    $packageManagerPath = Join-Path $Project 'Library\PackageManager'
+    $packageCachePath = [System.IO.Path]::Combine($Project, 'Library', 'PackageCache')
+    $packageManagerPath = [System.IO.Path]::Combine($Project, 'Library', 'PackageManager')
     $tempPath = Join-Path $Project 'Temp'
     $paths = @(
         $packageCachePath,
@@ -293,8 +297,8 @@ function Write-UnityPackageManagerDiagnostics {
         }
 
         if ($Project) {
-            foreach ($relativePath in @('Packages\manifest.json', 'Packages\packages-lock.json')) {
-                $file = Join-Path $Project $relativePath
+            foreach ($relativePath in @('Packages/manifest.json', 'Packages/packages-lock.json')) {
+                $file = [System.IO.Path]::Combine([string[]](@($Project) + ($relativePath -split '/')))
                 if (Test-Path -LiteralPath $file -PathType Leaf) {
                     Write-Host "${relativePath}:"
                     Get-Content -LiteralPath $file -ErrorAction SilentlyContinue |
@@ -304,7 +308,7 @@ function Write-UnityPackageManagerDiagnostics {
                 }
             }
 
-            $packageCache = Join-Path $Project 'Library\PackageCache'
+            $packageCache = [System.IO.Path]::Combine($Project, 'Library', 'PackageCache')
             Write-Host "Library PackageCache: $packageCache"
             if (Test-Path -LiteralPath $packageCache -PathType Container) {
                 Get-ChildItem -LiteralPath $packageCache -Force -ErrorAction SilentlyContinue |
@@ -580,6 +584,243 @@ function Resolve-FullPath {
     $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
 }
 
+function Get-PathStringComparison {
+    # This comparison gates recursive cleanup. Be conservative across default
+    # Windows/macOS case-insensitive filesystems; false-positive rejections are safer
+    # than missing a case-variant spelling of a protected directory.
+    return [System.StringComparison]::OrdinalIgnoreCase
+}
+
+function ConvertTo-ComparableFullPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $fullPath = $fullPath.Replace(
+        [System.IO.Path]::AltDirectorySeparatorChar,
+        [System.IO.Path]::DirectorySeparatorChar
+    )
+    $root = [System.IO.Path]::GetPathRoot($fullPath)
+    if (-not [string]::IsNullOrEmpty($root)) {
+        $root = $root.Replace(
+            [System.IO.Path]::AltDirectorySeparatorChar,
+            [System.IO.Path]::DirectorySeparatorChar
+        )
+        $separator = [string][System.IO.Path]::DirectorySeparatorChar
+        while (
+            $fullPath.Length -gt $root.Length -and
+            $fullPath.EndsWith($separator, [System.StringComparison]::Ordinal)
+        ) {
+            $fullPath = $fullPath.Substring(0, $fullPath.Length - 1)
+        }
+    }
+    return $fullPath
+}
+
+function Test-IsPathEqual {
+    param(
+        [Parameter(Mandatory = $true)][string]$Left,
+        [Parameter(Mandatory = $true)][string]$Right
+    )
+
+    return [string]::Equals(
+        (ConvertTo-ComparableFullPath -Path $Left),
+        (ConvertTo-ComparableFullPath -Path $Right),
+        (Get-PathStringComparison)
+    )
+}
+
+function Test-IsPathInsideDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Directory
+    )
+
+    $candidatePath = ConvertTo-ComparableFullPath -Path $Path
+    $directoryPath = ConvertTo-ComparableFullPath -Path $Directory
+    if ([string]::Equals($candidatePath, $directoryPath, (Get-PathStringComparison))) {
+        return $false
+    }
+
+    $separator = [string][System.IO.Path]::DirectorySeparatorChar
+    $directoryPrefix = if ($directoryPath.EndsWith($separator, [System.StringComparison]::Ordinal)) {
+        $directoryPath
+    } else {
+        "$directoryPath$separator"
+    }
+    return $candidatePath.StartsWith($directoryPrefix, (Get-PathStringComparison))
+}
+
+function Test-IsFilesystemRoot {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = ConvertTo-ComparableFullPath -Path $Path
+    $root = [System.IO.Path]::GetPathRoot($fullPath)
+    if ([string]::IsNullOrEmpty($root)) {
+        return $false
+    }
+    $root = ConvertTo-ComparableFullPath -Path $root
+    return [string]::Equals($fullPath, $root, (Get-PathStringComparison))
+}
+
+function Test-IsReparsePoint {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    return (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+}
+
+function Test-PathContainsReparsePointBeforeBoundary {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$BoundaryDirectory
+    )
+
+    $current = ConvertTo-ComparableFullPath -Path $Path
+    $boundary = ConvertTo-ComparableFullPath -Path $BoundaryDirectory
+    while (-not [string]::IsNullOrEmpty($current)) {
+        if (Test-IsPathEqual -Left $current -Right $boundary) {
+            return $false
+        }
+        if (Test-IsReparsePoint -Path $current) {
+            return $true
+        }
+
+        $parent = Split-Path -Parent $current
+        if ([string]::IsNullOrEmpty($parent) -or (Test-IsPathEqual -Left $parent -Right $current)) {
+            return $false
+        }
+        $current = $parent
+    }
+
+    return $false
+}
+
+function Test-ProjectOwnershipMarker {
+    param([Parameter(Mandatory = $true)][string]$ProjectPath)
+
+    $markerPath = Join-Path $ProjectPath $ProjectOwnershipMarkerName
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $markerContent = Get-Content -LiteralPath $markerPath -Raw
+    } catch {
+        return $false
+    }
+    if ($null -eq $markerContent) {
+        return $false
+    }
+    $markerContent = $markerContent.Trim()
+    return [string]::Equals(
+        $markerContent,
+        $ProjectOwnershipMarkerContent,
+        [System.StringComparison]::Ordinal
+    )
+}
+
+function Write-ProjectOwnershipMarker {
+    param([Parameter(Mandatory = $true)][string]$ProjectPath)
+
+    $markerPath = Join-Path $ProjectPath $ProjectOwnershipMarkerName
+    [System.IO.File]::WriteAllText(
+        $markerPath,
+        "$ProjectOwnershipMarkerContent`n",
+        [System.Text.Encoding]::UTF8
+    )
+}
+
+function Test-IsManagedUnityCiProjectPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][string[]]$ManagedProjectRoots
+    )
+
+    foreach ($managedProjectRoot in $ManagedProjectRoots) {
+        if (Test-IsPathInsideDirectory -Path $ProjectPath -Directory $managedProjectRoot) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-UnityCiProjectPathSafetyError {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ArtifactsPath,
+        [Parameter(Mandatory = $true)][string[]]$ManagedProjectRoots
+    )
+
+    if (Test-IsFilesystemRoot -Path $ProjectPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it resolves to a filesystem root."
+    }
+
+    $reservedPaths = @(
+        @{ Path = $RepoRoot; Label = 'repository root' },
+        @{ Path = $ArtifactsPath; Label = 'artifacts directory' }
+    ) + @(
+        foreach ($managedProjectRoot in $ManagedProjectRoots) {
+            @{ Path = $managedProjectRoot; Label = 'managed Unity project parent directory' }
+        }
+    )
+    foreach ($reservedPath in $reservedPaths) {
+        if (Test-IsPathEqual -Left $ProjectPath -Right $reservedPath.Path) {
+            return "Refusing to use ProjectPath '$ProjectPath' because it resolves to the $($reservedPath.Label)."
+        }
+    }
+
+    if (Test-IsPathInsideDirectory -Path $RepoRoot -Directory $ProjectPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it would write into a parent of the repository root '$RepoRoot'."
+    }
+    if (Test-IsPathInsideDirectory -Path $ArtifactsPath -Directory $ProjectPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it would write into a parent of the artifacts directory '$ArtifactsPath'."
+    }
+    if (Test-IsPathInsideDirectory -Path $ProjectPath -Directory $ArtifactsPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it would place the generated Unity project inside the uploaded artifacts directory '$ArtifactsPath'."
+    }
+
+    $isManagedProjectPath = Test-IsManagedUnityCiProjectPath `
+        -ProjectPath $ProjectPath `
+        -ManagedProjectRoots $ManagedProjectRoots
+    if (
+        $isManagedProjectPath -and
+        (Test-PathContainsReparsePointBeforeBoundary -Path $ProjectPath -BoundaryDirectory $RepoRoot)
+    ) {
+        return "Refusing to use ProjectPath '$ProjectPath' because a symlink or reparse point appears between it and the repository root '$RepoRoot'."
+    }
+    if (
+        (Test-IsPathInsideDirectory -Path $ProjectPath -Directory $RepoRoot) -and
+        -not $isManagedProjectPath
+    ) {
+        $managedRoots = $ManagedProjectRoots -join "', '"
+        return "Refusing to use ProjectPath '$ProjectPath' inside the repository. Repo-contained CI projects must live under '$managedRoots'."
+    }
+
+    if (
+        (Test-Path -LiteralPath $ProjectPath -PathType Container) -and
+        -not $isManagedProjectPath -and
+        (Test-IsReparsePoint -Path $ProjectPath)
+    ) {
+        return "Refusing to use existing ProjectPath '$ProjectPath' because it is a symlink or reparse point."
+    }
+
+    if (
+        (Test-Path -LiteralPath $ProjectPath -PathType Container) -and
+        -not $isManagedProjectPath -and
+        -not (Test-ProjectOwnershipMarker -ProjectPath $ProjectPath)
+    ) {
+        return "Refusing to use existing ProjectPath '$ProjectPath' because it is outside the managed Unity CI project area and lacks the ownership marker '$ProjectOwnershipMarkerName'. Choose a new empty ProjectPath or remove the directory manually."
+    }
+
+    return ''
+}
+
 function Assert-RepoRoot {
     param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath (Join-Path $Path 'package.json') -PathType Leaf)) {
@@ -601,14 +842,14 @@ function Initialize-UnityCacheEnvironment {
         [Parameter(Mandatory = $true)][string]$Version
     )
 
-    $cacheRoot = Join-Path $Root ".artifacts\unity\cache\$Version"
+    $cacheRoot = [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'cache', $Version)
     $upmRoot = Join-Path $cacheRoot 'upm'
     $npmRoot = Join-Path $cacheRoot 'npm'
     $gitLfsRoot = Join-Path $cacheRoot 'git-lfs'
     $localUnityCaches = if ($env:LOCALAPPDATA) {
-        Join-Path $env:LOCALAPPDATA 'Unity\Caches'
+        [System.IO.Path]::Combine($env:LOCALAPPDATA, 'Unity', 'Caches')
     } else {
-        Join-Path $cacheRoot 'localappdata\Unity\Caches'
+        [System.IO.Path]::Combine($cacheRoot, 'localappdata', 'Unity', 'Caches')
     }
 
     foreach ($path in @($cacheRoot, $upmRoot, $npmRoot, $gitLfsRoot, $localUnityCaches)) {
@@ -1012,159 +1253,20 @@ function New-StandaloneTestCallbackAsmdef {
 '@
 }
 
-# The two DLLs that MUST be tagged with Unity's "RoslynAnalyzer" asset label in
-# the Assets copy (mirrors SetupCscRsp.AnalyzerLabeledDllNames). The remaining
-# DLLs in Editor/Analyzers/ are the Roslyn runtime the generator loads at compile
-# time; they ride along as Editor-EXCLUDED analyzer dependencies (every platform
-# disabled), exactly as SetupCscRsp leaves them.
-$RoslynAnalyzerLabeledDllNames = @(
-    'WallstopStudios.DxMessaging.SourceGenerators.dll',
-    'WallstopStudios.DxMessaging.Analyzer.dll'
-)
-
 function Assert-DxMessagingAnalyzerDllsPresent {
     param([Parameter(Mandatory = $true)][string]$Root)
 
     $missingRequired = New-Object System.Collections.Generic.List[string]
     foreach ($dllName in $RequiredDxMessagingAnalyzerDllNames) {
-        $sourcePath = Join-Path $Root "Editor\Analyzers\$dllName"
+        $sourcePath = [System.IO.Path]::Combine($Root, 'Runtime', 'Analyzers', $dllName)
         if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
             $missingRequired.Add($sourcePath)
         }
     }
 
     if ($missingRequired.Count -gt 0) {
-        throw "Missing required DxMessaging analyzer DLL(s) in Editor/Analyzers:`n$($missingRequired.ToArray() -join "`n")"
+        throw "Missing required DxMessaging analyzer DLL(s) in Runtime/Analyzers:`n$($missingRequired.ToArray() -join "`n")"
     }
-}
-
-# Pre-create the SAME Assets/Plugins/Editor/WallstopStudios.DxMessaging/ analyzer
-# copy that the package's Editor/SetupCscRsp.cs makes at editor load, but do it
-# BEFORE Unity launches so the source generator is registered EXACTLY ONCE and is
-# present at the very first compile.
-#
-# WHY: when the package is consumed from Packages/ (the real install shape, and
-# the shape the CI manifest uses via a file: mount), SetupCscRsp copies the
-# analyzer DLLs into the project's Assets and tags the two analyzer DLLs
-# RoslynAnalyzer. The harness pre-creates the SAME copy before Unity launches so
-# the source generator is present at the very first compile.
-#
-# CRITICAL CONTRACT (the root cause of the Unity 2021 "Multiple precompiled
-# assemblies with the same name" abort): each analyzer DLL must be EXCLUDED from
-# every platform, the Editor included, and activated SOLELY by the RoslynAnalyzer
-# asset label. A platform-ENABLED managed DLL is registered as a precompiled
-# assembly. The same-named DLL is importable from BOTH the file:-mounted package
-# (its bytes ARE physically present under Packages/com.wallstop-studios.dxmessaging/
-# Editor/Analyzers/ -- a UPM file: package is NOT resolved purely virtually, proven
-# by the failing CI logs that import the analyzer DLL from that path) AND this
-# Assets copy. When BOTH copies were Editor-ENABLED, Unity 2021 aborted before
-# compile with PrecompiledAssemblyException; 2022/6000 tolerate the duplicate. The
-# Roslyn runtime dependencies in the same folder already ship excluded-from-all-
-# platforms and never collide despite the identical two-copy layout -- the analyzer
-# DLLs now match that proven-safe shape (Editor: enabled 0 in every meta -- the
-# shipped Editor/Analyzers/*.dll.meta, the template clone, AND the fallback heredoc
-# below), so the RoslynAnalyzer label still feeds them to the compiler while neither
-# copy is a precompiled assembly. The harness writes NO csc.rsp; SetupCscRsp manages
-# only the base-call ignore -additionalfile sidecar at editor load.
-function Copy-DxMessagingAnalyzersToAssets {
-    param(
-        [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string]$Project
-    )
-
-    Assert-DxMessagingAnalyzerDllsPresent -Root $Root
-
-    $analyzersDir = Join-Path $Root 'Editor\Analyzers'
-    # SourceGenerators.dll.meta already carries the RoslynAnalyzer label AND the
-    # Editor-only / Standalone-excluded PluginImporter settings SetupCscRsp
-    # converges to, so it is the template for BOTH analyzer DLLs (Analyzer.dll's
-    # own .meta lacks the label). Reusing the package's proven .meta -- changing
-    # only the GUID -- avoids hand-authoring importer YAML that could drift.
-    $analyzerTemplateMeta = Join-Path $analyzersDir 'WallstopStudios.DxMessaging.SourceGenerators.dll.meta'
-    $destDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
-    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-
-    $copied = New-Object System.Collections.Generic.List[string]
-    foreach ($dll in @(Get-ChildItem -LiteralPath $analyzersDir -Filter '*.dll' -File)) {
-        $destDll = Join-Path $destDir $dll.Name
-
-        # Copy the DLL only when missing or its bytes changed, so reruns against
-        # the cached project do not needlessly invalidate Unity's import cache.
-        $needsCopy = -not (Test-Path -LiteralPath $destDll -PathType Leaf)
-        if (-not $needsCopy) {
-            $needsCopy = (Get-Item -LiteralPath $destDll).Length -ne $dll.Length
-        }
-        if ($needsCopy) {
-            Copy-Item -LiteralPath $dll.FullName -Destination $destDll -Force
-        }
-
-        # Author the .meta only when missing so the GUID -- and thus Unity's asset
-        # identity and import cache -- stays stable across reruns. Fresh GUID so
-        # the Assets copy never collides with the package-resident asset.
-        $destMeta = "$destDll.meta"
-        if (-not (Test-Path -LiteralPath $destMeta -PathType Leaf)) {
-            $isAnalyzer = $RoslynAnalyzerLabeledDllNames -contains $dll.Name
-            $sourceMeta = if ($isAnalyzer) { $analyzerTemplateMeta } else { "$($dll.FullName).meta" }
-            $freshGuid = [guid]::NewGuid().ToString('N')
-            if (Test-Path -LiteralPath $sourceMeta -PathType Leaf) {
-                $metaContent = Get-Content -LiteralPath $sourceMeta -Raw
-                $metaContent = [regex]::Replace(
-                    $metaContent,
-                    '(?m)^guid:\s*[0-9A-Fa-f]+\s*$',
-                    "guid: $freshGuid"
-                )
-            } else {
-                # No shipped .meta to template from. Author a minimal meta that is
-                # EXCLUDED from every platform (Editor included), adding the
-                # RoslynAnalyzer label only for the two analyzer DLLs (deps are the
-                # Roslyn runtime, not analyzers). Disabling every platform keeps the DLL
-                # a compiler analyzer (activated solely by the RoslynAnalyzer label)
-                # rather than a managed precompiled assembly, so a same-named copy under
-                # the package's own Editor/Analyzers cannot trip Unity 2021's "Multiple
-                # precompiled assemblies with the same name" abort.
-                $labelBlock = if ($isAnalyzer) { "labels:`n- RoslynAnalyzer`n" } else { '' }
-                $metaContent = @"
-fileFormatVersion: 2
-guid: $freshGuid
-${labelBlock}PluginImporter:
-  externalObjects: {}
-  serializedVersion: 2
-  iconMap: {}
-  executionOrder: {}
-  defineConstraints: []
-  isPreloaded: 0
-  isOverridable: 1
-  isExplicitlyReferenced: 0
-  validateReferences: 1
-  platformData:
-  - first:
-      Any:
-    second:
-      enabled: 0
-      settings: {}
-  - first:
-      Editor: Editor
-    second:
-      enabled: 0
-      settings:
-        DefaultValueInitialized: true
-  userData:
-  assetBundleName:
-  assetBundleVariant:
-"@
-            }
-            Set-Content -LiteralPath $destMeta -Value $metaContent -Encoding UTF8
-        }
-        $copied.Add($dll.Name)
-    }
-
-    Write-Host "::group::DxMessaging analyzer Assets copy"
-    Write-Host "Pre-created the single analyzer registration under $destDir (no csc.rsp is written)."
-    foreach ($name in @($copied | Sort-Object)) {
-        $suffix = if ($RoslynAnalyzerLabeledDllNames -contains $name) { ' [RoslynAnalyzer]' } else { '' }
-        Write-Host "  $name$suffix"
-    }
-    Write-Host "::endgroup::"
 }
 
 function Write-AnalyzerSetupDiagnostics {
@@ -1174,27 +1276,14 @@ function Write-AnalyzerSetupDiagnostics {
         [Parameter(Mandatory = $true)][string]$Label
     )
 
-    $destDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
-    $sourceGeneratorDll = Join-Path $destDir 'WallstopStudios.DxMessaging.SourceGenerators.dll'
-    $analyzerDll = Join-Path $destDir 'WallstopStudios.DxMessaging.Analyzer.dll'
-
-    $sourceGeneratorLabeled = (Test-Path -LiteralPath "$sourceGeneratorDll.meta" -PathType Leaf) -and
-        ((Get-Content -LiteralPath "$sourceGeneratorDll.meta" -Raw) -match 'RoslynAnalyzer')
-    $analyzerLabeled = (Test-Path -LiteralPath "$analyzerDll.meta" -PathType Leaf) -and
-        ((Get-Content -LiteralPath "$analyzerDll.meta" -Raw) -match 'RoslynAnalyzer')
-
-    # A RoslynAnalyzer DLL must ALSO be excluded from the Editor platform (its meta's
-    # "Editor: Editor" block must be enabled: 0). An Editor-ENABLED copy is registered
-    # as a managed precompiled assembly; combined with the same-named copy under the
-    # package's own Editor/Analyzers, Unity 2021 aborts with "Multiple precompiled
-    # assemblies with the same name". Assert the EFFECTIVE excluded state here so a meta
-    # regression is caught in CI before Unity compiles, not just the label presence.
-    $editorEnabledPattern = 'Editor:\s+Editor\s+second:\s+enabled:\s*1'
-    $sourceGeneratorEditorDisabled = (Test-Path -LiteralPath "$sourceGeneratorDll.meta" -PathType Leaf) -and
-        -not ((Get-Content -LiteralPath "$sourceGeneratorDll.meta" -Raw) -match $editorEnabledPattern)
-    $analyzerEditorDisabled = (Test-Path -LiteralPath "$analyzerDll.meta" -PathType Leaf) -and
-        -not ((Get-Content -LiteralPath "$analyzerDll.meta" -Raw) -match $editorEnabledPattern)
-
+    # The generator + analyzer now apply NATIVELY from the package's Runtime/Analyzers/
+    # (Unity scopes the RoslynAnalyzer-labeled DLLs to the runtime assembly and
+    # everything referencing it). There is no in-project Assets copy or csc.rsp to
+    # inspect, so this is a best-effort log scan only: confirm the Unity compile log
+    # mentions both analyzer DLLs, proving Unity passed them to csc from
+    # Runtime/Analyzers/. No hard throw -- if the generator did NOT apply, the tests
+    # themselves fail loudly with CS0315/CS0452. $Project is unused (kept so the 3 call
+    # sites are unchanged).
     $logHasSourceGeneratorArg = $false
     $logHasAnalyzerArg = $false
     if ($LogPath -and (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
@@ -1204,20 +1293,9 @@ function Write-AnalyzerSetupDiagnostics {
     }
 
     Write-Host "::group::DxMessaging analyzer setup diagnostics ($Label)"
-    Write-Host "Assets analyzer copy: RoslynAnalyzer-labeled source generator: $sourceGeneratorLabeled"
-    Write-Host "Assets analyzer copy: RoslynAnalyzer-labeled analyzer: $analyzerLabeled"
-    Write-Host "Assets analyzer copy: source generator excluded from Editor platform: $sourceGeneratorEditorDisabled"
-    Write-Host "Assets analyzer copy: analyzer excluded from Editor platform: $analyzerEditorDisabled"
     Write-Host "Unity compile log mentioned DxMessaging source-generator arg: $logHasSourceGeneratorArg"
     Write-Host "Unity compile log mentioned DxMessaging analyzer arg: $logHasAnalyzerArg"
     Write-Host "::endgroup::"
-
-    if (-not ($sourceGeneratorLabeled -and $analyzerLabeled)) {
-        throw "Generated Assets/Plugins analyzer copy is missing the RoslynAnalyzer-labeled DxMessaging source-generator/analyzer DLLs."
-    }
-    if (-not ($sourceGeneratorEditorDisabled -and $analyzerEditorDisabled)) {
-        throw "Generated Assets/Plugins analyzer copy is Editor-ENABLED (a managed precompiled assembly). The analyzer DLLs must be excluded from every platform (Editor included) so Unity treats them as RoslynAnalyzer-only DLLs; otherwise the same-named copy under the package's Editor/Analyzers trips Unity 2021's 'Multiple precompiled assemblies with the same name' abort."
-    }
 }
 
 function Initialize-EphemeralProject {
@@ -1229,7 +1307,8 @@ function Initialize-EphemeralProject {
         [switch]$IncludeComparisons,
         [string]$Backend = 'IL2CPP',
         [bool]$DevelopmentBuild = $false,
-        [string]$RepoRoot
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ArtifactsPath
     )
 
     # The comparison-packages single source lives at the repo root. Default to
@@ -1239,20 +1318,34 @@ function Initialize-EphemeralProject {
         $RepoRoot = $Root
     }
 
+    $managedProjectRoots = @(
+        [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'projects'),
+        [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'game-ci-projects')
+    )
+
     $project = if ($Path) {
         Resolve-FullPath -Path $Path
     } else {
-        Join-Path $Root ".artifacts\unity\projects\$Version-$Mode"
+        [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'projects', "$Version-$Mode")
+    }
+    $projectPathSafetyError = Get-UnityCiProjectPathSafetyError `
+        -ProjectPath $project `
+        -RepoRoot $RepoRoot `
+        -ArtifactsPath $ArtifactsPath `
+        -ManagedProjectRoots $managedProjectRoots
+    if (-not [string]::IsNullOrWhiteSpace($projectPathSafetyError)) {
+        throw $projectPathSafetyError
     }
 
     New-Item -ItemType Directory -Force -Path (Join-Path $project 'Packages') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $project 'ProjectSettings') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $project 'Assets\Editor') | Out-Null
+    New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor')) | Out-Null
+    Write-ProjectOwnershipMarker -ProjectPath $project
 
     New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -RepoRoot $RepoRoot |
-        Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
+        Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Packages', 'manifest.json')) -Encoding UTF8
     "m_EditorVersion: $Version`n" |
-        Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
+        Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
     # Disable enter-play-mode domain + scene reload (DisableDomainReload=1 |
     # DisableSceneReload=2 = 3) so the PlayMode test leg skips the per-entry
     # reload. The ephemeral project is generated minimal, so without this emit
@@ -1276,36 +1369,32 @@ function Initialize-EphemeralProject {
 EditorSettings:
   m_EnterPlayModeOptionsEnabled: 1
   m_EnterPlayModeOptions: 3
-'@ | Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\EditorSettings.asset') -Encoding UTF8
+'@ | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'EditorSettings.asset')) -Encoding UTF8
     New-ConfiguratorSource -Backend $Backend |
-        Set-Content -LiteralPath (Join-Path $project 'Assets\Editor\DxmCiTestConfigurator.cs') -Encoding UTF8
+        Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) -Encoding UTF8
 
-    # Pre-create the same Assets/Plugins analyzer copy SetupCscRsp makes for consumers
-    # (see Copy-DxMessagingAnalyzersToAssets) so the source generator is registered at
-    # the very first compile. The analyzer DLLs are excluded from every platform and
-    # activated solely by the RoslynAnalyzer label, so neither this Assets copy nor the
-    # package's own Editor/Analyzers copy is a managed precompiled assembly -- the
-    # Editor-ENABLED duplicate of those same-named DLLs is what aborted Unity 2021 with
-    # "Multiple precompiled assemblies with the same name". The harness writes NO
-    # Assets/csc.rsp; for the CI file: mount SetupCscRsp emits no -a: line anyway (the
-    # package's bytes live at the repo root, outside <project>/Packages, so its
-    # File.Exists probe is false), and it manages only the base-call ignore sidecar.
-    Copy-DxMessagingAnalyzersToAssets -Root $Root -Project $project
+    # The generator + analyzer ship under the package's Runtime/Analyzers/
+    # (RoslynAnalyzer-labeled, every platform disabled), so Unity scopes them to the
+    # test assemblies + the predefined Assembly-CSharp NATIVELY -- registered at the
+    # first compile with NO in-project Assets copy and NO csc.rsp. This call only
+    # sanity-checks that the package actually ships those two DLLs where Unity expects
+    # them; the generator applies on its own once the file: package mounts.
+    Assert-DxMessagingAnalyzerDllsPresent -Root $Root
 
     # STANDALONE ONLY: generate the split-build helpers that sever the test
     # player's PlayerConnection/TCP result streaming (the 10060 hang on multi-NIC
     # self-hosted runners). The Editor-side build modifier clears the player's
     # outbound-connection BuildOptions and exits the editor after the build; the
     # player-side TestRunCallback writes NUnit XML to -dxmTestResults and quits.
-    # Written idempotently (only when missing or changed), exactly like
-    # Copy-DxMessagingAnalyzersToAssets, so reruns against the cached project do
-    # not needlessly invalidate Unity's import cache. editmode/playmode never emit
-    # these files (the local single -runTests path is untouched).
+    # Written idempotently (only when missing or changed) so reruns against the
+    # cached project do not needlessly invalidate Unity's import cache.
+    # editmode/playmode never emit these files (the local single -runTests path is
+    # untouched).
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
-            @{ Path = (Join-Path $project 'Assets\Editor\DxmCiStandaloneBuildModifier.cs'); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild) },
-            @{ Path = (Join-Path $project 'Assets\DxmCiStandaloneTestCallback\DxmCiStandaloneTestCallback.cs'); Content = (New-StandaloneTestCallbackSource) },
-            @{ Path = (Join-Path $project 'Assets\DxmCiStandaloneTestCallback\DxmCiStandaloneTestCallback.asmdef'); Content = (New-StandaloneTestCallbackAsmdef) }
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.asmdef')); Content = (New-StandaloneTestCallbackAsmdef) }
         )
         foreach ($file in $standaloneFiles) {
             $dir = Split-Path -Parent $file.Path
@@ -2329,7 +2418,7 @@ function Write-UnityResultFailureDiagnostics {
 
             $logText = Get-Content -LiteralPath $LogPath -Raw
             if ($logText -match 'warning CS8032') {
-                Write-CiError "Unity could not instantiate one or more DxMessaging analyzers/source generators (CS8032). Check that Editor/Analyzers DLLs target the Roslyn version supported by this Unity editor."
+                Write-CiError "Unity could not instantiate one or more DxMessaging analyzers/source generators (CS8032). Check that Runtime/Analyzers DLLs target the Roslyn version supported by this Unity editor."
             }
             if ($logText -match 'error CS0315' -and $logText -match 'Simple(?:Untargeted|Targeted|Broadcast)Message') {
                 Write-CiError "Message fixture compile errors followed missing generated interfaces. This usually means the DxMessaging source generator did not load."
@@ -2352,9 +2441,7 @@ function Write-UnityResultFailureDiagnostics {
         }
 
         if ($Project) {
-            $analyzerCopyDir = Join-Path $Project 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
-            Write-Host "Pre-created analyzer copy dir exists: $(Test-Path -LiteralPath $analyzerCopyDir -PathType Container)"
-            $scriptAssemblies = Join-Path $Project 'Library\ScriptAssemblies'
+            $scriptAssemblies = [System.IO.Path]::Combine($Project, 'Library', 'ScriptAssemblies')
             if (Test-Path -LiteralPath $scriptAssemblies -PathType Container) {
                 Write-Host "Script assemblies present:"
                 Get-ChildItem -LiteralPath $scriptAssemblies -Filter '*.dll' -ErrorAction SilentlyContinue |
@@ -2444,8 +2531,8 @@ function Write-StandaloneBuildOutputDiagnostics {
         $expectedDir = Split-Path -Parent $ExpectedExe
         Write-StandaloneDirectorySnapshot -Label 'Expected output directory' -Path $expectedDir
         Write-StandaloneDirectorySnapshot -Label 'Project Build directory' -Path (Join-Path $Project 'Build')
-        Write-StandaloneDirectorySnapshot -Label 'Project Temp\DxmTestPlayer directory' -Path (Join-Path $Project 'Temp\DxmTestPlayer')
-        Write-StandaloneDirectorySnapshot -Label 'Project Temp\PlayerWithTests directory' -Path (Join-Path $Project 'Temp\PlayerWithTests')
+        Write-StandaloneDirectorySnapshot -Label 'Project Temp/DxmTestPlayer directory' -Path ([System.IO.Path]::Combine($Project, 'Temp', 'DxmTestPlayer'))
+        Write-StandaloneDirectorySnapshot -Label 'Project Temp/PlayerWithTests directory' -Path ([System.IO.Path]::Combine($Project, 'Temp', 'PlayerWithTests'))
 
         Write-Host "Discovered executable candidates under Build/Temp:"
         $candidateRoots = @(
@@ -2597,7 +2684,7 @@ Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion
 $UseReleaseCodeOptimization = $true
 $UseReleasePlayerBuild = $true
 
-$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot
+$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot -ArtifactsPath $ArtifactsPath
 $LibraryPath = Join-Path $ProjectPath 'Library'
 New-Item -ItemType Directory -Force -Path $LibraryPath | Out-Null
 
@@ -2611,11 +2698,11 @@ Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"
 Write-Host "ReleasePlayerBuild: $UseReleasePlayerBuild"
 Write-Host "ReleaseCodeOptimization: $UseReleaseCodeOptimization"
 Write-Host "Manifest:"
-Get-Content -LiteralPath (Join-Path $ProjectPath 'Packages\manifest.json')
-Write-Host "Pre-created analyzer copy (Assets/Plugins/Editor/WallstopStudios.DxMessaging):"
-$analyzerCopyDir = Join-Path $ProjectPath 'Assets\Plugins\Editor\WallstopStudios.DxMessaging'
-if (Test-Path -LiteralPath $analyzerCopyDir -PathType Container) {
-    Get-ChildItem -LiteralPath $analyzerCopyDir -File |
+Get-Content -LiteralPath ([System.IO.Path]::Combine($ProjectPath, 'Packages', 'manifest.json'))
+Write-Host "Package analyzer payload (Runtime/Analyzers - applies natively, no Assets copy):"
+$analyzerPayloadDir = [System.IO.Path]::Combine($RepoRoot, 'Runtime', 'Analyzers')
+if (Test-Path -LiteralPath $analyzerPayloadDir -PathType Container) {
+    Get-ChildItem -LiteralPath $analyzerPayloadDir -Filter '*.dll' -File |
         Select-Object -ExpandProperty Name |
         Sort-Object |
         ForEach-Object { Write-Host "  $_" }
@@ -2721,7 +2808,7 @@ $configureMarkerPath = Join-Path $ArtifactsPath 'configure-complete.marker'
 # it before this script's post-build assertion runs. The player still stays out
 # of $ArtifactsPath because a full IL2CPP player is hundreds of MB; only the
 # small player log and NUnit XML are uploaded.
-$standaloneExe = Join-Path $ProjectPath 'Build\DxmTestPlayer\DxmTestPlayer.exe'
+$standaloneExe = [System.IO.Path]::Combine($ProjectPath, 'Build', 'DxmTestPlayer', 'DxmTestPlayer.exe')
 $playerLogPath = Join-Path $ArtifactsPath 'player.log'
 
 # Activation/return carry the serial/email/password in their argument arrays and
