@@ -312,7 +312,7 @@ jobs:
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          $artifactDir = Join-Path $env:GITHUB_WORKSPACE '.artifacts\runner-bootstrap'
+          $artifactDir = [System.IO.Path]::Combine($env:GITHUB_WORKSPACE, '.artifacts', 'runner-bootstrap')
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
           $timestamp = (Get-Date -Format 'yyyyMMdd-HHmmss')
           $logPath = Join-Path $artifactDir ("maintenance-{0}-{1}-{2}.log" -f $timestamp, $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
@@ -337,7 +337,7 @@ jobs:
           # a workflow (not a composite), so $GITHUB_WORKSPACE is reliably
           # the repo root post-checkout (actions/checkout@v6 above guarantees
           # the script is present at this path).
-          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts\unity\maintain-windows-runner.ps1'
+          $script = [System.IO.Path]::Combine($env:GITHUB_WORKSPACE, 'scripts', 'unity', 'maintain-windows-runner.ps1')
           if (-not (Test-Path -LiteralPath $script)) {
               Write-Host "::error::Runner maintenance script not found at $script"
               exit 1

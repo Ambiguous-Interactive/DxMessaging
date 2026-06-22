@@ -1,11 +1,5 @@
 "use strict";
 
-// -StageOnly smoke for scripts/unity/export-unitypackage.ps1: packs the REAL
-// repo payload with npm pack and stages it into a temp dir, pinning the
-// Assets-form invariants (exclusions, Samples~ rename, .meta pairing, the
-// exporter living outside the export root, and deterministic folder metas).
-// pwsh-gated like verify-unity-results-action.test.js.
-
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -15,6 +9,7 @@ const { spawnSync } = require("node:child_process");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPT_PATH = path.join(REPO_ROOT, "scripts", "unity", "export-unitypackage.ps1");
+const UNITY_VERSION = "2022.3.45f1";
 
 function commandExists(command) {
   const result = spawnSync(
@@ -38,6 +33,7 @@ function swapAsciiCase(value) {
 
 function runStageOnlyRaw(stagingRoot, projectPath, options = {}) {
   const artifactsPath = options.artifactsPath ?? path.join(stagingRoot, "artifacts");
+  const repoRoot = options.repoRoot ?? REPO_ROOT;
   const args = [
     "-NoLogo",
     "-NoProfile",
@@ -47,18 +43,19 @@ function runStageOnlyRaw(stagingRoot, projectPath, options = {}) {
     "-File",
     SCRIPT_PATH,
     "-UnityVersion",
-    "2022.3.45f1",
+    UNITY_VERSION,
     "-RepoRoot",
-    REPO_ROOT,
-    "-ProjectPath",
-    projectPath,
+    repoRoot,
     "-ArtifactsPath",
-    artifactsPath,
-    "-StageOnly"
+    artifactsPath
   ];
-  if (options.outputPath) {
-    args.splice(args.length - 1, 0, "-OutputPath", options.outputPath);
+  if (projectPath) {
+    args.push("-ProjectPath", projectPath);
   }
+  if (options.outputPath) {
+    args.push("-OutputPath", options.outputPath);
+  }
+  args.push("-StageOnly");
 
   return spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 600000 });
 }
@@ -78,6 +75,17 @@ function walk(dir) {
     }
   }
   return entries;
+}
+
+function createMinimalPackageRepo(root) {
+  fs.mkdirSync(path.join(root, "Runtime"), { recursive: true });
+  const packageJson = {
+    name: "com.wallstop-studios.dxmessaging",
+    version: "0.0.0",
+    files: ["Runtime/**", "package.json"]
+  };
+  fs.writeFileSync(path.join(root, "package.json"), `${JSON.stringify(packageJson)}\n`, "utf8");
+  fs.writeFileSync(path.join(root, "Runtime", "DxMessaging.Runtime.asmdef"), "{}\n", "utf8");
 }
 
 // The three staged folders whose .meta the payload cannot supply; the script
@@ -156,6 +164,45 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
   }
 });
 
+test("export-unitypackage -StageOnly defaults to the managed artifact project path", (t) => {
+  if (!HAS_PWSH) {
+    t.skip("PowerShell is not available");
+    return;
+  }
+
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-default-"));
+  const fakeRepoRoot = path.join(stagingRoot, "repo");
+  const artifactsPath = path.join(stagingRoot, "artifacts");
+  const defaultProjectPath = path.join(
+    fakeRepoRoot,
+    ".artifacts",
+    "unity",
+    "projects",
+    `${UNITY_VERSION}-unitypackage`
+  );
+
+  try {
+    createMinimalPackageRepo(fakeRepoRoot);
+
+    const defaultResult = runStageOnlyRaw(stagingRoot, undefined, {
+      repoRoot: fakeRepoRoot,
+      artifactsPath
+    });
+    assert.equal(
+      defaultResult.status,
+      0,
+      `default stage-only run failed:\n${defaultResult.stdout}\n${defaultResult.stderr}`
+    );
+    assert.ok(fs.existsSync(path.join(defaultProjectPath, ".dxmessaging-unitypackage-project")));
+    assert.ok(fs.existsSync(path.join(defaultProjectPath, "Packages", "manifest.json")));
+    assert.ok(
+      fs.existsSync(path.join(defaultProjectPath, "Assets", "Editor", "DxmUnityPackageExporter.cs"))
+    );
+  } finally {
+    fs.rmSync(stagingRoot, { recursive: true, force: true });
+  }
+});
+
 test("export-unitypackage -StageOnly refuses to delete an unowned existing ProjectPath", (t) => {
   if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
@@ -195,55 +242,59 @@ test("export-unitypackage -StageOnly rejects destructive ProjectPath values befo
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-paths-"));
   const artifactRoot = path.join(stagingRoot, "artifacts");
   const cases = [
-    {
-      name: "filesystem root",
-      projectPath: path.parse(stagingRoot).root,
-      pattern: /filesystem root/
-    },
-    {
-      name: "repository root",
-      projectPath: REPO_ROOT,
-      pattern: /repository root/
-    },
-    {
-      name: "case-variant repository root",
-      projectPath: swapAsciiCase(REPO_ROOT),
-      pattern: /repository root/
-    },
-    {
-      name: "repository parent",
-      projectPath: path.dirname(REPO_ROOT),
-      pattern: /parent of the repository root/
-    },
-    {
-      name: "artifacts directory",
-      projectPath: artifactRoot,
-      pattern: /artifacts directory/
-    },
-    {
-      name: "output directory parent",
-      projectPath: path.join(stagingRoot, "project-parent"),
-      outputPath: path.join(stagingRoot, "project-parent", "out", "package.unitypackage"),
-      pattern: /unitypackage output directory/
-    },
-    {
-      name: "repo-contained unmanaged project",
-      projectPath: path.join(REPO_ROOT, ".artifacts", "unity", "projects", "unmanaged"),
-      pattern: /Repo-contained export projects must live/
-    }
+    ["filesystem root", path.parse(stagingRoot).root, /filesystem root/],
+    ["repository root", REPO_ROOT, /repository root/],
+    ["case-variant repository root", swapAsciiCase(REPO_ROOT), /repository root/],
+    ["repository parent", path.dirname(REPO_ROOT), /parent of the repository root/],
+    ["artifacts directory", artifactRoot, /artifacts directory/],
+    [
+      "project inside artifacts directory",
+      path.join(artifactRoot, "project"),
+      /inside the uploaded artifacts directory/
+    ],
+    [
+      "output directory parent",
+      path.join(stagingRoot, "project-parent"),
+      /unitypackage output directory/,
+      path.join(stagingRoot, "project-parent", "out", "package.unitypackage")
+    ],
+    [
+      "repo-contained unmanaged project",
+      path.join(REPO_ROOT, ".artifacts", "unity", "projects", "unmanaged"),
+      /Repo-contained export projects must live/
+    ]
   ];
 
   try {
-    for (const testCase of cases) {
-      const result = runStageOnlyRaw(stagingRoot, testCase.projectPath, {
+    const fakeRepoRoot = path.join(stagingRoot, "repo");
+    const managedLink = path.join(
+      fakeRepoRoot,
+      ".artifacts",
+      "unity",
+      "projects",
+      "linked-unitypackage"
+    );
+    try {
+      createMinimalPackageRepo(fakeRepoRoot);
+      fs.mkdirSync(path.dirname(managedLink), { recursive: true });
+      fs.mkdirSync(path.join(stagingRoot, "linked-target"), { recursive: true });
+      fs.symlinkSync(path.join(stagingRoot, "linked-target"), managedLink, "dir");
+      cases.push(["managed symlink", managedLink, /symlink or reparse point/, null, fakeRepoRoot]);
+    } catch {
+      fs.rmSync(managedLink, { recursive: true, force: true });
+    }
+
+    for (const [name, projectPath, pattern, outputPath, repoRoot] of cases) {
+      const result = runStageOnlyRaw(stagingRoot, projectPath, {
         artifactsPath: artifactRoot,
-        outputPath: testCase.outputPath
+        outputPath,
+        repoRoot
       });
-      assert.notEqual(result.status, 0, `${testCase.name} should be rejected`);
+      assert.notEqual(result.status, 0, `${name} should be rejected`);
       assert.match(
         `${result.stdout}\n${result.stderr}`,
-        testCase.pattern,
-        `${testCase.name} should explain the blocked destructive path`
+        pattern,
+        `${name} should explain the blocked destructive path`
       );
     }
     assert.ok(fs.existsSync(path.join(REPO_ROOT, "package.json")));

@@ -120,6 +120,37 @@ test("PowerShell scripts avoid bare Node shim commands", () => {
   assert.deepEqual(violations, []);
 });
 
+test("PowerShell artifact paths are composed from native segments", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  const files = execFileSync(
+    "git",
+    [
+      "ls-files",
+      "*.ps1",
+      "*.psm1",
+      "*.psd1",
+      ".github/workflows/*.yml",
+      ".github/workflows/*.yaml"
+    ],
+    { cwd: repoRoot, encoding: "utf8" }
+  )
+    .split(/\r?\n/)
+    .filter(Boolean);
+  const artifactJoinPattern =
+    /(?:\bJoin-Path|\[System\.IO\.Path\]::Combine)\b[^\r\n]*(["'])\.artifacts\\/g;
+  const violations = [];
+
+  for (const file of files) {
+    const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    for (const match of text.matchAll(artifactJoinPattern)) {
+      const line = text.slice(0, match.index).split(/\r\n|\r|\n/).length;
+      violations.push(`${file}:${line}:${match[0].trim()}`);
+    }
+  }
+
+  assert.deepEqual(violations, []);
+});
+
 test("Node script tests create temporary directories under os.tmpdir", () => {
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const files = execFileSync("git", ["ls-files", "scripts"], { cwd: repoRoot, encoding: "utf8" })
@@ -143,7 +174,7 @@ test("Node script tests create temporary directories under os.tmpdir", () => {
 test("temporary directory convention guard requires a safe child prefix segment", () => {
   assert.equal(usesOsTmpdirJoinedLiteralPrefix('path.join(os.tmpdir(), "script-test-")'), true);
   assert.equal(usesOsTmpdirJoinedLiteralPrefix("path.join(os.tmpdir(), 'script.test-')"), true);
-  assert.equal(usesOsTmpdirJoinedLiteralPrefix('path.join(os.tmpdir())'), false);
+  assert.equal(usesOsTmpdirJoinedLiteralPrefix("path.join(os.tmpdir())"), false);
   assert.equal(usesOsTmpdirJoinedLiteralPrefix('path.join(os.tmpdir(), "../escape-")'), false);
   assert.equal(usesOsTmpdirJoinedLiteralPrefix('path.join(os.tmpdir(), "script-test")'), false);
   assert.equal(usesOsTmpdirJoinedLiteralPrefix('"script-test-"'), false);

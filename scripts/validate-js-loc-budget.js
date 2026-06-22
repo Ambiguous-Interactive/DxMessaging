@@ -20,7 +20,8 @@ const path = require("path");
 // 057: 11350 for update/check convergence validation.
 // 058: 11820 for shared release notes, changelog extraction, and export staging
 // coverage. Each increase was reviewed with the bespoke invariant it protects.
-const TOTAL_BUDGET = 11820;
+// 059: 11960 for cross-platform PowerShell project-path safety regression tests.
+const TOTAL_BUDGET = 11960;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

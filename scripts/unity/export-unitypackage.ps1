@@ -30,7 +30,7 @@ param(
     # <ArtifactsPath>/com.wallstop-studios.dxmessaging-<package.json version>.unitypackage.
     [string]$OutputPath,
 
-    [string]$RepoRoot = $(if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }),
+    [string]$RepoRoot = $(if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve-Path ([System.IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path }),
 
     # Uploaded as a CI artifact: keep it small (logs + the .unitypackage). The
     # staged project lives under .artifacts/unity/projects/ like the test
@@ -165,6 +165,43 @@ function Test-IsFilesystemRoot {
     return [string]::Equals($fullPath, $root, (Get-PathStringComparison))
 }
 
+function Test-IsReparsePoint {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    return (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+}
+
+function Test-PathContainsReparsePointBeforeBoundary {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$BoundaryDirectory
+    )
+
+    $current = ConvertTo-ComparableFullPath -Path $Path
+    $boundary = ConvertTo-ComparableFullPath -Path $BoundaryDirectory
+    while (-not [string]::IsNullOrEmpty($current)) {
+        if (Test-IsPathEqual -Left $current -Right $boundary) {
+            return $false
+        }
+        if (Test-IsReparsePoint -Path $current) {
+            return $true
+        }
+
+        $parent = Split-Path -Parent $current
+        if ([string]::IsNullOrEmpty($parent) -or (Test-IsPathEqual -Left $parent -Right $current)) {
+            return $false
+        }
+        $current = $parent
+    }
+
+    return $false
+}
+
 function Test-ProjectOwnershipMarker {
     param([Parameter(Mandatory = $true)][string]$ProjectPath)
 
@@ -173,7 +210,15 @@ function Test-ProjectOwnershipMarker {
         return $false
     }
 
-    $markerContent = (Get-Content -LiteralPath $markerPath -Raw).Trim()
+    try {
+        $markerContent = Get-Content -LiteralPath $markerPath -Raw
+    } catch {
+        return $false
+    }
+    if ($null -eq $markerContent) {
+        return $false
+    }
+    $markerContent = $markerContent.Trim()
     return [string]::Equals(
         $markerContent,
         $ProjectOwnershipMarkerContent,
@@ -218,7 +263,7 @@ function Get-UnityPackageProjectPathSafetyError {
         return "Refusing to use ProjectPath '$ProjectPath' because it resolves to a filesystem root."
     }
 
-    $managedProjectsRoot = Resolve-FullPath -Path (Join-Path $RepoRoot '.artifacts\unity\projects')
+    $managedProjectsRoot = Resolve-FullPath -Path ([System.IO.Path]::Combine($RepoRoot, '.artifacts', 'unity', 'projects'))
     $outputDirectory = Split-Path -Parent $OutputPath
     if ([string]::IsNullOrWhiteSpace($outputDirectory)) {
         $outputDirectory = (Get-Location).Path
@@ -246,15 +291,32 @@ function Get-UnityPackageProjectPathSafetyError {
     if (Test-IsPathInsideDirectory -Path $outputDirectory -Directory $ProjectPath) {
         return "Refusing to use ProjectPath '$ProjectPath' because deleting it would remove the unitypackage output directory '$outputDirectory'."
     }
+    if (Test-IsPathInsideDirectory -Path $ProjectPath -Directory $ArtifactsPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it would place the generated Unity project inside the uploaded artifacts directory '$ArtifactsPath'."
+    }
 
     $isManagedProjectPath = Test-IsManagedUnityPackageProjectPath `
         -ProjectPath $ProjectPath `
         -ManagedProjectsRoot $managedProjectsRoot
     if (
+        $isManagedProjectPath -and
+        (Test-PathContainsReparsePointBeforeBoundary -Path $ProjectPath -BoundaryDirectory $RepoRoot)
+    ) {
+        return "Refusing to use ProjectPath '$ProjectPath' because a symlink or reparse point appears between it and the repository root '$RepoRoot'."
+    }
+    if (
         (Test-IsPathInsideDirectory -Path $ProjectPath -Directory $RepoRoot) -and
         -not $isManagedProjectPath
     ) {
         return "Refusing to use ProjectPath '$ProjectPath' inside the repository. Repo-contained export projects must live under '$managedProjectsRoot' and end with '-unitypackage'."
+    }
+
+    if (
+        (Test-Path -LiteralPath $ProjectPath -PathType Container) -and
+        -not $isManagedProjectPath -and
+        (Test-IsReparsePoint -Path $ProjectPath)
+    ) {
+        return "Refusing to delete existing ProjectPath '$ProjectPath' because it is a symlink or reparse point."
     }
 
     if (
@@ -541,7 +603,7 @@ if (-not $StageOnly) {
 # Ephemeral project location mirrors the run-ci-tests.ps1 harness layout and is
 # NOT uploaded as an artifact (only $ArtifactsPath is).
 if ([string]::IsNullOrWhiteSpace($ProjectPath)) {
-    $ProjectPath = Join-Path $RepoRoot ".artifacts\unity\projects\$UnityVersion-unitypackage"
+    $ProjectPath = [System.IO.Path]::Combine($RepoRoot, '.artifacts', 'unity', 'projects', "$UnityVersion-unitypackage")
 }
 $projectPath = Resolve-FullPath -Path $ProjectPath
 $projectPathSafetyError = Get-UnityPackageProjectPathSafetyError `
@@ -622,7 +684,7 @@ if (-not (Test-Path -LiteralPath $payloadRoot -PathType Container)) {
 }
 
 # (3) STAGE the Assets-form payload (exclusions + Samples~ rename; see header).
-$exportRoot = Join-Path $projectPath ($ExportRootRelative -replace '/', '\')
+$exportRoot = [System.IO.Path]::Combine($projectPath, 'Assets', 'WallstopStudios', 'DxMessaging')
 New-Item -ItemType Directory -Force -Path $exportRoot | Out-Null
 $skipped = @()
 foreach ($entry in Get-ChildItem -LiteralPath $payloadRoot -Force) {
@@ -648,7 +710,7 @@ if (Test-Path -LiteralPath (Join-Path $exportRoot 'Samples') -PathType Container
     $folderMetaRelativePaths += "$ExportRootRelative/Samples"
 }
 foreach ($relativeFolder in $folderMetaRelativePaths) {
-    $metaPath = Join-Path $projectPath "$relativeFolder.meta"
+    $metaPath = [System.IO.Path]::Combine([string[]](@($projectPath) + (($relativeFolder + '.meta') -split '/')))
     if (Test-Path -LiteralPath $metaPath -PathType Leaf) {
         continue # A payload-supplied .meta wins; never overwrite its GUID.
     }
@@ -670,7 +732,7 @@ foreach ($relativeFolder in $folderMetaRelativePaths) {
 # top. See .llm/skills/github-actions/release-asset-and-notes-invariants.md.
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'Packages') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'ProjectSettings') | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'Assets\Editor') | Out-Null
+New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($projectPath, 'Assets', 'Editor')) | Out-Null
 $manifestDependencies = [ordered]@{}
 $builtinModulesPath = Join-Path $PSScriptRoot 'unity-builtin-modules.json'
 $builtinModules = (Get-Content -LiteralPath $builtinModulesPath -Raw | ConvertFrom-Json).dependencies
@@ -692,14 +754,14 @@ if ($null -ne $packageDependencies -and $null -ne $packageDependencies.Value) {
 # failure this block exists to prevent. WriteAllText is BOM-less on 5.1 and 7.
 $manifestJson = (@{ dependencies = $manifestDependencies } | ConvertTo-Json -Depth 5) + "`n"
 [System.IO.File]::WriteAllText(
-    (Join-Path $projectPath 'Packages\manifest.json'),
+    ([System.IO.Path]::Combine($projectPath, 'Packages', 'manifest.json')),
     $manifestJson,
     (New-Object System.Text.UTF8Encoding $false)
 )
 "m_EditorVersion: $UnityVersion`n" |
-    Set-Content -LiteralPath (Join-Path $projectPath 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
+    Set-Content -LiteralPath ([System.IO.Path]::Combine($projectPath, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
 New-ExporterSource |
-    Set-Content -LiteralPath (Join-Path $projectPath 'Assets\Editor\DxmUnityPackageExporter.cs') -Encoding UTF8
+    Set-Content -LiteralPath ([System.IO.Path]::Combine($projectPath, 'Assets', 'Editor', 'DxmUnityPackageExporter.cs')) -Encoding UTF8
 
 if ($StageOnly) {
     Write-Host "StageOnly: staged project at $projectPath; skipping the Unity export run."

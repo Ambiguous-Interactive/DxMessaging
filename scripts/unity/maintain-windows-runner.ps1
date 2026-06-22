@@ -228,9 +228,9 @@ function Invoke-WindowsRunnerMaintenance {
         return 0
     }
 
-    $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    $repoRoot = [System.IO.Path]::GetFullPath(([System.IO.Path]::Combine($PSScriptRoot, '..', '..')))
     if ([string]::IsNullOrWhiteSpace($DiagnosticsRoot)) {
-        $DiagnosticsRoot = Join-Path $repoRoot '.artifacts\runner-maintenance'
+        $DiagnosticsRoot = [System.IO.Path]::Combine($repoRoot, '.artifacts', 'runner-maintenance')
     }
     New-Item -ItemType Directory -Force -Path $DiagnosticsRoot | Out-Null
 

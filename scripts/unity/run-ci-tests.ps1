@@ -15,7 +15,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ArtifactsPath,
 
-    [string]$RepoRoot = $(if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }),
+    [string]$RepoRoot = $(if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve-Path ([System.IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path }),
 
     [string]$ProjectPath,
 
@@ -71,6 +71,8 @@ $RequiredDxMessagingAnalyzerDllNames = @(
     'WallstopStudios.DxMessaging.SourceGenerators.dll',
     'WallstopStudios.DxMessaging.Analyzer.dll'
 )
+$ProjectOwnershipMarkerName = '.dxmessaging-ci-project'
+$ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci ephemeral project'
 
 function Write-CiError {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -249,8 +251,8 @@ function Write-UnityPackageManagerTransientFailureWarnings {
 function Clear-UnityPackageManagerRetryState {
     param([Parameter(Mandatory = $true)][string]$Project)
 
-    $packageCachePath = Join-Path $Project 'Library\PackageCache'
-    $packageManagerPath = Join-Path $Project 'Library\PackageManager'
+    $packageCachePath = [System.IO.Path]::Combine($Project, 'Library', 'PackageCache')
+    $packageManagerPath = [System.IO.Path]::Combine($Project, 'Library', 'PackageManager')
     $tempPath = Join-Path $Project 'Temp'
     $paths = @(
         $packageCachePath,
@@ -295,8 +297,8 @@ function Write-UnityPackageManagerDiagnostics {
         }
 
         if ($Project) {
-            foreach ($relativePath in @('Packages\manifest.json', 'Packages\packages-lock.json')) {
-                $file = Join-Path $Project $relativePath
+            foreach ($relativePath in @('Packages/manifest.json', 'Packages/packages-lock.json')) {
+                $file = [System.IO.Path]::Combine([string[]](@($Project) + ($relativePath -split '/')))
                 if (Test-Path -LiteralPath $file -PathType Leaf) {
                     Write-Host "${relativePath}:"
                     Get-Content -LiteralPath $file -ErrorAction SilentlyContinue |
@@ -306,7 +308,7 @@ function Write-UnityPackageManagerDiagnostics {
                 }
             }
 
-            $packageCache = Join-Path $Project 'Library\PackageCache'
+            $packageCache = [System.IO.Path]::Combine($Project, 'Library', 'PackageCache')
             Write-Host "Library PackageCache: $packageCache"
             if (Test-Path -LiteralPath $packageCache -PathType Container) {
                 Get-ChildItem -LiteralPath $packageCache -Force -ErrorAction SilentlyContinue |
@@ -582,6 +584,243 @@ function Resolve-FullPath {
     $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
 }
 
+function Get-PathStringComparison {
+    # This comparison gates recursive cleanup. Be conservative across default
+    # Windows/macOS case-insensitive filesystems; false-positive rejections are safer
+    # than missing a case-variant spelling of a protected directory.
+    return [System.StringComparison]::OrdinalIgnoreCase
+}
+
+function ConvertTo-ComparableFullPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $fullPath = $fullPath.Replace(
+        [System.IO.Path]::AltDirectorySeparatorChar,
+        [System.IO.Path]::DirectorySeparatorChar
+    )
+    $root = [System.IO.Path]::GetPathRoot($fullPath)
+    if (-not [string]::IsNullOrEmpty($root)) {
+        $root = $root.Replace(
+            [System.IO.Path]::AltDirectorySeparatorChar,
+            [System.IO.Path]::DirectorySeparatorChar
+        )
+        $separator = [string][System.IO.Path]::DirectorySeparatorChar
+        while (
+            $fullPath.Length -gt $root.Length -and
+            $fullPath.EndsWith($separator, [System.StringComparison]::Ordinal)
+        ) {
+            $fullPath = $fullPath.Substring(0, $fullPath.Length - 1)
+        }
+    }
+    return $fullPath
+}
+
+function Test-IsPathEqual {
+    param(
+        [Parameter(Mandatory = $true)][string]$Left,
+        [Parameter(Mandatory = $true)][string]$Right
+    )
+
+    return [string]::Equals(
+        (ConvertTo-ComparableFullPath -Path $Left),
+        (ConvertTo-ComparableFullPath -Path $Right),
+        (Get-PathStringComparison)
+    )
+}
+
+function Test-IsPathInsideDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Directory
+    )
+
+    $candidatePath = ConvertTo-ComparableFullPath -Path $Path
+    $directoryPath = ConvertTo-ComparableFullPath -Path $Directory
+    if ([string]::Equals($candidatePath, $directoryPath, (Get-PathStringComparison))) {
+        return $false
+    }
+
+    $separator = [string][System.IO.Path]::DirectorySeparatorChar
+    $directoryPrefix = if ($directoryPath.EndsWith($separator, [System.StringComparison]::Ordinal)) {
+        $directoryPath
+    } else {
+        "$directoryPath$separator"
+    }
+    return $candidatePath.StartsWith($directoryPrefix, (Get-PathStringComparison))
+}
+
+function Test-IsFilesystemRoot {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = ConvertTo-ComparableFullPath -Path $Path
+    $root = [System.IO.Path]::GetPathRoot($fullPath)
+    if ([string]::IsNullOrEmpty($root)) {
+        return $false
+    }
+    $root = ConvertTo-ComparableFullPath -Path $root
+    return [string]::Equals($fullPath, $root, (Get-PathStringComparison))
+}
+
+function Test-IsReparsePoint {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    return (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+}
+
+function Test-PathContainsReparsePointBeforeBoundary {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$BoundaryDirectory
+    )
+
+    $current = ConvertTo-ComparableFullPath -Path $Path
+    $boundary = ConvertTo-ComparableFullPath -Path $BoundaryDirectory
+    while (-not [string]::IsNullOrEmpty($current)) {
+        if (Test-IsPathEqual -Left $current -Right $boundary) {
+            return $false
+        }
+        if (Test-IsReparsePoint -Path $current) {
+            return $true
+        }
+
+        $parent = Split-Path -Parent $current
+        if ([string]::IsNullOrEmpty($parent) -or (Test-IsPathEqual -Left $parent -Right $current)) {
+            return $false
+        }
+        $current = $parent
+    }
+
+    return $false
+}
+
+function Test-ProjectOwnershipMarker {
+    param([Parameter(Mandatory = $true)][string]$ProjectPath)
+
+    $markerPath = Join-Path $ProjectPath $ProjectOwnershipMarkerName
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $markerContent = Get-Content -LiteralPath $markerPath -Raw
+    } catch {
+        return $false
+    }
+    if ($null -eq $markerContent) {
+        return $false
+    }
+    $markerContent = $markerContent.Trim()
+    return [string]::Equals(
+        $markerContent,
+        $ProjectOwnershipMarkerContent,
+        [System.StringComparison]::Ordinal
+    )
+}
+
+function Write-ProjectOwnershipMarker {
+    param([Parameter(Mandatory = $true)][string]$ProjectPath)
+
+    $markerPath = Join-Path $ProjectPath $ProjectOwnershipMarkerName
+    [System.IO.File]::WriteAllText(
+        $markerPath,
+        "$ProjectOwnershipMarkerContent`n",
+        [System.Text.Encoding]::UTF8
+    )
+}
+
+function Test-IsManagedUnityCiProjectPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][string[]]$ManagedProjectRoots
+    )
+
+    foreach ($managedProjectRoot in $ManagedProjectRoots) {
+        if (Test-IsPathInsideDirectory -Path $ProjectPath -Directory $managedProjectRoot) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-UnityCiProjectPathSafetyError {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ArtifactsPath,
+        [Parameter(Mandatory = $true)][string[]]$ManagedProjectRoots
+    )
+
+    if (Test-IsFilesystemRoot -Path $ProjectPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it resolves to a filesystem root."
+    }
+
+    $reservedPaths = @(
+        @{ Path = $RepoRoot; Label = 'repository root' },
+        @{ Path = $ArtifactsPath; Label = 'artifacts directory' }
+    ) + @(
+        foreach ($managedProjectRoot in $ManagedProjectRoots) {
+            @{ Path = $managedProjectRoot; Label = 'managed Unity project parent directory' }
+        }
+    )
+    foreach ($reservedPath in $reservedPaths) {
+        if (Test-IsPathEqual -Left $ProjectPath -Right $reservedPath.Path) {
+            return "Refusing to use ProjectPath '$ProjectPath' because it resolves to the $($reservedPath.Label)."
+        }
+    }
+
+    if (Test-IsPathInsideDirectory -Path $RepoRoot -Directory $ProjectPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it would write into a parent of the repository root '$RepoRoot'."
+    }
+    if (Test-IsPathInsideDirectory -Path $ArtifactsPath -Directory $ProjectPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it would write into a parent of the artifacts directory '$ArtifactsPath'."
+    }
+    if (Test-IsPathInsideDirectory -Path $ProjectPath -Directory $ArtifactsPath) {
+        return "Refusing to use ProjectPath '$ProjectPath' because it would place the generated Unity project inside the uploaded artifacts directory '$ArtifactsPath'."
+    }
+
+    $isManagedProjectPath = Test-IsManagedUnityCiProjectPath `
+        -ProjectPath $ProjectPath `
+        -ManagedProjectRoots $ManagedProjectRoots
+    if (
+        $isManagedProjectPath -and
+        (Test-PathContainsReparsePointBeforeBoundary -Path $ProjectPath -BoundaryDirectory $RepoRoot)
+    ) {
+        return "Refusing to use ProjectPath '$ProjectPath' because a symlink or reparse point appears between it and the repository root '$RepoRoot'."
+    }
+    if (
+        (Test-IsPathInsideDirectory -Path $ProjectPath -Directory $RepoRoot) -and
+        -not $isManagedProjectPath
+    ) {
+        $managedRoots = $ManagedProjectRoots -join "', '"
+        return "Refusing to use ProjectPath '$ProjectPath' inside the repository. Repo-contained CI projects must live under '$managedRoots'."
+    }
+
+    if (
+        (Test-Path -LiteralPath $ProjectPath -PathType Container) -and
+        -not $isManagedProjectPath -and
+        (Test-IsReparsePoint -Path $ProjectPath)
+    ) {
+        return "Refusing to use existing ProjectPath '$ProjectPath' because it is a symlink or reparse point."
+    }
+
+    if (
+        (Test-Path -LiteralPath $ProjectPath -PathType Container) -and
+        -not $isManagedProjectPath -and
+        -not (Test-ProjectOwnershipMarker -ProjectPath $ProjectPath)
+    ) {
+        return "Refusing to use existing ProjectPath '$ProjectPath' because it is outside the managed Unity CI project area and lacks the ownership marker '$ProjectOwnershipMarkerName'. Choose a new empty ProjectPath or remove the directory manually."
+    }
+
+    return ''
+}
+
 function Assert-RepoRoot {
     param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath (Join-Path $Path 'package.json') -PathType Leaf)) {
@@ -603,14 +842,14 @@ function Initialize-UnityCacheEnvironment {
         [Parameter(Mandatory = $true)][string]$Version
     )
 
-    $cacheRoot = Join-Path $Root ".artifacts\unity\cache\$Version"
+    $cacheRoot = [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'cache', $Version)
     $upmRoot = Join-Path $cacheRoot 'upm'
     $npmRoot = Join-Path $cacheRoot 'npm'
     $gitLfsRoot = Join-Path $cacheRoot 'git-lfs'
     $localUnityCaches = if ($env:LOCALAPPDATA) {
-        Join-Path $env:LOCALAPPDATA 'Unity\Caches'
+        [System.IO.Path]::Combine($env:LOCALAPPDATA, 'Unity', 'Caches')
     } else {
-        Join-Path $cacheRoot 'localappdata\Unity\Caches'
+        [System.IO.Path]::Combine($cacheRoot, 'localappdata', 'Unity', 'Caches')
     }
 
     foreach ($path in @($cacheRoot, $upmRoot, $npmRoot, $gitLfsRoot, $localUnityCaches)) {
@@ -1019,7 +1258,7 @@ function Assert-DxMessagingAnalyzerDllsPresent {
 
     $missingRequired = New-Object System.Collections.Generic.List[string]
     foreach ($dllName in $RequiredDxMessagingAnalyzerDllNames) {
-        $sourcePath = Join-Path $Root "Runtime\Analyzers\$dllName"
+        $sourcePath = [System.IO.Path]::Combine($Root, 'Runtime', 'Analyzers', $dllName)
         if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
             $missingRequired.Add($sourcePath)
         }
@@ -1068,7 +1307,8 @@ function Initialize-EphemeralProject {
         [switch]$IncludeComparisons,
         [string]$Backend = 'IL2CPP',
         [bool]$DevelopmentBuild = $false,
-        [string]$RepoRoot
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ArtifactsPath
     )
 
     # The comparison-packages single source lives at the repo root. Default to
@@ -1078,20 +1318,34 @@ function Initialize-EphemeralProject {
         $RepoRoot = $Root
     }
 
+    $managedProjectRoots = @(
+        [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'projects'),
+        [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'game-ci-projects')
+    )
+
     $project = if ($Path) {
         Resolve-FullPath -Path $Path
     } else {
-        Join-Path $Root ".artifacts\unity\projects\$Version-$Mode"
+        [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'projects', "$Version-$Mode")
+    }
+    $projectPathSafetyError = Get-UnityCiProjectPathSafetyError `
+        -ProjectPath $project `
+        -RepoRoot $RepoRoot `
+        -ArtifactsPath $ArtifactsPath `
+        -ManagedProjectRoots $managedProjectRoots
+    if (-not [string]::IsNullOrWhiteSpace($projectPathSafetyError)) {
+        throw $projectPathSafetyError
     }
 
     New-Item -ItemType Directory -Force -Path (Join-Path $project 'Packages') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $project 'ProjectSettings') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $project 'Assets\Editor') | Out-Null
+    New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor')) | Out-Null
+    Write-ProjectOwnershipMarker -ProjectPath $project
 
     New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -RepoRoot $RepoRoot |
-        Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
+        Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Packages', 'manifest.json')) -Encoding UTF8
     "m_EditorVersion: $Version`n" |
-        Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
+        Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
     # Disable enter-play-mode domain + scene reload (DisableDomainReload=1 |
     # DisableSceneReload=2 = 3) so the PlayMode test leg skips the per-entry
     # reload. The ephemeral project is generated minimal, so without this emit
@@ -1115,9 +1369,9 @@ function Initialize-EphemeralProject {
 EditorSettings:
   m_EnterPlayModeOptionsEnabled: 1
   m_EnterPlayModeOptions: 3
-'@ | Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\EditorSettings.asset') -Encoding UTF8
+'@ | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'EditorSettings.asset')) -Encoding UTF8
     New-ConfiguratorSource -Backend $Backend |
-        Set-Content -LiteralPath (Join-Path $project 'Assets\Editor\DxmCiTestConfigurator.cs') -Encoding UTF8
+        Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) -Encoding UTF8
 
     # The generator + analyzer ship under the package's Runtime/Analyzers/
     # (RoslynAnalyzer-labeled, every platform disabled), so Unity scopes them to the
@@ -1138,9 +1392,9 @@ EditorSettings:
     # untouched).
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
-            @{ Path = (Join-Path $project 'Assets\Editor\DxmCiStandaloneBuildModifier.cs'); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild) },
-            @{ Path = (Join-Path $project 'Assets\DxmCiStandaloneTestCallback\DxmCiStandaloneTestCallback.cs'); Content = (New-StandaloneTestCallbackSource) },
-            @{ Path = (Join-Path $project 'Assets\DxmCiStandaloneTestCallback\DxmCiStandaloneTestCallback.asmdef'); Content = (New-StandaloneTestCallbackAsmdef) }
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.asmdef')); Content = (New-StandaloneTestCallbackAsmdef) }
         )
         foreach ($file in $standaloneFiles) {
             $dir = Split-Path -Parent $file.Path
@@ -2187,7 +2441,7 @@ function Write-UnityResultFailureDiagnostics {
         }
 
         if ($Project) {
-            $scriptAssemblies = Join-Path $Project 'Library\ScriptAssemblies'
+            $scriptAssemblies = [System.IO.Path]::Combine($Project, 'Library', 'ScriptAssemblies')
             if (Test-Path -LiteralPath $scriptAssemblies -PathType Container) {
                 Write-Host "Script assemblies present:"
                 Get-ChildItem -LiteralPath $scriptAssemblies -Filter '*.dll' -ErrorAction SilentlyContinue |
@@ -2277,8 +2531,8 @@ function Write-StandaloneBuildOutputDiagnostics {
         $expectedDir = Split-Path -Parent $ExpectedExe
         Write-StandaloneDirectorySnapshot -Label 'Expected output directory' -Path $expectedDir
         Write-StandaloneDirectorySnapshot -Label 'Project Build directory' -Path (Join-Path $Project 'Build')
-        Write-StandaloneDirectorySnapshot -Label 'Project Temp\DxmTestPlayer directory' -Path (Join-Path $Project 'Temp\DxmTestPlayer')
-        Write-StandaloneDirectorySnapshot -Label 'Project Temp\PlayerWithTests directory' -Path (Join-Path $Project 'Temp\PlayerWithTests')
+        Write-StandaloneDirectorySnapshot -Label 'Project Temp/DxmTestPlayer directory' -Path ([System.IO.Path]::Combine($Project, 'Temp', 'DxmTestPlayer'))
+        Write-StandaloneDirectorySnapshot -Label 'Project Temp/PlayerWithTests directory' -Path ([System.IO.Path]::Combine($Project, 'Temp', 'PlayerWithTests'))
 
         Write-Host "Discovered executable candidates under Build/Temp:"
         $candidateRoots = @(
@@ -2430,7 +2684,7 @@ Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion
 $UseReleaseCodeOptimization = $true
 $UseReleasePlayerBuild = $true
 
-$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot
+$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot -ArtifactsPath $ArtifactsPath
 $LibraryPath = Join-Path $ProjectPath 'Library'
 New-Item -ItemType Directory -Force -Path $LibraryPath | Out-Null
 
@@ -2444,9 +2698,9 @@ Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"
 Write-Host "ReleasePlayerBuild: $UseReleasePlayerBuild"
 Write-Host "ReleaseCodeOptimization: $UseReleaseCodeOptimization"
 Write-Host "Manifest:"
-Get-Content -LiteralPath (Join-Path $ProjectPath 'Packages\manifest.json')
+Get-Content -LiteralPath ([System.IO.Path]::Combine($ProjectPath, 'Packages', 'manifest.json'))
 Write-Host "Package analyzer payload (Runtime/Analyzers - applies natively, no Assets copy):"
-$analyzerPayloadDir = Join-Path $RepoRoot 'Runtime\Analyzers'
+$analyzerPayloadDir = [System.IO.Path]::Combine($RepoRoot, 'Runtime', 'Analyzers')
 if (Test-Path -LiteralPath $analyzerPayloadDir -PathType Container) {
     Get-ChildItem -LiteralPath $analyzerPayloadDir -Filter '*.dll' -File |
         Select-Object -ExpandProperty Name |
@@ -2554,7 +2808,7 @@ $configureMarkerPath = Join-Path $ArtifactsPath 'configure-complete.marker'
 # it before this script's post-build assertion runs. The player still stays out
 # of $ArtifactsPath because a full IL2CPP player is hundreds of MB; only the
 # small player log and NUnit XML are uploaded.
-$standaloneExe = Join-Path $ProjectPath 'Build\DxmTestPlayer\DxmTestPlayer.exe'
+$standaloneExe = [System.IO.Path]::Combine($ProjectPath, 'Build', 'DxmTestPlayer', 'DxmTestPlayer.exe')
 $playerLogPath = Join-Path $ArtifactsPath 'player.log'
 
 # Activation/return carry the serial/email/password in their argument arrays and

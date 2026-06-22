@@ -299,8 +299,7 @@ namespace DxMessaging.Editor
             {
                 if (!File.Exists(RspFilePath))
                 {
-                    File.WriteAllText(RspFilePath, string.Empty);
-                    AssetDatabase.ImportAsset("csc.rsp");
+                    return;
                 }
 
                 string rspContent = File.ReadAllText(RspFilePath);
@@ -412,12 +411,6 @@ namespace DxMessaging.Editor
         {
             try
             {
-                if (!File.Exists(RspFilePath))
-                {
-                    File.WriteAllText(RspFilePath, string.Empty);
-                    AssetDatabase.ImportAsset("csc.rsp");
-                }
-
                 string sidecarRelativePath = DxMessagingBaseCallIgnoreSync.SidecarAssetPath;
                 string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."))
                     .Replace("\\", "/");
@@ -425,6 +418,22 @@ namespace DxMessaging.Editor
                     .Replace("\\", "/");
 
                 bool sidecarExists = File.Exists(sidecarAbsolutePath);
+                if (!File.Exists(RspFilePath))
+                {
+                    if (!sidecarExists)
+                    {
+                        return;
+                    }
+
+                    File.WriteAllText(
+                        RspFilePath,
+                        FormatAdditionalFileArgument(sidecarRelativePath) + Environment.NewLine
+                    );
+                    AssetDatabase.ImportAsset("csc.rsp");
+                    Debug.Log("Updated csc.rsp additionalfile entries.");
+                    return;
+                }
+
                 string[] newLines = SynchronizeAdditionalFileForIgnoreListLines(
                     File.ReadAllLines(RspFilePath),
                     sidecarRelativePath,
