@@ -120,8 +120,10 @@ The release workflow performs these gates:
    published release carries all four.
 1. Assemble the `asset-store-submission` workflow artifact (the
    `.unitypackage`, the `.tgz`, checksums, and a generated
-   `SUBMISSION-CHECKLIST.md`) for the manual Unity Asset Store upload; see
-   [Unity Asset Store UPM](./unity-asset-store-upm.md).
+   `SUBMISSION-CHECKLIST.md`) for the manual Unity Asset Store upload; the
+   release-time procedure is the
+   [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md)
+   (account onboarding: [Unity Asset Store UPM](./unity-asset-store-upm.md)).
 
 Release assets are the npm `.tgz` plus `.sha256` and the `.unitypackage` plus
 `.sha256`. The `.unitypackage` is a REQUIRED asset and the release is atomic: a

@@ -238,7 +238,7 @@ jobs:
             echo "1. The tag fires release.yml: validate (pack + attest), the trusted Unity editmode check, the .unitypackage export,"
             echo "   npm publish (Trusted Publishing), then the GitHub Release with the .tgz, .sha256, and .unitypackage assets"
             echo "   plus the asset-store-submission artifact."
-            echo "1. The Unity Asset Store upload stays MANUAL: download the asset-store-submission artifact and follow docs/ops/unity-asset-store-upm.md."
+            echo "1. The Unity Asset Store upload stays MANUAL: download the asset-store-submission artifact and follow docs/runbooks/asset-store-publishing.md."
           } > "${pr_body_file}"
 
           GH_TOKEN="${GH_PUSH_TOKEN}" gh pr create \

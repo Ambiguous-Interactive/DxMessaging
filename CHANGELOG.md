@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New "What's New in 3.x" documentation page (Getting Started) that summarizes
+  the user-visible improvements across the 3.x line -- faster zero-allocation
+  dispatch, the base-call analyzer and inspector overlay, project-wide settings,
+  memory-reclamation controls, `ReregisterOnEnableAfterRelease`, the clarified
+  `ToggleMessageHandler` semantics, Unity 6.4+/6.5 compatibility, and the
+  dependency-injection helpers -- with links to the authoritative changelog and
+  the migration guide.
+
 ### Fixed
 
 - Source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`,
