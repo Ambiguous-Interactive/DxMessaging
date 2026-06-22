@@ -21,7 +21,12 @@ const path = require("path");
 // 058: 11820 for shared release notes, changelog extraction, and export staging
 // coverage. Each increase was reviewed with the bespoke invariant it protects.
 // 059: 11960 for cross-platform PowerShell project-path safety regression tests.
-const TOTAL_BUDGET = 11960;
+// 062: 12360 for the issue-template package-version dropdown generator + its
+// hermetic red-green test (G5 / #230) and the self-healing auto-commit workflow's
+// entry in the fetch-force-refspec drift-guard; the gate keeps the bug-report
+// dropdown in lockstep with released versions without dropping shallow-clone
+// history. The generator header was trimmed first to keep the increase minimal.
+const TOTAL_BUDGET = 12360;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

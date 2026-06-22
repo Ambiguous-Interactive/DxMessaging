@@ -152,7 +152,7 @@ Markdown`, and `Prettier and yamllint` gates are the correct required checks.
   `Validate Documentation Build` job in `ci.yml`), and the
   schedule/dispatch/release workflows, none of which have a `pull_request`
   trigger (`unity-benchmarks.yml`, `release*.yml`, `runner-bootstrap.yml`,
-  `update-llms-txt.yml`, `sync-wiki.yml`,
+  `update-llms-txt.yml`, `update-issue-template-versions.yml`, `sync-wiki.yml`,
   `markdown-link-validity.yml`, `stuck-job-watchdog.yml`, `unstick-run.yml`,
   `devcontainer-prebuild.yml`, `unity-gameci-experiment.yml`).
 

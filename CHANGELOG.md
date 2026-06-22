@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The bug-report issue template now offers the package version as a dropdown of
+  released versions (with an `Other` fallback) instead of a free-text field, so
+  reports carry an exact, valid version. The list is generated from
+  `package.json`, `CHANGELOG.md`, and git tags, kept in sync by
+  `npm run check:issue-template-versions` (gated in `validate:all`), and
+  self-heals on the default branch via the `Update Issue Template Versions`
+  workflow. Closes GitHub issue #230.
 - The Roslyn source generator no longer copies its DLLs into the consumer's
   `Assets/Plugins/Editor/` folder on editor load; it (with its pinned Roslyn dependency
   DLLs) ships ready-to-use under the package's `Runtime/Analyzers/` folder

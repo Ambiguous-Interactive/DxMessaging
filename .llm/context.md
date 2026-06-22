@@ -46,6 +46,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 - Sync banner SVG version/test-count: `npm run sync:banner`
 - Regenerate llms.txt: `npm run update:llms-txt` (check-only: `npm run check:llms-txt`)
 - Regenerate the skills-index Lines column + counts: `npm run update:skills-index` (check-only: `npm run check:skills-index`, gated in `validate:all`)
+- Regenerate the bug-report version dropdown (`.github/ISSUE_TEMPLATE/bug_report.yml`, derived from `package.json` + `CHANGELOG.md` + git tags, append-only so a shallow checkout never drops history): `npm run update:issue-template-versions` (check-only: `npm run check:issue-template-versions`, gated in `validate:all`). Self-healing in three layers: `release-prepare.yml` regenerates + stages it in its version-sync step (so the release PR passes the gate); `update-issue-template-versions.yml` auto-commits it on any `package.json`/`CHANGELOG.md` push to the default branch + a weekly cron (the same App-token pattern as `update-llms-txt.yml`); and the `--check` gate blocks a stale hand-edit on PRs.
 - Analyzer payload: `npm run check:analyzers` (refresh: `npm run refresh:analyzers`)
 - C# method naming auto-fix: `npm run fix:csharp-underscores`
 - Unity asmdef reference integrity: `npm run validate:asmdef-references`
