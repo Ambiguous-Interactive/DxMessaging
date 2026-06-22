@@ -36,6 +36,7 @@ function commandExists(command) {
 }
 
 const HAS_PWSH = commandExists("pwsh");
+const RETRY_LOG = "unity.first-attempt.log";
 
 function toPowerShellSingleQuoted(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
@@ -116,106 +117,72 @@ function runDumpUnityLogTailAction(resultsDir, scriptDir = resultsDir || os.tmpd
   }
 }
 
-test("verify-unity-results scans retry logs when final unity.log exists", (t) => {
+test("Unity result actions scan retry logs alongside or instead of unity.log", (t) => {
   if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-unity-results-"));
-  try {
-    fs.writeFileSync(path.join(tempDir, "unity.log"), "Final attempt failed later.\n", "utf8");
-    fs.writeFileSync(
-      path.join(tempDir, "unity.first-attempt.log"),
-      [
+  const cases = [
+    {
+      name: "verify final plus retry",
+      run: runVerifyUnityResultsAction,
+      finalLog: "Final attempt failed later.\n",
+      retryLog: [
         "Cancelled resolving packages",
         "PrecompiledAssemblyException: Multiple precompiled assemblies with the same name"
       ].join("\n"),
-      "utf8"
-    );
+      status: 1,
+      patterns: [
+        /Unity Package Manager canceled package resolution before tests started/,
+        /Pattern detected -- PrecompiledAssemblyException/,
+        /unity\.first-attempt\.log/
+      ]
+    },
+    {
+      name: "verify retry only",
+      run: runVerifyUnityResultsAction,
+      retryLog: "Cancelled resolving packages before retry could write a final log\n",
+      status: 1,
+      patterns: [
+        /Unity Package Manager canceled package resolution before tests started/,
+        /unity\.first-attempt\.log/
+      ]
+    },
+    {
+      name: "dump final plus retry",
+      run: runDumpUnityLogTailAction,
+      finalLog: "Final attempt failed later.\n",
+      retryLog: "CompilationFailedException: first attempt stopped before retry\n",
+      status: 0,
+      patterns: [/Pattern detected -- CompilationFailedException/, /unity\.first-attempt\.log/]
+    },
+    {
+      name: "dump retry only",
+      run: runDumpUnityLogTailAction,
+      retryLog: "CompilationFailedException: first attempt stopped before final log\n",
+      status: 0,
+      patterns: [/no unity\.log/, /Pattern detected -- CompilationFailedException/, /unity\.first-attempt\.log/]
+    }
+  ];
 
-    const result = runVerifyUnityResultsAction(tempDir);
-    const output = `${result.stdout}\n${result.stderr}`;
-    assert.equal(result.status, 1, output);
-    assert.match(output, /Unity Package Manager canceled package resolution before tests started/);
-    assert.match(output, /Pattern detected -- PrecompiledAssemblyException/);
-    assert.match(output, /unity\.first-attempt\.log/);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
+  for (const fixture of cases) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "unity-result-action-"));
+    try {
+      if (fixture.finalLog) {
+        fs.writeFileSync(path.join(tempDir, "unity.log"), fixture.finalLog, "utf8");
+      }
+      fs.writeFileSync(path.join(tempDir, RETRY_LOG), fixture.retryLog, "utf8");
 
-test("verify-unity-results scans retry logs when final unity.log is absent", (t) => {
-  if (!HAS_PWSH) {
-    t.skip("PowerShell is not available");
-    return;
-  }
-
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-unity-results-retry-only-"));
-  try {
-    fs.writeFileSync(
-      path.join(tempDir, "unity.first-attempt.log"),
-      "Cancelled resolving packages before retry could write a final log\n",
-      "utf8"
-    );
-
-    const result = runVerifyUnityResultsAction(tempDir);
-    const output = `${result.stdout}\n${result.stderr}`;
-    assert.equal(result.status, 1, output);
-    assert.match(output, /Unity Package Manager canceled package resolution before tests started/);
-    assert.match(output, /unity\.first-attempt\.log/);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
-test("dump-unity-log-tail scans retry logs when final unity.log exists", (t) => {
-  if (!HAS_PWSH) {
-    t.skip("PowerShell is not available");
-    return;
-  }
-
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dump-unity-log-tail-"));
-  try {
-    fs.writeFileSync(path.join(tempDir, "unity.log"), "Final attempt failed later.\n", "utf8");
-    fs.writeFileSync(
-      path.join(tempDir, "unity.first-attempt.log"),
-      "CompilationFailedException: first attempt stopped before retry\n",
-      "utf8"
-    );
-
-    const result = runDumpUnityLogTailAction(tempDir);
-    const output = `${result.stdout}\n${result.stderr}`;
-    assert.equal(result.status, 0, output);
-    assert.match(output, /Pattern detected -- CompilationFailedException/);
-    assert.match(output, /unity\.first-attempt\.log/);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
-test("dump-unity-log-tail scans retry logs when final unity.log is absent", (t) => {
-  if (!HAS_PWSH) {
-    t.skip("PowerShell is not available");
-    return;
-  }
-
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dump-unity-log-tail-retry-only-"));
-  try {
-    fs.writeFileSync(
-      path.join(tempDir, "unity.first-attempt.log"),
-      "CompilationFailedException: first attempt stopped before final log\n",
-      "utf8"
-    );
-
-    const result = runDumpUnityLogTailAction(tempDir);
-    const output = `${result.stdout}\n${result.stderr}`;
-    assert.equal(result.status, 0, output);
-    assert.match(output, /no unity\.log/);
-    assert.match(output, /Pattern detected -- CompilationFailedException/);
-    assert.match(output, /unity\.first-attempt\.log/);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+      const result = fixture.run(tempDir);
+      const output = `${result.stdout}\n${result.stderr}`;
+      assert.equal(result.status, fixture.status, `${fixture.name}\n${output}`);
+      for (const pattern of fixture.patterns) {
+        assert.match(output, pattern, fixture.name);
+      }
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   }
 });
 
