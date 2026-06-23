@@ -10,6 +10,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Core.Pooling;
     using DxMessaging.Tests.Editor.Benchmarks;
     using DxMessaging.Tests.Runtime;
+    using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
 
@@ -61,11 +62,9 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         /// <summary>
         /// Cumulative allocation budget for the diagnostics-enabled emit path
-        /// measured by <c>GC.GetAllocatedBytesForCurrentThread</c> (which is
-        /// thread-cumulative and unaffected by interim collections) across
-        /// <see cref="AllocationAssertions.DefaultMeasuredIterations"/> (32)
-        /// consecutive emissions after the cyclic buffer reaches steady state.
-        /// The diagnostics path captures a stack trace per emit (see
+        /// across <see cref="AllocationAssertions.DefaultMeasuredIterations"/>
+        /// (32) consecutive emissions after the cyclic buffer reaches steady
+        /// state. The diagnostics path captures a stack trace per emit (see
         /// <c>MessageEmissionData.GetAccurateStackTrace</c>), which is
         /// fundamentally allocating in the current design - Unity's
         /// <c>StackTraceUtility.ExtractStackTrace</c> returns a fresh string
@@ -73,14 +72,38 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// per-line substrings, and the LINQ filter plus <c>String.Join</c>
         /// each materialize additional managed objects. Empirically the steady
         /// state runs ~4-10 KB per emit, so 32 emits land in the 128-320 KB
-        /// range. The budget below sets a per-iteration ceiling
+        /// range. The budget below sets a per-iteration BYTE ceiling
         /// (<see cref="MaxBytesPerDiagnosticsEmit"/> bytes) and multiplies by
         /// the iteration count; a real regression (e.g. an unbounded list
         /// growth or per-frame buffer churn) will breach the ceiling.
         /// </summary>
+        /// <remarks>
+        /// These byte constants are retained ONLY for documentation: they record
+        /// the empirical per-emit cost that motivates the count ceiling below.
+        /// The actual assertion uses a managed-allocation CALL count via
+        /// <see cref="AllocationProbe"/>, because
+        /// <c>GC.GetAllocatedBytesForCurrentThread()</c> returns 0 for every
+        /// allocation under Unity's Boehm GC and so a byte delta cannot catch a
+        /// regression.
+        /// </remarks>
         private const long MaxBytesPerDiagnosticsEmit = 32 * 1024L;
         private const long PerEmitDiagnosticsByteBudget =
             MaxBytesPerDiagnosticsEmit * AllocationAssertions.DefaultMeasuredIterations;
+
+        /// <summary>
+        /// Managed-allocation CALL-count budget for the diagnostics-enabled emit
+        /// path over the measured window, used in place of the vacuous byte
+        /// delta. Derived from <see cref="PerEmitDiagnosticsByteBudget"/> as
+        /// <c>ceil(byteBudget / 16)</c> (16 = the minimum managed object size on
+        /// 64-bit: an 8-byte object header plus an 8-byte minimum payload), which
+        /// is the largest possible number of distinct managed objects that could
+        /// fit inside the byte budget. The ceiling is therefore intentionally
+        /// generous - it will never false-fail on incidental per-emit allocations
+        /// - while still tripping a gross regression that adds an unbounded
+        /// allocation per emit.
+        /// </summary>
+        private const long PerEmitDiagnosticsCountBudget =
+            (PerEmitDiagnosticsByteBudget + 15L) / 16L;
 
         /// <summary>
         /// Per-call allocation budget for a single registration after warm-up.
@@ -105,12 +128,22 @@ namespace DxMessaging.Tests.Editor.Allocations
         private const long PerDeregistrationByteBudget = 256L;
 
         /// <summary>
-        /// Cumulative allocation budget for 32 trim calls after warm-up. Trim
-        /// can perform small fixed bookkeeping work while walking dirty
+        /// Cumulative BYTE allocation budget for 32 trim calls after warm-up.
+        /// Trim can perform small fixed bookkeeping work while walking dirty
         /// candidates, but repeated calls must stay bounded and independent of
-        /// normal dispatch hot-path allocations.
+        /// normal dispatch hot-path allocations. Retained for documentation
+        /// only; the assertion uses the count budget below because the Boehm-GC
+        /// byte delta is always 0 (see <see cref="AllocationProbe"/>).
         /// </summary>
         private const long TrimAllocBudget = 4 * 1024L;
+
+        /// <summary>
+        /// Managed-allocation CALL-count budget for the 32-trim measured window,
+        /// derived from <see cref="TrimAllocBudget"/> as <c>ceil(byteBudget / 16)</c>
+        /// (16 = minimum managed object size on 64-bit). Generous enough never to
+        /// false-fail on incidental bookkeeping yet still trips a gross regression.
+        /// </summary>
+        private const long TrimAllocCountBudget = (TrimAllocBudget + 15L) / 16L;
 
         /// <summary>
         /// Per-call allocation budget for a single registration on the
@@ -306,32 +339,37 @@ namespace DxMessaging.Tests.Editor.Allocations
                         emit();
                     }
 
-                    // GC.GetTotalMemory measures live heap, not cumulative
-                    // allocation, so a Gen-0 collection mid-loop would silently
-                    // hide allocation pressure (and the test would flake-pass).
-                    // GC.GetAllocatedBytesForCurrentThread is monotonic and
-                    // unaffected by collections, so it accurately captures
-                    // cumulative allocation across the measured window.
+                    // We count managed allocation CALLS, not bytes:
+                    // GC.GetAllocatedBytesForCurrentThread() returns 0 for every
+                    // allocation under Unity's Boehm GC (editor Mono and IL2CPP),
+                    // so a byte delta is vacuously zero and cannot catch a
+                    // regression. The GC.Alloc profiler recorder behind
+                    // AllocationProbe counts allocation calls precisely and is
+                    // immune to GC timing, so a Gen-0 collection mid-loop cannot
+                    // erase the signal the way a live-heap delta could.
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    long before = GC.GetAllocatedBytesForCurrentThread();
+                    AllocationProbe.Begin();
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         emit();
                     }
-                    long after = GC.GetAllocatedBytesForCurrentThread();
-                    long delta = after - before;
-                    long perEmit = delta / AllocationAssertions.DefaultMeasuredIterations;
+                    long gcAllocations = AllocationProbe.End();
+                    if (gcAllocations == AllocationProbe.Unmeasured)
+                    {
+                        Assert.Ignore(
+                            $"EmitDiagnostics-{scenario.Kind}: the GC.Alloc allocation "
+                                + "probe is non-functional on this backend, so the "
+                                + "diagnostics allocation budget cannot be evaluated."
+                        );
+                    }
                     Assert.That(
-                        delta,
-                        Is.LessThanOrEqualTo(PerEmitDiagnosticsByteBudget),
-                        $"EmitDiagnostics-{scenario.Kind} allocated {delta} bytes "
-                            + $"({perEmit} avg/emit) across "
+                        gcAllocations,
+                        Is.LessThanOrEqualTo(PerEmitDiagnosticsCountBudget),
+                        $"EmitDiagnostics-{scenario.Kind} allocated {gcAllocations} GC "
+                            + $"allocations across "
                             + $"{AllocationAssertions.DefaultMeasuredIterations} emissions, "
-                            + $"exceeding the {PerEmitDiagnosticsByteBudget}-byte "
-                            + $"diagnostics budget ("
-                            + $"{PerEmitDiagnosticsByteBudget / AllocationAssertions.DefaultMeasuredIterations}"
-                            + " avg/emit)."
+                            + $"exceeding the count budget of {PerEmitDiagnosticsCountBudget}."
                     );
                 }
             );
@@ -583,25 +621,30 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    long before = GC.GetAllocatedBytesForCurrentThread();
                     IMessageBus.TrimResult result = default;
                     int evictedSlots = 0;
+                    AllocationProbe.Begin();
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         result = bus.Trim(force: true);
                         evictedSlots += result.TypeSlotsEvicted + result.TargetSlotsEvicted;
                     }
-                    long after = GC.GetAllocatedBytesForCurrentThread();
-                    long delta = after - before;
-                    long perTrim = delta / AllocationAssertions.DefaultMeasuredIterations;
+                    long gcAllocations = AllocationProbe.End();
+                    if (gcAllocations == AllocationProbe.Unmeasured)
+                    {
+                        Assert.Ignore(
+                            $"Trim-{scenario.Kind}: the GC.Alloc allocation probe is "
+                                + "non-functional on this backend, so the trim allocation "
+                                + "budget cannot be evaluated."
+                        );
+                    }
 
                     Assert.That(
-                        delta,
-                        Is.LessThanOrEqualTo(TrimAllocBudget),
-                        $"Trim-{scenario.Kind} allocated {delta} bytes; "
-                            + $"({perTrim} avg/trim) across "
-                            + $"{AllocationAssertions.DefaultMeasuredIterations} trims; "
-                            + $"budget is {TrimAllocBudget} bytes. "
+                        gcAllocations,
+                        Is.LessThanOrEqualTo(TrimAllocCountBudget),
+                        $"Trim-{scenario.Kind} allocated {gcAllocations} GC allocations "
+                            + $"across {AllocationAssertions.DefaultMeasuredIterations} trims, "
+                            + $"exceeding the count budget of {TrimAllocCountBudget}. "
                             + $"Result: type evicted={result.TypeSlotsEvicted}, "
                             + $"target evicted={result.TargetSlotsEvicted}, "
                             + $"pooled evicted={result.PooledCollectionsEvicted}, "
@@ -813,15 +856,31 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    long before = GC.GetAllocatedBytesForCurrentThread();
+                    AllocationProbe.Begin();
                     MarkDirtyTargets(markDirtyTarget, 0x2425_0000, targetCount);
-                    long after = GC.GetAllocatedBytesForCurrentThread();
+                    long gcAllocations = AllocationProbe.End();
                     PoolDiagnosticsSnapshot afterReuse = DxPools.DescribeAll();
 
-                    Assert.AreEqual(
-                        0,
-                        after - before,
-                        "Dirty-target tracking must reuse warmed InstanceId list/set storage without managed allocations."
+                    // Strict zero-allocation contract: this path reuses warmed
+                    // pooled storage and must not allocate at all. We count
+                    // managed allocation CALLS via AllocationProbe rather than a
+                    // GC.GetAllocatedBytesForCurrentThread() byte delta, which is
+                    // vacuously 0 under Unity's Boehm GC and cannot catch a
+                    // regression.
+                    if (gcAllocations == AllocationProbe.Unmeasured)
+                    {
+                        Assert.Ignore(
+                            "Dirty-target tracking: the GC.Alloc allocation probe is "
+                                + "non-functional on this backend, so the zero-allocation "
+                                + "contract cannot be evaluated."
+                        );
+                    }
+                    Assert.That(
+                        gcAllocations,
+                        Is.LessThanOrEqualTo(0L),
+                        $"Dirty-target tracking must reuse warmed InstanceId list/set "
+                            + $"storage without managed allocations, but allocated "
+                            + $"{gcAllocations} GC allocations, exceeding the count budget of 0."
                     );
                     Assert.Greater(
                         afterReuse.InstanceIdLists.Hits,

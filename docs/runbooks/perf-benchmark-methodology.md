@@ -19,14 +19,24 @@ window:
    first-dispatch scenarios, which warm up 0 emits so they measure one-time or
    first-touch cost. `ComparisonScenarios.WarmupEmits` applies the same policy to
    the comparison bridges.
-1. Sample `GC.GetAllocatedBytesForCurrentThread()` and start a stopwatch.
+1. Start a stopwatch.
 1. Emit in batches until ONE continuous measurement window of `N` seconds has
    elapsed (`BenchmarkProtocol.MeasurementSeconds`, currently `N = 5`).
-1. Sample allocated bytes again at the end of the window.
+1. Count managed GC allocations over ONE additional, untimed batch via
+   `AllocationProbe` (the `GC.Alloc` profiler recorder), reported as a COUNT.
 
-Throughput is `total operations / measured elapsed seconds`. The GC delta is
-captured over the same window, so allocation is attributed to exactly the work
-that produced the throughput. There is **no median-of-runs**: the older approach
+Throughput is `total operations / measured elapsed seconds`. Allocation is counted
+in a SEPARATE batch (not the timed window) so the recorder's overhead cannot
+distort the throughput clock, and is reported as a count of allocation calls -- a
+sharper "0 vs N per op" signal than a byte delta. **Why a count, not bytes:**
+`GC.GetAllocatedBytesForCurrentThread()` (the former source) returns `0` for every
+allocation under Unity's Boehm GC -- proven on the host editor, where a forced 1 MB
+array allocation read back as a `0`-byte delta -- so the old "allocated bytes"
+column was vacuously `0` for every technology. The `GC.Alloc` recorder
+(`AllocationProbe`) counts allocations reliably and is immune to GC timing; it
+self-validates and reports the `Unmeasured` sentinel (rendered `n/a`) rather than a
+fabricated `0` when no probe is available on a backend (for example a
+non-development player). There is **no median-of-runs**: the older approach
 of measuring several short sub-windows and comparing their median has been
 replaced by this single long window. The shared protocol is the single source of
 truth for every benchmark suite (dispatch throughput, comparisons) and lives in
@@ -89,8 +99,9 @@ The cold counterpart to `BenchmarkProtocol.Measure` is
 `BenchmarkProtocol.MeasureColdLatency`. It runs K trials; each trial builds fresh
 state (untimed, indexed so the caller picks a distinct closed type per trial),
 times EXACTLY ONE operation on it, then tears the state down (untimed). It reports
-the median wall clock and median allocation across the trials (cold latency is
-right-skewed, so the median is the headline). The three cold dispatch scenarios are
+the median wall clock and median GC-allocation count across the trials (cold
+latency is right-skewed, so the median is the headline). The three cold dispatch
+scenarios are
 its callers; the continuous-window protocol applies only to the warm/hot throughput
 scenarios.
 
@@ -107,10 +118,12 @@ Compare both throughput and per-emit nanoseconds. Throughput is easier to scan,
 but per-emit nanoseconds make fixed overhead visible. A 10 ns increase is
 material on handlers whose work is only 10-20 ns.
 
-Allocation budgets are interpreted as bytes allocated during the measured
-window. Dispatch scenarios should stay at zero measured bytes after warmup. Any
-non-zero allocation delta on a hot-path dispatch scenario requires an
-explanation, a fix, or an explicit reviewer-approved exception.
+Allocation budgets are interpreted as the COUNT of managed GC allocations during
+the measured batch. Dispatch scenarios should stay at zero measured allocations
+after warmup. Any non-zero allocation count on a hot-path dispatch scenario
+requires an explanation, a fix, or an explicit reviewer-approved exception. A
+count of `Unmeasured` (rendered `n/a`) is neither a pass nor a fail -- it means no
+reliable probe was available on that backend, so the budget cannot be evaluated.
 
 ## Build and runtime configuration
 
@@ -215,7 +228,7 @@ silently desync.
 | Comparison cell   | DxMessaging shape                    | Nearest dispatch cell                         | True twin? | Why they differ                                                                                                                                       |
 | ----------------- | ------------------------------------ | --------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GlobalToOne`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | **Yes**    | Identical shape; the DxMessaging numbers must agree within noise.                                                                                     |
-| `StructNoBox`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | **Yes**    | Same shape as `GlobalToOne`; this row exists to expose other libraries' boxing in the bytes/op column.                                                |
+| `StructNoBox`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | **Yes**    | Same shape as `GlobalToOne`; this row exists to expose other libraries' boxing in the GC-allocations column.                                          |
 | `GlobalToMany`    | 16 tokens, 16 untargeted handlers    | (none)                                        | No         | No dispatch scenario fans untargeted dispatch out to 16 handlers (the dispatch family caps untargeted fan-out at four).                               |
 | `KeyedToOne`      | 16 targets registered, dispatch to 1 | `TargetedFlood_OneListener`                   | No         | Measures lookup selectivity (16 registered, 1 fires); the dispatch cell registers a single target.                                                    |
 | `PriorityOrdered` | 1 token, 4 priorities                | `UntargetedFlood_FourHandlers_FourPriorities` | No         | Comparison uses one MessageHandler with four handler-store entries; the dispatch cell uses four separate tokens. Same fan-out (4), different storage. |
@@ -249,7 +262,7 @@ rows and rewrites the AUTOGENERATED region of
 from each row's platform string (`Standalone`, `PlayMode`, `EditMode`), emits
 one dispatch-throughput table per scope present (in headline order: Standalone,
 then PlayMode, then EditMode), and emits two cross-library comparison matrices
--- one for throughput and one for bytes per operation -- using the first scope
+-- one for throughput and one for GC allocations per batch -- using the first scope
 present in headline order (Standalone in published runs). Each table's backend label (Mono or IL2CPP) is
 derived from the platform string in that scope's rows, so the heading follows the
 data. Scenario rows and library rows are joined on stable machine keys
@@ -430,7 +443,7 @@ posts as a comment on your PR:
 - `Runtime/Core/MessageHandler.cs`
 - `Runtime/Core/Pooling/**`
 
-An unexpected throughput drop or a new non-zero allocation in the rendered
+An unexpected throughput drop or a new non-zero allocation count in the rendered
 tables is a regression to investigate before merging. The numbers track the
 actual measured throughput of the branch under review rather than committed
 state or a manually pasted table.

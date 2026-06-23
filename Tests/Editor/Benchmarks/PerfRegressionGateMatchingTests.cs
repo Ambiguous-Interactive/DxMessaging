@@ -30,7 +30,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 Platform,
                 "baseline",
                 emitsPerSecond: 12_000_000d,
-                allocatedBytesDelta: 0,
+                gcAllocations: 0,
                 wallClockMs: 5000d
             );
             List<BaselineRow> rows = new()
@@ -40,7 +40,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                     Platform,
                     "baseline",
                     emitsPerSecond: 9_000_000d,
-                    allocatedBytesDelta: 0,
+                    gcAllocations: 0,
                     wallClockMs: 5000d
                 ),
                 expected,
@@ -68,7 +68,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 Platform,
                 "0123456789abcdef0123456789abcdef01234567",
                 emitsPerSecond: 12_000_000d,
-                allocatedBytesDelta: 0,
+                gcAllocations: 0,
                 wallClockMs: 5000d
             );
             List<BaselineRow> rows = new() { expected };
@@ -93,7 +93,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 Platform,
                 "0000000000000000000000000000000000000000",
                 emitsPerSecond: 5_000_000d,
-                allocatedBytesDelta: 0,
+                gcAllocations: 0,
                 wallClockMs: 5000d
             );
             BaselineRow expected = BaselineRow.ForTest(
@@ -101,7 +101,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 Platform,
                 TargetCommit,
                 emitsPerSecond: 12_000_000d,
-                allocatedBytesDelta: 0,
+                gcAllocations: 0,
                 wallClockMs: 5000d
             );
             List<BaselineRow> rows = new() { other, expected };
@@ -126,7 +126,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 Platform,
                 RowCommit,
                 emitsPerSecond: 12_000_000d,
-                allocatedBytesDelta: 0,
+                gcAllocations: 0,
                 wallClockMs: 5000d
             );
             List<BaselineRow> rows = new() { expected };
@@ -154,7 +154,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                     Platform,
                     "baseline",
                     emitsPerSecond: 9_000_000d,
-                    allocatedBytesDelta: 0,
+                    gcAllocations: 0,
                     wallClockMs: 5000d
                 ),
             };
@@ -182,7 +182,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                     Platform,
                     "0000000000000000000000000000000000000000",
                     emitsPerSecond: 12_000_000d,
-                    allocatedBytesDelta: 0,
+                    gcAllocations: 0,
                     wallClockMs: 5000d
                 ),
             };

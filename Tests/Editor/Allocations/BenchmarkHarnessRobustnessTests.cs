@@ -711,15 +711,25 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // The "every scenario captures allocation bytes + CSV stays 7 columns" lock. This runs
+        // The "every scenario captures GC allocations + CSV stays 7 columns" lock. This runs
         // the real 5s measurement window per scenario, so it carries the PerfBench category and
-        // stays out of the fast metadata gate above.
+        // stays out of the fast metadata gate above. Because this runs in the Editor (where the
+        // GC.Alloc recorder is always functional), it also doubles as the regression guard for
+        // the dead-allocation-API bug: a non-functional probe would make GcAllocations the
+        // Unmeasured sentinel and trip the IsFunctional assertion.
         [Test, Category("PerfBench")]
         [TestCaseSource(nameof(DispatchScenarioCases))]
-        public void DispatchScenarioRunEmitsSevenColumnCsvWithAllocationBytes(
+        public void DispatchScenarioRunEmitsSevenColumnCsvWithGcAllocations(
             DispatchBenchmarkScenario scenario
         )
         {
+            Assert.IsTrue(
+                AllocationProbe.IsFunctional,
+                "The GC.Alloc allocation probe must be functional in the Editor; a non-functional "
+                    + "probe means the benchmark allocation column would be the Unmeasured sentinel "
+                    + "(the dead GC.GetAllocatedBytesForCurrentThread() bug this metric replaced)."
+            );
+
             DispatchBenchmarkResult result = DispatchThroughputBenchmarks.RunScenario(
                 scenario,
                 logResult: false
@@ -734,12 +744,14 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
             Assert.IsNotEmpty(
                 fields[5],
-                $"Scenario '{scenario}' must populate the allocated-bytes field (index 5). Row: '{csvRow}'."
+                $"Scenario '{scenario}' must populate the gc-allocations field (index 5). Row: '{csvRow}'."
             );
+            // Functional in the Editor, so the count is a real non-negative measurement (never
+            // the Unmeasured sentinel here).
             Assert.GreaterOrEqual(
-                result.AllocatedBytesDelta,
+                result.GcAllocations,
                 0,
-                $"Scenario '{scenario}' must report a non-negative allocated-bytes delta."
+                $"Scenario '{scenario}' must report a non-negative GC allocation count in the Editor."
             );
         }
 

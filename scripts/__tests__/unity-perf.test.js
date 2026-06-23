@@ -39,25 +39,25 @@ const PLATFORM = "Unity 6000.3.16f1 Linux PlayMode Mono";
 const STANDALONE_PLATFORM = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)";
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
-function row(scenario, emitsPerSecond, allocatedBytesDelta = "0", wallClockMs = "10.000") {
+function row(scenario, emitsPerSecond, gcAllocations = "0", wallClockMs = "10.000") {
   return {
     scenario,
     platform: PLATFORM,
     commit: "abc1234",
     runIndex: "0",
     emitsPerSecond,
-    allocatedBytesDelta,
+    gcAllocations,
     wallClockMs
   };
 }
 
-function comparisonRow(emitsPerSecond, allocatedBytesDelta = "0") {
+function comparisonRow(emitsPerSecond, gcAllocations = "0") {
   return {
     platform: STANDALONE_PLATFORM,
     commit: "abc1234",
     runIndex: "-1",
     emitsPerSecond,
-    allocatedBytesDelta,
+    gcAllocations,
     wallClockMs: "5000.000"
   };
 }
@@ -69,7 +69,7 @@ function dispatchRow(scenario, emitsPerSecond) {
     commit: "abc1234",
     runIndex: "-1",
     emitsPerSecond,
-    allocatedBytesDelta: "0",
+    gcAllocations: "0",
     wallClockMs: "5000.000"
   };
 }
@@ -101,16 +101,16 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
     CSV_HEADER,
     `2026-01-01T00:00:00 UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5`,
     `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5`,
-    `{scenario:"TargetedFlood_OneListener",platform:"${PLATFORM}",commit:"abc1234",runIndex:1,emitsPerSec:2500000.5,allocatedBytesDelta:64,wallClockMs:8.25}`,
+    `{scenario:"TargetedFlood_OneListener",platform:"${PLATFORM}",commit:"abc1234",runIndex:1,emitsPerSec:2500000.5,gcAllocations:64,wallClockMs:8.25}`,
     `UnknownScenario,${PLATFORM},abc1234,0,1,0,1`
   ].join("\n");
 
   const rows = extractRows(content);
   assert.deepEqual(
-    rows.map(({ scenario, emitsPerSecond, allocatedBytesDelta }) => [
+    rows.map(({ scenario, emitsPerSecond, gcAllocations }) => [
       scenario,
       emitsPerSecond,
-      allocatedBytesDelta
+      gcAllocations
     ]),
     [
       ["UntargetedFlood_OneHandler", "1000000.000", "0"],
@@ -160,11 +160,36 @@ test("isRegression trips on large throughput drops or allocation growth", () => 
     [row("x", "500000.000"), baseline, true],
     [row("x", "900000.000"), baseline, false],
     [row("x", "1000000.000", "128"), baseline, true],
-    [row("x", "0.000"), row("x", "0.000"), false]
+    [row("x", "0.000"), row("x", "0.000"), false],
+    // Unmeasured allocation sentinel (-1) on either side is never an allocation
+    // regression: it cannot be compared, so it neither trips nor masks the gate.
+    [row("x", "1000000.000", "-1"), row("x", "1000000.000", "0"), false],
+    [row("x", "1000000.000", "5"), row("x", "1000000.000", "-1"), false]
   ];
   for (const [current, base, expected] of cases) {
     assert.equal(isRegression(current, base, 0.33), expected);
   }
+});
+
+test("allocation reporting is honest: real counts render, sentinel renders n/a", () => {
+  const s = "UntargetedFlood_OneHandler";
+  // A real allocation increase shows a signed alloc delta and marks the row moved.
+  const grew = compareRow(s, row(s, "1000000.000", "10"), row(s, "1000000.000", "0"), 0.02);
+  assert.ok(grew.cells[3].includes("+10 allocs") && grew.moved, grew.cells[3]);
+
+  // The Unmeasured sentinel renders "n/a" (never "0"/"-1") and contributes no delta.
+  const na = compareRow(s, row(s, "1000000.000", "-1"), row(s, "1000000.000", "-1"), 0.02);
+  assert.ok(na.cells[1].includes("n/a") && na.cells[2].includes("n/a"), na.cells[1]);
+  assert.ok(!na.cells[3].includes("alloc") && na.moved === false, na.cells[3]);
+
+  // Comparison matrix shows the raw count and "n/a" for the sentinel.
+  const allocations = buildComparisonSections(
+    standaloneRows([
+      ["UnitySendMessage|GlobalToOne", comparisonRow("3000000.000", "110806")],
+      ["MessagePipe|GlobalToOne", comparisonRow("9000000.000", "-1")]
+    ])
+  )[1].join("\n");
+  assert.ok(allocations.includes("110,806") && allocations.includes("n/a"), allocations);
 });
 
 test("computeRegressed and buildDeltaTable only use overlapping scenarios", () => {

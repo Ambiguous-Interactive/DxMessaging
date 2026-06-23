@@ -58,6 +58,55 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
         }
 
+        // 1:1 drift-guard: for each scenario, every zero-dependency bridge that SUPPORTS it
+        // must perform the SAME number of invocations per operation (identical fan-out), so a
+        // scenario column measures an apples-to-apples workload across techs. A bridge that
+        // silently under- or over-fans-out would make its cell measure different work. The
+        // keyed lookup-table size (K) is single-sourced separately via
+        // ComparisonScenarios.KeyedListenerCount in every bridge. (External/UnityAtoms bridges
+        // live in gated assemblies with their own contract suites.)
+        [Test]
+        [TestCaseSource(nameof(ComparisonScenarioCases))]
+        public void SupportingBridgesAgreeOnInvocationsPerOperation(ComparisonScenario scenario)
+        {
+            Dictionary<long, List<string>> byInvocationCount = new();
+            foreach (
+                (
+                    string _,
+                    Func<IMessagingTechBridge> factory
+                ) in ZeroDependencyComparisonRoster.Bridges
+            )
+            {
+                using IMessagingTechBridge bridge = factory();
+                if (!bridge.Supports(scenario))
+                {
+                    continue;
+                }
+
+                long invocations = bridge.InvocationsPerOperation(scenario);
+                if (!byInvocationCount.TryGetValue(invocations, out List<string> techs))
+                {
+                    techs = new List<string>();
+                    byInvocationCount[invocations] = techs;
+                }
+
+                techs.Add(bridge.TechKey);
+            }
+
+            Assert.LessOrEqual(
+                byInvocationCount.Count,
+                1,
+                $"Scenario '{ComparisonScenarios.DisplayName(scenario)}': supporting bridges disagree on "
+                    + "InvocationsPerOperation (fan-out), so the comparison column is not 1:1. Groups: "
+                    + string.Join(
+                        "; ",
+                        byInvocationCount.Select(kvp =>
+                            $"{kvp.Key}=>[{string.Join(",", kvp.Value)}]"
+                        )
+                    )
+            );
+        }
+
         [Test]
         public void ComparisonScenarioDisplayNamesAreUnique()
         {

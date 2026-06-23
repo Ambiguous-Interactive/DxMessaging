@@ -48,7 +48,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private const string BaselineModeEnvVar = "DX_PERF_BASELINE_MODE";
         private const string PackageName = "com.wallstop-studios.dxmessaging";
         private const string BaselineCsvHeader =
-            "scenario,platform,commit,runIndex,emitsPerSecond,allocatedBytesDelta,wallClockMs";
+            "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs";
         private static readonly InstanceId Target = new(31001);
         private static readonly InstanceId Source = new(31002);
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
@@ -160,7 +160,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 GetScenarioName(scenario),
                 runIndex: -1,
                 measurement.OperationsPerSecond,
-                measurement.AllocatedBytesDelta,
+                measurement.GcAllocations,
                 measurement.ElapsedSeconds * 1000d
             );
         }
@@ -168,7 +168,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static DispatchBenchmarkResult MeasureRegistrationFlood()
         {
             Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
-            long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            // Count managed allocations via the reliable GC.Alloc recorder (the
+            // recorder spans the timed region; its overhead is negligible against the
+            // JIT-dominated flood). NEVER GC.GetAllocatedBytesForCurrentThread(): it
+            // returns 0 for every allocation under Unity's Boehm GC (see AllocationProbe).
+            AllocationProbe.Begin();
             long startTimestamp = Stopwatch.GetTimestamp();
             using (BenchmarkRegistrationScope scope = new())
             {
@@ -178,12 +182,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
             long endTimestamp = Stopwatch.GetTimestamp();
-            long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            long gcAllocations = AllocationProbe.End();
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus),
                 runIndex: -1,
-                afterAllocatedBytes - beforeAllocatedBytes,
+                gcAllocations,
                 TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
             );
         }
@@ -212,7 +216,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
-            long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            AllocationProbe.Begin();
             long startTimestamp = Stopwatch.GetTimestamp();
             using (BenchmarkRegistrationScope scope = new())
             {
@@ -222,12 +226,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
             long endTimestamp = Stopwatch.GetTimestamp();
-            long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            long gcAllocations = AllocationProbe.End();
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit),
                 runIndex: -1,
-                afterAllocatedBytes - beforeAllocatedBytes,
+                gcAllocations,
                 TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
             );
         }
@@ -252,16 +256,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     builders[index](scope.PrimaryToken);
                 }
 
-                long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                AllocationProbe.Begin();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 scope.PrimaryToken.UnregisterAll();
                 long endTimestamp = Stopwatch.GetTimestamp();
-                long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                long gcAllocations = AllocationProbe.End();
 
                 return DispatchBenchmarkResult.ForRegistrationScenario(
                     GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold),
                     runIndex: -1,
-                    afterAllocatedBytes - beforeAllocatedBytes,
+                    gcAllocations,
                     TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
                 );
             }
@@ -299,16 +303,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     builders[index](scope.PrimaryToken);
                 }
 
-                long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                AllocationProbe.Begin();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 scope.PrimaryToken.UnregisterAll();
                 long endTimestamp = Stopwatch.GetTimestamp();
-                long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                long gcAllocations = AllocationProbe.End();
 
                 return DispatchBenchmarkResult.ForRegistrationScenario(
                     GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit),
                     runIndex: -1,
-                    afterAllocatedBytes - beforeAllocatedBytes,
+                    gcAllocations,
                     TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
                 );
             }
@@ -352,7 +356,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return DispatchBenchmarkResult.ForColdLatencyScenario(
                 GetScenarioName(scenario),
                 runIndex: -1,
-                measurement.MedianAllocatedBytesDelta,
+                measurement.MedianGcAllocations,
                 measurement.MedianWallClockMs
             );
         }
@@ -1154,7 +1158,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             string commit,
             int runIndex,
             double emitsPerSecond,
-            long allocatedBytesDelta,
+            long gcAllocations,
             double wallClockMs,
             bool isRegistrationScenario
         )
@@ -1164,7 +1168,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Commit = commit;
             RunIndex = runIndex;
             EmitsPerSecond = emitsPerSecond;
-            AllocatedBytesDelta = allocatedBytesDelta;
+            GcAllocations = gcAllocations;
             WallClockMs = wallClockMs;
             IsRegistrationScenario = isRegistrationScenario;
         }
@@ -1179,7 +1183,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public double EmitsPerSecond { get; }
 
-        public long AllocatedBytesDelta { get; }
+        /// <summary>
+        /// Managed allocation CALL count for this row (over one steady-state batch, or
+        /// the median across cold trials), or <see cref="AllocationProbe.Unmeasured"/>
+        /// (<c>-1</c>) when no reliable allocation probe exists on this backend. A
+        /// reported <c>0</c> is a measured zero, never a fabricated one. Renamed from
+        /// the former <c>AllocatedBytesDelta</c>, whose
+        /// <c>GC.GetAllocatedBytesForCurrentThread()</c> source returns <c>0</c> for
+        /// every allocation under Unity's Boehm GC (see <see cref="AllocationProbe"/>).
+        /// </summary>
+        public long GcAllocations { get; }
 
         public double WallClockMs { get; }
 
@@ -1201,7 +1214,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             string scenario,
             int runIndex,
             double emitsPerSecond,
-            long allocatedBytesDelta,
+            long gcAllocations,
             double wallClockMs
         )
         {
@@ -1211,7 +1224,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 ResolveCommit(),
                 runIndex,
                 emitsPerSecond,
-                allocatedBytesDelta,
+                gcAllocations,
                 wallClockMs,
                 isRegistrationScenario: false
             );
@@ -1220,7 +1233,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public static DispatchBenchmarkResult ForRegistrationScenario(
             string scenario,
             int runIndex,
-            long allocatedBytesDelta,
+            long gcAllocations,
             double wallClockMs
         )
         {
@@ -1230,7 +1243,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 ResolveCommit(),
                 runIndex,
                 emitsPerSecond: 0,
-                allocatedBytesDelta,
+                gcAllocations,
                 wallClockMs,
                 isRegistrationScenario: true
             );
@@ -1248,7 +1261,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public static DispatchBenchmarkResult ForColdLatencyScenario(
             string scenario,
             int runIndex,
-            long medianAllocatedBytes,
+            long medianGcAllocations,
             double medianWallClockMs
         )
         {
@@ -1258,7 +1271,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 ResolveCommit(),
                 runIndex,
                 emitsPerSecond: 0,
-                medianAllocatedBytes,
+                medianGcAllocations,
                 medianWallClockMs,
                 isRegistrationScenario: false
             );
@@ -1273,7 +1286,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 EscapeCsv(Commit),
                 RunIndex.ToString(CultureInfo.InvariantCulture),
                 EmitsPerSecond.ToString("F3", CultureInfo.InvariantCulture),
-                AllocatedBytesDelta.ToString(CultureInfo.InvariantCulture),
+                GcAllocations.ToString(CultureInfo.InvariantCulture),
                 WallClockMs.ToString("F3", CultureInfo.InvariantCulture)
             );
         }
@@ -1286,7 +1299,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 + $"commit:\"{Commit}\", "
                 + $"runIndex:{RunIndex.ToString(CultureInfo.InvariantCulture)}, "
                 + $"emitsPerSec:{EmitsPerSecond.ToString("F3", CultureInfo.InvariantCulture)}, "
-                + $"allocatedBytesDelta:{AllocatedBytesDelta.ToString(CultureInfo.InvariantCulture)}, "
+                + $"gcAllocations:{GcAllocations.ToString(CultureInfo.InvariantCulture)}, "
                 + $"wallClockMs:{WallClockMs.ToString("F3", CultureInfo.InvariantCulture)}"
                 + "}";
         }

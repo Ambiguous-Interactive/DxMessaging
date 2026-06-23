@@ -178,9 +178,19 @@ function formatWallClock(wallClockMs) {
   return `${Number.parseFloat(wallClockMs).toFixed(3)} ms`;
 }
 
-function formatBytes(bytes) {
-  const value = Number.parseInt(bytes, 10);
-  return value === 0 ? "0 B" : `${value.toLocaleString("en-US")} B`;
+// Allocation is a COUNT of GC allocations over one batch (see AllocationProbe).
+// -1 is the "Unmeasured" sentinel (no reliable probe on that backend): "n/a",
+// never "0". A delta/regression is only computed when BOTH sides are real (>= 0).
+function formatAllocations(gcAllocations) {
+  const count = Number.parseInt(gcAllocations, 10);
+  if (!Number.isFinite(count) || count < 0) {
+    return "n/a";
+  }
+  return count.toLocaleString("en-US");
+}
+
+function allocationsComparable(currentAllocs, baselineAllocs) {
+  return currentAllocs >= 0 && baselineAllocs >= 0;
 }
 
 function formatPct(fraction) {
@@ -191,10 +201,10 @@ function formatPct(fraction) {
   return Number.parseFloat(rounded) === 0 ? "0.00%" : `${fraction > 0 ? "+" : ""}${rounded}%`;
 }
 
-function formatByteDelta(delta) {
+function formatAllocDelta(delta) {
   return delta === 0
-    ? "0 B"
-    : `${delta > 0 ? "+" : "-"}${Math.abs(delta).toLocaleString("en-US")} B`;
+    ? "0"
+    : `${delta > 0 ? "+" : "-"}${Math.abs(delta).toLocaleString("en-US")} allocs`;
 }
 
 function relativeChange(current, baseline) {
@@ -203,11 +213,16 @@ function relativeChange(current, baseline) {
 
 function compareRow(scenario, current, baseline, tolerance) {
   const label = scenarioLabel(scenario);
-  const currentBytes = Number.parseInt(current.allocatedBytesDelta, 10);
-  const baselineBytes = Number.parseInt(baseline.allocatedBytesDelta, 10);
-  const byteDelta = currentBytes - baselineBytes;
-  const byteMoved =
-    baselineBytes === 0 ? byteDelta !== 0 : Math.abs(byteDelta / baselineBytes) > tolerance;
+  const currentAllocs = Number.parseInt(current.gcAllocations, 10);
+  const baselineAllocs = Number.parseInt(baseline.gcAllocations, 10);
+  // Only meaningful when both sides were measured; otherwise cells render "n/a".
+  const allocComparable = allocationsComparable(currentAllocs, baselineAllocs);
+  const allocDelta = allocComparable ? currentAllocs - baselineAllocs : 0;
+  const allocMoved = allocComparable
+    ? baselineAllocs === 0
+      ? allocDelta !== 0
+      : Math.abs(allocDelta / baselineAllocs) > tolerance
+    : false;
 
   let baselineCell;
   let currentCell;
@@ -219,26 +234,26 @@ function compareRow(scenario, current, baseline, tolerance) {
     const currentMs = Number.parseFloat(current.wallClockMs);
     primaryPct = relativeChange(currentMs, baselineMs);
     primaryMoved = Math.abs(primaryPct) > tolerance;
-    baselineCell = `${formatWallClock(baseline.wallClockMs)}, ${formatBytes(baseline.allocatedBytesDelta)}`;
-    currentCell = `${formatWallClock(current.wallClockMs)}, ${formatBytes(current.allocatedBytesDelta)}`;
+    baselineCell = `${formatWallClock(baseline.wallClockMs)}, ${formatAllocations(baseline.gcAllocations)}`;
+    currentCell = `${formatWallClock(current.wallClockMs)}, ${formatAllocations(current.gcAllocations)}`;
   } else {
     const baselineEmits = Number.parseFloat(baseline.emitsPerSecond);
     const currentEmits = Number.parseFloat(current.emitsPerSecond);
     primaryPct = relativeChange(currentEmits, baselineEmits);
     primaryMoved = Math.abs(primaryPct) > tolerance;
-    baselineCell = `${formatThroughput(baseline.emitsPerSecond)}, ${formatBytes(baseline.allocatedBytesDelta)}`;
-    currentCell = `${formatThroughput(current.emitsPerSecond)}, ${formatBytes(current.allocatedBytesDelta)}`;
+    baselineCell = `${formatThroughput(baseline.emitsPerSecond)}, ${formatAllocations(baseline.gcAllocations)}`;
+    currentCell = `${formatThroughput(current.emitsPerSecond)}, ${formatAllocations(current.gcAllocations)}`;
   }
 
   const deltaParts = [formatPct(primaryPct)];
-  if (byteDelta !== 0) {
-    deltaParts.push(formatByteDelta(byteDelta));
+  if (allocComparable && allocDelta !== 0) {
+    deltaParts.push(formatAllocDelta(allocDelta));
   }
   const deltaCell = deltaParts.join(", ");
 
   return {
     cells: [label, baselineCell, currentCell, deltaCell],
-    moved: primaryMoved || byteMoved
+    moved: primaryMoved || allocMoved
   };
 }
 
@@ -280,10 +295,11 @@ function isRegression(current, baseline, regressionThreshold) {
     return true;
   }
 
-  return (
-    Number.parseInt(current.allocatedBytesDelta, 10) >
-    Number.parseInt(baseline.allocatedBytesDelta, 10)
-  );
+  // Allocation regression: more allocations than baseline. Only gate when both
+  // sides are real counts; an Unmeasured sentinel (-1) is never comparable.
+  const currentAllocs = Number.parseInt(current.gcAllocations, 10);
+  const baselineAllocs = Number.parseInt(baseline.gcAllocations, 10);
+  return allocationsComparable(currentAllocs, baselineAllocs) && currentAllocs > baselineAllocs;
 }
 
 function computeRegressed(currentByScenario, baselineByScenario, regressionThreshold) {

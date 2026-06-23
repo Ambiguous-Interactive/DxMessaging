@@ -1,4 +1,4 @@
-scenario,platform,commit,runIndex,emitsPerSecond,allocatedBytesDelta,wallClockMs
+scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs
 UntargetedFlood_OneHandler,Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1),e678b805a928734467f0c2567f03d31493fc7ff2,-1,38394429.668,0,5000.205
 UntargetedFlood_FourHandlers_OnePriority,Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1),e678b805a928734467f0c2567f03d31493fc7ff2,-1,23199909.984,0,5000.019
 UntargetedFlood_FourHandlers_FourPriorities,Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1),e678b805a928734467f0c2567f03d31493fc7ff2,-1,22877070.276,0,5000.203

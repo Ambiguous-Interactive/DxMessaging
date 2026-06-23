@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Benchmark and library-comparison allocation reporting is now honest. The harness
+  measured allocations with `GC.GetAllocatedBytesForCurrentThread()`, which returns
+  `0` for every allocation under Unity's Boehm GC (verified: a forced 1 MB array
+  allocation read back a `0`-byte delta), so the published "allocated bytes" column
+  was a vacuous `0` for every technology -- hiding real per-operation allocations
+  (Unity `SendMessage`, for example, allocates ~11 times per call via reflection).
+  The metric is now a COUNT of managed allocations from the reliable `GC.Alloc`
+  profiler recorder (new `AllocationProbe`), renamed `gcAllocations`, and reports an
+  `Unmeasured` sentinel (rendered `n/a`) -- never a fabricated `0` -- when no probe
+  is available on a backend. The perf-doc/PR-comment renderers, the regression gate,
+  and the methodology docs were updated accordingly; the doc's allocation column
+  reads `n/a` until the next CI run repopulates real counts.
 - Source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`,
   `[DxBroadcastMessage]`, `[DxAutoConstructor]`) now work in projects that do not use
   assembly definitions. The generator and analyzer DLLs previously shipped under the

@@ -260,24 +260,24 @@ function formatWallClock(wallClockMs) {
   return `${Number.parseFloat(wallClockMs).toFixed(3)} ms`;
 }
 
-function formatAllocations(allocatedBytesDelta) {
-  const bytes = Number.parseInt(allocatedBytesDelta, 10);
-  return bytes === 0 ? "0 B" : `${bytes.toLocaleString("en-US")} B`;
+// Allocation is a COUNT of managed GC allocations over one measurement batch
+// (AllocationProbe via the GC.Alloc recorder; smaller is better). -1 is the
+// "Unmeasured" sentinel (no reliable probe on that backend) and renders "n/a",
+// never "0"; a measured 0 is a real zero-alloc result. (Replaces the byte counter
+// whose GC.GetAllocatedBytesForCurrentThread() source returns 0 for EVERY
+// allocation under Unity's Boehm GC -- the old "Allocated bytes" column was vacuous.)
+function formatAllocations(gcAllocations) {
+  const count = Number.parseInt(gcAllocations, 10);
+  if (!Number.isFinite(count) || count < 0) {
+    return "n/a";
+  }
+  return count.toLocaleString("en-US");
 }
 
-// A row's measured op count = emitsPerSecond * wallClockMs / 1000. bytes-per-op
-// = allocatedBytesDelta / opCount, guarding div-by-zero -> 0. Returned as an
-// integer with thousands separators; a genuinely-zero allocation renders "0".
-function formatBytesPerOp(row) {
-  const emitsPerSecond = Number.parseFloat(row.emitsPerSecond);
-  const wallClockMs = Number.parseFloat(row.wallClockMs);
-  const allocatedBytes = Number.parseInt(row.allocatedBytesDelta, 10);
-  const opCount = (emitsPerSecond * wallClockMs) / 1000;
-  if (!Number.isFinite(opCount) || opCount <= 0) {
-    return "0";
-  }
-  const bytesPerOp = Math.round(allocatedBytes / opCount);
-  return bytesPerOp.toLocaleString("en-US");
+// Comparison matrices show the same raw count (every tech runs the same BatchSize,
+// so the counts are directly comparable; no per-op division).
+function formatRowAllocations(row) {
+  return formatAllocations(row.gcAllocations);
 }
 
 // Read + parse the collect-machine-specs.ps1 JSON and format the one-line
@@ -366,7 +366,11 @@ function alignTable(rows) {
 // SCENARIO_ORDER; the Scenario cell shows the human DisplayName (NOT the raw
 // key); registration scenarios show wall-clock, others throughput.
 function buildDispatchTable(byScenario) {
-  const header = ["Scenario", "Throughput / Wall clock", "Allocated bytes"];
+  // "GC allocs" (no fixed denominator): throughput rows count over a 10k-op batch,
+  // cold rows over one op per trial, registration floods over one flood -- each row's
+  // count is over its own measurement batch, so a single "/ 10k ops" denominator
+  // would overstate the cold/flood rows.
+  const header = ["Scenario", "Throughput / Wall clock", "GC allocs"];
   const dataRows = [];
 
   for (const scenario of SCENARIO_ORDER) {
@@ -378,7 +382,7 @@ function buildDispatchTable(byScenario) {
       ? formatWallClock(row.wallClockMs)
       : formatThroughput(row.emitsPerSecond);
     const label = DISPATCH_DISPLAY_NAMES[scenario] || scenario;
-    dataRows.push([label, primary, formatAllocations(row.allocatedBytesDelta)]);
+    dataRows.push([label, primary, formatAllocations(row.gcAllocations)]);
   }
 
   return dataRows.length === 0 ? null : alignTable([header, ...dataRows]);
@@ -457,7 +461,7 @@ function buildComparisonSections(comparisonByScope) {
   // The fastest tech per scenario COLUMN is bolded in the throughput matrix so
   // the per-category winner is visible at a glance. Ties (same emits/sec) are
   // all bolded; N/A capability gaps never win; the allocations matrix is
-  // never bolded (bytes/op is a property, not a race).
+  // never bolded (the GC-allocation count is a property, not a race).
   // Winners are computed at DISPLAY precision (the formatted cell text): two
   // techs that render identically are visually tied, so both are bolded even
   // when their raw floats differ in digits the reader cannot see. This also
@@ -495,7 +499,7 @@ function buildComparisonSections(comparisonByScope) {
       } else {
         throughputCells.push("N/A");
       }
-      allocationCells.push(row ? formatBytesPerOp(row) : "N/A");
+      allocationCells.push(row ? formatRowAllocations(row) : "N/A");
     }
     throughputRows.push(throughputCells);
     allocationRows.push(allocationCells);
@@ -510,7 +514,7 @@ function buildComparisonSections(comparisonByScope) {
       alignTable(throughputRows)
     ],
     [
-      `### Library comparison - allocations, bytes per op (${scopeLabel(scope, scopePlatform)})`,
+      `### Library comparison - GC allocations per 10k ops (${scopeLabel(scope, scopePlatform)})`,
       "",
       alignTable(allocationRows)
     ]
@@ -691,15 +695,17 @@ function tableRowCells(line) {
   if (!trimmed.startsWith("|")) {
     return null;
   }
-  return trimmed
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    // Winner-bold markers (**cell**) are presentation, not data: normalize them
-    // away so a within-tolerance jitter that merely moves the bold between two
-    // near-tied techs does not defeat the idempotence comparison and churn the
-    // committed doc. Numbers inside the markers still tolerance-compare.
-    .map((cell) => cell.trim().replace(/^\*\*(.*)\*\*$/, "$1"));
+  return (
+    trimmed
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      // Winner-bold markers (**cell**) are presentation, not data: normalize them
+      // away so a within-tolerance jitter that merely moves the bold between two
+      // near-tied techs does not defeat the idempotence comparison and churn the
+      // committed doc. Numbers inside the markers still tolerance-compare.
+      .map((cell) => cell.trim().replace(/^\*\*(.*)\*\*$/, "$1"))
+  );
 }
 
 function isSeparatorCells(cells) {

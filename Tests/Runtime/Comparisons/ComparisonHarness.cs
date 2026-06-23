@@ -84,7 +84,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 RowScenarioId(bridge.TechKey, scenario),
                 runIndex: -1,
                 measurement.OperationsPerSecond,
-                measurement.AllocatedBytesDelta,
+                measurement.GcAllocations,
                 measurement.ElapsedSeconds * 1000d
             );
             Debug.Log(result.ToStructuredLog());

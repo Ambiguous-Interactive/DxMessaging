@@ -26,7 +26,13 @@ const path = require("path");
 // entry in the fetch-force-refspec drift-guard; the gate keeps the bug-report
 // dropdown in lockstep with released versions without dropping shallow-clone
 // history. The generator header was trimmed first to keep the increase minimal.
-const TOTAL_BUDGET = 12360;
+// 064: 12390 for the allocation-honesty fix -- the perf pipeline reports a real
+// GC-allocation COUNT (AllocationProbe / GC.Alloc recorder) with an "Unmeasured"
+// sentinel instead of the vacuous 0 the dead GC.GetAllocatedBytesForCurrentThread()
+// byte counter produced under Unity's Boehm GC. Covers the renderer sentinel
+// handling + the honesty regression test (sentinel never renders as 0/regression).
+// Comments across the perf-render scripts were trimmed first to keep this minimal.
+const TOTAL_BUDGET = 12390;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

@@ -5,8 +5,7 @@ const path = require("path");
 
 const { COMPARISON_SCENARIO_IDS, SCENARIOS, isComparisonScenario } = require("./perf-scenarios.js");
 
-const CSV_HEADER =
-  "scenario,platform,commit,runIndex,emitsPerSecond,allocatedBytesDelta,wallClockMs";
+const CSV_HEADER = "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs";
 
 // Cross-library comparison rows share the exact CSV/log shape of the dispatch
 // rows but carry a synthetic scenario id of the form
@@ -136,7 +135,7 @@ function parseCsvRowFromLine(line) {
     commit: fields[2],
     runIndex: fields[3],
     emitsPerSecond: fields[4],
-    allocatedBytesDelta: fields[5],
+    gcAllocations: fields[5],
     wallClockMs: fields[6]
   });
 }
@@ -153,7 +152,7 @@ function parseStructuredLogFromLine(line) {
     commit: matchStructuredString(trimmed, "commit"),
     runIndex: matchStructuredNumber(trimmed, "runIndex"),
     emitsPerSecond: matchStructuredNumber(trimmed, "emitsPerSec"),
-    allocatedBytesDelta: matchStructuredNumber(trimmed, "allocatedBytesDelta"),
+    gcAllocations: matchStructuredNumber(trimmed, "gcAllocations"),
     wallClockMs: matchStructuredNumber(trimmed, "wallClockMs")
   };
 
@@ -272,7 +271,7 @@ function normalizeRow(row) {
     commit: requireText(row.commit, "commit"),
     runIndex: normalizeInteger(row.runIndex, "runIndex"),
     emitsPerSecond: normalizeDecimal(row.emitsPerSecond, "emitsPerSecond"),
-    allocatedBytesDelta: normalizeInteger(row.allocatedBytesDelta, "allocatedBytesDelta"),
+    gcAllocations: normalizeInteger(row.gcAllocations, "gcAllocations"),
     wallClockMs: normalizeDecimal(row.wallClockMs, "wallClockMs")
   };
 }
@@ -313,7 +312,7 @@ function toCsvRow(row) {
     escapeCsv(row.commit),
     row.runIndex,
     row.emitsPerSecond,
-    row.allocatedBytesDelta,
+    row.gcAllocations,
     row.wallClockMs
   ].join(",");
 }
