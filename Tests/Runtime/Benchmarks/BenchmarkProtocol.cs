@@ -68,8 +68,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             // Allocation is counted over a SEPARATE warmed batch (the path is already
             // warm from the throughput window) so the recorder overhead is excluded
-            // from the timing above. The count is per the operations in one batch.
-            long gcAllocations = AllocationProbe.Measure(() => emitBatch());
+            // from the timing above. The count is per the operations in one batch. That
+            // batch ALSO drives emitBatch once more, so its operation count is captured
+            // and reported as AllocationProbeOperations: a caller that reconciles an
+            // observed side-effect counter (e.g. a fan-out ProgressMarker) MUST add these
+            // ops back -- they really happened -- while throughput above stays
+            // timed-window-only. See ComparisonHarness for the canonical reconciliation.
+            long allocationProbeOperations = 0;
+            long gcAllocations = AllocationProbe.Measure(() =>
+            {
+                allocationProbeOperations += emitBatch();
+            });
 
             double elapsedSeconds = (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
             double operationsPerSecond = totalOperations / Math.Max(elapsedSeconds, double.Epsilon);
@@ -77,7 +86,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 totalOperations,
                 elapsedSeconds,
                 operationsPerSecond,
-                gcAllocations
+                gcAllocations,
+                allocationProbeOperations
             );
         }
 
@@ -244,15 +254,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long totalOperations,
             double elapsedSeconds,
             double operationsPerSecond,
-            long gcAllocations
+            long gcAllocations,
+            long allocationProbeOperations
         )
         {
             TotalOperations = totalOperations;
             ElapsedSeconds = elapsedSeconds;
             OperationsPerSecond = operationsPerSecond;
             GcAllocations = gcAllocations;
+            AllocationProbeOperations = allocationProbeOperations;
         }
 
+        /// <summary>
+        /// Operations performed inside the TIMED throughput window only. This is the
+        /// numerator of <see cref="OperationsPerSecond"/> and must never include the
+        /// untimed allocation-probe batch. To reconcile against a side-effect counter,
+        /// use <see cref="TotalEmittedOperations"/> instead.
+        /// </summary>
         public long TotalOperations { get; }
 
         public double ElapsedSeconds { get; }
@@ -266,6 +284,24 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// means the recorder observed zero allocations.
         /// </summary>
         public long GcAllocations { get; }
+
+        /// <summary>
+        /// Operations performed by the post-window allocation-probe batch (see
+        /// <see cref="BenchmarkProtocol.Measure"/>). These are REAL emits the protocol
+        /// drove, but they are EXCLUDED from <see cref="TotalOperations"/> and throughput
+        /// because the probe batch is untimed. A caller that asserts an exact observed
+        /// invocation count MUST add <c>InvocationsPerOperation * AllocationProbeOperations</c>
+        /// to its expected total, or it will under-count by exactly one batch.
+        /// </summary>
+        public long AllocationProbeOperations { get; }
+
+        /// <summary>
+        /// Total operations the protocol actually drove this run: the timed window plus
+        /// the untimed allocation-probe batch. Use this (never <see cref="TotalOperations"/>)
+        /// when reconciling against a side-effect counter such as a fan-out / ProgressMarker
+        /// total.
+        /// </summary>
+        public long TotalEmittedOperations => TotalOperations + AllocationProbeOperations;
     }
 
     /// <summary>

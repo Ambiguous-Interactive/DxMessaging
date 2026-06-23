@@ -2,7 +2,7 @@
 title: "Benchmark Methodology: Total Over One Window"
 id: "benchmark-methodology-total-over-window"
 category: "performance"
-version: "1.4.0"
+version: "1.5.0"
 created: "2026-06-07"
 updated: "2026-06-23"
 
@@ -143,11 +143,14 @@ long gcAllocations = measurement.GcAllocations; // -1 == AllocationProbe.Unmeasu
 ```
 
 The returned `BenchmarkMeasurement` carries `TotalOperations`,
-`ElapsedSeconds`, `OperationsPerSecond`, and `GcAllocations`. Throughput
-is `TotalOperations / ElapsedSeconds`; the renderer and the regression gate
-read these fields directly. `GcAllocations` is the count of managed allocations
-over one batch, or `AllocationProbe.Unmeasured` (`-1`, rendered `n/a`) when no
-reliable probe is available on the backend -- never a fabricated `0`.
+`ElapsedSeconds`, `OperationsPerSecond`, `GcAllocations`,
+`AllocationProbeOperations`, and the derived
+`TotalEmittedOperations`. Throughput is `TotalOperations / ElapsedSeconds`; the
+renderer and the regression gate read these fields directly. `GcAllocations` is
+the count of managed allocations over one batch, or `AllocationProbe.Unmeasured`
+(`-1`, rendered `n/a`) when no reliable probe is available on the backend --
+never a fabricated `0`. `AllocationProbeOperations` is the operation count of the
+untimed allocation-probe batch (see the invariant below).
 
 ## The Window Contract
 
@@ -181,6 +184,42 @@ per-scenario function is the only place that count diverges.
 Registration scenarios are the one documented exception to the throughput
 report shape: they report wall-clock milliseconds for one-time setup cost
 instead of steady-state emits per second.
+
+## Invariant: Reconcile Side-Effect Counters Against TotalEmittedOperations
+
+`Measure` drives `emitBatch` MORE times than the timed window: once per timed
+iteration AND one extra UNTIMED batch under `AllocationProbe` (step 4 above).
+Both kinds of batch produce real side effects -- handler invocations, churn
+cycles, `ProgressMarker` increments. So the measurement reports two distinct
+totals:
+
+- `TotalOperations` -- the TIMED window only. It is the numerator of
+  `OperationsPerSecond`; throughput must never include the untimed probe batch.
+- `TotalEmittedOperations` (= `TotalOperations + AllocationProbeOperations`) --
+  every operation the protocol actually drove this run, timed window plus the
+  post-window probe batch.
+
+Any assertion that reconciles an OBSERVED side-effect counter against an EXPECTED
+count MUST use `TotalEmittedOperations`, never `TotalOperations`. The comparison
+harness's exact fan-out check is the canonical example:
+
+```csharp
+long expected =
+    bridge.InvocationsPerOperation(scenario)
+    * (warmupEmits + measurement.TotalEmittedOperations);
+Assert.AreEqual(expected, bridge.ProgressMarker, /* enriched diagnostic */);
+```
+
+Counting only the timed window under-counts by exactly one `BatchSize` per
+`InvocationsPerOperation`, so the check fails for every case -- this was a real
+regression (44 comparison cases failed with
+`observed - expected == InvocationsPerOperation * BatchSize`) introduced when the
+allocation probe began running its own untimed `emitBatch`. The fix is to count
+the probe batch, NOT to relax the assertion: it is an EXACT correctness check
+that catches a library dropping, duplicating, or deduping a message, and a
+one-`BatchSize` tolerance would hide up to 10,000 lost or doubled deliveries. Fix
+the accounting; keep the equality exact. `DispatchThroughputBenchmarks` applies
+the same reconciliation to its handler-invocation count.
 
 ## Cold Counterpart: MeasureColdLatency
 
@@ -238,6 +277,9 @@ zero it did not observe.
   the `GC.Alloc` recorder (`AllocationProbe`) instead.
 - "A `0` and an `n/a` are the same." No -- `0` is a measured zero-allocation
   result; `n/a` (`AllocationProbe.Unmeasured`) means no probe was available.
+- "`TotalOperations` is the number of emits that happened." No -- the untimed
+  allocation-probe batch also emits. Reconcile fan-out / side-effect counters
+  against `TotalEmittedOperations`; reserve `TotalOperations` for throughput.
 
 ## See Also
 

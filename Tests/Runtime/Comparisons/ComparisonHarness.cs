@@ -70,14 +70,33 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     return BenchmarkProtocol.BatchSize;
                 }
             );
+            // Reconcile against TotalEmittedOperations (timed window + the untimed
+            // allocation-probe batch), NOT TotalOperations: BenchmarkProtocol.Measure drives
+            // one extra emitBatch under AllocationProbe after the window, which advances
+            // ProgressMarker too. Counting only the timed window under-counts by exactly one
+            // BatchSize and the exact-equality fan-out check fails for every case. This stays
+            // an EXACT correctness check (no tolerance): it must still catch a library that
+            // drops, duplicates, or dedups any message.
+            long invocationsPerOperation = bridge.InvocationsPerOperation(scenario);
             long expectedInvocations =
-                bridge.InvocationsPerOperation(scenario)
-                * (warmupEmits + measurement.TotalOperations);
+                invocationsPerOperation * (warmupEmits + measurement.TotalEmittedOperations);
+            long observedInvocations = bridge.ProgressMarker;
+            long deltaInvocations = observedInvocations - expectedInvocations;
+            long deltaOperations =
+                invocationsPerOperation > 0 ? deltaInvocations / invocationsPerOperation : 0;
             Assert.AreEqual(
                 expectedInvocations,
-                bridge.ProgressMarker,
+                observedInvocations,
                 $"{bridge.TechName} '{ComparisonScenarios.DisplayName(scenario)}' fan-out mismatch: "
-                    + $"expected {expectedInvocations} invocations, observed {bridge.ProgressMarker}."
+                    + $"expected {expectedInvocations} invocations, observed {observedInvocations} "
+                    + $"(delta {deltaInvocations} = {deltaOperations} ops). Breakdown: "
+                    + $"invocationsPerOperation={invocationsPerOperation}, warmupEmits={warmupEmits}, "
+                    + $"timedOps={measurement.TotalOperations}, allocationProbeOps={measurement.AllocationProbeOperations}, "
+                    + $"totalEmittedOps={measurement.TotalEmittedOperations} (= warmup + timed + probe). "
+                    + $"A delta of exactly +{BenchmarkProtocol.BatchSize} ops means the post-window "
+                    + "allocation-probe batch is not being counted in the expected total; any other "
+                    + "delta means the library dropped, duplicated, or deduped a message (a real "
+                    + "fan-out/correctness defect, NOT a harness accounting bug)."
             );
 
             DispatchBenchmarkResult result = DispatchBenchmarkResult.ForEmitScenario(

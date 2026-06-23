@@ -429,6 +429,57 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        // REGRESSION GUARD (fan-out accounting). BenchmarkProtocol.Measure drives ONE extra
+        // emitBatch under AllocationProbe AFTER the timed window. Those ops are real -- they advance
+        // any side-effect counter (e.g. a fan-out ProgressMarker) -- but are excluded from
+        // TotalOperations/throughput because the batch is untimed. They MUST be reported as
+        // AllocationProbeOperations so callers that assert an exact invocation total
+        // (ComparisonHarness) can reconcile via TotalEmittedOperations; pre-fix they were dropped,
+        // undercounting every comparison fan-out check by exactly one BatchSize. Runs the real 5s
+        // window, so it is PerfBench (matching this file's other measurement-window tests).
+        [Test, Category("PerfBench")]
+        public void MeasureCountsAllocationProbeBatchOperationsExactlyOneBatch()
+        {
+            long observedEmits = 0;
+            BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
+                warmup: null,
+                emitBatch: () =>
+                {
+                    for (int i = 0; i < BenchmarkProtocol.BatchSize; i++)
+                    {
+                        observedEmits++;
+                    }
+
+                    return BenchmarkProtocol.BatchSize;
+                }
+            );
+
+            Assert.AreEqual(
+                BenchmarkProtocol.BatchSize,
+                measurement.AllocationProbeOperations,
+                "Measure must run exactly one allocation-probe batch (BatchSize ops) after the timed "
+                    + "window and report its operation count. A 0 here means the post-window probe "
+                    + "batch's ops are being dropped (the fan-out-undercount regression)."
+            );
+            Assert.AreEqual(
+                measurement.TotalOperations + measurement.AllocationProbeOperations,
+                measurement.TotalEmittedOperations,
+                "TotalEmittedOperations must equal timed ops plus the probe batch ops."
+            );
+            Assert.AreEqual(
+                measurement.TotalEmittedOperations,
+                observedEmits,
+                $"Every emitBatch the protocol drives must be accounted for: observed {observedEmits} "
+                    + $"actual emits but TotalEmittedOperations reported {measurement.TotalEmittedOperations} "
+                    + $"(timed {measurement.TotalOperations} + probe {measurement.AllocationProbeOperations})."
+            );
+            Assert.Greater(
+                measurement.TotalOperations,
+                0,
+                "The timed window must run at least one batch."
+            );
+        }
+
         [Test]
         public void WarmupEmitsSkipsFloodAndKeepsDefaultForEmitScenarios()
         {

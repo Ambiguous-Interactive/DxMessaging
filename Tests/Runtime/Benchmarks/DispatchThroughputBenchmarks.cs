@@ -151,10 +151,26 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             );
 
-            Assert.Greater(
+            int perEmit = ExpectedHandlerInvocationsPerEmit(scenario);
+            int warmupEmits = DispatchBenchmarkScenarios.WarmupEmits(scenario);
+            // Defense-in-depth fan-out check (mirrors ComparisonHarness): reconcile the handler
+            // invocation count against the CONTRACT fan-out per emit times EVERY emit the protocol
+            // drove -- warmup + timed window + the untimed allocation-probe batch
+            // (TotalEmittedOperations, never TotalOperations). Exact equality catches a dropped or
+            // duplicated dispatch as well as the probe-batch accounting bug; the loose ">0" it
+            // replaced caught neither.
+            long expectedHandlerInvocations =
+                (long)perEmit * (warmupEmits + measurement.TotalEmittedOperations);
+            Assert.AreEqual(
+                expectedHandlerInvocations,
                 handlerInvocations.Count,
-                0,
-                "Benchmark scenario did not invoke handlers."
+                $"Dispatch scenario '{scenario}' fan-out mismatch: expected {expectedHandlerInvocations} "
+                    + $"handler invocations, observed {handlerInvocations.Count}. Breakdown: perEmit={perEmit}, "
+                    + $"warmupEmits={warmupEmits}, timedOps={measurement.TotalOperations}, "
+                    + $"allocationProbeOps={measurement.AllocationProbeOperations}, "
+                    + $"totalEmittedOps={measurement.TotalEmittedOperations}. A delta that is a multiple of "
+                    + $"{BenchmarkProtocol.BatchSize} points at batch-accounting; any other delta is a real "
+                    + "dispatch fan-out defect (dropped/duplicated handler invocation)."
             );
             return DispatchBenchmarkResult.ForEmitScenario(
                 GetScenarioName(scenario),
@@ -163,6 +179,34 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 measurement.GcAllocations,
                 measurement.ElapsedSeconds * 1000d
             );
+        }
+
+        // The CONTRACT fan-out per emit for each throughput (emit) scenario: how many
+        // handlerInvocations increments a SINGLE emit must produce. Kept as an explicit,
+        // implementation-independent contract that mirrors ConfigureScenario so a dispatch
+        // regression that drops or duplicates an invocation makes the exact fan-out check in
+        // MeasureEmitScenario fail (observed != expected) instead of passing silently.
+        // Interceptors do NOT count (AllowUntargeted only gates, it never increments);
+        // post-processors DO count (CountPostProcessed increments), plus the one terminal handler.
+        private static int ExpectedHandlerInvocationsPerEmit(DispatchBenchmarkScenario scenario)
+        {
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
+                case DispatchBenchmarkScenario.TargetedFloodOneListener:
+                case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
+                case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
+                    return 1;
+                case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
+                case DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities:
+                    return 4;
+                case DispatchBenchmarkScenario.TargetedFloodSixteenListeners:
+                    return 16;
+                case DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors:
+                    return 5; // four post-processors + one terminal handler
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+            }
         }
 
         private static DispatchBenchmarkResult MeasureRegistrationFlood()
