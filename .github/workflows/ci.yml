@@ -46,7 +46,7 @@ jobs:
       yaml: ${{ steps.filter.outputs.yaml }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -200,7 +200,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -242,7 +242,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.markdown != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -287,7 +287,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.csharpier != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -331,7 +331,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -446,7 +446,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.json != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -491,7 +491,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.spellcheck != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -527,7 +527,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.banner != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -563,7 +563,7 @@ jobs:
 
       - name: Checkout repository
         if: ${{ needs.changes.outputs.llms != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -609,7 +609,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.yaml != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -675,7 +675,7 @@ jobs:
 
       - name: Checkout repository
         if: ${{ needs.changes.outputs.scripts != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -734,7 +734,7 @@ jobs:
 
       - name: Checkout repository
         if: ${{ needs.changes.outputs.docs != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -870,7 +870,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.docs_links != 'false' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 

@@ -27,7 +27,7 @@ jobs:
       should-deploy: ${{ steps.check.outputs.should-deploy }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 2
           persist-credentials: false
@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: main
           persist-credentials: false

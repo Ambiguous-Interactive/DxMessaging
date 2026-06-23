@@ -46,14 +46,14 @@ jobs:
           exit 1
       - name: Checkout PR branch (same-repo)
         if: ${{ steps.meta.outputs.same_repo == 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.meta.outputs.head_ref }}
           fetch-depth: 0
           persist-credentials: false
       - name: Checkout PR fork head
         if: ${{ steps.meta.outputs.same_repo != 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ steps.meta.outputs.head_repo }}
           ref: ${{ steps.meta.outputs.head_ref }}
@@ -220,14 +220,14 @@ jobs:
             core.setOutput('same_repo', String(pr.head.repo.full_name === `${context.repo.owner}/${context.repo.repo}`));
       - name: Checkout PR branch (same-repo)
         if: ${{ steps.meta.outputs.same_repo == 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.meta.outputs.head_ref }}
           fetch-depth: 0
           persist-credentials: false
       - name: Checkout PR fork head
         if: ${{ steps.meta.outputs.same_repo != 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ steps.meta.outputs.head_repo }}
           ref: ${{ steps.meta.outputs.head_ref }}
