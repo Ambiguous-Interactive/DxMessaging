@@ -168,7 +168,7 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    AllocationProbe.Begin();
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
 
                     for (int i = 0; i < RegistrationChurnCycles; ++i)
                     {
@@ -177,7 +177,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                         token.RemoveRegistration(handle);
                     }
 
-                    long gcAllocations = AllocationProbe.End();
+                    long gcAllocations = window.Sample();
                     if (gcAllocations == AllocationProbe.Unmeasured)
                     {
                         Assert.Ignore(
@@ -312,12 +312,12 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    AllocationProbe.Begin();
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         emit();
                     }
-                    long gcAllocations = AllocationProbe.End();
+                    long gcAllocations = window.Sample();
                     if (gcAllocations == AllocationProbe.Unmeasured)
                     {
                         Assert.Ignore(

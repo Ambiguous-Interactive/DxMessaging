@@ -32,7 +32,13 @@ const path = require("path");
 // byte counter produced under Unity's Boehm GC. Covers the renderer sentinel
 // handling + the honesty regression test (sentinel never renders as 0/regression).
 // Comments across the perf-render scripts were trimmed first to keep this minimal.
-const TOTAL_BUDGET = 12390;
+// 065: 12664 for the in-editor PlayMode (Mono) allocation leg -- the Standalone
+// IL2CPP Release leg cannot measure allocations (profiler stripped -> -1/n/a), so
+// a second PlayMode leg supplies real GC-allocation counts; covers the renderer
+// per-scope comparison-alloc sourcing, the extract --scope baseline filter, and
+// their tests; deriveScope was hoisted to the shared perf-scenarios.js to keep the
+// increase minimal.
+const TOTAL_BUDGET = 12664;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

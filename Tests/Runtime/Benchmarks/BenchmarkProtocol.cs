@@ -157,13 +157,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     // cannot be re-run cold). When the probe is functional its recorder
                     // adds a small overhead to this window; that is acceptable for the
                     // cold scenarios (dominated by first-touch JIT) and keeps the count
-                    // honest. When non-functional, Begin/End are no-ops and End returns
-                    // AllocationProbe.Unmeasured.
-                    AllocationProbe.Begin();
+                    // honest. When non-functional, the window is a no-op and Sample
+                    // returns AllocationProbe.Unmeasured. The `using` is scoped to this
+                    // try block, so the recorder is released (disabled) even if
+                    // timedOperation throws -- before tearDownTrial runs -- and the end
+                    // timestamp is captured BEFORE Sample so the sample/disable overhead
+                    // stays out of the measured time.
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     long startTimestamp = Stopwatch.GetTimestamp();
                     timedOperation(state);
                     long endTimestamp = Stopwatch.GetTimestamp();
-                    long gcAllocations = AllocationProbe.End();
+                    long gcAllocations = window.Sample();
                     wallClockSamples[index] =
                         (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency * 1000d;
                     allocatedSamples[index] = gcAllocations;

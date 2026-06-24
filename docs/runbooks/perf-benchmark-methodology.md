@@ -127,11 +127,15 @@ reliable probe was available on that backend, so the budget cannot be evaluated.
 
 ## Build and runtime configuration
 
-The published numbers are measured under **Standalone IL2CPP + .NET Standard
-2.1 + Release** in a true Release player. All legs are driven by
+The published THROUGHPUT numbers are measured under **Standalone IL2CPP + .NET
+Standard 2.1 + Release** in a true Release player; the published GC-ALLOCATION
+counts come from an in-editor **PlayMode (Mono)** leg, because allocations are
+only measurable where the profiler is available and a Release player strips it
+(see [Editor-vs-player rationale](#editor-vs-player-rationale)). All legs are
+driven by
 [`scripts/unity/run-ci-tests.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/run-ci-tests.ps1):
 
-- **Standalone perf leg (the single published leg)** builds an **IL2CPP
+- **Standalone perf leg (the throughput headline)** builds an **IL2CPP
   non-development (Release) player**. The generated build modifier actively
   clears `BuildOptions.Development` -- the Unity Test Framework's PlayerLauncher
   injects it by default, and a development player reports
@@ -147,16 +151,41 @@ The published numbers are measured under **Standalone IL2CPP + .NET Standard
   `DXM perf config: backend=..., api=..., codeOpt=..., il2cppConfig=...` log
   line and each row's platform string
   (`Standalone IL2CPP x64 Release (WindowsPlayer; ...)`) prove the profile per
-  run; a published `x64 Debug` row is a configuration bug.
-- **PlayMode and EditMode legs (not published)** run in-editor under Mono and
-  pass `-releaseCodeOptimization`, which sets
+  run; a published `x64 Debug` row is a configuration bug. A Release player
+  strips the `GC.Alloc` profiler recorder, so every Standalone allocation cell
+  reports the `Unmeasured` sentinel (rendered `n/a`).
+- **PlayMode allocation leg (published for allocations only)** runs in-editor
+  under Mono and passes `-releaseCodeOptimization`, which sets
   `CompilationPipeline.codeOptimization = Release` so test assemblies compile
-  without debug code paths. They remain the fast scopes for local iteration,
-  and the weekly `unity-benchmarks.yml` runs the editmode + playmode benchmark
-  tests per Unity version as coverage; their numbers are not published.
+  without debug code paths. The differentiator from the Standalone leg is the
+  **profiler**, not bridge coverage: a built Standalone player has
+  `Application.isPlaying == true` just like PlayMode, so BOTH legs run every
+  comparison bridge (including the ones that require `Application.isPlaying`) and
+  produce a complete cross-library matrix. What the editor's Mono backend adds is
+  a functional `GC.Alloc` recorder, which a Release player strips -- so only this
+  leg can MEASURE the allocation COUNTS, and the Standalone leg's allocation cells
+  stay `Unmeasured` (`n/a`). Allocation counts are build-config-independent -- the
+  same code paths box and allocate under Mono and IL2CPP -- so these counts
+  represent the shipped IL2CPP player; the renderer documents this provenance by
+  labeling the allocation tables with the PlayMode (Mono) scope. Only ALLOCATIONS
+  are sourced from this leg; the headline throughput stays on the Standalone leg.
+- **EditMode leg (not published)** also runs in-editor under Mono with
+  `-releaseCodeOptimization`. It remains a fast scope for local iteration, and
+  the weekly `unity-benchmarks.yml` runs the editmode + playmode benchmark tests
+  per Unity version as coverage; EditMode numbers are not published.
 
-The harness can exercise every scope through the shared protocol, but
-`perf-numbers.yml` runs and publishes **only the Standalone IL2CPP leg** (see
+The harness can exercise every scope through the shared protocol;
+`perf-numbers.yml` runs the **Standalone IL2CPP leg (throughput)** and the
+**in-editor PlayMode Mono leg (allocations)**, and publishes both (see
+[Editor-vs-player rationale](#editor-vs-player-rationale)). The two legs serialize
+through the single organization build lock on the single `fast` runner, so adding
+the PlayMode leg increases the workflow's wall clock by the PlayMode leg's
+duration, which is shorter than the Standalone leg's because it builds no IL2CPP
+player (well under 2x total). The PlayMode leg is also **non-blocking**: it is
+marked `continue-on-error`, so a flaky PlayMode failure does NOT fail the
+benchmark job for the downstream comment/commit jobs -- the Standalone throughput
+headline and the regenerated baseline still publish, and that run's allocations
+degrade to `n/a` until the PlayMode leg is healthy again (see
 [Editor-vs-player rationale](#editor-vs-player-rationale)).
 
 ## Scenario taxonomy
@@ -249,23 +278,34 @@ divergence is always topology, never shared global state.
 
 The [Performance Numbers workflow](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/perf-numbers.yml)
 (`.github/workflows/perf-numbers.yml`) runs on every pull request to and push on
-`master`/`main`. It runs a single published leg with comparisons enabled
+`master`/`main`. It runs two published legs with comparisons enabled
 (`-IncludeComparisons`):
 
 - **Standalone (IL2CPP Release player)** -- a built IL2CPP player with
-  `BuildOptions.Development` stripped and the Release IL2CPP C++
-  configuration; the headline and only published scope.
+  `BuildOptions.Development` stripped and the Release IL2CPP C++ configuration;
+  the throughput headline scope.
+- **In-editor PlayMode (Mono)** -- an editor-only run (the matrix provisions
+  `EditorOnly` rather than the IL2CPP build support, and builds no player) whose
+  functional `GC.Alloc` recorder supplies the real allocation counts the Release
+  player cannot measure. This leg is `continue-on-error` (NON-BLOCKING): only the
+  Standalone leg gates publishing, so a flaky PlayMode failure still lets the
+  Standalone headline + baseline publish, with that run's allocations degrading to
+  `n/a` (see [Editor-vs-player rationale](#editor-vs-player-rationale)).
 
-After the leg finishes, `scripts/unity/render-perf-doc.js` reads the benchmark
-rows and rewrites the AUTOGENERATED region of
+After the legs finish, `scripts/unity/render-perf-doc.js` reads the benchmark
+rows from BOTH legs and rewrites the AUTOGENERATED region of
 `docs/architecture/performance.md`. The renderer derives the execution scope
 from each row's platform string (`Standalone`, `PlayMode`, `EditMode`), emits
 one dispatch-throughput table per scope present (in headline order: Standalone,
-then PlayMode, then EditMode), and emits two cross-library comparison matrices
--- one for throughput and one for GC allocations per batch -- using the first scope
-present in headline order (Standalone in published runs). Each table's backend label (Mono or IL2CPP) is
-derived from the platform string in that scope's rows, so the heading follows the
-data. Scenario rows and library rows are joined on stable machine keys
+then PlayMode, then EditMode), and emits two cross-library comparison matrices.
+The throughput comparison matrix uses the first scope present in headline order
+(Standalone in published runs); the GC-allocation comparison matrix uses the
+first scope that actually MEASURED allocations (the PlayMode Mono leg in
+published runs, since the Standalone Release player reports only the `Unmeasured`
+sentinel), and each matrix is labeled with its own scope. Each table's backend
+label (Mono or IL2CPP) is derived from the platform string in that scope's rows,
+so the heading follows the data. Scenario rows and library rows are joined on
+stable machine keys
 (`DispatchBenchmarkScenarios.Key`, `ComparisonScenarios.Key`, and each bridge's
 `TechKey`), never on display names.
 
@@ -292,20 +332,45 @@ auto-commit mechanics (the GitHub App token, branch-protection bypass, and the
 
 ### Editor-vs-player rationale
 
-The headline is **Standalone under IL2CPP in a true Release player** because it
-is the highest shipping fidelity: shipped titles run ahead-of-time (AOT)
-compiled Release players, not the editor. A development build or a Debug
+The throughput headline is **Standalone under IL2CPP in a true Release player**
+because it is the highest shipping fidelity: shipped titles run ahead-of-time
+(AOT) compiled Release players, not the editor. A development build or a Debug
 IL2CPP C++ configuration changes the measured numbers, so the published leg
 strips `BuildOptions.Development` and pins the Release C++ configuration;
-`Debug.isDebugBuild` must be false in every published run. The in-editor
-**PlayMode Mono leg is retired from publishing**: it measures the editor's
-Mono JIT environment, which shipped players do not run, and dropping it halves
-the benchmark wall clock. PlayMode and EditMode remain useful for local
-iteration and for the weekly per-version benchmark-test coverage in
-`unity-benchmarks.yml`. EditMode runs inside the editor's hosting environment,
-is the least representative of shipping behavior, and must never be treated as
-representative. The renderer uses the first scope present in headline order
-(Standalone in published runs) for the comparison matrices.
+`Debug.isDebugBuild` must be false in every published run.
+
+Allocations, however, are **only measurable where the profiler is available**. A
+Release player strips the `GC.Alloc` recorder, so the Standalone leg reports the
+`Unmeasured` sentinel (`n/a`) for every allocation cell. To publish real
+allocation numbers the workflow re-adds an in-editor **PlayMode (Mono)** leg,
+where the recorder is functional. The differentiator from the Standalone leg is
+the profiler, NOT bridge coverage: a built Standalone player has
+`Application.isPlaying == true` too, so BOTH legs run every comparison bridge
+(including the `Application.isPlaying`-only ones) and produce a complete matrix --
+only the editor's Mono backend can additionally MEASURE the allocations. (PlayMode
+rather than EditMode supplies them because EditMode runs with
+`Application.isPlaying == false` and so cannot host the `isPlaying`-only bridges.)
+Allocation counts are build-config-independent (the same code paths box and
+allocate under Mono and IL2CPP), so the Mono counts represent the shipped IL2CPP
+player; this is the documented provenance for sourcing throughput from one leg and
+allocations from another. The renderer therefore sources the throughput comparison
+matrix from the first scope present (Standalone in published runs) and the
+GC-allocation comparison matrix from the first scope that measured allocations
+(PlayMode in published runs).
+
+The PlayMode allocation leg is **non-blocking** (`continue-on-error` in
+`perf-numbers.yml`, see [How CI produces and publishes the
+numbers](#how-ci-produces-and-publishes-the-numbers)). The Standalone throughput
+leg is the headline and the baseline source, so it gates publishing; a flaky
+PlayMode leg must not. When the PlayMode leg fails, the matrix job still reports
+success for the downstream comment/commit jobs, the Standalone headline and the
+regenerated baseline publish as usual, and that run's allocation cells simply
+degrade to `n/a` until the PlayMode leg is healthy again.
+
+EditMode runs inside the editor's hosting environment, is the least
+representative of shipping behavior, and is not published; it -- and PlayMode --
+remain useful for local iteration and for the weekly per-version benchmark-test
+coverage in `unity-benchmarks.yml`.
 
 ## Baseline capture
 
@@ -316,11 +381,15 @@ is committed and is the baseline the CI regression gate and the PR delta comment
 compare against. It ships as an honest header-only seed -- the column header with
 no data rows -- so the first rollout has no fabricated numbers. Each push to the
 default branch regenerates it with real Standalone IL2CPP rows from that run
-(`extract-perf-baseline.js --replace`) and commits it alongside
-`performance.md`, so the seed becomes real after the first master push. A
-missing or header-only baseline makes both the gate and the delta comment skip
-gracefully. The committed baseline is therefore CI-owned and Standalone-scoped;
-the regression gate compares `--scope Standalone` rows against it.
+(`extract-perf-baseline.js --replace --scope Standalone`) and commits it
+alongside `performance.md`, so the seed becomes real after the first master push.
+Even though the perf run now also produces in-editor PlayMode (Mono) rows, the
+baseline regeneration passes `--scope Standalone` so the committed baseline stays
+**Standalone-only** -- the regression gate is Standalone-scoped (it compares
+`--scope Standalone` rows against the baseline), so mixing the PlayMode rows in
+would make the gate compare against the wrong scope. A missing or header-only
+baseline makes both the gate and the delta comment skip gracefully. The committed
+baseline is therefore CI-owned and Standalone-scoped.
 
 To capture a baseline locally, run the explicit `DispatchThroughputBenchmarks`
 baseline-update test in PlayMode through the MCP loop against the host editor (run

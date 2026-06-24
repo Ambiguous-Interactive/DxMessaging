@@ -82,14 +82,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 invocationsPerOperation * (warmupEmits + measurement.TotalEmittedOperations);
             long observedInvocations = bridge.ProgressMarker;
             long deltaInvocations = observedInvocations - expectedInvocations;
-            long deltaOperations =
-                invocationsPerOperation > 0 ? deltaInvocations / invocationsPerOperation : 0;
             Assert.AreEqual(
                 expectedInvocations,
                 observedInvocations,
                 $"{bridge.TechName} '{ComparisonScenarios.DisplayName(scenario)}' fan-out mismatch: "
                     + $"expected {expectedInvocations} invocations, observed {observedInvocations} "
-                    + $"(delta {deltaInvocations} = {deltaOperations} ops). Breakdown: "
+                    + $"(delta {DescribeFanOutDelta(deltaInvocations, invocationsPerOperation)}). Breakdown: "
                     + $"invocationsPerOperation={invocationsPerOperation}, warmupEmits={warmupEmits}, "
                     + $"timedOps={measurement.TotalOperations}, allocationProbeOps={measurement.AllocationProbeOperations}, "
                     + $"totalEmittedOps={measurement.TotalEmittedOperations} (= warmup + timed + probe). "
@@ -108,6 +106,41 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
             Debug.Log(result.ToStructuredLog());
             TestContext.Out.WriteLine(result.ToCsvRow());
+        }
+
+        /// <summary>
+        /// Formats a fan-out invocation delta for the mismatch diagnostic WITHOUT the silent
+        /// truncation of plain integer division. When the delta is an exact multiple of
+        /// <paramref name="invocationsPerOperation"/> it reads as "<c>D invocations = N ops</c>";
+        /// when it is NOT, the leftover invocations are shown explicitly (<c>N ops + R leftover</c>
+        /// always reconstructs the raw delta as <c>N * invocationsPerOperation + R</c>). A
+        /// non-integral remainder is itself a strong signal: the library emitted a partial
+        /// operation's worth of invocations, i.e. it fanned out inconsistently across emits -- a
+        /// real correctness defect the old truncating "= N ops" form hid. A non-positive
+        /// <paramref name="invocationsPerOperation"/> cannot be divided, so the raw invocation
+        /// delta is reported as-is.
+        /// </summary>
+        internal static string DescribeFanOutDelta(
+            long deltaInvocations,
+            long invocationsPerOperation
+        )
+        {
+            if (invocationsPerOperation <= 0)
+            {
+                return $"{deltaInvocations} invocations "
+                    + $"(invocationsPerOperation={invocationsPerOperation})";
+            }
+
+            long deltaOperations = deltaInvocations / invocationsPerOperation;
+            long remainder = deltaInvocations % invocationsPerOperation;
+            if (remainder == 0)
+            {
+                return $"{deltaInvocations} invocations = {deltaOperations} ops";
+            }
+
+            return $"{deltaInvocations} invocations = {deltaOperations} ops + {remainder} leftover "
+                + "(NON-INTEGRAL fan-out: a partial operation's worth of invocations, i.e. the "
+                + "library fanned out inconsistently across emits -- a real correctness defect)";
         }
     }
 }

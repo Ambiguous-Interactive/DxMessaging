@@ -2,9 +2,9 @@
 title: "Benchmark Methodology: Total Over One Window"
 id: "benchmark-methodology-total-over-window"
 category: "performance"
-version: "1.5.0"
+version: "1.6.0"
 created: "2026-06-07"
-updated: "2026-06-23"
+updated: "2026-06-24"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -169,8 +169,15 @@ public const int BatchSize = 10_000;
    per-emit path.
 1. AFTER the timed window, one more (untimed) batch runs under
    `AllocationProbe` to count managed allocations. It is kept OUT of the timed
-   window on purpose: the probe enables a profiler recorder whose overhead must
-   not distort the throughput clock.
+   window on purpose: the probe enables a `GC.Alloc` profiler recorder whose
+   overhead must not distort the throughput clock. That recorder is owned by a
+   `using`-scoped `AllocationProbe.Window` (`BeginWindow` / `Sample`), so it is
+   ALWAYS disabled on scope exit -- even when the measured body throws. There is
+   no raw enable/disable pair to leak a permanently-enabled recorder (whose
+   profiler overhead would distort every later measurement in the domain). The
+   recorder needs the profiler, so it is functional in the editor / development
+   builds but NOT in a Release IL2CPP player; the published allocation numbers
+   therefore come from the in-editor Mono leg (see the methodology runbook).
 
 Warm-up is per scenario. `DispatchBenchmarkScenarios.WarmupEmits(scenario)`
 returns `WarmupEmits` (10,000) for every dispatch scenario except the

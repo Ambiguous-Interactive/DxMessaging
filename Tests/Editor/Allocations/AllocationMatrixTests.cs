@@ -349,12 +349,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                     // erase the signal the way a live-heap delta could.
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    AllocationProbe.Begin();
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         emit();
                     }
-                    long gcAllocations = AllocationProbe.End();
+                    long gcAllocations = window.Sample();
                     if (gcAllocations == AllocationProbe.Unmeasured)
                     {
                         Assert.Ignore(
@@ -623,13 +623,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                     GC.WaitForPendingFinalizers();
                     IMessageBus.TrimResult result = default;
                     int evictedSlots = 0;
-                    AllocationProbe.Begin();
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         result = bus.Trim(force: true);
                         evictedSlots += result.TypeSlotsEvicted + result.TargetSlotsEvicted;
                     }
-                    long gcAllocations = AllocationProbe.End();
+                    long gcAllocations = window.Sample();
                     if (gcAllocations == AllocationProbe.Unmeasured)
                     {
                         Assert.Ignore(
@@ -856,9 +856,9 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    AllocationProbe.Begin();
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     MarkDirtyTargets(markDirtyTarget, 0x2425_0000, targetCount);
-                    long gcAllocations = AllocationProbe.End();
+                    long gcAllocations = window.Sample();
                     PoolDiagnosticsSnapshot afterReuse = DxPools.DescribeAll();
 
                     // Strict zero-allocation contract: this path reuses warmed

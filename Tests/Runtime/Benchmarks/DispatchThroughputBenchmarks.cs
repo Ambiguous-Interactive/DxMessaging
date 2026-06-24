@@ -216,7 +216,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // recorder spans the timed region; its overhead is negligible against the
             // JIT-dominated flood). NEVER GC.GetAllocatedBytesForCurrentThread(): it
             // returns 0 for every allocation under Unity's Boehm GC (see AllocationProbe).
-            AllocationProbe.Begin();
+            using AllocationProbe.Window window = AllocationProbe.BeginWindow();
             long startTimestamp = Stopwatch.GetTimestamp();
             using (BenchmarkRegistrationScope scope = new())
             {
@@ -226,7 +226,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
             long endTimestamp = Stopwatch.GetTimestamp();
-            long gcAllocations = AllocationProbe.End();
+            long gcAllocations = window.Sample();
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus),
@@ -260,7 +260,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
-            AllocationProbe.Begin();
+            using AllocationProbe.Window window = AllocationProbe.BeginWindow();
             long startTimestamp = Stopwatch.GetTimestamp();
             using (BenchmarkRegistrationScope scope = new())
             {
@@ -270,7 +270,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
             long endTimestamp = Stopwatch.GetTimestamp();
-            long gcAllocations = AllocationProbe.End();
+            long gcAllocations = window.Sample();
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit),
@@ -300,11 +300,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     builders[index](scope.PrimaryToken);
                 }
 
-                AllocationProbe.Begin();
+                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 scope.PrimaryToken.UnregisterAll();
                 long endTimestamp = Stopwatch.GetTimestamp();
-                long gcAllocations = AllocationProbe.End();
+                long gcAllocations = window.Sample();
 
                 return DispatchBenchmarkResult.ForRegistrationScenario(
                     GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold),
@@ -347,11 +347,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     builders[index](scope.PrimaryToken);
                 }
 
-                AllocationProbe.Begin();
+                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 scope.PrimaryToken.UnregisterAll();
                 long endTimestamp = Stopwatch.GetTimestamp();
-                long gcAllocations = AllocationProbe.End();
+                long gcAllocations = window.Sample();
 
                 return DispatchBenchmarkResult.ForRegistrationScenario(
                     GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit),

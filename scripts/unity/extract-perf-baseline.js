@@ -3,7 +3,12 @@
 const fs = require("fs");
 const path = require("path");
 
-const { COMPARISON_SCENARIO_IDS, SCENARIOS, isComparisonScenario } = require("./perf-scenarios.js");
+const {
+  COMPARISON_SCENARIO_IDS,
+  SCENARIOS,
+  isComparisonScenario,
+  deriveScope
+} = require("./perf-scenarios.js");
 
 const CSV_HEADER = "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs";
 
@@ -22,19 +27,28 @@ function isKeptScenario(scenario) {
 }
 
 function usage() {
-  return `Usage: node scripts/unity/extract-perf-baseline.js --input <unity-log-or-results> [--input <path> ...] [--output <csv>] [--append|--replace]
+  return `Usage: node scripts/unity/extract-perf-baseline.js --input <unity-log-or-results> [--input <path> ...] [--output <csv>] [--append|--replace] [--scope <name>]
 
 Extracts DispatchThroughputBenchmarks CSV rows from Unity logs or NUnit XML output.
-When --output is omitted, writes the normalized CSV to stdout.
+When --output is omitted, writes the normalized CSV to stdout. --scope keeps only
+rows whose platform's derived execution scope (Standalone/PlayMode/EditMode)
+matches the value, so a multi-leg input can be narrowed to one scope (the
+committed master baseline stays Standalone-scoped).
 `;
 }
+
+// deriveScope (platform -> Standalone/PlayMode/EditMode, else null) is imported
+// from perf-scenarios.js -- the shared, dependency-free module -- and re-exported
+// below so callers keep their existing import surface. ONE canonical copy now,
+// with no circular require.
 
 function parseArgs(argv) {
   const options = {
     inputs: [],
     output: "",
     append: false,
-    replace: false
+    replace: false,
+    scope: ""
   };
 
   for (let index = 2; index < argv.length; index++) {
@@ -46,6 +60,11 @@ function parseArgs(argv) {
 
     if (arg === "--output") {
       options.output = requireValue(argv, ++index, arg);
+      continue;
+    }
+
+    if (arg === "--scope") {
+      options.scope = requireValue(argv, ++index, arg);
       continue;
     }
 
@@ -356,7 +375,13 @@ function main(argv = process.argv) {
     return 0;
   }
 
-  const rows = extractRows(readInputs(options.inputs));
+  let rows = extractRows(readInputs(options.inputs));
+  // Filter to one execution scope BEFORE the empty-check so `--scope Standalone`
+  // against editor-only inputs fails loudly with "No ... rows found" rather than
+  // writing an empty baseline. Absent --scope keeps every row (existing behavior).
+  if (options.scope) {
+    rows = rows.filter((row) => deriveScope(row.platform) === options.scope);
+  }
   if (rows.length === 0) {
     throw new Error("No DispatchThroughputBenchmarks rows found.");
   }
@@ -380,5 +405,6 @@ module.exports = {
   isKeptScenario,
   extractRows,
   buildCsv,
-  parseArgs
+  parseArgs,
+  deriveScope
 };

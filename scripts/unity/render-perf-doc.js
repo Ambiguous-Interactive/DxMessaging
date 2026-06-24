@@ -12,7 +12,8 @@ const {
   COMPARISON_TECH_ORDER,
   COMPARISON_TECH_LABELS,
   isComparisonScenario,
-  parseComparisonScenario
+  parseComparisonScenario,
+  deriveScope
 } = require("./perf-scenarios.js");
 
 // The auto-generated dispatch-throughput region lives between these two HTML
@@ -40,12 +41,15 @@ const REGISTRATION_SCENARIOS = new Set([
 
 // Execution scopes in HEADLINE order: Standalone runs the IL2CPP/AOT backend in
 // a Release player -- the configuration shipped games actually run -- so it is
-// the headline scope and drives the comparison-matrix scope and the provenance
-// commit. In-editor PlayMode (Mono) and EditMode follow when present (CI
-// publishes only the Standalone leg; the renderer stays scope-agnostic so a
-// re-added leg renders without code changes). Dispatch tables render one section
-// per scope PRESENT in this order; the comparison matrices use the first scope
-// present (Standalone when available).
+// the headline scope and drives the comparison THROUGHPUT matrix and the
+// provenance commit. In-editor PlayMode (Mono) and EditMode follow when present;
+// CI now publishes BOTH the Standalone leg (throughput) AND the in-editor
+// PlayMode leg (real GC allocations -- the Release player strips the profiler).
+// The renderer stays scope-agnostic so adding/removing a leg is a workflow-only
+// change. Dispatch tables render one section per scope PRESENT in this order; the
+// comparison THROUGHPUT matrix uses the first scope present (Standalone when
+// available) while the comparison GC-ALLOCATION matrix uses the first scope that
+// actually MEASURED allocations (see preferredComparisonAllocScope).
 const SCOPE_ORDER = ["Standalone", "PlayMode", "EditMode"];
 
 // Each execution scope USUALLY runs a specific scripting backend: PlayMode and
@@ -172,27 +176,9 @@ function readInputs(inputs) {
     .join("\n");
 }
 
-// Derive the execution scope from a platform string. The benchmark encodes the
-// target as the FIRST token(s): "Standalone ...", "Editor PlayMode ...", or
-// "Editor EditMode ..." (see DispatchThroughputBenchmarks.ResolveExecutionTarget).
-// Standalone is checked first so a hypothetical "Standalone PlayMode" still maps
-// to the most player-faithful scope. Returns null for unrecognized platforms so
-// such rows are skipped rather than mis-grouped.
-function deriveScope(platform) {
-  if (typeof platform !== "string") {
-    return null;
-  }
-  if (/\bStandalone\b/.test(platform)) {
-    return "Standalone";
-  }
-  if (/\bPlayMode\b/.test(platform)) {
-    return "PlayMode";
-  }
-  if (/\bEditMode\b/.test(platform)) {
-    return "EditMode";
-  }
-  return null;
-}
+// deriveScope (platform -> Standalone/PlayMode/EditMode, else null) is the
+// canonical copy in perf-scenarios.js (the shared, dependency-free module, so no
+// circular require) and re-exported below for render-perf-deltas.js and the tests.
 
 // Group the rows that match the requested Unity version into the structure the
 // renderer needs:
@@ -415,9 +401,9 @@ function buildDispatchSections(dispatchByScope, scopesPresent) {
   return sections;
 }
 
-// Choose the scope whose comparison rows feed the cross-library matrices: the
-// first scope in SCOPE_ORDER (headline order) that actually has comparison rows
-// -- Standalone when present, else PlayMode, else EditMode.
+// Choose the scope whose comparison rows feed the cross-library THROUGHPUT
+// matrix: the first scope in SCOPE_ORDER (headline order) that actually has
+// comparison rows -- Standalone when present, else PlayMode, else EditMode.
 function preferredComparisonScope(comparisonByScope) {
   for (const scope of SCOPE_ORDER) {
     const byCell = comparisonByScope.get(scope);
@@ -428,29 +414,46 @@ function preferredComparisonScope(comparisonByScope) {
   return null;
 }
 
-// Build the two cross-library comparison matrices (throughput + bytes/op) for the
-// headline scope. Only techs with at least one comparison row in that scope get
-// a row (a fully-absent tech -- e.g. an unresolved package -- is omitted rather
-// than rendered as an all-N/A row). Cells absent for a (tech, scenario) show N/A.
-// Returns an array of markdown line-arrays, or [] when there are no comparison
-// rows to render.
-function buildComparisonSections(comparisonByScope) {
-  const scope = preferredComparisonScope(comparisonByScope);
-  if (!scope) {
-    return [];
+// Choose the scope whose comparison rows feed the cross-library GC-ALLOCATION
+// matrix. Throughput stays on the HEADLINE scope (preferredComparisonScope), but
+// allocations are only meaningful where the profiler actually measured them: a
+// Release IL2CPP player strips the GC.Alloc recorder, so every Standalone alloc
+// cell is the -1 "Unmeasured" sentinel (rendered "n/a"). Pick the first scope in
+// headline order that has at least one MEASURED allocation (gcAllocations parses
+// to an integer >= 0; -1 is the sentinel), so an in-editor Mono leg's real counts
+// drive the alloc matrix when present. Fall back to preferredComparisonScope when
+// NO scope measured allocations, preserving today's behavior (alloc matrix stays
+// all n/a on the headline scope) when only a Release player ran.
+function preferredComparisonAllocScope(comparisonByScope) {
+  for (const scope of SCOPE_ORDER) {
+    const byCell = comparisonByScope.get(scope);
+    if (!byCell) {
+      continue;
+    }
+    for (const row of byCell.values()) {
+      const count = Number.parseInt(row.gcAllocations, 10);
+      if (Number.isFinite(count) && count >= 0) {
+        return scope;
+      }
+    }
   }
-  const byCell = comparisonByScope.get(scope);
-  // Derive the heading backend from this scope's actual comparison rows (any cell
-  // shares the scope's platform string) so the matrix headings follow the data the
-  // same way the dispatch headings do.
-  const sampleRow = byCell.values().next().value;
-  const scopePlatform = sampleRow ? sampleRow.platform : undefined;
+  return preferredComparisonScope(comparisonByScope);
+}
 
+// Render one cross-library comparison matrix's data rows for a single scope.
+// Returns null when no tech has any comparison row in the scope (a fully-absent
+// tech is omitted rather than rendered as an all-N/A row). `bold` is true only
+// for the throughput matrix -- the fastest tech per scenario COLUMN is bolded so
+// the per-category winner is visible at a glance (ties at DISPLAY precision are
+// all bolded; N/A capability gaps never win). The allocations matrix is never
+// bolded (the GC-allocation count is a property, not a race). `formatCell` turns
+// a row into its cell text and cells absent for a (tech, scenario) show N/A.
+function buildComparisonMatrix(byCell, formatCell, { bold }) {
   const techsPresent = COMPARISON_TECH_ORDER.filter((techKey) =>
     COMPARISON_SCENARIO_ORDER.some((scenarioKey) => byCell.has(`${techKey}|${scenarioKey}`))
   );
   if (techsPresent.length === 0) {
-    return [];
+    return null;
   }
 
   const header = [
@@ -458,65 +461,107 @@ function buildComparisonSections(comparisonByScope) {
     ...COMPARISON_SCENARIO_ORDER.map((key) => COMPARISON_SCENARIO_LABELS[key])
   ];
 
-  // The fastest tech per scenario COLUMN is bolded in the throughput matrix so
-  // the per-category winner is visible at a glance. Ties (same emits/sec) are
-  // all bolded; N/A capability gaps never win; the allocations matrix is
-  // never bolded (the GC-allocation count is a property, not a race).
   // Winners are computed at DISPLAY precision (the formatted cell text): two
   // techs that render identically are visually tied, so both are bolded even
   // when their raw floats differ in digits the reader cannot see. This also
   // reduces bold flapping between near-tied techs across runs.
-  const winningThroughputByScenario = new Map();
-  for (const scenarioKey of COMPARISON_SCENARIO_ORDER) {
-    let best = -Infinity;
-    for (const techKey of techsPresent) {
-      const row = byCell.get(`${techKey}|${scenarioKey}`);
-      if (!row) {
-        continue;
+  const winningCellByScenario = new Map();
+  if (bold) {
+    for (const scenarioKey of COMPARISON_SCENARIO_ORDER) {
+      let best = -Infinity;
+      for (const techKey of techsPresent) {
+        const row = byCell.get(`${techKey}|${scenarioKey}`);
+        if (!row) {
+          continue;
+        }
+        const emitsPerSecond = Number.parseFloat(row.emitsPerSecond);
+        if (Number.isFinite(emitsPerSecond) && emitsPerSecond > best) {
+          best = emitsPerSecond;
+        }
       }
-      const emitsPerSecond = Number.parseFloat(row.emitsPerSecond);
-      if (Number.isFinite(emitsPerSecond) && emitsPerSecond > best) {
-        best = emitsPerSecond;
+      if (best > 0) {
+        winningCellByScenario.set(scenarioKey, formatThroughput(best));
       }
-    }
-    if (best > 0) {
-      winningThroughputByScenario.set(scenarioKey, formatThroughput(best));
     }
   }
 
-  const throughputRows = [header];
-  const allocationRows = [header];
+  const dataRows = [header];
   for (const techKey of techsPresent) {
-    const label = COMPARISON_TECH_LABELS[techKey] || techKey;
-    const throughputCells = [label];
-    const allocationCells = [label];
+    const cells = [COMPARISON_TECH_LABELS[techKey] || techKey];
     for (const scenarioKey of COMPARISON_SCENARIO_ORDER) {
       const row = byCell.get(`${techKey}|${scenarioKey}`);
-      if (row) {
-        const formatted = formatThroughput(row.emitsPerSecond);
-        const isWinner = winningThroughputByScenario.get(scenarioKey) === formatted;
-        throughputCells.push(isWinner ? `**${formatted}**` : formatted);
-      } else {
-        throughputCells.push("N/A");
+      if (!row) {
+        cells.push("N/A");
+        continue;
       }
-      allocationCells.push(row ? formatRowAllocations(row) : "N/A");
+      const formatted = formatCell(row);
+      const isWinner = bold && winningCellByScenario.get(scenarioKey) === formatted;
+      cells.push(isWinner ? `**${formatted}**` : formatted);
     }
-    throughputRows.push(throughputCells);
-    allocationRows.push(allocationCells);
+    dataRows.push(cells);
   }
+
+  return alignTable(dataRows);
+}
+
+// Build the two cross-library comparison matrices. The THROUGHPUT matrix uses the
+// HEADLINE scope (preferredComparisonScope; Standalone when present) and is
+// labeled with it. The GC-ALLOCATION matrix uses the scope that actually MEASURED
+// allocations (preferredComparisonAllocScope; the in-editor Mono leg when present,
+// since a Release IL2CPP player strips the profiler) and is labeled with ITS
+// scope -- each matrix independently derives its techsPresent and its platform
+// (for the backend in scopeLabel) from its OWN scope's byCell. Returns an array of
+// markdown line-arrays, or [] when there are no comparison rows to render. When
+// only the Standalone scope is present both scopes resolve to Standalone and the
+// output is byte-identical to the single-scope behavior.
+function buildComparisonSections(comparisonByScope) {
+  const throughputScope = preferredComparisonScope(comparisonByScope);
+  if (!throughputScope) {
+    return [];
+  }
+  const throughputByCell = comparisonByScope.get(throughputScope);
+  const throughputSample = throughputByCell.values().next().value;
+  const throughputPlatform = throughputSample ? throughputSample.platform : undefined;
+  const throughputTable = buildComparisonMatrix(
+    throughputByCell,
+    (row) => formatThroughput(row.emitsPerSecond),
+    { bold: true }
+  );
+  if (!throughputTable) {
+    return [];
+  }
+
+  let allocScope = preferredComparisonAllocScope(comparisonByScope);
+  let allocByCell = comparisonByScope.get(allocScope);
+  let allocTable = buildComparisonMatrix(allocByCell, formatRowAllocations, { bold: false });
+  // Symmetry with the throughput guard above: if the alloc scope somehow yields
+  // no techs (an empty matrix), fall back to the throughput scope's cells -- which
+  // we already proved render a non-null table -- so the alloc section never pushes
+  // a null. This is defense-in-depth: every comparisonByScope cell key is a valid
+  // tech|scenario pair, so a scope with any row always has >= 1 tech, and the
+  // alloc scope (a measured-alloc scope, else the throughput scope) always has
+  // rows -- so this fallback is currently unreachable but keeps the two matrices'
+  // null handling identical.
+  if (!allocTable) {
+    allocScope = throughputScope;
+    allocByCell = throughputByCell;
+    allocTable = buildComparisonMatrix(allocByCell, formatRowAllocations, { bold: false });
+  }
+  const allocSample = allocByCell.values().next().value;
+  const allocPlatform = allocSample ? allocSample.platform : undefined;
 
   return [
     [
       // h3 siblings of the dispatch-throughput section (see its comment): the
       // region's parent is an h2, so every top-level region heading is h3.
-      `### Library comparison - throughput (${scopeLabel(scope, scopePlatform)})`,
+      `### Library comparison - throughput (${scopeLabel(throughputScope, throughputPlatform)})`,
       "",
-      alignTable(throughputRows)
+      throughputTable
     ],
     [
-      `### Library comparison - GC allocations per 10k ops (${scopeLabel(scope, scopePlatform)})`,
+      `### Library comparison - GC allocations per 10k ops (${scopeLabel(allocScope, allocPlatform)})`,
       "",
-      alignTable(allocationRows)
+      allocTable
     ]
   ];
 }
