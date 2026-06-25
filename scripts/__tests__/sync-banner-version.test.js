@@ -14,15 +14,20 @@ const {
   roundTestCount,
   getVersionBadge,
   readPackageVersion,
-  syncBanner
+  syncBanner,
+  validateBanner
 } = require("../sync-banner-version.js");
 
 test("roundTestCount floors to the nearest hundred but never to zero", () => {
-  assert.equal(roundTestCount(1234), 1200);
-  assert.equal(roundTestCount(100), 100);
-  assert.equal(roundTestCount(199), 100);
-  assert.equal(roundTestCount(99), 99);
-  assert.equal(roundTestCount(0), 0);
+  for (const [input, expected] of [
+    [1234, 1200],
+    [100, 100],
+    [199, 100],
+    [99, 99],
+    [0, 0]
+  ]) {
+    assert.equal(roundTestCount(input), expected);
+  }
 });
 
 test("stripSourceComments removes comments but keeps URLs", () => {
@@ -107,6 +112,49 @@ test("syncBanner updates the SVG badge, never stages, and is idempotent", () => 
     // would have thrown before we got here.
     const second = syncBanner({ repoRoot });
     assert.equal(second.updated, false);
+  } finally {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("validateBanner requires the current rounded test-count label", () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "banner-check-"));
+  try {
+    fs.writeFileSync(
+      path.join(repoRoot, "package.json"),
+      JSON.stringify({ version: "1.2.3" }),
+      "utf8"
+    );
+    const testsDir = path.join(repoRoot, "Tests");
+    fs.mkdirSync(testsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(testsDir, "SampleTests.cs"),
+      Array.from({ length: 123 }, (_, index) => `[Test]\npublic void T${index}() {}`).join("\n"),
+      "utf8"
+    );
+    const svgPath = path.join(repoRoot, "docs", "images", "DxMessaging-banner.svg");
+    fs.mkdirSync(path.dirname(svgPath), { recursive: true });
+    const writeSvg = (label) =>
+      fs.writeFileSync(
+        svgPath,
+        `<svg>${getVersionBadge("1.2.3")}<text x="20" y="13" fill="#00d9ff">${label}</text></svg>`,
+        "utf8"
+      );
+
+    for (const { label, ok, error } of [
+      { label: "100+ Tests", ok: true },
+      { label: "99+ Tests", ok: false, error: /expected 100\+ Tests.*is stale/ },
+      { label: "124+ Tests", ok: false, error: /expected 100\+ Tests.*overstates/ }
+    ]) {
+      writeSvg(label);
+      const result = validateBanner({ repoRoot });
+      assert.equal(result.ok, ok, label);
+      if (error) {
+        assert.match(result.errors.join("\n"), error);
+      } else {
+        assert.deepEqual(result.errors, []);
+      }
+    }
   } finally {
     fs.rmSync(repoRoot, { recursive: true, force: true });
   }

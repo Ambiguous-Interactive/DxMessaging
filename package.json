@@ -63,6 +63,7 @@
     "lint:markdown": "markdownlint-cli2 \"**/*.md\" \"**/*.markdown\"",
     "check:spelling": "cspell --no-progress --no-summary \"**/*.{md,markdown,cs,json,yml,yaml,ps1,js}\"",
     "sync:banner": "node scripts/sync-banner-version.js",
+    "check:banner": "node scripts/sync-banner-version.js --check",
     "update:llms-txt": "node scripts/update-llms-txt.js",
     "check:llms-txt": "node scripts/update-llms-txt.js --check",
     "update:skills-index": "node scripts/generate-skills-index.js && prettier --write .llm/skills/index.md",
@@ -75,7 +76,7 @@
     "validate:js-loc-budget": "node scripts/validate-js-loc-budget.js",
     "validate:npm-meta": "node scripts/validate-npm-meta.js",
     "validate:docs:strict": "python3 -m venv .artifacts/docs-venv && .artifacts/docs-venv/bin/python -m pip install -r requirements-docs.txt && .artifacts/docs-venv/bin/mkdocs build --strict --site-dir _site",
-    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:js-loc-budget && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run check:skills-index"
+    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run check:skills-index"
   },
   "devDependencies": {
     "cspell": "10.0.1",

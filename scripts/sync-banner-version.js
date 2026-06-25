@@ -4,9 +4,12 @@
  * Keeps docs/images/DxMessaging-banner.svg aligned with package.json version
  * and the rounded C# test count (Tests/ + SourceGenerators/).
  *
+ * Usage:
+ *   node scripts/sync-banner-version.js [--check]
+ *
  * This script only rewrites the SVG; it never stages anything. The pre-commit
- * hook relies on pre-commit's own modified-file detection, and CI
- * (`Validate banner SVG` in ci.yml) follows the sync with `git diff --exit-code`.
+ * hook relies on pre-commit's own modified-file detection. Check mode validates
+ * without mutating the working tree.
  */
 
 "use strict";
@@ -88,6 +91,37 @@ function readPackageVersion(packageJsonPath) {
 }
 
 function syncBanner(options = {}) {
+  const analysis = analyzeBanner(options);
+
+  if (
+    analysis.currentVersion === analysis.version &&
+    analysis.currentTestCountLabel === analysis.testCountLabel
+  ) {
+    return {
+      updated: false,
+      version: analysis.version,
+      testCount: analysis.testCount,
+      testCountLabel: analysis.testCountLabel
+    };
+  }
+
+  let updatedSvg = analysis.svgContent.replace(VERSION_PATTERN, getVersionBadge(analysis.version));
+  updatedSvg = updatedSvg.replace(
+    TEST_COUNT_PATTERN,
+    (_whole, prefix, _oldLabel, suffix) => `${prefix}${analysis.testCountLabel}${suffix}`
+  );
+
+  fs.writeFileSync(analysis.svgPath, updatedSvg, "utf8");
+
+  return {
+    updated: true,
+    version: analysis.version,
+    testCount: analysis.testCount,
+    testCountLabel: analysis.testCountLabel
+  };
+}
+
+function analyzeBanner(options = {}) {
   const repoRoot = options.repoRoot ?? path.resolve(__dirname, "..");
   const packageJsonPath = options.packageJsonPath ?? path.join(repoRoot, "package.json");
   const svgPath =
@@ -114,34 +148,63 @@ function syncBanner(options = {}) {
 
   const currentVersionMatch = svgContent.match(VERSION_VALUE_PATTERN);
   const currentTestCountMatch = svgContent.match(TEST_COUNT_PATTERN);
-
-  if (currentVersionMatch?.[1] === version && currentTestCountMatch?.[2] === testCountLabel) {
-    return {
-      updated: false,
-      version,
-      testCount,
-      testCountLabel
-    };
-  }
-
-  let updatedSvg = svgContent.replace(VERSION_PATTERN, getVersionBadge(version));
-  updatedSvg = updatedSvg.replace(
-    TEST_COUNT_PATTERN,
-    (_whole, prefix, _oldLabel, suffix) => `${prefix}${testCountLabel}${suffix}`
-  );
-
-  fs.writeFileSync(svgPath, updatedSvg, "utf8");
+  const currentVersion = currentVersionMatch?.[1];
+  const currentTestCountLabel = currentTestCountMatch?.[2];
+  const currentTestCount = Number.parseInt(currentTestCountLabel, 10);
 
   return {
-    updated: true,
-    version,
+    currentTestCount,
+    currentTestCountLabel,
+    currentVersion,
+    packageJsonPath,
+    repoRoot,
+    svgContent,
+    svgPath,
     testCount,
-    testCountLabel
+    testCountLabel,
+    version
   };
 }
 
+function validateBanner(options = {}) {
+  const analysis = analyzeBanner(options);
+  const errors = [];
+
+  if (analysis.currentVersion !== analysis.version) {
+    errors.push(
+      `${analysis.svgPath}: version badge is v${analysis.currentVersion}; expected v${analysis.version}.`
+    );
+  }
+
+  if (analysis.currentTestCountLabel !== analysis.testCountLabel) {
+    const reason =
+      analysis.currentTestCount > analysis.testCount ? "overstates the marker count" : "is stale";
+    errors.push(
+      `${analysis.svgPath}: test-count badge is ${analysis.currentTestCountLabel}; expected ${analysis.testCountLabel} from ${analysis.testCount} test markers (${reason}).`
+    );
+  }
+
+  return { ...analysis, errors, ok: errors.length === 0 };
+}
+
 function main() {
+  const checkMode = process.argv.slice(2).includes("--check");
   try {
+    if (checkMode) {
+      const result = validateBanner();
+      if (!result.ok) {
+        console.error("ERROR: docs/images/DxMessaging-banner.svg is not valid:");
+        result.errors.forEach((error) => console.error(`  - ${error}`));
+        console.error("Run: npm run sync:banner");
+        process.exit(1);
+      }
+      console.log(`Banner version is current: v${result.version}`);
+      console.log(
+        `Banner test count is current: ${result.testCountLabel} (${result.testCount} markers).`
+      );
+      return;
+    }
+
     const result = syncBanner();
     if (!result.updated) {
       console.log(`Banner already has correct version: v${result.version}`);
@@ -152,7 +215,7 @@ function main() {
     console.log(`Updated banner version to: v${result.version}`);
     console.log(`Updated banner test count to: ${result.testCountLabel}`);
   } catch (error) {
-    console.error(`Failed to sync banner: ${error.message}`);
+    console.error(`Failed to ${checkMode ? "validate" : "sync"} banner: ${error.message}`);
     process.exit(1);
   }
 }
@@ -162,12 +225,14 @@ function main() {
 module.exports = {
   VERSION_PATTERN,
   TEST_COUNT_PATTERN,
+  analyzeBanner,
   stripSourceComments,
   countTestMarkers,
   roundTestCount,
   getVersionBadge,
   readPackageVersion,
-  syncBanner
+  syncBanner,
+  validateBanner
 };
 
 if (require.main === module) {

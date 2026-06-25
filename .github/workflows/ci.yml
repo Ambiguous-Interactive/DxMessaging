@@ -537,11 +537,9 @@ jobs:
         with:
           node-version: "22.18.0"
 
-      - name: Regenerate banner and verify it is committed
+      - name: Validate banner metadata
         if: ${{ needs.changes.outputs.banner != 'false' }}
-        run: |
-          node scripts/sync-banner-version.js
-          git diff --exit-code docs/images/DxMessaging-banner.svg
+        run: npm run check:banner
 
   validate-llms-txt:
     name: Check llms.txt is up-to-date

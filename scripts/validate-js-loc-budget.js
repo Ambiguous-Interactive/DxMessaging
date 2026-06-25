@@ -38,7 +38,9 @@ const path = require("path");
 // per-scope comparison-alloc sourcing, the extract --scope baseline filter, and
 // their tests; deriveScope was hoisted to the shared perf-scenarios.js to keep the
 // increase minimal.
-const TOTAL_BUDGET = 12664;
+// 066: 12795 for banner --check validation with non-mutating diagnostics for
+// stale version/test-count badge metadata.
+const TOTAL_BUDGET = 12795;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
