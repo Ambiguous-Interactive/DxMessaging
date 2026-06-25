@@ -12,37 +12,19 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-// Budget history:
-// 047: 10600 for skills-index generation after zero-loss script cuts.
-// 052: 10650 for the auto-commit force-refspec drift guard.
-// 055: 10890 for CI aggregate-workflow topology guards.
-// 056: 11185 for resilient llms.txt/README skill-count validation.
-// 057: 11350 for update/check convergence validation.
-// 058: 11820 for shared release notes, changelog extraction, and export staging
-// coverage. Each increase was reviewed with the bespoke invariant it protects.
-// 059: 11960 for cross-platform PowerShell project-path safety regression tests.
-// 062: 12360 for the issue-template package-version dropdown generator + its
-// hermetic red-green test (G5 / #230) and the self-healing auto-commit workflow's
-// entry in the fetch-force-refspec drift-guard; the gate keeps the bug-report
-// dropdown in lockstep with released versions without dropping shallow-clone
-// history. The generator header was trimmed first to keep the increase minimal.
-// 064: 12390 for the allocation-honesty fix -- the perf pipeline reports a real
-// GC-allocation COUNT (AllocationProbe / GC.Alloc recorder) with an "Unmeasured"
-// sentinel instead of the vacuous 0 the dead GC.GetAllocatedBytesForCurrentThread()
-// byte counter produced under Unity's Boehm GC. Covers the renderer sentinel
-// handling + the honesty regression test (sentinel never renders as 0/regression).
-// Comments across the perf-render scripts were trimmed first to keep this minimal.
-// 065: 12664 for the in-editor PlayMode (Mono) allocation leg -- the Standalone
-// IL2CPP Release leg cannot measure allocations (profiler stripped -> -1/n/a), so
-// a second PlayMode leg supplies real GC-allocation counts; covers the renderer
-// per-scope comparison-alloc sourcing, the extract --scope baseline filter, and
-// their tests; deriveScope was hoisted to the shared perf-scenarios.js to keep the
-// increase minimal.
-// 066: 12795 for banner --check validation with non-mutating diagnostics for
-// stale version/test-count badge metadata.
-// 067: 12890 for the package-script contract guard that catches workflows/docs
-// referencing missing npm scripts and keeps the issue-template check wired into
-// validate:all.
+// Budget history, newest last:
+// 047 skills-index generation after zero-loss script cuts: 10600.
+// 052 auto-commit force-refspec drift guard: 10650.
+// 055 CI aggregate-workflow topology guards: 10890.
+// 056 llms.txt/README skill-count validation: 11185.
+// 057 update/check convergence validation: 11350.
+// 058 release notes, changelog extraction, export staging: 11820.
+// 059 cross-platform PowerShell project-path safety tests: 11960.
+// 062 issue-template version generator and fetch-refspec guard: 12360.
+// 064 allocation-honesty perf sentinel handling: 12390.
+// 065 PlayMode allocation leg and perf-scenario sharing: 12664.
+// 066 banner --check diagnostics: 12795.
+// 067 package-script contract guard and validate:all issue-template gate: 12890.
 const TOTAL_BUDGET = 12890;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");

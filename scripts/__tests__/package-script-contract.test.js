@@ -4,6 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { walkFiles } = require("../lib/repo-files.js");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const PACKAGE_JSON = path.join(REPO_ROOT, "package.json");
@@ -30,17 +31,12 @@ function walkTextFiles(relativePath) {
   if (!fs.existsSync(absolutePath)) {
     return [];
   }
-  const stat = fs.statSync(absolutePath);
-  if (stat.isFile()) {
-    return [relativePath];
+  if (fs.statSync(absolutePath).isFile()) {
+    return /\.(md|markdown|ya?ml|js|json)$/i.test(relativePath) ? [relativePath] : [];
   }
-  return fs
-    .readdirSync(absolutePath, { withFileTypes: true })
-    .flatMap((entry) => {
-      const child = path.join(relativePath, entry.name);
-      return entry.isDirectory() ? walkTextFiles(child) : [child];
-    })
-    .filter((file) => /\.(md|markdown|ya?ml|js|json)$/i.test(file));
+  return walkFiles(absolutePath, {
+    match: (file) => /\.(md|markdown|ya?ml|js|json)$/i.test(file)
+  }).map((file) => path.relative(REPO_ROOT, file));
 }
 
 function npmRunReferences() {
