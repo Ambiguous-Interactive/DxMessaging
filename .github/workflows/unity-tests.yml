@@ -50,7 +50,7 @@ jobs:
       ci-owned-docs-only: ${{ steps.docs-only.outputs.docs-only }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -284,7 +284,7 @@ jobs:
         run: git config --global core.longpaths true
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
@@ -303,7 +303,7 @@ jobs:
           matrix-note: "default (organization lock wraps the Unity section)"
 
       - name: Cache Unity Library and package caches
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         env:
           PACKAGE_HASH: >-
             ${{ hashFiles(
