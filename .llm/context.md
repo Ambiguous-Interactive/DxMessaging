@@ -24,6 +24,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 - Script tests use the built-in `node --test` runner (`npm test`); there is no jest. Pre-push runs only the fast script-test subset and excludes real subprocess/archive integration tests, so agents must run full `npm test` when changing `scripts/**/*.js` or GitHub composite action scripts.
 - Run tools directly (`npx prettier`, `npx cspell`, `npx markdownlint-cli2`); never reintroduce "managed" runner wrappers.
 - A script with both a fixer/generator mode and a `--check` mode must converge: running the fixer either makes `--check` pass or exits non-zero naming the file a human must fix. Share one validator between the modes, and either refuse to write an unfixable state or re-verify the post-write state; never report success while leaving a `--check`-failing state (the trap is a fixer that silently no-ops on input its own `--check` rejects). See `collectValidationErrors` (post-write re-verify) in `scripts/update-llms-txt.js` and `analyze` (refuse-when-unfixable) in `scripts/generate-skills-index.js`.
+- When workflows, docs, scripts, or issue templates reference package-script aliases, update `package.json` in the same change; `scripts/__tests__/package-script-contract.test.js` guards the common reference surfaces and the `validate:all` issue-template-version gate.
 
 ## Core Delivery Rules
 

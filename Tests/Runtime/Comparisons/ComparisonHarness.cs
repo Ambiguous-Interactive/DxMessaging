@@ -90,8 +90,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     + $"(delta {DescribeFanOutDelta(deltaInvocations, invocationsPerOperation)}). Breakdown: "
                     + $"invocationsPerOperation={invocationsPerOperation}, warmupEmits={warmupEmits}, "
                     + $"timedOps={measurement.TotalOperations}, allocationProbeOps={measurement.AllocationProbeOperations}, "
-                    + $"totalEmittedOps={measurement.TotalEmittedOperations} (= warmup + timed + probe). "
-                    + $"A delta of exactly +{BenchmarkProtocol.BatchSize} ops means the post-window "
+                    + $"totalEmittedOps={measurement.TotalEmittedOperations} (= timed + probe; warmup listed separately). "
+                    + $"A delta of exactly +{invocationsPerOperation * BenchmarkProtocol.BatchSize} invocations "
+                    + $"(+{BenchmarkProtocol.BatchSize} ops) means the post-window "
                     + "allocation-probe batch is not being counted in the expected total; any other "
                     + "delta means the library dropped, duplicated, or deduped a message (a real "
                     + "fan-out/correctness defect, NOT a harness accounting bug)."
@@ -125,22 +126,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             long invocationsPerOperation
         )
         {
-            if (invocationsPerOperation <= 0)
-            {
-                return $"{deltaInvocations} invocations "
-                    + $"(invocationsPerOperation={invocationsPerOperation})";
-            }
-
-            long deltaOperations = deltaInvocations / invocationsPerOperation;
-            long remainder = deltaInvocations % invocationsPerOperation;
-            if (remainder == 0)
-            {
-                return $"{deltaInvocations} invocations = {deltaOperations} ops";
-            }
-
-            return $"{deltaInvocations} invocations = {deltaOperations} ops + {remainder} leftover "
-                + "(NON-INTEGRAL fan-out: a partial operation's worth of invocations, i.e. the "
-                + "library fanned out inconsistently across emits -- a real correctness defect)";
+            return BenchmarkProtocol.DescribeInvocationDelta(
+                deltaInvocations,
+                invocationsPerOperation
+            );
         }
     }
 }

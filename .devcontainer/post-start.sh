@@ -50,8 +50,10 @@ git lfs pull || true
 # Install / refresh the OpenAI Codex CLI (@openai/codex) from npm. The script
 # is idempotent and never fails the caller: it skips when already at latest,
 # and degrades gracefully when offline.
-if [[ -x "${SCRIPT_DIR}/install-codex-cli.sh" ]]; then
-    bash "${SCRIPT_DIR}/install-codex-cli.sh" || true
+if [[ ! -f "${SCRIPT_DIR}/install-codex-cli.sh" ]]; then
+    echo "[post-start] WARN: install-codex-cli.sh missing; skipping codex CLI install"
 else
-    echo "[post-start] WARN: install-codex-cli.sh missing or not executable; skipping codex CLI install"
+    if ! bash "${SCRIPT_DIR}/install-codex-cli.sh"; then
+        echo "[post-start] WARN: Codex CLI install/update failed (continuing)"
+    fi
 fi

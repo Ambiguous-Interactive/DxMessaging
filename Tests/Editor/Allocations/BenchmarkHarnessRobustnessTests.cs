@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using System.Collections;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -426,6 +427,30 @@ namespace DxMessaging.Tests.Editor.Allocations
                 BenchmarkProtocol.BatchSize,
                 NumInvocationsPerIteration,
                 "The editor benchmark harness must share the single batch-size constant with BenchmarkProtocol."
+            );
+        }
+
+        [Test]
+        public void DispatchInvocationCounterUsesLongCount()
+        {
+            Type counterType = typeof(DispatchThroughputBenchmarks).GetNestedType(
+                "InvocationCounter",
+                BindingFlags.NonPublic
+            );
+            Assert.IsNotNull(
+                counterType,
+                "DispatchThroughputBenchmarks must keep an invocation counter."
+            );
+
+            PropertyInfo countProperty = counterType.GetProperty(
+                "Count",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+            );
+            Assert.IsNotNull(countProperty, "InvocationCounter must expose a Count property.");
+            Assert.AreEqual(
+                typeof(long),
+                countProperty.PropertyType,
+                "InvocationCounter.Count must be long so high-throughput 5s fan-out windows cannot overflow an int."
             );
         }
 

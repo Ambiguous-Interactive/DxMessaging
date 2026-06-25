@@ -31,6 +31,15 @@ fi
 
 export PATH="${NPM_PREFIX}/bin:${PATH}"
 
+# Avoid concurrent npm global installs when multiple lifecycle hooks overlap.
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"${TMPDIR:-/tmp}/install-codex-cli.lock"
+    if ! flock -n 9; then
+        log "another install-codex process is running; skipping this run."
+        exit 0
+    fi
+fi
+
 # ---- read currently-installed version (cheap, offline) ----------------------
 installed=""
 pkg_json="${NPM_PREFIX}/lib/node_modules/@openai/codex/package.json"
@@ -38,7 +47,7 @@ if [[ -f "${pkg_json}" ]]; then
     if command -v jq >/dev/null 2>&1; then
         installed="$(jq -r '.version // empty' "${pkg_json}" 2>/dev/null || true)"
     else
-        installed="$(grep -m1 '"version"' "${pkg_json}" \
+        installed="$(grep -m1 '^[[:space:]]*"version"[[:space:]]*:' "${pkg_json}" \
             | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' \
             || true)"
     fi
@@ -67,7 +76,7 @@ for attempt in 1 2 3; do
     if timeout 180 npm install -g "${PKG}@${latest}" \
             --silent --no-fund --no-audit; then
         if command -v codex >/dev/null 2>&1; then
-            log "${PKG} ready: $(codex --version 2>/dev/null | head -n1 || echo "${latest}")"
+            log "${PKG} ready: $(timeout 10 codex --version 2>/dev/null | head -n1 || echo "${latest}")"
             exit 0
         fi
         warn "codex binary missing from PATH after install attempt ${attempt}/3."

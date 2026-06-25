@@ -102,9 +102,9 @@ The release workflow performs these gates:
 
 1. Verify the semver tag, the package version, and the changelog heading.
 1. Run script tests (`node --test scripts/`) and `npm run validate:all`
-   (asmdef references, Unity version matrix, JS LoC budget, analyzer payload,
-   `llms.txt` freshness). Repository identity checks are now the manual
-   checklist in [GitHub Transfer](./github-transfer.md).
+   (`package.json` is the source of truth for the current validation set).
+   Repository identity checks are now the manual checklist in
+   [GitHub Transfer](./github-transfer.md).
 1. Pack the npm tarball and write a `.sha256` checksum.
 1. Attest the packed `.tgz` with GitHub artifact attestations.
 1. Run the trusted Unity release check on the Ambiguous self-hosted Windows

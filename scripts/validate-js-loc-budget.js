@@ -40,7 +40,10 @@ const path = require("path");
 // increase minimal.
 // 066: 12795 for banner --check validation with non-mutating diagnostics for
 // stale version/test-count badge metadata.
-const TOTAL_BUDGET = 12795;
+// 067: 12890 for the package-script contract guard that catches workflows/docs
+// referencing missing npm scripts and keeps the issue-template check wired into
+// validate:all.
+const TOTAL_BUDGET = 12890;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

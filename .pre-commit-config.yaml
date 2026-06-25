@@ -138,6 +138,7 @@ repos:
           scripts/lib/__tests__/lib.test.js
           scripts/__tests__/analyzer-runtime-placement.test.js
           scripts/__tests__/fix-csharp-underscore-methods.test.js
+          scripts/__tests__/package-script-contract.test.js
           scripts/__tests__/sync-banner-version.test.js
           scripts/__tests__/unity-perf.test.js
           scripts/__tests__/validate-asmdef-references.test.js

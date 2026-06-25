@@ -57,9 +57,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void NegativeDeltaStaysExact()
         {
             // A dropped-message defect yields observed < expected (a negative delta). The message
-            // must still reconstruct: (-5 / 4) * 4 + (-5 % 4) = (-1 * 4) + -1 = -5.
+            // must stay readable while preserving exact arithmetic:
+            // (-5 / 4) * 4 + (-5 % 4) = (-1 * 4) + -1 = -5.
             string message = ComparisonHarness.DescribeFanOutDelta(-5, 4);
-            StringAssert.Contains("-5 invocations = -1 ops + -1 leftover", message);
+            StringAssert.Contains("-5 invocations = -1 ops - 1 leftover", message);
         }
 
         [Test]

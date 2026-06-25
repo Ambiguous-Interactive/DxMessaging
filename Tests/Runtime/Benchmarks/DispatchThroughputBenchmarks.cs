@@ -161,15 +161,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // replaced caught neither.
             long expectedHandlerInvocations =
                 (long)perEmit * (warmupEmits + measurement.TotalEmittedOperations);
+            long observedHandlerInvocations = handlerInvocations.Count;
+            long deltaHandlerInvocations = observedHandlerInvocations - expectedHandlerInvocations;
             Assert.AreEqual(
                 expectedHandlerInvocations,
-                handlerInvocations.Count,
+                observedHandlerInvocations,
                 $"Dispatch scenario '{scenario}' fan-out mismatch: expected {expectedHandlerInvocations} "
-                    + $"handler invocations, observed {handlerInvocations.Count}. Breakdown: perEmit={perEmit}, "
+                    + $"handler invocations, observed {observedHandlerInvocations} "
+                    + $"(delta {BenchmarkProtocol.DescribeInvocationDelta(deltaHandlerInvocations, perEmit)}). "
+                    + $"Breakdown: perEmit={perEmit}, "
                     + $"warmupEmits={warmupEmits}, timedOps={measurement.TotalOperations}, "
                     + $"allocationProbeOps={measurement.AllocationProbeOperations}, "
-                    + $"totalEmittedOps={measurement.TotalEmittedOperations}. A delta that is a multiple of "
-                    + $"{BenchmarkProtocol.BatchSize} points at batch-accounting; any other delta is a real "
+                    + $"totalEmittedOps={measurement.TotalEmittedOperations} (= timed + probe; warmup listed separately). "
+                    + $"A delta of exactly +{(long)perEmit * BenchmarkProtocol.BatchSize} invocations "
+                    + $"(+{BenchmarkProtocol.BatchSize} ops) points at post-window allocation-probe "
+                    + "batch accounting; any other delta is a real "
                     + "dispatch fan-out defect (dropped/duplicated handler invocation)."
             );
             return DispatchBenchmarkResult.ForEmitScenario(
@@ -1151,7 +1157,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private sealed class InvocationCounter
         {
-            public int Count { get; private set; }
+            public long Count { get; private set; }
 
             public void Increment()
             {

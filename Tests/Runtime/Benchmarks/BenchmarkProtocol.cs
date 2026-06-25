@@ -249,6 +249,37 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long upper = sorted[middle];
             return lower + ((upper - lower) / 2);
         }
+
+        /// <summary>
+        /// Formats an observed-vs-expected invocation delta without hiding leftovers
+        /// through truncating integer division. Exact multiples are shown as whole
+        /// operations; non-integral remainders stay visible because they signal
+        /// inconsistent fan-out within one logical operation.
+        /// </summary>
+        public static string DescribeInvocationDelta(
+            long deltaInvocations,
+            long invocationsPerOperation
+        )
+        {
+            if (invocationsPerOperation <= 0)
+            {
+                return $"{deltaInvocations} invocations "
+                    + $"(invocationsPerOperation={invocationsPerOperation})";
+            }
+
+            long deltaOperations = deltaInvocations / invocationsPerOperation;
+            long remainder = deltaInvocations % invocationsPerOperation;
+            if (remainder == 0)
+            {
+                return $"{deltaInvocations} invocations = {deltaOperations} ops";
+            }
+
+            string remainderText =
+                remainder > 0 ? $"+ {remainder} leftover" : $"- {-remainder} leftover";
+            return $"{deltaInvocations} invocations = {deltaOperations} ops {remainderText} "
+                + "(NON-INTEGRAL fan-out: a partial operation's worth of invocations, i.e. the "
+                + "library fanned out inconsistently across emits -- a real correctness defect)";
+        }
     }
 
     /// <summary>Result of a single <see cref="BenchmarkProtocol.Measure"/> window.</summary>
