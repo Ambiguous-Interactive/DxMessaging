@@ -130,7 +130,7 @@ jobs:
       has-autocommit-app: ${{ steps.check-autocommit-app.outputs.has-app }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -312,7 +312,7 @@ jobs:
         run: git config --global core.longpaths true
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
@@ -333,7 +333,7 @@ jobs:
           requested-labels: "self-hosted, Windows, RAM-64GB, fast"
 
       - name: Cache Unity Library and package caches
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         env:
           PACKAGE_HASH: >-
             ${{ hashFiles(
@@ -556,7 +556,7 @@ jobs:
       PERF_DOC: docs/architecture/performance.md
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # Render against the PR's code (head.sha), not the merge commit, so the
           # "changed vs committed" comparison reflects this branch.
@@ -953,7 +953,7 @@ jobs:
           private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
 
       - name: Checkout default branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
