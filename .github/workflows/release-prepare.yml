@@ -121,14 +121,16 @@ jobs:
           node scripts/release/prepare-release.js "${args[@]}"
 
       - name: Sync the version into generated files
-        # The banner SVG and llms.txt both embed the package version;
-        # validate:all's check:llms-txt (and CI's validate-banner) fail when
-        # they drift from package.json, so regenerate both for the release
-        # commit.
+        # The banner SVG and llms.txt both embed the package version, and the
+        # bug-report template's version dropdown is derived from it; validate:all's
+        # check:llms-txt / check:issue-template-versions (and CI's validate-banner)
+        # fail when they drift from package.json, so regenerate all three for the
+        # release commit.
         run: |
           set -euo pipefail
           npm run sync:banner
           npm run update:llms-txt
+          npm run update:issue-template-versions
 
       - name: Validate the prepared tree
         run: |
@@ -199,7 +201,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "${BRANCH}"
-          git add package.json CHANGELOG.md docs/images/DxMessaging-banner.svg llms.txt
+          # Stage every file the bump + "Sync the version into generated files"
+          # step can touch. Keep this list in lockstep with those generators
+          # (sync:banner, update:llms-txt, update:issue-template-versions); an
+          # omitted artifact is regenerated, passes validate:all, then is silently
+          # dropped from the release commit.
+          git add package.json CHANGELOG.md docs/images/DxMessaging-banner.svg llms.txt .github/ISSUE_TEMPLATE/bug_report.yml
           git commit -m "release: ${TAG}"
           auth_header="$(printf 'x-access-token:%s' "${GH_PUSH_TOKEN}" | base64 | tr -d '\n')"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
@@ -231,7 +238,7 @@ jobs:
             echo "1. The tag fires release.yml: validate (pack + attest), the trusted Unity editmode check, the .unitypackage export,"
             echo "   npm publish (Trusted Publishing), then the GitHub Release with the .tgz, .sha256, and .unitypackage assets"
             echo "   plus the asset-store-submission artifact."
-            echo "1. The Unity Asset Store upload stays MANUAL: download the asset-store-submission artifact and follow docs/ops/unity-asset-store-upm.md."
+            echo "1. The Unity Asset Store upload stays MANUAL: download the asset-store-submission artifact and follow docs/runbooks/asset-store-publishing.md."
           } > "${pr_body_file}"
 
           GH_TOKEN="${GH_PUSH_TOKEN}" gh pr create \

@@ -48,7 +48,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private const string BaselineModeEnvVar = "DX_PERF_BASELINE_MODE";
         private const string PackageName = "com.wallstop-studios.dxmessaging";
         private const string BaselineCsvHeader =
-            "scenario,platform,commit,runIndex,emitsPerSecond,allocatedBytesDelta,wallClockMs";
+            "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs";
         private static readonly InstanceId Target = new(31001);
         private static readonly InstanceId Source = new(31002);
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
@@ -151,24 +151,78 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             );
 
-            Assert.Greater(
-                handlerInvocations.Count,
-                0,
-                "Benchmark scenario did not invoke handlers."
+            int perEmit = ExpectedHandlerInvocationsPerEmit(scenario);
+            int warmupEmits = DispatchBenchmarkScenarios.WarmupEmits(scenario);
+            // Defense-in-depth fan-out check (mirrors ComparisonHarness): reconcile the handler
+            // invocation count against the CONTRACT fan-out per emit times EVERY emit the protocol
+            // drove -- warmup + timed window + the untimed allocation-probe batch
+            // (TotalEmittedOperations, never TotalOperations). Exact equality catches a dropped or
+            // duplicated dispatch as well as the probe-batch accounting bug; the loose ">0" it
+            // replaced caught neither.
+            long expectedHandlerInvocations =
+                (long)perEmit * (warmupEmits + measurement.TotalEmittedOperations);
+            long observedHandlerInvocations = handlerInvocations.Count;
+            long deltaHandlerInvocations = observedHandlerInvocations - expectedHandlerInvocations;
+            Assert.AreEqual(
+                expectedHandlerInvocations,
+                observedHandlerInvocations,
+                $"Dispatch scenario '{scenario}' fan-out mismatch: expected {expectedHandlerInvocations} "
+                    + $"handler invocations, observed {observedHandlerInvocations} "
+                    + $"(delta {BenchmarkProtocol.DescribeInvocationDelta(deltaHandlerInvocations, perEmit)}). "
+                    + $"Breakdown: perEmit={perEmit}, "
+                    + $"warmupEmits={warmupEmits}, timedOps={measurement.TotalOperations}, "
+                    + $"allocationProbeOps={measurement.AllocationProbeOperations}, "
+                    + $"totalEmittedOps={measurement.TotalEmittedOperations} (= timed + probe; warmup listed separately). "
+                    + $"A delta of exactly +{(long)perEmit * BenchmarkProtocol.BatchSize} invocations "
+                    + $"(+{BenchmarkProtocol.BatchSize} ops) points at post-window allocation-probe "
+                    + "batch accounting; any other delta is a real "
+                    + "dispatch fan-out defect (dropped/duplicated handler invocation)."
             );
             return DispatchBenchmarkResult.ForEmitScenario(
                 GetScenarioName(scenario),
                 runIndex: -1,
                 measurement.OperationsPerSecond,
-                measurement.AllocatedBytesDelta,
+                measurement.GcAllocations,
                 measurement.ElapsedSeconds * 1000d
             );
+        }
+
+        // The CONTRACT fan-out per emit for each throughput (emit) scenario: how many
+        // handlerInvocations increments a SINGLE emit must produce. Kept as an explicit,
+        // implementation-independent contract that mirrors ConfigureScenario so a dispatch
+        // regression that drops or duplicates an invocation makes the exact fan-out check in
+        // MeasureEmitScenario fail (observed != expected) instead of passing silently.
+        // Interceptors do NOT count (AllowUntargeted only gates, it never increments);
+        // post-processors DO count (CountPostProcessed increments), plus the one terminal handler.
+        private static int ExpectedHandlerInvocationsPerEmit(DispatchBenchmarkScenario scenario)
+        {
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
+                case DispatchBenchmarkScenario.TargetedFloodOneListener:
+                case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
+                case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
+                    return 1;
+                case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
+                case DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities:
+                    return 4;
+                case DispatchBenchmarkScenario.TargetedFloodSixteenListeners:
+                    return 16;
+                case DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors:
+                    return 5; // four post-processors + one terminal handler
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+            }
         }
 
         private static DispatchBenchmarkResult MeasureRegistrationFlood()
         {
             Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
-            long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            // Count managed allocations via the reliable GC.Alloc recorder (the
+            // recorder spans the timed region; its overhead is negligible against the
+            // JIT-dominated flood). NEVER GC.GetAllocatedBytesForCurrentThread(): it
+            // returns 0 for every allocation under Unity's Boehm GC (see AllocationProbe).
+            using AllocationProbe.Window window = AllocationProbe.BeginWindow();
             long startTimestamp = Stopwatch.GetTimestamp();
             using (BenchmarkRegistrationScope scope = new())
             {
@@ -178,12 +232,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
             long endTimestamp = Stopwatch.GetTimestamp();
-            long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            long gcAllocations = window.Sample();
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus),
                 runIndex: -1,
-                afterAllocatedBytes - beforeAllocatedBytes,
+                gcAllocations,
                 TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
             );
         }
@@ -212,7 +266,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
-            long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            using AllocationProbe.Window window = AllocationProbe.BeginWindow();
             long startTimestamp = Stopwatch.GetTimestamp();
             using (BenchmarkRegistrationScope scope = new())
             {
@@ -222,12 +276,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
             long endTimestamp = Stopwatch.GetTimestamp();
-            long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+            long gcAllocations = window.Sample();
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit),
                 runIndex: -1,
-                afterAllocatedBytes - beforeAllocatedBytes,
+                gcAllocations,
                 TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
             );
         }
@@ -252,16 +306,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     builders[index](scope.PrimaryToken);
                 }
 
-                long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 scope.PrimaryToken.UnregisterAll();
                 long endTimestamp = Stopwatch.GetTimestamp();
-                long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                long gcAllocations = window.Sample();
 
                 return DispatchBenchmarkResult.ForRegistrationScenario(
                     GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold),
                     runIndex: -1,
-                    afterAllocatedBytes - beforeAllocatedBytes,
+                    gcAllocations,
                     TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
                 );
             }
@@ -299,16 +353,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     builders[index](scope.PrimaryToken);
                 }
 
-                long beforeAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 scope.PrimaryToken.UnregisterAll();
                 long endTimestamp = Stopwatch.GetTimestamp();
-                long afterAllocatedBytes = GC.GetAllocatedBytesForCurrentThread();
+                long gcAllocations = window.Sample();
 
                 return DispatchBenchmarkResult.ForRegistrationScenario(
                     GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit),
                     runIndex: -1,
-                    afterAllocatedBytes - beforeAllocatedBytes,
+                    gcAllocations,
                     TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
                 );
             }
@@ -352,7 +406,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return DispatchBenchmarkResult.ForColdLatencyScenario(
                 GetScenarioName(scenario),
                 runIndex: -1,
-                measurement.MedianAllocatedBytesDelta,
+                measurement.MedianGcAllocations,
                 measurement.MedianWallClockMs
             );
         }
@@ -1103,7 +1157,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private sealed class InvocationCounter
         {
-            public int Count { get; private set; }
+            public long Count { get; private set; }
 
             public void Increment()
             {
@@ -1154,7 +1208,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             string commit,
             int runIndex,
             double emitsPerSecond,
-            long allocatedBytesDelta,
+            long gcAllocations,
             double wallClockMs,
             bool isRegistrationScenario
         )
@@ -1164,7 +1218,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Commit = commit;
             RunIndex = runIndex;
             EmitsPerSecond = emitsPerSecond;
-            AllocatedBytesDelta = allocatedBytesDelta;
+            GcAllocations = gcAllocations;
             WallClockMs = wallClockMs;
             IsRegistrationScenario = isRegistrationScenario;
         }
@@ -1179,7 +1233,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public double EmitsPerSecond { get; }
 
-        public long AllocatedBytesDelta { get; }
+        /// <summary>
+        /// Managed allocation CALL count for this row (over one steady-state batch, or
+        /// the median across cold trials), or <see cref="AllocationProbe.Unmeasured"/>
+        /// (<c>-1</c>) when no reliable allocation probe exists on this backend. A
+        /// reported <c>0</c> is a measured zero, never a fabricated one. Renamed from
+        /// the former <c>AllocatedBytesDelta</c>, whose
+        /// <c>GC.GetAllocatedBytesForCurrentThread()</c> source returns <c>0</c> for
+        /// every allocation under Unity's Boehm GC (see <see cref="AllocationProbe"/>).
+        /// </summary>
+        public long GcAllocations { get; }
 
         public double WallClockMs { get; }
 
@@ -1201,7 +1264,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             string scenario,
             int runIndex,
             double emitsPerSecond,
-            long allocatedBytesDelta,
+            long gcAllocations,
             double wallClockMs
         )
         {
@@ -1211,7 +1274,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 ResolveCommit(),
                 runIndex,
                 emitsPerSecond,
-                allocatedBytesDelta,
+                gcAllocations,
                 wallClockMs,
                 isRegistrationScenario: false
             );
@@ -1220,7 +1283,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public static DispatchBenchmarkResult ForRegistrationScenario(
             string scenario,
             int runIndex,
-            long allocatedBytesDelta,
+            long gcAllocations,
             double wallClockMs
         )
         {
@@ -1230,7 +1293,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 ResolveCommit(),
                 runIndex,
                 emitsPerSecond: 0,
-                allocatedBytesDelta,
+                gcAllocations,
                 wallClockMs,
                 isRegistrationScenario: true
             );
@@ -1248,7 +1311,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public static DispatchBenchmarkResult ForColdLatencyScenario(
             string scenario,
             int runIndex,
-            long medianAllocatedBytes,
+            long medianGcAllocations,
             double medianWallClockMs
         )
         {
@@ -1258,7 +1321,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 ResolveCommit(),
                 runIndex,
                 emitsPerSecond: 0,
-                medianAllocatedBytes,
+                medianGcAllocations,
                 medianWallClockMs,
                 isRegistrationScenario: false
             );
@@ -1273,7 +1336,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 EscapeCsv(Commit),
                 RunIndex.ToString(CultureInfo.InvariantCulture),
                 EmitsPerSecond.ToString("F3", CultureInfo.InvariantCulture),
-                AllocatedBytesDelta.ToString(CultureInfo.InvariantCulture),
+                GcAllocations.ToString(CultureInfo.InvariantCulture),
                 WallClockMs.ToString("F3", CultureInfo.InvariantCulture)
             );
         }
@@ -1286,7 +1349,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 + $"commit:\"{Commit}\", "
                 + $"runIndex:{RunIndex.ToString(CultureInfo.InvariantCulture)}, "
                 + $"emitsPerSec:{EmitsPerSecond.ToString("F3", CultureInfo.InvariantCulture)}, "
-                + $"allocatedBytesDelta:{AllocatedBytesDelta.ToString(CultureInfo.InvariantCulture)}, "
+                + $"gcAllocations:{GcAllocations.ToString(CultureInfo.InvariantCulture)}, "
                 + $"wallClockMs:{WallClockMs.ToString("F3", CultureInfo.InvariantCulture)}"
                 + "}";
         }

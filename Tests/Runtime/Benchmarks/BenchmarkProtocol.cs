@@ -8,9 +8,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// Single source of truth for benchmark measurement methodology shared by every
     /// DxMessaging benchmark suite (dispatch throughput, editor benchmarks, library
     /// comparisons). Warm up, then measure ONE continuous window of
-    /// <see cref="MeasurementSeconds"/> seconds, counting total operations and the GC
-    /// allocation delta over the same window. Throughput is total operations divided
-    /// by the measured elapsed time, never a median of resampled sub-windows.
+    /// <see cref="MeasurementSeconds"/> seconds for throughput, then count managed
+    /// allocations over a SEPARATE fixed-size batch via <see cref="AllocationProbe"/>.
+    /// Throughput is total operations divided by the measured elapsed time, never a
+    /// median of resampled sub-windows.
+    ///
+    /// <para>
+    /// Allocation is measured in its own batch (not folded into the timed window) for
+    /// two reasons: the reliable probe enables a profiler recorder whose overhead must
+    /// not distort the throughput clock, and the recorder counts allocation CALLS
+    /// (immune to GC timing) rather than a byte delta. The legacy
+    /// <c>GC.GetAllocatedBytesForCurrentThread()</c> byte counter was removed because
+    /// it returns <c>0</c> for every allocation under Unity's Boehm GC (proven on the
+    /// host editor), which made the old "allocated bytes" column vacuously zero for
+    /// every technology -- see <see cref="AllocationProbe"/>.
+    /// </para>
     /// </summary>
     public static class BenchmarkProtocol
     {
@@ -28,10 +40,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         /// <summary>
         /// Run <paramref name="warmup"/> once, then invoke <paramref name="emitBatch"/>
-        /// repeatedly until the measurement window elapses. <paramref name="emitBatch"/>
-        /// returns the number of operations it performed; the sum is the total. GC bytes
-        /// are sampled immediately before the first measured batch and immediately after
-        /// the last, so allocation is attributed to the same window as throughput.
+        /// repeatedly until the measurement window elapses to measure throughput.
+        /// <paramref name="emitBatch"/> returns the number of operations it performed;
+        /// the sum is the total. After the timed window, one additional batch is run
+        /// under <see cref="AllocationProbe"/> to count managed allocations (or report
+        /// <see cref="AllocationProbe.Unmeasured"/> when no reliable probe exists on
+        /// this backend). The allocation batch is UNTIMED and runs after the throughput
+        /// window so the recorder's overhead cannot distort the throughput clock.
         /// </summary>
         public static BenchmarkMeasurement Measure(Action warmup, Func<int> emitBatch)
         {
@@ -42,7 +57,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             warmup?.Invoke();
 
-            long startAllocated = GC.GetAllocatedBytesForCurrentThread();
             long startTimestamp = Stopwatch.GetTimestamp();
             long endTimestamp = startTimestamp;
             long totalOperations = 0;
@@ -51,7 +65,20 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 totalOperations += emitBatch();
                 endTimestamp = Stopwatch.GetTimestamp();
             } while (endTimestamp - startTimestamp < MeasurementWindowTicks);
-            long endAllocated = GC.GetAllocatedBytesForCurrentThread();
+
+            // Allocation is counted over a SEPARATE warmed batch (the path is already
+            // warm from the throughput window) so the recorder overhead is excluded
+            // from the timing above. The count is per the operations in one batch. That
+            // batch ALSO drives emitBatch once more, so its operation count is captured
+            // and reported as AllocationProbeOperations: a caller that reconciles an
+            // observed side-effect counter (e.g. a fan-out ProgressMarker) MUST add these
+            // ops back -- they really happened -- while throughput above stays
+            // timed-window-only. See ComparisonHarness for the canonical reconciliation.
+            long allocationProbeOperations = 0;
+            long gcAllocations = AllocationProbe.Measure(() =>
+            {
+                allocationProbeOperations += emitBatch();
+            });
 
             double elapsedSeconds = (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
             double operationsPerSecond = totalOperations / Math.Max(elapsedSeconds, double.Epsilon);
@@ -59,7 +86,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 totalOperations,
                 elapsedSeconds,
                 operationsPerSecond,
-                endAllocated - startAllocated
+                gcAllocations,
+                allocationProbeOperations
             );
         }
 
@@ -124,14 +152,25 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 TState state = setUpTrial(index);
                 try
                 {
-                    long startAllocated = GC.GetAllocatedBytesForCurrentThread();
+                    // Cold latency is a single first-touch operation per trial, so the
+                    // allocation count is taken over the SAME region as the timing (it
+                    // cannot be re-run cold). When the probe is functional its recorder
+                    // adds a small overhead to this window; that is acceptable for the
+                    // cold scenarios (dominated by first-touch JIT) and keeps the count
+                    // honest. When non-functional, the window is a no-op and Sample
+                    // returns AllocationProbe.Unmeasured. The `using` is scoped to this
+                    // try block, so the recorder is released (disabled) even if
+                    // timedOperation throws -- before tearDownTrial runs -- and the end
+                    // timestamp is captured BEFORE Sample so the sample/disable overhead
+                    // stays out of the measured time.
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     long startTimestamp = Stopwatch.GetTimestamp();
                     timedOperation(state);
                     long endTimestamp = Stopwatch.GetTimestamp();
-                    long endAllocated = GC.GetAllocatedBytesForCurrentThread();
+                    long gcAllocations = window.Sample();
                     wallClockSamples[index] =
                         (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency * 1000d;
-                    allocatedSamples[index] = endAllocated - startAllocated;
+                    allocatedSamples[index] = gcAllocations;
                 }
                 finally
                 {
@@ -175,9 +214,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /// <summary>
-        /// Median of a non-empty allocation sample set. For an even count it returns the
-        /// overflow-safe integer midpoint of the two middle elements (lower + (upper - lower)
-        /// / 2) so the reported allocation stays integral. The input is copied before sorting.
+        /// Median of a non-empty allocation-count sample set. For an even count it returns
+        /// the overflow-safe integer midpoint of the two middle elements (lower + (upper -
+        /// lower) / 2) so the reported count stays integral. The input is copied before
+        /// sorting. Samples are either all non-negative counts (probe functional) or all
+        /// <see cref="AllocationProbe.Unmeasured"/> (probe non-functional on this backend);
+        /// the verdict is backend-constant, so the midpoint never mixes a count with a
+        /// sentinel.
         /// </summary>
         public static long Median(long[] samples)
         {
@@ -206,6 +249,37 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long upper = sorted[middle];
             return lower + ((upper - lower) / 2);
         }
+
+        /// <summary>
+        /// Formats an observed-vs-expected invocation delta without hiding leftovers
+        /// through truncating integer division. Exact multiples are shown as whole
+        /// operations; non-integral remainders stay visible because they signal
+        /// inconsistent fan-out within one logical operation.
+        /// </summary>
+        public static string DescribeInvocationDelta(
+            long deltaInvocations,
+            long invocationsPerOperation
+        )
+        {
+            if (invocationsPerOperation <= 0)
+            {
+                return $"{deltaInvocations} invocations "
+                    + $"(invocationsPerOperation={invocationsPerOperation})";
+            }
+
+            long deltaOperations = deltaInvocations / invocationsPerOperation;
+            long remainder = deltaInvocations % invocationsPerOperation;
+            if (remainder == 0)
+            {
+                return $"{deltaInvocations} invocations = {deltaOperations} ops";
+            }
+
+            string remainderText =
+                remainder > 0 ? $"+ {remainder} leftover" : $"- {-remainder} leftover";
+            return $"{deltaInvocations} invocations = {deltaOperations} ops {remainderText} "
+                + "(NON-INTEGRAL fan-out: a partial operation's worth of invocations, i.e. the "
+                + "library fanned out inconsistently across emits -- a real correctness defect)";
+        }
     }
 
     /// <summary>Result of a single <see cref="BenchmarkProtocol.Measure"/> window.</summary>
@@ -215,46 +289,84 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long totalOperations,
             double elapsedSeconds,
             double operationsPerSecond,
-            long allocatedBytesDelta
+            long gcAllocations,
+            long allocationProbeOperations
         )
         {
             TotalOperations = totalOperations;
             ElapsedSeconds = elapsedSeconds;
             OperationsPerSecond = operationsPerSecond;
-            AllocatedBytesDelta = allocatedBytesDelta;
+            GcAllocations = gcAllocations;
+            AllocationProbeOperations = allocationProbeOperations;
         }
 
+        /// <summary>
+        /// Operations performed inside the TIMED throughput window only. This is the
+        /// numerator of <see cref="OperationsPerSecond"/> and must never include the
+        /// untimed allocation-probe batch. To reconcile against a side-effect counter,
+        /// use <see cref="TotalEmittedOperations"/> instead.
+        /// </summary>
         public long TotalOperations { get; }
 
         public double ElapsedSeconds { get; }
 
         public double OperationsPerSecond { get; }
 
-        public long AllocatedBytesDelta { get; }
+        /// <summary>
+        /// Managed allocation CALL count over one measurement batch, or
+        /// <see cref="AllocationProbe.Unmeasured"/> when no reliable allocation probe
+        /// exists on this backend. Never a fabricated <c>0</c>: a reported <c>0</c>
+        /// means the recorder observed zero allocations.
+        /// </summary>
+        public long GcAllocations { get; }
+
+        /// <summary>
+        /// Operations performed by the post-window allocation-probe batch (see
+        /// <see cref="BenchmarkProtocol.Measure"/>). These are REAL emits the protocol
+        /// drove, but they are EXCLUDED from <see cref="TotalOperations"/> and throughput
+        /// because the probe batch is untimed. A caller that asserts an exact observed
+        /// invocation count MUST add <c>InvocationsPerOperation * AllocationProbeOperations</c>
+        /// to its expected total, or it will under-count by exactly one batch.
+        /// </summary>
+        public long AllocationProbeOperations { get; }
+
+        /// <summary>
+        /// Total operations the protocol actually drove this run: the timed window plus
+        /// the untimed allocation-probe batch. Use this (never <see cref="TotalOperations"/>)
+        /// when reconciling against a side-effect counter such as a fan-out / ProgressMarker
+        /// total.
+        /// </summary>
+        public long TotalEmittedOperations => TotalOperations + AllocationProbeOperations;
     }
 
     /// <summary>
     /// Result of a <see cref="BenchmarkProtocol.MeasureColdLatency"/> run: the MEDIAN
-    /// wall-clock milliseconds and median allocation delta across <see cref="Trials"/>
-    /// single-shot cold trials. Cold latency is right-skewed, so the median is the
-    /// reported headline rather than the mean.
+    /// wall-clock milliseconds and median managed-allocation count across
+    /// <see cref="Trials"/> single-shot cold trials. Cold latency is right-skewed, so
+    /// the median is the reported headline rather than the mean.
     /// </summary>
     public readonly struct ColdLatencyMeasurement
     {
         public ColdLatencyMeasurement(
             double medianWallClockMs,
-            long medianAllocatedBytesDelta,
+            long medianGcAllocations,
             int trials
         )
         {
             MedianWallClockMs = medianWallClockMs;
-            MedianAllocatedBytesDelta = medianAllocatedBytesDelta;
+            MedianGcAllocations = medianGcAllocations;
             Trials = trials;
         }
 
         public double MedianWallClockMs { get; }
 
-        public long MedianAllocatedBytesDelta { get; }
+        /// <summary>
+        /// Median managed allocation CALL count across the cold trials, or
+        /// <see cref="AllocationProbe.Unmeasured"/> when no reliable allocation probe
+        /// exists on this backend (the verdict is backend-constant, so every trial
+        /// reports the same sentinel and the median preserves it).
+        /// </summary>
+        public long MedianGcAllocations { get; }
 
         public int Trials { get; }
     }

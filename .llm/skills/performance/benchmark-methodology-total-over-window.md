@@ -2,14 +2,15 @@
 title: "Benchmark Methodology: Total Over One Window"
 id: "benchmark-methodology-total-over-window"
 category: "performance"
-version: "1.3.0"
+version: "1.6.0"
 created: "2026-06-07"
-updated: "2026-06-12"
+updated: "2026-06-24"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Tests/Runtime/Benchmarks/BenchmarkProtocol.cs"
+    - path: "Tests/Runtime/Benchmarks/AllocationProbe.cs"
     - path: "Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs"
     - path: "Tests/Runtime/Comparisons/ComparisonHarness.cs"
     - path: "docs/runbooks/perf-benchmark-methodology.md"
@@ -25,12 +26,12 @@ tags:
 
 complexity:
   level: "intermediate"
-  reasoning: "Requires understanding why a single long window beats median-of-runs and how GC bytes attribute to the same window."
+  reasoning: "Requires understanding why a single long window beats median-of-runs and why allocation is counted via the GC.Alloc recorder, not GC.GetAllocatedBytesForCurrentThread."
 
 impact:
   performance:
     rating: "high"
-    details: "The measurement method decides whether reported throughput and bytes/op are trustworthy or noise."
+    details: "The measurement method decides whether reported throughput and allocation counts are trustworthy or noise."
   maintainability:
     rating: "high"
     details: "One shared protocol means every suite measures identically; changes land in one file."
@@ -39,7 +40,7 @@ impact:
     details: "A single Measure entry point is exercised by the dispatch suite, the editor suite, and every comparison bridge."
 
 prerequisites:
-  - "Familiarity with Stopwatch and GC.GetAllocatedBytesForCurrentThread"
+  - "Familiarity with Stopwatch and the Unity GC.Alloc profiler recorder"
   - "Awareness of the dispatch hot-path budget"
 
 dependencies:
@@ -74,8 +75,9 @@ status: "stable"
 
 > **One-line summary**: Warm up, then measure ONE continuous N-second window
 > (N = `BenchmarkProtocol.MeasurementSeconds` = 5) and report total operations
-> divided by measured elapsed seconds; GC bytes are captured over the same
-> window. Never median-of-runs, never a single untimed pass.
+> divided by measured elapsed seconds; managed allocations are COUNTED via the
+> `GC.Alloc` recorder over a SEPARATE batch. Never median-of-runs, never a single
+> untimed pass.
 
 ## Overview
 
@@ -85,26 +87,30 @@ way. DxMessaging fixes the method in one shared type,
 editor suite, and every cross-library comparison bridge produce numbers that
 can sit in the same table.
 
-The method is deliberately simple: run a warmup, sample the clock and the GC
-allocation counter, emit in batches until one continuous window of N seconds
-elapses, then sample the clock and GC counter again. Throughput is the total
-operation count divided by the actual elapsed seconds. The allocation delta is
-the difference of the two GC samples, so bytes/op is attributed to exactly the
-work that produced the throughput.
+The method is deliberately simple: run a warmup, sample the clock, emit in
+batches until one continuous window of N seconds elapses, then sample the clock
+again. Throughput is the total operation count divided by the actual elapsed
+seconds. Allocation is measured AFTER the timed window, over one additional
+untimed batch, by `AllocationProbe`, and is reported as a COUNT of managed
+allocations.
 
 ## Problem Statement
 
-Two tempting shortcuts both produce misleading numbers:
+Three tempting shortcuts all produce misleading numbers:
 
 - **Median-of-runs.** Measuring several short sub-windows and reporting the
   median hides warmup spillover and rewards lucky short samples. It also makes
-  bytes/op meaningless because no single sub-window owns the allocation.
+  allocation meaningless because no single sub-window owns the work.
 - **A single untimed pass.** Emitting a fixed count once and dividing by a
   rough timer conflates JIT/pool warmup with steady state.
+- **`GC.GetAllocatedBytesForCurrentThread()` for allocation.** This returns `0`
+  for EVERY allocation under Unity's Boehm GC (proven on the host editor: a
+  forced 1 MB array allocation read back as a `0`-byte delta). It made the old
+  "allocated bytes" column vacuously `0` for every technology -- hiding real
+  per-operation allocations such as `SendMessage`'s ~11-per-call reflection cost.
 
-The fix is one warmed, continuous, timed window. A long window (5 seconds)
-amortizes scheduler jitter and gives a stable operations-per-second figure
-without resampling games.
+The fix is one warmed, continuous, timed window for throughput plus a reliable
+`GC.Alloc`-recorder count for allocation.
 
 ## Solution
 
@@ -133,13 +139,18 @@ BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
     });
 
 double emitsPerSecond = measurement.OperationsPerSecond;
-long bytesOverWindow = measurement.AllocatedBytesDelta;
+long gcAllocations = measurement.GcAllocations; // -1 == AllocationProbe.Unmeasured
 ```
 
 The returned `BenchmarkMeasurement` carries `TotalOperations`,
-`ElapsedSeconds`, `OperationsPerSecond`, and `AllocatedBytesDelta`. Throughput
-is `TotalOperations / ElapsedSeconds`; the renderer and the regression gate
-read these fields directly.
+`ElapsedSeconds`, `OperationsPerSecond`, `GcAllocations`,
+`AllocationProbeOperations`, and the derived
+`TotalEmittedOperations`. Throughput is `TotalOperations / ElapsedSeconds`; the
+renderer and the regression gate read these fields directly. `GcAllocations` is
+the count of managed allocations over one batch, or `AllocationProbe.Unmeasured`
+(`-1`, rendered `n/a`) when no reliable probe is available on the backend --
+never a fabricated `0`. `AllocationProbeOperations` is the operation count of the
+untimed allocation-probe batch (see the invariant below).
 
 ## The Window Contract
 
@@ -152,13 +163,21 @@ public const int BatchSize = 10_000;
 ```
 
 1. `warmup` runs once so JIT and pools reach steady state.
-1. The GC counter and the stopwatch are sampled immediately before the first
-   measured batch.
+1. The stopwatch is sampled immediately before the first measured batch.
 1. Batches run until `endTimestamp - startTimestamp` reaches the window in
    stopwatch ticks; the batch granularity keeps the clock read off the
    per-emit path.
-1. The GC counter is sampled immediately after the last batch, so the delta
-   covers the same window as the elapsed time.
+1. AFTER the timed window, one more (untimed) batch runs under
+   `AllocationProbe` to count managed allocations. It is kept OUT of the timed
+   window on purpose: the probe enables a `GC.Alloc` profiler recorder whose
+   overhead must not distort the throughput clock. That recorder is owned by a
+   `using`-scoped `AllocationProbe.Window` (`BeginWindow` / `Sample`), so it is
+   ALWAYS disabled on scope exit -- even when the measured body throws. There is
+   no raw enable/disable pair to leak a permanently-enabled recorder (whose
+   profiler overhead would distort every later measurement in the domain). The
+   recorder needs the profiler, so it is functional in the editor / development
+   builds but NOT in a Release IL2CPP player; the published allocation numbers
+   therefore come from the in-editor Mono leg (see the methodology runbook).
 
 Warm-up is per scenario. `DispatchBenchmarkScenarios.WarmupEmits(scenario)`
 returns `WarmupEmits` (10,000) for every dispatch scenario except the
@@ -173,6 +192,42 @@ Registration scenarios are the one documented exception to the throughput
 report shape: they report wall-clock milliseconds for one-time setup cost
 instead of steady-state emits per second.
 
+## Invariant: Reconcile Side-Effect Counters Against TotalEmittedOperations
+
+`Measure` drives `emitBatch` MORE times than the timed window: once per timed
+iteration AND one extra UNTIMED batch under `AllocationProbe` (step 4 above).
+Both kinds of batch produce real side effects -- handler invocations, churn
+cycles, `ProgressMarker` increments. So the measurement reports two distinct
+totals:
+
+- `TotalOperations` -- the TIMED window only. It is the numerator of
+  `OperationsPerSecond`; throughput must never include the untimed probe batch.
+- `TotalEmittedOperations` (= `TotalOperations + AllocationProbeOperations`) --
+  every operation the protocol actually drove this run, timed window plus the
+  post-window probe batch.
+
+Any assertion that reconciles an OBSERVED side-effect counter against an EXPECTED
+count MUST use `TotalEmittedOperations`, never `TotalOperations`. The comparison
+harness's exact fan-out check is the canonical example:
+
+```csharp
+long expected =
+    bridge.InvocationsPerOperation(scenario)
+    * (warmupEmits + measurement.TotalEmittedOperations);
+Assert.AreEqual(expected, bridge.ProgressMarker, /* enriched diagnostic */);
+```
+
+Counting only the timed window under-counts by exactly one `BatchSize` per
+`InvocationsPerOperation`, so the check fails for every case -- this was a real
+regression (44 comparison cases failed with
+`observed - expected == InvocationsPerOperation * BatchSize`) introduced when the
+allocation probe began running its own untimed `emitBatch`. The fix is to count
+the probe batch, NOT to relax the assertion: it is an EXACT correctness check
+that catches a library dropping, duplicating, or deduping a message, and a
+one-`BatchSize` tolerance would hide up to 10,000 lost or doubled deliveries. Fix
+the accounting; keep the equality exact. `DispatchThroughputBenchmarks` applies
+the same reconciliation to its handler-invocation count.
+
 ## Cold Counterpart: MeasureColdLatency
 
 The window protocol above applies only to warm/hot throughput. Cold (JIT-inclusive
@@ -181,10 +236,11 @@ counterpart to `Measure`. Where `Measure` warms up and then sums batches over on
 continuous window, `MeasureColdLatency` runs K trials with NO warm-up and NO
 window. Each trial i builds FRESH state via `setUpTrial(i)` (UNTIMED; the index
 lets the caller pick a DISTINCT closed generic type per trial), times EXACTLY ONE
-`timedOperation` on that state, then disposes it via `tearDownTrial` (UNTIMED). It
-reports the MEDIAN wall clock and median allocation across the K trials, not the
-mean -- cold latency is right-skewed, so one GC or scheduler blip must not move the
-headline.
+`timedOperation` on that state (counting its allocations over the SAME region, since
+a cold op cannot be re-run cold), then disposes it via `tearDownTrial` (UNTIMED). It
+reports the MEDIAN wall clock and median allocation COUNT across the K trials, not
+the mean -- cold latency is right-skewed, so one GC or scheduler blip must not move
+the headline.
 
 ```csharp
 ColdLatencyMeasurement cold = BenchmarkProtocol.MeasureColdLatency(
@@ -193,7 +249,7 @@ ColdLatencyMeasurement cold = BenchmarkProtocol.MeasureColdLatency(
     timedOperation: state => state.EmitOnce(),
     tearDownTrial: state => state.Dispose());
 double medianMs = cold.MedianWallClockMs;
-long medianBytes = cold.MedianAllocatedBytesDelta;
+long medianAllocations = cold.MedianGcAllocations;
 ```
 
 Cold/latency results carry `emitsPerSecond=0` (the time lives in `wallClockMs`),
@@ -210,8 +266,10 @@ Because `Measure` is the only place the window logic lives, a suite cannot
 silently drift to a different method. The dispatch benchmarks, the editor
 benchmarks, and each comparison bridge call the same function, so a cell in
 the throughput table and a cell in the comparison matrix are directly
-comparable. Bytes/op stays honest because allocation is read across the exact
-measured interval, not estimated.
+comparable. The allocation count stays honest because `AllocationProbe`
+self-validates the recorder and reports `Unmeasured` rather than a fabricated
+`0` when the backend cannot measure -- the report can never again claim a
+zero it did not observe.
 
 ## Common Pitfalls
 
@@ -221,8 +279,14 @@ measured interval, not estimated.
   including it depresses throughput.
 - "I will read the clock per emit for finer granularity." The per-emit clock
   read is itself a cost on the hot path. Batch and sample at batch boundaries.
-- "I will measure GC bytes separately afterward." Sample inside the same
-  window so the delta matches the work.
+- "I will measure allocated BYTES with `GC.GetAllocatedBytesForCurrentThread()`."
+  That returns `0` for everything under Unity's Boehm GC. Count allocations with
+  the `GC.Alloc` recorder (`AllocationProbe`) instead.
+- "A `0` and an `n/a` are the same." No -- `0` is a measured zero-allocation
+  result; `n/a` (`AllocationProbe.Unmeasured`) means no probe was available.
+- "`TotalOperations` is the number of emits that happened." No -- the untimed
+  allocation-probe batch also emits. Reconcile fan-out / side-effect counters
+  against `TotalEmittedOperations`; reserve `TotalOperations` for throughput.
 
 ## See Also
 
@@ -233,5 +297,6 @@ measured interval, not estimated.
 ## References
 
 - Shared protocol: `Tests/Runtime/Benchmarks/BenchmarkProtocol.cs`
+- Allocation probe: `Tests/Runtime/Benchmarks/AllocationProbe.cs`
 - Methodology runbook: `docs/runbooks/perf-benchmark-methodology.md`
 - Consumers: `Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs`, `Tests/Runtime/Comparisons/ComparisonHarness.cs`

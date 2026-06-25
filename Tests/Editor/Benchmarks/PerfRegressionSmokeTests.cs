@@ -79,12 +79,22 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 $"{scenarioName} throughput regressed more than {RegressionMultiplier:0.0}x."
             );
 
-            long allocationBudgetBytes = Math.Max(0, baseline.AllocatedBytesDelta);
-            Assert.LessOrEqual(
-                current.AllocatedBytesDelta,
-                allocationBudgetBytes,
-                $"{scenarioName} allocated {current.AllocatedBytesDelta.ToString(CultureInfo.InvariantCulture)} bytes, exceeding the baseline allocation budget of {allocationBudgetBytes.ToString(CultureInfo.InvariantCulture)} bytes."
-            );
+            // Allocation budget is a CALL-COUNT budget now (see AllocationProbe). Enforce it
+            // only when BOTH baseline and current carry a real measured count; either side at
+            // the Unmeasured sentinel (-1) means the probe was non-functional on that run's
+            // backend, so a comparison would be meaningless rather than honest.
+            if (
+                baseline.GcAllocations != AllocationProbe.Unmeasured
+                && current.GcAllocations != AllocationProbe.Unmeasured
+            )
+            {
+                long allocationBudget = Math.Max(0, baseline.GcAllocations);
+                Assert.LessOrEqual(
+                    current.GcAllocations,
+                    allocationBudget,
+                    $"{scenarioName} performed {current.GcAllocations.ToString(CultureInfo.InvariantCulture)} GC allocations, exceeding the baseline budget of {allocationBudget.ToString(CultureInfo.InvariantCulture)}."
+                );
+            }
         }
 
         /// <summary>
@@ -228,7 +238,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 string platform,
                 string commit,
                 double emitsPerSecond,
-                long allocatedBytesDelta,
+                long gcAllocations,
                 double wallClockMs
             )
             {
@@ -236,7 +246,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 Platform = platform;
                 Commit = commit;
                 EmitsPerSecond = emitsPerSecond;
-                AllocatedBytesDelta = allocatedBytesDelta;
+                GcAllocations = gcAllocations;
                 WallClockMs = wallClockMs;
             }
 
@@ -248,7 +258,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 
             public double EmitsPerSecond { get; }
 
-            public long AllocatedBytesDelta { get; }
+            public long GcAllocations { get; }
 
             public double WallClockMs { get; }
 
@@ -262,7 +272,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 string platform,
                 string commit,
                 double emitsPerSecond,
-                long allocatedBytesDelta,
+                long gcAllocations,
                 double wallClockMs
             )
             {
@@ -271,7 +281,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                     platform,
                     commit,
                     emitsPerSecond,
-                    allocatedBytesDelta,
+                    gcAllocations,
                     wallClockMs
                 );
             }

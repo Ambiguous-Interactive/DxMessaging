@@ -74,6 +74,23 @@ run_optional() {
     fi
 }
 
+install_codex_cli() {
+    local installer="${SCRIPT_DIR}/install-codex-cli.sh"
+
+    if [[ ! -f "${installer}" ]]; then
+        log_warning "install-codex-cli.sh not found; skipping Codex CLI install"
+        return 1
+    fi
+
+    if bash "${installer}"; then
+        return 0
+    fi
+
+    # Keep post-create resilient when offline or npm registry is unreachable.
+    log_warning "Codex CLI install/update failed (continuing)"
+    return 1
+}
+
 ensure_path_line() {
     local rc_file="$1"
     # The $HOME literal is intentional — it must be written to the rc file
@@ -343,8 +360,11 @@ main() {
     log_success "npm prefix configured: $current_prefix"
 
     export PATH="$HOME/.local/bin:$PATH"
-    ensure_path_line "$HOME/.bashrc"
-    ensure_path_line "$HOME/.zshrc"
+    run_optional "Ensuring ~/.bashrc exports ~/.local/bin" ensure_path_line "$HOME/.bashrc"
+    run_optional "Ensuring ~/.zshrc exports ~/.local/bin" ensure_path_line "$HOME/.zshrc"
+    run_optional "Ensuring ~/.profile exports ~/.local/bin" ensure_path_line "$HOME/.profile"
+
+    run_optional "Installing Codex CLI (@openai/codex)" install_codex_cli
 
     # Step 3: workspace bootstrap.
     log_header "Bootstrapping Workspace"

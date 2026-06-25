@@ -12,16 +12,20 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-// Budget history:
-// 047: 10600 for skills-index generation after zero-loss script cuts.
-// 052: 10650 for the auto-commit force-refspec drift guard.
-// 055: 10890 for CI aggregate-workflow topology guards.
-// 056: 11185 for resilient llms.txt/README skill-count validation.
-// 057: 11350 for update/check convergence validation.
-// 058: 11820 for shared release notes, changelog extraction, and export staging
-// coverage. Each increase was reviewed with the bespoke invariant it protects.
-// 059: 11960 for cross-platform PowerShell project-path safety regression tests.
-const TOTAL_BUDGET = 11960;
+// Budget history, newest last:
+// 047 skills-index generation after zero-loss script cuts: 10600.
+// 052 auto-commit force-refspec drift guard: 10650.
+// 055 CI aggregate-workflow topology guards: 10890.
+// 056 llms.txt/README skill-count validation: 11185.
+// 057 update/check convergence validation: 11350.
+// 058 release notes, changelog extraction, export staging: 11820.
+// 059 cross-platform PowerShell project-path safety tests: 11960.
+// 062 issue-template version generator and fetch-refspec guard: 12360.
+// 064 allocation-honesty perf sentinel handling: 12390.
+// 065 PlayMode allocation leg and perf-scenario sharing: 12664.
+// 066 banner --check diagnostics: 12795.
+// 067 package-script contract guard and validate:all issue-template gate: 12890.
+const TOTAL_BUDGET = 12890;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

@@ -739,10 +739,11 @@ jobs:
 
       - name: Assemble the Asset Store submission staging artifact
         # There is NO sanctioned CLI/API for Unity Asset Store uploads
-        # (verified 2026-06): this STAGES the submission inputs and the
+        # (re-verified 2026-06-22): this STAGES the submission inputs and the
         # checklist; the upload itself is manual via publisher.unity.com with
-        # the Asset Store Publishing Tools package. See
-        # docs/ops/unity-asset-store-upm.md.
+        # the Asset Store Publishing Tools package. The release-time procedure
+        # and the automation determination live in
+        # docs/runbooks/asset-store-publishing.md.
         env:
           PACKAGE_VERSION: ${{ needs.verify-tag.outputs.package-version }}
           TAG: ${{ needs.verify-tag.outputs.tag }}
@@ -780,7 +781,7 @@ jobs:
             echo "1. Update the draft package metadata (version ${PACKAGE_VERSION}, changelog from CHANGELOG.md's ## [${PACKAGE_VERSION}] section)."
             echo "1. Submit for review."
             echo
-            echo "Full runbook: docs/ops/unity-asset-store-upm.md in the repository."
+            echo "Full runbook: docs/runbooks/asset-store-publishing.md (account setup: docs/ops/unity-asset-store-upm.md)."
           } > "${staging}/SUBMISSION-CHECKLIST.md"
 
       - name: Upload the Asset Store submission staging artifact

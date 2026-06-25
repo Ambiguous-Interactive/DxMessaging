@@ -66,24 +66,23 @@ generator and analyzer from the RoslynAnalyzer-labeled DLLs shipped under
 `Runtime/Analyzers/`), and `Samples~` is renamed to `Samples` so samples
 import visibly.
 
-There is no sanctioned CLI or API for Unity Asset Store uploads (verified
-June 2026). The pipeline therefore stops at staging; the upload below is
-manual.
+There is no sanctioned CLI or API for Unity Asset Store uploads (re-verified
+2026-06-22: the official `com.unity.asset-store-tools` v12.0.0 is GUI-only with
+no `-batchmode`/`-executeMethod`/API entry point, and the community batch
+uploaders drive undocumented internal Editor APIs that are unsupported and can
+break without warning). The pipeline therefore stops at staging; the upload
+below is manual. The release-time procedure -- and the full automation
+determination with its re-evaluation trigger -- lives in the
+[Asset Store Publishing runbook](../runbooks/asset-store-publishing.md).
 
 ## Submission Path
 
-For each release:
-
-1. Download the `asset-store-submission` artifact from the release workflow
-   run (or the `.unitypackage` from the GitHub Release assets).
-1. Sign in to `publisher.unity.com` with the Ambiguous publisher account.
-1. In a Unity project with the Asset Store Publishing Tools package
-   installed, import the staged `.unitypackage` and upload the package
-   content through the publisher tooling.
-1. Complete Asset Store metadata, screenshots, compatibility, and review
-   fields; copy the changelog from the matching `## [X.Y.Z]` CHANGELOG.md
-   section.
-1. Submit for review.
+The per-release classic `.unitypackage` upload procedure -- download the staged
+`asset-store-submission` artifact, drive the in-Editor uploader, fill the
+metadata, and submit for review -- lives in the
+[Asset Store Publishing runbook](../runbooks/asset-store-publishing.md). This
+page stays focused on the account-onboarding context and the UPM early-access
+variant below.
 
 If Ambiguous has UPM Asset Store early access, the UPM submission flow can
 replace the `.unitypackage` upload:

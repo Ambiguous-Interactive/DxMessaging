@@ -32,7 +32,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         /// <summary>
         /// Increments per handler invocation (or per churn cycle for SubscribeUnsubscribe);
-        /// the harness asserts this is greater than zero after measurement.
+        /// the harness asserts this equals <see cref="InvocationsPerOperation"/> times every
+        /// operation the benchmark protocol drove.
         /// </summary>
         long ProgressMarker { get; }
 

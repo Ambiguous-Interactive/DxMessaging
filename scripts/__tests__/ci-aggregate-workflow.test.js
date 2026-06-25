@@ -162,6 +162,16 @@ test("script-test path detector covers skills index inputs", () => {
   assert.match("scripts/generate-skills-index.js", scriptsPattern);
 });
 
+test("script-test path detector covers package-script contract reference surfaces", () => {
+  const source = readCiWorkflow();
+  const scriptsPattern = new RegExp(extractShellPatternVariable(source, "scripts_pattern"));
+
+  assert.match(".github/ISSUE_TEMPLATE/bug_report.yml", scriptsPattern);
+  assert.match("docs/ops/release-operations.md", scriptsPattern);
+  assert.match(".llm/context.md", scriptsPattern);
+  assert.match(".llm/skills/packaging/unity-analyzer-shipping.md", scriptsPattern);
+});
+
 test("static child jobs always report and fail closed on bad change detection", () => {
   const source = readCiWorkflow();
 

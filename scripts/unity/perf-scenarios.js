@@ -137,6 +137,31 @@ function isComparisonScenario(scenario) {
   return parseComparisonScenario(scenario) !== null;
 }
 
+// Derive the execution scope from a platform string. The benchmark encodes the
+// target as the FIRST token(s): "Standalone ...", "Editor PlayMode ...", or
+// "Editor EditMode ..." (see DispatchThroughputBenchmarks.ResolveExecutionTarget).
+// Standalone is checked first so a hypothetical "Standalone PlayMode" still maps
+// to the most player-faithful scope. Returns null for a non-string or a platform
+// with no recognized token so such rows are skipped rather than mis-grouped. Lives
+// here -- the shared, dependency-free module -- so render-perf-doc.js (which
+// re-exports it) and extract-perf-baseline.js share ONE copy with no circular
+// require.
+function deriveScope(platform) {
+  if (typeof platform !== "string") {
+    return null;
+  }
+  if (/\bStandalone\b/.test(platform)) {
+    return "Standalone";
+  }
+  if (/\bPlayMode\b/.test(platform)) {
+    return "PlayMode";
+  }
+  if (/\bEditMode\b/.test(platform)) {
+    return "EditMode";
+  }
+  return null;
+}
+
 module.exports = {
   SCENARIO_ORDER,
   SCENARIOS,
@@ -148,5 +173,6 @@ module.exports = {
   COMPARISON_SCENARIO_IDS,
   buildComparisonScenarioId,
   parseComparisonScenario,
-  isComparisonScenario
+  isComparisonScenario,
+  deriveScope
 };

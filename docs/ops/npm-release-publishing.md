@@ -102,8 +102,8 @@ The release workflow creates:
 - npm package version published with provenance
 - the `asset-store-submission` workflow artifact (the `.unitypackage`, the
   `.tgz`, checksums, and `SUBMISSION-CHECKLIST.md`) staged for the manual
-  Unity Asset Store upload; see
-  [Unity Asset Store UPM](./unity-asset-store-upm.md)
+  Unity Asset Store upload; the release-time procedure is the
+  [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md)
 
 The npm publish always runs before the GitHub Release update. The
 `.unitypackage` is a required asset, so a failed export blocks the entire

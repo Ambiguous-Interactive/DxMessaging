@@ -21,7 +21,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public long ProgressMarker => _fanOut?.Count ?? _progress;
 
         private const int DispatchKey = 0;
-        private const int KeyCount = 16;
+
+        // Single-sourced from the canonical scenario constant so the keyed
+        // lookup-table size stays identical (1:1) across every comparison bridge.
+        private const int KeyCount = ComparisonScenarios.KeyedListenerCount;
 
         private ComparisonScenario _scenario;
         private long _progress;

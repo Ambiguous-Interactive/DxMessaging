@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using System.Collections;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -430,6 +431,81 @@ namespace DxMessaging.Tests.Editor.Allocations
         }
 
         [Test]
+        public void DispatchInvocationCounterUsesLongCount()
+        {
+            Type counterType = typeof(DispatchThroughputBenchmarks).GetNestedType(
+                "InvocationCounter",
+                BindingFlags.NonPublic
+            );
+            Assert.IsNotNull(
+                counterType,
+                "DispatchThroughputBenchmarks must keep an invocation counter."
+            );
+
+            PropertyInfo countProperty = counterType.GetProperty(
+                "Count",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+            );
+            Assert.IsNotNull(countProperty, "InvocationCounter must expose a Count property.");
+            Assert.AreEqual(
+                typeof(long),
+                countProperty.PropertyType,
+                "InvocationCounter.Count must be long so high-throughput 5s fan-out windows cannot overflow an int."
+            );
+        }
+
+        // REGRESSION GUARD (fan-out accounting). BenchmarkProtocol.Measure drives ONE extra
+        // emitBatch under AllocationProbe AFTER the timed window. Those ops are real -- they advance
+        // any side-effect counter (e.g. a fan-out ProgressMarker) -- but are excluded from
+        // TotalOperations/throughput because the batch is untimed. They MUST be reported as
+        // AllocationProbeOperations so callers that assert an exact invocation total
+        // (ComparisonHarness) can reconcile via TotalEmittedOperations; pre-fix they were dropped,
+        // undercounting every comparison fan-out check by exactly one BatchSize. Runs the real 5s
+        // window, so it is PerfBench (matching this file's other measurement-window tests).
+        [Test, Category("PerfBench")]
+        public void MeasureCountsAllocationProbeBatchOperationsExactlyOneBatch()
+        {
+            long observedEmits = 0;
+            BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
+                warmup: null,
+                emitBatch: () =>
+                {
+                    for (int i = 0; i < BenchmarkProtocol.BatchSize; i++)
+                    {
+                        observedEmits++;
+                    }
+
+                    return BenchmarkProtocol.BatchSize;
+                }
+            );
+
+            Assert.AreEqual(
+                BenchmarkProtocol.BatchSize,
+                measurement.AllocationProbeOperations,
+                "Measure must run exactly one allocation-probe batch (BatchSize ops) after the timed "
+                    + "window and report its operation count. A 0 here means the post-window probe "
+                    + "batch's ops are being dropped (the fan-out-undercount regression)."
+            );
+            Assert.AreEqual(
+                measurement.TotalOperations + measurement.AllocationProbeOperations,
+                measurement.TotalEmittedOperations,
+                "TotalEmittedOperations must equal timed ops plus the probe batch ops."
+            );
+            Assert.AreEqual(
+                measurement.TotalEmittedOperations,
+                observedEmits,
+                $"Every emitBatch the protocol drives must be accounted for: observed {observedEmits} "
+                    + $"actual emits but TotalEmittedOperations reported {measurement.TotalEmittedOperations} "
+                    + $"(timed {measurement.TotalOperations} + probe {measurement.AllocationProbeOperations})."
+            );
+            Assert.Greater(
+                measurement.TotalOperations,
+                0,
+                "The timed window must run at least one batch."
+            );
+        }
+
+        [Test]
         public void WarmupEmitsSkipsFloodAndKeepsDefaultForEmitScenarios()
         {
             Assert.AreEqual(
@@ -711,15 +787,25 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // The "every scenario captures allocation bytes + CSV stays 7 columns" lock. This runs
+        // The "every scenario captures GC allocations + CSV stays 7 columns" lock. This runs
         // the real 5s measurement window per scenario, so it carries the PerfBench category and
-        // stays out of the fast metadata gate above.
+        // stays out of the fast metadata gate above. Because this runs in the Editor (where the
+        // GC.Alloc recorder is always functional), it also doubles as the regression guard for
+        // the dead-allocation-API bug: a non-functional probe would make GcAllocations the
+        // Unmeasured sentinel and trip the IsFunctional assertion.
         [Test, Category("PerfBench")]
         [TestCaseSource(nameof(DispatchScenarioCases))]
-        public void DispatchScenarioRunEmitsSevenColumnCsvWithAllocationBytes(
+        public void DispatchScenarioRunEmitsSevenColumnCsvWithGcAllocations(
             DispatchBenchmarkScenario scenario
         )
         {
+            Assert.IsTrue(
+                AllocationProbe.IsFunctional,
+                "The GC.Alloc allocation probe must be functional in the Editor; a non-functional "
+                    + "probe means the benchmark allocation column would be the Unmeasured sentinel "
+                    + "(the dead GC.GetAllocatedBytesForCurrentThread() bug this metric replaced)."
+            );
+
             DispatchBenchmarkResult result = DispatchThroughputBenchmarks.RunScenario(
                 scenario,
                 logResult: false
@@ -734,12 +820,14 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
             Assert.IsNotEmpty(
                 fields[5],
-                $"Scenario '{scenario}' must populate the allocated-bytes field (index 5). Row: '{csvRow}'."
+                $"Scenario '{scenario}' must populate the gc-allocations field (index 5). Row: '{csvRow}'."
             );
+            // Functional in the Editor, so the count is a real non-negative measurement (never
+            // the Unmeasured sentinel here).
             Assert.GreaterOrEqual(
-                result.AllocatedBytesDelta,
+                result.GcAllocations,
                 0,
-                $"Scenario '{scenario}' must report a non-negative allocated-bytes delta."
+                $"Scenario '{scenario}' must report a non-negative GC allocation count in the Editor."
             );
         }
 

@@ -8,6 +8,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Editor.Benchmarks;
     using DxMessaging.Tests.Runtime;
+    using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
 
@@ -136,9 +137,20 @@ namespace DxMessaging.Tests.Editor.Allocations
             // Budget: per-cycle worst case is dominated by closure +
             // dictionary churn (see AllocationMatrixTests.PerRegistrationByteBudget=512).
             // We allow 1.5x that ceiling per cycle to absorb interim
-            // dictionary resizing across the longer run.
+            // dictionary resizing across the longer run. The byte figures are
+            // retained for documentation only; the assertion uses a managed
+            // allocation CALL count via AllocationProbe because
+            // GC.GetAllocatedBytesForCurrentThread() returns 0 for every
+            // allocation under Unity's Boehm GC and cannot catch a regression.
             const long PerCycleBudgetBytes = 768L;
             long totalBudget = PerCycleBudgetBytes * RegistrationChurnCycles;
+
+            // Count budget = ceil(byteBudget / 16); 16 = minimum managed object
+            // size on 64-bit (8-byte header + 8-byte minimum payload), i.e. the
+            // most distinct objects that could fit in the byte budget. Generous
+            // by construction so incidental allocations never false-fail, while a
+            // gross per-cycle regression still trips it.
+            long totalCountBudget = (totalBudget + 15L) / 16L;
 
             RunWithFreshHarness(
                 scenario,
@@ -156,7 +168,7 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    long before = GC.GetAllocatedBytesForCurrentThread();
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
 
                     for (int i = 0; i < RegistrationChurnCycles; ++i)
                     {
@@ -165,29 +177,35 @@ namespace DxMessaging.Tests.Editor.Allocations
                         token.RemoveRegistration(handle);
                     }
 
-                    long after = GC.GetAllocatedBytesForCurrentThread();
-                    long delta = after - before;
+                    long gcAllocations = window.Sample();
+                    if (gcAllocations == AllocationProbe.Unmeasured)
+                    {
+                        Assert.Ignore(
+                            $"RegistrationChurn-{scenario.Kind}: the GC.Alloc allocation "
+                                + "probe is non-functional on this backend, so the churn "
+                                + "allocation budget cannot be evaluated."
+                        );
+                    }
 
                     // Always log the per-cycle average so a passing run still
                     // surfaces the baseline (useful when tightening the budget
                     // later). On failure the per-cycle figure is the actionable
                     // signal a maintainer needs to decide whether the regression
                     // is per-cycle or a one-off resize.
-                    long perCycleAvg = delta / RegistrationChurnCycles;
+                    long perCycleAvg = gcAllocations / RegistrationChurnCycles;
                     UnityEngine.Debug.Log(
-                        $"RegistrationChurn-{scenario.Kind}: {delta} bytes / "
+                        $"RegistrationChurn-{scenario.Kind}: {gcAllocations} GC allocations / "
                             + $"{RegistrationChurnCycles} cycles = {perCycleAvg} avg/cycle "
-                            + $"(budget {PerCycleBudgetBytes} avg/cycle, total {totalBudget})."
+                            + $"(count budget total {totalCountBudget})."
                     );
 
                     Assert.That(
-                        delta,
-                        Is.LessThanOrEqualTo(totalBudget),
-                        $"RegistrationChurn-{scenario.Kind} allocated {delta} bytes "
-                            + $"across {RegistrationChurnCycles} cycles "
+                        gcAllocations,
+                        Is.LessThanOrEqualTo(totalCountBudget),
+                        $"RegistrationChurn-{scenario.Kind} allocated {gcAllocations} GC "
+                            + $"allocations across {RegistrationChurnCycles} cycles "
                             + $"({perCycleAvg} avg/cycle), "
-                            + $"exceeding the {totalBudget}-byte budget "
-                            + $"({PerCycleBudgetBytes} avg/cycle)."
+                            + $"exceeding the count budget of {totalCountBudget}."
                     );
                 }
             );
@@ -259,9 +277,19 @@ namespace DxMessaging.Tests.Editor.Allocations
             // 128 bytes/emit covers struct-to-interface boxes up to 64 bytes
             // plus 64 bytes of per-emit overhead for any future bookkeeping;
             // 64 bytes was at the edge of safety relative to current struct
-            // sizes, so 128 provides meaningful margin for field growth.
+            // sizes, so 128 provides meaningful margin for field growth. These
+            // byte figures are retained for documentation only; the assertion
+            // uses a managed allocation CALL count via AllocationProbe because
+            // GC.GetAllocatedBytesForCurrentThread() returns 0 for every
+            // allocation under Unity's Boehm GC and cannot catch a regression.
             const long PerEmitBudgetBytes = 128L;
             long totalBudget = PerEmitBudgetBytes * AllocationAssertions.DefaultMeasuredIterations;
+
+            // Count budget = ceil(byteBudget / 16); 16 = minimum managed object
+            // size on 64-bit (8-byte header + 8-byte minimum payload). Generous
+            // by construction so incidental allocations never false-fail, while a
+            // gross per-emit regression on the boxing path still trips it.
+            long totalCountBudget = (totalBudget + 15L) / 16L;
 
             RunWithFreshHarness(
                 scenario,
@@ -284,34 +312,39 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                    long before = GC.GetAllocatedBytesForCurrentThread();
+                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         emit();
                     }
-                    long after = GC.GetAllocatedBytesForCurrentThread();
-                    long delta = after - before;
-                    long perEmit = delta / AllocationAssertions.DefaultMeasuredIterations;
+                    long gcAllocations = window.Sample();
+                    if (gcAllocations == AllocationProbe.Unmeasured)
+                    {
+                        Assert.Ignore(
+                            $"GlobalAcceptAllStruct-{scenario.Kind}: the GC.Alloc "
+                                + "allocation probe is non-functional on this backend, so "
+                                + "the boxing budget cannot be evaluated."
+                        );
+                    }
+                    long perEmit = gcAllocations / AllocationAssertions.DefaultMeasuredIterations;
 
                     // Always log the measured per-emit cost so a passing run
                     // still surfaces the baseline. Future maintainers can use
                     // the printed figure to decide whether the budget can be
                     // tightened.
                     UnityEngine.Debug.Log(
-                        $"GlobalAcceptAllStruct-{scenario.Kind}: {delta} bytes / "
+                        $"GlobalAcceptAllStruct-{scenario.Kind}: {gcAllocations} GC allocations / "
                             + $"{AllocationAssertions.DefaultMeasuredIterations} emissions = "
-                            + $"{perEmit} avg/emit "
-                            + $"(budget {PerEmitBudgetBytes} avg/emit, total {totalBudget})."
+                            + $"{perEmit} avg/emit (count budget total {totalCountBudget})."
                     );
 
                     Assert.That(
-                        delta,
-                        Is.LessThanOrEqualTo(totalBudget),
-                        $"GlobalAcceptAllStruct-{scenario.Kind} allocated {delta} bytes "
-                            + $"({perEmit} avg/emit) across "
+                        gcAllocations,
+                        Is.LessThanOrEqualTo(totalCountBudget),
+                        $"GlobalAcceptAllStruct-{scenario.Kind} allocated {gcAllocations} GC "
+                            + $"allocations ({perEmit} avg/emit) across "
                             + $"{AllocationAssertions.DefaultMeasuredIterations} emissions, "
-                            + $"exceeding the {totalBudget}-byte budget "
-                            + $"({PerEmitBudgetBytes} avg/emit)."
+                            + $"exceeding the count budget of {totalCountBudget}."
                     );
                 }
             );

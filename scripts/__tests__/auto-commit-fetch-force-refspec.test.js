@@ -19,7 +19,12 @@ const path = require("node:path");
 // and short ("${BRANCH}:...") source forms, and whether the shallow boundary comes
 // from `clone --depth 1` (stuck-job-watchdog) or `fetch --depth=1` (perf/llms).
 const WORKFLOW_DIR = path.resolve(__dirname, "..", "..", ".github", "workflows");
-const WORKFLOWS = ["perf-numbers.yml", "update-llms-txt.yml", "stuck-job-watchdog.yml"];
+const WORKFLOWS = [
+  "perf-numbers.yml",
+  "update-llms-txt.yml",
+  "update-issue-template-versions.yml",
+  "stuck-job-watchdog.yml"
+];
 
 // Group 1 is the optional `+`. Bare "refs/remotes/origin/<branch>" tokens (checkout /
 // rev-parse args, no `src:` colon) do not match: the `"` boundary stops `[^":]+`.

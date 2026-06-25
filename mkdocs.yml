@@ -165,6 +165,7 @@ nav:
       - Quick Start: getting-started/quick-start.md
       - Getting Started Guide: getting-started/getting-started.md
       - Visual Guide: getting-started/visual-guide.md
+      - What's New in 3.x: getting-started/whats-new-3x.md
   - Concepts:
       - concepts/index.md
       - Mental Model: concepts/mental-model.md
@@ -221,6 +222,7 @@ nav:
       - Analyzers: reference/analyzers.md
       - Compatibility: reference/compatibility.md
   - Runbooks:
+      - Asset Store Publishing: runbooks/asset-store-publishing.md
       - Perf Benchmark Methodology: runbooks/perf-benchmark-methodology.md
       - Perf-Numbers Auto-Commit: runbooks/perf-numbers-auto-commit.md
       - Required Status Checks: runbooks/required-checks.md
