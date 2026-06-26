@@ -117,11 +117,14 @@ Two requirements stack:
 1. Every dispatch path with a stable signature must have an
    `AllocationMatrixTests` row that exercises it via the appropriate
    parameterized `MessageScenarios` source. Use `AllocationAssertions.AssertNoAllocations`
-   for paths that must allocate exactly zero managed bytes per call, and a
-   hand-rolled `GC.GetTotalAllocatedBytes(precise: true)` delta with an
-   explicit `Is.LessThanOrEqualTo(byteBudget)` for paths where a small,
-   documented ceiling is intentional (for example registration and
-   deregistration).
+   for paths that must allocate exactly zero managed bytes per call, and
+   `AllocationProbe.MeasureMin` against an explicit COUNT budget for paths where a
+   small, documented ceiling is intentional (for example registration and
+   deregistration). Never use a `GC.GetTotalAllocatedBytes` / `GC.GetTotalMemory`
+   byte delta: under Unity's Boehm GC those under-count (the GC reclaims allocations
+   inside the measurement window) and `GC.GetAllocatedBytesForCurrentThread()` returns
+   a vacuous 0 for every allocation. Count managed allocation CALLS via the `GC.Alloc`
+   recorder (`AllocationProbe`) instead.
 1. Every `MessageKind` value must appear in
    `MessageScenarios.AllKindsIncludingWithoutContext`. Anything driven by
    `[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))]`
@@ -168,9 +171,16 @@ Some dispatch paths legitimately allocate a small, fixed amount per call.
 `RegisterIsZeroAllocSteadyState` and
 `DiagnosticsAugmentedHandlerAllocationCostIsBounded` in
 `AllocationMatrixTests.cs` budget for the closure plus dictionary entry that
-registration unavoidably produces. For those, measure a delta with
-`GC.GetTotalAllocatedBytes(precise: true)` after warming the path to steady
-state, and assert against an explicit byte budget:
+registration unavoidably produces. Measure a managed-allocation CALL count with
+`AllocationProbe.MeasureMin` and assert against an explicit count budget. `MeasureMin`
+runs the operation several times and returns the MINIMUM, which rejects the
+intermittent spikes a single window shows in a warm, long-lived editor domain (so the
+test is reliable locally, not just on the cold CI legs). Measure the marginal cost of an
+ADDITIONAL registration -- let the operation register without removing between attempts.
+Do NOT remove the sole handler between attempts to "reset" the token: removing it tears
+down and rebuilds the type's dispatch structures, whose cost depends on warm `DxPools`
+state and is not stable run-to-run (it reads ~21 isolated but ~140 in a churned suite).
+The accumulated handles are released when the harness disposes the token:
 
 ```csharp
 [Test]
@@ -188,25 +198,37 @@ public void RegisterIsZeroAllocSteadyState(
             token.RemoveRegistration(warm);
         }
 
-        long before = GC.GetTotalAllocatedBytes(precise: true);
-        MessageRegistrationHandle measured = RegisterHandler(scenario, token);
-        long after = GC.GetTotalAllocatedBytes(precise: true);
-        long delta = after - before;
-        token.RemoveRegistration(measured);
+        long delta = AllocationProbe.MeasureMin(
+            AllocationMeasurementAttempts,
+            prepare: null,
+            operation: () => _ = RegisterHandler(scenario, token)
+        );
+        if (delta == AllocationProbe.Unmeasured)
+        {
+            Assert.Ignore("GC.Alloc probe is non-functional on this backend.");
+        }
 
+        // Generous budget on purpose: registration rents handler-storage collections
+        // from the global DxPools, so its warm-editor floor varies run-to-run (~14-117)
+        // for every kind. The tight signal is the cold CI legs (deterministic pool) and
+        // the dedicated marginal-registration count test.
         Assert.That(
             delta,
-            Is.LessThanOrEqualTo(PerRegistrationByteBudget),
-            $"Register-{scenario.Kind} allocated {delta} bytes; "
-                + $"budget is {PerRegistrationByteBudget} bytes."
+            Is.LessThanOrEqualTo(PerRegistrationCountBudget),
+            $"Register-{scenario.Kind} allocated {delta} managed objects; "
+                + $"budget is {PerRegistrationCountBudget}."
         );
     });
 }
 ```
 
-Declare `PerRegistrationByteBudget` as a `private const long` at the top of
-the fixture and document it with an XML comment explaining what the bytes
-pay for, so reviewers can audit relaxations.
+Set each budget from the MEASURED floor (via `MeasureMin`) plus a margin -- NOT converted
+from a byte budget -- and document it with a comment explaining the floor so reviewers can
+audit relaxations. Where a path rents from the shared global `DxPools` (registration
+does), its warm-editor floor varies run-to-run with the pool's warmth and `MeasureMin`
+cannot subtract that real allocation; budget generously for the warm editor and rely on
+the cold CI legs (deterministic pool) plus a dedicated focused count test for the tight
+signal, rather than a tight bound that flakes locally.
 
 ## Enforcement
 

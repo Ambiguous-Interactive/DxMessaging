@@ -213,6 +213,105 @@ namespace DxMessaging.Tests.Editor.Allocations
             Assert.AreEqual(AllocationProbe.Unmeasured, window.Sample());
             Assert.DoesNotThrow(() => window.Dispose());
         }
+
+        [Test]
+        public void MeasureMinThrowsOnNonPositiveAttempts()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                AllocationProbe.MeasureMin(0, prepare: null, operation: () => { })
+            );
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                AllocationProbe.MeasureMin(-1, prepare: null, operation: () => { })
+            );
+        }
+
+        [Test]
+        public void MeasureMinThrowsOnNullOperation()
+        {
+            Assert.Throws<ArgumentNullException>(() =>
+                AllocationProbe.MeasureMin(4, prepare: null, operation: null)
+            );
+        }
+
+        [Test]
+        public void MeasureMinInvokesPrepareAndOperationOncePerAttempt()
+        {
+            if (!AllocationProbe.IsFunctional)
+            {
+                Assert.Ignore("GC.Alloc recorder is non-functional on this backend.");
+            }
+
+            const int attempts = 5;
+            int prepareCount = 0;
+            int operationCount = 0;
+            _ = AllocationProbe.MeasureMin(
+                attempts,
+                prepare: () => ++prepareCount,
+                operation: () => ++operationCount
+            );
+            Assert.AreEqual(attempts, prepareCount, "prepare must run once per attempt.");
+            Assert.AreEqual(attempts, operationCount, "operation must run once per attempt.");
+        }
+
+        [Test]
+        public void MeasureMinReturnsTheSmallestAttempt()
+        {
+            if (!AllocationProbe.IsFunctional)
+            {
+                Assert.Ignore("GC.Alloc recorder is non-functional on this backend.");
+            }
+
+            // Each attempt allocates a DESCENDING number of arrays: attempt i allocates
+            // (8 - i) * 100, i.e. 800, 700, ... 100. The descending step (100) is chosen far
+            // larger than the warm-editor per-window background-allocation floor (a handful
+            // to a few dozen), so the minimum reads ~100 (the smallest attempt) while a
+            // max/first selection would read ~800. This pins the min-selection the
+            // warm-editor denoising relies on without assuming a noise-free window.
+            int attempt = 0;
+            object sink = null;
+            long min = AllocationProbe.MeasureMin(
+                8,
+                prepare: null,
+                operation: () =>
+                {
+                    int allocations = (8 - attempt) * 100;
+                    ++attempt;
+                    for (int i = 0; i < allocations; ++i)
+                    {
+                        sink = new byte[16];
+                    }
+                }
+            );
+            Assert.That(
+                min,
+                Is.GreaterThanOrEqualTo(100),
+                $"The smallest attempt allocated 100 arrays, so the floor is >= 100 (was {min})."
+            );
+            Assert.That(
+                min,
+                Is.LessThanOrEqualTo(400),
+                $"MeasureMin returned {min}; it must take the MINIMUM (~100, the smallest "
+                    + "attempt), not the maximum or first attempt (~800). Anchoring sink: "
+                    + (sink == null ? "null" : "set")
+            );
+        }
+
+        [Test]
+        public void MeasureMinReleasesRecorderAfterMeasuring()
+        {
+            if (!AllocationProbe.IsFunctional)
+            {
+                Assert.Ignore("GC.Alloc recorder is non-functional on this backend.");
+            }
+
+            object sink = null;
+            _ = AllocationProbe.MeasureMin(3, prepare: null, operation: () => sink = new byte[16]);
+            Assert.IsFalse(
+                RecorderEnabled,
+                "MeasureMin must leave the GC.Alloc recorder disabled. Anchoring sink: "
+                    + (sink == null ? "null" : "set")
+            );
+        }
     }
 }
 #endif

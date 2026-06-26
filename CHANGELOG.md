@@ -46,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Registration allocates less. Each registration token's diagnostics-only
+  call-count and emission-history collections are now created lazily instead of
+  eagerly, so a token whose owner never enables diagnostics (the default) no longer
+  pays for them -- token creation drops from 11 to 7 managed allocations. The
+  per-registration metadata is now passed by value instead of through a closure
+  factory that was invoked immediately, removing one delegate allocation per handler
+  registration. Steady-state dispatch stays allocation-free, and diagnostics, the
+  inspector overlay, and all lifecycle behavior are unchanged.
 - The bug-report issue template now offers the package version as a dropdown of
   released versions (with an `Other` fallback) instead of a free-text field, so
   reports carry an exact, valid version. The list is generated from

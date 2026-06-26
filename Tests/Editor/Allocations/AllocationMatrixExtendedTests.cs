@@ -135,7 +135,8 @@ namespace DxMessaging.Tests.Editor.Allocations
         )
         {
             // Budget: per-cycle worst case is dominated by closure +
-            // dictionary churn (see AllocationMatrixTests.PerRegistrationByteBudget=512).
+            // dictionary churn (a single registration costs on the order of a few
+            // hundred bytes -- see the count-based budgets in AllocationMatrixTests).
             // We allow 1.5x that ceiling per cycle to absorb interim
             // dictionary resizing across the longer run. The byte figures are
             // retained for documentation only; the assertion uses a managed
@@ -310,14 +311,22 @@ namespace DxMessaging.Tests.Editor.Allocations
                         emit();
                     }
 
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
-                    for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
-                    {
-                        emit();
-                    }
-                    long gcAllocations = window.Sample();
+                    // Take the minimum allocation over several attempts: the boxing count
+                    // per emit is real, but a single warm-editor window intermittently
+                    // spikes above it (see AllocationProbe.MeasureMin). 8 attempts read the
+                    // boxing floor reliably; the operation just re-runs the measured emit
+                    // batch.
+                    long gcAllocations = AllocationProbe.MeasureMin(
+                        8,
+                        prepare: null,
+                        operation: () =>
+                        {
+                            for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
+                            {
+                                emit();
+                            }
+                        }
+                    );
                     if (gcAllocations == AllocationProbe.Unmeasured)
                     {
                         Assert.Ignore(

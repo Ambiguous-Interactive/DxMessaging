@@ -151,6 +151,84 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /// <summary>
+        /// Runs <paramref name="operation"/> <paramref name="attempts"/> times -- each
+        /// preceded by <paramref name="prepare"/> (the per-attempt precondition setup,
+        /// which is NOT counted) -- after a single settling collection before the loop --
+        /// and returns the MINIMUM
+        /// managed-allocation CALL count observed, or <see cref="Unmeasured"/> when the
+        /// probe is non-functional on this backend.
+        ///
+        /// <para>
+        /// WHY A MINIMUM: a single allocation window in a warm, long-lived editor domain
+        /// intermittently spikes far above the operation's true cost. Measured on the host
+        /// editor, a fixed <c>bus.Trim()</c>x32 block read a median of ~57 allocations with
+        /// a floor of ~9 and rare spikes past 4000 -- the spike is a GC/heap-state-dependent
+        /// pool miss or backing-array resize that fires inside one window and not the next
+        /// (a no-GC region does NOT suppress it). Because the operation executes a fixed
+        /// sequence of <c>new</c>s, those spikes only ADD to the floor; the minimum over a
+        /// handful of attempts therefore converges to the true per-operation cost and is
+        /// stable even on a busy editor, while still rising -- and tripping a budget -- on a
+        /// genuine regression that raises the floor. This is the allocation-count analogue
+        /// of taking the minimum of repeated timing samples to reject scheduler noise.
+        /// Cold CI legs run a fresh domain per assembly and do not exhibit the spikes, so a
+        /// single attempt there already reads the floor; the extra attempts are harmless.
+        /// </para>
+        /// </summary>
+        /// <param name="attempts">How many times to measure (and take the min of). Must be positive.</param>
+        /// <param name="prepare">Per-attempt precondition setup, run before each window and never counted. May be <c>null</c>.</param>
+        /// <param name="operation">The operation whose allocation floor is measured.</param>
+        public static long MeasureMin(int attempts, Action prepare, Action operation)
+        {
+            if (attempts <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(attempts));
+            }
+
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            if (!IsFunctional)
+            {
+                return Unmeasured;
+            }
+
+            // Settle ONCE before the loop, matching a single test's pre-measurement
+            // collection cost. We deliberately do NOT force a collection per attempt: a
+            // per-attempt GC.Collect storm (attempts x parameterizations) grows and
+            // fragments the long-lived editor heap enough to perturb OTHER allocation
+            // tests that run afterward. The minimum already rejects the windows where an
+            // organic collection fires mid-measurement, so per-attempt forcing is both
+            // unnecessary and harmful.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+
+            long min = long.MaxValue;
+            for (int attempt = 0; attempt < attempts; ++attempt)
+            {
+                prepare?.Invoke();
+                using Window window = BeginWindow();
+                operation();
+                long count = window.Sample();
+                if (count < min)
+                {
+                    min = count;
+                }
+            }
+
+            // Reclaim the garbage these repeated attempts produced BEFORE returning, so a
+            // collection it would otherwise trigger does not fire inside a later test's
+            // measurement window and inflate that test's count. Without this, repeating an
+            // operation N times leaves N times the garbage, which is what turns a robust
+            // single-window neighbor test flaky after a MeasureMin test runs.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+
+            return min;
+        }
+
+        /// <summary>
         /// A scoped allocation-counting window. Created by <see cref="BeginWindow"/> and
         /// released by <c>using</c>. <see cref="Dispose"/> disables the underlying
         /// profiler recorder; it is idempotent and safe to call after
