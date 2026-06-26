@@ -167,8 +167,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                         token.RemoveRegistration(warm);
                     }
 
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
+                    AllocationProbe.SettleHeapForMeasurement();
                     using AllocationProbe.Window window = AllocationProbe.BeginWindow();
 
                     for (int i = 0; i < RegistrationChurnCycles; ++i)

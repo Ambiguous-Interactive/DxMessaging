@@ -763,9 +763,9 @@ namespace DxMessaging.Core
                     // FastHandler and handed down as the flat invoker, so the
                     // default slot stores a single closure (this one) instead of
                     // an Action wrapper plus a separately-allocated FastHandler
-                    // adapter. The user's handler is the identity key; it is never
-                    // invoked directly for the default slot (FillDefaultFlatEntries
-                    // dispatches through the flat invoker).
+                    // adapter. The user's handler is the identity key; default-slot
+                    // dispatch uses the flat invoker, including the legacy Handle*
+                    // callback path.
                     return _messageHandler.RegisterUntargetedMessageHandler(
                         untargetedHandler,
                         (MessageHandler.FastHandler<T>)AugmentedHandler,

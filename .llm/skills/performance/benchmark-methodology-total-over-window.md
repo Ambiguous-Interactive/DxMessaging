@@ -179,6 +179,21 @@ public const int BatchSize = 10_000;
    builds but NOT in a Release IL2CPP player; the published allocation numbers
    therefore come from the in-editor Mono leg (see the methodology runbook).
 
+Allocation windows that need a settled heap call
+`AllocationProbe.SettleHeapForMeasurement()`. Do not inline
+`GC.Collect()` / `GC.WaitForPendingFinalizers()` in tests: the helper performs
+the complete collect, wait-for-finalizers, collect sequence so objects made
+unreachable by finalizers are reclaimed before the measured window or before
+the next test starts.
+
+When a repeated minimum allocation measurement needs side-effect diagnostics,
+use `AllocationProbe.MeasureMinWithDiagnostics<TDiagnostics>` and return a
+small allocation-free diagnostic value from each attempt. Do not accumulate
+diagnostic state in outer variables across attempts and then report it next to
+the minimum count; that can pair the winning count with another attempt's state
+or let aggregate side effects hide that the winning attempt did not perform the
+required work.
+
 Warm-up is per scenario. `DispatchBenchmarkScenarios.WarmupEmits(scenario)`
 returns `WarmupEmits` (10,000) for every dispatch scenario except the
 registration and deregistration floods and the cold first-dispatch scenarios,

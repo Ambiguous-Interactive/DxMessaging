@@ -2295,15 +2295,11 @@ namespace DxMessaging.Core
                 // guard; a missing adapter would indicate a new registration
                 // path that forgot to provide one.
                 //
-                // INVARIANT: this flat snapshot (entry.flatInvoker) is the SOLE
-                // dispatch consumer for default slots. entry.handler is the
-                // dedup/identity key only and is never invoked here -- the
-                // diagnostics-folding Add* overloads deliberately store the raw
-                // user handler there (not an augmented wrapper), so the legacy
-                // per-handler RunHandlers/Handle* path (superseded by this flat
-                // snapshot and currently unreachable) must NOT be revived for
-                // default slots without first restoring diagnostics into the
-                // dispatched delegate.
+                // INVARIANT: default-slot dispatch consumes entry.flatInvoker.
+                // entry.handler is not a safe dispatch target because
+                // diagnostics-folding Add* overloads may store the raw user
+                // Action there as the identity key. The legacy Handle*/RunHandlers
+                // path uses GetOrAddNewFlatInvokerStack for the same reason.
                 if (entry.flatInvoker is FastHandler<T> invoker)
                 {
                     target[writeIndex++] = new FlatDispatchEntry<T>(this, invoker);
@@ -2442,26 +2438,26 @@ namespace DxMessaging.Core
                 }
 
                 // The stored handler delegate. For default Action<TMessage>
-                // slots this is identity ONLY: it is the dedup key and is never
-                // invoked (dispatch goes through `flatInvoker`). Registration
-                // paths that pre-build the augmented invoker store the RAW user
-                // handler here (so no extra augmented Action wrapper is
-                // allocated); paths that adapt at registration time store the
-                // augmented handler. Either way it is not the default-slot
-                // dispatch target. For fast/global slots, by contrast, `handler`
-                // IS the dispatched delegate.
+                // slots this is the dedup/refcount delegate and is not the
+                // dispatch target; both bus-side flat dispatch and legacy
+                // Handle*/RunHandlers dispatch go through `flatInvoker`.
+                // Registration paths that pre-build the augmented invoker store
+                // the RAW user handler here (so no extra augmented Action wrapper
+                // is allocated); paths that adapt at registration time store the
+                // augmented handler. For fast/global slots, by contrast,
+                // `handler` IS the dispatched delegate.
                 public readonly T handler;
                 public readonly int count;
 
-                // Pre-resolved invoker consumed by the bus-side flat dispatch
-                // snapshot (MessageBus.BuildMessageFlatDispatch). For
-                // default Action<TMessage> registrations this holds the
+                // Pre-resolved invoker consumed by bus-side flat dispatch
+                // snapshots and legacy default-slot Handle*/RunHandlers
+                // snapshots. For default Action<TMessage> registrations this holds the
                 // diagnostics-AUGMENTED FastHandler<TMessage> closure (either a
                 // standalone adapter wrapping an augmented Action, or the single
                 // folded augmented closure the registration token now builds
                 // directly), created exactly ONCE at registration time so
                 // snapshot rebuilds never allocate closures. It -- not
-                // `handler` -- is the sole dispatch target for default slots.
+                // `handler` -- is the dispatch target for default slots.
                 // For delegate shapes the flat path does not consume (fast
                 // handlers, which already ARE the invoker, and global accept-all
                 // shapes) this stays null. Refcount increments and decrements
@@ -2484,9 +2480,12 @@ namespace DxMessaging.Core
             // <see cref="DxMessaging.Core.Internal.IHandlerActionCache.Reset"/>.
             public readonly List<T> insertionOrder = new();
             public readonly List<T> cache = new();
+            private System.Collections.IList _flatInvokerCache;
             public long version;
             public long lastSeenVersion = -1;
             public long lastSeenEmissionId = -1;
+            public long flatInvokerLastSeenVersion = -1;
+            public long flatInvokerLastSeenEmissionId = -1;
 
             /// <summary>Monotonic version field, read-only on the interface surface.</summary>
             long DxMessaging.Core.Internal.IHandlerActionCache.Version
@@ -2529,12 +2528,29 @@ namespace DxMessaging.Core
                 entries.Clear();
                 insertionOrder.Clear();
                 cache.Clear();
+                _flatInvokerCache?.Clear();
                 lastSeenVersion = -1;
                 lastSeenEmissionId = -1;
+                flatInvokerLastSeenVersion = -1;
+                flatInvokerLastSeenEmissionId = -1;
                 unchecked
                 {
                     ++version;
                 }
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal List<TInvoker> GetOrCreateFlatInvokerCache<TInvoker>()
+                where TInvoker : class
+            {
+                if (_flatInvokerCache == null)
+                {
+                    List<TInvoker> typedCache = new();
+                    _flatInvokerCache = typedCache;
+                    return typedCache;
+                }
+
+                return (List<TInvoker>)_flatInvokerCache;
             }
         }
 
@@ -3533,8 +3549,7 @@ namespace DxMessaging.Core
             /// fold diagnostics into one <see cref="FastHandler{T}"/>.
             /// <paramref name="originalHandler"/> is the dedup/identity key; it is
             /// stored as the entry handler but is never invoked for the default
-            /// slot, which dispatches exclusively through
-            /// <paramref name="flatInvoker"/> (see FillDefaultFlatEntries).
+            /// slot, which dispatches through <paramref name="flatInvoker"/>.
             /// </summary>
             internal Action AddUntargetedHandler(
                 Action<T> originalHandler,
@@ -5277,91 +5292,94 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                List<Action<T>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
+                List<FastHandler<T>> handlers = GetOrAddNewFlatInvokerStack<
+                    Action<T>,
+                    FastHandler<T>
+                >(cache, emissionId);
                 ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 int handlersCount = handlers.Count;
                 switch (handlersCount)
                 {
                     case 1:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         return;
                     }
                     case 2:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         if (handlers.Count < 2)
                         {
                             return;
                         }
-                        handlers[1](typedMessage);
+                        handlers[1](ref typedMessage);
                         return;
                     }
                     case 3:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         if (handlers.Count < 2)
                         {
                             return;
                         }
-                        handlers[1](typedMessage);
+                        handlers[1](ref typedMessage);
                         if (handlers.Count < 3)
                         {
                             return;
                         }
-                        handlers[2](typedMessage);
+                        handlers[2](ref typedMessage);
                         return;
                     }
                     case 4:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         if (handlers.Count < 2)
                         {
                             return;
                         }
-                        handlers[1](typedMessage);
+                        handlers[1](ref typedMessage);
                         if (handlers.Count < 3)
                         {
                             return;
                         }
-                        handlers[2](typedMessage);
+                        handlers[2](ref typedMessage);
                         if (handlers.Count < 4)
                         {
                             return;
                         }
-                        handlers[3](typedMessage);
+                        handlers[3](ref typedMessage);
                         return;
                     }
                     case 5:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         if (handlers.Count < 2)
                         {
                             return;
                         }
-                        handlers[1](typedMessage);
+                        handlers[1](ref typedMessage);
                         if (handlers.Count < 3)
                         {
                             return;
                         }
-                        handlers[2](typedMessage);
+                        handlers[2](ref typedMessage);
                         if (handlers.Count < 4)
                         {
                             return;
                         }
-                        handlers[3](typedMessage);
+                        handlers[3](ref typedMessage);
                         if (handlers.Count < 5)
                         {
                             return;
                         }
-                        handlers[4](typedMessage);
+                        handlers[4](ref typedMessage);
                         return;
                     }
                 }
 
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
-                    handlers[i](typedMessage);
+                    handlers[i](ref typedMessage);
                 }
             }
 
@@ -5383,91 +5401,94 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                List<Action<T>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
+                List<FastHandler<T>> handlers = GetOrAddNewFlatInvokerStack<
+                    Action<T>,
+                    FastHandler<T>
+                >(cache, emissionId);
                 ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 int handlersCount = handlers.Count;
                 switch (handlersCount)
                 {
                     case 1:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         return;
                     }
                     case 2:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         if (handlers.Count < 2)
                         {
                             return;
                         }
-                        handlers[1](typedMessage);
+                        handlers[1](ref typedMessage);
                         return;
                     }
                     case 3:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         if (handlers.Count < 2)
                         {
                             return;
                         }
-                        handlers[1](typedMessage);
+                        handlers[1](ref typedMessage);
                         if (handlers.Count < 3)
                         {
                             return;
                         }
-                        handlers[2](typedMessage);
+                        handlers[2](ref typedMessage);
                         return;
                     }
                     case 4:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         if (handlers.Count < 2)
                         {
                             return;
                         }
-                        handlers[1](typedMessage);
+                        handlers[1](ref typedMessage);
                         if (handlers.Count < 3)
                         {
                             return;
                         }
-                        handlers[2](typedMessage);
+                        handlers[2](ref typedMessage);
                         if (handlers.Count < 4)
                         {
                             return;
                         }
-                        handlers[3](typedMessage);
+                        handlers[3](ref typedMessage);
                         return;
                     }
                     case 5:
                     {
-                        handlers[0](typedMessage);
+                        handlers[0](ref typedMessage);
                         if (handlers.Count < 2)
                         {
                             return;
                         }
-                        handlers[1](typedMessage);
+                        handlers[1](ref typedMessage);
                         if (handlers.Count < 3)
                         {
                             return;
                         }
-                        handlers[2](typedMessage);
+                        handlers[2](ref typedMessage);
                         if (handlers.Count < 4)
                         {
                             return;
                         }
-                        handlers[3](typedMessage);
+                        handlers[3](ref typedMessage);
                         if (handlers.Count < 5)
                         {
                             return;
                         }
-                        handlers[4](typedMessage);
+                        handlers[4](ref typedMessage);
                         return;
                     }
                 }
 
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
-                    handlers[i](typedMessage);
+                    handlers[i](ref typedMessage);
                 }
             }
 
@@ -5493,94 +5514,94 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                List<Action<InstanceId, T>> typedHandlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
+                List<FastHandlerWithContext<T>> typedHandlers = GetOrAddNewFlatInvokerStack<
+                    Action<InstanceId, T>,
+                    FastHandlerWithContext<T>
+                >(cache, emissionId);
                 ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 int handlersCount = typedHandlers.Count;
                 switch (handlersCount)
                 {
                     case 1:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         return;
                     }
                     case 2:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         if (typedHandlers.Count < 2)
                         {
                             return;
                         }
-                        typedHandlers[1](context, typedMessage);
+                        typedHandlers[1](ref context, ref typedMessage);
                         return;
                     }
                     case 3:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         if (typedHandlers.Count < 2)
                         {
                             return;
                         }
-                        typedHandlers[1](context, typedMessage);
+                        typedHandlers[1](ref context, ref typedMessage);
                         if (typedHandlers.Count < 3)
                         {
                             return;
                         }
-                        typedHandlers[2](context, typedMessage);
+                        typedHandlers[2](ref context, ref typedMessage);
                         return;
                     }
                     case 4:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         if (typedHandlers.Count < 2)
                         {
                             return;
                         }
-                        typedHandlers[1](context, typedMessage);
+                        typedHandlers[1](ref context, ref typedMessage);
                         if (typedHandlers.Count < 3)
                         {
                             return;
                         }
-                        typedHandlers[2](context, typedMessage);
+                        typedHandlers[2](ref context, ref typedMessage);
                         if (typedHandlers.Count < 4)
                         {
                             return;
                         }
-                        typedHandlers[3](context, typedMessage);
+                        typedHandlers[3](ref context, ref typedMessage);
                         return;
                     }
                     case 5:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         if (typedHandlers.Count < 2)
                         {
                             return;
                         }
-                        typedHandlers[1](context, typedMessage);
+                        typedHandlers[1](ref context, ref typedMessage);
                         if (typedHandlers.Count < 3)
                         {
                             return;
                         }
-                        typedHandlers[2](context, typedMessage);
+                        typedHandlers[2](ref context, ref typedMessage);
                         if (typedHandlers.Count < 4)
                         {
                             return;
                         }
-                        typedHandlers[3](context, typedMessage);
+                        typedHandlers[3](ref context, ref typedMessage);
                         if (typedHandlers.Count < 5)
                         {
                             return;
                         }
-                        typedHandlers[4](context, typedMessage);
+                        typedHandlers[4](ref context, ref typedMessage);
                         return;
                     }
                 }
 
                 for (int i = 0; i < handlersCount && i < typedHandlers.Count; ++i)
                 {
-                    typedHandlers[i](context, typedMessage);
+                    typedHandlers[i](ref context, ref typedMessage);
                 }
             }
 
@@ -5608,94 +5629,94 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                List<Action<InstanceId, T>> typedHandlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
+                List<FastHandlerWithContext<T>> typedHandlers = GetOrAddNewFlatInvokerStack<
+                    Action<InstanceId, T>,
+                    FastHandlerWithContext<T>
+                >(cache, emissionId);
                 ref T typedMessage = ref DxUnsafe.As<TMessage, T>(ref message);
                 int handlersCount = typedHandlers.Count;
                 switch (handlersCount)
                 {
                     case 1:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         return;
                     }
                     case 2:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         if (typedHandlers.Count < 2)
                         {
                             return;
                         }
-                        typedHandlers[1](context, typedMessage);
+                        typedHandlers[1](ref context, ref typedMessage);
                         return;
                     }
                     case 3:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         if (typedHandlers.Count < 2)
                         {
                             return;
                         }
-                        typedHandlers[1](context, typedMessage);
+                        typedHandlers[1](ref context, ref typedMessage);
                         if (typedHandlers.Count < 3)
                         {
                             return;
                         }
-                        typedHandlers[2](context, typedMessage);
+                        typedHandlers[2](ref context, ref typedMessage);
                         return;
                     }
                     case 4:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         if (typedHandlers.Count < 2)
                         {
                             return;
                         }
-                        typedHandlers[1](context, typedMessage);
+                        typedHandlers[1](ref context, ref typedMessage);
                         if (typedHandlers.Count < 3)
                         {
                             return;
                         }
-                        typedHandlers[2](context, typedMessage);
+                        typedHandlers[2](ref context, ref typedMessage);
                         if (typedHandlers.Count < 4)
                         {
                             return;
                         }
-                        typedHandlers[3](context, typedMessage);
+                        typedHandlers[3](ref context, ref typedMessage);
                         return;
                     }
                     case 5:
                     {
-                        typedHandlers[0](context, typedMessage);
+                        typedHandlers[0](ref context, ref typedMessage);
                         if (typedHandlers.Count < 2)
                         {
                             return;
                         }
-                        typedHandlers[1](context, typedMessage);
+                        typedHandlers[1](ref context, ref typedMessage);
                         if (typedHandlers.Count < 3)
                         {
                             return;
                         }
-                        typedHandlers[2](context, typedMessage);
+                        typedHandlers[2](ref context, ref typedMessage);
                         if (typedHandlers.Count < 4)
                         {
                             return;
                         }
-                        typedHandlers[3](context, typedMessage);
+                        typedHandlers[3](ref context, ref typedMessage);
                         if (typedHandlers.Count < 5)
                         {
                             return;
                         }
-                        typedHandlers[4](context, typedMessage);
+                        typedHandlers[4](ref context, ref typedMessage);
                         return;
                     }
                 }
 
                 for (int i = 0; i < handlersCount && i < typedHandlers.Count; ++i)
                 {
-                    typedHandlers[i](context, typedMessage);
+                    typedHandlers[i](ref context, ref typedMessage);
                 }
             }
 
@@ -5748,6 +5769,63 @@ namespace DxMessaging.Core
                     actionCache.lastSeenEmissionId = emissionId;
                 }
                 return actionCache.cache;
+            }
+
+            // Default-slot registrations may store the raw user Action as the
+            // identity key while carrying diagnostics in Entry.flatInvoker. The
+            // legacy Handle* path must dispatch that same flat invoker snapshot,
+            // not Entry.handler, so diagnostics semantics match bus-side flat
+            // dispatch if the legacy callback path is used directly.
+            internal static List<TInvoker> GetOrAddNewFlatInvokerStack<TU, TInvoker>(
+                HandlerActionCache<TU> actionCache,
+                long emissionId
+            )
+                where TInvoker : class
+            {
+                DebugAssertInsertionOrderInSync(actionCache);
+                if (actionCache.flatInvokerLastSeenEmissionId != emissionId)
+                {
+                    if (actionCache.version != actionCache.flatInvokerLastSeenVersion)
+                    {
+                        List<TInvoker> list = actionCache.GetOrCreateFlatInvokerCache<TInvoker>();
+                        list.Clear();
+                        List<TU> orderedHandlers = actionCache.insertionOrder;
+                        int orderedCount = orderedHandlers.Count;
+                        for (int i = 0; i < orderedCount; ++i)
+                        {
+                            if (
+                                !actionCache.entries.TryGetValue(
+                                    orderedHandlers[i],
+                                    out HandlerActionCache<TU>.Entry entry
+                                )
+                            )
+                            {
+                                continue;
+                            }
+
+                            if (entry.flatInvoker is TInvoker invoker)
+                            {
+                                list.Add(invoker);
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.Assert(
+                                    false,
+                                    "Default registration is missing the flat invoker required "
+                                        + "by legacy Handle* dispatch. Every default Add* path must "
+                                        + "store the diagnostics-augmented flat invoker in "
+                                        + "HandlerActionCache.Entry.flatInvoker."
+                                );
+                            }
+                        }
+
+                        actionCache.flatInvokerLastSeenVersion = actionCache.version;
+                    }
+
+                    actionCache.flatInvokerLastSeenEmissionId = emissionId;
+                }
+
+                return actionCache.GetOrCreateFlatInvokerCache<TInvoker>();
             }
 
             // Asserts insertionOrder stays in lockstep with the entries

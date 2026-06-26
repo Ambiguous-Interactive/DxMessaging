@@ -103,6 +103,8 @@
     "unityproj",
     "userprefs",
     "booproj",
+    "finalizable",
+    "finalizer",
     "finalizers",
     "methodimpl",
     "iequatable",

@@ -370,8 +370,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     // AllocationProbe counts allocation calls precisely and is
                     // immune to GC timing, so a Gen-0 collection mid-loop cannot
                     // erase the signal the way a live-heap delta could.
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
+                    AllocationProbe.SettleHeapForMeasurement();
                     using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
@@ -664,31 +663,48 @@ namespace DxMessaging.Tests.Editor.Allocations
                 (token, bus) =>
                 {
                     Action emit = BuildEmitClosure(scenario, bus);
-                    IMessageBus.TrimResult lastResult = default;
-                    int evictedSlots = 0;
 
                     // Take the minimum allocation over several attempts: a single window
                     // in the warm editor intermittently spikes above the true cost (see
                     // AllocationMeasurementAttempts). Each attempt re-creates a fresh dirty
                     // candidate (the prior attempt's forced trims already evicted it) so
                     // the measured block always has a slot to reclaim.
-                    long gcAllocations = AllocationProbe.MeasureMin(
-                        AllocationMeasurementAttempts,
-                        prepare: () =>
-                        {
-                            _ = bus.Trim(force: true);
-                            CreateFreshTrimCandidate(scenario, token, emit);
-                        },
-                        operation: () =>
-                        {
-                            for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
+                    AllocationProbe.MinimumMeasurement<TrimAttemptDiagnostics> measurement =
+                        AllocationProbe.MeasureMinWithDiagnostics(
+                            AllocationMeasurementAttempts,
+                            prepare: () =>
                             {
-                                lastResult = bus.Trim(force: true);
-                                evictedSlots +=
-                                    lastResult.TypeSlotsEvicted + lastResult.TargetSlotsEvicted;
+                                _ = bus.Trim(force: true);
+                                CreateFreshTrimCandidate(scenario, token, emit);
+                            },
+                            operation: () =>
+                            {
+                                int typeSlotsEvicted = 0;
+                                int targetSlotsEvicted = 0;
+                                int pooledCollectionsEvicted = 0;
+                                IMessageBus.TrimResult lastResult = default;
+                                for (
+                                    int i = 0;
+                                    i < AllocationAssertions.DefaultMeasuredIterations;
+                                    ++i
+                                )
+                                {
+                                    IMessageBus.TrimResult result = bus.Trim(force: true);
+                                    typeSlotsEvicted += result.TypeSlotsEvicted;
+                                    targetSlotsEvicted += result.TargetSlotsEvicted;
+                                    pooledCollectionsEvicted += result.PooledCollectionsEvicted;
+                                    lastResult = result;
+                                }
+
+                                return new TrimAttemptDiagnostics(
+                                    typeSlotsEvicted,
+                                    targetSlotsEvicted,
+                                    pooledCollectionsEvicted,
+                                    lastResult.LiveTypeSlotsRemaining
+                                );
                             }
-                        }
-                    );
+                        );
+                    long gcAllocations = measurement.GcAllocations;
                     if (gcAllocations == AllocationProbe.Unmeasured)
                     {
                         Assert.Ignore(
@@ -705,15 +721,18 @@ namespace DxMessaging.Tests.Editor.Allocations
                             + $"allocations across {AllocationAssertions.DefaultMeasuredIterations} "
                             + $"trims (over {AllocationMeasurementAttempts} attempts), exceeding "
                             + $"the count budget of {TrimAllocCountBudget}. "
-                            + $"Result: type evicted={lastResult.TypeSlotsEvicted}, "
-                            + $"target evicted={lastResult.TargetSlotsEvicted}, "
-                            + $"pooled evicted={lastResult.PooledCollectionsEvicted}, "
-                            + $"live type slots={lastResult.LiveTypeSlotsRemaining}."
+                            + $"Minimum attempt={measurement.AttemptIndex + 1}/"
+                            + $"{AllocationMeasurementAttempts}; "
+                            + $"total type evicted={measurement.Diagnostics.TypeSlotsEvicted}, "
+                            + $"total target evicted={measurement.Diagnostics.TargetSlotsEvicted}, "
+                            + $"total pooled evicted={measurement.Diagnostics.PooledCollectionsEvicted}, "
+                            + $"final live type slots={measurement.Diagnostics.LiveTypeSlotsRemaining}."
                     );
                     Assert.Greater(
-                        evictedSlots,
+                        measurement.Diagnostics.EvictedSlots,
                         0,
-                        $"Trim-{scenario.Kind} must reclaim at least one slot during the measured loop."
+                        $"Trim-{scenario.Kind} must reclaim at least one slot during the "
+                            + "minimum-allocation measured loop."
                     );
                 }
             );
@@ -1170,6 +1189,32 @@ namespace DxMessaging.Tests.Editor.Allocations
                     }
                 }
             }
+        }
+
+        private readonly struct TrimAttemptDiagnostics
+        {
+            public TrimAttemptDiagnostics(
+                int typeSlotsEvicted,
+                int targetSlotsEvicted,
+                int pooledCollectionsEvicted,
+                int liveTypeSlotsRemaining
+            )
+            {
+                TypeSlotsEvicted = typeSlotsEvicted;
+                TargetSlotsEvicted = targetSlotsEvicted;
+                PooledCollectionsEvicted = pooledCollectionsEvicted;
+                LiveTypeSlotsRemaining = liveTypeSlotsRemaining;
+            }
+
+            public int TypeSlotsEvicted { get; }
+
+            public int TargetSlotsEvicted { get; }
+
+            public int PooledCollectionsEvicted { get; }
+
+            public int LiveTypeSlotsRemaining { get; }
+
+            public int EvictedSlots => TypeSlotsEvicted + TargetSlotsEvicted;
         }
 
         private static void NoOpUntargeted(ref SimpleUntargetedMessage message) { }
