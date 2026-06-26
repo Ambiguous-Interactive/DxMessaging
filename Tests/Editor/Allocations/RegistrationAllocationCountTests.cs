@@ -31,6 +31,14 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// backend-independent) and bounded by
     /// <see cref="MarginalRegistrationAllocationCountIsBounded"/>.
     /// </description></item>
+    /// <item><description>
+    /// <see cref="Action{T}"/> registration dropped its extra adapter closure once the
+    /// token folded diagnostics into a single by-ref <c>FastHandler&lt;T&gt;</c> flat
+    /// invoker (rather than an Action wrapper PLUS a separately allocated FastHandler
+    /// adapter). Guarded by
+    /// <see cref="ActionRegistrationAllocatesNoMoreClosuresThanFastHandler"/>, which
+    /// pins the Action path to the FastHandler path's closure count.
+    /// </description></item>
     /// </list>
     /// <para>
     /// The counting rows use <see cref="AllocationProbe"/> (the <c>GC.Alloc</c> profiler
@@ -93,6 +101,8 @@ namespace DxMessaging.Tests.Editor.Allocations
         }
 
         private static void NoOp(ref SimpleUntargetedMessage message) { }
+
+        private static void NoOpAction(SimpleUntargetedMessage message) { }
 
         private static MessageBus NewBus()
         {
@@ -186,6 +196,105 @@ namespace DxMessaging.Tests.Editor.Allocations
                     + "_emissionBuffer collections must stay lazily allocated (see "
                     + "MessageRegistrationToken field comments) so a token whose owner never "
                     + "enables diagnostics pays nothing for them."
+            );
+        }
+
+        /// <summary>
+        /// Pins the registration-closure collapse: an <see cref="Action{T}"/>
+        /// registration must allocate no more closures than the by-ref
+        /// <c>FastHandler&lt;T&gt;</c> registration. The token folds diagnostics into a
+        /// single <c>FastHandler</c> flat invoker and hands it to the internal
+        /// flat-invoker registration overload, so the default slot no longer pays
+        /// for an <see cref="Action{T}"/> wrapper PLUS a separately allocated
+        /// FastHandler adapter (the pre-collapse cost was one extra closure per
+        /// registration). Both paths register the same handler shape (a static
+        /// method group, so neither path allocates the user delegate inside the
+        /// window) into independent buses; the difference is therefore exactly the
+        /// per-registration closure count.
+        /// <para>
+        /// Measured as the minimum over attempts of (Action batch - FastHandler
+        /// batch): the minimum filters warm-editor spikes (a spike inflates a
+        /// single window, never the floor) and the differential cancels the
+        /// bus-side flat-array churn shared by both paths, leaving the structural
+        /// closure delta. A regression that re-adds the adapter would push the
+        /// Action batch a full <see cref="MeasuredRegistrations"/> calls above the
+        /// FastHandler batch, well past the half-window tolerance.
+        /// </para>
+        /// </summary>
+        [Test]
+        [Category("Allocation")]
+        public void ActionRegistrationAllocatesNoMoreClosuresThanFastHandler()
+        {
+            MessageBus actionBus = NewBus();
+            MessageHandler actionHandler = new MessageHandler(Owner, actionBus) { active = true };
+            MessageRegistrationToken actionToken = MessageRegistrationToken.Create(
+                actionHandler,
+                actionBus
+            );
+            actionToken.Enable();
+
+            MessageBus fastBus = NewBus();
+            MessageHandler fastHandler = new MessageHandler(Owner, fastBus) { active = true };
+            MessageRegistrationToken fastToken = MessageRegistrationToken.Create(
+                fastHandler,
+                fastBus
+            );
+            fastToken.Enable();
+
+            // Warm both paths past their capacity-boundary resizes so the measured
+            // batches pay only the steady per-registration cost.
+            for (int i = 0; i < WarmupRegistrations + SettleRegistrations; ++i)
+            {
+                _ = actionToken.RegisterUntargeted<SimpleUntargetedMessage>(NoOpAction);
+                _ = fastToken.RegisterUntargeted<SimpleUntargetedMessage>(NoOp);
+            }
+
+            if (!AllocationProbe.IsFunctional)
+            {
+                Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
+            }
+
+            long bestDelta = long.MaxValue;
+            for (int attempt = 0; attempt < MinAttempts; ++attempt)
+            {
+                long fastCount = AllocationProbe.Measure(() =>
+                {
+                    for (int i = 0; i < MeasuredRegistrations; ++i)
+                    {
+                        _ = fastToken.RegisterUntargeted<SimpleUntargetedMessage>(NoOp);
+                    }
+                });
+                long actionCount = AllocationProbe.Measure(() =>
+                {
+                    for (int i = 0; i < MeasuredRegistrations; ++i)
+                    {
+                        _ = actionToken.RegisterUntargeted<SimpleUntargetedMessage>(NoOpAction);
+                    }
+                });
+                if (
+                    fastCount == AllocationProbe.Unmeasured
+                    || actionCount == AllocationProbe.Unmeasured
+                )
+                {
+                    Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
+                }
+                bestDelta = Math.Min(bestDelta, actionCount - fastCount);
+            }
+
+            // Tolerance is half the window: the collapsed delta is ~0, while a
+            // re-introduced adapter would add a full MeasuredRegistrations of extra
+            // closures (one per registration), so half the window cleanly separates
+            // "collapsed" from "regressed" without tripping on warm-editor noise.
+            long tolerance = MeasuredRegistrations / 2;
+            Assert.That(
+                bestDelta,
+                Is.LessThanOrEqualTo(tolerance),
+                $"Action<T> registration allocated {bestDelta} more managed objects than the "
+                    + $"FastHandler<T> registration over {MeasuredRegistrations} registrations "
+                    + $"(tolerance {tolerance}). The token must fold diagnostics into a single "
+                    + "FastHandler flat invoker (the internal flat-invoker registration overload) "
+                    + "so the default slot does not allocate an Action wrapper plus a separate "
+                    + "FastHandler adapter."
             );
         }
 

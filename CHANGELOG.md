@@ -54,6 +54,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   factory that was invoked immediately, removing one delegate allocation per handler
   registration. Steady-state dispatch stays allocation-free, and diagnostics, the
   inspector overlay, and all lifecycle behavior are unchanged.
+- Registering a handler with the convenience `Action<T>` / `Action<InstanceId, T>`
+  overloads (`RegisterUntargeted`, `RegisterTargeted`, `RegisterTargetedWithoutTargeting`,
+  the sourced-broadcast register, and `RegisterBroadcastWithoutSource`) now allocates one
+  fewer closure per registration. Each such registration previously built two delegates --
+  a diagnostics-augmented `Action` wrapper plus a separate by-ref `FastHandler` adapter for
+  the flat-dispatch path -- and now folds diagnostics into a single by-ref `FastHandler`
+  closure that is the dispatch target directly (also removing a per-dispatch indirection).
+  The public API is unchanged; the optimization is internal and verified by a differential
+  allocation guard that pins the `Action` registration cost to the already-optimal
+  `FastHandler` registration cost. Diagnostics, deduplication, and dispatch ordering are
+  preserved.
 - The bug-report issue template now offers the package version as a dropdown of
   released versions (with an `Other` fallback) instead of a free-text field, so
   reports carry an exact, valid version. The list is generated from

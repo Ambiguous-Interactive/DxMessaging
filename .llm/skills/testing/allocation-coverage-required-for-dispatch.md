@@ -2,7 +2,7 @@
 title: "Allocation Coverage Required for Dispatch"
 id: "allocation-coverage-required-for-dispatch"
 category: "testing"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-01"
 updated: "2026-05-01"
 
@@ -229,6 +229,23 @@ does), its warm-editor floor varies run-to-run with the pool's warmth and `Measu
 cannot subtract that real allocation; budget generously for the warm editor and rely on
 the cold CI legs (deterministic pool) plus a dedicated focused count test for the tight
 signal, rather than a tight bound that flakes locally.
+
+### Differential Count Guards (subtracting the shared churn)
+
+When the thing you want to pin is the cost DIFFERENCE between two near-identical paths
+(for example "the `Action<T>` registration must not allocate more closures than the
+`FastHandler<T>` registration"), measure the DIFFERENCE rather than an absolute budget.
+Run both paths into independent buses each attempt and take the MINIMUM of
+`(pathA - pathB)` over attempts. The shared bus-side / `DxPools` churn that forces the
+absolute budgets to be generous cancels in the subtraction, and the minimum filters the
+warm-editor spikes (a spike inflates one window, never the floor), so the residual is the
+structural delta you care about -- letting you assert a TIGHT tolerance (well below a
+one-allocation-per-op regression) that is still robust in the warm editor. Use a static
+method group for both handlers so neither window allocates the user delegate itself.
+`RegistrationAllocationCountTests.ActionRegistrationAllocatesNoMoreClosuresThanFastHandler`
+is the worked example (tolerance = half the registration batch). Prove it red-green by
+temporarily reverting the optimized path and confirming the differential blows past the
+tolerance.
 
 ## Enforcement
 
