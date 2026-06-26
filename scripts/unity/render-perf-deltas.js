@@ -193,6 +193,9 @@ function allocationsComparable(currentAllocs, baselineAllocs) {
   return currentAllocs >= 0 && baselineAllocs >= 0;
 }
 
+// Renders a goodness-signed fraction: the value passed in is already normalized so
+// POSITIVE means BETTER and NEGATIVE means WORSE (see goodnessRelativeChange), so a
+// "+" here is always an improvement and a "-" is always a regression, for every metric.
 function formatPct(fraction) {
   if (!Number.isFinite(fraction)) {
     return "n/a";
@@ -201,14 +204,31 @@ function formatPct(fraction) {
   return Number.parseFloat(rounded) === 0 ? "0.00%" : `${fraction > 0 ? "+" : ""}${rounded}%`;
 }
 
+// Allocation delta in goodness terms: fewer allocations is better. The direction is
+// spelled out ("fewer"/"more") rather than encoded as a bare +/- on the count -- a
+// signed count next to a column the reader can see move reads ambiguously, while the
+// primary-metric percentage carries the +/- goodness sign. So "fewer" is always the
+// improvement and "more" is always the regression.
 function formatAllocDelta(delta) {
-  return delta === 0
-    ? "0"
-    : `${delta > 0 ? "+" : "-"}${Math.abs(delta).toLocaleString("en-US")} allocs`;
+  if (delta === 0) {
+    return "0 allocs";
+  }
+  const magnitude = Math.abs(delta).toLocaleString("en-US");
+  return delta < 0 ? `${magnitude} fewer allocs` : `${magnitude} more allocs`;
 }
 
 function relativeChange(current, baseline) {
   return baseline === 0 ? (current === 0 ? 0 : Infinity) : (current - baseline) / baseline;
+}
+
+// Goodness-signed relative change: POSITIVE always means BETTER, NEGATIVE always means
+// WORSE, so the rendered "+"/"-" is read identically for every metric. Throughput is
+// higher-is-better (the raw change); wall clock / latency is lower-is-better (the raw
+// change negated), so a faster (lower-ms) run renders as a "+" gain rather than the
+// "-" a naive numeric delta would show.
+function goodnessRelativeChange(current, baseline, higherIsBetter) {
+  const raw = relativeChange(current, baseline);
+  return higherIsBetter ? raw : -raw;
 }
 
 function compareRow(scenario, current, baseline, tolerance) {
@@ -232,14 +252,16 @@ function compareRow(scenario, current, baseline, tolerance) {
   if (REGISTRATION_SCENARIOS.has(scenario)) {
     const baselineMs = Number.parseFloat(baseline.wallClockMs);
     const currentMs = Number.parseFloat(current.wallClockMs);
-    primaryPct = relativeChange(currentMs, baselineMs);
+    // Wall clock / latency: lower is better, so a faster run renders as a "+" gain.
+    primaryPct = goodnessRelativeChange(currentMs, baselineMs, false);
     primaryMoved = Math.abs(primaryPct) > tolerance;
     baselineCell = `${formatWallClock(baseline.wallClockMs)}, ${formatAllocations(baseline.gcAllocations)}`;
     currentCell = `${formatWallClock(current.wallClockMs)}, ${formatAllocations(current.gcAllocations)}`;
   } else {
     const baselineEmits = Number.parseFloat(baseline.emitsPerSecond);
     const currentEmits = Number.parseFloat(current.emitsPerSecond);
-    primaryPct = relativeChange(currentEmits, baselineEmits);
+    // Throughput: higher is better, so more emits/sec renders as a "+" gain.
+    primaryPct = goodnessRelativeChange(currentEmits, baselineEmits, true);
     primaryMoved = Math.abs(primaryPct) > tolerance;
     baselineCell = `${formatThroughput(baseline.emitsPerSecond)}, ${formatAllocations(baseline.gcAllocations)}`;
     currentCell = `${formatThroughput(current.emitsPerSecond)}, ${formatAllocations(current.gcAllocations)}`;
@@ -398,6 +420,8 @@ module.exports = {
   isDxMessagingRow,
   indexDxMessagingRows,
   scenarioLabel,
+  goodnessRelativeChange,
+  formatAllocDelta,
   compareRow,
   buildDeltaTable,
   isRegression,

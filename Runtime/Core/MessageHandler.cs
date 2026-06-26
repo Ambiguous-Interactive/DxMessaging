@@ -1053,6 +1053,39 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
+        /// Registers a targeted post-processor whose diagnostics-augmented by-ref flat
+        /// invoker was already built by the caller (the registration token), so the
+        /// default slot stores a single closure instead of an <see cref="Action{T}"/>
+        /// wrapper plus a separately allocated FastHandler adapter.
+        /// <paramref name="originalHandler"/> stays the dedup/identity key.
+        /// </summary>
+        internal Action RegisterTargetedPostProcessor<T>(
+            InstanceId target,
+            Action<T> originalHandler,
+            FastHandler<T> flatInvoker,
+            int priority = 0,
+            IMessageBus messageBus = null
+        )
+            where T : ITargetedMessage
+        {
+            messageBus = ResolveMessageBus(messageBus);
+            Action messageBusDeregistration = messageBus.RegisterTargetedPostProcessor<T>(
+                target,
+                this,
+                priority
+            );
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            return typedHandler.AddTargetedPostProcessor(
+                target,
+                originalHandler,
+                flatInvoker,
+                messageBusDeregistration,
+                priority,
+                messageBus
+            );
+        }
+
+        /// <summary>
         /// Registers this MessageHandler to post-process TargetedMessages for all messages of the provided type via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
@@ -1110,6 +1143,38 @@ namespace DxMessaging.Core
             return typedHandler.AddTargetedWithoutTargetingPostProcessor(
                 originalHandler,
                 messageHandler,
+                messageBusDeregistration,
+                priority,
+                messageBus
+            );
+        }
+
+        /// <summary>
+        /// Registers a targeted (without-targeting) post-processor whose
+        /// diagnostics-augmented by-ref context flat invoker was already built by the
+        /// caller (the registration token), so the default slot stores a single closure
+        /// instead of an <see cref="Action{T1, T2}"/> wrapper plus a separately
+        /// allocated FastHandlerWithContext adapter. <paramref name="originalHandler"/>
+        /// stays the dedup/identity key.
+        /// </summary>
+        internal Action RegisterTargetedWithoutTargetingPostProcessor<T>(
+            Action<InstanceId, T> originalHandler,
+            FastHandlerWithContext<T> flatInvoker,
+            int priority = 0,
+            IMessageBus messageBus = null
+        )
+            where T : ITargetedMessage
+        {
+            messageBus = ResolveMessageBus(messageBus);
+            Action messageBusDeregistration =
+                messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
+                    priority: priority,
+                    messageHandler: this
+                );
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            return typedHandler.AddTargetedWithoutTargetingPostProcessor(
+                originalHandler,
+                flatInvoker,
                 messageBusDeregistration,
                 priority,
                 messageBus
@@ -1631,6 +1696,39 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
+        /// Registers a sourced-broadcast post-processor whose diagnostics-augmented
+        /// by-ref flat invoker was already built by the caller (the registration
+        /// token), so the default slot stores a single closure instead of an
+        /// <see cref="Action{T}"/> wrapper plus a separately allocated FastHandler
+        /// adapter. <paramref name="originalHandler"/> stays the dedup/identity key.
+        /// </summary>
+        internal Action RegisterSourcedBroadcastPostProcessor<T>(
+            InstanceId source,
+            Action<T> originalHandler,
+            FastHandler<T> flatInvoker,
+            int priority = 0,
+            IMessageBus messageBus = null
+        )
+            where T : IBroadcastMessage
+        {
+            messageBus = ResolveMessageBus(messageBus);
+            Action messageBusDeregistration = messageBus.RegisterBroadcastPostProcessor<T>(
+                source,
+                priority: priority,
+                messageHandler: this
+            );
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            return typedHandler.AddBroadcastPostProcessor(
+                source,
+                originalHandler,
+                flatInvoker,
+                messageBusDeregistration,
+                priority,
+                messageBus
+            );
+        }
+
+        /// <summary>
         /// Registers this MessageHandler to post-processes BroadcastMessage messages for all messages of the provided type.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
@@ -1688,6 +1786,38 @@ namespace DxMessaging.Core
             return typedHandler.AddBroadcastWithoutSourcePostProcessor(
                 originalHandler,
                 messageHandler,
+                messageBusDeregistration,
+                priority,
+                messageBus
+            );
+        }
+
+        /// <summary>
+        /// Registers a sourced-broadcast (without-source) post-processor whose
+        /// diagnostics-augmented by-ref context flat invoker was already built by the
+        /// caller (the registration token), so the default slot stores a single closure
+        /// instead of an <see cref="Action{T1, T2}"/> wrapper plus a separately
+        /// allocated FastHandlerWithContext adapter. <paramref name="originalHandler"/>
+        /// stays the dedup/identity key.
+        /// </summary>
+        internal Action RegisterSourcedBroadcastWithoutSourcePostProcessor<T>(
+            Action<InstanceId, T> originalHandler,
+            FastHandlerWithContext<T> flatInvoker,
+            int priority = 0,
+            IMessageBus messageBus = null
+        )
+            where T : IBroadcastMessage
+        {
+            messageBus = ResolveMessageBus(messageBus);
+            Action messageBusDeregistration =
+                messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
+                    priority: priority,
+                    messageHandler: this
+                );
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            return typedHandler.AddBroadcastWithoutSourcePostProcessor(
+                originalHandler,
+                flatInvoker,
                 messageBusDeregistration,
                 priority,
                 messageBus
@@ -4013,6 +4143,35 @@ namespace DxMessaging.Core
             }
 
             /// <summary>
+            /// Adds a Targeted post-processor whose by-ref flat invoker was already
+            /// built by the caller (the registration token folds diagnostics into one
+            /// <see cref="FastHandler{T}"/>), so the default slot stores a single
+            /// closure instead of an <see cref="Action{T}"/> wrapper plus a separately
+            /// allocated FastHandler adapter. <paramref name="originalHandler"/> is the
+            /// dedup/identity key and is never invoked for the default slot.
+            /// </summary>
+            internal Action AddTargetedPostProcessor(
+                InstanceId target,
+                Action<T> originalHandler,
+                FastHandler<T> flatInvoker,
+                Action deregistration,
+                int priority,
+                IMessageBus messageBus
+            )
+            {
+                return AddHandlerPreservingPriorityKey(
+                    target,
+                    GetOrCreateContextHandlers(TypedSlotIndex.TargetedPostProcessDefault),
+                    originalHandler,
+                    originalHandler,
+                    deregistration,
+                    priority,
+                    messageBus,
+                    flatInvoker
+                );
+            }
+
+            /// <summary>
             /// Adds a Targeted post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
@@ -4068,6 +4227,38 @@ namespace DxMessaging.Core
                     ),
                     originalHandler,
                     handler,
+                    deregistration,
+                    priority,
+                    messageBus,
+                    flatInvoker
+                );
+            }
+
+            /// <summary>
+            /// Adds a Targeted (without-targeting) post-processor whose by-ref
+            /// context flat invoker was already built by the caller (the registration
+            /// token folds diagnostics into one
+            /// <see cref="FastHandlerWithContext{T}"/>), so the default slot stores a
+            /// single closure instead of an <see cref="Action{T1, T2}"/> wrapper plus a
+            /// separately allocated FastHandlerWithContext adapter.
+            /// <paramref name="originalHandler"/> is the dedup/identity key and is never
+            /// invoked for the default slot.
+            /// </summary>
+            internal Action AddTargetedWithoutTargetingPostProcessor(
+                Action<InstanceId, T> originalHandler,
+                FastHandlerWithContext<T> flatInvoker,
+                Action deregistration,
+                int priority,
+                IMessageBus messageBus
+            )
+            {
+                return AddHandlerPreservingPriorityKey(
+                    GetOrCreatePriorityHandlers(
+                        TypedSlotIndex.TargetedPostProcessWithoutContext,
+                        requiresContext: false
+                    ),
+                    originalHandler,
+                    originalHandler,
                     deregistration,
                     priority,
                     messageBus,
@@ -4137,6 +4328,35 @@ namespace DxMessaging.Core
             }
 
             /// <summary>
+            /// Adds a Broadcast post-processor whose by-ref flat invoker was already
+            /// built by the caller (the registration token folds diagnostics into one
+            /// <see cref="FastHandler{T}"/>), so the default slot stores a single
+            /// closure instead of an <see cref="Action{T}"/> wrapper plus a separately
+            /// allocated FastHandler adapter. <paramref name="originalHandler"/> is the
+            /// dedup/identity key and is never invoked for the default slot.
+            /// </summary>
+            internal Action AddBroadcastPostProcessor(
+                InstanceId source,
+                Action<T> originalHandler,
+                FastHandler<T> flatInvoker,
+                Action deregistration,
+                int priority,
+                IMessageBus messageBus
+            )
+            {
+                return AddHandlerPreservingPriorityKey(
+                    source,
+                    GetOrCreateContextHandlers(TypedSlotIndex.BroadcastPostProcessDefault),
+                    originalHandler,
+                    originalHandler,
+                    deregistration,
+                    priority,
+                    messageBus,
+                    flatInvoker
+                );
+            }
+
+            /// <summary>
             /// Adds a fast Broadcast post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="source">The Source the handler is for.</param>
@@ -4192,6 +4412,37 @@ namespace DxMessaging.Core
                     ),
                     originalHandler,
                     handler,
+                    deregistration,
+                    priority,
+                    messageBus,
+                    flatInvoker
+                );
+            }
+
+            /// <summary>
+            /// Adds a Broadcast (without-source) post-processor whose by-ref context
+            /// flat invoker was already built by the caller (the registration token
+            /// folds diagnostics into one <see cref="FastHandlerWithContext{T}"/>), so
+            /// the default slot stores a single closure instead of an
+            /// <see cref="Action{T1, T2}"/> wrapper plus a separately allocated
+            /// FastHandlerWithContext adapter. <paramref name="originalHandler"/> is the
+            /// dedup/identity key and is never invoked for the default slot.
+            /// </summary>
+            internal Action AddBroadcastWithoutSourcePostProcessor(
+                Action<InstanceId, T> originalHandler,
+                FastHandlerWithContext<T> flatInvoker,
+                Action deregistration,
+                int priority,
+                IMessageBus messageBus
+            )
+            {
+                return AddHandlerPreservingPriorityKey(
+                    GetOrCreatePriorityHandlers(
+                        TypedSlotIndex.BroadcastPostProcessWithoutContext,
+                        requiresContext: false
+                    ),
+                    originalHandler,
+                    originalHandler,
                     deregistration,
                     priority,
                     messageBus,

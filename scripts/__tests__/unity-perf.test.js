@@ -24,7 +24,9 @@ const {
   buildDeltaTable,
   render,
   readBaselineRows,
-  scenarioLabel
+  scenarioLabel,
+  goodnessRelativeChange,
+  formatAllocDelta
 } = require("../unity/render-perf-deltas.js");
 const {
   buildComparisonSections,
@@ -175,6 +177,42 @@ test("compareRow reports throughput deltas beyond tolerance", () => {
   assert.equal(steady.moved, false);
 });
 
+test("delta sign is normalized so + is always better and - is always worse", () => {
+  // goodnessRelativeChange: higher-is-better keeps the raw sign; lower-is-better
+  // negates it, so an improvement is always positive regardless of metric direction.
+  assert.ok(goodnessRelativeChange(110, 100, true) > 0, "more throughput is better (+)");
+  assert.ok(goodnessRelativeChange(90, 100, true) < 0, "less throughput is worse (-)");
+  assert.ok(goodnessRelativeChange(90, 100, false) > 0, "lower latency is better (+)");
+  assert.ok(goodnessRelativeChange(110, 100, false) < 0, "higher latency is worse (-)");
+
+  // formatAllocDelta words the direction (fewer/more) instead of a bare +/-.
+  assert.equal(formatAllocDelta(-5), "5 fewer allocs");
+  assert.equal(formatAllocDelta(5), "5 more allocs");
+
+  // Throughput scenario: a faster run (more emits/sec) reads "+", a regression "-".
+  const t = "UntargetedFlood_OneHandler";
+  const up = compareRow(t, row(t, "1100000.000"), row(t, "1000000.000"), 0.02);
+  const down = compareRow(t, row(t, "900000.000"), row(t, "1000000.000"), 0.02);
+  assert.ok(up.cells[3].startsWith("+10.00%"), up.cells[3]);
+  assert.ok(down.cells[3].startsWith("-10.00%"), down.cells[3]);
+
+  // Registration (wall-clock) scenario: a FASTER run (lower ms) must read "+", even
+  // though the raw number went DOWN -- this is the bug the normalization fixes. Fewer
+  // allocations read "fewer"; more read "more".
+  const reg = "RegistrationFlood_1000Types_FromColdBus";
+  const baselineReg = row(reg, "0.000", "80", "12.500");
+  const fasterFewer = compareRow(reg, row(reg, "0.000", "75", "11.000"), baselineReg, 0.02);
+  const slowerMore = compareRow(reg, row(reg, "0.000", "85", "13.750"), baselineReg, 0.02);
+  assert.ok(
+    fasterFewer.cells[3].startsWith("+12.00%") && fasterFewer.cells[3].includes("5 fewer allocs"),
+    fasterFewer.cells[3]
+  );
+  assert.ok(
+    slowerMore.cells[3].startsWith("-10.00%") && slowerMore.cells[3].includes("5 more allocs"),
+    slowerMore.cells[3]
+  );
+});
+
 test("isRegression trips on large throughput drops or allocation growth", () => {
   const baseline = row("x", "1000000.000");
   const cases = [
@@ -194,9 +232,10 @@ test("isRegression trips on large throughput drops or allocation growth", () => 
 
 test("allocation reporting is honest: real counts render, sentinel renders n/a", () => {
   const s = "UntargetedFlood_OneHandler";
-  // A real allocation increase shows a signed alloc delta and marks the row moved.
+  // A real allocation increase is a regression, written out as "more" (not a bare
+  // +/- on the count), and marks the row moved.
   const grew = compareRow(s, row(s, "1000000.000", "10"), row(s, "1000000.000", "0"), 0.02);
-  assert.ok(grew.cells[3].includes("+10 allocs") && grew.moved, grew.cells[3]);
+  assert.ok(grew.cells[3].includes("10 more allocs") && grew.moved, grew.cells[3]);
 
   // The Unmeasured sentinel renders "n/a" (never "0"/"-1") and contributes no delta.
   const na = compareRow(s, row(s, "1000000.000", "-1"), row(s, "1000000.000", "-1"), 0.02);
