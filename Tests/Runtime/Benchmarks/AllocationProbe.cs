@@ -151,6 +151,198 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /// <summary>
+        /// Runs <paramref name="operation"/> <paramref name="attempts"/> times -- each
+        /// preceded by <paramref name="prepare"/> (the per-attempt precondition setup,
+        /// which is NOT counted) -- after a single settling collection before the loop --
+        /// and returns the MINIMUM managed-allocation CALL count observed, or
+        /// <see cref="Unmeasured"/> when the probe is non-functional on this backend.
+        ///
+        /// <para>
+        /// WHY A MINIMUM: a single allocation window in a warm, long-lived editor domain
+        /// intermittently spikes far above the operation's true cost. Measured on the host
+        /// editor, a fixed <c>bus.Trim()</c>x32 block read a median of ~57 allocations with
+        /// a floor of ~9 and rare spikes past 4000 -- the spike is a GC/heap-state-dependent
+        /// pool miss or backing-array resize that fires inside one window and not the next
+        /// (a no-GC region does NOT suppress it). Because the operation executes a fixed
+        /// sequence of <c>new</c>s, those spikes only ADD to the floor; the minimum over a
+        /// handful of attempts therefore converges to the true per-operation cost and is
+        /// stable even on a busy editor, while still rising -- and tripping a budget -- on a
+        /// genuine regression that raises the floor. This is the allocation-count analogue
+        /// of taking the minimum of repeated timing samples to reject scheduler noise.
+        /// Cold CI legs run a fresh domain per assembly and do not exhibit the spikes, so a
+        /// single attempt there already reads the floor; the extra attempts are harmless.
+        /// </para>
+        /// </summary>
+        /// <param name="attempts">How many times to measure (and take the min of). Must be positive.</param>
+        /// <param name="prepare">Per-attempt precondition setup, run before each window and never counted. May be <c>null</c>.</param>
+        /// <param name="operation">The operation whose allocation floor is measured.</param>
+        public static long MeasureMin(int attempts, Action prepare, Action operation)
+        {
+            if (attempts <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(attempts));
+            }
+
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            return MeasureMinCore(
+                attempts,
+                prepare,
+                () =>
+                {
+                    operation();
+                    return default(NoDiagnostics);
+                }
+            ).GcAllocations;
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation"/> repeatedly and returns both the minimum
+        /// managed-allocation CALL count and the diagnostics produced by the same attempt
+        /// that yielded that minimum.
+        ///
+        /// <para>
+        /// Use this overload when the caller needs to assert or report side effects from
+        /// the measured operation. Diagnostics accumulated in outer variables across all
+        /// attempts can drift away from the minimum window and produce misleading failure
+        /// messages or false positives. Keep <typeparamref name="TDiagnostics"/>
+        /// allocation-free; constructing the diagnostic value happens inside the measured
+        /// window.
+        /// </para>
+        /// </summary>
+        /// <param name="attempts">How many times to measure (and take the min of). Must be positive.</param>
+        /// <param name="prepare">Per-attempt precondition setup, run before each window and never counted. May be <c>null</c>.</param>
+        /// <param name="operation">The operation whose allocation floor is measured. Returns diagnostics for that attempt.</param>
+        public static MinimumMeasurement<TDiagnostics> MeasureMinWithDiagnostics<TDiagnostics>(
+            int attempts,
+            Action prepare,
+            Func<TDiagnostics> operation
+        )
+        {
+            if (attempts <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(attempts));
+            }
+
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            return MeasureMinCore(attempts, prepare, operation);
+        }
+
+        private static MinimumMeasurement<TDiagnostics> MeasureMinCore<TDiagnostics>(
+            int attempts,
+            Action prepare,
+            Func<TDiagnostics> operation
+        )
+        {
+            if (attempts <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(attempts));
+            }
+
+            if (!IsFunctional)
+            {
+                return new MinimumMeasurement<TDiagnostics>(Unmeasured, -1, default);
+            }
+
+            // Settle ONCE before the loop, matching a single test's pre-measurement
+            // collection cost. We deliberately do NOT force a collection per attempt: a
+            // per-attempt GC.Collect storm (attempts x parameterizations) grows and
+            // fragments the long-lived editor heap enough to perturb OTHER allocation
+            // tests that run afterward. The minimum already rejects the windows where an
+            // organic collection fires mid-measurement, so per-attempt forcing is both
+            // unnecessary and harmful.
+            SettleHeapForMeasurement();
+
+            long min = long.MaxValue;
+            int minAttemptIndex = -1;
+            TDiagnostics minDiagnostics = default;
+            try
+            {
+                for (int attempt = 0; attempt < attempts; ++attempt)
+                {
+                    prepare?.Invoke();
+                    using Window window = BeginWindow();
+                    TDiagnostics diagnostics = operation();
+                    long count = window.Sample();
+                    if (count < min)
+                    {
+                        min = count;
+                        minAttemptIndex = attempt;
+                        minDiagnostics = diagnostics;
+                    }
+                }
+            }
+            finally
+            {
+                // Reclaim the garbage these repeated attempts produced BEFORE returning,
+                // so a collection it would otherwise trigger does not fire inside a later
+                // test's measurement window and inflate that test's count. Without this,
+                // repeating an operation N times leaves N times the garbage, which is what
+                // turns a robust single-window neighbor test flaky after a MeasureMin test
+                // runs. The finally keeps that hygiene even when an attempt throws.
+                SettleHeapForMeasurement();
+            }
+
+            return new MinimumMeasurement<TDiagnostics>(min, minAttemptIndex, minDiagnostics);
+        }
+
+        private readonly struct NoDiagnostics { }
+
+        /// <summary>
+        /// Minimum allocation count plus the caller-provided diagnostics from the same
+        /// attempt that produced that count.
+        /// </summary>
+        public readonly struct MinimumMeasurement<TDiagnostics>
+        {
+            internal MinimumMeasurement(
+                long gcAllocations,
+                int attemptIndex,
+                TDiagnostics diagnostics
+            )
+            {
+                GcAllocations = gcAllocations;
+                AttemptIndex = attemptIndex;
+                Diagnostics = diagnostics;
+            }
+
+            /// <summary>
+            /// Minimum managed-allocation CALL count, or <see cref="Unmeasured"/> when
+            /// the recorder is not functional on this backend.
+            /// </summary>
+            public long GcAllocations { get; }
+
+            /// <summary>
+            /// Zero-based attempt index that produced <see cref="GcAllocations"/>, or -1
+            /// when <see cref="GcAllocations"/> is <see cref="Unmeasured"/>.
+            /// </summary>
+            public int AttemptIndex { get; }
+
+            /// <summary>
+            /// Diagnostics returned by the operation during the winning attempt.
+            /// </summary>
+            public TDiagnostics Diagnostics { get; }
+        }
+
+        /// <summary>
+        /// Forces a full collection, waits for finalizers, then forces a second
+        /// full collection so objects made unreachable by finalizers are reclaimed
+        /// before an allocation window begins or before the next test runs.
+        /// </summary>
+        public static void SettleHeapForMeasurement()
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        /// <summary>
         /// A scoped allocation-counting window. Created by <see cref="BeginWindow"/> and
         /// released by <c>using</c>. <see cref="Dispose"/> disables the underlying
         /// profiler recorder; it is idempotent and safe to call after

@@ -9,6 +9,7 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -45,6 +46,38 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(1, emissions.Count);
 
             token.RemoveRegistration(handle);
+        }
+
+        [Test]
+        public void ActionRegistrationDiagnosticsRecordedThroughFlatBusDispatch(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
+            )]
+                MessageScenario scenario
+        )
+        {
+            RunActionRegistrationDiagnosticsScenario(
+                scenario,
+                legacyHandlerDispatch: false,
+                nameof(ActionRegistrationDiagnosticsRecordedThroughFlatBusDispatch)
+            );
+        }
+
+        [Test]
+        public void ActionRegistrationDiagnosticsRecordedThroughLegacyHandlerDispatch(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
+            )]
+                MessageScenario scenario
+        )
+        {
+            RunActionRegistrationDiagnosticsScenario(
+                scenario,
+                legacyHandlerDispatch: true,
+                nameof(ActionRegistrationDiagnosticsRecordedThroughLegacyHandlerDispatch)
+            );
         }
 
         [Test]
@@ -101,6 +134,206 @@ namespace DxMessaging.Tests.Runtime.Core
         private static CyclicBuffer<MessageEmissionData> GetEmissionBuffer(MessageBus bus)
         {
             return bus._emissionBuffer;
+        }
+
+        private void RunActionRegistrationDiagnosticsScenario(
+            MessageScenario scenario,
+            bool legacyHandlerDispatch,
+            string testName
+        )
+        {
+            MessageBus bus = new() { DiagnosticsMode = true };
+            GameObject host = new(testName + "_" + scenario.DisplayName);
+            _spawned.Add(host);
+            MessageHandler handler = new(host, bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.DiagnosticMode = true;
+            token.Enable();
+
+            using LeakWatcher watcher = new(bus, label: scenario.DisplayName);
+            int userCallCount = 0;
+            MessageRegistrationHandle handle = RegisterActionHandler(
+                scenario,
+                token,
+                handler.owner,
+                () => ++userCallCount
+            );
+
+            try
+            {
+                if (legacyHandlerDispatch)
+                {
+                    EmitThroughLegacyHandler(scenario, handler, bus, handler.owner);
+                }
+                else
+                {
+                    EmitThroughBus(scenario, bus, handler.owner);
+                }
+
+                Assert.AreEqual(
+                    1,
+                    userCallCount,
+                    "[{0}] User Action handler must run exactly once.",
+                    scenario.DisplayName
+                );
+
+                Dictionary<MessageRegistrationHandle, int> callCounts = GetCallCounts(token);
+                Assert.IsTrue(
+                    callCounts.TryGetValue(handle, out int recordedCount),
+                    "[{0}] Diagnostics call-count entry missing for handle {1}.",
+                    scenario.DisplayName,
+                    handle
+                );
+                Assert.AreEqual(
+                    1,
+                    recordedCount,
+                    "[{0}] Diagnostics call count must match the delivered Action handler.",
+                    scenario.DisplayName
+                );
+
+                CyclicBuffer<MessageEmissionData> emissions = GetEmissionBuffer(token);
+                Assert.AreEqual(
+                    1,
+                    emissions.Count,
+                    "[{0}] Diagnostics emission history must record the delivered Action handler.",
+                    scenario.DisplayName
+                );
+            }
+            finally
+            {
+                token.RemoveRegistration(handle);
+                token.Disable();
+                handler.active = false;
+            }
+        }
+
+        private static MessageRegistrationHandle RegisterActionHandler(
+            MessageScenario scenario,
+            MessageRegistrationToken token,
+            InstanceId context,
+            Action onCall
+        )
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
+                        (SimpleUntargetedMessage _) => onCall()
+                    );
+                case MessageKind.Targeted:
+                    return token.RegisterTargeted<SimpleTargetedMessage>(
+                        context,
+                        (SimpleTargetedMessage _) => onCall()
+                    );
+                case MessageKind.Broadcast:
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
+                        context,
+                        (SimpleBroadcastMessage _) => onCall()
+                    );
+                case MessageKind.TargetedWithoutTargeting:
+                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                        (InstanceId _, SimpleTargetedMessage _) => onCall()
+                    );
+                case MessageKind.BroadcastWithoutSource:
+                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                        (InstanceId _, SimpleBroadcastMessage _) => onCall()
+                    );
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, null);
+            }
+        }
+
+        private static void EmitThroughBus(
+            MessageScenario scenario,
+            MessageBus bus,
+            InstanceId context
+        )
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                {
+                    SimpleUntargetedMessage message = new();
+                    bus.UntargetedBroadcast(ref message);
+                    return;
+                }
+                case MessageKind.Targeted:
+                case MessageKind.TargetedWithoutTargeting:
+                {
+                    SimpleTargetedMessage message = new();
+                    InstanceId target = context;
+                    bus.TargetedBroadcast(ref target, ref message);
+                    return;
+                }
+                case MessageKind.Broadcast:
+                case MessageKind.BroadcastWithoutSource:
+                {
+                    SimpleBroadcastMessage message = new();
+                    InstanceId source = context;
+                    bus.SourcedBroadcast(ref source, ref message);
+                    return;
+                }
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, null);
+            }
+        }
+
+        private static void EmitThroughLegacyHandler(
+            MessageScenario scenario,
+            MessageHandler handler,
+            MessageBus bus,
+            InstanceId context
+        )
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                {
+                    SimpleUntargetedMessage message = new();
+                    handler.HandleUntargetedMessage(ref message, bus, priority: 0);
+                    return;
+                }
+                case MessageKind.Targeted:
+                {
+                    SimpleTargetedMessage message = new();
+                    InstanceId target = context;
+                    handler.HandleTargeted(ref target, ref message, bus, priority: 0);
+                    return;
+                }
+                case MessageKind.Broadcast:
+                {
+                    SimpleBroadcastMessage message = new();
+                    InstanceId source = context;
+                    handler.HandleSourcedBroadcast(ref source, ref message, bus, priority: 0);
+                    return;
+                }
+                case MessageKind.TargetedWithoutTargeting:
+                {
+                    SimpleTargetedMessage message = new();
+                    InstanceId target = context;
+                    handler.HandleTargetedWithoutTargeting(
+                        ref target,
+                        ref message,
+                        bus,
+                        priority: 0
+                    );
+                    return;
+                }
+                case MessageKind.BroadcastWithoutSource:
+                {
+                    SimpleBroadcastMessage message = new();
+                    InstanceId source = context;
+                    handler.HandleSourcedBroadcastWithoutSource(
+                        ref source,
+                        ref message,
+                        bus,
+                        priority: 0
+                    );
+                    return;
+                }
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, null);
+            }
         }
 
         [Test]

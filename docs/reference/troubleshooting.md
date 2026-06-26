@@ -18,35 +18,43 @@
   - **Never use `new` to hide Unity methods** (e.g., `new void OnEnable()`); always use `override` and call `base.*`.
   - For the complete table of guarded methods and the exact failure mode for each, see [Inheritance and base calls](../getting-started/quick-start.md#important-inheritance-and-base-calls) in the quickstart.
 
-Registration timing
+## Registration timing
 
 - **ALWAYS register message handlers in `Awake()`**, not `Start()`.
 - `MessageAwareComponent` automatically calls `RegisterMessageHandlers()` in `Awake()`.
 - Registering in `Awake()` ensures handlers are ready before other components' `Start()` methods run.
 - If you register in `Start()`, you may miss messages emitted by other components in their `Start()` methods.
 
-Unexpected ordering
+## Unexpected ordering
 
 - Check `priority` values on registrations; lower runs earlier. Same priority is registration order.
 - Interceptors always precede handlers and can cancel; confirm interceptors return `true`.
 
-Double registration or over-deregistration warnings
+## Double registration or over-deregistration warnings
 
 - Avoid calling stage/enable multiple times; pair registrations and lifecycles consistently.
 - Review logs with `bus.Log.Enabled = true` to see the registration history.
 
-Allocations/boxing
+## Allocations and boxing
 
 - Prefer struct messages implementing the generic interfaces: `I*Message<T>`.
 - Use by-ref handler overloads to avoid copies.
+- Register handlers once in `Awake`/setup, not every frame: each registration allocates a small bounded amount, while steady-state dispatch is allocation-free. See the [allocation FAQ](faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc).
 
-Emitting while disabled
+## Emitting while disabled
 
 - If you need to emit when a component is disabled, use a bus not tied to enable state or set `emitMessagesWhenDisabled` on `MessagingComponent`.
 
-Diagnostics overhead
+## Diagnostics overhead
 
-- Disable diagnostics in release builds (`IMessageBus.GlobalDiagnosticsMode = false`).
+- Diagnostics are off by default. Leave them off in release builds (`IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off`); enable them only when inspecting message history. See [Diagnostics](../guides/diagnostics.md).
+
+## Source generator did not generate Emit or handler methods
+
+- Mark the message type `partial`. The generator emits members into a second partial declaration, which requires the keyword on your type.
+- Apply a `[DxUntargetedMessage]`, `[DxTargetedMessage]`, or `[DxBroadcastMessage]` attribute, or implement the matching `I*Message` interface directly.
+- An assembly definition is **not** required -- generation runs for Unity's default `Assembly-CSharp` as well as for your own `.asmdef` assemblies.
+- After changing message types, let Unity finish recompiling; generated members appear once the analyzer reruns.
 
 ## Memory grows in long sessions
 

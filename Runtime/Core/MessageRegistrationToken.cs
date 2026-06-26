@@ -80,10 +80,31 @@ namespace DxMessaging.Core
             MessageRegistrationHandle,
             MessageRegistrationMetadata
         > _metadata = new();
-        internal readonly Dictionary<MessageRegistrationHandle, int> _callCounts = new();
-        internal readonly CyclicBuffer<MessageEmissionData> _emissionBuffer = new(
-            IMessageBus.GlobalMessageBufferSize
-        );
+
+        // Diagnostics-only collections, allocated lazily on first use. A token whose
+        // owner never enables diagnostics (the default -- GlobalDiagnosticsTargets is
+        // Off -- and the common player case) never materializes them, saving the
+        // dictionary, the cyclic buffer, and the buffer's two backing lists per token.
+        // These are exposed as properties under their original field names so the
+        // inspector overlay and the diagnostics tests (which read token._callCounts /
+        // token._emissionBuffer) compile and behave unchanged; the getter caches into
+        // the backing field, so repeated reads return the same instance and an editor
+        // read simply materializes an empty collection. The only production writers are
+        // the dispatch-time AugmentedHandler bodies, all guarded by _diagnosticMode, so
+        // production-with-diagnostics-off never triggers the allocation. Teardown
+        // (ClearDiagnosticState / RemoveRegistrationState /
+        // PruneRegistrationStateToFailedDeregistrations) clears through the backing
+        // fields to avoid materializing a collection just to empty it.
+        private Dictionary<MessageRegistrationHandle, int> _callCountsBacking;
+        private CyclicBuffer<MessageEmissionData> _emissionBufferBacking;
+
+        internal Dictionary<MessageRegistrationHandle, int> _callCounts =>
+            _callCountsBacking ??= new Dictionary<MessageRegistrationHandle, int>();
+
+        internal CyclicBuffer<MessageEmissionData> _emissionBuffer =>
+            _emissionBufferBacking ??= new CyclicBuffer<MessageEmissionData>(
+                IMessageBus.GlobalMessageBufferSize
+            );
 
         private IMessageBus _messageBus;
         private bool _enabled;
@@ -111,15 +132,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref FastHandler handed
+                    // down as the flat invoker; the user's handler is the identity
+                    // key and is never invoked for the default slot.
                     return _messageHandler.RegisterTargetedMessageHandler(
                         target,
                         targetedHandler,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandler<T>)AugmentedHandler,
                         priority: priority,
                         messageBus: _messageBus
                     );
 
-                    void AugmentedHandler(T message)
+                    void AugmentedHandler(ref T message)
                     {
                         targetedHandler(message);
                         if (_diagnosticMode)
@@ -129,13 +153,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        target,
-                        typeof(T),
-                        MessageRegistrationType.Targeted,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    target,
+                    typeof(T),
+                    MessageRegistrationType.Targeted,
+                    priority
+                )
             );
         }
 
@@ -172,13 +195,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        target,
-                        typeof(T),
-                        MessageRegistrationType.Targeted,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    target,
+                    typeof(T),
+                    MessageRegistrationType.Targeted,
+                    priority
+                )
             );
         }
 
@@ -320,13 +342,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        target,
-                        typeof(T),
-                        MessageRegistrationType.TargetedPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    target,
+                    typeof(T),
+                    MessageRegistrationType.TargetedPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -366,13 +387,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        target,
-                        typeof(T),
-                        MessageRegistrationType.TargetedPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    target,
+                    typeof(T),
+                    MessageRegistrationType.TargetedPostProcessor,
+                    priority
+                )
             );
         }
 #endif
@@ -455,13 +475,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        target,
-                        typeof(T),
-                        MessageRegistrationType.TargetedPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    target,
+                    typeof(T),
+                    MessageRegistrationType.TargetedPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -501,13 +520,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        target,
-                        typeof(T),
-                        MessageRegistrationType.TargetedPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    target,
+                    typeof(T),
+                    MessageRegistrationType.TargetedPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -534,14 +552,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref-with-context
+                    // FastHandlerWithContext handed down as the flat invoker; the
+                    // user's handler is the identity key and is never invoked for
+                    // the default slot.
                     return _messageHandler.RegisterTargetedWithoutTargeting(
                         messageHandler,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandlerWithContext<T>)AugmentedHandler,
                         priority: priority,
                         messageBus: _messageBus
                     );
 
-                    void AugmentedHandler(InstanceId target, T message)
+                    void AugmentedHandler(ref InstanceId target, ref T message)
                     {
                         messageHandler(target, message);
                         if (_diagnosticMode)
@@ -551,13 +573,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.TargetedWithoutTargeting,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.TargetedWithoutTargeting,
+                    priority
+                )
             );
         }
 
@@ -601,13 +622,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.TargetedWithoutTargeting,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.TargetedWithoutTargeting,
+                    priority
+                )
             );
         }
 
@@ -651,13 +671,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.TargetedWithoutTargetingPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.TargetedWithoutTargetingPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -701,13 +720,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.TargetedWithoutTargetingPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.TargetedWithoutTargetingPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -741,14 +759,21 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // The diagnostics-augmented handler is built once as a by-ref
+                    // FastHandler and handed down as the flat invoker, so the
+                    // default slot stores a single closure (this one) instead of
+                    // an Action wrapper plus a separately-allocated FastHandler
+                    // adapter. The user's handler is the identity key; default-slot
+                    // dispatch uses the flat invoker, including the legacy Handle*
+                    // callback path.
                     return _messageHandler.RegisterUntargetedMessageHandler(
                         untargetedHandler,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandler<T>)AugmentedHandler,
                         priority: priority,
                         messageBus: _messageBus
                     );
 
-                    void AugmentedHandler(T message)
+                    void AugmentedHandler(ref T message)
                     {
                         untargetedHandler(message);
                         if (_diagnosticMode)
@@ -758,13 +783,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.Untargeted,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.Untargeted,
+                    priority
+                )
             );
         }
 
@@ -814,13 +838,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.Untargeted,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.Untargeted,
+                    priority
+                )
             );
         }
 
@@ -861,13 +884,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.UntargetedPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.UntargetedPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -885,15 +907,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref FastHandler handed
+                    // down as the flat invoker; the user's handler is the identity
+                    // key and is never invoked for the default slot.
                     return _messageHandler.RegisterSourcedBroadcastMessageHandler(
                         source,
                         broadcastHandler,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandler<T>)AugmentedHandler,
                         priority: priority,
                         messageBus: _messageBus
                     );
 
-                    void AugmentedHandler(T message)
+                    void AugmentedHandler(ref T message)
                     {
                         broadcastHandler(message);
                         if (_diagnosticMode)
@@ -903,13 +928,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        source,
-                        typeof(T),
-                        MessageRegistrationType.Broadcast,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    source,
+                    typeof(T),
+                    MessageRegistrationType.Broadcast,
+                    priority
+                )
             );
         }
 
@@ -945,13 +969,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        source,
-                        typeof(T),
-                        MessageRegistrationType.Broadcast,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    source,
+                    typeof(T),
+                    MessageRegistrationType.Broadcast,
+                    priority
+                )
             );
         }
 
@@ -988,13 +1011,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        source,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    source,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -1030,13 +1052,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        source,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    source,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -1201,13 +1222,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        source,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    source,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastPostProcessor,
+                    priority
+                )
             );
         }
 
@@ -1251,13 +1271,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        source,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastPostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    source,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastPostProcessor,
+                    priority
+                )
             );
         }
 #endif
@@ -1375,14 +1394,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref-with-context
+                    // FastHandlerWithContext handed down as the flat invoker; the
+                    // user's handler is the identity key and is never invoked for
+                    // the default slot.
                     return _messageHandler.RegisterSourcedBroadcastWithoutSource(
                         broadcastHandler,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandlerWithContext<T>)AugmentedHandler,
                         priority: priority,
                         messageBus: _messageBus
                     );
 
-                    void AugmentedHandler(InstanceId source, T message)
+                    void AugmentedHandler(ref InstanceId source, ref T message)
                     {
                         broadcastHandler(source, message);
                         if (_diagnosticMode)
@@ -1392,13 +1415,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastWithoutSource,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastWithoutSource,
+                    priority
+                )
             );
         }
 
@@ -1443,13 +1465,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastWithoutSource,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastWithoutSource,
+                    priority
+                )
             );
         }
 
@@ -1499,13 +1520,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastWithoutSourcePostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastWithoutSourcePostProcessor,
+                    priority
+                )
             );
         }
 
@@ -1550,13 +1570,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastWithoutSourcePostProcessor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastWithoutSourcePostProcessor,
+                    priority
+                )
             );
         }
 
@@ -1623,13 +1642,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(IMessage),
-                        MessageRegistrationType.GlobalAcceptAll,
-                        0
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(IMessage),
+                    MessageRegistrationType.GlobalAcceptAll,
+                    0
+                )
             );
         }
 
@@ -1705,13 +1723,12 @@ namespace DxMessaging.Core
                         }
                     }
                 },
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(IMessage),
-                        MessageRegistrationType.GlobalAcceptAll,
-                        0
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(IMessage),
+                    MessageRegistrationType.GlobalAcceptAll,
+                    0
+                )
             );
         }
 
@@ -1740,13 +1757,12 @@ namespace DxMessaging.Core
                         priority: priority,
                         messageBus: _messageBus
                     ),
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.UntargetedInterceptor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.UntargetedInterceptor,
+                    priority
+                )
             );
         }
 
@@ -1775,13 +1791,12 @@ namespace DxMessaging.Core
                         priority: priority,
                         messageBus: _messageBus
                     ),
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.BroadcastInterceptor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastInterceptor,
+                    priority
+                )
             );
         }
 
@@ -1810,13 +1825,12 @@ namespace DxMessaging.Core
                         priority: priority,
                         messageBus: _messageBus
                     ),
-                () =>
-                    new MessageRegistrationMetadata(
-                        null,
-                        typeof(T),
-                        MessageRegistrationType.TargetedInterceptor,
-                        priority
-                    )
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.TargetedInterceptor,
+                    priority
+                )
             );
         }
 
@@ -1824,11 +1838,11 @@ namespace DxMessaging.Core
         /// Handles the actual [de]registration wrapping and (potential) lazy execution.
         /// </summary>
         /// <param name="registerAndGetDeregistration">Proxied registration function that returns a de-registration function.</param>
-        /// <param name="metadataProducer">Opaque metadata producer function.</param>
+        /// <param name="metadata">Registration metadata recorded for the diagnostics inspector overlay and the registration-count warning.</param>
         /// <returns>A handle that allows for registration and de-registration.</returns>
         private MessageRegistrationHandle InternalRegister(
             Func<MessageRegistrationHandle, Action> registerAndGetDeregistration,
-            Func<MessageRegistrationMetadata> metadataProducer
+            MessageRegistrationMetadata metadata
         )
         {
             MessageRegistrationHandle handle =
@@ -1836,7 +1850,15 @@ namespace DxMessaging.Core
 
             _registrations[handle] = Registration;
             _registrationOrder.Add(handle);
-            _metadata[handle] = metadataProducer();
+            // Metadata is passed by value (a readonly struct) instead of through a
+            // Func<MessageRegistrationMetadata> factory: the factory was invoked
+            // immediately and unconditionally here, so it never deferred any work --
+            // it only cost one delegate (plus its display class) allocation per
+            // registration. Constructing the struct at the call site is identical
+            // work without that closure. _metadata stays populated for every
+            // registration because the inspector overlay and the registration-count
+            // warning read it regardless of diagnostics mode.
+            _metadata[handle] = metadata;
 
             // Generally, registrations should take place before all calls to enable. Just in case, though...
             if (_enabled)
@@ -2257,8 +2279,10 @@ namespace DxMessaging.Core
         private void ClearDiagnosticState()
         {
             _metadata.Clear();
-            _callCounts.Clear();
-            _emissionBuffer.Clear();
+            // Clear through the backing fields so an inactive (never-materialized)
+            // diagnostics collection is not allocated merely to be emptied.
+            _callCountsBacking?.Clear();
+            _emissionBufferBacking?.Clear();
         }
 
         private void PruneRegistrationStateToFailedDeregistrations()
@@ -2274,7 +2298,7 @@ namespace DxMessaging.Core
                 RemoveRegistrationState(handle);
             }
 
-            _emissionBuffer.Clear();
+            _emissionBufferBacking?.Clear();
             if (_registrations.Count == 0)
             {
                 ClearDiagnosticState();
@@ -2286,7 +2310,7 @@ namespace DxMessaging.Core
             bool removedRegistration = _registrations.Remove(handle);
             _ = _registrationOrder.Remove(handle);
             _ = _metadata.Remove(handle);
-            _ = _callCounts.Remove(handle);
+            _callCountsBacking?.Remove(handle);
             if (removedRegistration && _registrations.Count == 0)
             {
                 ClearDiagnosticState();

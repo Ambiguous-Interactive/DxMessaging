@@ -8,11 +8,19 @@
 
 - No. You can implement `IUntargetedMessage<T>`, `ITargetedMessage<T>`, or `IBroadcastMessage<T>` directly (recommended for structs). Attributes are optional and help tooling/source-gen.
 
+## Do I need an assembly definition for the source generator to work?
+
+- No. The source generator and analyzers run for code in Unity's default `Assembly-CSharp` and in your own assembly definitions alike, so you do not need to add an `.asmdef` just to get generation. Mark the message type `partial` and apply a `[DxUntargetedMessage]` / `[DxTargetedMessage]` / `[DxBroadcastMessage]` attribute (or implement the matching `I*Message` interface). If generated members are missing, see [Troubleshooting](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods).
+
 ## Which message type should I use?
 
 - **Untargeted** - global notifications (any listener).
 - **Targeted** - commands/events for a specific recipient.
 - **Broadcast** - facts emitted from a source that others may observe.
+
+## Does DxMessaging allocate memory? Is dispatch zero-GC?
+
+- Steady-state dispatch is allocation-free: emitting a struct message and invoking a registered handler allocates nothing after the first warm-up emit of that message type (a one-time JIT cost in the editor that IL2CPP precompiles away). The by-ref (`FastHandler`) handler overloads also avoid copying the struct on each call; the by-value `Action<T>` overloads add one struct copy per dispatch but still do not allocate. Heap allocations come from constructing a class message instance; boxing happens only if you upcast a struct message to a non-generic interface yourself. Registration itself allocates a small, bounded amount per handler (delegates and dictionary entries), so register handlers in `Awake`/setup rather than every frame. See [Performance](../architecture/performance.md) for measured numbers and [Troubleshooting](troubleshooting.md#allocations-and-boxing) if you observe unexpected allocations.
 
 ## How do I enforce ordering?
 
@@ -40,6 +48,14 @@ The most common cause is forgetting to call `base.Awake()` (or `base.OnEnable()`
 ## Do I need a global bus?
 
 - A global bus is provided (`MessageHandler.MessageBus`). You can also create and pass your own `MessageBus` instance to isolate subsystems and tests.
+
+## Can I use DxMessaging with a dependency injection container?
+
+- Yes. Installers ship for VContainer, Zenject, and Reflex; see [Integrations](../integrations/index.md). They wire the message bus into the container so your message-aware types resolve and register through it instead of reaching for the global bus.
+
+## How do I unit-test code that sends or receives messages?
+
+- Construct a dedicated `MessageBus` per test and pass it to the participants instead of using the global bus, so registrations cannot leak between tests. Emit a message, then assert your handler observed it. Isolating the bus also lets tests run in parallel without cross-talk.
 
 ## Is this compatible with Unity's SendMessage/UnityEvents
 
