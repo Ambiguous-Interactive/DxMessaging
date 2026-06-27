@@ -502,15 +502,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref FastHandler handed
+                    // down as the flat invoker; the user's handler is the identity
+                    // key and is never invoked for the default slot.
                     return _messageHandler.RegisterTargetedPostProcessor(
                         target,
                         targetedPostProcessor,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandler<T>)AugmentedHandler,
                         priority,
                         _messageBus
                     );
 
-                    void AugmentedHandler(T message)
+                    void AugmentedHandler(ref T message)
                     {
                         targetedPostProcessor(message);
                         if (_diagnosticMode)
@@ -654,14 +657,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref-with-context
+                    // FastHandlerWithContext handed down as the flat invoker; the
+                    // user's handler is the identity key and is never invoked for the
+                    // default slot.
                     return _messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
                         postProcessor,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandlerWithContext<T>)AugmentedHandler,
                         priority,
                         _messageBus
                     );
 
-                    void AugmentedHandler(InstanceId target, T message)
+                    void AugmentedHandler(ref InstanceId target, ref T message)
                     {
                         postProcessor(target, message);
                         if (_diagnosticMode)
@@ -993,15 +1000,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref FastHandler handed
+                    // down as the flat invoker; the user's handler is the identity
+                    // key and is never invoked for the default slot.
                     return _messageHandler.RegisterSourcedBroadcastPostProcessor(
                         source,
                         broadcastPostProcessor,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandler<T>)AugmentedHandler,
                         priority,
                         _messageBus
                     );
 
-                    void AugmentedHandler(T message)
+                    void AugmentedHandler(ref T message)
                     {
                         broadcastPostProcessor(message);
                         if (_diagnosticMode)
@@ -1204,15 +1214,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref FastHandler handed
+                    // down as the flat invoker; the user's handler is the identity
+                    // key and is never invoked for the default slot.
                     return _messageHandler.RegisterSourcedBroadcastPostProcessor(
                         source,
                         broadcastPostProcessor,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandler<T>)AugmentedHandler,
                         priority: priority,
                         _messageBus
                     );
 
-                    void AugmentedHandler(T message)
+                    void AugmentedHandler(ref T message)
                     {
                         broadcastPostProcessor(message);
                         if (_diagnosticMode)
@@ -1503,14 +1516,18 @@ namespace DxMessaging.Core
             return InternalRegister(
                 handle =>
                 {
+                    // Diagnostics folded into a single by-ref-with-context
+                    // FastHandlerWithContext handed down as the flat invoker; the
+                    // user's handler is the identity key and is never invoked for the
+                    // default slot.
                     return _messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
                         broadcastHandler,
-                        AugmentedHandler,
+                        (MessageHandler.FastHandlerWithContext<T>)AugmentedHandler,
                         priority: priority,
                         _messageBus
                     );
 
-                    void AugmentedHandler(InstanceId source, T message)
+                    void AugmentedHandler(ref InstanceId source, ref T message)
                     {
                         broadcastHandler(source, message);
                         if (_diagnosticMode)

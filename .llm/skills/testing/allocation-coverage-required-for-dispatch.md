@@ -2,9 +2,9 @@
 title: "Allocation Coverage Required for Dispatch"
 id: "allocation-coverage-required-for-dispatch"
 category: "testing"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-01"
-updated: "2026-05-01"
+updated: "2026-06-26"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -243,9 +243,21 @@ structural delta you care about -- letting you assert a TIGHT tolerance (well be
 one-allocation-per-op regression) that is still robust in the warm editor. Use a static
 method group for both handlers so neither window allocates the user delegate itself.
 `RegistrationAllocationCountTests.ActionRegistrationAllocatesNoMoreClosuresThanFastHandler`
-is the worked example (tolerance = half the registration batch). Prove it red-green by
-temporarily reverting the optimized path and confirming the differential blows past the
-tolerance.
+(handlers) and `...ActionPostProcessorAllocatesNoMoreClosuresThanFastHandler`
+(post-processors) are the worked examples (tolerance = half the registration batch).
+Prove it red-green by temporarily reverting the optimized path and confirming the
+differential blows past the tolerance (the post-processor revert measured +32 over a
+tolerance of 8).
+
+When the optimized path stores the RAW user handler as the dedup key and dispatches a
+separate diagnostics-augmented closure (the `Action` -> single-`FastHandler` collapse does
+this), pair the allocation guard with a CORRECTNESS guard that proves the augmented closure
+-- not the raw handler -- is the live dispatch target, or the saving could silently drop
+diagnostics. `PostProcessorDiagnosticsTests` does this: it enables token diagnostics,
+registers an `Action` post-processor, emits, and asserts the token's per-registration call
+count recorded the invocation (only the augmented closure touches `_callCounts`; a zero
+count would mean the raw handler was dispatched). Closes the gap that the global-accept-all
+slot -- which DOES dispatch `entry.handler` -- warns about.
 
 ## Enforcement
 

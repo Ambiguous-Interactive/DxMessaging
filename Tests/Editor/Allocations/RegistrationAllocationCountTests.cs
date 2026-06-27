@@ -39,6 +39,15 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// <see cref="ActionRegistrationAllocatesNoMoreClosuresThanFastHandler"/>, which
     /// pins the Action path to the FastHandler path's closure count.
     /// </description></item>
+    /// <item><description>
+    /// <see cref="Action{T}"/> post-processor registration dropped the same extra
+    /// adapter closure once the token folded diagnostics into a single by-ref
+    /// <c>FastHandler&lt;T&gt;</c> flat invoker for the post-process default slot.
+    /// Guarded by
+    /// <see cref="ActionPostProcessorAllocatesNoMoreClosuresThanFastHandler"/>, which
+    /// pins the Action post-processor path to the FastHandler post-processor path's
+    /// closure count.
+    /// </description></item>
     /// </list>
     /// <para>
     /// The counting rows use <see cref="AllocationProbe"/> (the <c>GC.Alloc</c> profiler
@@ -55,6 +64,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     public sealed class RegistrationAllocationCountTests : BenchmarkTestBase
     {
         private static readonly InstanceId Owner = new InstanceId(0x7A7A_7A7A);
+        private static readonly InstanceId PostProcessorTarget = new InstanceId(0x5151_5151);
 
         // Warm to a count that grows the per-token registration dictionaries AND the
         // bus-side per-type handler arrays past the measured window; the settle batch
@@ -103,6 +113,10 @@ namespace DxMessaging.Tests.Editor.Allocations
         private static void NoOp(ref SimpleUntargetedMessage message) { }
 
         private static void NoOpAction(SimpleUntargetedMessage message) { }
+
+        private static void NoOpTargetedPostProcessor(ref SimpleTargetedMessage message) { }
+
+        private static void NoOpTargetedActionPostProcessor(SimpleTargetedMessage message) { }
 
         private static MessageBus NewBus()
         {
@@ -295,6 +309,106 @@ namespace DxMessaging.Tests.Editor.Allocations
                     + "FastHandler flat invoker (the internal flat-invoker registration overload) "
                     + "so the default slot does not allocate an Action wrapper plus a separate "
                     + "FastHandler adapter."
+            );
+        }
+
+        /// <summary>
+        /// Pins the post-processor registration-closure collapse: an
+        /// <see cref="Action{T}"/> post-processor registration must allocate no more
+        /// closures than the by-ref <c>FastHandler&lt;T&gt;</c> post-processor
+        /// registration. The token folds diagnostics into a single <c>FastHandler</c>
+        /// flat invoker and hands it to the internal flat-invoker post-processor overload
+        /// (one per family: targeted, targeted-without-targeting, broadcast,
+        /// broadcast-without-source), so the default post-process slot no longer pays for
+        /// an <see cref="Action{T}"/> wrapper PLUS a separately allocated FastHandler
+        /// adapter. This mirrors
+        /// <see cref="ActionRegistrationAllocatesNoMoreClosuresThanFastHandler"/> for the
+        /// post-processor paths; the targeted post-processor exercises the
+        /// <c>FastHandler&lt;T&gt;</c> collapse and the same internal-overload pattern the
+        /// other three families share.
+        /// </summary>
+        [Test]
+        [Category("Allocation")]
+        public void ActionPostProcessorAllocatesNoMoreClosuresThanFastHandler()
+        {
+            MessageBus actionBus = NewBus();
+            MessageHandler actionHandler = new MessageHandler(Owner, actionBus) { active = true };
+            MessageRegistrationToken actionToken = MessageRegistrationToken.Create(
+                actionHandler,
+                actionBus
+            );
+            actionToken.Enable();
+
+            MessageBus fastBus = NewBus();
+            MessageHandler fastHandler = new MessageHandler(Owner, fastBus) { active = true };
+            MessageRegistrationToken fastToken = MessageRegistrationToken.Create(
+                fastHandler,
+                fastBus
+            );
+            fastToken.Enable();
+
+            // Warm both paths past their capacity-boundary resizes so the measured
+            // batches pay only the steady per-registration cost.
+            for (int i = 0; i < WarmupRegistrations + SettleRegistrations; ++i)
+            {
+                _ = actionToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                    PostProcessorTarget,
+                    NoOpTargetedActionPostProcessor
+                );
+                _ = fastToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                    PostProcessorTarget,
+                    NoOpTargetedPostProcessor
+                );
+            }
+
+            if (!AllocationProbe.IsFunctional)
+            {
+                Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
+            }
+
+            long bestDelta = long.MaxValue;
+            for (int attempt = 0; attempt < MinAttempts; ++attempt)
+            {
+                long fastCount = AllocationProbe.Measure(() =>
+                {
+                    for (int i = 0; i < MeasuredRegistrations; ++i)
+                    {
+                        _ = fastToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                            PostProcessorTarget,
+                            NoOpTargetedPostProcessor
+                        );
+                    }
+                });
+                long actionCount = AllocationProbe.Measure(() =>
+                {
+                    for (int i = 0; i < MeasuredRegistrations; ++i)
+                    {
+                        _ = actionToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                            PostProcessorTarget,
+                            NoOpTargetedActionPostProcessor
+                        );
+                    }
+                });
+                if (
+                    fastCount == AllocationProbe.Unmeasured
+                    || actionCount == AllocationProbe.Unmeasured
+                )
+                {
+                    Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
+                }
+                bestDelta = Math.Min(bestDelta, actionCount - fastCount);
+            }
+
+            long tolerance = MeasuredRegistrations / 2;
+            Assert.That(
+                bestDelta,
+                Is.LessThanOrEqualTo(tolerance),
+                $"Action<T> targeted post-processor registration allocated {bestDelta} more managed "
+                    + $"objects than the FastHandler<T> post-processor registration over "
+                    + $"{MeasuredRegistrations} registrations (tolerance {tolerance}). The token must "
+                    + "fold diagnostics into a single FastHandler flat invoker (the internal "
+                    + "flat-invoker post-processor overload) so the default post-process slot does not "
+                    + "allocate an Action wrapper plus a separate FastHandler adapter."
             );
         }
 
