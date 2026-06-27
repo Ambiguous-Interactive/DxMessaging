@@ -2,9 +2,9 @@
 title: "Benchmark Methodology: Total Over One Window"
 id: "benchmark-methodology-total-over-window"
 category: "performance"
-version: "1.6.0"
+version: "1.7.0"
 created: "2026-06-07"
-updated: "2026-06-24"
+updated: "2026-06-27"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -76,7 +76,9 @@ status: "stable"
 > **One-line summary**: Warm up, then measure ONE continuous N-second window
 > (N = `BenchmarkProtocol.MeasurementSeconds` = 5) and report total operations
 > divided by measured elapsed seconds; managed allocations are COUNTED via the
-> `GC.Alloc` recorder over a SEPARATE batch. Never median-of-runs, never a single
+> `GC.Alloc` recorder over a SEPARATE batch, and the total allocated BYTES are
+> measured alongside that count from the live `"GC Allocated In Frame"` counter
+> (informational; the count is the gate). Never median-of-runs, never a single
 > untimed pass.
 
 ## Overview
@@ -107,7 +109,10 @@ Three tempting shortcuts all produce misleading numbers:
   for EVERY allocation under Unity's Boehm GC (proven on the host editor: a
   forced 1 MB array allocation read back as a `0`-byte delta). It made the old
   "allocated bytes" column vacuously `0` for every technology -- hiding real
-  per-operation allocations such as `SendMessage`'s ~11-per-call reflection cost.
+  per-operation allocations such as the per-call box Unity `SendMessage` pays to pass
+  a value-type payload through its `object` parameter (1 allocation / ~20 bytes per
+  call, verified on the host editor in PlayMode; its reflection dispatch itself is
+  allocation-free once warm).
 
 The fix is one warmed, continuous, timed window for throughput plus a reliable
 `GC.Alloc`-recorder count for allocation.
@@ -140,16 +145,20 @@ BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
 
 double emitsPerSecond = measurement.OperationsPerSecond;
 long gcAllocations = measurement.GcAllocations; // -1 == AllocationProbe.Unmeasured
+long gcAllocatedBytes = measurement.GcAllocatedBytes; // -1 == AllocationProbe.Unmeasured
 ```
 
 The returned `BenchmarkMeasurement` carries `TotalOperations`,
-`ElapsedSeconds`, `OperationsPerSecond`, `GcAllocations`,
+`ElapsedSeconds`, `OperationsPerSecond`, `GcAllocations`, `GcAllocatedBytes`,
 `AllocationProbeOperations`, and the derived
 `TotalEmittedOperations`. Throughput is `TotalOperations / ElapsedSeconds`; the
 renderer and the regression gate read these fields directly. `GcAllocations` is
 the count of managed allocations over one batch, or `AllocationProbe.Unmeasured`
 (`-1`, rendered `n/a`) when no reliable probe is available on the backend --
-never a fabricated `0`. `AllocationProbeOperations` is the operation count of the
+never a fabricated `0`. `GcAllocatedBytes` is the total allocated BYTES over the
+SAME batch (see the dedicated section below), likewise `AllocationProbe.Unmeasured`
+(`-1`, rendered `n/a`) when the byte counter is unavailable.
+`AllocationProbeOperations` is the operation count of the
 untimed allocation-probe batch (see the invariant below).
 
 ## The Window Contract
@@ -206,6 +215,90 @@ per-scenario function is the only place that count diverges.
 Registration scenarios are the one documented exception to the throughput
 report shape: they report wall-clock milliseconds for one-time setup cost
 instead of steady-state emits per second.
+
+## The Byte Companion: gcAllocatedBytes
+
+Alongside the allocation CALL count, the same probe window measures the total
+allocated BYTES over the same measurement batch as `gcAllocatedBytes`. The count is and remains the
+canonical, gated signal; bytes are INFORMATIONAL and answer the follow-up "how
+big was each allocation" once the count says one happened.
+
+**Mechanism.** Bytes come from a before/after delta of the live Unity
+`ProfilerRecorder(ProfilerCategory.Memory, "GC Allocated In Frame").CurrentValue`
+-- a within-frame `GC.Alloc` hook byte accumulator. The probe reads the counter
+when the window opens and again when it closes; the delta is the bytes the body
+allocated. Proven on the host editor (Unity 6000.4): exact and run-to-run
+identical (100 x `byte[10000]` measured 1,003,200 bytes every run), ~0 for a
+genuine zero-allocation region, and -- crucially -- **collection-immune**. A
+heavy-churn region that made a `GC.GetTotalMemory` delta swing to -133 MB read a
+stable 8,000,000 bytes here, because the counter SUMS allocation-hook bytes
+rather than measuring a heap-size difference, so a mid-window collection cannot
+corrupt it.
+
+**Why not the obvious alternatives** (dated rationale -- 2026-06, so nobody
+re-tries them):
+
+- `GC.GetAllocatedBytesForCurrentThread()` returns `0` for every allocation under
+  Unity's Boehm GC.
+- A `GC.GetTotalMemory` delta is dominated by warm-editor heap noise for
+  sub-megabyte regions (a zero-alloc loop read back 24 KB; the same op swung
+  41 KB-938 KB across repeats) and is corrupted by any mid-window collection.
+- The per-sample `.Value` of the `GC.Alloc` ProfilerRecorder is garbage (it read
+  2400 for a 1.2 MB region); only the `"GC Allocated In Frame"`
+  `.CurrentValue` delta is trustworthy.
+- `GC.TryStartNoGCRegion` throws `NotImplementedException` on Unity Mono.
+- Unity's own Performance Testing package reads the alloc-CALL `.Count`, not
+  bytes -- which is why the count stays the canonical signal and the gate metric.
+
+**Honesty / availability.** The byte counter and count recorder are both
+profiler-dependent but self-validate independently. They are functional in the
+editor and in development players; on the published NON-development Standalone
+IL2CPP Release leg the profiler is stripped, so both metrics usually read
+`AllocationProbe.Unmeasured` (`-1`, rendered `n/a`) -- never a fabricated `0`.
+Renderers must choose the first scope that measured each metric instead of
+reusing the count scope for bytes. The real allocation net is the EDITOR
+allocation suite plus the weekly editor benchmarks, not the per-PR Standalone
+delta gate. A `gcAllocatedBytes` of `-1` means `AllocationProbe.Unmeasured`,
+identical in meaning to the count's sentinel; a `0` is a measured zero-byte
+result and must never be conflated with it.
+
+**Goodness.** Fewer bytes is better. The perf-delta PR comment renders byte deltas
+goodness-signed (`N fewer bytes` / `N more bytes`). Bytes are informational only --
+the regression gate stays on the allocation COUNT.
+
+### Measuring both at once: MeasureWithBytes / AllocationSample
+
+When you want both numbers from one body, use `AllocationProbe.MeasureWithBytes`,
+which returns an `AllocationProbe.AllocationSample { long Allocations; long Bytes; }`
+(each field independently `Unmeasured` when its probe is non-functional):
+
+```csharp
+AllocationProbe.AllocationSample sample = AllocationProbe.MeasureWithBytes(() =>
+{
+    for (int i = 0; i < BenchmarkProtocol.BatchSize; i++)
+    {
+        bus.UntargetedBroadcast(ref message);
+    }
+});
+
+long allocations = sample.Allocations; // -1 == AllocationProbe.Unmeasured
+long bytes = sample.Bytes;             // -1 == AllocationProbe.Unmeasured
+```
+
+Inside a `using`-scoped window, `AllocationProbe.Window.SampleBytes()` returns the
+byte delta alone and `AllocationProbe.Window.SampleBoth()` returns the
+`AllocationSample`; `AllocationProbe.BytesFunctional` reports whether the
+`"GC Allocated In Frame"` counter is confirmed usable on this backend (cached, the
+byte analogue of `IsFunctional`). The cold counterpart carries the byte median as
+`ColdLatencyMeasurement.MedianGcAllocatedBytes`; cold count and byte medians are
+reduced independently because a byte sample can be `Unmeasured` for one
+frame-boundary trial while count samples remain valid. The repeated-minimum path
+exposes `MinimumMeasurement<T>.GcAllocatedBytes` next to its `GcAllocations`.
+`MeasureMin` is count-keyed: if the count probe is unavailable it returns
+`Unmeasured` for both fields rather than selecting a byte-only attempt, and when
+multiple attempts tie the minimum count it prefers a tied attempt with measured
+bytes over one whose bytes are `Unmeasured` without ever taking bytes from a
+different-count attempt.
 
 ## Invariant: Reconcile Side-Effect Counters Against TotalEmittedOperations
 
@@ -265,6 +358,7 @@ ColdLatencyMeasurement cold = BenchmarkProtocol.MeasureColdLatency(
     tearDownTrial: state => state.Dispose());
 double medianMs = cold.MedianWallClockMs;
 long medianAllocations = cold.MedianGcAllocations;
+long medianBytes = cold.MedianGcAllocatedBytes; // -1 == AllocationProbe.Unmeasured
 ```
 
 Cold/latency results carry `emitsPerSecond=0` (the time lives in `wallClockMs`),
@@ -296,7 +390,9 @@ zero it did not observe.
   read is itself a cost on the hot path. Batch and sample at batch boundaries.
 - "I will measure allocated BYTES with `GC.GetAllocatedBytesForCurrentThread()`."
   That returns `0` for everything under Unity's Boehm GC. Count allocations with
-  the `GC.Alloc` recorder (`AllocationProbe`) instead.
+  the `GC.Alloc` recorder (`AllocationProbe`) and, for the informational byte
+  figure, the `"GC Allocated In Frame"` `.CurrentValue` delta -- never a
+  `GC.GetTotalMemory` or per-thread byte delta (see the byte-companion section).
 - "A `0` and an `n/a` are the same." No -- `0` is a measured zero-allocation
   result; `n/a` (`AllocationProbe.Unmeasured`) means no probe was available.
 - "`TotalOperations` is the number of emits that happened." No -- the untimed

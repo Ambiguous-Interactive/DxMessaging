@@ -67,7 +67,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             // The keyed scenario broadcasts SimpleTargetedMessage; every other scenario
             // broadcasts (or registers a handler for) SimpleUntargetedMessage. Both are
             // non-primitive IUntargetedMessage/ITargetedMessage value-type structs, so the
-            // StructMessageZeroCopy entry is boxing-free without faking a primitive payload.
+            // StructMessageNoBoxing entry is boxing-free without faking a primitive payload.
             return scenario == ComparisonScenario.KeyedToOneOfMany
                 ? typeof(SimpleTargetedMessage)
                 : typeof(SimpleUntargetedMessage);
@@ -92,7 +92,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             switch (scenario)
             {
                 case ComparisonScenario.GlobalToOneSubscriber:
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:

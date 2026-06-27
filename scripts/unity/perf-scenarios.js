@@ -70,7 +70,7 @@ const COMPARISON_SCENARIO_LABELS = {
   Filtered: "Filtered/intercepted dispatch",
   PostProcess: "Post-processing dispatch",
   SubUnsub: "Subscribe/unsubscribe churn",
-  StructNoBox: "Struct message (zero-copy)"
+  StructNoBox: "Struct message (no boxing)"
 };
 
 // Fixed row order for the comparison matrices, by bridge TechKey. Mirrors each

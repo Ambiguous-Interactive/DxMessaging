@@ -17,11 +17,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// Allocation is measured in its own batch (not folded into the timed window) for
     /// two reasons: the reliable probe enables a profiler recorder whose overhead must
     /// not distort the throughput clock, and the recorder counts allocation CALLS
-    /// (immune to GC timing) rather than a byte delta. The legacy
-    /// <c>GC.GetAllocatedBytesForCurrentThread()</c> byte counter was removed because
-    /// it returns <c>0</c> for every allocation under Unity's Boehm GC (proven on the
-    /// host editor), which made the old "allocated bytes" column vacuously zero for
-    /// every technology -- see <see cref="AllocationProbe"/>.
+    /// (immune to GC timing) rather than a heap-size byte delta. The same batch ALSO
+    /// measures total allocated BYTES via the live <c>"GC Allocated In Frame"</c> counter
+    /// delta (see <see cref="AllocationProbe"/>): byte-exact and collection-immune, it is
+    /// the working byte mechanism that REPLACED the dead
+    /// <c>GC.GetAllocatedBytesForCurrentThread()</c> counter -- which returned <c>0</c> for
+    /// every allocation under Unity's Boehm GC (proven on the host editor) and made the old
+    /// "allocated bytes" column vacuously zero for every technology. The CALL count remains
+    /// the canonical zero-alloc signal and the regression gate; bytes are reported for
+    /// magnitude.
     /// </para>
     /// </summary>
     public static class BenchmarkProtocol
@@ -75,10 +79,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // ops back -- they really happened -- while throughput above stays
             // timed-window-only. See ComparisonHarness for the canonical reconciliation.
             long allocationProbeOperations = 0;
-            long gcAllocations = AllocationProbe.Measure(() =>
-            {
-                allocationProbeOperations += emitBatch();
-            });
+            AllocationProbe.AllocationSample allocationSample = AllocationProbe.MeasureWithBytes(
+                () =>
+                {
+                    allocationProbeOperations += emitBatch();
+                }
+            );
 
             double elapsedSeconds = (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
             double operationsPerSecond = totalOperations / Math.Max(elapsedSeconds, double.Epsilon);
@@ -86,7 +92,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 totalOperations,
                 elapsedSeconds,
                 operationsPerSecond,
-                gcAllocations,
+                allocationSample.Allocations,
+                allocationSample.Bytes,
                 allocationProbeOperations
             );
         }
@@ -100,6 +107,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// the timed operation runs exactly once per trial and is timed end to end. The
         /// median (not the mean) is the headline because cold latency is right-skewed --
         /// one GC or scheduler blip must not move the reported number.
+        /// Count and byte medians are reduced independently: byte samples can be
+        /// <see cref="AllocationProbe.Unmeasured"/> for individual frame-boundary trials
+        /// even when count samples are valid, so the byte median filters only the byte
+        /// sentinel and does not claim to come from the same trial as the count median.
         ///
         /// Each trial i prepares FRESH state via <paramref name="setUpTrial"/> (UNTIMED;
         /// the <c>i</c> argument lets the caller pick a DISTINCT closed generic type per
@@ -147,6 +158,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             double[] wallClockSamples = new double[trials];
             long[] allocatedSamples = new long[trials];
+            long[] allocatedByteSamples = new long[trials];
             for (int index = 0; index < trials; index++)
             {
                 TState state = setUpTrial(index);
@@ -167,10 +179,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     long startTimestamp = Stopwatch.GetTimestamp();
                     timedOperation(state);
                     long endTimestamp = Stopwatch.GetTimestamp();
-                    long gcAllocations = window.Sample();
+                    AllocationProbe.AllocationSample sample = window.SampleBoth();
                     wallClockSamples[index] =
                         (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency * 1000d;
-                    allocatedSamples[index] = gcAllocations;
+                    allocatedSamples[index] = sample.Allocations;
+                    allocatedByteSamples[index] = sample.Bytes;
                 }
                 finally
                 {
@@ -181,6 +194,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return new ColdLatencyMeasurement(
                 Median(wallClockSamples),
                 Median(allocatedSamples),
+                MedianOfMeasured(allocatedByteSamples),
                 trials
             );
         }
@@ -214,13 +228,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /// <summary>
-        /// Median of a non-empty allocation-count sample set. For an even count it returns
+        /// Median of a non-empty allocation-COUNT sample set. For an even count it returns
         /// the overflow-safe integer midpoint of the two middle elements (lower + (upper -
         /// lower) / 2) so the reported count stays integral. The input is copied before
-        /// sorting. Samples are either all non-negative counts (probe functional) or all
+        /// sorting. Count samples are either all non-negative (probe functional) or all
         /// <see cref="AllocationProbe.Unmeasured"/> (probe non-functional on this backend);
-        /// the verdict is backend-constant, so the midpoint never mixes a count with a
-        /// sentinel.
+        /// that verdict is backend-constant, so the midpoint never mixes a count with a
+        /// sentinel. This invariant holds for COUNTS only -- allocation BYTE samples can mix
+        /// a per-trial sentinel with real values on a functional backend, so byte sets use
+        /// <see cref="MedianOfMeasured"/>, which filters the sentinel first.
         /// </summary>
         public static long Median(long[] samples)
         {
@@ -248,6 +264,60 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long lower = sorted[middle - 1];
             long upper = sorted[middle];
             return lower + ((upper - lower) / 2);
+        }
+
+        /// <summary>
+        /// Median of an allocation-BYTE sample set that may MIX real measurements with the
+        /// <see cref="AllocationProbe.Unmeasured"/> (<c>-1</c>) sentinel even on a functional
+        /// backend. Unlike the allocation COUNT (whose functional verdict is backend-constant
+        /// -- every trial counts), a per-trial byte sample is <see cref="AllocationProbe.Unmeasured"/>
+        /// whenever that trial crossed a frame boundary (the live byte counter resets per
+        /// frame; see <see cref="AllocationProbe.Window.SampleBytes"/>). Feeding that
+        /// <c>-1</c> into the midpoint arithmetic of <see cref="Median(long[])"/> would launder
+        /// it into a fabricated magnitude, violating the honesty guarantee. So this filters the
+        /// sentinel OUT and medians the measured survivors; only when EVERY sample is the
+        /// sentinel (the byte probe is genuinely non-functional on this backend) does it report
+        /// <see cref="AllocationProbe.Unmeasured"/>.
+        /// </summary>
+        public static long MedianOfMeasured(long[] samples)
+        {
+            if (samples == null)
+            {
+                throw new ArgumentNullException(nameof(samples));
+            }
+
+            if (samples.Length == 0)
+            {
+                throw new ArgumentException("Cannot take the median of an empty set.");
+            }
+
+            int measuredCount = 0;
+            for (int index = 0; index < samples.Length; index++)
+            {
+                if (samples[index] != AllocationProbe.Unmeasured)
+                {
+                    measuredCount++;
+                }
+            }
+
+            // Every trial was Unmeasured -> the byte probe is non-functional here; preserve
+            // the sentinel rather than inventing a value.
+            if (measuredCount == 0)
+            {
+                return AllocationProbe.Unmeasured;
+            }
+
+            long[] measured = new long[measuredCount];
+            int cursor = 0;
+            for (int index = 0; index < samples.Length; index++)
+            {
+                if (samples[index] != AllocationProbe.Unmeasured)
+                {
+                    measured[cursor++] = samples[index];
+                }
+            }
+
+            return Median(measured);
         }
 
         /// <summary>
@@ -290,6 +360,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             double elapsedSeconds,
             double operationsPerSecond,
             long gcAllocations,
+            long gcAllocatedBytes,
             long allocationProbeOperations
         )
         {
@@ -297,6 +368,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             ElapsedSeconds = elapsedSeconds;
             OperationsPerSecond = operationsPerSecond;
             GcAllocations = gcAllocations;
+            GcAllocatedBytes = gcAllocatedBytes;
             AllocationProbeOperations = allocationProbeOperations;
         }
 
@@ -319,6 +391,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// means the recorder observed zero allocations.
         /// </summary>
         public long GcAllocations { get; }
+
+        /// <summary>
+        /// Total managed allocation BYTES over the same measurement batch, or
+        /// <see cref="AllocationProbe.Unmeasured"/> when no reliable byte probe exists on
+        /// this backend (for example a non-development Release player with the profiler
+        /// stripped, where the count is likewise <see cref="AllocationProbe.Unmeasured"/>).
+        /// Never a fabricated <c>0</c>. This is the byte companion to
+        /// <see cref="GcAllocations"/>; the count remains the canonical zero-alloc signal
+        /// and the regression gate, while bytes are reported for magnitude.
+        /// </summary>
+        public long GcAllocatedBytes { get; }
 
         /// <summary>
         /// Operations performed by the post-window allocation-probe batch (see
@@ -350,11 +433,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public ColdLatencyMeasurement(
             double medianWallClockMs,
             long medianGcAllocations,
+            long medianGcAllocatedBytes,
             int trials
         )
         {
             MedianWallClockMs = medianWallClockMs;
             MedianGcAllocations = medianGcAllocations;
+            MedianGcAllocatedBytes = medianGcAllocatedBytes;
             Trials = trials;
         }
 
@@ -367,6 +452,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// reports the same sentinel and the median preserves it).
         /// </summary>
         public long MedianGcAllocations { get; }
+
+        /// <summary>
+        /// Median total managed allocation BYTES across the cold trials, or
+        /// <see cref="AllocationProbe.Unmeasured"/> when no reliable byte probe exists on
+        /// this backend or every cold trial crossed a frame boundary. This median is
+        /// reduced independently from <see cref="MedianGcAllocations"/> because byte
+        /// samples can be independently unmeasured per trial.
+        /// </summary>
+        public long MedianGcAllocatedBytes { get; }
 
         public int Trials { get; }
     }

@@ -48,7 +48,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// The payload TYPE this bridge's handler/dispatch is typed to for the given scenario, or
         /// null if the scenario is unsupported. Pure metadata (a typeof literal); it must never
         /// dispatch, allocate, or require Prepare. The fidelity contract asserts the
-        /// StructMessageZeroCopy payload is a non-primitive value type (never int/float), so a
+        /// StructMessageNoBoxing payload is a non-primitive value type (never int/float), so a
         /// bridge cannot mark the struct scenario Supported while secretly raising a boxed
         /// primitive. Non-DxMessaging bridges that SUPPORT the struct scenario must return exactly
         /// typeof(ComparisonStructPayload); scenarios they do not support return null. DxMessaging
@@ -59,7 +59,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
     /// <summary>
     /// Plain value type used by the non-DxMessaging bridges for the
-    /// <see cref="ComparisonScenario.StructMessageZeroCopy"/> scenario. Carrying this
+    /// <see cref="ComparisonScenario.StructMessageNoBoxing"/> scenario. Carrying this
     /// through a generic delegate (e.g. <c>Action&lt;ComparisonStructPayload&gt;</c>) avoids
     /// boxing, while carrying it through a non-generic/object channel forces a box; the
     /// allocation column then reveals which technology copies or boxes the payload.

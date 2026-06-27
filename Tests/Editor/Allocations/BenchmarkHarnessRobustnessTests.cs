@@ -609,6 +609,65 @@ namespace DxMessaging.Tests.Editor.Allocations
         }
 
         [Test]
+        public void MedianOfMeasuredAllRealReturnsPlainMedian()
+        {
+            // When no sample is the sentinel, MedianOfMeasured behaves exactly like Median.
+            long[] samples = { 100L, 300L, 200L };
+            Assert.AreEqual(200L, BenchmarkProtocol.MedianOfMeasured(samples));
+        }
+
+        [Test]
+        public void MedianOfMeasuredFiltersTheUnmeasuredSentinelBeforeMedianing()
+        {
+            // THE HONESTY FIX (session 068): a byte sample can be Unmeasured (-1) for a single
+            // trial that crossed a frame boundary even on a functional backend. Feeding that -1
+            // into the plain Median midpoint would launder it into a fabricated magnitude
+            // (e.g. Median({-1,100,200,300}) = 150, or Median({-1,100}) = 49). MedianOfMeasured
+            // must drop the sentinel and median ONLY the real survivors.
+            long[] mixed = { AllocationProbe.Unmeasured, 100L, 200L, 300L };
+            Assert.AreEqual(
+                200L,
+                BenchmarkProtocol.MedianOfMeasured(mixed),
+                "MedianOfMeasured must median {100,200,300} (the survivors), not launder -1 into "
+                    + "the midpoint arithmetic."
+            );
+
+            long[] twoWithSentinel = { AllocationProbe.Unmeasured, 100L };
+            Assert.AreEqual(
+                100L,
+                BenchmarkProtocol.MedianOfMeasured(twoWithSentinel),
+                "A single real survivor must be reported as-is, never blended with the sentinel "
+                    + "(plain Median would return 49 here)."
+            );
+        }
+
+        [Test]
+        public void MedianOfMeasuredAllSentinelReportsUnmeasured()
+        {
+            // When EVERY sample is the sentinel (the byte probe is genuinely non-functional on
+            // this backend) the honest result is Unmeasured, never a fabricated number.
+            long[] allSentinel =
+            {
+                AllocationProbe.Unmeasured,
+                AllocationProbe.Unmeasured,
+                AllocationProbe.Unmeasured,
+            };
+            Assert.AreEqual(
+                AllocationProbe.Unmeasured,
+                BenchmarkProtocol.MedianOfMeasured(allSentinel)
+            );
+        }
+
+        [Test]
+        public void MedianOfMeasuredThrowsOnEmptyOrNull()
+        {
+            Assert.Throws<ArgumentException>(() =>
+                BenchmarkProtocol.MedianOfMeasured(Array.Empty<long>())
+            );
+            Assert.Throws<ArgumentNullException>(() => BenchmarkProtocol.MedianOfMeasured(null));
+        }
+
+        [Test]
         public void MeasureColdLatencyRunsSetUpTimedAndTearDownPerTrialAndReportsTrials()
         {
             const int trials = 4;
@@ -787,15 +846,17 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // The "every scenario captures GC allocations + CSV stays 7 columns" lock. This runs
-        // the real 5s measurement window per scenario, so it carries the PerfBench category and
-        // stays out of the fast metadata gate above. Because this runs in the Editor (where the
-        // GC.Alloc recorder is always functional), it also doubles as the regression guard for
-        // the dead-allocation-API bug: a non-functional probe would make GcAllocations the
-        // Unmeasured sentinel and trip the IsFunctional assertion.
+        // The "every scenario captures GC allocations + bytes + CSV stays 8 columns" lock. This
+        // runs the real 5s measurement window per scenario, so it carries the PerfBench category
+        // and stays out of the fast metadata gate above. Because this runs in the Editor (where
+        // both the GC.Alloc recorder and the "GC Allocated In Frame" byte counter are functional),
+        // it also doubles as the regression guard for the dead-allocation-API bug: a non-functional
+        // probe would make GcAllocations the Unmeasured sentinel and trip the IsFunctional
+        // assertion. The byte column (index 7) is the gcAllocatedBytes companion appended in
+        // session 068.
         [Test, Category("PerfBench")]
         [TestCaseSource(nameof(DispatchScenarioCases))]
-        public void DispatchScenarioRunEmitsSevenColumnCsvWithGcAllocations(
+        public void DispatchScenarioRunEmitsEightColumnCsvWithGcAllocationsAndBytes(
             DispatchBenchmarkScenario scenario
         )
         {
@@ -814,13 +875,18 @@ namespace DxMessaging.Tests.Editor.Allocations
             string csvRow = result.ToCsvRow();
             string[] fields = csvRow.Split(',');
             Assert.AreEqual(
-                7,
+                8,
                 fields.Length,
-                $"Scenario '{scenario}' CSV row must stay exactly 7 columns. Row: '{csvRow}'."
+                $"Scenario '{scenario}' CSV row must stay exactly 8 columns "
+                    + $"(gcAllocatedBytes appended as the last column). Row: '{csvRow}'."
             );
             Assert.IsNotEmpty(
                 fields[5],
                 $"Scenario '{scenario}' must populate the gc-allocations field (index 5). Row: '{csvRow}'."
+            );
+            Assert.IsNotEmpty(
+                fields[7],
+                $"Scenario '{scenario}' must populate the gc-allocated-bytes field (index 7). Row: '{csvRow}'."
             );
             // Functional in the Editor, so the count is a real non-negative measurement (never
             // the Unmeasured sentinel here).
@@ -828,6 +894,19 @@ namespace DxMessaging.Tests.Editor.Allocations
                 result.GcAllocations,
                 0,
                 $"Scenario '{scenario}' must report a non-negative GC allocation count in the Editor."
+            );
+            // The "GC Allocated In Frame" byte counter is functional in the Editor too, so bytes
+            // are a real non-negative measurement here (never the Unmeasured sentinel).
+            Assert.IsTrue(
+                AllocationProbe.BytesFunctional,
+                "The 'GC Allocated In Frame' byte counter must be functional in the Editor; a "
+                    + "non-functional counter means the benchmark byte column would be the "
+                    + "Unmeasured sentinel rather than a measured magnitude."
+            );
+            Assert.GreaterOrEqual(
+                result.GcAllocatedBytes,
+                0,
+                $"Scenario '{scenario}' must report a non-negative GC allocated-bytes value in the Editor."
             );
         }
 

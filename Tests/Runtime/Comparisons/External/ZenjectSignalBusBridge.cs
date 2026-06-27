@@ -47,7 +47,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 case ComparisonScenario.GlobalToOneSubscriber:
                 case ComparisonScenario.GlobalToManySubscribers:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     return true;
                 default:
                     return false;
@@ -70,7 +70,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             // The dispatched payload TYPE is the value-type ComparisonStructPayload; Zenject's
             // internal object-typed routing boxes it on the dispatch path (its real cost), but
             // the declared payload is still the canonical non-primitive struct.
-            return scenario == ComparisonScenario.StructMessageZeroCopy
+            return scenario == ComparisonScenario.StructMessageNoBoxing
                 ? typeof(ComparisonStructPayload)
                 : typeof(int);
         }
@@ -93,7 +93,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
             switch (scenario)
             {
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     _container.DeclareSignal<ComparisonStructPayload>();
                     _container.ResolveRoots();
                     _bus = _container.Resolve<SignalBus>();
@@ -138,7 +138,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     _bus.TryUnsubscribe(_churnHandler);
                     _progress++;
                     return;
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     _bus.Fire(new ComparisonStructPayload(1));
                     return;
                 default:

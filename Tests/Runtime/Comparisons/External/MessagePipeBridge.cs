@@ -65,7 +65,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 case ComparisonScenario.KeyedToOneOfMany:
                 case ComparisonScenario.FilteredDispatch:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     return true;
                 default:
                     return false;
@@ -85,7 +85,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 return null;
             }
-            return scenario == ComparisonScenario.StructMessageZeroCopy
+            return scenario == ComparisonScenario.StructMessageNoBoxing
                 ? typeof(ComparisonStructPayload)
                 : typeof(int);
         }
@@ -148,7 +148,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     _subscriber = GlobalMessagePipe.GetSubscriber<int>();
                     _churnHandler = Handle;
                     return;
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     builder.AddMessageBroker<ComparisonStructPayload>();
                     BuildProvider(builder);
                     _structPublisher = GlobalMessagePipe.GetPublisher<ComparisonStructPayload>();
@@ -177,7 +177,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     subscription.Dispose();
                     _progress++;
                     return;
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     _structPublisher.Publish(new ComparisonStructPayload(1));
                     return;
                 default:

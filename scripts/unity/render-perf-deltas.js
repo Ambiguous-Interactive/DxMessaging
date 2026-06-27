@@ -193,6 +193,21 @@ function allocationsComparable(currentAllocs, baselineAllocs) {
   return currentAllocs >= 0 && baselineAllocs >= 0;
 }
 
+// Allocated BYTES over one batch (informational companion to the count; fewer is
+// better). -1 is the "Unmeasured" sentinel: "n/a", never "0". A byte delta is only
+// rendered when BOTH sides are real (>= 0), the same gate as allocationsComparable.
+function formatBytesAllocated(gcAllocatedBytes) {
+  const bytes = Number.parseInt(gcAllocatedBytes, 10);
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return "n/a";
+  }
+  return bytes.toLocaleString("en-US");
+}
+
+function bytesComparable(currentBytes, baselineBytes) {
+  return currentBytes >= 0 && baselineBytes >= 0;
+}
+
 // Renders a goodness-signed fraction: the value passed in is already normalized so
 // POSITIVE means BETTER and NEGATIVE means WORSE (see goodnessRelativeChange), so a
 // "+" here is always an improvement and a "-" is always a regression, for every metric.
@@ -215,6 +230,17 @@ function formatAllocDelta(delta) {
   }
   const magnitude = Math.abs(delta).toLocaleString("en-US");
   return delta < 0 ? `${magnitude} fewer allocs` : `${magnitude} more allocs`;
+}
+
+// Allocated-bytes delta in goodness terms (fewer bytes is better), worded the same
+// way as the allocation-count delta so "fewer" is always the improvement and "more"
+// is always the regression. Informational only -- bytes never gate (see isRegression).
+function formatBytesDelta(delta) {
+  if (delta === 0) {
+    return "0 bytes";
+  }
+  const magnitude = Math.abs(delta).toLocaleString("en-US");
+  return delta < 0 ? `${magnitude} fewer bytes` : `${magnitude} more bytes`;
 }
 
 function relativeChange(current, baseline) {
@@ -244,6 +270,13 @@ function compareRow(scenario, current, baseline, tolerance) {
       : Math.abs(allocDelta / baselineAllocs) > tolerance
     : false;
 
+  // Bytes mirror the count exactly but are informational only -- they never gate
+  // (see isRegression) and never mark the row moved; only the byte delta renders.
+  const currentBytes = Number.parseInt(current.gcAllocatedBytes, 10);
+  const baselineBytes = Number.parseInt(baseline.gcAllocatedBytes, 10);
+  const bytesAreComparable = bytesComparable(currentBytes, baselineBytes);
+  const bytesDelta = bytesAreComparable ? currentBytes - baselineBytes : 0;
+
   let baselineCell;
   let currentCell;
   let primaryPct;
@@ -255,21 +288,24 @@ function compareRow(scenario, current, baseline, tolerance) {
     // Wall clock / latency: lower is better, so a faster run renders as a "+" gain.
     primaryPct = goodnessRelativeChange(currentMs, baselineMs, false);
     primaryMoved = Math.abs(primaryPct) > tolerance;
-    baselineCell = `${formatWallClock(baseline.wallClockMs)}, ${formatAllocations(baseline.gcAllocations)}`;
-    currentCell = `${formatWallClock(current.wallClockMs)}, ${formatAllocations(current.gcAllocations)}`;
+    baselineCell = `${formatWallClock(baseline.wallClockMs)}, ${formatAllocations(baseline.gcAllocations)}, ${formatBytesAllocated(baseline.gcAllocatedBytes)}`;
+    currentCell = `${formatWallClock(current.wallClockMs)}, ${formatAllocations(current.gcAllocations)}, ${formatBytesAllocated(current.gcAllocatedBytes)}`;
   } else {
     const baselineEmits = Number.parseFloat(baseline.emitsPerSecond);
     const currentEmits = Number.parseFloat(current.emitsPerSecond);
     // Throughput: higher is better, so more emits/sec renders as a "+" gain.
     primaryPct = goodnessRelativeChange(currentEmits, baselineEmits, true);
     primaryMoved = Math.abs(primaryPct) > tolerance;
-    baselineCell = `${formatThroughput(baseline.emitsPerSecond)}, ${formatAllocations(baseline.gcAllocations)}`;
-    currentCell = `${formatThroughput(current.emitsPerSecond)}, ${formatAllocations(current.gcAllocations)}`;
+    baselineCell = `${formatThroughput(baseline.emitsPerSecond)}, ${formatAllocations(baseline.gcAllocations)}, ${formatBytesAllocated(baseline.gcAllocatedBytes)}`;
+    currentCell = `${formatThroughput(current.emitsPerSecond)}, ${formatAllocations(current.gcAllocations)}, ${formatBytesAllocated(current.gcAllocatedBytes)}`;
   }
 
   const deltaParts = [formatPct(primaryPct)];
   if (allocComparable && allocDelta !== 0) {
     deltaParts.push(formatAllocDelta(allocDelta));
+  }
+  if (bytesAreComparable && bytesDelta !== 0) {
+    deltaParts.push(formatBytesDelta(bytesDelta));
   }
   const deltaCell = deltaParts.join(", ");
 
@@ -422,6 +458,7 @@ module.exports = {
   scenarioLabel,
   goodnessRelativeChange,
   formatAllocDelta,
+  formatBytesDelta,
   compareRow,
   buildDeltaTable,
   isRegression,
