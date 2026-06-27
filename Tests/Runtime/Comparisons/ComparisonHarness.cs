@@ -103,6 +103,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 runIndex: -1,
                 measurement.OperationsPerSecond,
                 measurement.GcAllocations,
+                measurement.GcAllocatedBytes,
                 measurement.ElapsedSeconds * 1000d
             );
             Debug.Log(result.ToStructuredLog());

@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Runtime.Benchmarks
 {
     using System;
+    using global::Unity.Profiling;
     using UnityEngine.Profiling;
 
     /// <summary>
@@ -45,6 +46,32 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// </para>
     ///
     /// <para>
+    /// BYTES, NOT JUST COUNTS: the same window ALSO measures the total BYTES of managed
+    /// allocations, via a SECOND mechanism -- the live <c>"GC Allocated In Frame"</c>
+    /// profiler counter (<see cref="ProfilerRecorder"/>). Reading its <c>CurrentValue</c>
+    /// before and after the measured region yields the exact bytes that region's
+    /// <c>GC.Alloc</c> hooks reported, because that counter accumulates LIVE within the
+    /// frame. This was proven on the host editor (6000.4): a region allocating
+    /// <c>100 x byte[10000]</c> read back a byte-exact, run-to-run-identical
+    /// <c>1,003,200</c>; a genuinely zero-alloc region read <c>0</c>; and -- crucially --
+    /// it is COLLECTION-IMMUNE, where a <c>GC.GetTotalMemory</c> heap delta is not: a
+    /// heavy-churn region that fires mid-window collections (which made
+    /// <c>GC.GetTotalMemory</c> swing to <c>-133 MB</c>) read a rock-stable
+    /// <c>8,000,000</c> here, because the counter sums allocation-hook bytes rather than a
+    /// heap-size difference. <c>GC.GetAllocatedBytesForCurrentThread()</c> is unusable
+    /// (returns <c>0</c> under Boehm) and <c>GC.GetTotalMemory</c> is dominated by
+    /// warm-editor heap noise for sub-megabyte regions -- this counter is the ONLY
+    /// mechanism that is exact AND collection-immune AND synchronous. It shares the count
+    /// probe's HONESTY GUARANTEE: it self-validates once per domain and reports
+    /// <see cref="Unmeasured"/> (never a fabricated <c>0</c>) on a backend where the
+    /// counter is absent (a non-development Release player with the profiler stripped).
+    /// A region that crosses a frame boundary (the counter resets per frame) yields a
+    /// negative delta, which is reported as <see cref="Unmeasured"/> -- the benchmark
+    /// batches are synchronous and never cross a frame, so this is a guard, not a normal
+    /// path.
+    /// </para>
+    ///
+    /// <para>
     /// EXCEPTION SAFETY: a measurement window ENABLES a global profiler recorder that
     /// MUST be disabled again afterwards -- a recorder left enabled adds profiler
     /// overhead to every allocation that runs for the rest of the domain and can
@@ -68,11 +95,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private const string GcAllocMarker = "GC.Alloc";
 
+        // The live, per-frame managed-allocation BYTE counter. Reading its CurrentValue
+        // before/after a synchronous region yields that region's allocated bytes exactly.
+        private const string GcAllocatedInFrameCounter = "GC Allocated In Frame";
+
         // 0 = not yet probed, 1 = recorder confirmed functional, -1 = non-functional.
         private static int s_state;
 
         // Anchors the self-test allocation so a release-build optimizer cannot elide it.
         private static object s_selfTestSink;
+
+        // 0 = not yet probed, 1 = byte counter confirmed functional, -1 = non-functional.
+        private static int s_bytesState;
+
+        // The domain-lived byte counter recorder. Created lazily by the byte self-test and
+        // kept running for the rest of the domain (a single always-on counter, like the
+        // count probe's global GC.Alloc Recorder), so opening a window reads CurrentValue
+        // without allocating a fresh recorder -- which would itself pollute the count.
+        private static ProfilerRecorder s_byteRecorder;
+
+        // Anchors the byte self-test allocation against a release-build optimizer.
+        private static object s_byteSelfTestSink;
 
         /// <summary>
         /// True when the <c>GC.Alloc</c> recorder is confirmed to observe a known
@@ -90,6 +133,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
 
                 return s_state == 1;
+            }
+        }
+
+        /// <summary>
+        /// True when the <c>"GC Allocated In Frame"</c> byte counter is confirmed to
+        /// observe a known allocation on this backend. Computed once per domain and
+        /// cached. When false, every measured byte value is <see cref="Unmeasured"/>.
+        /// This is INDEPENDENT of <see cref="IsFunctional"/> (the count probe): a backend
+        /// could in principle support one and not the other, so each is validated and
+        /// reported separately.
+        /// </summary>
+        public static bool BytesFunctional
+        {
+            get
+            {
+                if (s_bytesState == 0)
+                {
+                    s_bytesState = ComputeBytesFunctional() ? 1 : -1;
+                }
+
+                return s_bytesState == 1;
             }
         }
 
@@ -117,17 +181,29 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// </summary>
         public static Window BeginWindow()
         {
-            if (!IsFunctional)
+            bool countFunctional = IsFunctional;
+            bool bytesFunctional = BytesFunctional;
+            if (!countFunctional && !bytesFunctional)
             {
                 return default;
             }
 
-            Recorder recorder = Recorder.Get(GcAllocMarker);
-            // Toggling off then on resets sampleBlockCount for a fresh window. Enabling
-            // is the LAST thing we do so nothing above is counted against the window.
-            recorder.enabled = false;
-            recorder.enabled = true;
-            return new Window(recorder);
+            Recorder recorder = null;
+            if (countFunctional)
+            {
+                recorder = Recorder.Get(GcAllocMarker);
+                // Toggling off then on resets sampleBlockCount for a fresh window. Enabling
+                // is the LAST thing we do so nothing above is counted against the window.
+                recorder.enabled = false;
+                recorder.enabled = true;
+            }
+
+            // Capture the byte baseline LAST -- after the count recorder is enabled -- so
+            // the count-recorder toggle is not attributed to this window's byte delta. The
+            // counter accumulates live within the frame, so (CurrentValue at Sample) minus
+            // this baseline is exactly the bytes the measured region allocated.
+            long byteStart = bytesFunctional ? s_byteRecorder.CurrentValue : Unmeasured;
+            return new Window(recorder, bytesFunctional, byteStart);
         }
 
         /// <summary>
@@ -148,6 +224,25 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             using Window window = BeginWindow();
             body();
             return window.Sample();
+        }
+
+        /// <summary>
+        /// Runs <paramref name="body"/> and returns BOTH the managed allocation CALL count
+        /// and the total allocated BYTES it triggered (each <see cref="Unmeasured"/> when
+        /// its respective probe is non-functional on this backend). <paramref name="body"/>
+        /// always runs. The recorder is ALWAYS released, even when <paramref name="body"/>
+        /// throws -- the exception propagates after the window is disposed.
+        /// </summary>
+        public static AllocationSample MeasureWithBytes(Action body)
+        {
+            if (body == null)
+            {
+                throw new ArgumentNullException(nameof(body));
+            }
+
+            using Window window = BeginWindow();
+            body();
+            return window.SampleBoth();
         }
 
         /// <summary>
@@ -246,9 +341,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 throw new ArgumentOutOfRangeException(nameof(attempts));
             }
 
-            if (!IsFunctional)
+            if (!IsFunctional && !BytesFunctional)
             {
-                return new MinimumMeasurement<TDiagnostics>(Unmeasured, -1, default);
+                return new MinimumMeasurement<TDiagnostics>(Unmeasured, Unmeasured, -1, default);
             }
 
             // Settle ONCE before the loop, matching a single test's pre-measurement
@@ -261,6 +356,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             SettleHeapForMeasurement();
 
             long min = long.MaxValue;
+            long minBytes = Unmeasured;
             int minAttemptIndex = -1;
             TDiagnostics minDiagnostics = default;
             try
@@ -270,10 +366,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     prepare?.Invoke();
                     using Window window = BeginWindow();
                     TDiagnostics diagnostics = operation();
-                    long count = window.Sample();
+                    // Bytes are exact per attempt (not noisy like counts), so the bytes
+                    // reported are those of the same attempt that produced the minimum
+                    // count -- a single self-consistent sample, never a min/attempt mix.
+                    AllocationSample sample = window.SampleBoth();
+                    long count = sample.Allocations;
                     if (count < min)
                     {
                         min = count;
+                        minBytes = sample.Bytes;
                         minAttemptIndex = attempt;
                         minDiagnostics = diagnostics;
                     }
@@ -290,7 +391,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 SettleHeapForMeasurement();
             }
 
-            return new MinimumMeasurement<TDiagnostics>(min, minAttemptIndex, minDiagnostics);
+            return new MinimumMeasurement<TDiagnostics>(
+                min,
+                minBytes,
+                minAttemptIndex,
+                minDiagnostics
+            );
         }
 
         private readonly struct NoDiagnostics { }
@@ -303,11 +409,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             internal MinimumMeasurement(
                 long gcAllocations,
+                long gcAllocatedBytes,
                 int attemptIndex,
                 TDiagnostics diagnostics
             )
             {
                 GcAllocations = gcAllocations;
+                GcAllocatedBytes = gcAllocatedBytes;
                 AttemptIndex = attemptIndex;
                 Diagnostics = diagnostics;
             }
@@ -317,6 +425,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             /// the recorder is not functional on this backend.
             /// </summary>
             public long GcAllocations { get; }
+
+            /// <summary>
+            /// Total managed allocation BYTES from the same attempt that produced
+            /// <see cref="GcAllocations"/>, or <see cref="Unmeasured"/> when bytes could not
+            /// be measured for that attempt -- EITHER the byte counter is non-functional on
+            /// this backend OR that specific attempt crossed a frame boundary (the live byte
+            /// counter resets per frame; see <see cref="Window.SampleBytes"/>). Bytes are
+            /// exact per attempt, so this is a self-consistent companion to the minimum count,
+            /// not a separate minimum -- but a consumer that renders this value MUST treat
+            /// <see cref="Unmeasured"/> as "n/a", never as a real magnitude.
+            /// </summary>
+            public long GcAllocatedBytes { get; }
 
             /// <summary>
             /// Zero-based attempt index that produced <see cref="GcAllocations"/>, or -1
@@ -353,13 +473,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// </summary>
         public readonly struct Window : IDisposable
         {
-            // Null when the probe is non-functional (a no-op window). Recorder is a plain
-            // managed class (not a UnityEngine.Object), so == null is a true reference check.
+            // Null when the count probe is non-functional (a no-op count window). Recorder
+            // is a plain managed class (not a UnityEngine.Object), so == null is a true
+            // reference check.
             private readonly Recorder _recorder;
 
-            internal Window(Recorder recorder)
+            // True when the byte counter is functional for this window. The counter itself
+            // is the domain-static s_byteRecorder (always running); the window only needs
+            // the baseline it captured at BeginWindow.
+            private readonly bool _bytesFunctional;
+            private readonly long _byteStart;
+
+            internal Window(Recorder recorder, bool bytesFunctional, long byteStart)
             {
                 _recorder = recorder;
+                _bytesFunctional = bytesFunctional;
+                _byteStart = byteStart;
             }
 
             /// <summary>
@@ -381,9 +510,42 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
 
             /// <summary>
+            /// Returns the total managed allocation BYTES observed since the window opened
+            /// (the live per-frame counter's delta), or <see cref="Unmeasured"/> when the
+            /// byte counter is non-functional on this backend. A NEGATIVE delta means the
+            /// measured region crossed a frame boundary (the counter resets per frame) and
+            /// the bytes cannot be attributed -- that is reported as <see cref="Unmeasured"/>
+            /// too, never a misleading value. Safe to call more than once (the counter is
+            /// monotonic within a frame).
+            /// </summary>
+            public long SampleBytes()
+            {
+                if (!_bytesFunctional)
+                {
+                    return Unmeasured;
+                }
+
+                long delta = s_byteRecorder.CurrentValue - _byteStart;
+                return delta < 0 ? Unmeasured : delta;
+            }
+
+            /// <summary>
+            /// Samples BOTH the allocation CALL count and the allocated BYTES for this
+            /// window in one call. Bytes are read FIRST so the count recorder's disable
+            /// overhead is never attributed to the byte delta.
+            /// </summary>
+            public AllocationSample SampleBoth()
+            {
+                long bytes = SampleBytes();
+                long count = Sample();
+                return new AllocationSample(count, bytes);
+            }
+
+            /// <summary>
             /// Ensures the recorder is disabled. Idempotent and exception-safe; running
             /// via <c>using</c> guarantees the recorder is released even if the measured
-            /// body throws before <see cref="Sample"/> is reached.
+            /// body throws before <see cref="Sample"/> is reached. The byte counter is a
+            /// domain-static always-on counter, so there is nothing to release for bytes.
             /// </summary>
             public void Dispose()
             {
@@ -391,6 +553,80 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 {
                     _recorder.enabled = false;
                 }
+            }
+        }
+
+        /// <summary>
+        /// A paired allocation measurement: the managed allocation CALL
+        /// <see cref="Allocations"/> count and the total allocated <see cref="Bytes"/>.
+        /// Either field is <see cref="Unmeasured"/> when its probe is non-functional on
+        /// this backend; the two are validated independently.
+        /// </summary>
+        public readonly struct AllocationSample
+        {
+            internal AllocationSample(long allocations, long bytes)
+            {
+                Allocations = allocations;
+                Bytes = bytes;
+            }
+
+            /// <summary>
+            /// Managed allocation CALL count, or <see cref="Unmeasured"/>.
+            /// </summary>
+            public long Allocations { get; }
+
+            /// <summary>
+            /// Total managed allocation BYTES, or <see cref="Unmeasured"/>.
+            /// </summary>
+            public long Bytes { get; }
+        }
+
+        private static bool ComputeBytesFunctional()
+        {
+            try
+            {
+                if (!s_byteRecorder.Valid)
+                {
+                    s_byteRecorder = ProfilerRecorder.StartNew(
+                        ProfilerCategory.Memory,
+                        GcAllocatedInFrameCounter
+                    );
+                }
+
+                if (!s_byteRecorder.Valid)
+                {
+                    return false;
+                }
+
+                // Confirm the live counter actually observes a known allocation. byte[4096]
+                // is large enough that even with Boehm's size-class rounding the delta must
+                // be at least the requested 4096 bytes if the counter is working. A backend
+                // that strips the profiler counter (a non-development Release player) reads a
+                // flat 0 here, so we fall back to the honest Unmeasured sentinel.
+                //
+                // Retried a few times because the counter resets per frame: a single frame
+                // boundary landing between the before/after reads would make the delta
+                // negative and false-negative the WHOLE domain (the verdict is cached). One
+                // clean attempt is enough to confirm the counter works; an all-stripped
+                // backend never produces one and correctly stays non-functional.
+                for (int attempt = 0; attempt < 4; attempt++)
+                {
+                    long before = s_byteRecorder.CurrentValue;
+                    s_byteSelfTestSink = new byte[4096];
+                    long after = s_byteRecorder.CurrentValue;
+                    if (after - before >= 4096)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            catch
+            {
+                // Any recorder/profiler unavailability => honest "unmeasured" sentinel
+                // rather than a misleading byte value.
+                return false;
             }
         }
 

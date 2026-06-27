@@ -212,7 +212,94 @@ namespace DxMessaging.Tests.Editor.Allocations
             // non-functional backends (for example a Release IL2CPP player) rely on.
             AllocationProbe.Window window = default;
             Assert.AreEqual(AllocationProbe.Unmeasured, window.Sample());
+            Assert.AreEqual(AllocationProbe.Unmeasured, window.SampleBytes());
+            AllocationProbe.AllocationSample sample = window.SampleBoth();
+            Assert.AreEqual(AllocationProbe.Unmeasured, sample.Allocations);
+            Assert.AreEqual(AllocationProbe.Unmeasured, sample.Bytes);
             Assert.DoesNotThrow(() => window.Dispose());
+        }
+
+        [Test]
+        public void MeasureWithBytesReportsKnownAllocationBytes()
+        {
+            if (!AllocationProbe.BytesFunctional)
+            {
+                Assert.Ignore(
+                    "GC Allocated In Frame byte counter is non-functional on this backend."
+                );
+            }
+
+            // RED-GREEN: a region allocating 100 x byte[10000] allocates ~1,003,200 bytes
+            // (Boehm rounds each to ~10,032). The live frame-counter delta is byte-exact and
+            // collection-immune, so the measured value must be well above 1,000,000. If the
+            // byte mechanism regressed to Unmeasured (-1) or a vacuous 0 this FAILS.
+            object sink = null;
+            AllocationProbe.AllocationSample sample = AllocationProbe.MeasureWithBytes(() =>
+            {
+                for (int i = 0; i < 100; ++i)
+                {
+                    sink = new byte[10000];
+                }
+            });
+            Assert.IsNotNull(sink, "The measured body must have run.");
+            Assert.That(
+                sample.Bytes,
+                Is.GreaterThan(1_000_000L),
+                $"100 x byte[10000] must measure > 1,000,000 bytes (was {sample.Bytes}); the live "
+                    + "GC.Alloc byte counter is exact and collection-immune."
+            );
+            Assert.That(
+                sample.Allocations,
+                Is.GreaterThanOrEqualTo(100L),
+                $"The same region must count at least 100 allocation calls (was {sample.Allocations})."
+            );
+        }
+
+        [Test]
+        public void MeasureWithBytesReportsZeroBytesForZeroAllocBody()
+        {
+            if (!AllocationProbe.BytesFunctional)
+            {
+                Assert.Ignore(
+                    "GC Allocated In Frame byte counter is non-functional on this backend."
+                );
+            }
+
+            // A genuinely non-allocating region must read ~0 bytes -- the byte counter sums
+            // real GC.Alloc hook sizes, so a no-alloc body has nothing to add. In a warm
+            // editor a small amount of unrelated background allocation can land inside the
+            // window (the counter is all-thread, like the count recorder), so we take the
+            // MINIMUM byte delta over several attempts: background only ADDS, so the minimum
+            // converges to the operation's true ~0 floor -- the exact byte analogue of the
+            // min-over-attempts the count probe already uses to denoise the warm editor.
+            int accumulator = 0;
+            long minBytes = long.MaxValue;
+            for (int attempt = 0; attempt < 8; ++attempt)
+            {
+                AllocationProbe.AllocationSample sample = AllocationProbe.MeasureWithBytes(() =>
+                {
+                    for (int i = 0; i < 10_000; ++i)
+                    {
+                        accumulator += i;
+                    }
+                });
+                if (sample.Bytes >= 0 && sample.Bytes < minBytes)
+                {
+                    minBytes = sample.Bytes;
+                }
+            }
+            Assert.That(
+                accumulator,
+                Is.GreaterThan(0),
+                "Anchors the loop so the optimizer cannot elide the non-allocating body."
+            );
+            Assert.That(
+                minBytes,
+                Is.InRange(0L, 2048L),
+                $"A zero-alloc body's minimum byte delta must be ~0 (was {minBytes}); a large "
+                    + "floor would mean the counter is reporting a vacuous constant or unrelated "
+                    + "heap noise rather than real per-region allocation."
+            );
         }
 
         [Test]
@@ -444,8 +531,11 @@ namespace DxMessaging.Tests.Editor.Allocations
                 firstSettle + settleCall.Length,
                 StringComparison.Ordinal
             );
-            int returnMeasurement = method.IndexOf(
-                "return new MinimumMeasurement<TDiagnostics>(min",
+            // LastIndexOf targets the FINAL return (after the settle/finally); the core also
+            // has an EARLY return for the non-functional-probe case, which is the first
+            // occurrence and precedes the settlement calls.
+            int returnMeasurement = method.LastIndexOf(
+                "return new MinimumMeasurement<TDiagnostics>(",
                 StringComparison.Ordinal
             );
 

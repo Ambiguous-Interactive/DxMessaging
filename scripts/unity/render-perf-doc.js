@@ -260,6 +260,17 @@ function formatAllocations(gcAllocations) {
   return count.toLocaleString("en-US");
 }
 
+// Allocated BYTES over one measurement batch (informational companion to the
+// allocation count; smaller is better). -1 is the same "Unmeasured" sentinel and
+// renders "n/a", never "0"; a measured 0 is a real zero-byte result.
+function formatBytesAllocated(gcAllocatedBytes) {
+  const bytes = Number.parseInt(gcAllocatedBytes, 10);
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return "n/a";
+  }
+  return bytes.toLocaleString("en-US");
+}
+
 // Comparison matrices show the same raw count (every tech runs the same BatchSize,
 // so the counts are directly comparable; no per-op division).
 function formatRowAllocations(row) {
@@ -356,7 +367,7 @@ function buildDispatchTable(byScenario) {
   // cold rows over one op per trial, registration floods over one flood -- each row's
   // count is over its own measurement batch, so a single "/ 10k ops" denominator
   // would overstate the cold/flood rows.
-  const header = ["Scenario", "Throughput / Wall clock", "GC allocs"];
+  const header = ["Scenario", "Throughput / Wall clock", "GC allocs", "GC bytes"];
   const dataRows = [];
 
   for (const scenario of SCENARIO_ORDER) {
@@ -368,7 +379,12 @@ function buildDispatchTable(byScenario) {
       ? formatWallClock(row.wallClockMs)
       : formatThroughput(row.emitsPerSecond);
     const label = DISPATCH_DISPLAY_NAMES[scenario] || scenario;
-    dataRows.push([label, primary, formatAllocations(row.gcAllocations)]);
+    dataRows.push([
+      label,
+      primary,
+      formatAllocations(row.gcAllocations),
+      formatBytesAllocated(row.gcAllocatedBytes)
+    ]);
   }
 
   return dataRows.length === 0 ? null : alignTable([header, ...dataRows]);

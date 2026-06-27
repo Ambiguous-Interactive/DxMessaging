@@ -10,15 +10,21 @@ const {
   deriveScope
 } = require("./perf-scenarios.js");
 
-const CSV_HEADER = "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs";
+const CSV_HEADER =
+  "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes";
+
+// -1 is the AllocationProbe "Unmeasured" sentinel; a legacy 7-column CSV row has
+// no gcAllocatedBytes field, so re-extracting it defaults the bytes to this
+// sentinel (rendered "n/a") rather than crashing.
+const UNMEASURED_SENTINEL = "-1";
 
 // Cross-library comparison rows share the exact CSV/log shape of the dispatch
 // rows but carry a synthetic scenario id of the form
 // "Comparison_<TechKey>_<ScenarioKey>" (e.g. "Comparison_DxMessaging_GlobalToOne").
 // They are NOT in SCENARIOS, so accept a row whose scenario is either a known
-// dispatch key OR a known comparison tech/scenario pair. The CSV schema (7 fields)
-// and the structured-log key names are unchanged; only the set of kept scenario
-// ids grows.
+// dispatch key OR a known comparison tech/scenario pair. The CSV schema (8 fields;
+// a legacy 7-field row defaults gcAllocatedBytes to the Unmeasured sentinel) and the
+// structured-log key names are unchanged; only the set of kept scenario ids grows.
 
 function isKeptScenario(scenario) {
   return (
@@ -144,7 +150,10 @@ function parseCsvRowFromLine(line) {
   }
 
   const fields = parseCsvFields(trimmed);
-  if (fields.length !== 7 || !isKeptScenario(fields[0])) {
+  // Accept both the legacy 7-column rows and the current 8-column rows. A legacy
+  // row has no gcAllocatedBytes field (fields[7] undefined), so default it to the
+  // Unmeasured sentinel rather than crashing.
+  if ((fields.length !== 7 && fields.length !== 8) || !isKeptScenario(fields[0])) {
     return null;
   }
 
@@ -155,7 +164,8 @@ function parseCsvRowFromLine(line) {
     runIndex: fields[3],
     emitsPerSecond: fields[4],
     gcAllocations: fields[5],
-    wallClockMs: fields[6]
+    wallClockMs: fields[6],
+    gcAllocatedBytes: fields[7] === undefined ? UNMEASURED_SENTINEL : fields[7]
   });
 }
 
@@ -172,7 +182,8 @@ function parseStructuredLogFromLine(line) {
     runIndex: matchStructuredNumber(trimmed, "runIndex"),
     emitsPerSecond: matchStructuredNumber(trimmed, "emitsPerSec"),
     gcAllocations: matchStructuredNumber(trimmed, "gcAllocations"),
-    wallClockMs: matchStructuredNumber(trimmed, "wallClockMs")
+    wallClockMs: matchStructuredNumber(trimmed, "wallClockMs"),
+    gcAllocatedBytes: matchStructuredNumber(trimmed, "gcAllocatedBytes")
   };
 
   if (!isKeptScenario(row.scenario)) {
@@ -291,7 +302,15 @@ function normalizeRow(row) {
     runIndex: normalizeInteger(row.runIndex, "runIndex"),
     emitsPerSecond: normalizeDecimal(row.emitsPerSecond, "emitsPerSecond"),
     gcAllocations: normalizeInteger(row.gcAllocations, "gcAllocations"),
-    wallClockMs: normalizeDecimal(row.wallClockMs, "wallClockMs")
+    wallClockMs: normalizeDecimal(row.wallClockMs, "wallClockMs"),
+    // A legacy CSV row or a legacy structured-log line carries no gcAllocatedBytes,
+    // so default a missing/empty value to the Unmeasured sentinel (rendered "n/a").
+    gcAllocatedBytes: normalizeInteger(
+      row.gcAllocatedBytes === undefined || row.gcAllocatedBytes === ""
+        ? UNMEASURED_SENTINEL
+        : row.gcAllocatedBytes,
+      "gcAllocatedBytes"
+    )
   };
 }
 
@@ -332,7 +351,8 @@ function toCsvRow(row) {
     row.runIndex,
     row.emitsPerSecond,
     row.gcAllocations,
-    row.wallClockMs
+    row.wallClockMs,
+    row.gcAllocatedBytes
   ].join(",");
 }
 

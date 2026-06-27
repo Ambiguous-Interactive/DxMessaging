@@ -26,7 +26,8 @@ const {
   readBaselineRows,
   scenarioLabel,
   goodnessRelativeChange,
-  formatAllocDelta
+  formatAllocDelta,
+  formatBytesDelta
 } = require("../unity/render-perf-deltas.js");
 const {
   buildComparisonSections,
@@ -48,7 +49,13 @@ const EDITOR_PLAYMODE_PLATFORM =
   "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
-function row(scenario, emitsPerSecond, gcAllocations = "0", wallClockMs = "10.000") {
+function row(
+  scenario,
+  emitsPerSecond,
+  gcAllocations = "0",
+  wallClockMs = "10.000",
+  gcAllocatedBytes = "0"
+) {
   return {
     scenario,
     platform: PLATFORM,
@@ -56,18 +63,20 @@ function row(scenario, emitsPerSecond, gcAllocations = "0", wallClockMs = "10.00
     runIndex: "0",
     emitsPerSecond,
     gcAllocations,
-    wallClockMs
+    wallClockMs,
+    gcAllocatedBytes
   };
 }
 
-function comparisonRow(emitsPerSecond, gcAllocations = "0") {
+function comparisonRow(emitsPerSecond, gcAllocations = "0", gcAllocatedBytes = "0") {
   return {
     platform: STANDALONE_PLATFORM,
     commit: "abc1234",
     runIndex: "-1",
     emitsPerSecond,
     gcAllocations,
-    wallClockMs: "5000.000"
+    wallClockMs: "5000.000",
+    gcAllocatedBytes
   };
 }
 
@@ -79,13 +88,20 @@ function dispatchRow(scenario, emitsPerSecond) {
     runIndex: "-1",
     emitsPerSecond,
     gcAllocations: "0",
-    wallClockMs: "5000.000"
+    wallClockMs: "5000.000",
+    gcAllocatedBytes: "0"
   };
 }
 
 // A dispatch/comparison row on the in-editor PlayMode (Mono) platform, where the
 // GC.Alloc recorder is functional so gcAllocations carries a real count.
-function playModeRow(scenario, emitsPerSecond, gcAllocations, wallClockMs = "5000.000") {
+function playModeRow(
+  scenario,
+  emitsPerSecond,
+  gcAllocations,
+  wallClockMs = "5000.000",
+  gcAllocatedBytes = "0"
+) {
   return {
     scenario,
     platform: EDITOR_PLAYMODE_PLATFORM,
@@ -93,7 +109,8 @@ function playModeRow(scenario, emitsPerSecond, gcAllocations, wallClockMs = "500
     runIndex: "-1",
     emitsPerSecond,
     gcAllocations,
-    wallClockMs
+    wallClockMs,
+    gcAllocatedBytes
   };
 }
 
@@ -122,24 +139,42 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
   const content = [
     "random unity log line",
     CSV_HEADER,
-    `2026-01-01T00:00:00 UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5`,
-    `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5`,
-    `{scenario:"TargetedFlood_OneListener",platform:"${PLATFORM}",commit:"abc1234",runIndex:1,emitsPerSec:2500000.5,gcAllocations:64,wallClockMs:8.25}`,
-    `UnknownScenario,${PLATFORM},abc1234,0,1,0,1`
+    `2026-01-01T00:00:00 UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5,2048`,
+    `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5,2048`,
+    `{scenario:"TargetedFlood_OneListener",platform:"${PLATFORM}",commit:"abc1234",runIndex:1,emitsPerSec:2500000.5,gcAllocations:64,wallClockMs:8.25,gcAllocatedBytes:4096}`,
+    `UnknownScenario,${PLATFORM},abc1234,0,1,0,1,0`
   ].join("\n");
 
   const rows = extractRows(content);
   assert.deepEqual(
-    rows.map(({ scenario, emitsPerSecond, gcAllocations }) => [
+    rows.map(({ scenario, emitsPerSecond, gcAllocations, gcAllocatedBytes }) => [
       scenario,
       emitsPerSecond,
-      gcAllocations
+      gcAllocations,
+      gcAllocatedBytes
     ]),
     [
-      ["UntargetedFlood_OneHandler", "1000000.000", "0"],
-      ["TargetedFlood_OneListener", "2500000.500", "64"]
+      ["UntargetedFlood_OneHandler", "1000000.000", "0", "2048"],
+      ["TargetedFlood_OneListener", "2500000.500", "64", "4096"]
     ]
   );
+});
+
+test("legacy 7-column CSV rows default gcAllocatedBytes to the -1 sentinel", () => {
+  // An old baseline row (no gcAllocatedBytes column) must still parse: the missing
+  // field defaults to the Unmeasured sentinel "-1" so re-extracting a legacy baseline
+  // round-trips honestly instead of crashing.
+  const legacy = `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5`;
+  const [parsed] = extractRows(legacy);
+  assert.equal(parsed.gcAllocatedBytes, "-1");
+
+  // Re-serializing yields the 8-column shape with the sentinel preserved.
+  const reparsed = extractRows(buildCsv([parsed]));
+  assert.deepEqual(reparsed, [parsed]);
+
+  // A legacy structured-log line (no gcAllocatedBytes key) defaults the same way.
+  const legacyLog = `{scenario:"UntargetedFlood_OneHandler",platform:"${PLATFORM}",commit:"abc1234",runIndex:0,emitsPerSec:1000000,gcAllocations:0,wallClockMs:12.5}`;
+  assert.equal(extractRows(legacyLog)[0].gcAllocatedBytes, "-1");
 });
 
 test("extract-perf-baseline CSV and args helpers cover round-trip and errors", () => {
@@ -188,6 +223,11 @@ test("delta sign is normalized so + is always better and - is always worse", () 
   // formatAllocDelta words the direction (fewer/more) instead of a bare +/-.
   assert.equal(formatAllocDelta(-5), "5 fewer allocs");
   assert.equal(formatAllocDelta(5), "5 more allocs");
+
+  // formatBytesDelta mirrors the count wording: fewer bytes is better.
+  assert.equal(formatBytesDelta(-2048), "2,048 fewer bytes");
+  assert.equal(formatBytesDelta(2048), "2,048 more bytes");
+  assert.equal(formatBytesDelta(0), "0 bytes");
 
   // Throughput scenario: a faster run (more emits/sec) reads "+", a regression "-".
   const t = "UntargetedFlood_OneHandler";
@@ -250,6 +290,72 @@ test("allocation reporting is honest: real counts render, sentinel renders n/a",
     ])
   )[1].join("\n");
   assert.ok(allocations.includes("110,806") && allocations.includes("n/a"), allocations);
+});
+
+test("byte reporting mirrors allocs: real byte delta is goodness-signed, sentinel is n/a", () => {
+  const s = "UntargetedFlood_OneHandler";
+  // A real byte INCREASE renders "more bytes"; a DECREASE renders "fewer bytes".
+  // Bytes are informational only -- they never gate, so they never mark the row moved.
+  const moreBytes = compareRow(
+    s,
+    row(s, "1000000.000", "0", "10.000", "4096"),
+    row(s, "1000000.000", "0", "10.000", "2048"),
+    0.02
+  );
+  assert.ok(moreBytes.cells[3].includes("2,048 more bytes"), moreBytes.cells[3]);
+  assert.equal(moreBytes.moved, false, "bytes do not gate / do not mark moved");
+
+  const fewerBytes = compareRow(
+    s,
+    row(s, "1000000.000", "0", "10.000", "1024"),
+    row(s, "1000000.000", "0", "10.000", "2048"),
+    0.02
+  );
+  assert.ok(fewerBytes.cells[3].includes("1,024 fewer bytes"), fewerBytes.cells[3]);
+
+  // Real bytes render in the baseline/current cells; the -1 sentinel renders "n/a",
+  // NEVER "0", and contributes no byte delta.
+  assert.ok(moreBytes.cells[1].includes("2,048") && moreBytes.cells[2].includes("4,096"));
+  const naBytes = compareRow(
+    s,
+    row(s, "1000000.000", "0", "10.000", "-1"),
+    row(s, "1000000.000", "0", "10.000", "-1"),
+    0.02
+  );
+  assert.ok(naBytes.cells[1].includes("n/a") && naBytes.cells[2].includes("n/a"), naBytes.cells[1]);
+  assert.ok(!naBytes.cells[3].includes("bytes"), naBytes.cells[3]);
+  // Honesty: a sentinel must not leak as a bare "0" in either side's cell.
+  assert.ok(!/\b0 bytes\b/.test(naBytes.cells[3]));
+});
+
+test("dispatch table renders a GC bytes column with real values and the n/a sentinel", () => {
+  const scenario = "UntargetedFlood_OneHandler";
+  const broadcast = "BroadcastFlood_OneHandler";
+  const rows = [
+    // Real measured bytes alongside the count.
+    playModeRow(scenario, "20000000.000", "0", "5000.000", "0"),
+    playModeRow(broadcast, "9000000.000", "1234", "5000.000", "98304")
+  ];
+  const block = buildBlock(selectRowsForVersion(rows, "Unity 6000.3.16f1"), "6000.3.16f1");
+  assert.ok(block.includes("GC bytes"), block);
+  assert.ok(block.includes("98,304"), block);
+
+  // The -1 sentinel renders n/a in the GC bytes column, never 0. The count is a
+  // DISTINCTIVE real value (42) so the n/a can only be coming from the bytes column:
+  // the count cell renders "42", proving the lone n/a is the byte sentinel, not a
+  // count sentinel landing in a different column.
+  const sentinelRows = [
+    { ...playModeRow(scenario, "20000000.000", "42"), gcAllocatedBytes: "-1" }
+  ];
+  const sentinelBlock = buildBlock(
+    selectRowsForVersion(sentinelRows, "Unity 6000.3.16f1"),
+    "6000.3.16f1"
+  );
+  assert.ok(sentinelBlock.includes("42"), sentinelBlock);
+  assert.ok(/\bn\/a\b/.test(sentinelBlock), sentinelBlock);
+  // And the count column did NOT render n/a (it has a real value), so the n/a above is
+  // unambiguously the GC bytes column.
+  assert.ok(!/\b42\b[^|]*n\/a[^|]*n\/a/.test(sentinelBlock), sentinelBlock);
 });
 
 test("computeRegressed and buildDeltaTable only use overlapping scenarios", () => {

@@ -23,7 +23,8 @@ window:
 1. Emit in batches until ONE continuous measurement window of `N` seconds has
    elapsed (`BenchmarkProtocol.MeasurementSeconds`, currently `N = 5`).
 1. Count managed GC allocations over ONE additional, untimed batch via
-   `AllocationProbe` (the `GC.Alloc` profiler recorder), reported as a COUNT.
+   `AllocationProbe` (the `GC.Alloc` profiler recorder), reported as a COUNT, and
+   measure the total allocated BYTES over that SAME batch as `gcAllocatedBytes`.
 
 Throughput is `total operations / measured elapsed seconds`. Allocation is counted
 in a SEPARATE batch (not the timed window) so the recorder's overhead cannot
@@ -36,7 +37,27 @@ column was vacuously `0` for every technology. The `GC.Alloc` recorder
 (`AllocationProbe`) counts allocations reliably and is immune to GC timing; it
 self-validates and reports the `Unmeasured` sentinel (rendered `n/a`) rather than a
 fabricated `0` when no probe is available on a backend (for example a
-non-development player). There is **no median-of-runs**: the older approach
+non-development player).
+
+**Allocated bytes (`gcAllocatedBytes`), informational.** Alongside the gated
+allocation COUNT, the harness reports the total allocated BYTES per operation from a
+before/after delta of the live Unity
+`ProfilerRecorder(ProfilerCategory.Memory, "GC Allocated In Frame").CurrentValue` --
+a within-frame `GC.Alloc`-hook byte accumulator. Because it SUMS allocation-hook
+bytes rather than measuring a heap-size difference, it is exact and run-to-run
+identical (100 × `byte[10000]` reads 1,003,200 bytes) and immune to mid-window
+collections (a heavy-churn region that swung a `GC.GetTotalMemory` delta to −133 MB
+read a rock-stable 8,000,000 bytes here). The other byte sources were rejected:
+`GC.GetAllocatedBytesForCurrentThread()` returns `0` under Boehm; a `GC.GetTotalMemory`
+delta is dominated by warm-editor heap noise (a zero-alloc loop read 24 KB; the same
+op swung 41 KB–938 KB across repeats) and is corrupted by collections; the `GC.Alloc`
+recorder's per-sample `.Value` is garbage (2400 for a 1.2 MB region); and
+`GC.TryStartNoGCRegion` throws `NotImplementedException` on Unity Mono. Bytes are
+profiler-dependent exactly like the count, so the Standalone Release leg reports the
+`Unmeasured` sentinel (`n/a`) for bytes too -- never a fabricated `0`. Bytes are
+INFORMATIONAL: the perf-delta PR comment renders byte deltas goodness-signed (`N fewer
+bytes` / `N more bytes`), but the regression gate stays on the allocation COUNT.
+There is **no median-of-runs**: the older approach
 of measuring several short sub-windows and comparing their median has been
 replaced by this single long window. The shared protocol is the single source of
 truth for every benchmark suite (dispatch throughput, comparisons) and lives in

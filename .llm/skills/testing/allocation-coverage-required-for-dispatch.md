@@ -2,9 +2,9 @@
 title: "Allocation Coverage Required for Dispatch"
 id: "allocation-coverage-required-for-dispatch"
 category: "testing"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-05-01"
-updated: "2026-06-26"
+updated: "2026-06-27"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -124,7 +124,13 @@ Two requirements stack:
    byte delta: under Unity's Boehm GC those under-count (the GC reclaims allocations
    inside the measurement window) and `GC.GetAllocatedBytesForCurrentThread()` returns
    a vacuous 0 for every allocation. Count managed allocation CALLS via the `GC.Alloc`
-   recorder (`AllocationProbe`) instead.
+   recorder (`AllocationProbe`) instead. The benchmark pipeline now ALSO tracks the
+   total allocated BYTES per operation (`gcAllocatedBytes`) from the collection-immune
+   `"GC Allocated In Frame"` `.CurrentValue` delta, with the SAME honesty guarantees
+   as the count: `AllocationProbe.Unmeasured` (`-1`, rendered `n/a`) rather than a
+   fabricated `0` where the profiler is stripped, and `0` only for a real zero-byte
+   region. Bytes are informational; the allocation COUNT stays the gate (see
+   [Benchmark Methodology: Total Over One Window](../performance/benchmark-methodology-total-over-window.md)).
 1. Every `MessageKind` value must appear in
    `MessageScenarios.AllKindsIncludingWithoutContext`. Anything driven by
    `[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKindsIncludingWithoutContext))]`
