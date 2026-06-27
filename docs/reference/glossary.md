@@ -166,7 +166,8 @@ _ = Token.RegisterGlobalAcceptAll(
 A **debug feature** that tracks message history and handler statistics. Enable in Editor, disable in builds for performance.
 
 ```csharp
-IMessageBus.GlobalDiagnosticsMode = true; // See message history
+// DiagnosticsTarget.Editor turns diagnostics on in the Editor only, off in builds.
+IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor; // See message history
 ```
 
 ## Memory Reclamation Terms

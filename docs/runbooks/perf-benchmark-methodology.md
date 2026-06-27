@@ -35,9 +35,11 @@ allocation under Unity's Boehm GC -- proven on the host editor, where a forced 1
 array allocation read back as a `0`-byte delta -- so the old "allocated bytes"
 column was vacuously `0` for every technology. The `GC.Alloc` recorder
 (`AllocationProbe`) counts allocations reliably and is immune to GC timing; it
-self-validates and reports the `Unmeasured` sentinel (rendered `n/a`) rather than a
+self-validates and reports the `Unmeasured` sentinel (`-1`) rather than a
 fabricated `0` when no probe is available on a backend (for example a
-non-development player).
+non-development player). A surface that is unmeasured for EVERY row (the whole
+Standalone leg) is omitted rather than rendered `n/a`; `n/a` survives only as an
+individual cell within an otherwise-measured table or matrix.
 
 **Allocated bytes (`gcAllocatedBytes`), informational.** Alongside the gated
 allocation COUNT, the harness reports the total allocated BYTES over that SAME batch from a
@@ -53,9 +55,11 @@ delta is dominated by warm-editor heap noise (a zero-alloc loop read 24 KB; the 
 op swung 41 KB-938 KB across repeats) and is corrupted by collections; the `GC.Alloc`
 recorder's per-sample `.Value` is garbage (2400 for a 1.2 MB region); and
 `GC.TryStartNoGCRegion` throws `NotImplementedException` on Unity Mono. Bytes and
-counts are self-validated independently; the Standalone Release leg usually reports
-the `Unmeasured` sentinel (`n/a`) for both, but renderers must select the first scope
-that measured each metric rather than reusing the count scope for bytes. Bytes are
+counts are self-validated independently; the Standalone Release leg cannot measure
+either (its profiler is stripped), so the renderer omits the all-unmeasured memory
+columns/matrices entirely and sources the count and byte metrics from the first scope
+that measured each (the PlayMode Mono leg), rather than reusing the count scope for
+bytes or publishing a vacuous wall of `n/a`. Bytes are
 INFORMATIONAL: the perf-delta PR comment renders byte deltas goodness-signed (`N fewer
 bytes` / `N more bytes`), but the regression gate stays on the allocation COUNT.
 There is **no median-of-runs**: the older approach
@@ -174,8 +178,11 @@ driven by
   line and each row's platform string
   (`Standalone IL2CPP x64 Release (WindowsPlayer; ...)`) prove the profile per
   run; a published `x64 Debug` row is a configuration bug. A Release player
-  strips the `GC.Alloc` profiler recorder, so every Standalone allocation cell
-  reports the `Unmeasured` sentinel (rendered `n/a`).
+  strips the `GC.Alloc` profiler recorder, so the Standalone leg cannot measure
+  allocations or bytes at all; rather than fill those columns with `n/a`, the
+  renderer omits the all-unmeasured memory columns from the Standalone table and
+  the all-unmeasured memory matrices entirely (the real numbers come from the
+  PlayMode Mono leg).
 - **PlayMode allocation leg (published for allocations only)** runs in-editor
   under Mono and passes `-releaseCodeOptimization`, which sets
   `CompilationPipeline.codeOptimization = Release` so test assemblies compile
@@ -185,8 +192,8 @@ driven by
   comparison bridge (including the ones that require `Application.isPlaying`) and
   produce a complete cross-library matrix. What the editor's Mono backend adds is
   a functional `GC.Alloc` recorder, which a Release player strips -- so only this
-  leg can MEASURE the allocation COUNTS, and the Standalone leg's allocation cells
-  stay `Unmeasured` (`n/a`). Allocation counts are build-config-independent -- the
+  leg can MEASURE the allocation COUNTS and bytes, and the Standalone table simply
+  omits those memory columns. Allocation counts are build-config-independent -- the
   same code paths box and allocate under Mono and IL2CPP -- so these counts
   represent the shipped IL2CPP player; the renderer documents this provenance by
   labeling the allocation tables with the PlayMode (Mono) scope. Only ALLOCATIONS
@@ -206,9 +213,9 @@ duration, which is shorter than the Standalone leg's because it builds no IL2CPP
 player (well under 2x total). The PlayMode leg is also **non-blocking**: it is
 marked `continue-on-error`, so a flaky PlayMode failure does NOT fail the
 benchmark job for the downstream comment/commit jobs -- the Standalone throughput
-headline and the regenerated baseline still publish, and that run's allocations
-degrade to `n/a` until the PlayMode leg is healthy again (see
-[Editor-vs-player rationale](#editor-vs-player-rationale)).
+headline and the regenerated baseline still publish, and that run simply omits the
+allocation/byte tables (no PlayMode leg measured them) until the PlayMode leg is
+healthy again (see [Editor-vs-player rationale](#editor-vs-player-rationale)).
 
 ## Scenario taxonomy
 
@@ -311,21 +318,23 @@ The [Performance Numbers workflow](https://github.com/Ambiguous-Interactive/DxMe
   functional `GC.Alloc` recorder supplies the real allocation counts the Release
   player cannot measure. This leg is `continue-on-error` (NON-BLOCKING): only the
   Standalone leg gates publishing, so a flaky PlayMode failure still lets the
-  Standalone headline + baseline publish, with that run's allocations degrading to
-  `n/a` (see [Editor-vs-player rationale](#editor-vs-player-rationale)).
+  Standalone headline + baseline publish; that run simply omits the allocation/byte
+  tables because no leg measured them (see [Editor-vs-player rationale](#editor-vs-player-rationale)).
 
 After the legs finish, `scripts/unity/render-perf-doc.js` reads the benchmark
 rows from BOTH legs and rewrites the AUTOGENERATED region of
 `docs/architecture/performance.md`. The renderer derives the execution scope
 from each row's platform string (`Standalone`, `PlayMode`, `EditMode`), emits
 one dispatch-throughput table per scope present (in headline order: Standalone,
-then PlayMode, then EditMode), and emits three cross-library comparison matrices.
-The throughput comparison matrix uses the first scope present in headline order
-(Standalone in published runs); the GC-allocation COUNT matrix and the
+then PlayMode, then EditMode), and emits the cross-library comparison matrices.
+Each per-scope dispatch table omits any profiler metric column it could not measure
+(the Standalone Release table is throughput-only), so a column never degenerates to
+all-`n/a`. The throughput comparison matrix uses the first scope present in headline
+order (Standalone in published runs); the GC-allocation COUNT matrix and the
 GC-allocated-BYTES matrix each use the first scope that actually MEASURED their
-metric (the PlayMode Mono leg in published runs, since the Standalone Release
-player reports only the `Unmeasured` sentinel for both), and each matrix is
-labeled with its own scope. These selectors are intentionally independent because
+metric (the PlayMode Mono leg in published runs), and each is labeled with its own
+scope -- a metric no present scope measured has its whole matrix omitted rather than
+rendered all-`n/a`. These selectors are intentionally independent because
 a backend can expose the byte counter while the allocation-count recorder is
 unavailable, or vice versa. Each table's backend
 label (Mono or IL2CPP) is derived from the platform string in that scope's rows,
@@ -365,8 +374,9 @@ strips `BuildOptions.Development` and pins the Release C++ configuration;
 `Debug.isDebugBuild` must be false in every published run.
 
 Allocations, however, are **only measurable where the profiler is available**. A
-Release player strips the `GC.Alloc` recorder, so the Standalone leg reports the
-`Unmeasured` sentinel (`n/a`) for every allocation cell. To publish real
+Release player strips the `GC.Alloc` recorder, so the Standalone leg cannot measure
+allocations or bytes at all, and the renderer omits those memory columns entirely
+(rather than filling them with `n/a`). To publish real
 allocation numbers the workflow re-adds an in-editor **PlayMode (Mono)** leg,
 where the recorder is functional. The differentiator from the Standalone leg is
 the profiler, NOT bridge coverage: a built Standalone player has
@@ -389,8 +399,9 @@ numbers](#how-ci-produces-and-publishes-the-numbers)). The Standalone throughput
 leg is the headline and the baseline source, so it gates publishing; a flaky
 PlayMode leg must not. When the PlayMode leg fails, the matrix job still reports
 success for the downstream comment/commit jobs, the Standalone headline and the
-regenerated baseline publish as usual, and that run's allocation cells simply
-degrade to `n/a` until the PlayMode leg is healthy again.
+regenerated baseline publish as usual, and that run simply omits the
+allocation/byte tables (no leg measured them) until the PlayMode leg is healthy
+again.
 
 EditMode runs inside the editor's hosting environment, is the least
 representative of shipping behavior, and is not published; it -- and PlayMode --

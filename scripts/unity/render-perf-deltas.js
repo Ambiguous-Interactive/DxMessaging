@@ -277,8 +277,12 @@ function compareRow(scenario, current, baseline, tolerance) {
   const bytesAreComparable = bytesComparable(currentBytes, baselineBytes);
   const bytesDelta = bytesAreComparable ? currentBytes - baselineBytes : 0;
 
-  let baselineCell;
-  let currentCell;
+  // Each cell is "primary[, allocs][, bytes]". An unmeasured metric (the sentinel on
+  // BOTH sides -- e.g. the profiler-stripped Standalone IL2CPP leg) is OMITTED, not
+  // padded with a useless ", n/a"; allocComparable/bytesAreComparable gate it.
+  const baselineParts = [];
+  const currentParts = [];
+
   let primaryPct;
   let primaryMoved;
 
@@ -288,17 +292,28 @@ function compareRow(scenario, current, baseline, tolerance) {
     // Wall clock / latency: lower is better, so a faster run renders as a "+" gain.
     primaryPct = goodnessRelativeChange(currentMs, baselineMs, false);
     primaryMoved = Math.abs(primaryPct) > tolerance;
-    baselineCell = `${formatWallClock(baseline.wallClockMs)}, ${formatAllocations(baseline.gcAllocations)}, ${formatBytesAllocated(baseline.gcAllocatedBytes)}`;
-    currentCell = `${formatWallClock(current.wallClockMs)}, ${formatAllocations(current.gcAllocations)}, ${formatBytesAllocated(current.gcAllocatedBytes)}`;
+    baselineParts.push(formatWallClock(baseline.wallClockMs));
+    currentParts.push(formatWallClock(current.wallClockMs));
   } else {
     const baselineEmits = Number.parseFloat(baseline.emitsPerSecond);
     const currentEmits = Number.parseFloat(current.emitsPerSecond);
     // Throughput: higher is better, so more emits/sec renders as a "+" gain.
     primaryPct = goodnessRelativeChange(currentEmits, baselineEmits, true);
     primaryMoved = Math.abs(primaryPct) > tolerance;
-    baselineCell = `${formatThroughput(baseline.emitsPerSecond)}, ${formatAllocations(baseline.gcAllocations)}, ${formatBytesAllocated(baseline.gcAllocatedBytes)}`;
-    currentCell = `${formatThroughput(current.emitsPerSecond)}, ${formatAllocations(current.gcAllocations)}, ${formatBytesAllocated(current.gcAllocatedBytes)}`;
+    baselineParts.push(formatThroughput(baseline.emitsPerSecond));
+    currentParts.push(formatThroughput(current.emitsPerSecond));
   }
+
+  if (allocComparable) {
+    baselineParts.push(formatAllocations(baseline.gcAllocations));
+    currentParts.push(formatAllocations(current.gcAllocations));
+  }
+  if (bytesAreComparable) {
+    baselineParts.push(formatBytesAllocated(baseline.gcAllocatedBytes));
+    currentParts.push(formatBytesAllocated(current.gcAllocatedBytes));
+  }
+  const baselineCell = baselineParts.join(", ");
+  const currentCell = currentParts.join(", ");
 
   const deltaParts = [formatPct(primaryPct)];
   if (allocComparable && allocDelta !== 0) {

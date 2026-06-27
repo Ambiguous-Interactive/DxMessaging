@@ -265,7 +265,7 @@ Do's
 
 ## 11) Diagnostics and Tuning
 
-- Enable `IMessageBus.GlobalDiagnosticsMode` in Editor or per-token.
+- Enable `IMessageBus.GlobalDiagnosticsTargets` (e.g. `DiagnosticsTarget.Editor`) or per-token.
 - Adjust `IMessageBus.GlobalMessageBufferSize` for deeper history (Editor settings UI provided).
 - Wire `MessagingDebug.LogFunction` to Unity's console to see warnings/errors.
 
@@ -348,7 +348,7 @@ public class CombatAnalytics : MessageAwareComponent {
 
 ##### Performance notes
 
-- Disable diagnostics in production (`IMessageBus.GlobalDiagnosticsMode = false`)
+- Disable diagnostics in production (`IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off`)
 - Use `RegisterBroadcastWithoutSource` sparingly (it's called for every emit)
 - Profile with Unity Profiler to find hotspots
 
@@ -613,10 +613,10 @@ public class GameAnalytics : MessageAwareComponent {
 
 ```csharp
 #if UNITY_EDITOR
-IMessageBus.GlobalDiagnosticsMode = true;
+IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
 IMessageBus.GlobalMessageBufferSize = 100; // Keep history for debugging
 #else
-IMessageBus.GlobalDiagnosticsMode = false; // Production builds
+IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off; // Production builds
 #endif
 ```
 

@@ -135,8 +135,10 @@ jobs:
             "(^docs/|^mkdocs\.yml$|^requirements-docs\.txt$|$ci_workflow)"
           set_output docs_links \
             "(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$|$ci_workflow)"
+          # docs/*.md is a dotnet trigger because the dotnet job compiles and scans the
+          # published docs (DocsSnippetCompilationTests, DocsObsoleteApiReferenceTests).
           set_output dotnet \
-            "(\.cs$|\.csproj$|\.sln$|^Runtime/Analyzers/|^SourceGenerators/|^\.config/dotnet-tools\.json$|$ci_workflow)"
+            "(\.cs$|\.csproj$|\.sln$|^Runtime/Analyzers/|^SourceGenerators/|^docs/.*\.(md|markdown)$|^\.config/dotnet-tools\.json$|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'

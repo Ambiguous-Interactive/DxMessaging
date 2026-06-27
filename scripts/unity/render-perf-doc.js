@@ -341,31 +341,50 @@ function alignTable(rows) {
 // SCENARIO_ORDER; the Scenario cell shows the human DisplayName (NOT the raw
 // key); registration scenarios show wall-clock, others throughput.
 function buildDispatchTable(byScenario) {
-  // "GC allocs" (no fixed denominator): throughput rows count over a 10k-op batch,
-  // cold rows over one op per trial, registration floods over one flood -- each row's
-  // count is over its own measurement batch, so a single "/ 10k ops" denominator
-  // would overstate the cold/flood rows.
-  const header = ["Scenario", "Throughput / Wall clock", "GC allocs", "GC bytes"];
-  const dataRows = [];
-
+  const selected = [];
   for (const scenario of SCENARIO_ORDER) {
     const row = byScenario.get(scenario);
-    if (!row) {
-      continue;
+    if (row) {
+      selected.push({ scenario, row });
     }
+  }
+  if (selected.length === 0) {
+    return null;
+  }
+
+  // A profiler-sourced metric column renders only when at least one row measured it:
+  // a Release IL2CPP player strips the profiler, so its "GC allocs"/"GC bytes" would
+  // be ENTIRELY "n/a" -- omit that structurally-unmeasured column rather than publish
+  // a vacuous wall of n/a (the real counts come from the Mono leg's table). A column
+  // is KEPT when the metric is measured for the scope but missing for one row; that
+  // lone "n/a" cell is a real partial-measurement signal. "GC allocs" has no fixed
+  // denominator (each row counts over its own batch), so no "/ 10k ops" suffix.
+  const hasAllocations = selected.some(({ row }) => isMeasuredInteger(row.gcAllocations));
+  const hasBytes = selected.some(({ row }) => isMeasuredInteger(row.gcAllocatedBytes));
+
+  const header = ["Scenario", "Throughput / Wall clock"];
+  if (hasAllocations) {
+    header.push("GC allocs");
+  }
+  if (hasBytes) {
+    header.push("GC bytes");
+  }
+
+  const dataRows = selected.map(({ scenario, row }) => {
     const primary = REGISTRATION_SCENARIOS.has(scenario)
       ? formatWallClock(row.wallClockMs)
       : formatThroughput(row.emitsPerSecond);
-    const label = DISPATCH_DISPLAY_NAMES[scenario] || scenario;
-    dataRows.push([
-      label,
-      primary,
-      formatAllocations(row.gcAllocations),
-      formatBytesAllocated(row.gcAllocatedBytes)
-    ]);
-  }
+    const cells = [DISPATCH_DISPLAY_NAMES[scenario] || scenario, primary];
+    if (hasAllocations) {
+      cells.push(formatAllocations(row.gcAllocations));
+    }
+    if (hasBytes) {
+      cells.push(formatBytesAllocated(row.gcAllocatedBytes));
+    }
+    return cells;
+  });
 
-  return dataRows.length === 0 ? null : alignTable([header, ...dataRows]);
+  return alignTable([header, ...dataRows]);
 }
 
 // Build the per-scope dispatch sections (label + Platform line + table) in
@@ -428,6 +447,20 @@ function preferredComparisonMetricScope(comparisonByScope, selectMetric) {
     }
   }
   return preferredComparisonScope(comparisonByScope);
+}
+
+// True when at least one present scope measured the metric (a non-sentinel value);
+// gates whether a comparison matrix renders at all (an all-sentinel metric would be
+// a vacuous all-n/a grid).
+function anyScopeMeasures(comparisonByScope, selectMetric) {
+  for (const byCell of comparisonByScope.values()) {
+    for (const row of byCell.values()) {
+      if (isMeasuredInteger(selectMetric(row))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function preferredComparisonAllocScope(comparisonByScope) {
@@ -547,40 +580,50 @@ function buildComparisonSections(comparisonByScope) {
     return [];
   }
 
-  const allocations = buildMetricComparison(
-    comparisonByScope,
-    throughputScope,
-    throughputByCell,
-    preferredComparisonAllocScope(comparisonByScope),
-    formatRowAllocations
-  );
-  const bytes = buildMetricComparison(
-    comparisonByScope,
-    throughputScope,
-    throughputByCell,
-    preferredComparisonBytesScope(comparisonByScope),
-    formatRowBytes
-  );
-
-  return [
+  const sections = [
     [
       // h3 siblings of the dispatch-throughput section (see its comment): the
       // region's parent is an h2, so every top-level region heading is h3.
       `### Library comparison - throughput (${scopeLabel(throughputScope, throughputPlatform)})`,
       "",
       throughputTable
-    ],
-    [
+    ]
+  ];
+
+  // Allocation/byte matrices render only when SOME present scope measured them; an
+  // all-unmeasured metric (e.g. only the profiler-stripped Release IL2CPP leg ran) is
+  // omitted rather than published as an all-n/a grid. A measured matrix still keeps
+  // any single-tech "n/a" cell (a real per-library measurement gap).
+  if (anyScopeMeasures(comparisonByScope, (row) => row.gcAllocations)) {
+    const allocations = buildMetricComparison(
+      comparisonByScope,
+      throughputScope,
+      throughputByCell,
+      preferredComparisonAllocScope(comparisonByScope),
+      formatRowAllocations
+    );
+    sections.push([
       `### Library comparison - GC allocations per 10k ops (${scopeLabel(allocations.scope, allocations.platform)})`,
       "",
       allocations.table
-    ],
-    [
+    ]);
+  }
+  if (anyScopeMeasures(comparisonByScope, (row) => row.gcAllocatedBytes)) {
+    const bytes = buildMetricComparison(
+      comparisonByScope,
+      throughputScope,
+      throughputByCell,
+      preferredComparisonBytesScope(comparisonByScope),
+      formatRowBytes
+    );
+    sections.push([
       `### Library comparison - GC allocated bytes per 10k ops (${scopeLabel(bytes.scope, bytes.platform)})`,
       "",
       bytes.table
-    ]
-  ];
+    ]);
+  }
+
+  return sections;
 }
 
 // Derive the scripting backend from a scope's actual platform string token. The

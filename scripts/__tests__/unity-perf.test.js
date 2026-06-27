@@ -267,15 +267,25 @@ test("isRegression trips on large throughput drops or allocation growth", () => 
   }
 });
 
-test("allocation reporting is honest: real counts render, sentinel renders n/a", () => {
+test("allocation reporting is honest: real counts render, unmeasured is omitted", () => {
   const s = "UntargetedFlood_OneHandler";
   const grew = compareRow(s, row(s, "1000000.000", "10"), row(s, "1000000.000", "0"), 0.02);
   assert.ok(grew.cells[3].includes("10 more allocs") && grew.moved, grew.cells[3]);
 
-  const na = compareRow(s, row(s, "1000000.000", "-1"), row(s, "1000000.000", "-1"), 0.02);
-  assert.ok(na.cells[1].includes("n/a") && na.cells[2].includes("n/a"), na.cells[1]);
+  // Both metrics unmeasured on both sides (the Standalone IL2CPP leg): the alloc and
+  // byte segments are OMITTED -- the cell carries only the primary metric, no ", n/a".
+  const na = compareRow(
+    s,
+    row(s, "1000000.000", "-1", "10.000", "-1"),
+    row(s, "1000000.000", "-1", "10.000", "-1"),
+    0.02
+  );
+  assert.equal(na.cells[1], "1.00 M emits/sec", na.cells[1]);
+  assert.equal(na.cells[2], "1.00 M emits/sec", na.cells[2]);
   assert.ok(!na.cells[3].includes("alloc") && na.moved === false, na.cells[3]);
 
+  // A comparison matrix where SOME tech measured the metric still renders, and the
+  // unmeasured tech's lone cell shows "n/a" (a real per-library measurement gap).
   const allocations = buildComparisonSections(
     standaloneRows([
       ["UnitySendMessage|GlobalToOne", comparisonRow("3000000.000", "110806")],
@@ -285,7 +295,7 @@ test("allocation reporting is honest: real counts render, sentinel renders n/a",
   assert.ok(allocations.includes("110,806") && allocations.includes("n/a"), allocations);
 });
 
-test("byte reporting mirrors allocs: real byte delta is goodness-signed, sentinel is n/a", () => {
+test("byte reporting mirrors allocs: real byte delta is goodness-signed, unmeasured is omitted", () => {
   const s = "UntargetedFlood_OneHandler";
   const moreBytes = compareRow(
     s,
@@ -305,18 +315,23 @@ test("byte reporting mirrors allocs: real byte delta is goodness-signed, sentine
   assert.ok(fewerBytes.cells[3].includes("1,024 fewer bytes"), fewerBytes.cells[3]);
 
   assert.ok(moreBytes.cells[1].includes("2,048") && moreBytes.cells[2].includes("4,096"));
+  // Bytes unmeasured (sentinel both sides) but allocs measured ("0"): the byte
+  // segment is OMITTED, the allocation segment stays. So the cell ends in the alloc
+  // count, never a ", n/a" byte placeholder, and the delta has no byte clause.
   const naBytes = compareRow(
     s,
     row(s, "1000000.000", "0", "10.000", "-1"),
     row(s, "1000000.000", "0", "10.000", "-1"),
     0.02
   );
-  assert.ok(naBytes.cells[1].includes("n/a") && naBytes.cells[2].includes("n/a"), naBytes.cells[1]);
+  assert.equal(naBytes.cells[1], "1.00 M emits/sec, 0", naBytes.cells[1]);
+  assert.equal(naBytes.cells[2], "1.00 M emits/sec, 0", naBytes.cells[2]);
+  assert.ok(!naBytes.cells[1].includes("n/a") && !naBytes.cells[2].includes("n/a"));
   assert.ok(!naBytes.cells[3].includes("bytes"), naBytes.cells[3]);
   assert.ok(!/\b0 bytes\b/.test(naBytes.cells[3]));
 });
 
-test("dispatch table renders a GC bytes column with real values and the n/a sentinel", () => {
+test("dispatch table renders a GC bytes column with real values and a per-row n/a", () => {
   const scenario = "UntargetedFlood_OneHandler";
   const broadcast = "BroadcastFlood_OneHandler";
   const rows = [
@@ -327,14 +342,20 @@ test("dispatch table renders a GC bytes column with real values and the n/a sent
   assert.ok(block.includes("GC bytes"), block);
   assert.ok(block.includes("98,304"), block);
 
-  const sentinelRows = [{ ...playModeRow(scenario, "20000000.000", "42"), gcAllocatedBytes: "-1" }];
-  const sentinelBlock = buildBlock(
-    selectRowsForVersion(sentinelRows, "Unity 6000.3.16f1"),
+  // A metric measured for the scope but MISSING for one row keeps the column and
+  // renders that one cell "n/a" (a real partial-measurement signal, not the all-n/a
+  // noise an IL2CPP leg produces -- that column is omitted, see the two-scopes test).
+  const partialRows = [
+    playModeRow(scenario, "20000000.000", "0", "5000.000", "8192"),
+    { ...playModeRow(broadcast, "9000000.000", "42"), gcAllocatedBytes: "-1" }
+  ];
+  const partialBlock = buildBlock(
+    selectRowsForVersion(partialRows, "Unity 6000.3.16f1"),
     "6000.3.16f1"
   );
-  assert.ok(sentinelBlock.includes("42"), sentinelBlock);
-  assert.ok(/\bn\/a\b/.test(sentinelBlock), sentinelBlock);
-  assert.ok(!/\b42\b[^|]*n\/a[^|]*n\/a/.test(sentinelBlock), sentinelBlock);
+  assert.ok(partialBlock.includes("GC bytes"), partialBlock);
+  assert.ok(partialBlock.includes("8,192") && partialBlock.includes("42"), partialBlock);
+  assert.ok(/\bn\/a\b/.test(partialBlock), partialBlock);
 });
 
 test("computeRegressed and buildDeltaTable only use overlapping scenarios", () => {
@@ -489,12 +510,13 @@ test("two scopes render separate dispatch tables; only the Mono leg shows real a
   const scenario = "UntargetedFlood_OneHandler";
   const broadcast = "BroadcastFlood_OneHandler";
   const rows = [
-    // Standalone (IL2CPP) leg: allocations are the Unmeasured sentinel (-1 -> n/a).
-    { ...dispatchRow(scenario, "37500000.000"), gcAllocations: "-1" },
-    { ...dispatchRow(broadcast, "18000000.000"), gcAllocations: "-1" },
+    // Standalone (IL2CPP) leg: a Release player strips the profiler, so BOTH the
+    // allocation count and the byte total are the Unmeasured sentinel (-1).
+    { ...dispatchRow(scenario, "37500000.000"), gcAllocations: "-1", gcAllocatedBytes: "-1" },
+    { ...dispatchRow(broadcast, "18000000.000"), gcAllocations: "-1", gcAllocatedBytes: "-1" },
     // In-editor PlayMode (Mono) leg: REAL counts for the SAME version.
-    playModeRow(scenario, "20000000.000", "0"),
-    playModeRow(broadcast, "9000000.000", "1234")
+    playModeRow(scenario, "20000000.000", "0", "5000.000", "4096"),
+    playModeRow(broadcast, "9000000.000", "1234", "5000.000", "98304")
   ];
   const block = buildBlock(selectRowsForVersion(rows, "Unity 6000.3.16f1"), "6000.3.16f1");
 
@@ -514,10 +536,18 @@ test("two scopes render separate dispatch tables; only the Mono leg shows real a
   );
   const playModeSection = block.slice(block.indexOf(playModeHeading));
 
-  assert.ok(/\bn\/a\b/.test(standaloneSection), standaloneSection);
+  // The Standalone table omits its all-unmeasured memory columns -- no header, no n/a.
+  assert.ok(!standaloneSection.includes("GC allocs"), standaloneSection);
+  assert.ok(!standaloneSection.includes("GC bytes"), standaloneSection);
+  assert.ok(!/\bn\/a\b/.test(standaloneSection), standaloneSection);
+  // The Mono table keeps both memory columns with their real values.
+  assert.ok(playModeSection.includes("GC allocs") && playModeSection.includes("GC bytes"));
   assert.ok(!playModeSection.includes("n/a"), playModeSection);
   assert.ok(playModeSection.includes("| 0 "), playModeSection);
-  assert.ok(playModeSection.includes("1,234"), playModeSection);
+  assert.ok(
+    playModeSection.includes("1,234") && playModeSection.includes("98,304"),
+    playModeSection
+  );
 });
 
 test("comparison throughput stays on Standalone while GC count+bytes come from the Mono leg", () => {
@@ -565,14 +595,15 @@ test("comparison bytes choose their own measured scope", () => {
       "GC allocated bytes per 10k ops (Standalone (IL2CPP))"
     ],
     [
+      // Mirror image: allocs measured on the Standalone leg, bytes on the Mono leg.
       [
-        dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "-1", "-1"),
-        dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "-1", "-1"),
+        dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "111", "-1"),
+        dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "222", "-1"),
         playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "-1", "5000.000", "4096"),
         playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "-1", "5000.000", "8192")
       ],
       "GC allocations per 10k ops (Standalone (IL2CPP))",
-      "n/a",
+      "222",
       "GC allocated bytes per 10k ops (PlayMode (Mono))"
     ]
   ];
@@ -584,28 +615,23 @@ test("comparison bytes choose their own measured scope", () => {
   }
 });
 
-test("comparison count+bytes matrices stay Standalone n/a when no editor leg ran", () => {
+test("comparison count+bytes matrices are omitted when no leg measured them", () => {
+  // Only the Release IL2CPP leg ran (no editor leg), so both memory metrics are the
+  // Unmeasured sentinel for every tech. The throughput matrix renders; the allocation
+  // and byte matrices are OMITTED entirely rather than published as all-n/a grids.
   const sections = buildComparisonSections(
     standaloneRows([
       ["DxMessaging|GlobalToOne", comparisonRow("28000000.000", "-1", "-1")],
       ["MessagePipe|GlobalToOne", comparisonRow("68000000.000", "-1", "-1")]
     ])
   );
-  assert.equal(sections.length, 3);
-  const allocations = sections[1].join("\n");
-  const bytes = sections[2].join("\n");
-  assert.ok(
-    allocations.includes(
-      "### Library comparison - GC allocations per 10k ops (Standalone (IL2CPP))"
-    ) && allocations.includes("n/a"),
-    allocations
-  );
-  assert.ok(
-    bytes.includes(
-      "### Library comparison - GC allocated bytes per 10k ops (Standalone (IL2CPP))"
-    ) && bytes.includes("n/a"),
-    bytes
-  );
+  assert.equal(sections.length, 1);
+  const onlySection = sections[0].join("\n");
+  assert.ok(onlySection.includes("### Library comparison - throughput (Standalone (IL2CPP))"));
+  const joined = sections.map((section) => section.join("\n")).join("\n");
+  assert.ok(!joined.includes("GC allocations per 10k ops"), joined);
+  assert.ok(!joined.includes("GC allocated bytes per 10k ops"), joined);
+  assert.ok(!/\bn\/a\b/.test(joined), joined);
 });
 
 test("extract-perf-baseline --scope filters rows to one execution scope", () => {

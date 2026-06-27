@@ -68,9 +68,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applies the generator to the DxMessaging runtime assembly and every assembly that
   references it, including the predefined `Assembly-CSharp`. No assembly definition is
   required. Closes GitHub issue #229.
+- Documentation no longer teaches the obsolete `IMessageBus.GlobalDiagnosticsMode`
+  API. The reference, patterns, glossary, and migration guides now use
+  `IMessageBus.GlobalDiagnosticsTargets` with the `DiagnosticsTarget` flags enum
+  (matching the canonical diagnostics guide), and the API reference no longer shows a
+  write to the read-only `IMessageBus.DiagnosticsMode` property. A source-derived
+  drift-guard (`DocsObsoleteApiReferenceTests`) now fails the build if any published
+  doc references a member marked `[Obsolete]` in the runtime, so this cannot regress.
 
 ### Changed
 
+- The published performance report no longer prints columns of `n/a`. The
+  Standalone IL2CPP leg runs in a Release player whose stripped profiler cannot
+  measure GC allocations or bytes, so the renderer now OMITS a memory column from a
+  per-scope dispatch table when every row is unmeasured (the Standalone table is
+  throughput-only), omits a whole cross-library memory matrix when no leg measured
+  that metric, and drops the unmeasured allocation/byte segment from each per-PR
+  delta cell -- instead of filling them with a wall of `n/a`. The real allocation
+  and byte numbers still publish from the in-editor PlayMode (Mono) leg, and `n/a`
+  now appears only as a genuine per-row or per-library cell (a metric measured for
+  the scope in general but missing for that one entry).
 - Registration allocates less. Each registration token's diagnostics-only
   call-count and emission-history collections are now created lazily instead of
   eagerly, so a token whose owner never enables diagnostics (the default) no longer
