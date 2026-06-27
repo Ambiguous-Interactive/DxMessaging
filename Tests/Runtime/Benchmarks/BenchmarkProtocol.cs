@@ -107,6 +107,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// the timed operation runs exactly once per trial and is timed end to end. The
         /// median (not the mean) is the headline because cold latency is right-skewed --
         /// one GC or scheduler blip must not move the reported number.
+        /// Count and byte medians are reduced independently: byte samples can be
+        /// <see cref="AllocationProbe.Unmeasured"/> for individual frame-boundary trials
+        /// even when count samples are valid, so the byte median filters only the byte
+        /// sentinel and does not claim to come from the same trial as the count median.
         ///
         /// Each trial i prepares FRESH state via <paramref name="setUpTrial"/> (UNTIMED;
         /// the <c>i</c> argument lets the caller pick a DISTINCT closed generic type per
@@ -452,7 +456,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// <summary>
         /// Median total managed allocation BYTES across the cold trials, or
         /// <see cref="AllocationProbe.Unmeasured"/> when no reliable byte probe exists on
-        /// this backend. The byte companion to <see cref="MedianGcAllocations"/>.
+        /// this backend or every cold trial crossed a frame boundary. This median is
+        /// reduced independently from <see cref="MedianGcAllocations"/> because byte
+        /// samples can be independently unmeasured per trial.
         /// </summary>
         public long MedianGcAllocatedBytes { get; }
 

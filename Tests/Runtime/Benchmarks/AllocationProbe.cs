@@ -1,4 +1,8 @@
 #if UNITY_2021_3_OR_NEWER
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("WallstopStudios.DxMessaging.Tests.Editor.Allocations")]
+
 namespace DxMessaging.Tests.Runtime.Benchmarks
 {
     using System;
@@ -251,6 +255,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// which is NOT counted) -- after a single settling collection before the loop --
         /// and returns the MINIMUM managed-allocation CALL count observed, or
         /// <see cref="Unmeasured"/> when the probe is non-functional on this backend.
+        /// This API is count-keyed: when the count probe is unavailable, it reports
+        /// <see cref="Unmeasured"/> for both count and bytes rather than selecting a
+        /// byte-only attempt.
         ///
         /// <para>
         /// WHY A MINIMUM: a single allocation window in a warm, long-lived editor domain
@@ -298,6 +305,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// Runs <paramref name="operation"/> repeatedly and returns both the minimum
         /// managed-allocation CALL count and the diagnostics produced by the same attempt
         /// that yielded that minimum.
+        /// If multiple attempts tie for the minimum count, a tied attempt with measured
+        /// bytes is preferred over one whose bytes are <see cref="Unmeasured"/>.
         ///
         /// <para>
         /// Use this overload when the caller needs to assert or report side effects from
@@ -341,7 +350,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 throw new ArgumentOutOfRangeException(nameof(attempts));
             }
 
-            if (!IsFunctional && !BytesFunctional)
+            if (!IsFunctional)
             {
                 return new MinimumMeasurement<TDiagnostics>(Unmeasured, Unmeasured, -1, default);
             }
@@ -366,12 +375,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     prepare?.Invoke();
                     using Window window = BeginWindow();
                     TDiagnostics diagnostics = operation();
-                    // Bytes are exact per attempt (not noisy like counts), so the bytes
-                    // reported are those of the same attempt that produced the minimum
-                    // count -- a single self-consistent sample, never a min/attempt mix.
                     AllocationSample sample = window.SampleBoth();
                     long count = sample.Allocations;
-                    if (count < min)
+                    if (ShouldReplaceMinimumAttempt(count, sample.Bytes, min, minBytes))
                     {
                         min = count;
                         minBytes = sample.Bytes;
@@ -391,12 +397,50 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 SettleHeapForMeasurement();
             }
 
+            if (min == long.MaxValue)
+            {
+                return new MinimumMeasurement<TDiagnostics>(Unmeasured, Unmeasured, -1, default);
+            }
+
             return new MinimumMeasurement<TDiagnostics>(
                 min,
                 minBytes,
                 minAttemptIndex,
                 minDiagnostics
             );
+        }
+
+        internal static bool ShouldReplaceMinimumAttempt(
+            long candidateAllocations,
+            long candidateBytes,
+            long currentAllocations,
+            long currentBytes
+        )
+        {
+            if (candidateAllocations < 0)
+            {
+                return false;
+            }
+
+            if (currentAllocations < 0 || currentAllocations == long.MaxValue)
+            {
+                return true;
+            }
+
+            if (candidateAllocations < currentAllocations)
+            {
+                return true;
+            }
+
+            if (candidateAllocations > currentAllocations)
+            {
+                return false;
+            }
+
+            // Counts are the selection key. When attempts tie on that key, prefer a
+            // measured byte companion over an Unmeasured one so a frame-boundary reset in
+            // an earlier tied attempt does not hide a later equally-minimal byte sample.
+            return candidateBytes >= 0 && currentBytes < 0;
         }
 
         private readonly struct NoDiagnostics { }
@@ -427,13 +471,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             public long GcAllocations { get; }
 
             /// <summary>
-            /// Total managed allocation BYTES from the same attempt that produced
-            /// <see cref="GcAllocations"/>, or <see cref="Unmeasured"/> when bytes could not
-            /// be measured for that attempt -- EITHER the byte counter is non-functional on
-            /// this backend OR that specific attempt crossed a frame boundary (the live byte
+            /// Total managed allocation BYTES from the selected minimum-count attempt, or
+            /// <see cref="Unmeasured"/> when bytes could not be measured for any selected
+            /// attempt -- EITHER the byte counter is non-functional on this backend OR every
+            /// attempt tied for the minimum count crossed a frame boundary (the live byte
             /// counter resets per frame; see <see cref="Window.SampleBytes"/>). Bytes are
             /// exact per attempt, so this is a self-consistent companion to the minimum count,
-            /// not a separate minimum -- but a consumer that renders this value MUST treat
+            /// not a separate minimum. When multiple attempts tie the minimum count, a later
+            /// tied attempt with measured bytes replaces an earlier tied attempt whose bytes
+            /// were <see cref="Unmeasured"/>; a different-count attempt is never used for the
+            /// byte companion. A consumer that renders this value MUST treat
             /// <see cref="Unmeasured"/> as "n/a", never as a real magnitude.
             /// </summary>
             public long GcAllocatedBytes { get; }

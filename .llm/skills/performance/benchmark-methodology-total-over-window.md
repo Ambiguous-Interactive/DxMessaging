@@ -250,14 +250,17 @@ re-tries them):
 - Unity's own Performance Testing package reads the alloc-CALL `.Count`, not
   bytes -- which is why the count stays the canonical signal and the gate metric.
 
-**Honesty / availability.** The byte counter is profiler-dependent, exactly like
-the count probe. It is functional in the editor and in development players; on the
-published NON-development Standalone IL2CPP Release leg the profiler is stripped,
-so BOTH metrics read `AllocationProbe.Unmeasured` (`-1`, rendered `n/a`) -- never
-a fabricated `0`. The real allocation net is the EDITOR allocation suite plus the
-weekly editor benchmarks, not the per-PR Standalone delta gate. A `gcAllocatedBytes`
-of `-1` means `AllocationProbe.Unmeasured`, identical in meaning to the count's
-sentinel; a `0` is a measured zero-byte result and must never be conflated with it.
+**Honesty / availability.** The byte counter and count recorder are both
+profiler-dependent but self-validate independently. They are functional in the
+editor and in development players; on the published NON-development Standalone
+IL2CPP Release leg the profiler is stripped, so both metrics usually read
+`AllocationProbe.Unmeasured` (`-1`, rendered `n/a`) -- never a fabricated `0`.
+Renderers must choose the first scope that measured each metric instead of
+reusing the count scope for bytes. The real allocation net is the EDITOR
+allocation suite plus the weekly editor benchmarks, not the per-PR Standalone
+delta gate. A `gcAllocatedBytes` of `-1` means `AllocationProbe.Unmeasured`,
+identical in meaning to the count's sentinel; a `0` is a measured zero-byte
+result and must never be conflated with it.
 
 **Goodness.** Fewer bytes is better. The perf-delta PR comment renders byte deltas
 goodness-signed (`N fewer bytes` / `N more bytes`). Bytes are informational only --
@@ -287,8 +290,15 @@ byte delta alone and `AllocationProbe.Window.SampleBoth()` returns the
 `AllocationSample`; `AllocationProbe.BytesFunctional` reports whether the
 `"GC Allocated In Frame"` counter is confirmed usable on this backend (cached, the
 byte analogue of `IsFunctional`). The cold counterpart carries the byte median as
-`ColdLatencyMeasurement.MedianGcAllocatedBytes`, and the repeated-minimum path
+`ColdLatencyMeasurement.MedianGcAllocatedBytes`; cold count and byte medians are
+reduced independently because a byte sample can be `Unmeasured` for one
+frame-boundary trial while count samples remain valid. The repeated-minimum path
 exposes `MinimumMeasurement<T>.GcAllocatedBytes` next to its `GcAllocations`.
+`MeasureMin` is count-keyed: if the count probe is unavailable it returns
+`Unmeasured` for both fields rather than selecting a byte-only attempt, and when
+multiple attempts tie the minimum count it prefers a tied attempt with measured
+bytes over one whose bytes are `Unmeasured` without ever taking bytes from a
+different-count attempt.
 
 ## Invariant: Reconcile Side-Effect Counters Against TotalEmittedOperations
 

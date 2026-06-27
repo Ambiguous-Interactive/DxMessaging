@@ -453,6 +453,61 @@ namespace DxMessaging.Tests.Editor.Allocations
         }
 
         [Test]
+        public void MeasureMinTieBreakerPrefersMeasuredBytesForEqualMinimumCount()
+        {
+            Assert.IsTrue(
+                AllocationProbe.ShouldReplaceMinimumAttempt(
+                    candidateAllocations: 5,
+                    candidateBytes: 2048,
+                    currentAllocations: 5,
+                    currentBytes: AllocationProbe.Unmeasured
+                ),
+                "A later attempt with the SAME minimum count and measured bytes must replace "
+                    + "an earlier tied attempt whose bytes were Unmeasured."
+            );
+            Assert.IsFalse(
+                AllocationProbe.ShouldReplaceMinimumAttempt(
+                    candidateAllocations: 6,
+                    candidateBytes: 2048,
+                    currentAllocations: 5,
+                    currentBytes: AllocationProbe.Unmeasured
+                ),
+                "Measured bytes from a higher-count attempt must not replace the minimum-count "
+                    + "attempt; the byte companion must stay tied to a minimum allocation count."
+            );
+            Assert.IsFalse(
+                AllocationProbe.ShouldReplaceMinimumAttempt(
+                    candidateAllocations: 5,
+                    candidateBytes: 4096,
+                    currentAllocations: 5,
+                    currentBytes: 2048
+                ),
+                "Once the selected minimum-count attempt already has measured bytes, a later "
+                    + "equal-count attempt is not a separate byte-minimum search."
+            );
+            Assert.IsTrue(
+                AllocationProbe.ShouldReplaceMinimumAttempt(
+                    candidateAllocations: 4,
+                    candidateBytes: AllocationProbe.Unmeasured,
+                    currentAllocations: 5,
+                    currentBytes: 2048
+                ),
+                "A lower measured allocation count remains the primary selection key even when "
+                    + "its byte companion is Unmeasured."
+            );
+            Assert.IsFalse(
+                AllocationProbe.ShouldReplaceMinimumAttempt(
+                    candidateAllocations: AllocationProbe.Unmeasured,
+                    candidateBytes: 2048,
+                    currentAllocations: long.MaxValue,
+                    currentBytes: AllocationProbe.Unmeasured
+                ),
+                "MeasureMin is count-keyed; an Unmeasured count cannot win solely because bytes "
+                    + "were measured."
+            );
+        }
+
+        [Test]
         public void MeasureMinReleasesRecorderAfterMeasuring()
         {
             if (!AllocationProbe.IsFunctional)

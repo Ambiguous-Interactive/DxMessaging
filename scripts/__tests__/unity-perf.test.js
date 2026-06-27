@@ -41,10 +41,6 @@ const { buildComparisonScenarioId } = require("../unity/perf-scenarios.js");
 
 const PLATFORM = "Unity 6000.3.16f1 Linux PlayMode Mono";
 const STANDALONE_PLATFORM = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)";
-// The exact platform string the in-editor PlayMode (Mono) leg emits (see
-// DispatchThroughputBenchmarks.ResolveExecutionTarget): "Editor PlayMode Mono ...".
-// This is the leg that can actually measure allocations (the Release IL2CPP player
-// strips the profiler), so its rows carry REAL gcAllocations.
 const EDITOR_PLAYMODE_PLATFORM =
   "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -93,8 +89,6 @@ function dispatchRow(scenario, emitsPerSecond, gcAllocations = "0", gcAllocatedB
   };
 }
 
-// A dispatch/comparison row on the in-editor PlayMode (Mono) platform, where the
-// GC.Alloc recorder is functional so gcAllocations carries a real count.
 function playModeRow(
   scenario,
   emitsPerSecond,
@@ -116,6 +110,11 @@ function playModeRow(
 
 function standaloneRows(entries) {
   return new Map([["Standalone", new Map(entries)]]);
+}
+
+function comparisonSectionsFor(rows) {
+  const { comparisonByScope } = selectRowsForVersion(rows, "Unity 6000.3.16f1");
+  return buildComparisonSections(comparisonByScope).map((section) => section.join("\n"));
 }
 
 test("scenario filters keep only dispatch and DxMessaging comparison rows", () => {
@@ -260,8 +259,6 @@ test("isRegression trips on large throughput drops or allocation growth", () => 
     [row("x", "900000.000"), baseline, false],
     [row("x", "1000000.000", "128"), baseline, true],
     [row("x", "0.000"), row("x", "0.000"), false],
-    // Unmeasured allocation sentinel (-1) on either side is never an allocation
-    // regression: it cannot be compared, so it neither trips nor masks the gate.
     [row("x", "1000000.000", "-1"), row("x", "1000000.000", "0"), false],
     [row("x", "1000000.000", "5"), row("x", "1000000.000", "-1"), false]
   ];
@@ -272,17 +269,13 @@ test("isRegression trips on large throughput drops or allocation growth", () => 
 
 test("allocation reporting is honest: real counts render, sentinel renders n/a", () => {
   const s = "UntargetedFlood_OneHandler";
-  // A real allocation increase is a regression, written out as "more" (not a bare
-  // +/- on the count), and marks the row moved.
   const grew = compareRow(s, row(s, "1000000.000", "10"), row(s, "1000000.000", "0"), 0.02);
   assert.ok(grew.cells[3].includes("10 more allocs") && grew.moved, grew.cells[3]);
 
-  // The Unmeasured sentinel renders "n/a" (never "0"/"-1") and contributes no delta.
   const na = compareRow(s, row(s, "1000000.000", "-1"), row(s, "1000000.000", "-1"), 0.02);
   assert.ok(na.cells[1].includes("n/a") && na.cells[2].includes("n/a"), na.cells[1]);
   assert.ok(!na.cells[3].includes("alloc") && na.moved === false, na.cells[3]);
 
-  // Comparison matrix shows the raw count and "n/a" for the sentinel.
   const allocations = buildComparisonSections(
     standaloneRows([
       ["UnitySendMessage|GlobalToOne", comparisonRow("3000000.000", "110806")],
@@ -294,8 +287,6 @@ test("allocation reporting is honest: real counts render, sentinel renders n/a",
 
 test("byte reporting mirrors allocs: real byte delta is goodness-signed, sentinel is n/a", () => {
   const s = "UntargetedFlood_OneHandler";
-  // A real byte INCREASE renders "more bytes"; a DECREASE renders "fewer bytes".
-  // Bytes are informational only -- they never gate, so they never mark the row moved.
   const moreBytes = compareRow(
     s,
     row(s, "1000000.000", "0", "10.000", "4096"),
@@ -313,8 +304,6 @@ test("byte reporting mirrors allocs: real byte delta is goodness-signed, sentine
   );
   assert.ok(fewerBytes.cells[3].includes("1,024 fewer bytes"), fewerBytes.cells[3]);
 
-  // Real bytes render in the baseline/current cells; the -1 sentinel renders "n/a",
-  // NEVER "0", and contributes no byte delta.
   assert.ok(moreBytes.cells[1].includes("2,048") && moreBytes.cells[2].includes("4,096"));
   const naBytes = compareRow(
     s,
@@ -324,7 +313,6 @@ test("byte reporting mirrors allocs: real byte delta is goodness-signed, sentine
   );
   assert.ok(naBytes.cells[1].includes("n/a") && naBytes.cells[2].includes("n/a"), naBytes.cells[1]);
   assert.ok(!naBytes.cells[3].includes("bytes"), naBytes.cells[3]);
-  // Honesty: a sentinel must not leak as a bare "0" in either side's cell.
   assert.ok(!/\b0 bytes\b/.test(naBytes.cells[3]));
 });
 
@@ -332,7 +320,6 @@ test("dispatch table renders a GC bytes column with real values and the n/a sent
   const scenario = "UntargetedFlood_OneHandler";
   const broadcast = "BroadcastFlood_OneHandler";
   const rows = [
-    // Real measured bytes alongside the count.
     playModeRow(scenario, "20000000.000", "0", "5000.000", "0"),
     playModeRow(broadcast, "9000000.000", "1234", "5000.000", "98304")
   ];
@@ -340,10 +327,6 @@ test("dispatch table renders a GC bytes column with real values and the n/a sent
   assert.ok(block.includes("GC bytes"), block);
   assert.ok(block.includes("98,304"), block);
 
-  // The -1 sentinel renders n/a in the GC bytes column, never 0. The count is a
-  // DISTINCTIVE real value (42) so the n/a can only be coming from the bytes column:
-  // the count cell renders "42", proving the lone n/a is the byte sentinel, not a
-  // count sentinel landing in a different column.
   const sentinelRows = [{ ...playModeRow(scenario, "20000000.000", "42"), gcAllocatedBytes: "-1" }];
   const sentinelBlock = buildBlock(
     selectRowsForVersion(sentinelRows, "Unity 6000.3.16f1"),
@@ -351,8 +334,6 @@ test("dispatch table renders a GC bytes column with real values and the n/a sent
   );
   assert.ok(sentinelBlock.includes("42"), sentinelBlock);
   assert.ok(/\bn\/a\b/.test(sentinelBlock), sentinelBlock);
-  // And the count column did NOT render n/a (it has a real value), so the n/a above is
-  // unambiguously the GC bytes column.
   assert.ok(!/\b42\b[^|]*n\/a[^|]*n\/a/.test(sentinelBlock), sentinelBlock);
 });
 
@@ -527,14 +508,12 @@ test("two scopes render separate dispatch tables; only the Mono leg shows real a
     "Standalone dispatch table must precede the PlayMode one"
   );
 
-  // Slice each section so the alloc assertions are scoped to the right table.
   const standaloneSection = block.slice(
     block.indexOf(standaloneHeading),
     block.indexOf(playModeHeading)
   );
   const playModeSection = block.slice(block.indexOf(playModeHeading));
 
-  // Standalone shows n/a in the alloc column; PlayMode shows the real counts.
   assert.ok(/\bn\/a\b/.test(standaloneSection), standaloneSection);
   assert.ok(!playModeSection.includes("n/a"), playModeSection);
   assert.ok(playModeSection.includes("| 0 "), playModeSection);
@@ -542,24 +521,15 @@ test("two scopes render separate dispatch tables; only the Mono leg shows real a
 });
 
 test("comparison throughput stays on Standalone while GC count+bytes come from the Mono leg", () => {
-  // Same (tech, scenario) cells on both legs: the Standalone (Release player) leg
-  // strips the profiler so BOTH its count and its bytes are the Unmeasured sentinel;
-  // the in-editor PlayMode (Mono) leg carries the real count AND the real byte total.
-  // Standalone (Release player) strips the profiler: its count AND bytes are the -1
-  // sentinel. The in-editor PlayMode (Mono) leg measures both, so the count and bytes
-  // matrices both source from it (one probe measures both metrics in the same leg).
   const rows = [
     dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "-1", "-1"),
     dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "-1", "-1"),
     playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "0", "5000.000", "0"),
     playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "110806", "5000.000", "20000")
   ];
-  const { comparisonByScope } = selectRowsForVersion(rows, "Unity 6000.3.16f1");
-  const sections = buildComparisonSections(comparisonByScope);
+  const sections = comparisonSectionsFor(rows);
   assert.equal(sections.length, 3);
-  const throughput = sections[0].join("\n");
-  const allocations = sections[1].join("\n");
-  const bytes = sections[2].join("\n");
+  const [throughput, allocations, bytes] = sections;
 
   assert.ok(throughput.includes("### Library comparison - throughput (Standalone (IL2CPP))"));
   assert.ok(throughput.includes("68.00 M emits/sec"), throughput);
@@ -575,9 +545,46 @@ test("comparison throughput stays on Standalone while GC count+bytes come from t
   assert.ok(bytes.includes("20,000") && bytes.includes("| 0 "), bytes);
 });
 
+test("comparison bytes choose their own measured scope", () => {
+  const cases = [
+    [
+      [
+        dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "-1", "4096"),
+        dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "-1", "8192"),
+        playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "0", "5000.000", "-1"),
+        playModeRow(
+          "Comparison_MessagePipe_GlobalToOne",
+          "40000000.000",
+          "110806",
+          "5000.000",
+          "-1"
+        )
+      ],
+      "GC allocations per 10k ops (PlayMode (Mono))",
+      "110,806",
+      "GC allocated bytes per 10k ops (Standalone (IL2CPP))"
+    ],
+    [
+      [
+        dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "-1", "-1"),
+        dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "-1", "-1"),
+        playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "-1", "5000.000", "4096"),
+        playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "-1", "5000.000", "8192")
+      ],
+      "GC allocations per 10k ops (Standalone (IL2CPP))",
+      "n/a",
+      "GC allocated bytes per 10k ops (PlayMode (Mono))"
+    ]
+  ];
+  for (const [rows, allocHeading, allocValue, bytesHeading] of cases) {
+    const [, allocations, bytes] = comparisonSectionsFor(rows);
+    assert.ok(allocations.includes(allocHeading) && allocations.includes(allocValue), allocations);
+    assert.ok(bytes.includes(bytesHeading), bytes);
+    assert.ok(bytes.includes("4,096") && bytes.includes("8,192"), bytes);
+  }
+});
+
 test("comparison count+bytes matrices stay Standalone n/a when no editor leg ran", () => {
-  // Only Standalone comparison rows, all sentinel count AND bytes: all three matrices
-  // stay on Standalone and the count/bytes matrices render n/a -- never a fabricated 0.
   const sections = buildComparisonSections(
     standaloneRows([
       ["DxMessaging|GlobalToOne", comparisonRow("28000000.000", "-1", "-1")],

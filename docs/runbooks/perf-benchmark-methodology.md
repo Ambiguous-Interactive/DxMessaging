@@ -52,9 +52,10 @@ read a stable 8,000,000 bytes here). The other byte sources were rejected:
 delta is dominated by warm-editor heap noise (a zero-alloc loop read 24 KB; the same
 op swung 41 KB-938 KB across repeats) and is corrupted by collections; the `GC.Alloc`
 recorder's per-sample `.Value` is garbage (2400 for a 1.2 MB region); and
-`GC.TryStartNoGCRegion` throws `NotImplementedException` on Unity Mono. Bytes are
-profiler-dependent exactly like the count, so the Standalone Release leg reports the
-`Unmeasured` sentinel (`n/a`) for bytes too -- never a fabricated `0`. Bytes are
+`GC.TryStartNoGCRegion` throws `NotImplementedException` on Unity Mono. Bytes and
+counts are self-validated independently; the Standalone Release leg usually reports
+the `Unmeasured` sentinel (`n/a`) for both, but renderers must select the first scope
+that measured each metric rather than reusing the count scope for bytes. Bytes are
 INFORMATIONAL: the perf-delta PR comment renders byte deltas goodness-signed (`N fewer
 bytes` / `N more bytes`), but the regression gate stays on the allocation COUNT.
 There is **no median-of-runs**: the older approach
@@ -324,7 +325,9 @@ The throughput comparison matrix uses the first scope present in headline order
 GC-allocated-BYTES matrix each use the first scope that actually MEASURED their
 metric (the PlayMode Mono leg in published runs, since the Standalone Release
 player reports only the `Unmeasured` sentinel for both), and each matrix is
-labeled with its own scope. Each table's backend
+labeled with its own scope. These selectors are intentionally independent because
+a backend can expose the byte counter while the allocation-count recorder is
+unavailable, or vice versa. Each table's backend
 label (Mono or IL2CPP) is derived from the platform string in that scope's rows,
 so the heading follows the data. Scenario rows and library rows are joined on
 stable machine keys
