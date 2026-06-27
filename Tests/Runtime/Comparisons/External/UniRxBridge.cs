@@ -47,7 +47,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 case ComparisonScenario.GlobalToOneSubscriber:
                 case ComparisonScenario.GlobalToManySubscribers:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     return true;
                 default:
                     return false;
@@ -67,7 +67,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 return null;
             }
-            return scenario == ComparisonScenario.StructMessageZeroCopy
+            return scenario == ComparisonScenario.StructMessageNoBoxing
                 ? typeof(ComparisonStructPayload)
                 : typeof(int);
         }
@@ -101,7 +101,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     // cycle using the cached handler below.
                     _churnHandler = Handle;
                     return;
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     _subscriptions.Add(
                         _broker.Receive<ComparisonStructPayload>().Subscribe(HandleStruct)
                     );
@@ -125,7 +125,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     subscription.Dispose();
                     _progress++;
                     return;
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     _broker.Publish(new ComparisonStructPayload(1));
                     return;
                 default:

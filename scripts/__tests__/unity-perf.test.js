@@ -80,16 +80,16 @@ function comparisonRow(emitsPerSecond, gcAllocations = "0", gcAllocatedBytes = "
   };
 }
 
-function dispatchRow(scenario, emitsPerSecond) {
+function dispatchRow(scenario, emitsPerSecond, gcAllocations = "0", gcAllocatedBytes = "0") {
   return {
     scenario,
     platform: STANDALONE_PLATFORM,
     commit: "abc1234",
     runIndex: "-1",
     emitsPerSecond,
-    gcAllocations: "0",
+    gcAllocations,
     wallClockMs: "5000.000",
-    gcAllocatedBytes: "0"
+    gcAllocatedBytes
   };
 }
 
@@ -344,9 +344,7 @@ test("dispatch table renders a GC bytes column with real values and the n/a sent
   // DISTINCTIVE real value (42) so the n/a can only be coming from the bytes column:
   // the count cell renders "42", proving the lone n/a is the byte sentinel, not a
   // count sentinel landing in a different column.
-  const sentinelRows = [
-    { ...playModeRow(scenario, "20000000.000", "42"), gcAllocatedBytes: "-1" }
-  ];
+  const sentinelRows = [{ ...playModeRow(scenario, "20000000.000", "42"), gcAllocatedBytes: "-1" }];
   const sentinelBlock = buildBlock(
     selectRowsForVersion(sentinelRows, "Unity 6000.3.16f1"),
     "6000.3.16f1"
@@ -543,53 +541,64 @@ test("two scopes render separate dispatch tables; only the Mono leg shows real a
   assert.ok(playModeSection.includes("1,234"), playModeSection);
 });
 
-test("comparison throughput stays on Standalone while GC allocs come from the Mono leg", () => {
-  // Same (tech, scenario) cells on both legs: Standalone allocs are sentinel, the
-  // PlayMode (Mono) leg carries real counts.
+test("comparison throughput stays on Standalone while GC count+bytes come from the Mono leg", () => {
+  // Same (tech, scenario) cells on both legs: the Standalone (Release player) leg
+  // strips the profiler so BOTH its count and its bytes are the Unmeasured sentinel;
+  // the in-editor PlayMode (Mono) leg carries the real count AND the real byte total.
+  // Standalone (Release player) strips the profiler: its count AND bytes are the -1
+  // sentinel. The in-editor PlayMode (Mono) leg measures both, so the count and bytes
+  // matrices both source from it (one probe measures both metrics in the same leg).
   const rows = [
-    { ...dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000"), gcAllocations: "-1" },
-    { ...dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000"), gcAllocations: "-1" },
-    playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "0"),
-    playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "110806")
+    dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "-1", "-1"),
+    dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "-1", "-1"),
+    playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "0", "5000.000", "0"),
+    playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "110806", "5000.000", "20000")
   ];
   const { comparisonByScope } = selectRowsForVersion(rows, "Unity 6000.3.16f1");
   const sections = buildComparisonSections(comparisonByScope);
+  assert.equal(sections.length, 3);
   const throughput = sections[0].join("\n");
   const allocations = sections[1].join("\n");
+  const bytes = sections[2].join("\n");
 
-  // Throughput matrix is labeled with the Standalone (IL2CPP) headline scope and
-  // shows the Standalone emit rates.
   assert.ok(throughput.includes("### Library comparison - throughput (Standalone (IL2CPP))"));
   assert.ok(throughput.includes("68.00 M emits/sec"), throughput);
-
-  // GC-alloc matrix is labeled with the PlayMode (Mono) scope and shows the real
-  // counts measured there (NOT the Standalone n/a sentinel).
   assert.ok(
     allocations.includes("### Library comparison - GC allocations per 10k ops (PlayMode (Mono))"),
     allocations
   );
-  assert.ok(allocations.includes("110,806"), allocations);
-  assert.ok(allocations.includes("| 0 "), allocations);
+  assert.ok(allocations.includes("110,806") && allocations.includes("| 0 "), allocations);
+  assert.ok(
+    bytes.includes("### Library comparison - GC allocated bytes per 10k ops (PlayMode (Mono))"),
+    bytes
+  );
+  assert.ok(bytes.includes("20,000") && bytes.includes("| 0 "), bytes);
 });
 
-test("comparison alloc matrix stays Standalone n/a when no editor leg ran (backward-compat)", () => {
-  // Only Standalone comparison rows, all sentinel allocations: both matrices stay
-  // on Standalone and the alloc matrix renders n/a -- byte-identical to today.
+test("comparison count+bytes matrices stay Standalone n/a when no editor leg ran", () => {
+  // Only Standalone comparison rows, all sentinel count AND bytes: all three matrices
+  // stay on Standalone and the count/bytes matrices render n/a -- never a fabricated 0.
   const sections = buildComparisonSections(
     standaloneRows([
-      ["DxMessaging|GlobalToOne", comparisonRow("28000000.000", "-1")],
-      ["MessagePipe|GlobalToOne", comparisonRow("68000000.000", "-1")]
+      ["DxMessaging|GlobalToOne", comparisonRow("28000000.000", "-1", "-1")],
+      ["MessagePipe|GlobalToOne", comparisonRow("68000000.000", "-1", "-1")]
     ])
   );
-  const throughput = sections[0].join("\n");
+  assert.equal(sections.length, 3);
   const allocations = sections[1].join("\n");
-  assert.ok(throughput.includes("### Library comparison - throughput (Standalone (IL2CPP))"));
+  const bytes = sections[2].join("\n");
   assert.ok(
     allocations.includes(
       "### Library comparison - GC allocations per 10k ops (Standalone (IL2CPP))"
-    )
+    ) && allocations.includes("n/a"),
+    allocations
   );
-  assert.ok(allocations.includes("n/a") && !allocations.includes("110,806"), allocations);
+  assert.ok(
+    bytes.includes(
+      "### Library comparison - GC allocated bytes per 10k ops (Standalone (IL2CPP))"
+    ) && bytes.includes("n/a"),
+    bytes
+  );
 });
 
 test("extract-perf-baseline --scope filters rows to one execution scope", () => {

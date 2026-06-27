@@ -39,7 +39,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
     /// <summary>
     /// ScriptableObject event channel carrying a <see cref="ComparisonStructPayload"/> for the
-    /// struct (zero-copy) scenario. Listeners receive the payload by value through a generic
+    /// struct (no-boxing) scenario. Listeners receive the payload by value through a generic
     /// delegate, so no boxing occurs on the dispatch path.
     /// </summary>
     public sealed class ScriptableObjectStructEventChannel : ScriptableObject

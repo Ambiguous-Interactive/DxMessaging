@@ -137,7 +137,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         }
 
         /// <summary>
-        /// Locks the StructMessageZeroCopy payload-fidelity contract: a bridge may not mark the
+        /// Locks the StructMessageNoBoxing payload-fidelity contract: a bridge may not mark the
         /// struct scenario Supported while secretly dispatching a primitive (e.g. an int via a
         /// fake event) or a boxed/different payload. No-ops for the seven non-struct scenarios,
         /// so wiring it into a per-(bridge,scenario) case source effectively asserts once per
@@ -157,7 +157,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             {
                 throw new ArgumentNullException(nameof(factory));
             }
-            if (scenario != ComparisonScenario.StructMessageZeroCopy)
+            if (scenario != ComparisonScenario.StructMessageNoBoxing)
             {
                 return;
             }

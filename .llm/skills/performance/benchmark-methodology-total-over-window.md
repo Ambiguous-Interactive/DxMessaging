@@ -109,7 +109,10 @@ Three tempting shortcuts all produce misleading numbers:
   for EVERY allocation under Unity's Boehm GC (proven on the host editor: a
   forced 1 MB array allocation read back as a `0`-byte delta). It made the old
   "allocated bytes" column vacuously `0` for every technology -- hiding real
-  per-operation allocations such as `SendMessage`'s ~11-per-call reflection cost.
+  per-operation allocations such as the per-call box Unity `SendMessage` pays to pass
+  a value-type payload through its `object` parameter (1 allocation / ~20 bytes per
+  call, verified on the host editor in PlayMode; its reflection dispatch itself is
+  allocation-free once warm).
 
 The fix is one warmed, continuous, timed window for throughput plus a reliable
 `GC.Alloc`-recorder count for allocation.
@@ -216,7 +219,7 @@ instead of steady-state emits per second.
 ## The Byte Companion: gcAllocatedBytes
 
 Alongside the allocation CALL count, the same probe window measures the total
-allocated BYTES per operation as `gcAllocatedBytes`. The count is and remains the
+allocated BYTES over the same measurement batch as `gcAllocatedBytes`. The count is and remains the
 canonical, gated signal; bytes are INFORMATIONAL and answer the follow-up "how
 big was each allocation" once the count says one happened.
 
@@ -225,10 +228,10 @@ big was each allocation" once the count says one happened.
 -- a within-frame `GC.Alloc` hook byte accumulator. The probe reads the counter
 when the window opens and again when it closes; the delta is the bytes the body
 allocated. Proven on the host editor (Unity 6000.4): exact and run-to-run
-identical (100 × `byte[10000]` measured 1,003,200 bytes every run), ~0 for a
+identical (100 x `byte[10000]` measured 1,003,200 bytes every run), ~0 for a
 genuine zero-allocation region, and -- crucially -- **collection-immune**. A
-heavy-churn region that made a `GC.GetTotalMemory` delta swing to −133 MB read a
-rock-stable 8,000,000 bytes here, because the counter SUMS allocation-hook bytes
+heavy-churn region that made a `GC.GetTotalMemory` delta swing to -133 MB read a
+stable 8,000,000 bytes here, because the counter SUMS allocation-hook bytes
 rather than measuring a heap-size difference, so a mid-window collection cannot
 corrupt it.
 
@@ -239,7 +242,7 @@ re-tries them):
   Unity's Boehm GC.
 - A `GC.GetTotalMemory` delta is dominated by warm-editor heap noise for
   sub-megabyte regions (a zero-alloc loop read back 24 KB; the same op swung
-  41 KB–938 KB across repeats) and is corrupted by any mid-window collection.
+  41 KB-938 KB across repeats) and is corrupted by any mid-window collection.
 - The per-sample `.Value` of the `GC.Alloc` ProfilerRecorder is garbage (it read
   2400 for a 1.2 MB region); only the `"GC Allocated In Frame"`
   `.CurrentValue` delta is trustworthy.

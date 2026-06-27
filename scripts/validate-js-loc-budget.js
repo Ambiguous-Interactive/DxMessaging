@@ -26,7 +26,8 @@ const path = require("path");
 // 066 banner --check diagnostics: 12795.
 // 067 package-script contract guard and validate:all issue-template gate: 12890.
 // 068 per-operation gcAllocatedBytes perf metric (column, delta, backward-compat): 13033.
-const TOTAL_BUDGET = 13033;
+// 069 gcAllocatedBytes cross-library comparison matrix (renderer + scope reuse + tests): 13061.
+const TOTAL_BUDGET = 13061;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

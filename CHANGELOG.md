@@ -9,22 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Benchmarks now report the total allocated BYTES per operation (`gcAllocatedBytes`)
+- Benchmarks now report the total allocated BYTES per measurement batch (`gcAllocatedBytes`)
   alongside the existing managed-allocation CALL count (`gcAllocations`). Bytes are
   measured from a before/after delta of the live Unity
   `ProfilerRecorder(ProfilerCategory.Memory, "GC Allocated In Frame").CurrentValue`
   -- a within-frame `GC.Alloc`-hook byte accumulator that SUMS allocation-hook bytes
-  rather than measuring a heap-size difference, so it is exact (verified: 100 ×
+  rather than measuring a heap-size difference, so it is exact (verified: 100 x
   `byte[10000]` reads 1,003,200 bytes, run-to-run identical) and immune to mid-window
-  collections (a heavy-churn region that swung a `GC.GetTotalMemory` delta to −133 MB
-  read a rock-stable 8,000,000 bytes here). The byte counter is profiler-dependent
+  collections (a heavy-churn region that swung a `GC.GetTotalMemory` delta to -133 MB
+  read a stable 8,000,000 bytes here). The byte counter is profiler-dependent
   like the count probe: in the editor and development players it is functional, and on
   the published non-development Standalone IL2CPP Release leg -- where the profiler is
   stripped -- BOTH metrics report the `Unmeasured` sentinel (rendered `n/a`), never a
   fabricated `0`. Bytes are INFORMATIONAL -- the perf-delta PR comment renders byte
   deltas goodness-signed (`N fewer bytes` / `N more bytes`) -- while the regression gate
   stays on the allocation COUNT, which remains the canonical signal (Unity's own
-  Performance Testing package likewise reads the alloc-CALL count, not bytes). New API:
+  Performance Testing package likewise reads the alloc-CALL count, not bytes). The
+  cross-library comparison tables now also surface this byte metric as a dedicated
+  GC-allocated-bytes matrix, and the Unity `SendMessage` comparison boxes its value
+  payload on every dispatch (as any real `SendMessage(value)` call must) so its
+  allocation columns show that real per-call cost instead of a misleading zero. New API:
   `AllocationProbe.MeasureWithBytes` returning `AllocationProbe.AllocationSample`,
   `AllocationProbe.Window.SampleBytes()`/`SampleBoth()`,
   `AllocationProbe.BytesFunctional`, `BenchmarkMeasurement.GcAllocatedBytes`,
@@ -45,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `0` for every allocation under Unity's Boehm GC (verified: a forced 1 MB array
   allocation read back a `0`-byte delta), so the published "allocated bytes" column
   was a vacuous `0` for every technology -- hiding real per-operation allocations
-  (Unity `SendMessage`, for example, allocates ~11 times per call via reflection).
+  (Unity `SendMessage`, for example, boxes its value-type payload once per call).
   The metric is now a COUNT of managed allocations from the reliable `GC.Alloc`
   profiler recorder (new `AllocationProbe`), renamed `gcAllocations`, and reports an
   `Unmeasured` sentinel (rendered `n/a`) -- never a fabricated `0` -- when no probe

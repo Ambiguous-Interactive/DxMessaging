@@ -98,7 +98,7 @@
 | [Array Pooling with ArrayPool and Custom Pools Part 1](./performance/array-pooling-part-1.md)                      | [ok] 204    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 56  | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Auto-Load Singleton Attribute](./performance/singleton-autoload.md)                                               | [draft] 111 | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
-| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [warn] 400  | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
+| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [warn] 403  | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
 | [Cache Builder Configuration](./performance/cache-eviction-builder.md)                                             | [ok] 203    | [intermediate] | [stable] | [risk: high]     | caching, builder        |
 | [Cache Eviction Implementation](./performance/cache-eviction-implementation.md)                                    | [draft] 90  | [advanced]     | [stable] | [risk: high]     | caching, eviction       |
 | [Cache Eviction Implementation Part 1](./performance/cache-eviction-implementation-part-1.md)                      | [ok] 244    | [intermediate] | [stable] | [risk: low]      | migration, split        |
@@ -176,7 +176,7 @@
 | ------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ---------------- | ---------------------------- |
 | [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 318  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
 | [Benchmarks Run in the Highest-Fidelity Scope](./testing/benchmarks-run-in-highest-fidelity-scope.md)   | [ok] 183    | [intermediate] | [stable] | [risk: medium]   | testing, benchmarks          |
-| [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [warn] 273  | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
+| [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [warn] 304  | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Data-Driven Coverage Patterns](./testing/test-coverage-data-driven.md)                                 | [ok] 172    | [intermediate] | [stable] | [risk: none]     | testing, data-driven         |
 | [Data-Driven Test Sources](./testing/data-driven-tests-sources.md)                                      | [ok] 255    | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Test Usage Patterns](./testing/data-driven-tests-usage.md)                                 | [draft] 107 | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |

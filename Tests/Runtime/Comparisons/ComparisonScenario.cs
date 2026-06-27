@@ -19,7 +19,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         FilteredDispatch,
         PostProcessingDispatch,
         SubscribeUnsubscribeChurn,
-        StructMessageZeroCopy,
+        StructMessageNoBoxing,
     }
 
     /// <summary>
@@ -57,7 +57,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 ComparisonScenario.FilteredDispatch => "Filtered",
                 ComparisonScenario.PostProcessingDispatch => "PostProcess",
                 ComparisonScenario.SubscribeUnsubscribeChurn => "SubUnsub",
-                ComparisonScenario.StructMessageZeroCopy => "StructNoBox",
+                ComparisonScenario.StructMessageNoBoxing => "StructNoBox",
                 _ => throw new ArgumentOutOfRangeException(nameof(s), s, null),
             };
         }
@@ -74,7 +74,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 ComparisonScenario.FilteredDispatch => "Filtered/intercepted dispatch",
                 ComparisonScenario.PostProcessingDispatch => "Post-processing dispatch",
                 ComparisonScenario.SubscribeUnsubscribeChurn => "Subscribe/unsubscribe churn",
-                ComparisonScenario.StructMessageZeroCopy => "Struct message (zero-copy)",
+                ComparisonScenario.StructMessageNoBoxing => "Struct message (no boxing)",
                 _ => throw new ArgumentOutOfRangeException(nameof(s), s, null),
             };
         }

@@ -47,7 +47,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 case ComparisonScenario.GlobalToManySubscribers:
                 case ComparisonScenario.KeyedToOneOfMany:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     return true;
                 default:
                     return false;
@@ -67,7 +67,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             {
                 return null;
             }
-            return scenario == ComparisonScenario.StructMessageZeroCopy
+            return scenario == ComparisonScenario.StructMessageNoBoxing
                 ? typeof(ComparisonStructPayload)
                 : typeof(int);
         }
@@ -114,7 +114,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _global = ScriptableObject.CreateInstance<ScriptableObjectEventChannel>();
                     _churnHandler = Handle;
                     return;
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     _structGlobal =
                         ScriptableObject.CreateInstance<ScriptableObjectStructEventChannel>();
                     _structGlobal.Register(HandleStruct);
@@ -141,7 +141,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _global.Unregister(_churnHandler);
                     _progress++;
                     return;
-                case ComparisonScenario.StructMessageZeroCopy:
+                case ComparisonScenario.StructMessageNoBoxing:
                     _structGlobal.Raise(new ComparisonStructPayload(1));
                     return;
                 default:

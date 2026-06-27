@@ -126,7 +126,7 @@ the matrix cell; it is a capability gap, never a failure and never faked.
 
 ### Payload fidelity for the struct scenario
 
-The `StructMessageZeroCopy` scenario measures boxing-free struct dispatch, so a
+The `StructMessageNoBoxing` scenario measures boxing-free struct dispatch, so a
 bridge cannot claim it Supported while secretly raising a primitive (an `int`
 through a fake event) or a boxed payload. `IMessagingTechBridge.DispatchedPayloadType(scenario)`
 declares what the bridge actually dispatches, and the contract test
@@ -137,6 +137,37 @@ must return a non-primitive, non-enum value type, and every non-DxMessaging
 bridge must dispatch exactly `ComparisonStructPayload`. Unity Atoms has no
 idiomatic boxing-free struct event, so it marks the struct scenario unsupported
 (`N/A`) rather than dispatching an `int`.
+
+### Allocation honesty: measure idiomatic per-call cost, never hide it
+
+The cross-library GC columns (the allocation-COUNT matrix and its companion
+allocated-BYTES matrix) exist to surface each technology's REAL per-dispatch
+allocation cost, so a bridge must dispatch its payload the way an idiomatic caller
+would and must not cache an allocation that real usage pays on every call. The trap
+is a reflection/`object`-based API: Unity `SendMessage(string, object)` has no
+generic overload, so a value-type payload BOXES on every call. Caching one pre-boxed
+`object` (`static readonly object Payload = 0;`) makes that bridge read 0
+allocations / 0 bytes -- a number no real `SendMessage(value)` caller can achieve --
+which misrepresents the technology. Pass the value so it boxes per call: cast to
+`object` explicitly, and keep the backing field NON-`const` so a literal `0` does
+not bind to the `SendMessage(string, SendMessageOptions)` overload and silently drop
+the argument.
+
+Verified on the host editor (Unity 6000.4, PlayMode): a pre-boxed payload reads
+0/0; a per-call box reads exactly 1 allocation / ~20 bytes per dispatch; and
+`SendMessage`'s reflection dispatch is otherwise allocation-free once warm. (EditMode
+adds ~6 allocations/call of editor-only `SendMessage` instrumentation that the
+shipped player never pays, which is why the PlayMode Mono leg is the honest
+allocation scope.)
+
+`ComparisonAllocationHonestyTests` is the red-green guard. It pins BOTH directions
+with the real `AllocationProbe` over a batch (the MINIMUM across attempts rejects
+warm-editor spikes, which only ADD): a forced-boxing bridge's dispatch floor is at
+least one allocation per call (`SendMessage`), while a bridge that advertises
+boxing-free struct dispatch floors UNDER one per call. The rule is "do not HIDE a
+cost", not "must be zero": Zenject's `SignalBus` boxes through its internal `object`
+routing and is measured honestly -- its non-zero count and bytes are its real cost,
+not an artifact.
 
 ### Per-(tech, scenario) fan-out assertion
 
@@ -245,7 +276,7 @@ package) and never constrain a define the asmdef does not produce locally.
   invent a capability.
 - "My library has no struct event, so I will dispatch an int for the struct
   scenario." Mark it unsupported (`N/A`); never raise a primitive for
-  `StructMessageZeroCopy`. `DispatchedPayloadType` plus the
+  `StructMessageNoBoxing`. `DispatchedPayloadType` plus the
   `StructScenarioDispatchesNonPrimitiveStructPayload` contract test fail any
   bridge that claims the scenario while dispatching a primitive or boxed payload.
 - "I will bump the pin in the manifest only." Bump

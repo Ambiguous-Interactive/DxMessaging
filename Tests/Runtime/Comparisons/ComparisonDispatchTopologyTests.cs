@@ -112,7 +112,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     "Register/unregister churn cycle; the dispatch family has no "
                         + "subscribe/unsubscribe-throughput scenario."
                 ),
-                [ComparisonScenario.StructMessageZeroCopy] = new TopologyMapping(
+                [ComparisonScenario.StructMessageNoBoxing] = new TopologyMapping(
                     1,
                     DispatchBenchmarkScenario.UntargetedFloodOneHandler,
                     isTrueTopologyTwin: true,
@@ -204,7 +204,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 new[]
                 {
                     ComparisonScenario.GlobalToOneSubscriber,
-                    ComparisonScenario.StructMessageZeroCopy,
+                    ComparisonScenario.StructMessageNoBoxing,
                 },
                 trueTwins,
                 "The true topology twins are exactly GlobalToOne and StructNoBox (both reduce to "

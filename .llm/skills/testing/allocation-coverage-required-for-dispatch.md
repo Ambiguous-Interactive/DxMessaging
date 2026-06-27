@@ -125,7 +125,7 @@ Two requirements stack:
    inside the measurement window) and `GC.GetAllocatedBytesForCurrentThread()` returns
    a vacuous 0 for every allocation. Count managed allocation CALLS via the `GC.Alloc`
    recorder (`AllocationProbe`) instead. The benchmark pipeline now ALSO tracks the
-   total allocated BYTES per operation (`gcAllocatedBytes`) from the collection-immune
+   total allocated BYTES per measurement batch (`gcAllocatedBytes`) from the collection-immune
    `"GC Allocated In Frame"` `.CurrentValue` delta, with the SAME honesty guarantees
    as the count: `AllocationProbe.Unmeasured` (`-1`, rendered `n/a`) rather than a
    fabricated `0` where the profiler is stripped, and `0` only for a real zero-byte
