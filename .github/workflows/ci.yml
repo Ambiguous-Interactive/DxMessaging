@@ -691,7 +691,7 @@ jobs:
           cache-dependency-path: package.json
 
       - name: Setup .NET
-        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}
         uses: actions/setup-dotnet@v5
         with:
           global-json-file: SourceGenerators/global.json
@@ -712,7 +712,7 @@ jobs:
         run: node --test scripts/
 
       - name: Run validators
-        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}
         shell: bash
         run: npm run validate:all
 

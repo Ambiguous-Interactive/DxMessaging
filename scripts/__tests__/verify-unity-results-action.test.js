@@ -22,6 +22,7 @@ const DUMP_ACTION_PATH = path.join(
   "dump-unity-log-tail",
   "action.yml"
 );
+const RUN_CI_TESTS_PATH = path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1");
 
 function commandExists(command) {
   const result = spawnSync(
@@ -117,6 +118,26 @@ function runDumpUnityLogTailAction(resultsDir, scriptDir = resultsDir || os.tmpd
   }
 }
 
+function labelsInBlock(filePath, startNeedle, endNeedle) {
+  const text = fs.readFileSync(filePath, "utf8");
+  const start = text.indexOf(startNeedle);
+  assert.notEqual(start, -1, `${filePath} must contain ${startNeedle}`);
+  const end = text.indexOf(endNeedle, start);
+  assert.notEqual(end, -1, `${filePath} must close the diagnostic pattern block`);
+  return [...text.slice(start, end).matchAll(/Label\s*=\s*'([^']+)'/g)].map((match) => match[1]);
+}
+
+test("Unity catastrophic diagnostic labels stay in sync", () => {
+  const expected = labelsInBlock(VERIFY_ACTION_PATH, "$patterns = @(", "\n          )");
+  const cases = [
+    [DUMP_ACTION_PATH, "$patterns = @(", "\n        )"],
+    [RUN_CI_TESTS_PATH, "$script:CatastrophicPatterns = @(", "\n)"]
+  ];
+  for (const [filePath, startNeedle, endNeedle] of cases) {
+    assert.deepEqual(labelsInBlock(filePath, startNeedle, endNeedle), expected, filePath);
+  }
+});
+
 test("Unity result actions scan retry logs alongside or instead of unity.log", (t) => {
   if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
@@ -142,10 +163,14 @@ test("Unity result actions scan retry logs alongside or instead of unity.log", (
     {
       name: "verify retry only",
       run: runVerifyUnityResultsAction,
-      retryLog: "Cancelled resolving packages before retry could write a final log\n",
+      retryLog:
+        "Cancelled resolving packages before retry could write a final log\n" +
+        "error CS1069: type forwarded to assembly 'UnityEngine.AIModule'\n",
       status: 1,
       patterns: [
         /Unity Package Manager canceled package resolution before tests started/,
+        /CS1069 forwarded type/,
+        /Remediation -- .*optional Unity engine module/,
         /unity\.first-attempt\.log/
       ]
     },
@@ -160,9 +185,17 @@ test("Unity result actions scan retry logs alongside or instead of unity.log", (
     {
       name: "dump retry only",
       run: runDumpUnityLogTailAction,
-      retryLog: "CompilationFailedException: first attempt stopped before final log\n",
+      retryLog:
+        "CompilationFailedException: first attempt stopped before final log\n" +
+        "error CS1069: type forwarded to assembly 'UnityEngine.AIModule'\n",
       status: 0,
-      patterns: [/no unity\.log/, /Pattern detected -- CompilationFailedException/, /unity\.first-attempt\.log/]
+      patterns: [
+        /no unity\.log/,
+        /Pattern detected -- CompilationFailedException/,
+        /CS1069 forwarded type/,
+        /Remediation -- .*optional Unity engine module/,
+        /unity\.first-attempt\.log/
+      ]
     }
   ];
 

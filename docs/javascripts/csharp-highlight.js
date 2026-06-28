@@ -19,19 +19,19 @@
   }
 
   function getNextNonWhitespace(element) {
-    var next = element.nextElementSibling;
-    while (next && next.classList && next.classList.contains("w")) {
-      next = next.nextElementSibling;
-    }
-    return next;
+    return getSiblingNonWhitespace(element, "nextElementSibling");
   }
 
   function getPrevNonWhitespace(element) {
-    var prev = element.previousElementSibling;
-    while (prev && prev.classList && prev.classList.contains("w")) {
-      prev = prev.previousElementSibling;
+    return getSiblingNonWhitespace(element, "previousElementSibling");
+  }
+
+  function getSiblingNonWhitespace(element, property) {
+    var sibling = element[property];
+    while (sibling && sibling.classList && sibling.classList.contains("w")) {
+      sibling = sibling[property];
     }
-    return prev;
+    return sibling;
   }
 
   function classifyNameToken(span) {
@@ -78,32 +78,8 @@
     }
 
     if (
-      (nextText === "," || nextText === ")" || nextText === "=") &&
-      prevClass.includes("n") &&
-      isCamelCase(text)
-    ) {
-      return "n-param";
-    }
-
-    if (
-      (nextText === "," || nextText === ")" || nextText === "=") &&
-      prevText === ">" &&
-      isCamelCase(text)
-    ) {
-      return "n-param";
-    }
-
-    if (
-      (nextText === "," || nextText === ")" || nextText === "=") &&
-      prevText === "]" &&
-      isCamelCase(text)
-    ) {
-      return "n-param";
-    }
-
-    if (
-      (nextText === "," || nextText === ")" || nextText === "=") &&
-      prevText === "?" &&
+      [",", ")", "="].includes(nextText) &&
+      (prevClass.includes("n") || [">", "]", "?"].includes(prevText)) &&
       isCamelCase(text)
     ) {
       return "n-param";
