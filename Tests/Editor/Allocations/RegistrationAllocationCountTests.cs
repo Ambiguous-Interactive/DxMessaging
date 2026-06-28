@@ -19,8 +19,14 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// Token creation dropped from 11 to 7 managed-allocation calls once the
     /// diagnostics-only <c>_callCounts</c> dictionary and <c>_emissionBuffer</c> cyclic
     /// buffer (plus the buffer's two backing lists) became lazily allocated rather than
-    /// eager per-token fields. Guarded precisely by
-    /// <see cref="TokenCreateAllocationCountIsWithinBudget"/>.
+    /// eager per-token fields. Guarded DETERMINISTICALLY by
+    /// <c>RegistrationDiagnosticsLazyAllocationTests.TokenCreateDoesNotEagerlyAllocateDiagnosticsCollections</c>
+    /// (in the per-PR EditMode correctness leg): it asserts the lazy backing fields are
+    /// <c>null</c> after <c>Create</c> rather than measuring a <c>GC.Alloc</c> count. The
+    /// original absolute-count budget for this win was inherently warm-editor-flaky -- the
+    /// recorder's ambient-noise floor (~19 measured for a 7-allocation operation) sits above
+    /// any budget tight enough to catch the revert -- so it was replaced by the deterministic
+    /// state assertion. See that test's remarks for the measured distribution.
     /// </description></item>
     /// <item><description>
     /// Marginal registration dropped by one managed-allocation call per registration
@@ -86,12 +92,6 @@ namespace DxMessaging.Tests.Editor.Allocations
         // long-lived editor domain intermittently spikes above the true cost, so we take
         // the minimum over several attempts (see AllocationProbe.MeasureMin).
         private const int MinAttempts = 8;
-
-        // Post-change floor is 7, but it drifts to ~9 with warm-editor heap state even
-        // through MeasureMin (a token Create's internal dictionary sizing varies). 10
-        // covers that drift while still tripping on the pre-change eager-field cost of 11
-        // (reverting Win B re-adds the four diagnostics-collection allocations -> 11+).
-        private const long TokenCreateBudget = 10;
 
         // ~14 measured per registration post-change (224 over 16). The window also pays
         // bus-side flat-array growth whose warm-domain count varies, so this is a
@@ -224,40 +224,6 @@ namespace DxMessaging.Tests.Editor.Allocations
                     + "Action wrapper. Wrapping the staging function in a parameterless Action "
                     + "re-introduces one delegate plus its display class allocation per "
                     + "registration (the collapsed 'Registration' local function)."
-            );
-        }
-
-        [Test]
-        [Category("Allocation")]
-        public void TokenCreateAllocationCountIsWithinBudget()
-        {
-            MessageBus bus = NewBus();
-            MessageHandler handler = new MessageHandler(Owner, bus) { active = true };
-
-            for (int i = 0; i < 50; ++i)
-            {
-                _ = MessageRegistrationToken.Create(handler, bus);
-            }
-
-            long createCount = AllocationProbe.MeasureMin(
-                MinAttempts,
-                prepare: null,
-                operation: () => _ = MessageRegistrationToken.Create(handler, bus)
-            );
-
-            if (createCount == AllocationProbe.Unmeasured)
-            {
-                Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
-            }
-
-            Assert.That(
-                createCount,
-                Is.LessThanOrEqualTo(TokenCreateBudget),
-                $"MessageRegistrationToken.Create allocated {createCount} managed objects; "
-                    + $"budget is {TokenCreateBudget}. The diagnostics-only _callCounts / "
-                    + "_emissionBuffer collections must stay lazily allocated (see "
-                    + "MessageRegistrationToken field comments) so a token whose owner never "
-                    + "enables diagnostics pays nothing for them."
             );
         }
 

@@ -44,6 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The token-creation allocation guard no longer flakes in a warm editor. The
+  diagnostics-lazy win (token `Create` allocating 7 managed objects instead of 11) was
+  guarded by an absolute `GC.Alloc` recorder COUNT budget, but a warm, long-lived editor
+  domain attributes background allocations to whatever measurement window is open --
+  measured on the host editor, the minimum over 64 windows was ~19 allocations for that
+  7-allocation operation (median ~51), well above any budget tight enough to catch the
+  revert -- so the guard false-failed run-to-run. A measure-first probe also disproved the
+  assumption that the swing came from the `DxPools` collection pools: the steady refcount
+  registration path does not rent from them at all (hits = misses = 0), so the noise is
+  pure background-editor `GC.Alloc` pollution that no pool pre-warm can remove. The guard
+  is now a DETERMINISTIC state assertion -- after `Create` with diagnostics off, the lazy
+  `_callCounts`/`_emissionBuffer` backing fields must still be `null` -- which uses no
+  allocation probe, never flakes, and runs in the per-PR EditMode correctness leg rather
+  than the weekly perf-gated Allocation scope.
 - Benchmark and library-comparison allocation reporting is now honest. The harness
   measured allocations with `GC.GetAllocatedBytesForCurrentThread()`, which returns
   `0` for every allocation under Unity's Boehm GC (verified: a forced 1 MB array
