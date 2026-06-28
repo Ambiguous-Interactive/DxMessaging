@@ -123,6 +123,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replay, rollback-on-failure, re-entrancy, and equal-priority registration-order semantics are
   unchanged; the public API is unchanged. Pinned structurally by a deterministic guard that the
   token stores the staging function (not an `Action` wrapper).
+- Every active registration now allocates about two fewer managed objects again. The token
+  tracked each handle's live de-registration in a per-handle holder that eagerly allocated a
+  `List` (plus its backing array) to hold what is almost always a single de-registration; the
+  holder now keeps that one de-registration inline and only allocates an overflow list on the
+  rare second de-registration for the same handle. Measured cold-registration floor (FastHandler,
+  diagnostics off): untargeted drops from 13.29 to 11.29 managed allocations per registration (a
+  clean -2.00), with the same ~2-allocation reduction across targeted and broadcast. The
+  insertion-order, partial-failure-retryable, and rollback-baseline de-registration semantics are
+  unchanged (verified by a differential simulation across every count/failure/start-index
+  combination); the public API is unchanged.
 - The bug-report issue template now offers the package version as a dropdown of
   released versions (with an `Other` fallback) instead of a free-text field, so
   reports carry an exact, valid version. The list is generated from

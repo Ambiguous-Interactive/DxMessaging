@@ -2,7 +2,7 @@
 title: "Allocation Coverage Required for Dispatch"
 id: "allocation-coverage-required-for-dispatch"
 category: "testing"
-version: "1.4.0"
+version: "1.5.0"
 created: "2026-05-01"
 updated: "2026-06-28"
 
@@ -294,6 +294,21 @@ staging-function collapse measured untargeted 14.69 -> 12.69 allocs/registration
 -2.00). Reserve this for a one-off science measurement; ship the deterministic structural
 guard as the regression lock.
 
+When the win is collapsing an eager collection inside a PRIVATE holder whose multi-element
+BEHAVIOR also changes (e.g. the per-handle de-registration holder: an eager `List<Action>`
+became an inline head plus a lazy overflow list, saving the list object and its backing
+array per registration), the type-signature pin is not enough -- the reworked
+invoke/remove/rollback logic must match the old collection's semantics exactly. Pin both
+with a focused reflection unit test over the private type (resolve it via
+`GetNestedType(..., BindingFlags.NonPublic)`, drive `Add`/`InvokeFrom`/`Count` directly):
+assert the storage shape (the overflow collection field is null after a single add) AND
+re-derive the behavior against the old form (insertion order, partial-failure-retryable,
+the rollback `startIndex` baseline) across an exhaustive count x failure x start-index
+matrix. Put it in the per-PR EditMode correctness assembly (NOT the `Allocation`-category
+suite) so it runs every PR and stays immune to warm-editor allocation-count flakiness --
+the example is `PendingDeregistrationStorageTests` (cold-total A/B untargeted 13.29 -> 11.29,
+a clean -2.00).
+
 ## Enforcement
 
 `Tests/Runtime/Core/TestAttributeContractTests.cs` contains
@@ -344,6 +359,7 @@ common drift point.
 
 | Version | Date       | Changes                                                                 |
 | ------- | ---------- | ----------------------------------------------------------------------- |
+| 1.5.0   | 2026-06-28 | Add private-holder storage-shape + behavioral reflection-guard pattern  |
 | 1.4.0   | 2026-06-28 | Add Structural Guards subsection (type-signature pins + cold-total A/B) |
 | 1.3.0   | 2026-06-27 | Add `gcAllocatedBytes` byte-tracking honesty note alongside the count   |
 | 1.2.0   | 2026-06-26 | Add post-processor differential guard + augmented-closure correctness   |

@@ -174,7 +174,7 @@
 
 | Skill                                                                                                   | Lines       | Complexity     | Status   | Performance      | Tags                         |
 | ------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ---------------- | ---------------------------- |
-| [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 351  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
+| [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 367  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
 | [Benchmarks Run in the Highest-Fidelity Scope](./testing/benchmarks-run-in-highest-fidelity-scope.md)   | [ok] 183    | [intermediate] | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [warn] 304  | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Data-Driven Coverage Patterns](./testing/test-coverage-data-driven.md)                                 | [ok] 172    | [intermediate] | [stable] | [risk: none]     | testing, data-driven         |
