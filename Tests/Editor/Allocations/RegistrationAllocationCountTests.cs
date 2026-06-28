@@ -2,8 +2,6 @@
 namespace DxMessaging.Tests.Editor.Allocations
 {
     using System;
-    using System.Collections.Generic;
-    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
@@ -34,9 +32,9 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// once the per-registration <c>Func&lt;MessageRegistrationMetadata&gt;</c> factory
     /// (which was invoked immediately, so it only cost a closure) became a by-value
     /// struct. Guarded structurally by
-    /// <see cref="InternalRegisterPassesMetadataByValueNotFactory"/> (deterministic,
-    /// backend-independent) and bounded by
-    /// <see cref="MarginalRegistrationAllocationCountIsBounded"/>.
+    /// <c>RegistrationStorageStructuralGuardTests.InternalRegisterPassesMetadataByValueNotFactory</c>
+    /// (deterministic, backend-independent -- in the per-PR EditMode correctness leg) and
+    /// bounded by <see cref="MarginalRegistrationAllocationCountIsBounded"/>.
     /// </description></item>
     /// <item><description>
     /// <see cref="Action{T}"/> registration dropped its extra adapter closure once the
@@ -60,8 +58,9 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// token stored each staging function directly in <c>_registrations</c> (paired with
     /// its handle in the replay queue) instead of wrapping it in a per-registration
     /// parameterless <c>Action</c> (a delegate plus its display class). Guarded
-    /// structurally by <see cref="RegistrationsStoreStagingFunctionNotWrapperAction"/>
-    /// (deterministic, backend-independent).
+    /// structurally by
+    /// <c>RegistrationStorageStructuralGuardTests.RegistrationsStoreStagingFunctionNotWrapperAction</c>
+    /// (deterministic, backend-independent -- in the per-PR EditMode correctness leg).
     /// </description></item>
     /// </list>
     /// <para>
@@ -135,124 +134,6 @@ namespace DxMessaging.Tests.Editor.Allocations
                 evictionTickIntervalSeconds: double.PositiveInfinity,
                 idleEvictionEnabled: false,
                 trimApiEnabled: true
-            );
-        }
-
-        /// <summary>
-        /// Pins the by-value metadata change structurally: <c>InternalRegister</c>'s
-        /// metadata parameter must be the <see cref="MessageRegistrationMetadata"/>
-        /// struct, never a <c>Func&lt;MessageRegistrationMetadata&gt;</c>. A revert to the
-        /// factory re-introduces one delegate allocation per registration; this assertion
-        /// is deterministic and backend-independent, so it catches that revert even where
-        /// the allocation probe is unavailable.
-        /// </summary>
-        [Test]
-        public void InternalRegisterPassesMetadataByValueNotFactory()
-        {
-            MethodInfo internalRegister = typeof(MessageRegistrationToken).GetMethod(
-                "InternalRegister",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Assert.That(
-                internalRegister,
-                Is.Not.Null,
-                "MessageRegistrationToken.InternalRegister was renamed; update this guard."
-            );
-
-            ParameterInfo[] parameters = internalRegister.GetParameters();
-            bool hasByValueMetadata = false;
-            bool hasMetadataFactory = false;
-            foreach (ParameterInfo parameter in parameters)
-            {
-                if (parameter.ParameterType == typeof(MessageRegistrationMetadata))
-                {
-                    hasByValueMetadata = true;
-                }
-                if (parameter.ParameterType == typeof(Func<MessageRegistrationMetadata>))
-                {
-                    hasMetadataFactory = true;
-                }
-            }
-
-            Assert.That(
-                hasByValueMetadata,
-                Is.True,
-                "InternalRegister must accept MessageRegistrationMetadata by value so no "
-                    + "per-registration metadata closure is allocated."
-            );
-            Assert.That(
-                hasMetadataFactory,
-                Is.False,
-                "InternalRegister must not accept a Func<MessageRegistrationMetadata>; the "
-                    + "factory was invoked immediately, so it only added a closure allocation."
-            );
-        }
-
-        /// <summary>
-        /// Pins the per-registration wrapper-closure collapse structurally: the token's
-        /// <c>_registrations</c> map must store the staging function
-        /// (<c>Func&lt;MessageRegistrationHandle, Action&gt;</c>) DIRECTLY, never a
-        /// parameterless <see cref="Action"/>. The pre-change form stored a
-        /// per-registration <c>Registration</c> wrapper local function (a delegate plus
-        /// its display class, captured from <c>InternalRegister</c>) that only re-bundled
-        /// the handle, the staging function, and the <c>AddDeregistration</c> call; storing
-        /// the staging function directly and pairing it with its handle in the replay
-        /// queue removes that delegate AND <c>InternalRegister</c>'s display class -- about
-        /// two managed allocations per registration, uniformly across every registration
-        /// kind (measured cold-total floor: Untargeted 14.69 -&gt; 12.69 allocs/registration,
-        /// a clean -2.00). This assertion is deterministic and backend-independent, so it
-        /// catches a revert even where the allocation probe is unavailable.
-        /// </summary>
-        [Test]
-        public void RegistrationsStoreStagingFunctionNotWrapperAction()
-        {
-            FieldInfo registrations = typeof(MessageRegistrationToken).GetField(
-                "_registrations",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Assert.That(
-                registrations,
-                Is.Not.Null,
-                "MessageRegistrationToken._registrations was renamed; update this guard."
-            );
-
-            Type registrationMapType = registrations.FieldType;
-            Assert.That(
-                registrationMapType.IsGenericType,
-                Is.True,
-                "MessageRegistrationToken._registrations must remain a generic map from "
-                    + "MessageRegistrationHandle to the staging function."
-            );
-            Assert.That(
-                registrationMapType.GetGenericTypeDefinition(),
-                Is.EqualTo(typeof(Dictionary<,>)),
-                "MessageRegistrationToken._registrations must remain a Dictionary<,> so "
-                    + "registration replay preserves the same storage and allocation contract."
-            );
-
-            Type[] registrationMapArguments = registrationMapType.GetGenericArguments();
-            Assert.That(
-                registrationMapArguments,
-                Has.Length.EqualTo(2),
-                "MessageRegistrationToken._registrations must have key and value generic "
-                    + "arguments."
-            );
-            Assert.That(
-                registrationMapArguments[0],
-                Is.EqualTo(typeof(MessageRegistrationHandle)),
-                "MessageRegistrationToken._registrations must be keyed by "
-                    + "MessageRegistrationHandle."
-            );
-
-            Type valueType = registrationMapArguments[1];
-            Assert.That(
-                valueType,
-                Is.EqualTo(typeof(Func<MessageRegistrationHandle, Action>)),
-                "MessageRegistrationToken._registrations must store the staging function "
-                    + "(Func<MessageRegistrationHandle, Action>) directly, not a per-registration "
-                    + "Action wrapper. Wrapping the staging function in a parameterless Action "
-                    + "re-introduces one delegate plus its display class allocation per "
-                    + "registration (the collapsed 'Registration' local function)."
             );
         }
 
@@ -496,8 +377,8 @@ namespace DxMessaging.Tests.Editor.Allocations
                     + $"objects ({registrationCount / (double)MeasuredRegistrations:0.00}/registration); "
                     + $"budget is {MarginalRegistrationBudget}. A gross regression here means a new "
                     + "per-registration allocation; the by-value metadata is pinned separately by "
-                    + nameof(InternalRegisterPassesMetadataByValueNotFactory)
-                    + "."
+                    + "RegistrationStorageStructuralGuardTests."
+                    + "InternalRegisterPassesMetadataByValueNotFactory (per-PR EditMode leg)."
             );
         }
     }

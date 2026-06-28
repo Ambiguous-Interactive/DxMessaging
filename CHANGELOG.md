@@ -58,6 +58,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_callCounts`/`_emissionBuffer` backing fields must still be `null` -- which uses no
   allocation probe, never flakes, and runs in the per-PR EditMode correctness leg rather
   than the weekly perf-gated Allocation scope.
+- Two more memory-reclamation/registration allocation guards no longer flake in a warm
+  editor. The forced-trim guard measured a `GC.Alloc` COUNT budget over a 32-trim window
+  and the dirty-target reuse guard a per-batch count budget; both false-failed run-to-run
+  on the same warm-editor ambient-noise floor that the token-creation guard hit. The
+  forced-trim guard is now a DETERMINISTIC assertion on the exact `IMessageBus.TrimResult`
+  eviction counts (the first force-trim reclaims; every subsequent one is an idempotent
+  no-op that evicts nothing and leaves the live slot count stable) plus a `DxPools`
+  Misses-flat check (repeated no-op trims rent no fresh pooled collection); the
+  dirty-target guard now relies solely on its existing exact pool Hits/Misses assertions
+  (renting the warmed collection, never allocating a fresh one). Neither uses an allocation
+  probe, so neither flakes. The two deterministic registration STORAGE structural guards
+  (the by-value metadata parameter and the staging-function map value type) were also moved
+  from the weekly perf-gated Allocation suite into the per-PR EditMode correctness leg, so
+  they protect every PR. Internal test/quality change only; no public API or runtime
+  behavior change.
 - Benchmark and library-comparison allocation reporting is now honest. The harness
   measured allocations with `GC.GetAllocatedBytesForCurrentThread()`, which returns
   `0` for every allocation under Unity's Boehm GC (verified: a forced 1 MB array

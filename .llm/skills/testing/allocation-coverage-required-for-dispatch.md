@@ -2,7 +2,7 @@
 title: "Allocation Coverage Required for Dispatch"
 id: "allocation-coverage-required-for-dispatch"
 category: "testing"
-version: "1.6.0"
+version: "1.7.0"
 created: "2026-05-01"
 updated: "2026-06-28"
 
@@ -10,6 +10,8 @@ source:
   repository: "Ambiguous-Interactive/DxMessaging"
   files:
     - path: "Tests/Editor/Allocations/AllocationMatrixTests.cs"
+    - path: "Tests/Editor/Allocations/RegistrationAllocationCountTests.cs"
+    - path: "Tests/Editor/RegistrationStorageStructuralGuardTests.cs"
     - path: "Tests/Runtime/TestUtilities/AllocationAssertions.cs"
     - path: "Tests/Runtime/TestUtilities/MessageScenarios.cs"
   url: "https://github.com/Ambiguous-Interactive/DxMessaging"
@@ -273,16 +275,22 @@ the staging function directly instead of a per-item wrapper -- pin it with a det
 reflection assertion on the type signature, NOT only a count budget. A structural guard
 cannot flake (it never measures allocations) and still fails on the backend where the
 `GC.Alloc` probe is unavailable, so it is the most reliable lock for a closure-collapse win.
-Worked examples in `RegistrationAllocationCountTests`:
-`InternalRegisterPassesMetadataByValueNotFactory` (asserts the metadata parameter is the
-`MessageRegistrationMetadata` struct, never a `Func<...>` factory) and
-`RegistrationsStoreStagingFunctionNotWrapperAction` (asserts the token's `_registrations`
-value type is `Func<MessageRegistrationHandle, Action>` -- the staging function stored
-directly -- not a per-registration `Action` wrapper, which would re-introduce one delegate
-plus its display class per registration). Prove it red-green by reverting the optimization
-and confirming the type-signature assertion flips. A structural guard is necessary, not
-sufficient: pair it with the behavioral count/differential guards (a revert that kept the
-field type but re-wrapped elsewhere would slip past the structural test alone).
+Worked examples in `RegistrationStorageStructuralGuardTests` (the per-PR EditMode
+correctness leg -- so they protect every PR; they were relocated there from the weekly
+`Allocation` suite precisely because, being deterministic reflection assertions, they never
+flake and benefit from per-PR coverage): `InternalRegisterPassesMetadataByValueNotFactory`
+(asserts the metadata parameter is the `MessageRegistrationMetadata` struct, never a
+`Func<...>` factory) and `RegistrationsStoreStagingFunctionNotWrapperAction` (asserts the
+token's `_registrations` value type is `Func<MessageRegistrationHandle, Action>` -- the
+staging function stored directly -- not a per-registration `Action` wrapper, which would
+re-introduce one delegate plus its display class per registration). Prove it red-green by
+reverting the optimization and confirming the type-signature assertion flips. A structural
+guard is necessary, not sufficient: pair it with the behavioral count/differential guards in
+the `Allocation` suite (`RegistrationAllocationCountTests`) -- a revert that kept the field
+type but re-wrapped elsewhere would slip past the structural test alone. Keep the
+deterministic structural pins in the per-PR leg and the probe-based count budgets in the
+weekly `Allocation` leg, so every PR gets the flake-free guard and the noisy count lives
+where its warm-editor denoising belongs.
 
 When a closure-collapse win is uniform across many near-identical paths (every registration
 kind), the warm-editor accumulating-token count test is too noisy to read a small per-path
@@ -329,6 +337,27 @@ never flakes, and runs in the per-PR correctness leg. The example is
 `RegistrationDiagnosticsLazyAllocationTests.TokenCreateDoesNotEagerlyAllocateDiagnosticsCollections`
 (asserts `_callCountsBacking`/`_emissionBufferBacking` are `null` after `Create`); a revert to
 an eager `= new()` field makes them non-null and trips it (proven red-green).
+
+For a BEHAVIORAL operation that already exposes a deterministic RESULT or COUNTER which moves
+iff the guarded behavior breaks, assert THAT result directly instead of an allocation count.
+Two warm-flaky count budgets were replaced this way (no probe, so they never flake):
+
+- **Repeated forced trim** -- assert via `IMessageBus.TrimResult` that the first force-trim
+  reclaims (`TypeSlotsEvicted + TargetSlotsEvicted > 0`) and every subsequent force-trim is an
+  idempotent no-op (evicts 0 type/target slots, stable `LiveTypeSlotsRemaining`). `force: true`
+  makes the bus's idle check return `true` unconditionally, so one pass clears everything
+  eligible and the rest observe a clean bus; unbounded per-call trim work would evict again or
+  drift the live count. Example: `AllocationMatrixTests.RepeatedForcedTrimIsIdempotentAfterReclaim`.
+- **Dirty-target reuse** -- assert via the `DxPools` Hits/Misses counters that marking rents the
+  warmed pooled collection (Hits climb) and NEVER allocates a fresh one (Misses stay flat across
+  disjoint mark/return cycles). The Misses-equality is exact and strictly STRONGER than the count
+  budget it replaced -- it catches a per-target rent-and-allocate regression even at
+  targetCount=1, where a count delta could not separate one extra allocation from the warm-editor
+  floor. Example: `AllocationMatrixTests.DirtyTargetTrackingIsAllocationFreeAfterWarmup`.
+
+The rule generalizes: STATE (a lazy field is `null`) or RESULT/COUNTER (a `TrimResult` eviction
+count, a pool Hits/Misses delta) beats an absolute `GC.Alloc` budget whenever the operation
+exposes a deterministic signal that breaks exactly when the optimization regresses.
 
 Measure-first correction worth remembering: do NOT assume registration allocation noise comes
 from `DxPools` rental. A per-pool probe showed the steady refcount registration path never
@@ -384,12 +413,13 @@ common drift point.
 
 ## Changelog
 
-| Version | Date       | Changes                                                                            |
-| ------- | ---------- | ---------------------------------------------------------------------------------- |
-| 1.6.0   | 2026-06-28 | Add STATE-assertion-over-doomed-count-budget subsection + DxPools-noise correction |
-| 1.5.0   | 2026-06-28 | Add private-holder storage-shape + behavioral reflection-guard pattern             |
-| 1.4.0   | 2026-06-28 | Add Structural Guards subsection (type-signature pins + cold-total A/B)            |
-| 1.3.0   | 2026-06-27 | Add `gcAllocatedBytes` byte-tracking honesty note alongside the count              |
-| 1.2.0   | 2026-06-26 | Add post-processor differential guard + augmented-closure correctness              |
-| 1.1.0   | 2026-06-26 | Add Differential Count Guards subsection                                           |
-| 1.0.0   | 2026-05-01 | Initial version                                                                    |
+| Version | Date       | Changes                                                                                                               |
+| ------- | ---------- | --------------------------------------------------------------------------------------------------------------------- |
+| 1.7.0   | 2026-06-28 | Add RESULT/COUNTER state assertions (Trim idempotency, DxPools Hits/Misses); relocate structural guards to per-PR leg |
+| 1.6.0   | 2026-06-28 | Add STATE-assertion-over-doomed-count-budget subsection + DxPools-noise correction                                    |
+| 1.5.0   | 2026-06-28 | Add private-holder storage-shape + behavioral reflection-guard pattern                                                |
+| 1.4.0   | 2026-06-28 | Add Structural Guards subsection (type-signature pins + cold-total A/B)                                               |
+| 1.3.0   | 2026-06-27 | Add `gcAllocatedBytes` byte-tracking honesty note alongside the count                                                 |
+| 1.2.0   | 2026-06-26 | Add post-processor differential guard + augmented-closure correctness                                                 |
+| 1.1.0   | 2026-06-26 | Add Differential Count Guards subsection                                                                              |
+| 1.0.0   | 2026-05-01 | Initial version                                                                                                       |

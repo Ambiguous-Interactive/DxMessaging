@@ -176,8 +176,13 @@ When adding a new `MessageCache<>` storage field to `MessageBus`:
 
 - Dispatch remains zero-allocation; sweep work is outside the hot handler loop.
 - Touching a slot is a single counter write on register, deregister, or emit.
-- Forced trim may allocate a small bounded amount during measurement setup; the
-  suite pins this through `AllocationMatrixTests.TrimIsBoundedAlloc`.
+- Forced trim does bounded work: the first force-trim reclaims the dirty
+  candidate, and every subsequent force-trim is an idempotent no-op (evicts no
+  type/target slots, stable live-slot count). The suite pins this
+  DETERMINISTICALLY through
+  `AllocationMatrixTests.RepeatedForcedTrimIsIdempotentAfterReclaim` via the
+  `IMessageBus.TrimResult` eviction counts -- no `GC.Alloc` probe, so it never
+  flakes in the warm editor (it replaced a former count budget that did).
 - Active dispatch snapshots are leased so forced trim cannot return arrays that
   are still being iterated.
 

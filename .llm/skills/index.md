@@ -107,7 +107,7 @@
 | [Collection Pooling with RAII Pattern Part 1](./performance/collection-pooling-part-1.md)                          | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Collection Pooling with RAII Pattern Part 2](./performance/collection-pooling-part-2.md)                          | [draft] 56  | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [warn] 296  | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path      |
-| [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 197    | [advanced]     | [stable] | [risk: critical] | memory, reclamation     |
+| [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 202    | [advanced]     | [stable] | [risk: critical] | memory, reclamation     |
 | [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 198    | [advanced]     | [stable] | [risk: critical] | sweep, eviction         |
 | [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 176    | [advanced]     | [stable] | [risk: high]     | caching, memory         |
 | [Mono vs IL2CPP Optimization Split](./performance/mono-vs-il2cpp-optimization-split.md)                            | [ok] 216    | [advanced]     | [stable] | [risk: high]     | performance, mono       |
@@ -174,7 +174,7 @@
 
 | Skill                                                                                                   | Lines       | Complexity     | Status   | Performance      | Tags                         |
 | ------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ---------------- | ---------------------------- |
-| [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 395  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
+| [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 425  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
 | [Benchmarks Run in the Highest-Fidelity Scope](./testing/benchmarks-run-in-highest-fidelity-scope.md)   | [ok] 183    | [intermediate] | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [warn] 304  | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Data-Driven Coverage Patterns](./testing/test-coverage-data-driven.md)                                 | [ok] 172    | [intermediate] | [stable] | [risk: none]     | testing, data-driven         |
@@ -187,7 +187,7 @@
 | [Inspector Overlay Invariants for MessageAwareComponent](./testing/inspector-overlay-invariants.md)     | [ok] 152    | [intermediate] | [stable] | [risk: low]      | testing, editor              |
 | [LeakWatcher: Detecting Registration Leaks in Tests](./testing/leak-watcher-usage.md)                   | [ok] 259    | [basic]        | [stable] | [risk: low]      | testing, leaks               |
 | [Lifecycle Edge-Case Test Coverage](./testing/lifecycle-edge-coverage.md)                               | [ok] 248    | [intermediate] | [stable] | [risk: none]     | testing, lifecycle           |
-| [Memory Reclaim Coverage](./testing/memory-reclaim-coverage.md)                                         | [ok] 183    | [intermediate] | [stable] | [risk: high]     | testing, memory              |
+| [Memory Reclaim Coverage](./testing/memory-reclaim-coverage.md)                                         | [ok] 187    | [intermediate] | [stable] | [risk: high]     | testing, memory              |
 | [Shared Fixtures: Generic Base](./testing/shared-test-fixtures-generic-base.md)                         | [ok] 185    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |
 | [Shared Fixtures: Reference Counting](./testing/shared-test-fixtures-reference-counting.md)             | [ok] 252    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |
 | [Shared Test Fixtures with Reference Counting](./testing/shared-test-fixtures.md)                       | [ok] 165    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |
