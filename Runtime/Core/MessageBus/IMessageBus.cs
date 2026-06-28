@@ -297,8 +297,11 @@ namespace DxMessaging.Core.MessageBus
         /// <typeparam name="T">Specific type of UntargetedMessages to register for.</typeparam>
         /// <param name="messageHandler">MessageHandler to register to accept UntargetedMessages of the specified type.</param>
         /// <param name="priority">Priority at which to run; lower runs earlier.</param>
-        /// <returns>The deregistration action. Invoke when the handler no longer wants to receive messages.</returns>
-        Action RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving messages.</returns>
+        MessageBusRegistration RegisterUntargeted<T>(
+            MessageHandler messageHandler,
+            int priority = 0
+        )
             where T : IUntargetedMessage;
 
         /// <summary>
@@ -308,7 +311,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="target">Target of messages to listen for.</param>
         /// <param name="messageHandler">MessageHandler to register the TargetedMessages of the specified type.</param>
         /// <param name="priority">Priority at which to run; lower runs earlier.</param>
-        /// <returns>The deregistration action. Invoke when the handler no longer wants to receive the messages.</returns>
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving the messages.</returns>
         /// <remarks>
         /// To preserve frozen dispatch snapshots during in-flight emissions, the per-MessageHandler
         /// typed-cache for <c>(target, priority)</c> is NOT removed when the last registration at
@@ -319,7 +322,7 @@ namespace DxMessaging.Core.MessageBus
         /// at every spawned GameObject) should prefer <see cref="RegisterTargetedWithoutTargeting{T}"/>
         /// or recycle MessageHandlers to avoid unbounded inner-dictionary growth.
         /// </remarks>
-        Action RegisterTargeted<T>(
+        MessageBusRegistration RegisterTargeted<T>(
             InstanceId target,
             MessageHandler messageHandler,
             int priority = 0
@@ -333,8 +336,11 @@ namespace DxMessaging.Core.MessageBus
         /// <typeparam name="T">Specific type of TargetedMessages to register for.</typeparam>
         /// <param name="messageHandler">MessageHandler to register to accept all TargetedMessages of the specified type.</param>
         /// <param name="priority">Priority at which to run; lower runs earlier.</param>
-        /// <returns>The deregistration action. Invoke when the handler no longer wants to receive messages.</returns>
-        Action RegisterTargetedWithoutTargeting<T>(MessageHandler messageHandler, int priority = 0)
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving messages.</returns>
+        MessageBusRegistration RegisterTargetedWithoutTargeting<T>(
+            MessageHandler messageHandler,
+            int priority = 0
+        )
             where T : ITargetedMessage;
 
         /// <summary>
@@ -344,7 +350,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="source">InstanceId of the source for BroadcastMessages to listen to.</param>
         /// <param name="messageHandler">MessageHandler to register to accept BroadcastMessages.</param>
         /// <param name="priority"></param>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to receive messages.</returns>
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving messages.</returns>
         /// <remarks>
         /// To preserve frozen dispatch snapshots during in-flight emissions, the per-MessageHandler
         /// typed-cache for <c>(source, priority)</c> is NOT removed when the last registration at
@@ -355,7 +361,7 @@ namespace DxMessaging.Core.MessageBus
         /// every spawned GameObject) should prefer <see cref="RegisterSourcedBroadcastWithoutSource{T}"/>
         /// or recycle MessageHandlers to avoid unbounded inner-dictionary growth.
         /// </remarks>
-        Action RegisterSourcedBroadcast<T>(
+        MessageBusRegistration RegisterSourcedBroadcast<T>(
             InstanceId source,
             MessageHandler messageHandler,
             int priority = 0
@@ -369,8 +375,8 @@ namespace DxMessaging.Core.MessageBus
         /// <typeparam name="T">Type of the BroadcastMessage to register.</typeparam>
         /// <param name="messageHandler">MessageHandler to register to accept BroadcastMessages.</param>
         /// <param name="priority"></param>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to receive messages.</returns>
-        Action RegisterSourcedBroadcastWithoutSource<T>(
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving messages.</returns>
+        MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
@@ -381,8 +387,8 @@ namespace DxMessaging.Core.MessageBus
         /// It doesn't matter if the message is Targeted or Untargeted, this MessageHandler will be invoked for it.
         /// </summary>
         /// <param name="messageHandler">MessageHandler to register to accept all messages.</param>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to receive messages.</returns>
-        Action RegisterGlobalAcceptAll(MessageHandler messageHandler);
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop receiving messages.</returns>
+        MessageBusRegistration RegisterGlobalAcceptAll(MessageHandler messageHandler);
 
         /// <summary>
         /// Registers the specified MessageHandler and transformer function as an interceptor for Messages of type T.
@@ -407,8 +413,8 @@ namespace DxMessaging.Core.MessageBus
         /// Calling the returned deregistration action removes the interceptor from dispatch, but
         /// the delegate reference may remain until the final deregistration of that interceptor.
         /// </remarks>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to intercept messages.</returns>
-        Action RegisterUntargetedInterceptor<T>(
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
+        MessageBusRegistration RegisterUntargetedInterceptor<T>(
             UntargetedInterceptor<T> interceptor,
             int priority = 0
         )
@@ -437,8 +443,11 @@ namespace DxMessaging.Core.MessageBus
         /// Calling the returned deregistration action removes the interceptor from dispatch, but
         /// the delegate reference may remain until the final deregistration of that interceptor.
         /// </remarks>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to intercept messages.</returns>
-        Action RegisterTargetedInterceptor<T>(TargetedInterceptor<T> interceptor, int priority = 0)
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
+        MessageBusRegistration RegisterTargetedInterceptor<T>(
+            TargetedInterceptor<T> interceptor,
+            int priority = 0
+        )
             where T : ITargetedMessage;
 
         /// <summary>
@@ -464,8 +473,8 @@ namespace DxMessaging.Core.MessageBus
         /// Calling the returned deregistration action removes the interceptor from dispatch, but
         /// the delegate reference may remain until the final deregistration of that interceptor.
         /// </remarks>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to intercept messages.</returns>
-        Action RegisterBroadcastInterceptor<T>(
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
+        MessageBusRegistration RegisterBroadcastInterceptor<T>(
             BroadcastInterceptor<T> interceptor,
             int priority = 0
         )
@@ -478,8 +487,11 @@ namespace DxMessaging.Core.MessageBus
         /// <typeparam name="T">Type of UntargetedMessage to post-process.</typeparam>
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to post-process messages.</returns>
-        Action RegisterUntargetedPostProcessor<T>(MessageHandler messageHandler, int priority = 0)
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
+        MessageBusRegistration RegisterUntargetedPostProcessor<T>(
+            MessageHandler messageHandler,
+            int priority = 0
+        )
             where T : IUntargetedMessage;
 
         /// <summary>
@@ -490,8 +502,8 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="target">Target of messages to listen for.</param>
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to post-process messages.</returns>
-        Action RegisterTargetedPostProcessor<T>(
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
+        MessageBusRegistration RegisterTargetedPostProcessor<T>(
             InstanceId target,
             MessageHandler messageHandler,
             int priority = 0
@@ -505,8 +517,8 @@ namespace DxMessaging.Core.MessageBus
         /// <typeparam name="T">Type of TargetedMessage to post-process.</typeparam>
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to post-process messages.</returns>
-        Action RegisterTargetedWithoutTargetingPostProcessor<T>(
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
+        MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
@@ -520,8 +532,8 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="source">Source of messages to listen for.</param>
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to post-process messages.</returns>
-        Action RegisterBroadcastPostProcessor<T>(
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
+        MessageBusRegistration RegisterBroadcastPostProcessor<T>(
             InstanceId source,
             MessageHandler messageHandler,
             int priority = 0
@@ -535,12 +547,35 @@ namespace DxMessaging.Core.MessageBus
         /// <typeparam name="T">Type of TargetedMessage to post-process.</typeparam>
         /// <param name="messageHandler">MessageHandler to post-process messages for.</param>
         /// <param name="priority">Priority of the interceptor to run at. Handlers run in order of priority from low -> high.</param>
-        /// <returns>The deregistration action. Should be invoked when the handler no longer wants to post-process messages.</returns>
-        Action RegisterBroadcastWithoutSourcePostProcessor<T>(
+        /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop post-processing messages.</returns>
+        MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
             where T : IBroadcastMessage;
+
+        /// <summary>
+        /// Undoes a registration produced by any of the <c>Register*</c> methods.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Pass the <see cref="MessageBusRegistration"/> returned by the matching
+        /// <c>Register*</c> call, using the SAME <typeparamref name="T"/> you registered with
+        /// (for <see cref="RegisterGlobalAcceptAll"/>, any <c>T : IMessage</c> such as
+        /// <see cref="Messages.IMessage"/> is accepted, since the global slot is not type-keyed).
+        /// </para>
+        /// <para>
+        /// Deregistration is idempotent at the handle level only in the sense that a handle that
+        /// has outlived a reset/domain-reload, or a <see cref="MessageBusRegistration.None"/> /
+        /// foreign handle, is a silent no-op. Calling it twice for the same live registration is a
+        /// genuine over-deregistration and is logged (matching the pre-v4 behaviour of invoking
+        /// the returned deregistration action twice).
+        /// </para>
+        /// </remarks>
+        /// <typeparam name="T">The message type the registration was created for.</typeparam>
+        /// <param name="registration">The handle returned by the originating <c>Register*</c> call.</param>
+        void Deregister<T>(in MessageBusRegistration registration)
+            where T : IMessage;
 
         /// <summary>
         /// Broadcasts an Untargeted message to all listeners registered to this bus.

@@ -6,6 +6,7 @@ namespace DxMessaging.Tests.Editor
     using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
+    using DxMessaging.Core.MessageBus;
     using NUnit.Framework;
 
     /// <summary>
@@ -157,6 +158,67 @@ namespace DxMessaging.Tests.Editor
                     + "Action wrapper. Wrapping the staging function in a parameterless Action "
                     + "re-introduces one delegate plus its display class allocation per "
                     + "registration (the collapsed 'Registration' local function)."
+            );
+        }
+
+        /// <summary>
+        /// Pins the v4 opaque-handle contract structurally: every <see cref="IMessageBus"/>
+        /// <c>Register*</c> method must return <see cref="MessageBusRegistration"/> (not
+        /// <see cref="Action"/>), and the bus must expose a generic
+        /// <see cref="IMessageBus.Deregister{T}"/>. A revert to returning <c>Action</c>
+        /// re-introduces the per-registration bus deregistration closure (the Layer-A
+        /// allocation this rework removed).
+        /// </summary>
+        [Test]
+        public void AllBusRegisterMethodsReturnMessageBusRegistrationHandle()
+        {
+            int registerMethods = 0;
+            foreach (
+                MethodInfo method in typeof(IMessageBus).GetMethods(
+                    BindingFlags.Public | BindingFlags.Instance
+                )
+            )
+            {
+                if (!method.Name.StartsWith("Register", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                registerMethods++;
+                Assert.That(
+                    method.ReturnType,
+                    Is.EqualTo(typeof(MessageBusRegistration)),
+                    $"IMessageBus.{method.Name} must return MessageBusRegistration (the v4 "
+                        + "opaque handle); returning Action re-introduces the per-registration "
+                        + "bus deregistration closure."
+                );
+            }
+
+            Assert.That(
+                registerMethods,
+                Is.EqualTo(14),
+                "Expected the 14 IMessageBus.Register* methods; update this guard if the "
+                    + "registration surface changes."
+            );
+
+            MethodInfo deregister = typeof(IMessageBus).GetMethod(
+                "Deregister",
+                BindingFlags.Public | BindingFlags.Instance
+            );
+            Assert.That(
+                deregister,
+                Is.Not.Null,
+                "IMessageBus must expose Deregister<T>(in MessageBusRegistration)."
+            );
+            Assert.That(
+                deregister.IsGenericMethodDefinition,
+                Is.True,
+                "IMessageBus.Deregister must be generic in the message type T."
+            );
+            Assert.That(
+                deregister.ReturnType,
+                Is.EqualTo(typeof(void)),
+                "IMessageBus.Deregister<T> must return void."
             );
         }
     }

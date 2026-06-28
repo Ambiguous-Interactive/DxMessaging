@@ -120,6 +120,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING (v4):** the `IMessageBus` registration contract now returns an opaque,
+  zero-allocation handle instead of a deregistration delegate. The 14
+  `IMessageBus.Register*<T>` methods return a new `readonly struct`
+  `DxMessaging.Core.MessageBus.MessageBusRegistration` (previously `System.Action`), and a
+  new `void IMessageBus.Deregister<T>(in MessageBusRegistration registration) where T : IMessage`
+  undoes a registration (call it with the same `T` you registered with; for
+  `RegisterGlobalAcceptAll`, any `T : IMessage` works since the global slot is not
+  type-keyed). This removes the per-registration bus-side deregistration **closure** (the
+  prior `Action` plus its display class) from the handler registration path -- roughly
+  **two fewer managed allocations per registration** -- by packing the deregistration
+  snapshot into the returned value handle and re-expressing the bus's deregistration logic
+  against it (behaviour and the four reentrancy invariants -- generation guard, identity
+  liveness / over-deregistration, token idempotency, no counter underflow -- are unchanged).
+  Custom `IMessageBus` implementers that wrap `MessageBus` (the
+  `DelegatingMessageBus`-style extension point) just forward the new members; from-scratch
+  implementers mint handles via the public `new MessageBusRegistration(long externalId,
+object externalState)` constructor and read them back in their own `Deregister<T>`.
+  **The Unity-facing surface is unaffected:** `MessageRegistrationToken`,
+  `MessageAwareComponent`, and the `MessageHandler.Register*` facades keep their existing
+  shapes and still return `System.Action`. Only code that talks to `IMessageBus.Register*`
+  **directly** and keeps the returned delegate sees the break. The larger
+  per-registration allocation reduction (collapsing the token/handler closures onto a
+  single per-handle object) is sequenced as a follow-up on top of this contract change.
 - The published performance report no longer prints columns of `n/a`. The
   Standalone IL2CPP leg runs in a Release player whose stripped profiler cannot
   measure GC allocations or bytes, so the renderer now OMITS a memory column from a

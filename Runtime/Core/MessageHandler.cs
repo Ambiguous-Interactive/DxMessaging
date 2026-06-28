@@ -788,7 +788,9 @@ namespace DxMessaging.Core
         )
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterGlobalAcceptAll(this);
+            MessageBusRegistration messageBusDeregistration = messageBus.RegisterGlobalAcceptAll(
+                this
+            );
             TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(messageBus);
 
             Action untargetedDeregistration = typedHandler.AddGlobalUntargetedHandler(
@@ -812,7 +814,7 @@ namespace DxMessaging.Core
 
             return () =>
             {
-                messageBusDeregistration?.Invoke();
+                messageBus.Deregister<IMessage>(in messageBusDeregistration);
                 untargetedDeregistration();
                 targetedDeregistration();
                 broadcastDeregistration();
@@ -843,7 +845,9 @@ namespace DxMessaging.Core
         )
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterGlobalAcceptAll(this);
+            MessageBusRegistration messageBusDeregistration = messageBus.RegisterGlobalAcceptAll(
+                this
+            );
             TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(messageBus);
 
             Action untargetedDeregistration = typedHandler.AddGlobalUntargetedHandler(
@@ -867,7 +871,7 @@ namespace DxMessaging.Core
 
             return () =>
             {
-                messageBusDeregistration?.Invoke();
+                messageBus.Deregister<IMessage>(in messageBusDeregistration);
                 untargetedDeregistration();
                 targetedDeregistration();
                 broadcastDeregistration();
@@ -898,7 +902,7 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargeted<T>(
+            MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
@@ -931,7 +935,7 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargeted<T>(
+            MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
@@ -966,7 +970,7 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargeted<T>(
+            MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
@@ -1001,11 +1005,8 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargetedPostProcessor<T>(
-                target,
-                this,
-                priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterTargetedPostProcessor<T>(target, this, priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddTargetedPostProcessor(
                 target,
@@ -1036,11 +1037,8 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargetedPostProcessor<T>(
-                target,
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterTargetedPostProcessor<T>(target, this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddTargetedPostProcessor(
                 target,
@@ -1069,11 +1067,8 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargetedPostProcessor<T>(
-                target,
-                this,
-                priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterTargetedPostProcessor<T>(target, this, priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddTargetedPostProcessor(
                 target,
@@ -1102,7 +1097,7 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration =
+            MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
@@ -1134,7 +1129,7 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration =
+            MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
@@ -1166,7 +1161,7 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration =
+            MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
@@ -1198,10 +1193,8 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargetedWithoutTargeting<T>(
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
@@ -1229,10 +1222,8 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargetedWithoutTargeting<T>(
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
@@ -1260,10 +1251,8 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterTargetedWithoutTargeting<T>(
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
@@ -1291,7 +1280,7 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterUntargeted<T>(
+            MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
@@ -1321,7 +1310,7 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterUntargeted<T>(
+            MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
@@ -1352,7 +1341,7 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterUntargeted<T>(
+            MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
@@ -1383,10 +1372,11 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterUntargetedPostProcessor<T>(
-                priority: priority,
-                messageHandler: this
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterUntargetedPostProcessor<T>(
+                    priority: priority,
+                    messageHandler: this
+                );
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddUntargetedPostProcessor(
                 originalHandler,
@@ -1414,10 +1404,11 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterUntargetedPostProcessor<T>(
-                priority: priority,
-                messageHandler: this
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterUntargetedPostProcessor<T>(
+                    priority: priority,
+                    messageHandler: this
+                );
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddUntargetedPostProcessor(
                 originalHandler,
@@ -1447,11 +1438,8 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterSourcedBroadcast<T>(
-                source,
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
 
             return typedHandler.AddSourcedBroadcastHandler(
@@ -1481,11 +1469,8 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterSourcedBroadcast<T>(
-                source,
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddSourcedBroadcastHandler(
                 source,
@@ -1516,11 +1501,8 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterSourcedBroadcast<T>(
-                source,
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddSourcedBroadcastHandler(
                 source,
@@ -1549,10 +1531,8 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterSourcedBroadcastWithoutSource<T>(
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
@@ -1580,10 +1560,8 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterSourcedBroadcastWithoutSource<T>(
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
@@ -1611,10 +1589,8 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterSourcedBroadcastWithoutSource<T>(
-                this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
@@ -1644,11 +1620,12 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterBroadcastPostProcessor<T>(
-                source,
-                messageHandler: this,
-                priority: priority
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterBroadcastPostProcessor<T>(
+                    source,
+                    messageHandler: this,
+                    priority: priority
+                );
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
@@ -1679,11 +1656,12 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterBroadcastPostProcessor<T>(
-                source,
-                priority: priority,
-                messageHandler: this
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterBroadcastPostProcessor<T>(
+                    source,
+                    priority: priority,
+                    messageHandler: this
+                );
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
@@ -1712,11 +1690,12 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration = messageBus.RegisterBroadcastPostProcessor<T>(
-                source,
-                priority: priority,
-                messageHandler: this
-            );
+            MessageBusRegistration messageBusDeregistration =
+                messageBus.RegisterBroadcastPostProcessor<T>(
+                    source,
+                    priority: priority,
+                    messageHandler: this
+                );
             TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
@@ -1745,7 +1724,7 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration =
+            MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
@@ -1777,7 +1756,7 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration =
+            MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
@@ -1809,7 +1788,7 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            Action messageBusDeregistration =
+            MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
@@ -1840,7 +1819,11 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            return messageBus.RegisterUntargetedInterceptor(interceptor, priority);
+            MessageBusRegistration registration = messageBus.RegisterUntargetedInterceptor(
+                interceptor,
+                priority
+            );
+            return () => messageBus.Deregister<T>(in registration);
         }
 
         /// <summary>
@@ -1859,7 +1842,11 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            return messageBus.RegisterBroadcastInterceptor(interceptor, priority);
+            MessageBusRegistration registration = messageBus.RegisterBroadcastInterceptor(
+                interceptor,
+                priority
+            );
+            return () => messageBus.Deregister<T>(in registration);
         }
 
         /// <summary>
@@ -1878,7 +1865,11 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
-            return messageBus.RegisterTargetedInterceptor(interceptor, priority);
+            MessageBusRegistration registration = messageBus.RegisterTargetedInterceptor(
+                interceptor,
+                priority
+            );
+            return () => messageBus.Deregister<T>(in registration);
         }
 
         /// <summary>
@@ -3467,7 +3458,7 @@ namespace DxMessaging.Core
                 InstanceId target,
                 Action<T> originalHandler,
                 Action<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3500,7 +3491,7 @@ namespace DxMessaging.Core
                 InstanceId target,
                 Action<T> originalHandler,
                 FastHandler<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3529,7 +3520,7 @@ namespace DxMessaging.Core
                 InstanceId target,
                 FastHandler<T> originalHandler,
                 FastHandler<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3555,7 +3546,7 @@ namespace DxMessaging.Core
             public Action AddTargetedWithoutTargetingHandler(
                 Action<InstanceId, T> originalHandler,
                 Action<InstanceId, T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3591,7 +3582,7 @@ namespace DxMessaging.Core
             internal Action AddTargetedWithoutTargetingHandler(
                 Action<InstanceId, T> originalHandler,
                 FastHandlerWithContext<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3620,7 +3611,7 @@ namespace DxMessaging.Core
             public Action AddTargetedWithoutTargetingHandler(
                 FastHandlerWithContext<T> originalHandler,
                 FastHandlerWithContext<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3648,7 +3639,7 @@ namespace DxMessaging.Core
             public Action AddUntargetedHandler(
                 Action<T> originalHandler,
                 Action<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3684,7 +3675,7 @@ namespace DxMessaging.Core
             internal Action AddUntargetedHandler(
                 Action<T> originalHandler,
                 FastHandler<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3713,7 +3704,7 @@ namespace DxMessaging.Core
             public Action AddUntargetedHandler(
                 FastHandler<T> originalHandler,
                 FastHandler<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3743,7 +3734,7 @@ namespace DxMessaging.Core
                 InstanceId source,
                 Action<T> originalHandler,
                 Action<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3775,7 +3766,7 @@ namespace DxMessaging.Core
                 InstanceId source,
                 Action<T> originalHandler,
                 FastHandler<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3804,7 +3795,7 @@ namespace DxMessaging.Core
                 InstanceId source,
                 FastHandler<T> originalHandler,
                 FastHandler<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3830,7 +3821,7 @@ namespace DxMessaging.Core
             public Action AddSourcedBroadcastWithoutSourceHandler(
                 Action<InstanceId, T> originalHandler,
                 Action<InstanceId, T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3868,7 +3859,7 @@ namespace DxMessaging.Core
             internal Action AddSourcedBroadcastWithoutSourceHandler(
                 Action<InstanceId, T> originalHandler,
                 FastHandlerWithContext<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -3897,7 +3888,7 @@ namespace DxMessaging.Core
             public Action AddSourcedBroadcastWithoutSourceHandler(
                 FastHandlerWithContext<T> originalHandler,
                 FastHandlerWithContext<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4058,7 +4049,7 @@ namespace DxMessaging.Core
             public Action AddUntargetedPostProcessor(
                 Action<T> originalHandler,
                 Action<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4091,7 +4082,7 @@ namespace DxMessaging.Core
             public Action AddUntargetedPostProcessor(
                 FastHandler<T> originalHandler,
                 FastHandler<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4121,7 +4112,7 @@ namespace DxMessaging.Core
                 InstanceId target,
                 Action<T> originalHandler,
                 Action<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4154,7 +4145,7 @@ namespace DxMessaging.Core
                 InstanceId target,
                 Action<T> originalHandler,
                 FastHandler<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4183,7 +4174,7 @@ namespace DxMessaging.Core
                 InstanceId target,
                 FastHandler<T> originalHandler,
                 FastHandler<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4209,7 +4200,7 @@ namespace DxMessaging.Core
             public Action AddTargetedWithoutTargetingPostProcessor(
                 Action<InstanceId, T> originalHandler,
                 Action<InstanceId, T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4247,7 +4238,7 @@ namespace DxMessaging.Core
             internal Action AddTargetedWithoutTargetingPostProcessor(
                 Action<InstanceId, T> originalHandler,
                 FastHandlerWithContext<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4276,7 +4267,7 @@ namespace DxMessaging.Core
             public Action AddTargetedWithoutTargetingPostProcessor(
                 FastHandlerWithContext<T> originalHandler,
                 FastHandlerWithContext<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4306,7 +4297,7 @@ namespace DxMessaging.Core
                 InstanceId source,
                 Action<T> originalHandler,
                 Action<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4339,7 +4330,7 @@ namespace DxMessaging.Core
                 InstanceId source,
                 Action<T> originalHandler,
                 FastHandler<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4368,7 +4359,7 @@ namespace DxMessaging.Core
                 InstanceId source,
                 FastHandler<T> originalHandler,
                 FastHandler<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4394,7 +4385,7 @@ namespace DxMessaging.Core
             public Action AddBroadcastWithoutSourcePostProcessor(
                 Action<InstanceId, T> originalHandler,
                 Action<InstanceId, T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4431,7 +4422,7 @@ namespace DxMessaging.Core
             internal Action AddBroadcastWithoutSourcePostProcessor(
                 Action<InstanceId, T> originalHandler,
                 FastHandlerWithContext<T> flatInvoker,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4460,7 +4451,7 @@ namespace DxMessaging.Core
             public Action AddBroadcastWithoutSourcePostProcessor(
                 FastHandlerWithContext<T> originalHandler,
                 FastHandlerWithContext<T> handler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus
             )
@@ -4502,7 +4493,7 @@ namespace DxMessaging.Core
                 Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> handlersByContext,
                 TU originalHandler,
                 TU augmentedHandler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus,
                 object flatInvoker = null
@@ -4619,7 +4610,7 @@ namespace DxMessaging.Core
 
                     localCache.version++;
 
-                    deregistration?.Invoke();
+                    messageBus.Deregister<T>(in deregistration);
                     if (localSlot != null)
                     {
                         localSlot.lastTouchTicks =
@@ -6474,7 +6465,7 @@ namespace DxMessaging.Core
                 Dictionary<int, IHandlerActionCache> handlers,
                 TU originalHandler,
                 TU augmentedHandler,
-                Action deregistration,
+                MessageBusRegistration deregistration,
                 int priority,
                 IMessageBus messageBus,
                 object flatInvoker = null
@@ -6576,7 +6567,7 @@ namespace DxMessaging.Core
 
                     localCache.version++;
 
-                    deregistration?.Invoke();
+                    messageBus.Deregister<T>(in deregistration);
                     if (localSlot != null)
                     {
                         localSlot.lastTouchTicks =

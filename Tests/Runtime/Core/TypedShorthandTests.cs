@@ -163,7 +163,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             IMessageBus bus = MessageHandler.MessageBus;
             bool cancel = true;
-            Action dereg = bus.RegisterTargetedInterceptor(
+            MessageBusRegistration dereg = bus.RegisterTargetedInterceptor(
                 (ref InstanceId t, ref SimpleTargetedMessage m) => !cancel
             );
             try
@@ -180,7 +180,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             finally
             {
-                dereg();
+                bus.Deregister<SimpleTargetedMessage>(in dereg);
             }
         }
 
@@ -197,7 +197,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             IMessageBus bus = MessageHandler.MessageBus;
             bool cancel = true;
-            Action dereg = bus.RegisterBroadcastInterceptor(
+            MessageBusRegistration dereg = bus.RegisterBroadcastInterceptor(
                 (ref InstanceId s, ref SimpleBroadcastMessage m) => !cancel
             );
             try
@@ -214,7 +214,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             finally
             {
-                dereg();
+                bus.Deregister<SimpleBroadcastMessage>(in dereg);
             }
         }
     }

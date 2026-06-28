@@ -57,17 +57,20 @@ namespace DxMessaging.Tests.Runtime
 
         public virtual IMessageBus.TrimResult Trim(bool force = false) => Inner.Trim(force);
 
-        public virtual Action RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
+        public virtual MessageBusRegistration RegisterUntargeted<T>(
+            MessageHandler messageHandler,
+            int priority = 0
+        )
             where T : IUntargetedMessage => Inner.RegisterUntargeted<T>(messageHandler, priority);
 
-        public virtual Action RegisterUntargetedPostProcessor<T>(
+        public virtual MessageBusRegistration RegisterUntargetedPostProcessor<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
             where T : IUntargetedMessage =>
             Inner.RegisterUntargetedPostProcessor<T>(messageHandler, priority);
 
-        public virtual Action RegisterTargeted<T>(
+        public virtual MessageBusRegistration RegisterTargeted<T>(
             InstanceId target,
             MessageHandler messageHandler,
             int priority = 0
@@ -75,7 +78,7 @@ namespace DxMessaging.Tests.Runtime
             where T : ITargetedMessage =>
             Inner.RegisterTargeted<T>(target, messageHandler, priority);
 
-        public virtual Action RegisterTargetedPostProcessor<T>(
+        public virtual MessageBusRegistration RegisterTargetedPostProcessor<T>(
             InstanceId target,
             MessageHandler messageHandler,
             int priority = 0
@@ -83,21 +86,21 @@ namespace DxMessaging.Tests.Runtime
             where T : ITargetedMessage =>
             Inner.RegisterTargetedPostProcessor<T>(target, messageHandler, priority);
 
-        public virtual Action RegisterTargetedWithoutTargeting<T>(
+        public virtual MessageBusRegistration RegisterTargetedWithoutTargeting<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
             where T : ITargetedMessage =>
             Inner.RegisterTargetedWithoutTargeting<T>(messageHandler, priority);
 
-        public virtual Action RegisterTargetedWithoutTargetingPostProcessor<T>(
+        public virtual MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
             where T : ITargetedMessage =>
             Inner.RegisterTargetedWithoutTargetingPostProcessor<T>(messageHandler, priority);
 
-        public virtual Action RegisterSourcedBroadcast<T>(
+        public virtual MessageBusRegistration RegisterSourcedBroadcast<T>(
             InstanceId source,
             MessageHandler messageHandler,
             int priority = 0
@@ -105,7 +108,7 @@ namespace DxMessaging.Tests.Runtime
             where T : IBroadcastMessage =>
             Inner.RegisterSourcedBroadcast<T>(source, messageHandler, priority);
 
-        public virtual Action RegisterBroadcastPostProcessor<T>(
+        public virtual MessageBusRegistration RegisterBroadcastPostProcessor<T>(
             InstanceId source,
             MessageHandler messageHandler,
             int priority = 0
@@ -113,42 +116,46 @@ namespace DxMessaging.Tests.Runtime
             where T : IBroadcastMessage =>
             Inner.RegisterBroadcastPostProcessor<T>(source, messageHandler, priority);
 
-        public virtual Action RegisterSourcedBroadcastWithoutSource<T>(
+        public virtual MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
             where T : IBroadcastMessage =>
             Inner.RegisterSourcedBroadcastWithoutSource<T>(messageHandler, priority);
 
-        public virtual Action RegisterBroadcastWithoutSourcePostProcessor<T>(
+        public virtual MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
             where T : IBroadcastMessage =>
             Inner.RegisterBroadcastWithoutSourcePostProcessor<T>(messageHandler, priority);
 
-        public virtual Action RegisterGlobalAcceptAll(MessageHandler messageHandler) =>
-            Inner.RegisterGlobalAcceptAll(messageHandler);
+        public virtual MessageBusRegistration RegisterGlobalAcceptAll(
+            MessageHandler messageHandler
+        ) => Inner.RegisterGlobalAcceptAll(messageHandler);
 
-        public virtual Action RegisterUntargetedInterceptor<T>(
+        public virtual MessageBusRegistration RegisterUntargetedInterceptor<T>(
             IMessageBus.UntargetedInterceptor<T> interceptor,
             int priority = 0
         )
             where T : IUntargetedMessage =>
             Inner.RegisterUntargetedInterceptor(interceptor, priority);
 
-        public virtual Action RegisterTargetedInterceptor<T>(
+        public virtual MessageBusRegistration RegisterTargetedInterceptor<T>(
             IMessageBus.TargetedInterceptor<T> interceptor,
             int priority = 0
         )
             where T : ITargetedMessage => Inner.RegisterTargetedInterceptor(interceptor, priority);
 
-        public virtual Action RegisterBroadcastInterceptor<T>(
+        public virtual MessageBusRegistration RegisterBroadcastInterceptor<T>(
             IMessageBus.BroadcastInterceptor<T> interceptor,
             int priority = 0
         )
             where T : IBroadcastMessage =>
             Inner.RegisterBroadcastInterceptor(interceptor, priority);
+
+        public virtual void Deregister<T>(in MessageBusRegistration registration)
+            where T : IMessage => Inner.Deregister<T>(in registration);
 
         public virtual void UntypedUntargetedBroadcast(IUntargetedMessage typedMessage) =>
             Inner.UntypedUntargetedBroadcast(typedMessage);
