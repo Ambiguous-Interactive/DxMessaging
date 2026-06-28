@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor.Allocations
 {
     using System;
+    using System.Collections.Generic;
     using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
@@ -215,7 +216,35 @@ namespace DxMessaging.Tests.Editor.Allocations
                 "MessageRegistrationToken._registrations was renamed; update this guard."
             );
 
-            Type valueType = registrations.FieldType.GetGenericArguments()[1];
+            Type registrationMapType = registrations.FieldType;
+            Assert.That(
+                registrationMapType.IsGenericType,
+                Is.True,
+                "MessageRegistrationToken._registrations must remain a generic map from "
+                    + "MessageRegistrationHandle to the staging function."
+            );
+            Assert.That(
+                registrationMapType.GetGenericTypeDefinition(),
+                Is.EqualTo(typeof(Dictionary<,>)),
+                "MessageRegistrationToken._registrations must remain a Dictionary<,> so "
+                    + "registration replay preserves the same storage and allocation contract."
+            );
+
+            Type[] registrationMapArguments = registrationMapType.GetGenericArguments();
+            Assert.That(
+                registrationMapArguments,
+                Has.Length.EqualTo(2),
+                "MessageRegistrationToken._registrations must have key and value generic "
+                    + "arguments."
+            );
+            Assert.That(
+                registrationMapArguments[0],
+                Is.EqualTo(typeof(MessageRegistrationHandle)),
+                "MessageRegistrationToken._registrations must be keyed by "
+                    + "MessageRegistrationHandle."
+            );
+
+            Type valueType = registrationMapArguments[1];
             Assert.That(
                 valueType,
                 Is.EqualTo(typeof(Func<MessageRegistrationHandle, Action>)),

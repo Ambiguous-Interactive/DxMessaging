@@ -352,15 +352,15 @@ namespace DxMessaging.Tests.Editor
         /// </summary>
         private sealed class Pending
         {
-            private static readonly MethodInfo AddMethod = PendingType.GetMethod(
+            private static readonly MethodInfo AddMethod = PendingType?.GetMethod(
                 "Add",
                 BindingFlags.Instance | BindingFlags.NonPublic
             );
-            private static readonly MethodInfo InvokeFromMethod = PendingType.GetMethod(
+            private static readonly MethodInfo InvokeFromMethod = PendingType?.GetMethod(
                 "InvokeFrom",
                 BindingFlags.Instance | BindingFlags.NonPublic
             );
-            private static readonly PropertyInfo CountProperty = PendingType.GetProperty(
+            private static readonly PropertyInfo CountProperty = PendingType?.GetProperty(
                 "Count",
                 BindingFlags.Instance | BindingFlags.NonPublic
             );

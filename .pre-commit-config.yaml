@@ -128,7 +128,7 @@ repos:
           - pre-push
         description: >-
           Fail when tracked C# .meta files are missing Unity's standard
-          MonoImporter block.
+          MonoImporter block or contain non-canonical MonoImporter lines.
       - id: script-tests
         name: Run fast JavaScript script tests (node --test)
         # Curated unit/mocked subset only. Real subprocess/archive integration
