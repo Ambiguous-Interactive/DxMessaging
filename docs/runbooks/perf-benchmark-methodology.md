@@ -225,10 +225,15 @@ apples-to-apples set every library bridge implements (or declares unsupported).
 
 ### Dispatch scenarios (DxMessaging only)
 
-The fifteen dispatch-throughput scenarios are defined in
+The eighteen dispatch-throughput scenarios are defined in
 [`DispatchThroughputBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs).
-The first eight are warm/hot throughput; the last seven are cold or warm-JIT latency
-(see [Cold vs warm/hot modes](#cold-vs-warmhot-modes)):
+The first eight are warm/hot throughput; the remaining ten are cold, warm-JIT, or
+marginal-registration latency (zero-throughput, wall-clock rows; see
+[Cold vs warm/hot modes](#cold-vs-warmhot-modes)). The three marginal-registration
+rows report the GC-allocation cost of an additional same-type registration -- the
+surface the registration allocation work reduced -- and are measurable only where the
+profiler is present (the in-editor PlayMode/Mono leg; the published Standalone IL2CPP
+leg strips it, so their allocation columns read `n/a` there):
 
 | Scenario key                                  | What it measures                                                       |
 | --------------------------------------------- | ---------------------------------------------------------------------- |
@@ -242,6 +247,9 @@ The first eight are warm/hot throughput; the last seven are cold or warm-JIT lat
 | `PostProcessingHeavy_FourPostProcessors`      | Four post-processors plus one handler.                                 |
 | `RegistrationFlood_1000Types_FromColdBus`     | Registering 1000 distinct message types from a cold bus (cold flood).  |
 | `RegistrationFlood_1000Types_WarmJit`         | Registering the same 1000 types after a JIT pre-warm (warm-JIT flood). |
+| `UntargetedRegistration_Marginal`             | Marginal cost of 1000 more untargeted handlers on one warm type.       |
+| `TargetedRegistration_Marginal`               | Marginal cost of 1000 more targeted handlers on one warm type/target.  |
+| `BroadcastRegistration_Marginal`              | Marginal cost of 1000 more broadcast handlers on one warm type/source. |
 | `DeregistrationFlood_1000Types_Cold`          | Tearing down 1000 live registrations, JIT-inclusive (cold flood).      |
 | `DeregistrationFlood_1000Types_WarmJit`       | Tearing down the same 1000 registrations after a JIT pre-warm.         |
 | `UntargetedFirstDispatch_Cold`                | First untargeted dispatch per type, JIT-inclusive, median of 32 types. |

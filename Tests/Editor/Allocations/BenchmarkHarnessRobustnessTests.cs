@@ -722,8 +722,10 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Data-driven over the six cold/warm-JIT latency scenarios. Each is a wall-clock
-        // (latency) row, so its result must report zero throughput and IsWallClockScenario.
+        // Data-driven over the ten wall-clock scenarios (the registration/deregistration
+        // floods, the three per-kind marginal registration scenarios, and the three cold
+        // first-dispatch scenarios). Each is a wall-clock (latency) row, so its result must
+        // report zero throughput and IsWallClockScenario.
         private static IEnumerable<TestCaseData> WallClockScenarioCases()
         {
             yield return new TestCaseData(
@@ -732,6 +734,15 @@ namespace DxMessaging.Tests.Editor.Allocations
             yield return new TestCaseData(
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit
             ).SetName("WallClock_RegistrationFloodWarmJit");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedRegistrationMarginal
+            ).SetName("WallClock_UntargetedRegistrationMarginal");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedRegistrationMarginal
+            ).SetName("WallClock_TargetedRegistrationMarginal");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastRegistrationMarginal
+            ).SetName("WallClock_BroadcastRegistrationMarginal");
             yield return new TestCaseData(
                 DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold
             ).SetName("WallClock_DeregistrationFloodCold");

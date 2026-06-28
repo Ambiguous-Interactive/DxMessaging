@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Three per-kind **marginal registration** benchmark scenarios
+  (`UntargetedRegistration_Marginal`, `TargetedRegistration_Marginal`,
+  `BroadcastRegistration_Marginal`) that measure the GC-allocation cost of an additional
+  same-type registration on an already-warm bus -- the surface the registration
+  allocation reductions target -- so the published performance tables now show per-kind
+  registration cost (allocation count + bytes), not just dispatch throughput. Each
+  registers 1000 more handlers of one warmed message type using distinct, pre-built
+  handler delegates, so the measured window captures only the registration machinery
+  (never the handler delegate, and never a same-handler refcount bump). They are
+  wall-clock (zero-throughput) rows whose allocation columns populate on the
+  profiler-bearing in-editor PlayMode/Mono leg and read `n/a` on the published Standalone
+  IL2CPP Release leg (which strips the profiler), exactly like the existing
+  registration-flood rows.
 - Benchmarks now report the total allocated BYTES per measurement batch (`gcAllocatedBytes`)
   alongside the existing managed-allocation CALL count (`gcAllocations`). Bytes are
   measured from a before/after delta of the live Unity

@@ -19,6 +19,9 @@ const SCENARIO_ORDER = [
   "PostProcessingHeavy_FourPostProcessors",
   "RegistrationFlood_1000Types_FromColdBus",
   "RegistrationFlood_1000Types_WarmJit",
+  "UntargetedRegistration_Marginal",
+  "TargetedRegistration_Marginal",
+  "BroadcastRegistration_Marginal",
   "DeregistrationFlood_1000Types_Cold",
   "DeregistrationFlood_1000Types_WarmJit"
 ];
@@ -41,6 +44,9 @@ const DISPATCH_DISPLAY_NAMES = {
   PostProcessingHeavy_FourPostProcessors: "Post-Processing Heavy (Four Post-Processors)",
   RegistrationFlood_1000Types_FromColdBus: "Registration Flood (1000 Types, Cold Bus)",
   RegistrationFlood_1000Types_WarmJit: "Registration Flood (1000 Types, Warm JIT)",
+  UntargetedRegistration_Marginal: "Untargeted Registration (Marginal, 1000 Same-Type)",
+  TargetedRegistration_Marginal: "Targeted Registration (Marginal, 1000 Same-Type)",
+  BroadcastRegistration_Marginal: "Broadcast Registration (Marginal, 1000 Same-Type)",
   DeregistrationFlood_1000Types_Cold: "Deregistration Flood (1000 Types, Cold)",
   DeregistrationFlood_1000Types_WarmJit: "Deregistration Flood (1000 Types, Warm JIT)"
 };

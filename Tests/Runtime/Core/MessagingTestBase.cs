@@ -268,14 +268,22 @@ namespace DxMessaging.Tests.Runtime.Core
             // Mark every tracked object for destruction FIRST, then yield a
             // SINGLE frame. In play mode Object.Destroy is deferred to the
             // end-of-frame flush, and every destroy queued within the same
-            // frame flushes together, so one yield drains all of this test's
-            // OnDisable/OnDestroy callbacks (and thus every bus deregistration)
-            // at once. The prior loop yielded once PER object -- an O(n)
-            // per-test frame tax that a 128-component stress fixture paid as
-            // ~128 teardown frames. Batching it is O(1) while preserving the
-            // same drain-before-the-next-test guarantee the UnitySetup comment
-            // relies on: queued destroys must flush inside THIS teardown so
-            // their OnDisable does not fire against the next test's emptied bus.
+            // frame flushes together, so one yield drains all callbacks at once
+            // -- O(1) per teardown, not the O(n) a yield-per-object loop would
+            // cost a 128-component fixture (~128 teardown frames).
+            //
+            // LIFECYCLE NOTE (verified via the MCP loop on 6000.4; standard
+            // Unity Test Framework ordering): in the normal per-test flow the
+            // synchronous [TearDown] Cleanup() runs BEFORE this [UnityTearDown]
+            // and has already destroyed + cleared _spawned, so this loop
+            // normally iterates an EMPTY set and the drain below is skipped
+            // (destroyedAny stays false). The deferred destroys Cleanup() queued
+            // are flushed by the NEXT test's UnitySetup drain (before its Reset);
+            // that is where the real drain-before-the-next-test guarantee lives,
+            // not here. This destroy+drain path runs only when UnityCleanup() is
+            // invoked DIRECTLY against a populated _spawned
+            // (MessagingTestBaseCleanupRobustnessTests' "unity-*" scenarios),
+            // which is why it is retained rather than folded into Cleanup().
             bool destroyedAny = false;
             foreach (GameObject spawned in _spawned)
             {
@@ -312,6 +320,16 @@ namespace DxMessaging.Tests.Runtime.Core
             // fire against an emptied bus and log over-deregistration errors
             // against the next test (see ResetState's _resetGeneration guard
             // for the production-side hardening).
+            //
+            // This single yield is the only per-test frame the harness costs
+            // after the domain/scene reload-off win and the batched teardown
+            // (the WaitUntil...Fresh polls below are zero-frame on the happy
+            // path). It is load-bearing and cannot be removed: many fixtures
+            // call Object.Destroy directly in the test body (lifecycle / mutation
+            // / base-call tests), so the next test cannot safely Reset() until
+            // any such deferred destroy has flushed. Making the harness-tracked
+            // teardown synchronous (DestroyImmediate) would not let this drain
+            // go away while those direct-Destroy fixtures exist.
             if (Application.isPlaying)
             {
                 yield return null;

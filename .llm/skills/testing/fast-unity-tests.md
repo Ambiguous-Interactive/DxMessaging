@@ -2,9 +2,9 @@
 title: "Fast Unity Tests: Reload, Frame Tax, and Anti-Patterns"
 id: "fast-unity-tests"
 category: "testing"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-06-15"
-updated: "2026-06-20"
+updated: "2026-06-28"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -163,9 +163,18 @@ foreach (GameObject spawned in _spawned)
 }
 ```
 
-The single drain still flushes inside this teardown, so a queued `OnDisable` never
-bleeds into the next test's emptied bus (the race `UnitySetup` guards). This is the
-`MessagingTestBase.UnityCleanup` pattern.
+The batch-then-single-drain shape keeps teardown O(1) regardless of object count
+(`MessagingTestBase.UnityCleanup` uses it). Where the per-test drain actually
+lands is worth knowing (verified via the MCP loop on 6000.4): in the normal
+lifecycle the synchronous `[TearDown] Cleanup()` runs BEFORE `[UnityTearDown]
+UnityCleanup()` and already destroyed + cleared `_spawned`, so `UnityCleanup`
+iterates an empty set and its drain is skipped; the deferred destroys are flushed
+by the NEXT test's `UnitySetup` drain (before `Reset()`). That single `UnitySetup`
+yield is therefore the residual per-test frame, and it is load-bearing -- many
+fixtures call `Object.Destroy` directly in the test body, so it cannot be removed
+even if the harness-tracked teardown were made synchronous (`DestroyImmediate`).
+`UnityCleanup`'s own destroy+drain path runs only when it is invoked directly
+against a populated `_spawned` (the cleanup-robustness "unity-\*" scenarios).
 
 ## Lever 3: `[UnityTest]` only when you yield
 
@@ -263,3 +272,5 @@ resultPath)`; record `durationSeconds` + `{pass,fail,skip}`.
 | 1.0.0   | 2026-06-16 | Initial version                                                             |
 | 1.1.0   | 2026-06-18 | Add Lever 5 (standalone IL2CPP Release C++ after Debug/Release measurement) |
 | 1.2.0   | 2026-06-19 | Lever 3 migration done (45 fixtures, 310 methods); ship the no-yield guard  |
+| 1.3.0   | 2026-06-20 | Lever 3 tail drained (8 mixed fixtures, 43 methods); allowlist now empty    |
+| 1.4.0   | 2026-06-28 | Lever 2 mechanism corrected: the per-test drain is the `UnitySetup` frame   |
