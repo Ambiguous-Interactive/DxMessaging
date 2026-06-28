@@ -111,6 +111,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verified by differential allocation guards that pin the `Action` registration cost to the
   already-optimal `FastHandler` registration cost. Diagnostics, deduplication, and dispatch
   ordering are preserved.
+- Every registration kind now allocates about two fewer managed objects. The token used to
+  wrap each staged registration in a per-registration parameterless `Action` (a delegate plus
+  its display class) whose only job was to re-bundle the handle, the staging function, and the
+  de-registration bookkeeping; the token now stores each staging function directly and pairs it
+  with its handle in the replay queue, so that wrapper -- and the closure `InternalRegister`
+  needed to build it -- is gone. Measured cold-registration floor (FastHandler, diagnostics off):
+  untargeted drops from 14.69 to 12.69 managed allocations per registration (a clean -2.00), with
+  the same ~2-allocation reduction across targeted, broadcast, without-targeting/source, and
+  post-processor registrations (~12% fewer registration allocations overall). The de-registration
+  replay, rollback-on-failure, re-entrancy, and equal-priority registration-order semantics are
+  unchanged; the public API is unchanged. Pinned structurally by a deterministic guard that the
+  token stores the staging function (not an `Action` wrapper).
 - The bug-report issue template now offers the package version as a dropdown of
   released versions (with an `Other` fallback) instead of a free-text field, so
   reports carry an exact, valid version. The list is generated from

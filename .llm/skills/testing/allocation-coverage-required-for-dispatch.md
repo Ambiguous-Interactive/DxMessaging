@@ -2,9 +2,9 @@
 title: "Allocation Coverage Required for Dispatch"
 id: "allocation-coverage-required-for-dispatch"
 category: "testing"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-05-01"
-updated: "2026-06-27"
+updated: "2026-06-28"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -265,6 +265,35 @@ count recorded the invocation (only the augmented closure touches `_callCounts`;
 count would mean the raw handler was dispatched). Closes the gap that the global-accept-all
 slot -- which DOES dispatch `entry.handler` -- warns about.
 
+### Structural Guards (deterministic, backend-independent pins)
+
+When an allocation win is a STRUCTURAL fact -- a field stores a value type instead of a
+delegate, a parameter is passed by value instead of through a closure factory, a map stores
+the staging function directly instead of a per-item wrapper -- pin it with a deterministic
+reflection assertion on the type signature, NOT only a count budget. A structural guard
+cannot flake (it never measures allocations) and still fails on the backend where the
+`GC.Alloc` probe is unavailable, so it is the most reliable lock for a closure-collapse win.
+Worked examples in `RegistrationAllocationCountTests`:
+`InternalRegisterPassesMetadataByValueNotFactory` (asserts the metadata parameter is the
+`MessageRegistrationMetadata` struct, never a `Func<...>` factory) and
+`RegistrationsStoreStagingFunctionNotWrapperAction` (asserts the token's `_registrations`
+value type is `Func<MessageRegistrationHandle, Action>` -- the staging function stored
+directly -- not a per-registration `Action` wrapper, which would re-introduce one delegate
+plus its display class per registration). Prove it red-green by reverting the optimization
+and confirming the type-signature assertion flips. A structural guard is necessary, not
+sufficient: pair it with the behavioral count/differential guards (a revert that kept the
+field type but re-wrapped elsewhere would slip past the structural test alone).
+
+When a closure-collapse win is uniform across many near-identical paths (every registration
+kind), the warm-editor accumulating-token count test is too noisy to read a small per-path
+delta -- min-over-attempts on a single growing token swings with mid-window dictionary/array
+resizes. Measure the delta instead as a COLD TOTAL: a fresh bus+token per attempt, register
+N handlers of one kind, take the minimum over attempts. Cold totals grow the same way every
+attempt, so the floor is deterministic and the before/after delta is trustworthy (the
+staging-function collapse measured untargeted 14.69 -> 12.69 allocs/registration, a clean
+-2.00). Reserve this for a one-off science measurement; ship the deterministic structural
+guard as the regression lock.
+
 ## Enforcement
 
 `Tests/Runtime/Core/TestAttributeContractTests.cs` contains
@@ -313,6 +342,10 @@ common drift point.
 
 ## Changelog
 
-| Version | Date       | Changes         |
-| ------- | ---------- | --------------- |
-| 1.0.0   | 2026-05-01 | Initial version |
+| Version | Date       | Changes                                                                 |
+| ------- | ---------- | ----------------------------------------------------------------------- |
+| 1.4.0   | 2026-06-28 | Add Structural Guards subsection (type-signature pins + cold-total A/B) |
+| 1.3.0   | 2026-06-27 | Add `gcAllocatedBytes` byte-tracking honesty note alongside the count   |
+| 1.2.0   | 2026-06-26 | Add post-processor differential guard + augmented-closure correctness   |
+| 1.1.0   | 2026-06-26 | Add Differential Count Guards subsection                                |
+| 1.0.0   | 2026-05-01 | Initial version                                                         |

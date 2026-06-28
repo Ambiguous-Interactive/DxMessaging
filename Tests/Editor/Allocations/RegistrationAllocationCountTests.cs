@@ -48,6 +48,14 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// pins the Action post-processor path to the FastHandler post-processor path's
     /// closure count.
     /// </description></item>
+    /// <item><description>
+    /// Every registration kind dropped about two managed-allocation calls once the
+    /// token stored each staging function directly in <c>_registrations</c> (paired with
+    /// its handle in the replay queue) instead of wrapping it in a per-registration
+    /// parameterless <c>Action</c> (a delegate plus its display class). Guarded
+    /// structurally by <see cref="RegistrationsStoreStagingFunctionNotWrapperAction"/>
+    /// (deterministic, backend-independent).
+    /// </description></item>
     /// </list>
     /// <para>
     /// The counting rows use <see cref="AllocationProbe"/> (the <c>GC.Alloc</c> profiler
@@ -176,6 +184,46 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Is.False,
                 "InternalRegister must not accept a Func<MessageRegistrationMetadata>; the "
                     + "factory was invoked immediately, so it only added a closure allocation."
+            );
+        }
+
+        /// <summary>
+        /// Pins the per-registration wrapper-closure collapse structurally: the token's
+        /// <c>_registrations</c> map must store the staging function
+        /// (<c>Func&lt;MessageRegistrationHandle, Action&gt;</c>) DIRECTLY, never a
+        /// parameterless <see cref="Action"/>. The pre-change form stored a
+        /// per-registration <c>Registration</c> wrapper local function (a delegate plus
+        /// its display class, captured from <c>InternalRegister</c>) that only re-bundled
+        /// the handle, the staging function, and the <c>AddDeregistration</c> call; storing
+        /// the staging function directly and pairing it with its handle in the replay
+        /// queue removes that delegate AND <c>InternalRegister</c>'s display class -- about
+        /// two managed allocations per registration, uniformly across every registration
+        /// kind (measured cold-total floor: Untargeted 14.69 -&gt; 12.69 allocs/registration,
+        /// a clean -2.00). This assertion is deterministic and backend-independent, so it
+        /// catches a revert even where the allocation probe is unavailable.
+        /// </summary>
+        [Test]
+        public void RegistrationsStoreStagingFunctionNotWrapperAction()
+        {
+            FieldInfo registrations = typeof(MessageRegistrationToken).GetField(
+                "_registrations",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(
+                registrations,
+                Is.Not.Null,
+                "MessageRegistrationToken._registrations was renamed; update this guard."
+            );
+
+            Type valueType = registrations.FieldType.GetGenericArguments()[1];
+            Assert.That(
+                valueType,
+                Is.EqualTo(typeof(Func<MessageRegistrationHandle, Action>)),
+                "MessageRegistrationToken._registrations must store the staging function "
+                    + "(Func<MessageRegistrationHandle, Action>) directly, not a per-registration "
+                    + "Action wrapper. Wrapping the staging function in a parameterless Action "
+                    + "re-introduces one delegate plus its display class allocation per "
+                    + "registration (the collapsed 'Registration' local function)."
             );
         }
 
