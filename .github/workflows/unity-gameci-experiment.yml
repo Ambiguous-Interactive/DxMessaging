@@ -225,6 +225,13 @@ jobs:
         env:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
+      - name: Dump Unity log tail on failure or cancellation
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/dump-unity-log-tail
+        with:
+          results-dir: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}
+          label: GameCI experiment ${{ inputs.unity-version }} ${{ inputs.test-mode }}
+
       - name: Verify tests actually ran
         if: >-
           ${{

@@ -253,10 +253,16 @@ re-tries them):
 **Honesty / availability.** The byte counter and count recorder are both
 profiler-dependent but self-validate independently. They are functional in the
 editor and in development players; on the published NON-development Standalone
-IL2CPP Release leg the profiler is stripped, so both metrics usually read
-`AllocationProbe.Unmeasured` (`-1`, rendered `n/a`) -- never a fabricated `0`.
+IL2CPP Release leg the profiler is stripped, so both metrics read
+`AllocationProbe.Unmeasured` (`-1`) for every row -- never a fabricated `0`.
 Renderers must choose the first scope that measured each metric instead of
-reusing the count scope for bytes. The real allocation net is the EDITOR
+reusing the count scope for bytes, AND must drop a structurally-unmeasured surface
+rather than fill it with `n/a`: the per-scope dispatch table omits a metric column
+when every row is `Unmeasured` (so the Standalone table is throughput-only), the
+comparison matrix for a metric no present scope measured is omitted entirely, and
+the per-PR delta cell drops the metric segment when both sides are `Unmeasured`.
+`n/a` then survives only as a genuine per-row/per-library cell (measured for the
+scope in general, missing for that one entry). The real allocation net is the EDITOR
 allocation suite plus the weekly editor benchmarks, not the per-PR Standalone
 delta gate. A `gcAllocatedBytes` of `-1` means `AllocationProbe.Unmeasured`,
 identical in meaning to the count's sentinel; a `0` is a measured zero-byte

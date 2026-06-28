@@ -543,9 +543,9 @@ var token = MessageRegistrationToken.Create(handler, testBus);
 Enable diagnostics only in Editor:
 
 ```csharp
-#if UNITY_EDITOR
-IMessageBus.GlobalDiagnosticsMode = true;
-#endif
+// DiagnosticsTarget.Editor scopes diagnostics to the Unity Editor automatically;
+// player builds leave them off, so no #if UNITY_EDITOR guard is needed.
+IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor;
 ```
 
 Profile early, measure impact.

@@ -244,8 +244,9 @@ DxMessaging provides diagnostic tools for debugging and monitoring message flow.
 ### Global Settings
 
 ```csharp
-// Enable/disable diagnostics globally
-IMessageBus.GlobalDiagnosticsMode = true;
+// Enable/disable diagnostics globally (DiagnosticsTarget is a [Flags] enum:
+// Off, Editor, Runtime, All)
+IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
 
 // Configure global message buffer size
 IMessageBus.GlobalMessageBufferSize = 1024;
@@ -254,8 +255,9 @@ IMessageBus.GlobalMessageBufferSize = 1024;
 ### Per-Instance Settings
 
 ```csharp
-// Per-bus diagnostics
-messageBus.DiagnosticsMode = true;
+// Per-bus: IMessageBus.DiagnosticsMode is read-only; it reflects GlobalDiagnosticsTargets
+// when the bus is created or reset. Read it to check whether diagnostics are active.
+if (messageBus.DiagnosticsMode) { /* diagnostics are active on this bus */ }
 
 // Per-token diagnostics
 token.DiagnosticMode = true;

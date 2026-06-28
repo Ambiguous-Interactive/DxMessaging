@@ -27,7 +27,10 @@ const path = require("path");
 // 067 package-script contract guard and validate:all issue-template gate: 12890.
 // 068 per-operation gcAllocatedBytes perf metric (column, delta, backward-compat): 13033.
 // 069 gcAllocatedBytes cross-library comparison matrix (renderer + scope reuse + tests): 13061.
-const TOTAL_BUDGET = 13061;
+// 070 omit all-unmeasured (n/a) memory columns/matrices/delta-segments so the
+//     profiler-stripped IL2CPP leg stops publishing vacuous n/a (renderer column +
+//     matrix gating, delta segment gating, red-green tests): 13140.
+const TOTAL_BUDGET = 13140;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

@@ -2,9 +2,9 @@
 title: "Allocation Coverage Required for Dispatch"
 id: "allocation-coverage-required-for-dispatch"
 category: "testing"
-version: "1.3.0"
+version: "1.6.0"
 created: "2026-05-01"
-updated: "2026-06-27"
+updated: "2026-06-28"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -265,6 +265,77 @@ count recorded the invocation (only the augmented closure touches `_callCounts`;
 count would mean the raw handler was dispatched). Closes the gap that the global-accept-all
 slot -- which DOES dispatch `entry.handler` -- warns about.
 
+### Structural Guards (deterministic, backend-independent pins)
+
+When an allocation win is a STRUCTURAL fact -- a field stores a value type instead of a
+delegate, a parameter is passed by value instead of through a closure factory, a map stores
+the staging function directly instead of a per-item wrapper -- pin it with a deterministic
+reflection assertion on the type signature, NOT only a count budget. A structural guard
+cannot flake (it never measures allocations) and still fails on the backend where the
+`GC.Alloc` probe is unavailable, so it is the most reliable lock for a closure-collapse win.
+Worked examples in `RegistrationAllocationCountTests`:
+`InternalRegisterPassesMetadataByValueNotFactory` (asserts the metadata parameter is the
+`MessageRegistrationMetadata` struct, never a `Func<...>` factory) and
+`RegistrationsStoreStagingFunctionNotWrapperAction` (asserts the token's `_registrations`
+value type is `Func<MessageRegistrationHandle, Action>` -- the staging function stored
+directly -- not a per-registration `Action` wrapper, which would re-introduce one delegate
+plus its display class per registration). Prove it red-green by reverting the optimization
+and confirming the type-signature assertion flips. A structural guard is necessary, not
+sufficient: pair it with the behavioral count/differential guards (a revert that kept the
+field type but re-wrapped elsewhere would slip past the structural test alone).
+
+When a closure-collapse win is uniform across many near-identical paths (every registration
+kind), the warm-editor accumulating-token count test is too noisy to read a small per-path
+delta -- min-over-attempts on a single growing token swings with mid-window dictionary/array
+resizes. Measure the delta instead as a COLD TOTAL: a fresh bus+token per attempt, register
+N handlers of one kind, take the minimum over attempts. Cold totals grow the same way every
+attempt, so the floor is deterministic and the before/after delta is trustworthy (the
+staging-function collapse measured untargeted 14.69 -> 12.69 allocs/registration, a clean
+-2.00). Reserve this for a one-off science measurement; ship the deterministic structural
+guard as the regression lock.
+
+When the win is collapsing an eager collection inside a PRIVATE holder whose multi-element
+BEHAVIOR also changes (e.g. the per-handle de-registration holder: an eager `List<Action>`
+became an inline head plus a lazy overflow list, saving the list object and its backing
+array per registration), the type-signature pin is not enough -- the reworked
+invoke/remove/rollback logic must match the old collection's semantics exactly. Pin both
+with a focused reflection unit test over the private type (resolve it via
+`GetNestedType(..., BindingFlags.NonPublic)`, drive `Add`/`InvokeFrom`/`Count` directly):
+assert the storage shape (the overflow collection field is null after a single add) AND
+re-derive the behavior against the old form (insertion order, partial-failure-retryable,
+the rollback `startIndex` baseline) across an exhaustive count x failure x start-index
+matrix. Put it in the per-PR EditMode correctness assembly (NOT the `Allocation`-category
+suite) so it runs every PR and stays immune to warm-editor allocation-count flakiness --
+the example is `PendingDeregistrationStorageTests` (cold-total A/B untargeted 13.29 -> 11.29,
+a clean -2.00).
+
+### When an absolute COUNT budget is structurally doomed (prefer a STATE assertion)
+
+An absolute `GC.Alloc` COUNT budget only works when the operation's true floor sits
+comfortably above the editor's ambient-noise floor. A warm, long-lived editor domain
+attributes background allocations to whatever window is open, and `MeasureMin` cannot push a
+measurement below that ambient floor -- it only rejects upward spikes. Measured on the host
+editor, token `Create` (a deterministic 7-allocation operation) read a MINIMUM of ~19 over 64
+windows (median ~51, p90 ~73): any budget tight enough to catch the diagnostics-revert (+4)
+was already below the achievable warm-editor floor, so the absolute-count guard
+false-failed run-to-run. When the floor is small and the noise is comparable, an absolute
+count budget cannot be both non-flaky AND meaningful -- replace it.
+
+For a LAZY-ALLOCATION win (a field materialized on first use via `??=` rather than eagerly in
+the constructor), the strongest replacement is a deterministic STATE assertion, not a count
+at all: construct the object in the no-diagnostics state and assert the lazy backing field is
+still `null` (proof the constructor allocated nothing for it). It uses no allocation probe,
+never flakes, and runs in the per-PR correctness leg. The example is
+`RegistrationDiagnosticsLazyAllocationTests.TokenCreateDoesNotEagerlyAllocateDiagnosticsCollections`
+(asserts `_callCountsBacking`/`_emissionBufferBacking` are `null` after `Create`); a revert to
+an eager `= new()` field makes them non-null and trips it (proven red-green).
+
+Measure-first correction worth remembering: do NOT assume registration allocation noise comes
+from `DxPools` rental. A per-pool probe showed the steady refcount registration path never
+rents from the typed-handler pools (hits = misses = 0), so a deterministic pool pre-warm would
+not have reduced the swing -- the noise was pure background-editor `GC.Alloc` pollution.
+Attribute the noise source with data before "fixing" the wrong layer.
+
 ## Enforcement
 
 `Tests/Runtime/Core/TestAttributeContractTests.cs` contains
@@ -313,6 +384,12 @@ common drift point.
 
 ## Changelog
 
-| Version | Date       | Changes         |
-| ------- | ---------- | --------------- |
-| 1.0.0   | 2026-05-01 | Initial version |
+| Version | Date       | Changes                                                                            |
+| ------- | ---------- | ---------------------------------------------------------------------------------- |
+| 1.6.0   | 2026-06-28 | Add STATE-assertion-over-doomed-count-budget subsection + DxPools-noise correction |
+| 1.5.0   | 2026-06-28 | Add private-holder storage-shape + behavioral reflection-guard pattern             |
+| 1.4.0   | 2026-06-28 | Add Structural Guards subsection (type-signature pins + cold-total A/B)            |
+| 1.3.0   | 2026-06-27 | Add `gcAllocatedBytes` byte-tracking honesty note alongside the count              |
+| 1.2.0   | 2026-06-26 | Add post-processor differential guard + augmented-closure correctness              |
+| 1.1.0   | 2026-06-26 | Add Differential Count Guards subsection                                           |
+| 1.0.0   | 2026-05-01 | Initial version                                                                    |

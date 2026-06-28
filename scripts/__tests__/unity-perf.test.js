@@ -160,18 +160,13 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
 });
 
 test("legacy 7-column CSV rows default gcAllocatedBytes to the -1 sentinel", () => {
-  // An old baseline row (no gcAllocatedBytes column) must still parse: the missing
-  // field defaults to the Unmeasured sentinel "-1" so re-extracting a legacy baseline
-  // round-trips honestly instead of crashing.
   const legacy = `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5`;
   const [parsed] = extractRows(legacy);
   assert.equal(parsed.gcAllocatedBytes, "-1");
 
-  // Re-serializing yields the 8-column shape with the sentinel preserved.
   const reparsed = extractRows(buildCsv([parsed]));
   assert.deepEqual(reparsed, [parsed]);
 
-  // A legacy structured-log line (no gcAllocatedBytes key) defaults the same way.
   const legacyLog = `{scenario:"UntargetedFlood_OneHandler",platform:"${PLATFORM}",commit:"abc1234",runIndex:0,emitsPerSec:1000000,gcAllocations:0,wallClockMs:12.5}`;
   assert.equal(extractRows(legacyLog)[0].gcAllocatedBytes, "-1");
 });
@@ -212,32 +207,24 @@ test("compareRow reports throughput deltas beyond tolerance", () => {
 });
 
 test("delta sign is normalized so + is always better and - is always worse", () => {
-  // goodnessRelativeChange: higher-is-better keeps the raw sign; lower-is-better
-  // negates it, so an improvement is always positive regardless of metric direction.
   assert.ok(goodnessRelativeChange(110, 100, true) > 0, "more throughput is better (+)");
   assert.ok(goodnessRelativeChange(90, 100, true) < 0, "less throughput is worse (-)");
   assert.ok(goodnessRelativeChange(90, 100, false) > 0, "lower latency is better (+)");
   assert.ok(goodnessRelativeChange(110, 100, false) < 0, "higher latency is worse (-)");
 
-  // formatAllocDelta words the direction (fewer/more) instead of a bare +/-.
   assert.equal(formatAllocDelta(-5), "5 fewer allocs");
   assert.equal(formatAllocDelta(5), "5 more allocs");
 
-  // formatBytesDelta mirrors the count wording: fewer bytes is better.
   assert.equal(formatBytesDelta(-2048), "2,048 fewer bytes");
   assert.equal(formatBytesDelta(2048), "2,048 more bytes");
   assert.equal(formatBytesDelta(0), "0 bytes");
 
-  // Throughput scenario: a faster run (more emits/sec) reads "+", a regression "-".
   const t = "UntargetedFlood_OneHandler";
   const up = compareRow(t, row(t, "1100000.000"), row(t, "1000000.000"), 0.02);
   const down = compareRow(t, row(t, "900000.000"), row(t, "1000000.000"), 0.02);
   assert.ok(up.cells[3].startsWith("+10.00%"), up.cells[3]);
   assert.ok(down.cells[3].startsWith("-10.00%"), down.cells[3]);
 
-  // Registration (wall-clock) scenario: a FASTER run (lower ms) must read "+", even
-  // though the raw number went DOWN -- this is the bug the normalization fixes. Fewer
-  // allocations read "fewer"; more read "more".
   const reg = "RegistrationFlood_1000Types_FromColdBus";
   const baselineReg = row(reg, "0.000", "80", "12.500");
   const fasterFewer = compareRow(reg, row(reg, "0.000", "75", "11.000"), baselineReg, 0.02);
@@ -267,13 +254,19 @@ test("isRegression trips on large throughput drops or allocation growth", () => 
   }
 });
 
-test("allocation reporting is honest: real counts render, sentinel renders n/a", () => {
+test("allocation reporting is honest: real counts render, unmeasured is omitted", () => {
   const s = "UntargetedFlood_OneHandler";
   const grew = compareRow(s, row(s, "1000000.000", "10"), row(s, "1000000.000", "0"), 0.02);
   assert.ok(grew.cells[3].includes("10 more allocs") && grew.moved, grew.cells[3]);
 
-  const na = compareRow(s, row(s, "1000000.000", "-1"), row(s, "1000000.000", "-1"), 0.02);
-  assert.ok(na.cells[1].includes("n/a") && na.cells[2].includes("n/a"), na.cells[1]);
+  const na = compareRow(
+    s,
+    row(s, "1000000.000", "-1", "10.000", "-1"),
+    row(s, "1000000.000", "-1", "10.000", "-1"),
+    0.02
+  );
+  assert.equal(na.cells[1], "1.00 M emits/sec", na.cells[1]);
+  assert.equal(na.cells[2], "1.00 M emits/sec", na.cells[2]);
   assert.ok(!na.cells[3].includes("alloc") && na.moved === false, na.cells[3]);
 
   const allocations = buildComparisonSections(
@@ -285,7 +278,7 @@ test("allocation reporting is honest: real counts render, sentinel renders n/a",
   assert.ok(allocations.includes("110,806") && allocations.includes("n/a"), allocations);
 });
 
-test("byte reporting mirrors allocs: real byte delta is goodness-signed, sentinel is n/a", () => {
+test("byte reporting mirrors allocs: real byte delta is goodness-signed, unmeasured is omitted", () => {
   const s = "UntargetedFlood_OneHandler";
   const moreBytes = compareRow(
     s,
@@ -311,12 +304,14 @@ test("byte reporting mirrors allocs: real byte delta is goodness-signed, sentine
     row(s, "1000000.000", "0", "10.000", "-1"),
     0.02
   );
-  assert.ok(naBytes.cells[1].includes("n/a") && naBytes.cells[2].includes("n/a"), naBytes.cells[1]);
+  assert.equal(naBytes.cells[1], "1.00 M emits/sec, 0", naBytes.cells[1]);
+  assert.equal(naBytes.cells[2], "1.00 M emits/sec, 0", naBytes.cells[2]);
+  assert.ok(!naBytes.cells[1].includes("n/a") && !naBytes.cells[2].includes("n/a"));
   assert.ok(!naBytes.cells[3].includes("bytes"), naBytes.cells[3]);
   assert.ok(!/\b0 bytes\b/.test(naBytes.cells[3]));
 });
 
-test("dispatch table renders a GC bytes column with real values and the n/a sentinel", () => {
+test("dispatch table renders a GC bytes column with real values and a per-row n/a", () => {
   const scenario = "UntargetedFlood_OneHandler";
   const broadcast = "BroadcastFlood_OneHandler";
   const rows = [
@@ -327,14 +322,17 @@ test("dispatch table renders a GC bytes column with real values and the n/a sent
   assert.ok(block.includes("GC bytes"), block);
   assert.ok(block.includes("98,304"), block);
 
-  const sentinelRows = [{ ...playModeRow(scenario, "20000000.000", "42"), gcAllocatedBytes: "-1" }];
-  const sentinelBlock = buildBlock(
-    selectRowsForVersion(sentinelRows, "Unity 6000.3.16f1"),
+  const partialRows = [
+    playModeRow(scenario, "20000000.000", "0", "5000.000", "8192"),
+    { ...playModeRow(broadcast, "9000000.000", "42"), gcAllocatedBytes: "-1" }
+  ];
+  const partialBlock = buildBlock(
+    selectRowsForVersion(partialRows, "Unity 6000.3.16f1"),
     "6000.3.16f1"
   );
-  assert.ok(sentinelBlock.includes("42"), sentinelBlock);
-  assert.ok(/\bn\/a\b/.test(sentinelBlock), sentinelBlock);
-  assert.ok(!/\b42\b[^|]*n\/a[^|]*n\/a/.test(sentinelBlock), sentinelBlock);
+  assert.ok(partialBlock.includes("GC bytes"), partialBlock);
+  assert.ok(partialBlock.includes("8,192") && partialBlock.includes("42"), partialBlock);
+  assert.ok(/\bn\/a\b/.test(partialBlock), partialBlock);
 });
 
 test("computeRegressed and buildDeltaTable only use overlapping scenarios", () => {
@@ -466,22 +464,17 @@ test("buildComparisonSections bolds a sole present tech and display-precision ti
 });
 
 test("deriveScope reads the execution scope from platform strings", () => {
-  // ONE canonical deriveScope (perf-scenarios.js, re-exported by render-perf-doc
-  // and extract-perf-baseline), so cover it directly over the full token table:
-  // Standalone -> PlayMode -> EditMode precedence, null for no-token/non-string.
   const cases = [
     [STANDALONE_PLATFORM, "Standalone"],
     [EDITOR_PLAYMODE_PLATFORM, "PlayMode"],
     ["Unity 6000.3.16f1 EditMode Mono", "EditMode"],
     ["Unity 6000.3.16f1 Linux", null],
     [undefined, null],
-    // Both tokens present: Standalone wins (most player-faithful scope).
     ["Standalone PlayMode mix", "Standalone"]
   ];
   for (const [platform, expected] of cases) {
     assert.equal(deriveScope(platform), expected, `${platform}`);
   }
-  // The re-export consumed by extract-perf-baseline.js is the SAME function.
   assert.equal(extractorDeriveScope, deriveScope);
 });
 
@@ -489,16 +482,13 @@ test("two scopes render separate dispatch tables; only the Mono leg shows real a
   const scenario = "UntargetedFlood_OneHandler";
   const broadcast = "BroadcastFlood_OneHandler";
   const rows = [
-    // Standalone (IL2CPP) leg: allocations are the Unmeasured sentinel (-1 -> n/a).
-    { ...dispatchRow(scenario, "37500000.000"), gcAllocations: "-1" },
-    { ...dispatchRow(broadcast, "18000000.000"), gcAllocations: "-1" },
-    // In-editor PlayMode (Mono) leg: REAL counts for the SAME version.
-    playModeRow(scenario, "20000000.000", "0"),
-    playModeRow(broadcast, "9000000.000", "1234")
+    { ...dispatchRow(scenario, "37500000.000"), gcAllocations: "-1", gcAllocatedBytes: "-1" },
+    { ...dispatchRow(broadcast, "18000000.000"), gcAllocations: "-1", gcAllocatedBytes: "-1" },
+    playModeRow(scenario, "20000000.000", "0", "5000.000", "4096"),
+    playModeRow(broadcast, "9000000.000", "1234", "5000.000", "98304")
   ];
   const block = buildBlock(selectRowsForVersion(rows, "Unity 6000.3.16f1"), "6000.3.16f1");
 
-  // Two dispatch sections, Standalone before PlayMode (headline order).
   const standaloneHeading = "### Dispatch throughput - Standalone (IL2CPP)";
   const playModeHeading = "### Dispatch throughput - PlayMode (Mono)";
   assert.ok(block.includes(standaloneHeading), block);
@@ -514,10 +504,16 @@ test("two scopes render separate dispatch tables; only the Mono leg shows real a
   );
   const playModeSection = block.slice(block.indexOf(playModeHeading));
 
-  assert.ok(/\bn\/a\b/.test(standaloneSection), standaloneSection);
+  assert.ok(!standaloneSection.includes("GC allocs"), standaloneSection);
+  assert.ok(!standaloneSection.includes("GC bytes"), standaloneSection);
+  assert.ok(!/\bn\/a\b/.test(standaloneSection), standaloneSection);
+  assert.ok(playModeSection.includes("GC allocs") && playModeSection.includes("GC bytes"));
   assert.ok(!playModeSection.includes("n/a"), playModeSection);
   assert.ok(playModeSection.includes("| 0 "), playModeSection);
-  assert.ok(playModeSection.includes("1,234"), playModeSection);
+  assert.ok(
+    playModeSection.includes("1,234") && playModeSection.includes("98,304"),
+    playModeSection
+  );
 });
 
 test("comparison throughput stays on Standalone while GC count+bytes come from the Mono leg", () => {
@@ -566,13 +562,13 @@ test("comparison bytes choose their own measured scope", () => {
     ],
     [
       [
-        dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "-1", "-1"),
-        dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "-1", "-1"),
+        dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "111", "-1"),
+        dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "222", "-1"),
         playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "-1", "5000.000", "4096"),
         playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "-1", "5000.000", "8192")
       ],
       "GC allocations per 10k ops (Standalone (IL2CPP))",
-      "n/a",
+      "222",
       "GC allocated bytes per 10k ops (PlayMode (Mono))"
     ]
   ];
@@ -584,32 +580,23 @@ test("comparison bytes choose their own measured scope", () => {
   }
 });
 
-test("comparison count+bytes matrices stay Standalone n/a when no editor leg ran", () => {
+test("comparison count+bytes matrices are omitted when no leg measured them", () => {
   const sections = buildComparisonSections(
     standaloneRows([
       ["DxMessaging|GlobalToOne", comparisonRow("28000000.000", "-1", "-1")],
       ["MessagePipe|GlobalToOne", comparisonRow("68000000.000", "-1", "-1")]
     ])
   );
-  assert.equal(sections.length, 3);
-  const allocations = sections[1].join("\n");
-  const bytes = sections[2].join("\n");
-  assert.ok(
-    allocations.includes(
-      "### Library comparison - GC allocations per 10k ops (Standalone (IL2CPP))"
-    ) && allocations.includes("n/a"),
-    allocations
-  );
-  assert.ok(
-    bytes.includes(
-      "### Library comparison - GC allocated bytes per 10k ops (Standalone (IL2CPP))"
-    ) && bytes.includes("n/a"),
-    bytes
-  );
+  assert.equal(sections.length, 1);
+  const onlySection = sections[0].join("\n");
+  assert.ok(onlySection.includes("### Library comparison - throughput (Standalone (IL2CPP))"));
+  const joined = sections.map((section) => section.join("\n")).join("\n");
+  assert.ok(!joined.includes("GC allocations per 10k ops"), joined);
+  assert.ok(!joined.includes("GC allocated bytes per 10k ops"), joined);
+  assert.ok(!/\bn\/a\b/.test(joined), joined);
 });
 
 test("extract-perf-baseline --scope filters rows to one execution scope", () => {
-  // --scope Standalone drops the PlayMode/EditMode rows and keeps Standalone rows.
   const mixed = [
     `UntargetedFlood_OneHandler,${STANDALONE_PLATFORM},abc1234,-1,37500000,-1,5000`,
     `UntargetedFlood_OneHandler,${EDITOR_PLAYMODE_PLATFORM},abc1234,-1,20000000,0,5000`,
@@ -623,8 +610,6 @@ test("extract-perf-baseline --scope filters rows to one execution scope", () => 
     [STANDALONE_PLATFORM]
   );
 
-  // End-to-end via the CLI: --scope Standalone against a mixed input writes ONLY
-  // the Standalone row; an all-editor input with --scope Standalone fails loudly.
   const script = path.join(REPO_ROOT, "scripts", "unity", "extract-perf-baseline.js");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-scope-"));
   try {

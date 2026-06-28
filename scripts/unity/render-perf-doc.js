@@ -147,22 +147,7 @@ function readInputs(inputs) {
     .join("\n");
 }
 
-// deriveScope (platform -> Standalone/PlayMode/EditMode, else null) is the
-// canonical copy in perf-scenarios.js (the shared, dependency-free module, so no
-// circular require) and re-exported below for render-perf-deltas.js and the tests.
-
-// Group the rows that match the requested Unity version into the structure the
-// renderer needs:
-//   - dispatchByScope:   Map<scope, Map<scenario, row>> (first row per scenario
-//                        within a scope wins, deterministically).
-//   - comparisonByScope: Map<scope, Map<"tech|scenario", row>> (first wins).
-//   - scopesPresent:     ordered (headline-first) list of scopes with any
-//                        dispatch rows.
-// This replaces the old single-table "prefer Editor" selection: scopes are kept
-// SEPARATE (one dispatch table each) and the comparison matrices later prefer the
-// headline scope (first SCOPE_ORDER entry present; Standalone IL2CPP when
-// available). Filtering to the version is by platform substring,
-// exactly as before.
+// Keep rows separated by execution scope; first row per scope/scenario wins.
 function selectRowsForVersion(rows, platformSubstring) {
   const matching = rows.filter((row) => row.platform.includes(platformSubstring));
 
@@ -217,12 +202,7 @@ function formatWallClock(wallClockMs) {
   return `${Number.parseFloat(wallClockMs).toFixed(3)} ms`;
 }
 
-// Allocation is a COUNT of managed GC allocations over one measurement batch
-// (AllocationProbe via the GC.Alloc recorder; smaller is better). -1 is the
-// "Unmeasured" sentinel (no reliable probe on that backend) and renders "n/a",
-// never "0"; a measured 0 is a real zero-alloc result. (Replaces the byte counter
-// whose GC.GetAllocatedBytesForCurrentThread() source returns 0 for EVERY
-// allocation under Unity's Boehm GC -- the old "Allocated bytes" column was vacuous.)
+// -1 is the unmeasured sentinel; measured zero stays a real zero.
 function formatAllocations(gcAllocations) {
   const count = Number.parseInt(gcAllocations, 10);
   if (!Number.isFinite(count) || count < 0) {
@@ -231,9 +211,6 @@ function formatAllocations(gcAllocations) {
   return count.toLocaleString("en-US");
 }
 
-// Allocated BYTES over one measurement batch (informational companion to the
-// allocation count; smaller is better). -1 is the same "Unmeasured" sentinel and
-// renders "n/a", never "0"; a measured 0 is a real zero-byte result.
 function formatBytesAllocated(gcAllocatedBytes) {
   const bytes = Number.parseInt(gcAllocatedBytes, 10);
   if (!Number.isFinite(bytes) || bytes < 0) {
@@ -242,26 +219,15 @@ function formatBytesAllocated(gcAllocatedBytes) {
   return bytes.toLocaleString("en-US");
 }
 
-// Comparison matrices show the same raw count (every tech runs the same BatchSize,
-// so the counts are directly comparable; no per-op division).
 function formatRowAllocations(row) {
   return formatAllocations(row.gcAllocations);
 }
 
-// Byte companion to formatRowAllocations for the GC-allocated-bytes matrix (same
-// BatchSize across techs, so totals compare directly). Bytes show MAGNITUDE; the
-// allocation count stays the canonical zero-alloc signal.
 function formatRowBytes(row) {
   return formatBytesAllocated(row.gcAllocatedBytes);
 }
 
-// Read + parse the collect-machine-specs.ps1 JSON and format the one-line
-// "Runner: ..." provenance string. Resilient by contract: a missing path, a
-// missing/unreadable file, malformed JSON, or a non-object payload ALL fall back
-// to the neutral literal rather than throwing -- the doc must render even when the
-// runner failed to emit specs. Returns NEUTRAL_RUNNER_DESCRIPTION when machineSpecsPath
-// is empty/undefined. Individual missing fields render as "unknown" (the .ps1
-// already emits "unknown" for failed probes; this also guards a partial payload).
+// Optional runner diagnostics fall back to neutral text when missing or malformed.
 function readMachineSpecs(machineSpecsPath) {
   if (!machineSpecsPath) {
     return NEUTRAL_RUNNER_DESCRIPTION;
@@ -284,10 +250,7 @@ function readMachineSpecs(machineSpecsPath) {
   return formatMachineSpecs(specs);
 }
 
-// Format a parsed machine-specs object into the one-line provenance string:
-//   "<cpu>, <pc>C/<lc>T @ <clock>MHz; <ramGb>GB <ramType>@<ramSpeed>; <gpu>; <os>"
-// Each field defaults to "unknown" when absent/empty so a partial payload never
-// produces "undefined". Pure (no I/O) so it is unit-testable.
+// Missing fields render as "unknown" so partial diagnostics never leak undefined.
 function formatMachineSpecs(specs) {
   const field = (value) => {
     if (value === undefined || value === null) {
@@ -311,15 +274,7 @@ function formatMachineSpecs(specs) {
   );
 }
 
-// Render a GFM table whose pipes are column-aligned the SAME way Prettier
-// aligns them (each column padded to max(3, widest cell), one space of
-// padding on each side, the separator row filled with dashes to the column
-// width). The benchmark cells are pure ASCII, so this reproduces Prettier's GFM
-// output byte-for-byte. Emitting the aligned form here -- rather than a compact
-// `| --- |` form -- is what makes the rendered doc pass the repo's REQUIRED
-// `prettier --check` markdown gate and stay byte-stable run-to-run (the
-// workflow's post-render `prettier --write` becomes a verified no-op on the
-// table).
+// Match Prettier's GFM table alignment so generated docs stay byte-stable.
 function alignTable(rows) {
   const columnCount = rows[0].length;
   const widths = new Array(columnCount).fill(3);
@@ -337,39 +292,47 @@ function alignTable(rows) {
   return [renderRow(header), separator, ...body.map(renderRow)].join("\n");
 }
 
-// Build one dispatch-throughput table for a single scope. Rows follow
-// SCENARIO_ORDER; the Scenario cell shows the human DisplayName (NOT the raw
-// key); registration scenarios show wall-clock, others throughput.
 function buildDispatchTable(byScenario) {
-  // "GC allocs" (no fixed denominator): throughput rows count over a 10k-op batch,
-  // cold rows over one op per trial, registration floods over one flood -- each row's
-  // count is over its own measurement batch, so a single "/ 10k ops" denominator
-  // would overstate the cold/flood rows.
-  const header = ["Scenario", "Throughput / Wall clock", "GC allocs", "GC bytes"];
-  const dataRows = [];
-
+  const selected = [];
   for (const scenario of SCENARIO_ORDER) {
     const row = byScenario.get(scenario);
-    if (!row) {
-      continue;
+    if (row) {
+      selected.push({ scenario, row });
     }
+  }
+  if (selected.length === 0) {
+    return null;
+  }
+
+  // Omit all-unmeasured profiler columns; keep partial n/a cells as signal.
+  const hasAllocations = selected.some(({ row }) => isMeasuredInteger(row.gcAllocations));
+  const hasBytes = selected.some(({ row }) => isMeasuredInteger(row.gcAllocatedBytes));
+
+  const header = ["Scenario", "Throughput / Wall clock"];
+  if (hasAllocations) {
+    header.push("GC allocs");
+  }
+  if (hasBytes) {
+    header.push("GC bytes");
+  }
+
+  const dataRows = selected.map(({ scenario, row }) => {
     const primary = REGISTRATION_SCENARIOS.has(scenario)
       ? formatWallClock(row.wallClockMs)
       : formatThroughput(row.emitsPerSecond);
-    const label = DISPATCH_DISPLAY_NAMES[scenario] || scenario;
-    dataRows.push([
-      label,
-      primary,
-      formatAllocations(row.gcAllocations),
-      formatBytesAllocated(row.gcAllocatedBytes)
-    ]);
-  }
+    const cells = [DISPATCH_DISPLAY_NAMES[scenario] || scenario, primary];
+    if (hasAllocations) {
+      cells.push(formatAllocations(row.gcAllocations));
+    }
+    if (hasBytes) {
+      cells.push(formatBytesAllocated(row.gcAllocatedBytes));
+    }
+    return cells;
+  });
 
-  return dataRows.length === 0 ? null : alignTable([header, ...dataRows]);
+  return alignTable([header, ...dataRows]);
 }
 
-// Build the per-scope dispatch sections (label + Platform line + table) in
-// headline scope order (SCOPE_ORDER; Standalone first). Returns an array of markdown line-arrays.
 function buildDispatchSections(dispatchByScope, scopesPresent) {
   const sections = [];
   for (const scope of scopesPresent) {
@@ -381,10 +344,6 @@ function buildDispatchSections(dispatchByScope, scopesPresent) {
     const sampleRow = SCENARIO_ORDER.map((scenario) => byScenario.get(scenario)).find(Boolean);
     const platform = sampleRow ? sampleRow.platform : "unknown";
     sections.push([
-      // h3: the AUTOGENERATED region lives under the "## Latest CI dispatch
-      // throughput" h2 in performance.md, so the first heading here must be h3
-      // to satisfy markdownlint MD001 (heading-increment). Do not deepen to h4
-      // without introducing an intervening h3 parent.
       `### Dispatch throughput - ${scopeLabel(scope, platform)}`,
       "",
       `Platform: ${platform}.`,
@@ -395,9 +354,6 @@ function buildDispatchSections(dispatchByScope, scopesPresent) {
   return sections;
 }
 
-// Choose the scope whose comparison rows feed the cross-library THROUGHPUT
-// matrix: the first scope in SCOPE_ORDER (headline order) that actually has
-// comparison rows -- Standalone when present, else PlayMode, else EditMode.
 function preferredComparisonScope(comparisonByScope) {
   for (const scope of SCOPE_ORDER) {
     const byCell = comparisonByScope.get(scope);
@@ -413,8 +369,6 @@ function isMeasuredInteger(value) {
   return Number.isFinite(parsed) && parsed >= 0;
 }
 
-// Pick the first headline-ordered scope with at least one measured value for a
-// profiler metric. Counts and bytes self-validate independently.
 function preferredComparisonMetricScope(comparisonByScope, selectMetric) {
   for (const scope of SCOPE_ORDER) {
     const byCell = comparisonByScope.get(scope);
@@ -428,6 +382,17 @@ function preferredComparisonMetricScope(comparisonByScope, selectMetric) {
     }
   }
   return preferredComparisonScope(comparisonByScope);
+}
+
+function anyScopeMeasures(comparisonByScope, selectMetric) {
+  for (const byCell of comparisonByScope.values()) {
+    for (const row of byCell.values()) {
+      if (isMeasuredInteger(selectMetric(row))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function preferredComparisonAllocScope(comparisonByScope) {
@@ -464,14 +429,7 @@ function buildMetricComparison(
   };
 }
 
-// Render one cross-library comparison matrix's data rows for a single scope.
-// Returns null when no tech has any comparison row in the scope (a fully-absent
-// tech is omitted rather than rendered as an all-N/A row). `bold` is true only
-// for the throughput matrix -- the fastest tech per scenario COLUMN is bolded so
-// the per-category winner is visible at a glance (ties at DISPLAY precision are
-// all bolded; N/A capability gaps never win). The allocations matrix is never
-// bolded (the GC-allocation count is a property, not a race). `formatCell` turns
-// a row into its cell text and cells absent for a (tech, scenario) show N/A.
+// Throughput matrices bold per-scenario display-precision winners.
 function buildComparisonMatrix(byCell, formatCell, { bold }) {
   const techsPresent = COMPARISON_TECH_ORDER.filter((techKey) =>
     COMPARISON_SCENARIO_ORDER.some((scenarioKey) => byCell.has(`${techKey}|${scenarioKey}`))
@@ -485,10 +443,7 @@ function buildComparisonMatrix(byCell, formatCell, { bold }) {
     ...COMPARISON_SCENARIO_ORDER.map((key) => COMPARISON_SCENARIO_LABELS[key])
   ];
 
-  // Winners are computed at DISPLAY precision (the formatted cell text): two
-  // techs that render identically are visually tied, so both are bolded even
-  // when their raw floats differ in digits the reader cannot see. This also
-  // reduces bold flapping between near-tied techs across runs.
+  // Display-precision ties all win, reducing churn for near-tied techs.
   const winningCellByScenario = new Map();
   if (bold) {
     for (const scenarioKey of COMPARISON_SCENARIO_ORDER) {
@@ -528,8 +483,6 @@ function buildComparisonMatrix(byCell, formatCell, { bold }) {
   return alignTable(dataRows);
 }
 
-// Build throughput, allocation-count, and allocated-byte comparison matrices.
-// Each metric chooses and labels its own scope.
 function buildComparisonSections(comparisonByScope) {
   const throughputScope = preferredComparisonScope(comparisonByScope);
   if (!throughputScope) {
@@ -547,49 +500,48 @@ function buildComparisonSections(comparisonByScope) {
     return [];
   }
 
-  const allocations = buildMetricComparison(
-    comparisonByScope,
-    throughputScope,
-    throughputByCell,
-    preferredComparisonAllocScope(comparisonByScope),
-    formatRowAllocations
-  );
-  const bytes = buildMetricComparison(
-    comparisonByScope,
-    throughputScope,
-    throughputByCell,
-    preferredComparisonBytesScope(comparisonByScope),
-    formatRowBytes
-  );
-
-  return [
+  const sections = [
     [
-      // h3 siblings of the dispatch-throughput section (see its comment): the
-      // region's parent is an h2, so every top-level region heading is h3.
       `### Library comparison - throughput (${scopeLabel(throughputScope, throughputPlatform)})`,
       "",
       throughputTable
-    ],
-    [
+    ]
+  ];
+
+  // Omit all-unmeasured metric matrices; keep partial n/a cells as signal.
+  if (anyScopeMeasures(comparisonByScope, (row) => row.gcAllocations)) {
+    const allocations = buildMetricComparison(
+      comparisonByScope,
+      throughputScope,
+      throughputByCell,
+      preferredComparisonAllocScope(comparisonByScope),
+      formatRowAllocations
+    );
+    sections.push([
       `### Library comparison - GC allocations per 10k ops (${scopeLabel(allocations.scope, allocations.platform)})`,
       "",
       allocations.table
-    ],
-    [
+    ]);
+  }
+  if (anyScopeMeasures(comparisonByScope, (row) => row.gcAllocatedBytes)) {
+    const bytes = buildMetricComparison(
+      comparisonByScope,
+      throughputScope,
+      throughputByCell,
+      preferredComparisonBytesScope(comparisonByScope),
+      formatRowBytes
+    );
+    sections.push([
       `### Library comparison - GC allocated bytes per 10k ops (${scopeLabel(bytes.scope, bytes.platform)})`,
       "",
       bytes.table
-    ]
-  ];
+    ]);
+  }
+
+  return sections;
 }
 
-// Derive the scripting backend from a scope's actual platform string token. The
-// benchmark already emits the backend in the platform (e.g.
-// "Standalone IL2CPP x64 ..." / "Editor PlayMode Mono x64 ..."), so the heading
-// follows the DATA rather than a hard-coded scope->backend assumption: an IL2CPP
-// token wins, else a Mono token, else null (no usable token -> caller falls back to
-// the SCOPE_BACKEND map). This keeps the heading consistent with the Platform: line
-// even if the workflow ever flips a scope's backend (e.g. Standalone back to Mono).
+// Prefer the backend token emitted in the benchmark platform string.
 function deriveBackendLabel(platform) {
   if (typeof platform === "string") {
     if (/\bIL2CPP\b/i.test(platform)) {
@@ -602,24 +554,12 @@ function deriveBackendLabel(platform) {
   return null;
 }
 
-// Surface the per-scope scripting backend next to the scope so the section labels
-// read e.g. "PlayMode (Mono)" / "Standalone (IL2CPP)". The backend is DERIVED from
-// the scope's actual platform string token when one is supplied (deriveBackendLabel);
-// otherwise it falls back to the SCOPE_BACKEND map, and finally to "Mono" for an
-// unknown scope.
 function scopeLabel(scope, platform) {
   const backend = deriveBackendLabel(platform) || SCOPE_BACKEND[scope] || "Mono";
   return `${scope} (${backend})`;
 }
 
-// The rendered block carries a provenance line (which Unity version / commit
-// produced it), an optional Runner hardware line, the per-scope dispatch tables,
-// then the cross-library comparison matrices, framed by the AUTOGENERATED markers.
-// The commit is read from the first selected row (headline scope order, then
-// SCENARIO_ORDER) so the doc is traceable to a real run. The optional
-// `runnerDescription` is rendered as a NON-table provenance line so the
-// idempotence row-comparator (blocksEquivalent) ignores it -- a runner-spec or
-// commit change never opens a churn PR on its own.
+// Keep provenance outside tables so commit/spec churn does not force rewrites.
 function buildBlock(selection, unityVersion, { runnerDescription = "" } = {}) {
   const { dispatchByScope, comparisonByScope, scopesPresent } = selection;
 
@@ -658,9 +598,6 @@ function buildBlock(selection, unityVersion, { runnerDescription = "" } = {}) {
   return lines.join("\n");
 }
 
-// The provenance commit comes from the first dispatch row in headline scope
-// order (SCOPE_ORDER; Standalone first), then SCENARIO_ORDER, so it is
-// deterministic and tied to a real run.
 function firstSelectedCommit(selection) {
   for (const scope of selection.scopesPresent) {
     const byScenario = selection.dispatchByScope.get(scope);
@@ -696,9 +633,7 @@ function locateMarkers(content) {
         `Expected both '${BEGIN_MARKER}' and '${END_MARKER}'.`
     );
   }
-  // LOW-1: a second BEGIN/END pair would make the first-match slicing below
-  // rewrite only the first region and silently leave a stale duplicate behind.
-  // Refuse to guess -- require exactly one of each marker.
+  // Refuse duplicate regions; first-match slicing would leave stale generated docs.
   const beginCount = countOccurrences(content, BEGIN_MARKER);
   const endCount = countOccurrences(content, END_MARKER);
   if (beginCount !== 1 || endCount !== 1) {
@@ -719,9 +654,6 @@ function replaceBlock(content, block) {
   return content.slice(0, beginIndex) + block + content.slice(endIndex);
 }
 
-// Pull the numeric value out of a rendered metric cell so two cells can be
-// compared with a jitter tolerance instead of byte equality. Non-numeric cells
-// (scenario names, units, "N/A") compare exactly via the surrounding text.
 function extractCellNumbers(text) {
   const matches = text.match(/-?\d[\d,]*(?:\.\d+)?/g);
   if (!matches) {
@@ -734,24 +666,7 @@ function stripNumbers(text) {
   return text.replace(/-?\d[\d,]*(?:\.\d+)?/g, "#");
 }
 
-// CRITICAL-2: equivalence is decided ONLY on the markdown TABLE ROWS inside the
-// block, never on the surrounding lines.
-//
-//   (a) The provenance line ("Latest CI benchmark run: Unity <v>, commit
-//       `<sha>`"), the per-scope label/Platform lines, and the matrix headings
-//       live inside the markers but are NOT table rows, so a changed commit hash
-//       -- which moves every run as master advances -- no longer makes the block
-//       "differ" and no longer triggers a churn rewrite.
-//
-//   (b) Each table row is compared cell-by-cell on its TRIMMED cells, so the
-//       comparison is insensitive to Prettier's column alignment.
-//
-// Row order is deterministic (fixed scope order, SCENARIO_ORDER, tech order,
-// comparison-scenario column order), so re-rendering equivalent numbers compares
-// row-for-row. "N/A" cells contain no digits -> extractCellNumbers returns [] ->
-// they compare by skeleton text. A row's non-numeric skeleton must match exactly
-// and every numeric cell must be within `tolerance` (relative). That is what
-// keeps the update idempotent across the multiple tables/matrices.
+// Compare only table rows, cell-by-cell, with numeric tolerance and stable order.
 function tableRowCells(line) {
   const trimmed = line.trim();
   if (!trimmed.startsWith("|")) {
@@ -762,10 +677,7 @@ function tableRowCells(line) {
       .replace(/^\|/, "")
       .replace(/\|$/, "")
       .split("|")
-      // Winner-bold markers (**cell**) are presentation, not data: normalize them
-      // away so a within-tolerance jitter that merely moves the bold between two
-      // near-tied techs does not defeat the idempotence comparison and churn the
-      // committed doc. Numbers inside the markers still tolerance-compare.
+      // Bold markers are presentation; numbers still tolerance-compare.
       .map((cell) => cell.trim().replace(/^\*\*(.*)\*\*$/, "$1"))
   );
 }

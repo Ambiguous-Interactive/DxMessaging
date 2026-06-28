@@ -239,7 +239,12 @@ function readTarballPackageJson(tarballPath, execFileSyncImpl = execFileSync) {
 }
 
 function buildStandardCsharpMetaContent(guid) {
-  return ["fileFormatVersion: 2", `guid: ${guid}`, ...STANDARD_CSHARP_META_MONO_IMPORTER_LINES, ""].join("\n");
+  return [
+    "fileFormatVersion: 2",
+    `guid: ${guid}`,
+    ...STANDARD_CSHARP_META_MONO_IMPORTER_LINES,
+    ""
+  ].join("\n");
 }
 
 function isCsharpMetaPath(relativePath) {
@@ -252,28 +257,50 @@ function getCsharpMetaShapeViolation(relativePath, content) {
   }
 
   const normalized = normalizeToLf(String(content || ""));
-  if (!/^fileFormatVersion: 2\nguid: [0-9a-f]{32}(?:\n|$)/.test(normalized)) {
+  const lines = normalized.split("\n");
+  if (lines[0] !== "fileFormatVersion: 2" || !/^guid: [0-9a-f]{32}$/.test(lines[1] || "")) {
     return "must start with fileFormatVersion: 2 followed by a 32-hex guid";
   }
 
-  const importerMatch = /^MonoImporter:\n((?:  .*(?:\n|$))*)/m.exec(normalized);
-  if (!importerMatch) {
+  let importerIndex = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trimEnd() !== "MonoImporter:") {
+      continue;
+    }
+
+    if (line !== "MonoImporter:") {
+      return `line ${index + 1} must match standard line 'MonoImporter:' without trailing whitespace`;
+    }
+
+    if (importerIndex < 0) {
+      importerIndex = index;
+    }
+  }
+
+  if (importerIndex < 0) {
     return "is missing the standard MonoImporter block for Unity C# scripts";
   }
 
-  const importerLines = importerMatch[1].split("\n").map((line) => line.trimEnd()).filter(Boolean);
-  const expectedLines = STANDARD_CSHARP_META_MONO_IMPORTER_LINES.slice(1).map((line) => line.trimEnd());
+  for (let offset = 0; offset < STANDARD_CSHARP_META_MONO_IMPORTER_LINES.length; offset += 1) {
+    const expected = STANDARD_CSHARP_META_MONO_IMPORTER_LINES[offset];
+    const actual = lines[importerIndex + offset];
+    if (actual !== expected) {
+      if (typeof actual === "string" && actual.trimEnd() === expected) {
+        return `line ${importerIndex + offset + 1} must match standard line '${expected}' without trailing whitespace`;
+      }
+      return `line ${importerIndex + offset + 1} must match standard line '${expected}'`;
+    }
+  }
 
-  let lastIndex = -1;
-  for (const expected of expectedLines) {
-    const foundIndex = importerLines.indexOf(expected);
-    if (foundIndex < 0) {
-      return `is missing standard MonoImporter line '${expected}'`;
+  for (
+    let index = importerIndex + STANDARD_CSHARP_META_MONO_IMPORTER_LINES.length;
+    index < lines.length;
+    index += 1
+  ) {
+    if (lines[index].length > 0) {
+      return `line ${index + 1} is not part of the standard MonoImporter block`;
     }
-    if (foundIndex <= lastIndex) {
-      return "has standard MonoImporter lines out of order";
-    }
-    lastIndex = foundIndex;
   }
 
   return "";
@@ -306,7 +333,10 @@ function collectTrackedCsharpMetaPaths(execFileSyncImpl = execFileSync) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
-    return String(output || "").split("\0").filter(Boolean).sort();
+    return String(output || "")
+      .split("\0")
+      .filter(Boolean)
+      .sort();
   } catch (error) {
     const detail = describeProcessFailure(error.stderr, error.message);
     throw new Error(`Unable to list tracked C# .meta files with git: ${detail}`);
@@ -566,7 +596,14 @@ function validatePackEntries(entries) {
 }
 
 function parseCliArgs(args) {
-  const options = { tarball: "", packJson: "", releaseDir: "", expectedName: "", expectedVersion: "", repoCsharpMetasOnly: false };
+  const options = {
+    tarball: "",
+    packJson: "",
+    releaseDir: "",
+    expectedName: "",
+    expectedVersion: "",
+    repoCsharpMetasOnly: false
+  };
   const valueOptions = {
     "--tarball": "tarball",
     "--pack-json": "packJson",
@@ -598,7 +635,12 @@ function parseCliArgs(args) {
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  const sources = [options.tarball, options.packJson, options.releaseDir, options.repoCsharpMetasOnly].filter(Boolean);
+  const sources = [
+    options.tarball,
+    options.packJson,
+    options.releaseDir,
+    options.repoCsharpMetasOnly
+  ].filter(Boolean);
   if (sources.length > 1) {
     throw new Error(
       "Use only one of --tarball, --pack-json, --release-dir, or --repo-cs-metas-only."
@@ -612,12 +654,14 @@ function parseCliArgs(args) {
 }
 
 function printHelp() {
-  console.log([
-    "Usage: node scripts/validate-npm-meta.js [--tarball <file.tgz>] [--pack-json <file.json>]",
-    "       node scripts/validate-npm-meta.js --release-dir <dir> --expected-name <name> --expected-version <version>",
-    "       node scripts/validate-npm-meta.js --repo-cs-metas-only",
-    "  Default mode validates npm pack --json --dry-run --ignore-scripts output."
-  ].join("\n"));
+  console.log(
+    [
+      "Usage: node scripts/validate-npm-meta.js [--tarball <file.tgz>] [--pack-json <file.json>]",
+      "       node scripts/validate-npm-meta.js --release-dir <dir> --expected-name <name> --expected-version <version>",
+      "       node scripts/validate-npm-meta.js --repo-cs-metas-only",
+      "  Default mode validates npm pack --json --dry-run --ignore-scripts output."
+    ].join("\n")
+  );
 }
 
 function printDiagnosticList(title, entries, formatEntry = (entry) => entry) {
@@ -651,7 +695,11 @@ function runValidation(options = {}) {
     console.error(
       `Unity C# .meta validation failed (${repoMetaValidation.checked} tracked files).`
     );
-    printDiagnosticList("Invalid Unity C# .meta file shapes:", result.invalidCsharpMetas, (invalid) => `${invalid.path}: ${invalid.reason}`);
+    printDiagnosticList(
+      "Invalid Unity C# .meta file shapes:",
+      result.invalidCsharpMetas,
+      (invalid) => `${invalid.path}: ${invalid.reason}`
+    );
     return result;
   }
 
@@ -670,14 +718,7 @@ function runValidation(options = {}) {
   }
 
   const packResult = validatePackEntries(entries);
-  try {
-    repoMetaValidation = validateRepositoryCsharpMetaFiles(options);
-  } catch (error) {
-    console.error(
-      `Skipping tracked Unity C# .meta validation because git is unavailable: ${error.message}`
-    );
-    repoMetaValidation = { checked: 0, invalid: [] };
-  }
+  repoMetaValidation = validateRepositoryCsharpMetaFiles(options);
   const result = {
     ...packResult,
     invalidCsharpMetas: repoMetaValidation.invalid,
@@ -692,10 +733,18 @@ function runValidation(options = {}) {
 
   console.error(`npm packaging validation failed (${entries.length} entries from ${source}).`);
 
-  printDiagnosticList("Forbidden build-artifact paths:", result.forbidden, (violation) => `${violation.path} (${violation.reason})`);
+  printDiagnosticList(
+    "Forbidden build-artifact paths:",
+    result.forbidden,
+    (violation) => `${violation.path} (${violation.reason})`
+  );
   printDiagnosticList("Missing Unity .meta sibling paths:", result.missingMetas);
   printDiagnosticList("Orphan Unity .meta paths:", result.orphanMetas);
-  printDiagnosticList("Invalid Unity C# .meta file shapes:", result.invalidCsharpMetas, (invalid) => `${invalid.path}: ${invalid.reason}`);
+  printDiagnosticList(
+    "Invalid Unity C# .meta file shapes:",
+    result.invalidCsharpMetas,
+    (invalid) => `${invalid.path}: ${invalid.reason}`
+  );
 
   return result;
 }

@@ -233,6 +233,21 @@ test("source marker scan is tracked-file scoped and cannot self-match workflow t
   }
 });
 
+test("script validators run once while script tests stay cross-platform", () => {
+  const source = readCiWorkflow();
+  const scriptTests = getJobBlock(source, "script-tests");
+  const setupDotnet = getStepBlock(scriptTests, "Setup .NET");
+  const validators = getStepBlock(scriptTests, "Run validators");
+
+  assert.match(
+    scriptTests,
+    /os:\n          - ubuntu-latest\n          - macos-latest\n          - windows-latest/
+  );
+  assert.match(setupDotnet, /matrix\.os == 'ubuntu-latest'/);
+  assert.match(validators, /matrix\.os == 'ubuntu-latest'/);
+  assert.match(validators, /\n        run: npm run validate:all\n/);
+});
+
 test("standalone static-check workflows are not reintroduced", () => {
   for (const workflow of CONSOLIDATED_WORKFLOWS) {
     assert.equal(

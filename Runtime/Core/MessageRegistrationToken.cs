@@ -58,7 +58,21 @@ namespace DxMessaging.Core
 
         private readonly MessageHandler _messageHandler;
 
-        private readonly Dictionary<MessageRegistrationHandle, Action> _registrations = new();
+        // Maps each staged registration handle to the staging function the public
+        // Register* methods built: invoking it (re)registers the handler on the bus
+        // and returns the matching de-registration Action. Storing the staging
+        // function DIRECTLY (rather than wrapping it in a per-registration
+        // parameterless Action that also calls AddDeregistration) saves one delegate
+        // plus its display class per registration -- InternalRegister no longer needs
+        // a closure of its own; the central replay loop pairs the function with its
+        // handle and performs the AddDeregistration. The re-entrancy snapshot
+        // semantics are unchanged: the replay queue captures the function reference
+        // (exactly as it previously captured the wrapper Action), so a registration
+        // removed mid-replay is still replayed if it was already snapshotted.
+        private readonly Dictionary<
+            MessageRegistrationHandle,
+            Func<MessageRegistrationHandle, Action>
+        > _registrations = new();
 
         // Staged-registration handles in registration order. Dictionary
         // enumeration order is NOT stable across Remove/Add churn, so Enable()
@@ -74,7 +88,14 @@ namespace DxMessaging.Core
             MessageRegistrationHandle,
             PendingDeregistration
         > _deregistrations = new();
-        private readonly List<Action> _actionQueue = new();
+
+        // Snapshot of (handle, staging function) pairs to replay on Enable() /
+        // RetargetMessageBus. Snapshotting before invoking lets replay tolerate
+        // re-entrant registration mutation (a handler that registers or removes
+        // handlers while it runs). The pair carries the handle so the central replay
+        // loop can call the staging function and AddDeregistration without a
+        // per-registration wrapper closure.
+        private readonly List<StagedRegistration> _registrationReplayQueue = new();
         private readonly List<MessageRegistrationHandle> _handleQueue = new();
         internal readonly Dictionary<
             MessageRegistrationHandle,
@@ -1865,7 +1886,7 @@ namespace DxMessaging.Core
             MessageRegistrationHandle handle =
                 MessageRegistrationHandle.CreateMessageRegistrationHandle();
 
-            _registrations[handle] = Registration;
+            _registrations[handle] = registerAndGetDeregistration;
             _registrationOrder.Add(handle);
             // Metadata is passed by value (a readonly struct) instead of through a
             // Func<MessageRegistrationMetadata> factory: the factory was invoked
@@ -1877,20 +1898,18 @@ namespace DxMessaging.Core
             // warning read it regardless of diagnostics mode.
             _metadata[handle] = metadata;
 
-            // Generally, registrations should take place before all calls to enable. Just in case, though...
+            // Generally, registrations should take place before all calls to enable.
+            // Just in case, though, register immediately if already enabled. We do not
+            // register at staging time when disabled (the owner might not be awake), so
+            // the staging function is retained in _registrations to lazily (re)register
+            // on Enable().
             if (_enabled)
-            {
-                Registration();
-            }
-
-            return handle;
-
-            // We don't want to actually register at this time (might not be awake/enabled) - so we wrap that shit up, to lazy register when we're enabled.
-            void Registration()
             {
                 Action actualDeregistration = registerAndGetDeregistration(handle);
                 AddDeregistration(handle, actualDeregistration);
             }
+
+            return handle;
         }
 
         /// <summary>
@@ -1919,7 +1938,7 @@ namespace DxMessaging.Core
                 // _registrations.Values enumeration order, which permutes
                 // after Remove/Add churn. This preserves the documented
                 // equal-priority "registration order" dispatch contract across
-                // Disable()/Enable() cycles. Snapshot into _actionQueue first
+                // Disable()/Enable() cycles. Snapshot into _registrationReplayQueue first
                 // so replay tolerates re-entrant registration mutation.
                 QueueRegistrationsInOrder();
                 InvokeRegistrationQueueWithRollback();
@@ -2133,13 +2152,19 @@ namespace DxMessaging.Core
 
         private void QueueRegistrationsInOrder()
         {
-            _actionQueue.Clear();
+            _registrationReplayQueue.Clear();
             int registrationCount = _registrationOrder.Count;
             for (int i = 0; i < registrationCount; ++i)
             {
-                if (_registrations.TryGetValue(_registrationOrder[i], out Action registration))
+                MessageRegistrationHandle handle = _registrationOrder[i];
+                if (
+                    _registrations.TryGetValue(
+                        handle,
+                        out Func<MessageRegistrationHandle, Action> registration
+                    )
+                )
                 {
-                    _actionQueue.Add(registration);
+                    _registrationReplayQueue.Add(new StagedRegistration(handle, registration));
                 }
             }
         }
@@ -2148,7 +2173,7 @@ namespace DxMessaging.Core
             List<MessageRegistrationHandle> activeRetargetHandles
         )
         {
-            _actionQueue.Clear();
+            _registrationReplayQueue.Clear();
             int registrationCount = _registrationOrder.Count;
             for (int i = 0; i < registrationCount; ++i)
             {
@@ -2156,47 +2181,82 @@ namespace DxMessaging.Core
                 if (
                     !activeRetargetHandles.Contains(handle)
                     || _deregistrations.ContainsKey(handle)
-                    || !_registrations.TryGetValue(handle, out Action registration)
+                    || !_registrations.TryGetValue(
+                        handle,
+                        out Func<MessageRegistrationHandle, Action> registration
+                    )
                 )
                 {
                     continue;
                 }
 
-                _actionQueue.Add(registration);
+                _registrationReplayQueue.Add(new StagedRegistration(handle, registration));
             }
         }
 
         private void QueueRegistrationsWithoutRetryableDeregistrationsInOrder()
         {
-            _actionQueue.Clear();
+            _registrationReplayQueue.Clear();
             int registrationCount = _registrationOrder.Count;
             for (int i = 0; i < registrationCount; ++i)
             {
                 MessageRegistrationHandle handle = _registrationOrder[i];
                 if (
                     _deregistrations.ContainsKey(handle)
-                    || !_registrations.TryGetValue(handle, out Action registration)
+                    || !_registrations.TryGetValue(
+                        handle,
+                        out Func<MessageRegistrationHandle, Action> registration
+                    )
                 )
                 {
                     continue;
                 }
 
-                _actionQueue.Add(registration);
+                _registrationReplayQueue.Add(new StagedRegistration(handle, registration));
             }
         }
 
-        private void InvokeActionQueue()
+        private void InvokeRegistrationReplayQueue()
         {
             try
             {
-                foreach (Action action in _actionQueue)
+                foreach (StagedRegistration staged in _registrationReplayQueue)
                 {
-                    action?.Invoke();
+                    Func<MessageRegistrationHandle, Action> register = staged.Register;
+                    if (register == null)
+                    {
+                        continue;
+                    }
+
+                    Action actualDeregistration = register(staged.Handle);
+                    AddDeregistration(staged.Handle, actualDeregistration);
                 }
             }
             finally
             {
-                _actionQueue.Clear();
+                _registrationReplayQueue.Clear();
+            }
+        }
+
+        /// <summary>
+        /// A staged registration captured for replay: the handle plus the staging
+        /// function that (re)registers the handler and returns its de-registration
+        /// Action. Snapshotting the function reference (rather than a per-registration
+        /// wrapper closure) preserves the original re-entrancy semantics while removing
+        /// one delegate allocation per registration.
+        /// </summary>
+        private readonly struct StagedRegistration
+        {
+            public readonly MessageRegistrationHandle Handle;
+            public readonly Func<MessageRegistrationHandle, Action> Register;
+
+            public StagedRegistration(
+                MessageRegistrationHandle handle,
+                Func<MessageRegistrationHandle, Action> register
+            )
+            {
+                Handle = handle;
+                Register = register;
             }
         }
 
@@ -2262,7 +2322,7 @@ namespace DxMessaging.Core
                 SnapshotDeregistrationCounts();
             try
             {
-                InvokeActionQueue();
+                InvokeRegistrationReplayQueue();
             }
             catch (Exception exception)
             {
@@ -2368,15 +2428,53 @@ namespace DxMessaging.Core
             RemoveRegistrationState(handle);
         }
 
+        // Tracks the live de-registration Action(s) for a single handle. The common
+        // case is EXACTLY ONE de-registration per handle (a staging function registers
+        // once and returns one de-registration Action), so the head Action is stored
+        // INLINE rather than always in a List<Action>. Eagerly allocating a List plus
+        // its backing array per handle cost two managed allocations on every
+        // registration (uniformly across every kind); the inline head pays neither, and
+        // a rare second de-registration for the same handle -- a re-entrant
+        // retarget-recovery replay can stage one beyond the rollback baseline -- spills
+        // to a lazily-allocated overflow list. This stays a class (mutated in place
+        // through the _deregistrations dictionary), so reference semantics and every
+        // call site are unchanged; only the storage shape changed.
+        //
+        // Invariant: when Count > 0 the head lives in _hasHead/_head and is the LOGICAL
+        // FIRST entry; any further entries follow in _overflow in insertion order. Add
+        // appends to the logical tail; InvokeFrom invokes a contiguous logical tail
+        // [startIndex..Count), removing each success and KEEPING each failure (retryable),
+        // then promotes the first surviving overflow entry into the head slot if the head
+        // was consumed -- preserving the exact ordering, partial-failure, and
+        // rollback-baseline (startIndex) semantics the List<Action> form had.
         private sealed class PendingDeregistration
         {
-            private readonly List<Action> _actions = new();
+            private Action _head;
+            private bool _hasHead;
+            private List<Action> _overflow;
 
-            internal int Count => _actions.Count;
+            internal int Count => (_hasHead ? 1 : 0) + (_overflow?.Count ?? 0);
 
             internal void Add(Action action)
             {
-                _actions.Add(action);
+                // Fill the inline head ONLY when nothing is stored. The empty-overflow
+                // clause matters during the transient window inside InvokeFrom where the
+                // head has been consumed but overflow survivors remain (before they are
+                // promoted): a re-entrant Add then appends to the logical TAIL (overflow),
+                // exactly as the List form did, rather than jumping the new entry ahead of
+                // the survivors into the head slot. The overflow loop re-reads its Count,
+                // so such a tail-appended entry is still invoked in the same pass -- the
+                // List form's behavior preserved. (The stored Actions are pure bus
+                // de-registration callbacks, so this re-entrancy is not reachable through
+                // the public API today; the guard keeps the invariant honest regardless.)
+                if (!_hasHead && (_overflow == null || _overflow.Count == 0))
+                {
+                    _head = action;
+                    _hasHead = true;
+                    return;
+                }
+
+                (_overflow ??= new List<Action>()).Add(action);
             }
 
             internal Exception InvokeFrom(int startIndex)
@@ -2387,18 +2485,54 @@ namespace DxMessaging.Core
                 }
 
                 Exception firstException = null;
-                for (int i = startIndex; i < _actions.Count; )
+
+                // Logical index 0 is the inline head; logical indices 1.. are _overflow.
+                // Invoke the head only when it is within the requested tail (a rollback
+                // pass with startIndex > 0 must leave the baseline head untouched).
+                if (_hasHead && startIndex <= 0)
                 {
                     try
                     {
-                        _actions[i]?.Invoke();
-                        _actions.RemoveAt(i);
+                        _head?.Invoke();
+                        _head = null;
+                        _hasHead = false;
                     }
                     catch (Exception exception)
                     {
+                        // Keep the failed head (retryable), exactly as the List form did
+                        // by advancing past a throwing entry instead of removing it.
                         firstException ??= exception;
-                        ++i;
                     }
+                }
+
+                if (_overflow is { Count: > 0 })
+                {
+                    // Overflow entry j has logical index 1 + j; invoke those at or past
+                    // startIndex. Remove successes, keep failures (retryable).
+                    int overflowStart = startIndex <= 1 ? 0 : startIndex - 1;
+                    for (int j = overflowStart; j < _overflow.Count; )
+                    {
+                        try
+                        {
+                            _overflow[j]?.Invoke();
+                            _overflow.RemoveAt(j);
+                        }
+                        catch (Exception exception)
+                        {
+                            firstException ??= exception;
+                            ++j;
+                        }
+                    }
+                }
+
+                // If the head was consumed but overflow survivors remain, promote the
+                // first survivor into the head slot so the head is always the logical
+                // first entry (keeping Count and future Adds consistent).
+                if (!_hasHead && _overflow is { Count: > 0 })
+                {
+                    _head = _overflow[0];
+                    _hasHead = true;
+                    _overflow.RemoveAt(0);
                 }
 
                 return firstException;

@@ -8,8 +8,8 @@ name: Performance Numbers
 # legs publish: the Standalone IL2CPP (Release player) leg is the throughput
 # HEADLINE -- the AOT backend shipped players run -- while the in-editor PlayMode
 # (Mono) leg supplies the REAL GC-allocation numbers, because a Release player
-# strips the GC.Alloc profiler recorder so every Standalone allocation cell is the
-# "Unmeasured" sentinel ("n/a"). Allocation counts are build-config-independent, so
+# strips the GC.Alloc profiler recorder so the Standalone leg cannot measure them at
+# all (the renderer omits those memory columns). Allocation counts are build-config-independent, so
 # the Mono counts represent the shipped IL2CPP player; the committed regression
 # baseline stays Standalone-only (extract-perf-baseline.js --scope Standalone). It
 # does NOT push onto the contributor's
@@ -274,8 +274,8 @@ jobs:
     # makes a flaky PlayMode failure report SUCCESS for the matrix-aggregating
     # `needs.perf-benchmarks.result`, so the downstream comment + commit jobs
     # (gated on result == 'success') still publish the Standalone headline +
-    # baseline; that run's allocations simply fall back to "n/a" until PlayMode is
-    # healthy again. `fail-fast: false` (below) still keeps a Standalone failure
+    # baseline; that run simply omits the allocation/byte tables (no leg measured
+    # them) until PlayMode is healthy again. `fail-fast: false` (below) still keeps a Standalone failure
     # from cancelling an in-flight PlayMode leg.
     continue-on-error: ${{ matrix.test-mode != 'standalone' }}
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
@@ -295,9 +295,9 @@ jobs:
         # BOTH legs publish. Standalone IL2CPP (Release player) is the throughput
         # HEADLINE -- the AOT backend shipped games run. The in-editor PlayMode
         # (Mono) leg supplies the REAL GC-allocation numbers: a Release player
-        # strips the GC.Alloc profiler recorder, so every Standalone alloc cell is
-        # the "Unmeasured" sentinel ("n/a"), while the editor's Mono backend can
-        # actually count allocations (allocation counts are build-config-independent,
+        # strips the GC.Alloc profiler recorder, so the Standalone leg cannot measure
+        # allocations at all (the renderer omits those memory columns), while the
+        # editor's Mono backend can count them (allocation counts are build-config-independent,
         # so the Mono counts represent the shipped IL2CPP player). render-perf-doc.js
         # renders whatever scopes are present and sources each matrix from the scope
         # that measured it.
@@ -832,13 +832,13 @@ jobs:
               "",
               "Reading the Delta column: the sign is normalized so `+` ALWAYS means better " +
                 "and `-` ALWAYS means worse, for every metric -- a `+` percentage is higher " +
-                "**throughput** (emits/sec) OR lower **latency** (wall clock ms), and " +
-                "**GC allocation** changes are written out as `N fewer` (better) / `N more` " +
-                "(worse). GC allocations are a managed-allocation COUNT via the `GC.Alloc` " +
-                "recorder; `n/a` means the metric was unmeasurable on this backend, not zero. " +
-                "This Standalone IL2CPP player strips the profiler, so GC allocations read " +
-                "`n/a` in THIS comment; measured allocation counts and their regression " +
-                "coverage come from the in-editor Mono leg and the allocation test suite.",
+                "**throughput** (emits/sec) OR lower **latency** (wall clock ms). This " +
+                "Standalone IL2CPP player strips the profiler, so it cannot measure GC " +
+                "allocations or bytes; those columns are omitted from this comment entirely " +
+                "(not shown as `n/a`). Measured allocation counts and their regression " +
+                "coverage come from the in-editor Mono leg and the allocation test suite. " +
+                "When a leg DOES measure them, allocation/byte changes render as " +
+                "`N fewer` (better) / `N more` (worse).",
               "",
               table,
             ].join("\n");

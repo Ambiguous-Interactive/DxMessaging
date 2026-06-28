@@ -53,7 +53,7 @@ This file is intentionally concise. It contains only critical, high-signal guida
 - Unity asmdef reference integrity: `npm run validate:asmdef-references`
 - Unity version matrix consistency: `npm run validate:unity-versions`
 - JS LOC budget: `npm run validate:js-loc-budget`
-- npm tarball hygiene + Unity .meta pairing + tracked C# `.meta` `MonoImporter` shape: `npm run validate:npm-meta`
+- npm tarball hygiene + Unity .meta pairing + tracked C# `.meta` canonical `MonoImporter` lines (no trailing whitespace): `npm run validate:npm-meta`
 - Everything: `npm run validate:all`
 - Hooks (one-time setup): `pipx install pre-commit && pre-commit install`; normal hooks run on changed files. Use targeted `pre-commit run <hook-id> --files ...` during development. Reserve `pre-commit run --all-files` / `pre-commit run --all-files --hook-stage pre-push` for hook-config changes or release audits; they are whole-repo audits, not the routine agent loop. For release audits, run the direct heavy checks (`npm test`, `npm run check:spelling`, `npm run validate:all`) alongside the all-files hook audits. Pre-push is intentionally sub-second as hook body work and excludes heavier checks such as spelling and npm pack validation; agents must run those directly when relevant.
 

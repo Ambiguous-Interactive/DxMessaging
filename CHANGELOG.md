@@ -44,6 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The token-creation allocation guard no longer flakes in a warm editor. The
+  diagnostics-lazy win (token `Create` allocating 7 managed objects instead of 11) was
+  guarded by an absolute `GC.Alloc` recorder COUNT budget, but a warm, long-lived editor
+  domain attributes background allocations to whatever measurement window is open --
+  measured on the host editor, the minimum over 64 windows was ~19 allocations for that
+  7-allocation operation (median ~51), well above any budget tight enough to catch the
+  revert -- so the guard false-failed run-to-run. A measure-first probe also disproved the
+  assumption that the swing came from the `DxPools` collection pools: the steady refcount
+  registration path does not rent from them at all (hits = misses = 0), so the noise is
+  pure background-editor `GC.Alloc` pollution that no pool pre-warm can remove. The guard
+  is now a DETERMINISTIC state assertion -- after `Create` with diagnostics off, the lazy
+  `_callCounts`/`_emissionBuffer` backing fields must still be `null` -- which uses no
+  allocation probe, never flakes, and runs in the per-PR EditMode correctness leg rather
+  than the weekly perf-gated Allocation scope.
 - Benchmark and library-comparison allocation reporting is now honest. The harness
   measured allocations with `GC.GetAllocatedBytesForCurrentThread()`, which returns
   `0` for every allocation under Unity's Boehm GC (verified: a forced 1 MB array
@@ -68,9 +82,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applies the generator to the DxMessaging runtime assembly and every assembly that
   references it, including the predefined `Assembly-CSharp`. No assembly definition is
   required. Closes GitHub issue #229.
+- Documentation no longer teaches the obsolete `IMessageBus.GlobalDiagnosticsMode`
+  API. The reference, patterns, glossary, and migration guides now use
+  `IMessageBus.GlobalDiagnosticsTargets` with the `DiagnosticsTarget` flags enum
+  (matching the canonical diagnostics guide), and the API reference no longer shows a
+  write to the read-only `IMessageBus.DiagnosticsMode` property. A source-derived
+  drift-guard (`DocsObsoleteApiReferenceTests`) now fails the build if any published
+  doc references a member marked `[Obsolete]` in the runtime, so this cannot regress.
 
 ### Changed
 
+- The published performance report no longer prints columns of `n/a`. The
+  Standalone IL2CPP leg runs in a Release player whose stripped profiler cannot
+  measure GC allocations or bytes, so the renderer now OMITS a memory column from a
+  per-scope dispatch table when every row is unmeasured (the Standalone table is
+  throughput-only), omits a whole cross-library memory matrix when no leg measured
+  that metric, and drops the unmeasured allocation/byte segment from each per-PR
+  delta cell -- instead of filling them with a wall of `n/a`. The real allocation
+  and byte numbers still publish from the in-editor PlayMode (Mono) leg, and `n/a`
+  now appears only as a genuine per-row or per-library cell (a metric measured for
+  the scope in general but missing for that one entry).
 - Registration allocates less. Each registration token's diagnostics-only
   call-count and emission-history collections are now created lazily instead of
   eagerly, so a token whose owner never enables diagnostics (the default) no longer
@@ -94,6 +125,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verified by differential allocation guards that pin the `Action` registration cost to the
   already-optimal `FastHandler` registration cost. Diagnostics, deduplication, and dispatch
   ordering are preserved.
+- Every registration kind now allocates about two fewer managed objects. The token used to
+  wrap each staged registration in a per-registration parameterless `Action` (a delegate plus
+  its display class) whose only job was to re-bundle the handle, the staging function, and the
+  de-registration bookkeeping; the token now stores each staging function directly and pairs it
+  with its handle in the replay queue, so that wrapper -- and the closure `InternalRegister`
+  needed to build it -- is gone. Measured cold-registration floor (FastHandler, diagnostics off):
+  untargeted drops from 14.69 to 12.69 managed allocations per registration (a clean -2.00), with
+  the same ~2-allocation reduction across targeted, broadcast, without-targeting/source, and
+  post-processor registrations (~12% fewer registration allocations overall). The de-registration
+  replay, rollback-on-failure, re-entrancy, and equal-priority registration-order semantics are
+  unchanged; the public API is unchanged. Pinned structurally by a deterministic guard that the
+  token stores the staging function (not an `Action` wrapper).
+- Every active registration now allocates about two fewer managed objects again. The token
+  tracked each handle's live de-registration in a per-handle holder that eagerly allocated a
+  `List` (plus its backing array) to hold what is almost always a single de-registration; the
+  holder now keeps that one de-registration inline and only allocates an overflow list on the
+  rare second de-registration for the same handle. Measured cold-registration floor (FastHandler,
+  diagnostics off): untargeted drops from 13.29 to 11.29 managed allocations per registration (a
+  clean -2.00), with the same ~2-allocation reduction across targeted and broadcast. The
+  insertion-order, partial-failure-retryable, and rollback-baseline de-registration semantics are
+  unchanged (verified by a differential simulation across every count/failure/start-index
+  combination); the public API is unchanged.
 - The bug-report issue template now offers the package version as a dropdown of
   released versions (with an `Other` fallback) instead of a free-text field, so
   reports carry an exact, valid version. The list is generated from
