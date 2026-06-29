@@ -122,11 +122,7 @@ test("static CI checks stay consolidated behind CI Success", () => {
   const ciSuccess = getJobBlock(source, "ci-success");
   assert.match(ciSuccess, /\n    name: CI Success\n/);
   assert.match(ciSuccess, /\n    if: \$\{\{ always\(\) \}\}\n/);
-  // Pin the fail-closed aggregator action identity to a versioned tag, not one
-  // exact version: re-actors/alls-green is what makes empty allowed-skips/failures
-  // gate every leg. The `@...vN` shape tolerates deliberate, dependabot-tracked
-  // version bumps (so the test never cries wolf) while still rejecting a floating
-  // @main/@master ref on the gate action.
+  // Pin the fail-closed aggregator action to a versioned tag, not @main/@master.
   assert.match(ciSuccess, /uses: re-actors\/alls-green@[\w./-]*v\d/);
   assert.match(ciSuccess, /allowed-skips: ""/);
   assert.match(ciSuccess, /allowed-failures: ""/);
@@ -256,4 +252,18 @@ test("standalone static-check workflows are not reintroduced", () => {
       `${workflow} is consolidated into ci.yml; do not restore it as a separate required gate`
     );
   }
+});
+
+test("release workflows pin App write scopes and denied-push diagnostics", () => {
+  const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
+  const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
+  assert.match(
+    prepare,
+    /permission-contents: write[\s\S]*permission-pull-requests: write[\s\S]*recovery_dir="artifacts\/release-prepare"[\s\S]*git format-patch -1 --stdout[\s\S]*release branch push failure[\s\S]*path: artifacts\/release-prepare\//
+  );
+  assert.doesNotMatch(prepare, /\.artifacts\/release-prepare/);
+  assert.match(
+    tag,
+    /permission-contents: write[\s\S]*push_status=\$\{PIPESTATUS\[0\]\}[\s\S]*release tag push failure[\s\S]*Manual fallback:/
+  );
 });
