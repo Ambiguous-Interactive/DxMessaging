@@ -5010,8 +5010,8 @@ namespace DxMessaging.Core.MessageBus
 
             long deregisterTouchTick = AdvanceTick();
             InvalidateDispatchPlans();
-            // Bump the registration-time bucket's version (defensive snapshot invalidation;
-            // mirrors the former closure's top-of-body `cache.version++`).
+            // Mirror the former closure's top-of-body `cache.version++` on the
+            // registration-time bucket, preserving the prior bump-then-re-resolve ordering.
             if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache registeredCache))
             {
                 registeredCache.version++;
@@ -5223,8 +5223,8 @@ namespace DxMessaging.Core.MessageBus
 
             long deregisterTouchTick = AdvanceTick();
             InvalidateDispatchPlans();
-            // Bump the registration-time bucket's version (defensive snapshot invalidation;
-            // mirrors the former closure's top-of-body `cache.version++`).
+            // Mirror the former closure's top-of-body `cache.version++` on the
+            // registration-time bucket, preserving the prior bump-then-re-resolve ordering.
             if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache registeredCache))
             {
                 registeredCache.version++;
