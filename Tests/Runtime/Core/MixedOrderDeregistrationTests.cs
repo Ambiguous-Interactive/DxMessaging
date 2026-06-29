@@ -288,6 +288,101 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        [Test]
+        public void ArbitraryOrderPostProcessorDeregistrationKeepsSurvivorsInRegistrationOrder(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            foreach (int[] removal in RemovalPermutations(HandlerCount))
+            {
+                (MessageRegistrationToken token, InstanceId hostId) = NewHost(scenario);
+                List<int> order = new();
+                MessageRegistrationHandle[] handles = new MessageRegistrationHandle[HandlerCount];
+                List<int> live = new();
+                for (int i = 0; i < HandlerCount; i++)
+                {
+                    int label = i;
+                    handles[i] = ScenarioCallbacks.RegisterCountingPostProcessor(
+                        scenario,
+                        token,
+                        hostId,
+                        () => order.Add(label)
+                    );
+                    live.Add(i);
+                }
+
+                AssertEmitOrder(
+                    scenario,
+                    hostId,
+                    order,
+                    live.ToArray(),
+                    $"post-processors anchor, perm=[{string.Join(",", removal)}]"
+                );
+                foreach (int idx in removal)
+                {
+                    token.RemoveRegistration(handles[idx]);
+                    _ = live.Remove(idx);
+                    AssertEmitOrder(
+                        scenario,
+                        hostId,
+                        order,
+                        live.ToArray(),
+                        $"post-processors after removing {idx}, perm=[{string.Join(",", removal)}]"
+                    );
+                }
+            }
+        }
+
+        [Test]
+        public void ArbitraryOrderInterceptorDeregistrationKeepsSurvivorsInRegistrationOrder(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            foreach (int[] removal in RemovalPermutations(HandlerCount))
+            {
+                (MessageRegistrationToken token, InstanceId hostId) = NewHost(scenario);
+                List<int> order = new();
+                // A sink handler so the message is actually dispatched (interceptors run on emit).
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => { });
+
+                MessageRegistrationHandle[] handles = new MessageRegistrationHandle[HandlerCount];
+                List<int> live = new();
+                for (int i = 0; i < HandlerCount; i++)
+                {
+                    int label = i;
+                    handles[i] = ScenarioCallbacks.RegisterCountingInterceptor(
+                        scenario,
+                        token,
+                        result: () => true,
+                        onIntercepted: () => order.Add(label)
+                    );
+                    live.Add(i);
+                }
+
+                AssertEmitOrder(
+                    scenario,
+                    hostId,
+                    order,
+                    live.ToArray(),
+                    $"interceptors anchor, perm=[{string.Join(",", removal)}]"
+                );
+                foreach (int idx in removal)
+                {
+                    token.RemoveRegistration(handles[idx]);
+                    _ = live.Remove(idx);
+                    AssertEmitOrder(
+                        scenario,
+                        hostId,
+                        order,
+                        live.ToArray(),
+                        $"interceptors after removing {idx}, perm=[{string.Join(",", removal)}]"
+                    );
+                }
+            }
+        }
+
         private (MessageRegistrationToken token, InstanceId hostId) NewHost(
             MessageScenario scenario
         )
