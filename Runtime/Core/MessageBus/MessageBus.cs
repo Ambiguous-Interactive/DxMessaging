@@ -5006,106 +5006,110 @@ namespace DxMessaging.Core.MessageBus
                 (HandlerCache<int, HandlerCache>)reg.capturedPrimary;
             int priority = reg.priority;
             RegistrationMethod registrationMethod = reg.method;
-            MessageCache<HandlerCache<int, HandlerCache>> sinks = ScalarSinkForMethod(
-                registrationMethod
-            );
             SlotKey slotKey = RegistrationMethodAxes.GetSlotKey(registrationMethod);
             Type type = typeof(T);
             InstanceId handlerOwnerId = messageHandler.owner;
 
             long deregisterTouchTick = AdvanceTick();
             InvalidateDispatchPlans();
-            // Mirror the former closure's top-of-body `cache.version++` on the
-            // registration-time bucket, preserving the prior bump-then-re-resolve ordering.
-            if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache registeredCache))
-            {
-                registeredCache.version++;
-            }
+
+            // FAST PATH: operate on the captured leaf handler-cache (already pinned on the
+            // handle at registration time) DIRECTLY, without re-resolving the sink from the
+            // method (ScalarSinkForMethod) or re-walking sinks->type->priority->handler. When
+            // the generation guard above has passed and the captured bucket still holds this
+            // handler, the captured leaf IS the live sink entry (handles are unique and never
+            // reused), so the re-resolution + ReferenceEquals identity check is redundant. The
+            // sweep-staleness / over-deregistration classification only matters when the handler
+            // is NOT found, so it is deferred to the cold fallback below. This removes the
+            // per-deregistration sink re-resolution (the measured cold-path regression source)
+            // while preserving every guard and the throw-safe ordering (this method performs no
+            // user callback; the throwing IMessageBus.Deregister boundary is the caller's).
             if (
-                !sinks.TryGetValue<T>(out HandlerCache<int, HandlerCache> handlers)
-                || !ReferenceEquals(handlers, capturedHandlers)
-                || !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                || !cache.handlers.TryGetValue(messageHandler, out int count)
+                capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                && cache.handlers.TryGetValue(messageHandler, out int count)
             )
             {
-                if (
-                    capturedHandlers.handlers.Count == 0
-                    && !ReferenceEquals(handlers, capturedHandlers)
-                )
-                {
-                    return;
-                }
-
-                if (MessagingDebug.enabled)
-                {
-                    MessagingDebug.Log(
-                        LogLevel.Error,
-                        "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
+                _log.Log(
+                    new MessagingRegistration(
+                        handlerOwnerId,
                         type,
-                        messageHandler
-                    );
-                }
+                        RegistrationType.Deregister,
+                        registrationMethod
+                    )
+                );
+                Touch(capturedHandlers, deregisterTouchTick);
+                capturedHandlers.version++;
+                cache.version++;
+                Dictionary<MessageHandler, int> handler = cache.handlers;
+                if (count <= 1)
+                {
+                    _ = handler.Remove(messageHandler);
+                    // List.Remove is O(n) over the same-priority bucket. Accepted tradeoff (here
+                    // and at the context-path sibling site): buckets are small in practice,
+                    // removal is a cold churn path, and the list keeps dispatch-order rebuilds
+                    // allocation-free while preserving first-registration order, unlike Dictionary
+                    // enumeration whose freed slots are reused LIFO. Mirrors the MessageHandler-side
+                    // insertionOrder tradeoff.
+                    _ = cache.insertionOrder.Remove(messageHandler);
+                    MarkDirtyHandler(messageHandler);
+                    // do not mutate cache.cache here; let next read rebuild from handlers
 
+                    if (handler.Count == 0)
+                    {
+                        _ = capturedHandlers.handlers.Remove(priority);
+                        // remove priority from order
+                        List<int> order = capturedHandlers.order;
+                        int removeIdx = order.IndexOf(priority);
+                        if (removeIdx >= 0)
+                        {
+                            order.RemoveAt(removeIdx);
+                        }
+                    }
+
+                    if (capturedHandlers.handlers.Count == 0)
+                    {
+                        MarkDirtyType<T>();
+                    }
+                }
+                else
+                {
+                    handler[messageHandler] = count - 1;
+                }
+                StageDispatchSnapshot<T>(this, capturedHandlers, slotKey);
                 return;
             }
 
-            _log.Log(
-                new MessagingRegistration(
-                    handlerOwnerId,
-                    type,
-                    RegistrationType.Deregister,
-                    registrationMethod
-                )
+            // COLD FALLBACK: the handler was not found in the captured bucket. Mirror the former
+            // closure's top-of-body bucket `version++` (snapshot invalidation), then re-resolve
+            // the live sink only to classify this as a silent stale-after-sweep no-op versus a
+            // genuine over-deregistration. This path is rare (double-deregister or post-sweep);
+            // its extra cost does not touch the steady deregistration cost.
+            if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache staleBucket))
+            {
+                staleBucket.version++;
+            }
+
+            MessageCache<HandlerCache<int, HandlerCache>> sinks = ScalarSinkForMethod(
+                registrationMethod
             );
-            Touch(handlers, deregisterTouchTick);
-            handlers.version++;
-            Dictionary<MessageHandler, int> handler = cache.handlers;
-            if (count <= 1)
+            _ = sinks.TryGetValue<T>(out HandlerCache<int, HandlerCache> handlers);
+            if (
+                capturedHandlers.handlers.Count == 0
+                && !ReferenceEquals(handlers, capturedHandlers)
+            )
             {
-                bool complete = handler.Remove(messageHandler);
-                // List.Remove is O(n) over the same-priority bucket. Accepted tradeoff (here and
-                // at the context-path sibling site): buckets are small in practice, removal is a
-                // cold churn path, and the list keeps dispatch-order rebuilds allocation-free
-                // while preserving first-registration order, unlike Dictionary enumeration whose
-                // freed slots are reused LIFO. Mirrors the MessageHandler-side insertionOrder
-                // tradeoff.
-                _ = cache.insertionOrder.Remove(messageHandler);
-                MarkDirtyHandler(messageHandler);
-                cache.version++;
-                // do not mutate cache.cache here; let next read rebuild from handlers
-
-                if (handler.Count == 0)
-                {
-                    _ = handlers.handlers.Remove(priority);
-                    // remove priority from order
-                    List<int> order = handlers.order;
-                    int removeIdx = order.IndexOf(priority);
-                    if (removeIdx >= 0)
-                    {
-                        order.RemoveAt(removeIdx);
-                    }
-                }
-
-                if (handlers.handlers.Count == 0)
-                {
-                    MarkDirtyType<T>();
-                }
-
-                if (!complete && MessagingDebug.enabled)
-                {
-                    MessagingDebug.Log(
-                        LogLevel.Error,
-                        "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
-                        type,
-                        messageHandler
-                    );
-                }
+                return;
             }
-            else
+
+            if (MessagingDebug.enabled)
             {
-                handler[messageHandler] = count - 1;
+                MessagingDebug.Log(
+                    LogLevel.Error,
+                    "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
+                    type,
+                    messageHandler
+                );
             }
-            StageDispatchSnapshot<T>(this, handlers, slotKey);
         }
 
         private MessageBusRegistration InternalRegisterWithContext<T>(
@@ -5217,108 +5221,95 @@ namespace DxMessaging.Core.MessageBus
             MessageHandler messageHandler = (MessageHandler)reg.payload;
             HandlerCache<int, HandlerCache> capturedHandlers =
                 (HandlerCache<int, HandlerCache>)reg.capturedPrimary;
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> capturedBroadcastHandlers =
-                (Dictionary<InstanceId, HandlerCache<int, HandlerCache>>)reg.capturedSecondary;
             InstanceId context = reg.context;
             int priority = reg.priority;
             RegistrationMethod registrationMethod = reg.method;
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks =
-                ContextSinkForMethod(registrationMethod);
             SlotKey slotKey = RegistrationMethodAxes.GetSlotKey(registrationMethod);
             Type type = typeof(T);
 
             long deregisterTouchTick = AdvanceTick();
             InvalidateDispatchPlans();
-            // Mirror the former closure's top-of-body `cache.version++` on the
-            // registration-time bucket, preserving the prior bump-then-re-resolve ordering.
-            if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache registeredCache))
-            {
-                registeredCache.version++;
-            }
+
+            // FAST PATH: operate on the captured per-context leaf handler-cache directly, without
+            // re-resolving the sink (ContextSinkForMethod) or re-walking sinks->type->context->
+            // priority->handler. See DeregisterScalarHandler for the full rationale and the
+            // sweep-staleness argument (the context sweep, like the scalar sweep, only evicts
+            // EMPTY caches, so a found handler is never in a swept/detached cache). Throw-safe:
+            // no user callback runs here.
             if (
-                !sinks.TryGetValue<T>(
-                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> broadcastHandlers
-                )
-                || !ReferenceEquals(broadcastHandlers, capturedBroadcastHandlers)
-                || !broadcastHandlers.TryGetValue(
-                    context,
-                    out HandlerCache<int, HandlerCache> handlers
-                )
-                || !ReferenceEquals(handlers, capturedHandlers)
-                || !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                || !cache.handlers.TryGetValue(messageHandler, out int count)
+                capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                && cache.handlers.TryGetValue(messageHandler, out int count)
             )
             {
-                if (IsStaleContextDeregisterAfterSweep<T>(sinks, context, capturedHandlers))
-                {
-                    return;
-                }
-
-                if (MessagingDebug.enabled)
-                {
-                    MessagingDebug.Log(
-                        LogLevel.Error,
-                        "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
+                _log.Log(
+                    new MessagingRegistration(
+                        context,
                         type,
-                        messageHandler
-                    );
-                }
+                        RegistrationType.Deregister,
+                        registrationMethod
+                    )
+                );
+                Touch(capturedHandlers, deregisterTouchTick);
+                cache.version++;
+                Dictionary<MessageHandler, int> handler = cache.handlers;
+                if (count <= 1)
+                {
+                    _ = handler.Remove(messageHandler);
+                    // O(n) List.Remove: see the tradeoff comment at the scalar-path sibling site in
+                    // DeregisterScalarHandler.
+                    _ = cache.insertionOrder.Remove(messageHandler);
+                    MarkDirtyHandler(messageHandler);
+                    // do not mutate cache.cache here; let next read rebuild from handlers
+                    if (handler.Count == 0)
+                    {
+                        capturedHandlers.version++;
+                        _ = capturedHandlers.handlers.Remove(priority);
+                        // remove priority from order
+                        List<int> order = capturedHandlers.order;
+                        int removeIdx = order.IndexOf(priority);
+                        if (removeIdx >= 0)
+                        {
+                            order.RemoveAt(removeIdx);
+                        }
+                    }
 
+                    if (capturedHandlers.handlers.Count == 0)
+                    {
+                        MarkDirtyTarget<T>(context);
+                    }
+                }
+                else
+                {
+                    handler[messageHandler] = count - 1;
+                }
+                StageDispatchSnapshot<T>(this, capturedHandlers, slotKey);
                 return;
             }
 
-            _log.Log(
-                new MessagingRegistration(
-                    context,
+            // COLD FALLBACK: handler not found in the captured bucket. Mirror the former top-of-body
+            // bucket `version++`, then re-resolve only to classify stale-after-sweep (silent) versus
+            // over-deregistration (error). Rare path; not on the steady deregistration cost.
+            if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache staleBucket))
+            {
+                staleBucket.version++;
+            }
+
+            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks =
+                ContextSinkForMethod(registrationMethod);
+            if (IsStaleContextDeregisterAfterSweep<T>(sinks, context, capturedHandlers))
+            {
+                return;
+            }
+
+            if (MessagingDebug.enabled)
+            {
+                MessagingDebug.Log(
+                    LogLevel.Error,
+                    "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
                     type,
-                    RegistrationType.Deregister,
-                    registrationMethod
-                )
-            );
-            Touch(handlers, deregisterTouchTick);
-            Dictionary<MessageHandler, int> handler = cache.handlers;
-            if (count <= 1)
-            {
-                bool complete = handler.Remove(messageHandler);
-                // O(n) List.Remove: see the tradeoff comment at the scalar-path sibling site in
-                // DeregisterScalarHandler.
-                _ = cache.insertionOrder.Remove(messageHandler);
-                MarkDirtyHandler(messageHandler);
-                cache.version++;
-                // do not mutate cache.cache here; let next read rebuild from handlers
-                if (handler.Count == 0)
-                {
-                    handlers.version++;
-                    _ = handlers.handlers.Remove(priority);
-                    // remove priority from order
-                    List<int> order = handlers.order;
-                    int removeIdx = order.IndexOf(priority);
-                    if (removeIdx >= 0)
-                    {
-                        order.RemoveAt(removeIdx);
-                    }
-                }
-
-                if (handlers.handlers.Count == 0)
-                {
-                    MarkDirtyTarget<T>(context);
-                }
-
-                if (!complete && MessagingDebug.enabled)
-                {
-                    MessagingDebug.Log(
-                        LogLevel.Error,
-                        "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
-                        type,
-                        messageHandler
-                    );
-                }
+                    messageHandler
+                );
             }
-            else
-            {
-                handler[messageHandler] = count - 1;
-            }
-            StageDispatchSnapshot<T>(this, handlers, slotKey);
         }
 
         /// <inheritdoc />
