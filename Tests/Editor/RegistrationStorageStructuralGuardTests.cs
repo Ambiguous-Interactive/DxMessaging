@@ -152,12 +152,17 @@ namespace DxMessaging.Tests.Editor
             Type valueType = registrationMapArguments[1];
             Assert.That(
                 valueType,
-                Is.EqualTo(typeof(Func<MessageRegistrationHandle, Action>)),
+                Is.EqualTo(
+                    typeof(Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>)
+                ),
                 "MessageRegistrationToken._registrations must store the staging function "
-                    + "(Func<MessageRegistrationHandle, Action>) directly, not a per-registration "
-                    + "Action wrapper. Wrapping the staging function in a parameterless Action "
-                    + "re-introduces one delegate plus its display class allocation per "
-                    + "registration (the collapsed 'Registration' local function)."
+                    + "(Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>) "
+                    + "directly, not a per-registration Action wrapper. Wrapping the staging "
+                    + "function in a parameterless Action re-introduces one delegate plus its "
+                    + "display class allocation per registration (the collapsed 'Registration' "
+                    + "local function). The staging function now returns the per-handle "
+                    + "HandlerDeregistration object (replacing the old deregistration Action "
+                    + "closure)."
             );
         }
 

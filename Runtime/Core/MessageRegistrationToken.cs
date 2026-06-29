@@ -71,7 +71,7 @@ namespace DxMessaging.Core
         // removed mid-replay is still replayed if it was already snapshotted.
         private readonly Dictionary<
             MessageRegistrationHandle,
-            Func<MessageRegistrationHandle, Action>
+            Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>
         > _registrations = new();
 
         // Staged-registration handles in registration order. Dictionary
@@ -1884,7 +1884,10 @@ namespace DxMessaging.Core
         /// <param name="metadata">Registration metadata recorded for the diagnostics inspector overlay and the registration-count warning.</param>
         /// <returns>A handle that allows for registration and de-registration.</returns>
         private MessageRegistrationHandle InternalRegister(
-            Func<MessageRegistrationHandle, Action> registerAndGetDeregistration,
+            Func<
+                MessageRegistrationHandle,
+                MessageHandler.HandlerDeregistration
+            > registerAndGetDeregistration,
             MessageRegistrationMetadata metadata
         )
         {
@@ -1910,7 +1913,8 @@ namespace DxMessaging.Core
             // on Enable().
             if (_enabled)
             {
-                Action actualDeregistration = registerAndGetDeregistration(handle);
+                MessageHandler.HandlerDeregistration actualDeregistration =
+                    registerAndGetDeregistration(handle);
                 AddDeregistration(handle, actualDeregistration);
             }
 
@@ -2070,11 +2074,14 @@ namespace DxMessaging.Core
             }
         }
 
-        private void AddDeregistration(MessageRegistrationHandle handle, Action deregistration)
+        private void AddDeregistration(
+            MessageRegistrationHandle handle,
+            MessageHandler.HandlerDeregistration deregistration
+        )
         {
             if (!_deregistrations.TryGetValue(handle, out object existing))
             {
-                // First (and usually only) de-registration: store the Action inline.
+                // First (and usually only) de-registration: store the object inline.
                 _deregistrations[handle] = deregistration;
                 return;
             }
@@ -2085,21 +2092,21 @@ namespace DxMessaging.Core
                 return;
             }
 
-            // A second de-registration accumulated on this handle: promote the inline Action to a
+            // A second de-registration accumulated on this handle: promote the inline object to a
             // PendingDeregistration holder that preserves the ordering / partial-failure / rollback
             // semantics for the multi-de-registration (retarget-recovery replay) case.
             PendingDeregistration promoted = new();
-            promoted.Add((Action)existing);
+            promoted.Add((MessageHandler.HandlerDeregistration)existing);
             promoted.Add(deregistration);
             _deregistrations[handle] = promoted;
         }
 
-        // Logical de-registration count for a _deregistrations value (inline Action == 1).
+        // Logical de-registration count for a _deregistrations value (inline object == 1).
         private static int DeregistrationCount(object value) =>
             value is PendingDeregistration pending ? pending.Count : 1;
 
         // Invokes the de-registration tail [startIndex..) for a _deregistrations value. For the
-        // inline Action (logical Count 1, index 0): on success it is consumed (shouldRemove = true);
+        // inline object (logical Count 1, index 0): on success it is consumed (shouldRemove = true);
         // on throw it is KEPT (retryable, shouldRemove = false); a rollback pass (startIndex &gt; 0)
         // leaves the baseline entry untouched. For a holder it delegates to InvokeFrom, mutating the
         // holder in place. Mirrors the prior PendingDeregistration-only semantics exactly.
@@ -2126,7 +2133,7 @@ namespace DxMessaging.Core
 
             try
             {
-                ((Action)value)?.Invoke();
+                ((MessageHandler.HandlerDeregistration)value)?.Deregister();
                 shouldRemove = true;
                 return null;
             }
@@ -2217,7 +2224,10 @@ namespace DxMessaging.Core
                 if (
                     _registrations.TryGetValue(
                         handle,
-                        out Func<MessageRegistrationHandle, Action> registration
+                        out Func<
+                            MessageRegistrationHandle,
+                            MessageHandler.HandlerDeregistration
+                        > registration
                     )
                 )
                 {
@@ -2240,7 +2250,10 @@ namespace DxMessaging.Core
                     || _deregistrations.ContainsKey(handle)
                     || !_registrations.TryGetValue(
                         handle,
-                        out Func<MessageRegistrationHandle, Action> registration
+                        out Func<
+                            MessageRegistrationHandle,
+                            MessageHandler.HandlerDeregistration
+                        > registration
                     )
                 )
                 {
@@ -2262,7 +2275,10 @@ namespace DxMessaging.Core
                     _deregistrations.ContainsKey(handle)
                     || !_registrations.TryGetValue(
                         handle,
-                        out Func<MessageRegistrationHandle, Action> registration
+                        out Func<
+                            MessageRegistrationHandle,
+                            MessageHandler.HandlerDeregistration
+                        > registration
                     )
                 )
                 {
@@ -2279,13 +2295,16 @@ namespace DxMessaging.Core
             {
                 foreach (StagedRegistration staged in _registrationReplayQueue)
                 {
-                    Func<MessageRegistrationHandle, Action> register = staged.Register;
+                    Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration> register =
+                        staged.Register;
                     if (register == null)
                     {
                         continue;
                     }
 
-                    Action actualDeregistration = register(staged.Handle);
+                    MessageHandler.HandlerDeregistration actualDeregistration = register(
+                        staged.Handle
+                    );
                     AddDeregistration(staged.Handle, actualDeregistration);
                 }
             }
@@ -2305,11 +2324,14 @@ namespace DxMessaging.Core
         private readonly struct StagedRegistration
         {
             public readonly MessageRegistrationHandle Handle;
-            public readonly Func<MessageRegistrationHandle, Action> Register;
+            public readonly Func<
+                MessageRegistrationHandle,
+                MessageHandler.HandlerDeregistration
+            > Register;
 
             public StagedRegistration(
                 MessageRegistrationHandle handle,
-                Func<MessageRegistrationHandle, Action> register
+                Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration> register
             )
             {
                 Handle = handle;
@@ -2514,13 +2536,13 @@ namespace DxMessaging.Core
         // rollback-baseline (startIndex) semantics the List<Action> form had.
         private sealed class PendingDeregistration
         {
-            private Action _head;
+            private MessageHandler.HandlerDeregistration _head;
             private bool _hasHead;
-            private List<Action> _overflow;
+            private List<MessageHandler.HandlerDeregistration> _overflow;
 
             internal int Count => (_hasHead ? 1 : 0) + (_overflow?.Count ?? 0);
 
-            internal void Add(Action action)
+            internal void Add(MessageHandler.HandlerDeregistration action)
             {
                 // Fill the inline head ONLY when nothing is stored. The empty-overflow
                 // clause matters during the transient window inside InvokeFrom where the
@@ -2539,7 +2561,7 @@ namespace DxMessaging.Core
                     return;
                 }
 
-                (_overflow ??= new List<Action>()).Add(action);
+                (_overflow ??= new List<MessageHandler.HandlerDeregistration>()).Add(action);
             }
 
             internal Exception InvokeFrom(int startIndex)
@@ -2558,7 +2580,7 @@ namespace DxMessaging.Core
                 {
                     try
                     {
-                        _head?.Invoke();
+                        _head?.Deregister();
                         _head = null;
                         _hasHead = false;
                     }
@@ -2579,7 +2601,7 @@ namespace DxMessaging.Core
                     {
                         try
                         {
-                            _overflow[j]?.Invoke();
+                            _overflow[j]?.Deregister();
                             _overflow.RemoveAt(j);
                         }
                         catch (Exception exception)

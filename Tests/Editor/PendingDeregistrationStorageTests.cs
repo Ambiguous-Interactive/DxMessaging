@@ -381,18 +381,25 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(
                     OverflowField,
                     Is.Not.Null,
-                    "PendingDeregistration must keep a List<Action> overflow field."
+                    "PendingDeregistration must keep a List<HandlerDeregistration> overflow field."
                 );
                 _instance = Activator.CreateInstance(PendingType, nonPublic: true);
             }
 
             internal int Count => (int)CountProperty.GetValue(_instance);
 
-            internal List<Action> OverflowList => (List<Action>)OverflowField.GetValue(_instance);
+            // The overflow field is now a List<MessageHandler.HandlerDeregistration>; the
+            // tests only assert its Count / null-or-empty, so expose it through the
+            // non-generic ICollection surface.
+            internal System.Collections.ICollection OverflowList =>
+                (System.Collections.ICollection)OverflowField.GetValue(_instance);
 
             internal void Add(Action action)
             {
-                AddMethod.Invoke(_instance, new object[] { action });
+                // PendingDeregistration.Add now takes a HandlerDeregistration; wrap the
+                // test's Action so the existing test bodies (which express each
+                // de-registration as a lambda) keep reading like ordinary usage.
+                AddMethod.Invoke(_instance, new object[] { new ActionDeregistration(action) });
             }
 
             internal Exception InvokeFrom(int startIndex)
@@ -413,13 +420,33 @@ namespace DxMessaging.Tests.Editor
                     )
                 )
                 {
-                    if (field.FieldType == typeof(List<Action>))
+                    if (field.FieldType == typeof(List<MessageHandler.HandlerDeregistration>))
                     {
                         return field;
                     }
                 }
 
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Test-only <see cref="MessageHandler.HandlerDeregistration"/> that runs a plain
+        /// <see cref="Action"/> when deregistered, so the storage tests can express each
+        /// de-registration as a lambda (mirroring the old <c>List&lt;Action&gt;</c> form).
+        /// </summary>
+        private sealed class ActionDeregistration : MessageHandler.HandlerDeregistration
+        {
+            private readonly Action _action;
+
+            internal ActionDeregistration(Action action)
+            {
+                _action = action;
+            }
+
+            internal override void Deregister()
+            {
+                _action?.Invoke();
             }
         }
     }

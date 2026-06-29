@@ -209,6 +209,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   insertion-order, partial-failure-retryable, and rollback-baseline de-registration semantics are
   unchanged (verified by a differential simulation across every count/failure/start-index
   combination); the public API is unchanged.
+- Each handler/post-processor registration now allocates one fewer managed object by replacing
+  its per-registration de-registration **closure** with a per-handle **object**. The typed
+  handler used to hand back a captured parameterless `Action` (a delegate plus the display class
+  holding the slot, cache key, priority, and generation it closed over) as the thing the token
+  would later invoke to tear the registration down; that closure is now a single per-handle
+  `HandlerDeregistration` object whose `Deregister()` instance method carries the same captured
+  state as plain fields (and converts implicitly to `Action`, so the token's replay/rollback
+  machinery is untouched). To let one non-generic object tear down a generic
+  `HandlerActionCache<TU>` without re-introducing a per-handler-delegate-type closure, the erased
+  `IHandlerActionCache` gained three non-generic operations (`ContainsEntry`, `BumpVersion`,
+  `DeregisterEntry`). The de-registration **order** (generation guard, slot-version liveness,
+  keyed-vs-scalar split, identity/over-de-registration check, version bump, bus de-register,
+  refcount decrement) is a faithful re-expression of the prior closure body, pinned by the 19
+  arbitrary-order `MixedOrderDeregistrationTests` and the full re-entrancy suite. Because these
+  `MessageHandler.Register*` facades now return the internal `HandlerDeregistration` (still
+  implicitly an `Action`), they were narrowed from `public` to `internal` -- this is part of the
+  v4 bus<->handler boundary rework and does NOT touch the Unity-facing surface
+  (`MessageRegistrationToken`, `MessageAwareComponent`); only code calling
+  `MessageHandler.Register*` **directly** is affected.
 - The bug-report issue template now offers the package version as a dropdown of
   released versions (with an `Other` fallback) instead of a free-text field, so
   reports carry an exact, valid version. The list is generated from

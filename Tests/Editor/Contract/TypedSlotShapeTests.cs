@@ -122,6 +122,16 @@ namespace DxMessaging.Tests.Editor.Contract
             {
                 ++ResetCallCount;
             }
+
+            public bool ContainsEntry(object originalHandler) => false;
+
+            public void BumpVersion() => ++Version;
+
+            public bool DeregisterEntry(object originalHandler, out bool wasLastForEntry)
+            {
+                wasLastForEntry = false;
+                return false;
+            }
         }
 
         /// <summary>
@@ -149,6 +159,16 @@ namespace DxMessaging.Tests.Editor.Contract
             public void Reset()
             {
                 ObservedOuterCountAtReset = ProbeOuterCount();
+            }
+
+            public bool ContainsEntry(object originalHandler) => false;
+
+            public void BumpVersion() { }
+
+            public bool DeregisterEntry(object originalHandler, out bool wasLastForEntry)
+            {
+                wasLastForEntry = false;
+                return false;
             }
         }
 
@@ -860,13 +880,17 @@ namespace DxMessaging.Tests.Editor.Contract
 
         /// <summary>
         /// Reflection-based shape pin for <see cref="IHandlerActionCache"/>.
-        /// Asserts the interface declares exactly the five members the staged
+        /// Asserts the interface declares exactly the members the staged
         /// dispatch + eviction layers require: <see cref="IHandlerActionCache.Version"/>,
         /// <see cref="IHandlerActionCache.LastSeenVersion"/>,
         /// <see cref="IHandlerActionCache.LastSeenEmissionId"/>,
-        /// <see cref="IHandlerActionCache.IsEmpty"/>, and
-        /// <see cref="IHandlerActionCache.Reset"/>. Adding or removing a
-        /// member breaks this test until reviewers update the expected list,
+        /// <see cref="IHandlerActionCache.IsEmpty"/>,
+        /// <see cref="IHandlerActionCache.Reset"/>, plus the non-generic
+        /// per-handle teardown ops the unified deregistration object uses:
+        /// <see cref="IHandlerActionCache.ContainsEntry"/>,
+        /// <see cref="IHandlerActionCache.BumpVersion"/>, and
+        /// <see cref="IHandlerActionCache.DeregisterEntry"/>. Adding or removing
+        /// a member breaks this test until reviewers update the expected list,
         /// providing a structural backstop for the
         /// <c>HandlerActionCache&lt;TDelegate&gt;</c> interface implementation.
         /// </summary>
@@ -880,6 +904,9 @@ namespace DxMessaging.Tests.Editor.Contract
                 "LastSeenEmissionId",
                 "IsEmpty",
                 "Reset",
+                "ContainsEntry",
+                "BumpVersion",
+                "DeregisterEntry",
             };
 
             // GetMembers on an interface reports declared members directly.
