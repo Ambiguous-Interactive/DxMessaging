@@ -1679,13 +1679,16 @@ namespace DxMessaging.Core
             MessageHandler.HandlerDeregistration deregistration
         )
         {
-            if (!_deregistrations.TryGetValue(handle, out object existing))
+            // First (and usually only) de-registration: store the object inline in ONE dictionary
+            // operation. TryAdd succeeds on the common first-registration path without the prior
+            // separate TryGetValue-miss + indexer-insert (two probes of the same key); the rare
+            // second-de-registration promotion path below re-reads the existing value.
+            if (_deregistrations.TryAdd(handle, deregistration))
             {
-                // First (and usually only) de-registration: store the object inline.
-                _deregistrations[handle] = deregistration;
                 return;
             }
 
+            object existing = _deregistrations[handle];
             if (existing is PendingDeregistration pending)
             {
                 pending.Add(deregistration);
