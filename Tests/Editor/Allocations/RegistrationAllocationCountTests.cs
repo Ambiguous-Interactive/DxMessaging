@@ -55,11 +55,11 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// </description></item>
     /// <item><description>
     /// Every registration kind dropped about two managed-allocation calls once the
-    /// token stored each staging function directly in <c>_registrations</c> (paired with
-    /// its handle in the replay queue) instead of wrapping it in a per-registration
-    /// parameterless <c>Action</c> (a delegate plus its display class). Guarded
-    /// structurally by
-    /// <c>RegistrationStorageStructuralGuardTests.RegistrationsStoreStagingFunctionNotWrapperAction</c>
+    /// token collapsed its per-handle staging <c>Func</c> (display class + delegate) and
+    /// its nested <c>AugmentedHandler</c> local-function delegate into a single unified
+    /// per-handle <c>Registration</c> object stored in <c>_registrations</c> (paired with
+    /// its handle in the replay queue). Guarded structurally by
+    /// <c>RegistrationStorageStructuralGuardTests.RegistrationsStoreUnifiedRegistrationObjectNotFuncOrAction</c>
     /// (deterministic, backend-independent -- in the per-PR EditMode correctness leg).
     /// </description></item>
     /// </list>

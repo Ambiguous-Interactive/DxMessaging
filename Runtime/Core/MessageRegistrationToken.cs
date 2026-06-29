@@ -58,21 +58,23 @@ namespace DxMessaging.Core
 
         private readonly MessageHandler _messageHandler;
 
-        // Maps each staged registration handle to the staging function the public
-        // Register* methods built: invoking it (re)registers the handler on the bus
-        // and returns the matching de-registration Action. Storing the staging
-        // function DIRECTLY (rather than wrapping it in a per-registration
-        // parameterless Action that also calls AddDeregistration) saves one delegate
-        // plus its display class per registration -- InternalRegister no longer needs
-        // a closure of its own; the central replay loop pairs the function with its
-        // handle and performs the AddDeregistration. The re-entrancy snapshot
-        // semantics are unchanged: the replay queue captures the function reference
-        // (exactly as it previously captured the wrapper Action), so a registration
-        // removed mid-replay is still replayed if it was already snapshotted.
-        private readonly Dictionary<
-            MessageRegistrationHandle,
-            Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>
-        > _registrations = new();
+        // Maps each staged registration handle to the unified per-handle Registration
+        // object the public Register* methods built. Calling Registration.Register()
+        // (re)registers the handler on the bus and returns the matching
+        // HandlerDeregistration. The Registration object IS the collapsed staging
+        // state: it replaces (a) the per-registration staging Func display class, (b)
+        // the staging Func delegate itself, and (c) the nested AugmentedHandler
+        // local-function delegate -- the captured target/source, user handler,
+        // priority, and kind are now plain fields, and the diagnostics-augmented
+        // invoker is an instance method bound to the object (the FastHandler<T> handed
+        // to MessageHandler is (FastHandler<T>)registration.AugmentedHandlerScalar).
+        // Net ~ -2 managed allocations per registration. The central replay loop pairs
+        // the Registration with its handle and performs the AddDeregistration. The
+        // re-entrancy snapshot semantics are unchanged: the replay queue captures the
+        // Registration reference (exactly as it previously captured the staging Func),
+        // so a registration removed mid-replay is still replayed if it was already
+        // snapshotted.
+        private readonly Dictionary<MessageRegistrationHandle, Registration> _registrations = new();
 
         // Staged-registration handles in registration order. Dictionary
         // enumeration order is NOT stable across Remove/Add churn, so Enable()
@@ -94,11 +96,11 @@ namespace DxMessaging.Core
         // Action (1 de-registration) or a PendingDeregistration (2+).
         private readonly Dictionary<MessageRegistrationHandle, object> _deregistrations = new();
 
-        // Snapshot of (handle, staging function) pairs to replay on Enable() /
+        // Snapshot of (handle, Registration object) pairs to replay on Enable() /
         // RetargetMessageBus. Snapshotting before invoking lets replay tolerate
         // re-entrant registration mutation (a handler that registers or removes
         // handlers while it runs). The pair carries the handle so the central replay
-        // loop can call the staging function and AddDeregistration without a
+        // loop can call Registration.Register() and AddDeregistration without a
         // per-registration wrapper closure.
         private readonly List<StagedRegistration> _registrationReplayQueue = new();
         private readonly List<MessageRegistrationHandle> _handleQueue = new();
@@ -156,29 +158,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref FastHandler handed
-                    // down as the flat invoker; the user's handler is the identity
-                    // key and is never invoked for the default slot.
-                    return _messageHandler.RegisterTargetedMessageHandler(
-                        target,
-                        targetedHandler,
-                        (MessageHandler.FastHandler<T>)AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        targetedHandler(message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedHandlerAction,
+                    target,
+                    targetedHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     target,
                     typeof(T),
@@ -201,26 +187,13 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterTargetedMessageHandler(
-                        target,
-                        targetedHandler,
-                        AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        targetedHandler(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedHandlerFast,
+                    target,
+                    targetedHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     target,
                     typeof(T),
@@ -348,26 +321,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterTargetedPostProcessor(
-                        target,
-                        targetedPostProcessor,
-                        AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        targetedPostProcessor(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedPostProcessorFast,
+                    target,
+                    targetedPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     target,
                     typeof(T),
@@ -393,26 +353,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterTargetedPostProcessor(
-                        target,
-                        targetedPostProcessor,
-                        AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        targetedPostProcessor(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedPostProcessorFast,
+                    target,
+                    targetedPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     target,
                     typeof(T),
@@ -481,26 +428,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterTargetedPostProcessor(
-                        target,
-                        targetedPostProcessor,
-                        AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        targetedPostProcessor(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedPostProcessorFast,
+                    target,
+                    targetedPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     target,
                     typeof(T),
@@ -526,29 +460,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref FastHandler handed
-                    // down as the flat invoker; the user's handler is the identity
-                    // key and is never invoked for the default slot.
-                    return _messageHandler.RegisterTargetedPostProcessor(
-                        target,
-                        targetedPostProcessor,
-                        (MessageHandler.FastHandler<T>)AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        targetedPostProcessor(message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedPostProcessorAction,
+                    target,
+                    targetedPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     target,
                     typeof(T),
@@ -579,29 +497,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref-with-context
-                    // FastHandlerWithContext handed down as the flat invoker; the
-                    // user's handler is the identity key and is never invoked for
-                    // the default slot.
-                    return _messageHandler.RegisterTargetedWithoutTargeting(
-                        messageHandler,
-                        (MessageHandler.FastHandlerWithContext<T>)AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref InstanceId target, ref T message)
-                    {
-                        messageHandler(target, message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedWithoutTargetingAction,
+                    default,
+                    messageHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -632,25 +534,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterTargetedWithoutTargeting(
-                        messageHandler,
-                        AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref InstanceId target, ref T message)
-                    {
-                        messageHandler(ref target, ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedWithoutTargetingFast,
+                    default,
+                    messageHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -681,29 +571,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref-with-context
-                    // FastHandlerWithContext handed down as the flat invoker; the
-                    // user's handler is the identity key and is never invoked for the
-                    // default slot.
-                    return _messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                        postProcessor,
-                        (MessageHandler.FastHandlerWithContext<T>)AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref InstanceId target, ref T message)
-                    {
-                        postProcessor(target, message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedWithoutTargetingPostProcessorAction,
+                    default,
+                    postProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -734,25 +608,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                        postProcessor,
-                        AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref InstanceId target, ref T message)
-                    {
-                        postProcessor(ref target, ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-                },
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedWithoutTargetingPostProcessorFast,
+                    default,
+                    postProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -790,32 +652,12 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    // The diagnostics-augmented handler is built once as a by-ref
-                    // FastHandler and handed down as the flat invoker, so the
-                    // default slot stores a single closure (this one) instead of
-                    // an Action wrapper plus a separately-allocated FastHandler
-                    // adapter. The user's handler is the identity key; default-slot
-                    // dispatch uses the flat invoker, including the legacy Handle*
-                    // callback path.
-                    return _messageHandler.RegisterUntargetedMessageHandler(
-                        untargetedHandler,
-                        (MessageHandler.FastHandler<T>)AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        untargetedHandler(message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message));
-                        }
-                    }
-                },
+                new UntargetedRegistration<T>(
+                    this,
+                    RegistrationKind.UntargetedHandlerAction,
+                    untargetedHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -852,25 +694,12 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterUntargetedMessageHandler(
-                        untargetedHandler,
-                        AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        untargetedHandler(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message));
-                        }
-                    }
-                },
+                new UntargetedRegistration<T>(
+                    this,
+                    RegistrationKind.UntargetedHandlerFast,
+                    untargetedHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -898,25 +727,12 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterUntargetedPostProcessor(
-                        untargetedPostProcessor,
-                        AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        untargetedPostProcessor(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message));
-                        }
-                    }
-                },
+                new UntargetedRegistration<T>(
+                    this,
+                    RegistrationKind.UntargetedPostProcessorFast,
+                    untargetedPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -938,29 +754,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref FastHandler handed
-                    // down as the flat invoker; the user's handler is the identity
-                    // key and is never invoked for the default slot.
-                    return _messageHandler.RegisterSourcedBroadcastMessageHandler(
-                        source,
-                        broadcastHandler,
-                        (MessageHandler.FastHandler<T>)AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        broadcastHandler(message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastHandlerAction,
+                    source,
+                    broadcastHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     source,
                     typeof(T),
@@ -982,26 +782,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterSourcedBroadcastMessageHandler(
-                        source,
-                        broadcastHandler,
-                        AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        broadcastHandler(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastHandlerFast,
+                    source,
+                    broadcastHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     source,
                     typeof(T),
@@ -1024,29 +811,13 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref FastHandler handed
-                    // down as the flat invoker; the user's handler is the identity
-                    // key and is never invoked for the default slot.
-                    return _messageHandler.RegisterSourcedBroadcastPostProcessor(
-                        source,
-                        broadcastPostProcessor,
-                        (MessageHandler.FastHandler<T>)AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        broadcastPostProcessor(message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastPostProcessorAction,
+                    source,
+                    broadcastPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     source,
                     typeof(T),
@@ -1068,26 +839,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterSourcedBroadcastPostProcessor(
-                        source,
-                        broadcastPostProcessor,
-                        AugmentedHandler,
-                        priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        broadcastPostProcessor(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastPostProcessorFast,
+                    source,
+                    broadcastPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     source,
                     typeof(T),
@@ -1238,29 +996,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref FastHandler handed
-                    // down as the flat invoker; the user's handler is the identity
-                    // key and is never invoked for the default slot.
-                    return _messageHandler.RegisterSourcedBroadcastPostProcessor(
-                        source,
-                        broadcastPostProcessor,
-                        (MessageHandler.FastHandler<T>)AugmentedHandler,
-                        priority: priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        broadcastPostProcessor(message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastPostProcessorAction,
+                    source,
+                    broadcastPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     source,
                     typeof(T),
@@ -1290,26 +1032,13 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterSourcedBroadcastPostProcessor(
-                        source,
-                        broadcastPostProcessor,
-                        AugmentedHandler,
-                        priority: priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref T message)
-                    {
-                        broadcastPostProcessor(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastPostProcessorFast,
+                    source,
+                    broadcastPostProcessor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     source,
                     typeof(T),
@@ -1431,29 +1160,13 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref-with-context
-                    // FastHandlerWithContext handed down as the flat invoker; the
-                    // user's handler is the identity key and is never invoked for
-                    // the default slot.
-                    return _messageHandler.RegisterSourcedBroadcastWithoutSource(
-                        broadcastHandler,
-                        (MessageHandler.FastHandlerWithContext<T>)AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref InstanceId source, ref T message)
-                    {
-                        broadcastHandler(source, message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastWithoutSourceAction,
+                    default,
+                    broadcastHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -1485,25 +1198,13 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterSourcedBroadcastWithoutSource(
-                        broadcastHandler,
-                        AugmentedHandler,
-                        priority: priority,
-                        messageBus: _messageBus
-                    );
-
-                    void AugmentedHandler(ref InstanceId source, ref T message)
-                    {
-                        broadcastHandler(ref source, ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastWithoutSourceFast,
+                    default,
+                    broadcastHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -1540,29 +1241,13 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                handle =>
-                {
-                    // Diagnostics folded into a single by-ref-with-context
-                    // FastHandlerWithContext handed down as the flat invoker; the
-                    // user's handler is the identity key and is never invoked for the
-                    // default slot.
-                    return _messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                        broadcastHandler,
-                        (MessageHandler.FastHandlerWithContext<T>)AugmentedHandler,
-                        priority: priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref InstanceId source, ref T message)
-                    {
-                        broadcastHandler(source, message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastWithoutSourcePostProcessorAction,
+                    default,
+                    broadcastHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -1594,25 +1279,13 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                        broadcastHandler,
-                        AugmentedHandler,
-                        priority: priority,
-                        _messageBus
-                    );
-
-                    void AugmentedHandler(ref InstanceId source, ref T message)
-                    {
-                        broadcastHandler(ref source, ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastWithoutSourcePostProcessorFast,
+                    default,
+                    broadcastHandler,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -1643,48 +1316,12 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterGlobalAcceptAll(
-                        acceptAllUntargeted,
-                        AugmentedUntargeted,
-                        acceptAllTargeted,
-                        AugmentedTargeted,
-                        acceptAllBroadcast,
-                        AugmentedBroadcast,
-                        _messageBus
-                    );
-
-                    void AugmentedUntargeted(IUntargetedMessage message)
-                    {
-                        acceptAllUntargeted(message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message));
-                        }
-                    }
-
-                    void AugmentedTargeted(InstanceId target, ITargetedMessage message)
-                    {
-                        acceptAllTargeted(target, message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-
-                    void AugmentedBroadcast(InstanceId source, IBroadcastMessage message)
-                    {
-                        acceptAllBroadcast(source, message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new GlobalAcceptAllRegistration(
+                    this,
+                    acceptAllUntargeted,
+                    acceptAllTargeted,
+                    acceptAllBroadcast
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(IMessage),
@@ -1724,48 +1361,12 @@ namespace DxMessaging.Core
                 return MessageRegistrationHandle.CreateMessageRegistrationHandle();
             }
             return InternalRegister(
-                handle =>
-                {
-                    return _messageHandler.RegisterGlobalAcceptAll(
-                        acceptAllUntargeted,
-                        AugmentedUntargeted,
-                        acceptAllTargeted,
-                        AugmentedTargeted,
-                        acceptAllBroadcast,
-                        AugmentedBroadcast,
-                        _messageBus
-                    );
-
-                    void AugmentedUntargeted(ref IUntargetedMessage message)
-                    {
-                        acceptAllUntargeted(ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message));
-                        }
-                    }
-
-                    void AugmentedTargeted(ref InstanceId target, ref ITargetedMessage message)
-                    {
-                        acceptAllTargeted(ref target, ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, target));
-                        }
-                    }
-
-                    void AugmentedBroadcast(ref InstanceId source, ref IBroadcastMessage message)
-                    {
-                        acceptAllBroadcast(ref source, ref message);
-                        if (_diagnosticMode)
-                        {
-                            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
-                            _emissionBuffer.Add(new MessageEmissionData(message, source));
-                        }
-                    }
-                },
+                new GlobalAcceptAllRegistration(
+                    this,
+                    acceptAllUntargeted,
+                    acceptAllTargeted,
+                    acceptAllBroadcast
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(IMessage),
@@ -1794,12 +1395,12 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ =>
-                    _messageHandler.RegisterUntargetedInterceptor(
-                        interceptor,
-                        priority: priority,
-                        messageBus: _messageBus
-                    ),
+                new UntargetedRegistration<T>(
+                    this,
+                    RegistrationKind.UntargetedInterceptor,
+                    interceptor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -1828,12 +1429,13 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ =>
-                    _messageHandler.RegisterBroadcastInterceptor(
-                        interceptor,
-                        priority: priority,
-                        messageBus: _messageBus
-                    ),
+                new BroadcastRegistration<T>(
+                    this,
+                    RegistrationKind.BroadcastInterceptor,
+                    default,
+                    interceptor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -1862,12 +1464,13 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                _ =>
-                    _messageHandler.RegisterTargetedInterceptor(
-                        interceptor,
-                        priority: priority,
-                        messageBus: _messageBus
-                    ),
+                new TargetedRegistration<T>(
+                    this,
+                    RegistrationKind.TargetedInterceptor,
+                    default,
+                    interceptor,
+                    priority
+                ),
                 new MessageRegistrationMetadata(
                     null,
                     typeof(T),
@@ -1880,21 +1483,19 @@ namespace DxMessaging.Core
         /// <summary>
         /// Handles the actual [de]registration wrapping and (potential) lazy execution.
         /// </summary>
-        /// <param name="registerAndGetDeregistration">Proxied registration function that returns a de-registration function.</param>
+        /// <param name="registration">The unified per-handle registration object the public Register* method built. Calling <see cref="Registration.Register"/> (re)registers the handler on the bus and returns the matching de-registration.</param>
         /// <param name="metadata">Registration metadata recorded for the diagnostics inspector overlay and the registration-count warning.</param>
         /// <returns>A handle that allows for registration and de-registration.</returns>
         private MessageRegistrationHandle InternalRegister(
-            Func<
-                MessageRegistrationHandle,
-                MessageHandler.HandlerDeregistration
-            > registerAndGetDeregistration,
+            Registration registration,
             MessageRegistrationMetadata metadata
         )
         {
             MessageRegistrationHandle handle =
                 MessageRegistrationHandle.CreateMessageRegistrationHandle();
 
-            _registrations[handle] = registerAndGetDeregistration;
+            registration.Handle = handle;
+            _registrations[handle] = registration;
             _registrationOrder.Add(handle);
             // Metadata is passed by value (a readonly struct) instead of through a
             // Func<MessageRegistrationMetadata> factory: the factory was invoked
@@ -1909,12 +1510,11 @@ namespace DxMessaging.Core
             // Generally, registrations should take place before all calls to enable.
             // Just in case, though, register immediately if already enabled. We do not
             // register at staging time when disabled (the owner might not be awake), so
-            // the staging function is retained in _registrations to lazily (re)register
-            // on Enable().
+            // the Registration object is retained in _registrations to lazily
+            // (re)register on Enable().
             if (_enabled)
             {
-                MessageHandler.HandlerDeregistration actualDeregistration =
-                    registerAndGetDeregistration(handle);
+                MessageHandler.HandlerDeregistration actualDeregistration = registration.Register();
                 AddDeregistration(handle, actualDeregistration);
             }
 
@@ -2221,15 +1821,7 @@ namespace DxMessaging.Core
             for (int i = 0; i < registrationCount; ++i)
             {
                 MessageRegistrationHandle handle = _registrationOrder[i];
-                if (
-                    _registrations.TryGetValue(
-                        handle,
-                        out Func<
-                            MessageRegistrationHandle,
-                            MessageHandler.HandlerDeregistration
-                        > registration
-                    )
-                )
+                if (_registrations.TryGetValue(handle, out Registration registration))
                 {
                     _registrationReplayQueue.Add(new StagedRegistration(handle, registration));
                 }
@@ -2248,13 +1840,7 @@ namespace DxMessaging.Core
                 if (
                     !activeRetargetHandles.Contains(handle)
                     || _deregistrations.ContainsKey(handle)
-                    || !_registrations.TryGetValue(
-                        handle,
-                        out Func<
-                            MessageRegistrationHandle,
-                            MessageHandler.HandlerDeregistration
-                        > registration
-                    )
+                    || !_registrations.TryGetValue(handle, out Registration registration)
                 )
                 {
                     continue;
@@ -2273,13 +1859,7 @@ namespace DxMessaging.Core
                 MessageRegistrationHandle handle = _registrationOrder[i];
                 if (
                     _deregistrations.ContainsKey(handle)
-                    || !_registrations.TryGetValue(
-                        handle,
-                        out Func<
-                            MessageRegistrationHandle,
-                            MessageHandler.HandlerDeregistration
-                        > registration
-                    )
+                    || !_registrations.TryGetValue(handle, out Registration registration)
                 )
                 {
                     continue;
@@ -2295,16 +1875,14 @@ namespace DxMessaging.Core
             {
                 foreach (StagedRegistration staged in _registrationReplayQueue)
                 {
-                    Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration> register =
-                        staged.Register;
-                    if (register == null)
+                    Registration registration = staged.Registration;
+                    if (registration == null)
                     {
                         continue;
                     }
 
-                    MessageHandler.HandlerDeregistration actualDeregistration = register(
-                        staged.Handle
-                    );
+                    MessageHandler.HandlerDeregistration actualDeregistration =
+                        registration.Register();
                     AddDeregistration(staged.Handle, actualDeregistration);
                 }
             }
@@ -2315,27 +1893,22 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// A staged registration captured for replay: the handle plus the staging
-        /// function that (re)registers the handler and returns its de-registration
-        /// Action. Snapshotting the function reference (rather than a per-registration
-        /// wrapper closure) preserves the original re-entrancy semantics while removing
-        /// one delegate allocation per registration.
+        /// A staged registration captured for replay: the handle plus the unified
+        /// per-handle <see cref="Registration"/> object that (re)registers the handler
+        /// and returns its <see cref="MessageHandler.HandlerDeregistration"/>.
+        /// Snapshotting the object reference (rather than a per-registration wrapper
+        /// closure) preserves the original re-entrancy semantics while keeping the
+        /// staging state in a single object per registration.
         /// </summary>
         private readonly struct StagedRegistration
         {
             public readonly MessageRegistrationHandle Handle;
-            public readonly Func<
-                MessageRegistrationHandle,
-                MessageHandler.HandlerDeregistration
-            > Register;
+            public readonly Registration Registration;
 
-            public StagedRegistration(
-                MessageRegistrationHandle handle,
-                Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration> register
-            )
+            public StagedRegistration(MessageRegistrationHandle handle, Registration registration)
             {
                 Handle = handle;
-                Register = register;
+                Registration = registration;
             }
         }
 
@@ -2623,6 +2196,607 @@ namespace DxMessaging.Core
                 }
 
                 return firstException;
+            }
+        }
+
+        // Discriminates the per-handle Registration object's behaviour. Each value
+        // pins (a) which MessageHandler.Register* method the kind-switch in
+        // Registration.Register() calls and (b) which augmented-invoker body shape
+        // (user-delegate type + by-value vs by-ref call) the bound FastHandler/
+        // FastHandlerWithContext delegate runs. The values map 1:1 onto the former
+        // per-method staging lambdas; the *Action / *Fast suffix mirrors the two
+        // public overloads (Action<T>/Action<InstanceId,T> vs FastHandler<T>/
+        // FastHandlerWithContext<T>) that previously had distinct AugmentedHandler
+        // local functions.
+        private enum RegistrationKind
+        {
+            TargetedHandlerAction,
+            TargetedHandlerFast,
+            TargetedPostProcessorAction,
+            TargetedPostProcessorFast,
+            TargetedWithoutTargetingAction,
+            TargetedWithoutTargetingFast,
+            TargetedWithoutTargetingPostProcessorAction,
+            TargetedWithoutTargetingPostProcessorFast,
+            TargetedInterceptor,
+
+            UntargetedHandlerAction,
+            UntargetedHandlerFast,
+            UntargetedPostProcessorFast,
+            UntargetedInterceptor,
+
+            BroadcastHandlerAction,
+            BroadcastHandlerFast,
+            BroadcastPostProcessorAction,
+            BroadcastPostProcessorFast,
+            BroadcastWithoutSourceAction,
+            BroadcastWithoutSourceFast,
+            BroadcastWithoutSourcePostProcessorAction,
+            BroadcastWithoutSourcePostProcessorFast,
+            BroadcastInterceptor,
+
+            GlobalAcceptAllAction,
+            GlobalAcceptAllFast,
+        }
+
+        // The unified per-handle staging object. Replaces, per registration, the old
+        // staging Func<handle, HandlerDeregistration> display class + delegate AND the
+        // nested AugmentedHandler local-function delegate. The captured staging state
+        // (owning token, handle, user handler delegate, target/source InstanceId,
+        // priority, kind) lives in plain fields; the diagnostics-augmented invoker is
+        // an instance method bound to this object (so MessageHandler still receives a
+        // delegate on the hot path -- no virtual/interface call per dispatch).
+        //
+        // The base is non-generic so _registrations / the replay queue can hold every
+        // registration polymorphically. The constrained MessageHandler.Register*<T>
+        // calls each require T : ITargetedMessage / IUntargetedMessage /
+        // IBroadcastMessage, which a single Registration<T> (T : IMessage) cannot
+        // satisfy; the three concrete subclasses below carry the matching constraint
+        // and each run a kind-SWITCH over only the kinds in their family (per the
+        // user-accepted "unified object, accept the kind-switch" design -- NOT ~14
+        // subclasses). GlobalAcceptAllRegistration is non-generic (its sub-handlers
+        // are the fixed IMessage facades).
+        private abstract class Registration
+        {
+            protected readonly MessageRegistrationToken Token;
+            public MessageRegistrationHandle Handle;
+
+            protected Registration(MessageRegistrationToken token)
+            {
+                Token = token;
+            }
+
+            // Kind-switch: (re)register on the bus and return the matching
+            // HandlerDeregistration, exactly as the former staging lambda did. Reads
+            // the token's CURRENT _messageBus (so Enable()/RetargetMessageBus replay
+            // binds to the active bus, unchanged from when _messageBus was captured by
+            // the staging closure at call time -- the staging closure also read the
+            // field, not a snapshot).
+            public abstract MessageHandler.HandlerDeregistration Register();
+        }
+
+        private sealed class TargetedRegistration<T> : Registration
+            where T : ITargetedMessage
+        {
+            private readonly RegistrationKind _kind;
+            private readonly InstanceId _context;
+            private readonly object _userHandler;
+            private readonly int _priority;
+
+            internal TargetedRegistration(
+                MessageRegistrationToken token,
+                RegistrationKind kind,
+                InstanceId context,
+                object userHandler,
+                int priority
+            )
+                : base(token)
+            {
+                _kind = kind;
+                _context = context;
+                _userHandler = userHandler;
+                _priority = priority;
+            }
+
+            public override MessageHandler.HandlerDeregistration Register()
+            {
+                MessageHandler messageHandler = Token._messageHandler;
+                IMessageBus messageBus = Token._messageBus;
+                switch (_kind)
+                {
+                    case RegistrationKind.TargetedHandlerAction:
+                        return messageHandler.RegisterTargetedMessageHandler(
+                            _context,
+                            (Action<T>)_userHandler,
+                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.TargetedHandlerFast:
+                        return messageHandler.RegisterTargetedMessageHandler(
+                            _context,
+                            (MessageHandler.FastHandler<T>)_userHandler,
+                            AugmentedHandlerScalar,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.TargetedPostProcessorAction:
+                        return messageHandler.RegisterTargetedPostProcessor(
+                            _context,
+                            (Action<T>)_userHandler,
+                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.TargetedPostProcessorFast:
+                        return messageHandler.RegisterTargetedPostProcessor(
+                            _context,
+                            (MessageHandler.FastHandler<T>)_userHandler,
+                            AugmentedHandlerScalar,
+                            _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.TargetedWithoutTargetingAction:
+                        return messageHandler.RegisterTargetedWithoutTargeting(
+                            (Action<InstanceId, T>)_userHandler,
+                            (MessageHandler.FastHandlerWithContext<T>)AugmentedHandlerContext,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.TargetedWithoutTargetingFast:
+                        return messageHandler.RegisterTargetedWithoutTargeting(
+                            (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                            AugmentedHandlerContext,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.TargetedWithoutTargetingPostProcessorAction:
+                        return messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
+                            (Action<InstanceId, T>)_userHandler,
+                            (MessageHandler.FastHandlerWithContext<T>)AugmentedHandlerContext,
+                            _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.TargetedWithoutTargetingPostProcessorFast:
+                        return messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
+                            (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                            AugmentedHandlerContext,
+                            _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.TargetedInterceptor:
+                        return messageHandler.RegisterTargetedInterceptor(
+                            (IMessageBus.TargetedInterceptor<T>)_userHandler,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unexpected registration kind {_kind} for TargetedRegistration<{typeof(T)}>."
+                        );
+                }
+            }
+
+            // Scalar invoker for the targeted handler / post-processor kinds. The
+            // user's handler is the identity/dedup key; this flat invoker runs for the
+            // default slot. Reproduces each former AugmentedHandler body EXACTLY,
+            // including the diagnostics guard and the (message, target) emission data.
+            private void AugmentedHandlerScalar(ref T message)
+            {
+                switch (_kind)
+                {
+                    case RegistrationKind.TargetedHandlerAction:
+                    case RegistrationKind.TargetedPostProcessorAction:
+                        ((Action<T>)_userHandler)(message);
+                        break;
+                    default:
+                        ((MessageHandler.FastHandler<T>)_userHandler)(ref message);
+                        break;
+                }
+
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, _context));
+                }
+            }
+
+            // Context invoker for the without-targeting handler / post-processor kinds.
+            // The emission data uses the dispatch-supplied target (the ref param), not
+            // the stored _context (which is default for these kinds), matching the
+            // former AugmentedHandler bodies exactly.
+            private void AugmentedHandlerContext(ref InstanceId target, ref T message)
+            {
+                switch (_kind)
+                {
+                    case RegistrationKind.TargetedWithoutTargetingAction:
+                    case RegistrationKind.TargetedWithoutTargetingPostProcessorAction:
+                        ((Action<InstanceId, T>)_userHandler)(target, message);
+                        break;
+                    default:
+                        ((MessageHandler.FastHandlerWithContext<T>)_userHandler)(
+                            ref target,
+                            ref message
+                        );
+                        break;
+                }
+
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, target));
+                }
+            }
+        }
+
+        private sealed class UntargetedRegistration<T> : Registration
+            where T : IUntargetedMessage
+        {
+            private readonly RegistrationKind _kind;
+            private readonly object _userHandler;
+            private readonly int _priority;
+
+            internal UntargetedRegistration(
+                MessageRegistrationToken token,
+                RegistrationKind kind,
+                object userHandler,
+                int priority
+            )
+                : base(token)
+            {
+                _kind = kind;
+                _userHandler = userHandler;
+                _priority = priority;
+            }
+
+            public override MessageHandler.HandlerDeregistration Register()
+            {
+                MessageHandler messageHandler = Token._messageHandler;
+                IMessageBus messageBus = Token._messageBus;
+                switch (_kind)
+                {
+                    case RegistrationKind.UntargetedHandlerAction:
+                        return messageHandler.RegisterUntargetedMessageHandler(
+                            (Action<T>)_userHandler,
+                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.UntargetedHandlerFast:
+                        return messageHandler.RegisterUntargetedMessageHandler(
+                            (MessageHandler.FastHandler<T>)_userHandler,
+                            AugmentedHandlerScalar,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.UntargetedPostProcessorFast:
+                        return messageHandler.RegisterUntargetedPostProcessor(
+                            (MessageHandler.FastHandler<T>)_userHandler,
+                            AugmentedHandlerScalar,
+                            _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.UntargetedInterceptor:
+                        return messageHandler.RegisterUntargetedInterceptor(
+                            (IMessageBus.UntargetedInterceptor<T>)_userHandler,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unexpected registration kind {_kind} for UntargetedRegistration<{typeof(T)}>."
+                        );
+                }
+            }
+
+            // Untargeted scalar invoker. No context: emission data carries the message
+            // only, matching the former AugmentedHandler bodies exactly.
+            private void AugmentedHandlerScalar(ref T message)
+            {
+                if (_kind == RegistrationKind.UntargetedHandlerAction)
+                {
+                    ((Action<T>)_userHandler)(message);
+                }
+                else
+                {
+                    ((MessageHandler.FastHandler<T>)_userHandler)(ref message);
+                }
+
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message));
+                }
+            }
+        }
+
+        private sealed class BroadcastRegistration<T> : Registration
+            where T : IBroadcastMessage
+        {
+            private readonly RegistrationKind _kind;
+            private readonly InstanceId _context;
+            private readonly object _userHandler;
+            private readonly int _priority;
+
+            internal BroadcastRegistration(
+                MessageRegistrationToken token,
+                RegistrationKind kind,
+                InstanceId context,
+                object userHandler,
+                int priority
+            )
+                : base(token)
+            {
+                _kind = kind;
+                _context = context;
+                _userHandler = userHandler;
+                _priority = priority;
+            }
+
+            public override MessageHandler.HandlerDeregistration Register()
+            {
+                MessageHandler messageHandler = Token._messageHandler;
+                IMessageBus messageBus = Token._messageBus;
+                switch (_kind)
+                {
+                    case RegistrationKind.BroadcastHandlerAction:
+                        return messageHandler.RegisterSourcedBroadcastMessageHandler(
+                            _context,
+                            (Action<T>)_userHandler,
+                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.BroadcastHandlerFast:
+                        return messageHandler.RegisterSourcedBroadcastMessageHandler(
+                            _context,
+                            (MessageHandler.FastHandler<T>)_userHandler,
+                            AugmentedHandlerScalar,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.BroadcastPostProcessorAction:
+                        return messageHandler.RegisterSourcedBroadcastPostProcessor(
+                            _context,
+                            (Action<T>)_userHandler,
+                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.BroadcastPostProcessorFast:
+                        return messageHandler.RegisterSourcedBroadcastPostProcessor(
+                            _context,
+                            (MessageHandler.FastHandler<T>)_userHandler,
+                            AugmentedHandlerScalar,
+                            _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.BroadcastWithoutSourceAction:
+                        return messageHandler.RegisterSourcedBroadcastWithoutSource(
+                            (Action<InstanceId, T>)_userHandler,
+                            (MessageHandler.FastHandlerWithContext<T>)AugmentedHandlerContext,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.BroadcastWithoutSourceFast:
+                        return messageHandler.RegisterSourcedBroadcastWithoutSource(
+                            (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                            AugmentedHandlerContext,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    case RegistrationKind.BroadcastWithoutSourcePostProcessorAction:
+                        return messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
+                            (Action<InstanceId, T>)_userHandler,
+                            (MessageHandler.FastHandlerWithContext<T>)AugmentedHandlerContext,
+                            priority: _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.BroadcastWithoutSourcePostProcessorFast:
+                        return messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
+                            (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                            AugmentedHandlerContext,
+                            priority: _priority,
+                            messageBus
+                        );
+                    case RegistrationKind.BroadcastInterceptor:
+                        return messageHandler.RegisterBroadcastInterceptor(
+                            (IMessageBus.BroadcastInterceptor<T>)_userHandler,
+                            priority: _priority,
+                            messageBus: messageBus
+                        );
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unexpected registration kind {_kind} for BroadcastRegistration<{typeof(T)}>."
+                        );
+                }
+            }
+
+            // Broadcast scalar invoker. Emission data carries the stored source
+            // (_context), matching the former AugmentedHandler bodies exactly.
+            private void AugmentedHandlerScalar(ref T message)
+            {
+                switch (_kind)
+                {
+                    case RegistrationKind.BroadcastHandlerAction:
+                    case RegistrationKind.BroadcastPostProcessorAction:
+                        ((Action<T>)_userHandler)(message);
+                        break;
+                    default:
+                        ((MessageHandler.FastHandler<T>)_userHandler)(ref message);
+                        break;
+                }
+
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, _context));
+                }
+            }
+
+            // Broadcast context invoker for the without-source kinds. Emission data
+            // uses the dispatch-supplied source (the ref param), not the stored
+            // _context (default for these kinds), matching the former bodies exactly.
+            private void AugmentedHandlerContext(ref InstanceId source, ref T message)
+            {
+                switch (_kind)
+                {
+                    case RegistrationKind.BroadcastWithoutSourceAction:
+                    case RegistrationKind.BroadcastWithoutSourcePostProcessorAction:
+                        ((Action<InstanceId, T>)_userHandler)(source, message);
+                        break;
+                    default:
+                        ((MessageHandler.FastHandlerWithContext<T>)_userHandler)(
+                            ref source,
+                            ref message
+                        );
+                        break;
+                }
+
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, source));
+                }
+            }
+        }
+
+        // Global accept-all is non-generic: its three sub-handlers are the fixed
+        // IMessage facades. Stores the three user delegates (as object, since the two
+        // public overloads differ in delegate shape -- Action vs FastHandler/
+        // FastHandlerWithContext) and exposes six augmented sub-invokers (three per
+        // overload shape). The kind-switch picks the matching MessageHandler.
+        // RegisterGlobalAcceptAll overload and binds the three augmented invokers.
+        private sealed class GlobalAcceptAllRegistration : Registration
+        {
+            private readonly RegistrationKind _kind;
+            private readonly object _untargeted;
+            private readonly object _targeted;
+            private readonly object _broadcast;
+
+            internal GlobalAcceptAllRegistration(
+                MessageRegistrationToken token,
+                Action<IUntargetedMessage> untargeted,
+                Action<InstanceId, ITargetedMessage> targeted,
+                Action<InstanceId, IBroadcastMessage> broadcast
+            )
+                : base(token)
+            {
+                _kind = RegistrationKind.GlobalAcceptAllAction;
+                _untargeted = untargeted;
+                _targeted = targeted;
+                _broadcast = broadcast;
+            }
+
+            internal GlobalAcceptAllRegistration(
+                MessageRegistrationToken token,
+                MessageHandler.FastHandler<IUntargetedMessage> untargeted,
+                MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted,
+                MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast
+            )
+                : base(token)
+            {
+                _kind = RegistrationKind.GlobalAcceptAllFast;
+                _untargeted = untargeted;
+                _targeted = targeted;
+                _broadcast = broadcast;
+            }
+
+            public override MessageHandler.HandlerDeregistration Register()
+            {
+                MessageHandler messageHandler = Token._messageHandler;
+                IMessageBus messageBus = Token._messageBus;
+                if (_kind == RegistrationKind.GlobalAcceptAllAction)
+                {
+                    return messageHandler.RegisterGlobalAcceptAll(
+                        (Action<IUntargetedMessage>)_untargeted,
+                        AugmentedUntargetedAction,
+                        (Action<InstanceId, ITargetedMessage>)_targeted,
+                        AugmentedTargetedAction,
+                        (Action<InstanceId, IBroadcastMessage>)_broadcast,
+                        AugmentedBroadcastAction,
+                        messageBus
+                    );
+                }
+
+                return messageHandler.RegisterGlobalAcceptAll(
+                    (MessageHandler.FastHandler<IUntargetedMessage>)_untargeted,
+                    AugmentedUntargetedFast,
+                    (MessageHandler.FastHandlerWithContext<ITargetedMessage>)_targeted,
+                    AugmentedTargetedFast,
+                    (MessageHandler.FastHandlerWithContext<IBroadcastMessage>)_broadcast,
+                    AugmentedBroadcastFast,
+                    messageBus
+                );
+            }
+
+            private void AugmentedUntargetedAction(IUntargetedMessage message)
+            {
+                ((Action<IUntargetedMessage>)_untargeted)(message);
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message));
+                }
+            }
+
+            private void AugmentedTargetedAction(InstanceId target, ITargetedMessage message)
+            {
+                ((Action<InstanceId, ITargetedMessage>)_targeted)(target, message);
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, target));
+                }
+            }
+
+            private void AugmentedBroadcastAction(InstanceId source, IBroadcastMessage message)
+            {
+                ((Action<InstanceId, IBroadcastMessage>)_broadcast)(source, message);
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, source));
+                }
+            }
+
+            private void AugmentedUntargetedFast(ref IUntargetedMessage message)
+            {
+                ((MessageHandler.FastHandler<IUntargetedMessage>)_untargeted)(ref message);
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message));
+                }
+            }
+
+            private void AugmentedTargetedFast(ref InstanceId target, ref ITargetedMessage message)
+            {
+                ((MessageHandler.FastHandlerWithContext<ITargetedMessage>)_targeted)(
+                    ref target,
+                    ref message
+                );
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, target));
+                }
+            }
+
+            private void AugmentedBroadcastFast(
+                ref InstanceId source,
+                ref IBroadcastMessage message
+            )
+            {
+                ((MessageHandler.FastHandlerWithContext<IBroadcastMessage>)_broadcast)(
+                    ref source,
+                    ref message
+                );
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, source));
+                }
             }
         }
 

@@ -21,10 +21,11 @@ namespace DxMessaging.Tests.Editor
     /// re-introduces one delegate allocation per registration.
     /// </description></item>
     /// <item><description>
-    /// <see cref="RegistrationsStoreStagingFunctionNotWrapperAction"/> pins the
-    /// per-registration wrapper-closure collapse: a revert to storing a parameterless
-    /// <see cref="Action"/> wrapper re-introduces a delegate plus its display class per
-    /// registration.
+    /// <see cref="RegistrationsStoreUnifiedRegistrationObjectNotFuncOrAction"/> pins the
+    /// unified per-handle Registration-object collapse: a revert to storing a staging
+    /// <c>Func&lt;handle, HandlerDeregistration&gt;</c> (or a parameterless
+    /// <see cref="Action"/> wrapper) re-introduces the staging delegate plus its display
+    /// class AND the nested AugmentedHandler local-function delegate per registration.
     /// </description></item>
     /// </list>
     /// <para>
@@ -94,22 +95,25 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <summary>
-        /// Pins the per-registration wrapper-closure collapse structurally: the token's
-        /// <c>_registrations</c> map must store the staging function
-        /// (<c>Func&lt;MessageRegistrationHandle, Action&gt;</c>) DIRECTLY, never a
-        /// parameterless <see cref="Action"/>. The pre-change form stored a
-        /// per-registration <c>Registration</c> wrapper local function (a delegate plus its
-        /// display class, captured from <c>InternalRegister</c>) that only re-bundled the
-        /// handle, the staging function, and the <c>AddDeregistration</c> call; storing the
-        /// staging function directly and pairing it with its handle in the replay queue
-        /// removes that delegate AND <c>InternalRegister</c>'s display class -- about two
-        /// managed allocations per registration, uniformly across every registration kind
-        /// (measured cold-total floor: Untargeted 14.69 -&gt; 12.69 allocs/registration, a
-        /// clean -2.00). This assertion is deterministic and backend-independent, so it
-        /// catches a revert even where the allocation probe is unavailable.
+        /// Pins the unified per-handle Registration-object collapse structurally: the
+        /// token's <c>_registrations</c> map must store ONE per-handle registration
+        /// OBJECT (the abstract <c>Registration</c> reference type nested in
+        /// <see cref="MessageRegistrationToken"/>), never a staging
+        /// <c>Func&lt;MessageRegistrationHandle, MessageHandler.HandlerDeregistration&gt;</c>
+        /// and never a parameterless <see cref="Action"/> wrapper. The pre-change form
+        /// stored a staging <c>Func</c> (a delegate plus its display class capturing
+        /// target/source/handler/priority) whose nested <c>AugmentedHandler</c> local
+        /// function became a SECOND delegate handed to the bus. Collapsing both into a
+        /// single Registration object (captured state as fields, the augmented invoker
+        /// an instance method bound to the object) removes about two managed allocations
+        /// per registration, uniformly across every registration kind, while keeping the
+        /// hot dispatch path delegate-based. A revert to a <c>Func</c>/<c>Action</c> value
+        /// type re-introduces those allocations. This assertion is deterministic and
+        /// backend-independent, so it catches a revert even where the allocation probe is
+        /// unavailable.
         /// </summary>
         [Test]
-        public void RegistrationsStoreStagingFunctionNotWrapperAction()
+        public void RegistrationsStoreUnifiedRegistrationObjectNotFuncOrAction()
         {
             FieldInfo registrations = typeof(MessageRegistrationToken).GetField(
                 "_registrations",
@@ -126,7 +130,7 @@ namespace DxMessaging.Tests.Editor
                 registrationMapType.IsGenericType,
                 Is.True,
                 "MessageRegistrationToken._registrations must remain a generic map from "
-                    + "MessageRegistrationHandle to the staging function."
+                    + "MessageRegistrationHandle to the unified per-handle registration object."
             );
             Assert.That(
                 registrationMapType.GetGenericTypeDefinition(),
@@ -150,19 +154,44 @@ namespace DxMessaging.Tests.Editor
             );
 
             Type valueType = registrationMapArguments[1];
+
+            // The value must be the unified per-handle registration OBJECT, not a
+            // delegate. A revert to either the staging Func or a parameterless Action
+            // wrapper re-introduces the staging display class + delegate (and the
+            // separate AugmentedHandler delegate) per registration.
+            Assert.That(
+                typeof(Delegate).IsAssignableFrom(valueType),
+                Is.False,
+                "MessageRegistrationToken._registrations must store a per-handle registration "
+                    + "OBJECT, not a delegate. A Func<MessageRegistrationHandle, "
+                    + "MessageHandler.HandlerDeregistration> (or a parameterless Action wrapper) "
+                    + "re-introduces the staging display class plus the staging delegate AND the "
+                    + "nested AugmentedHandler delegate per registration."
+            );
             Assert.That(
                 valueType,
-                Is.EqualTo(
+                Is.Not.EqualTo(
                     typeof(Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>)
                 ),
-                "MessageRegistrationToken._registrations must store the staging function "
-                    + "(Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>) "
-                    + "directly, not a per-registration Action wrapper. Wrapping the staging "
-                    + "function in a parameterless Action re-introduces one delegate plus its "
-                    + "display class allocation per registration (the collapsed 'Registration' "
-                    + "local function). The staging function now returns the per-handle "
-                    + "HandlerDeregistration object (replacing the old deregistration Action "
-                    + "closure)."
+                "MessageRegistrationToken._registrations must NOT store the staging Func."
+            );
+            Assert.That(
+                valueType.IsClass && valueType.IsAbstract,
+                Is.True,
+                "MessageRegistrationToken._registrations must store the abstract per-handle "
+                    + "Registration base reference type (the unified staging object), so every "
+                    + "registration kind shares the single collapsed object shape."
+            );
+            Assert.That(
+                valueType.Name,
+                Is.EqualTo("Registration"),
+                "MessageRegistrationToken._registrations value type must be the nested "
+                    + "'Registration' object; update this guard if it was renamed."
+            );
+            Assert.That(
+                valueType.DeclaringType,
+                Is.EqualTo(typeof(MessageRegistrationToken)),
+                "The Registration object must remain nested in MessageRegistrationToken."
             );
         }
 

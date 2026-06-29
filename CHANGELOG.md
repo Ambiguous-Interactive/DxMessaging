@@ -228,6 +228,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   v4 bus<->handler boundary rework and does NOT touch the Unity-facing surface
   (`MessageRegistrationToken`, `MessageAwareComponent`); only code calling
   `MessageHandler.Register*` **directly** is affected.
+- Every registration kind now allocates roughly half as many managed objects again by
+  collapsing the token's per-handle staging closures into one unified per-handle object.
+  Each registration previously staged a `Func<handle, HandlerDeregistration>` (a delegate plus
+  its display class capturing the target/source, user handler, and priority) whose nested
+  `AugmentedHandler` local function became a _second_ delegate (the diagnostics-augmented flat
+  invoker). Both are now a single per-handle `Registration` object stored in `_registrations`:
+  its fields hold the captured staging state, and its diagnostics-augmented invoker is an
+  _instance method_ bound to the object -- so `MessageHandler` still receives a `FastHandler<T>`
+  delegate and the hot dispatch path stays delegate-based (no virtual/interface call per
+  dispatch). A `Register()` method runs a kind-switch to call the matching
+  `MessageHandler.Register*` and reproduce the exact prior staging body per kind. Because the
+  constrained `MessageHandler.Register*<T>` calls require `T : ITargetedMessage` /
+  `IUntargetedMessage` / `IBroadcastMessage` (which a single `Registration<T> where T : IMessage`
+  cannot satisfy), the object is realized as three constraint-family generic subclasses plus one
+  non-generic global-accept-all subclass over a non-generic `Registration` base -- still a
+  unified per-handle object with a kind-switch, not a per-method subclass explosion. Measured
+  marginal cost (cold, FastHandler, diagnostics off) drops from ~9.3 to ~4.6 managed allocations
+  per registration (about half). The equal-priority registration-order dispatch, idempotent
+  double-deregister, partial-failure rollback, generation/slot-version guards, refcount handlers,
+  and diagnostics call-counts/emission semantics are all unchanged (pinned by the 19
+  `MixedOrderDeregistrationTests` and the full re-entrancy suite); the public API is unchanged.
+  Pinned structurally by a deterministic guard that `_registrations` stores the unified
+  `Registration` object, not a `Func`/`Action` wrapper.
 - The bug-report issue template now offers the package version as a dropdown of
   released versions (with an `Other` fallback) instead of a free-text field, so
   reports carry an exact, valid version. The list is generated from
