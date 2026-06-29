@@ -120,6 +120,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Registration now allocates one fewer managed object per handler in the common case. The
+  registration token stored every handle's de-registration in a per-handle holder object,
+  but the common case is EXACTLY ONE de-registration per handle, so the single
+  de-registration delegate is now stored INLINE in the token's de-registration map (with no
+  holder object); a holder is allocated only when a rare second de-registration accumulates
+  on the same handle (the re-entrant retarget-recovery replay). The ordering,
+  partial-failure, and rollback-baseline semantics are unchanged (pinned by the existing
+  `PendingDeregistrationStorageTests` and the full re-entrancy suite), and a new
+  `RegistrationStorageStructuralGuardTests.DeregistrationsStoreInlineActionNotPerHandleHolder`
+  deterministically guards the inline storage against regression. Internal change only; no
+  public API or behavior change.
 - **BREAKING (v4):** the `IMessageBus` registration contract now returns an opaque,
   zero-allocation handle instead of a deregistration delegate. The 14
   `IMessageBus.Register*<T>` methods return a new `readonly struct`

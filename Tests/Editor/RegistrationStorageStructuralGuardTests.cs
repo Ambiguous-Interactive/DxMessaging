@@ -162,6 +162,56 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <summary>
+        /// Pins the inline single-deregistration storage structurally: the token's
+        /// <c>_deregistrations</c> map must store its value as <see cref="object"/>, so the
+        /// common case (EXACTLY ONE de-registration per handle) stores the de-registration
+        /// <see cref="Action"/> INLINE as the dictionary value with NO per-registration
+        /// <c>PendingDeregistration</c> holder object. A <c>PendingDeregistration</c> is
+        /// allocated only when a rare second de-registration accumulates on the same handle
+        /// (retarget-recovery replay). A revert to a
+        /// <c>Dictionary&lt;MessageRegistrationHandle, PendingDeregistration&gt;</c> value type
+        /// re-introduces one holder allocation per registration; this deterministic,
+        /// backend-independent assertion catches that revert even where the allocation probe is
+        /// unavailable.
+        /// </summary>
+        [Test]
+        public void DeregistrationsStoreInlineActionNotPerHandleHolder()
+        {
+            FieldInfo deregistrations = typeof(MessageRegistrationToken).GetField(
+                "_deregistrations",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(
+                deregistrations,
+                Is.Not.Null,
+                "MessageRegistrationToken._deregistrations was renamed; update this guard."
+            );
+
+            Type deregistrationMapType = deregistrations.FieldType;
+            Assert.That(
+                deregistrationMapType.IsGenericType
+                    && deregistrationMapType.GetGenericTypeDefinition() == typeof(Dictionary<,>),
+                Is.True,
+                "MessageRegistrationToken._deregistrations must remain a Dictionary<,>."
+            );
+
+            Type[] arguments = deregistrationMapType.GetGenericArguments();
+            Assert.That(
+                arguments[0],
+                Is.EqualTo(typeof(MessageRegistrationHandle)),
+                "MessageRegistrationToken._deregistrations must be keyed by MessageRegistrationHandle."
+            );
+            Assert.That(
+                arguments[1],
+                Is.EqualTo(typeof(object)),
+                "MessageRegistrationToken._deregistrations must store its value as object so the "
+                    + "single common-case de-registration Action is stored INLINE (no per-handle "
+                    + "PendingDeregistration holder). A Dictionary<..., PendingDeregistration> value "
+                    + "type re-introduces one holder allocation per registration."
+            );
+        }
+
+        /// <summary>
         /// Pins the v4 opaque-handle contract structurally: every <see cref="IMessageBus"/>
         /// <c>Register*</c> method must return <see cref="MessageBusRegistration"/> (not
         /// <see cref="Action"/>), and the bus must expose a generic

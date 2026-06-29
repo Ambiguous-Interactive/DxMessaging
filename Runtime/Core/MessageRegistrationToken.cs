@@ -84,10 +84,15 @@ namespace DxMessaging.Core
         // InternalRegister staged them (handle ids are monotonically
         // increasing, so this list is also sorted by handle id).
         private readonly List<MessageRegistrationHandle> _registrationOrder = new();
-        private readonly Dictionary<
-            MessageRegistrationHandle,
-            PendingDeregistration
-        > _deregistrations = new();
+
+        // Maps a handle to its live de-registration(s). The common case is EXACTLY ONE
+        // de-registration per handle, so the single Action is stored INLINE as the dictionary
+        // value (presence == pending, removal == done, keep-on-throw == retryable) -- no
+        // per-registration PendingDeregistration object. A PendingDeregistration is allocated and
+        // substituted ONLY when a second de-registration accumulates on the same handle (the rare
+        // retarget-recovery replay; see AddDeregistration). The value is therefore either an
+        // Action (1 de-registration) or a PendingDeregistration (2+).
+        private readonly Dictionary<MessageRegistrationHandle, object> _deregistrations = new();
 
         // Snapshot of (handle, staging function) pairs to replay on Enable() /
         // RetargetMessageBus. Snapshotting before invoking lets replay tolerate
@@ -2067,26 +2072,78 @@ namespace DxMessaging.Core
 
         private void AddDeregistration(MessageRegistrationHandle handle, Action deregistration)
         {
-            if (!_deregistrations.TryGetValue(handle, out PendingDeregistration pending))
+            if (!_deregistrations.TryGetValue(handle, out object existing))
             {
-                pending = new PendingDeregistration();
-                _deregistrations[handle] = pending;
+                // First (and usually only) de-registration: store the Action inline.
+                _deregistrations[handle] = deregistration;
+                return;
             }
 
-            pending.Add(deregistration);
+            if (existing is PendingDeregistration pending)
+            {
+                pending.Add(deregistration);
+                return;
+            }
+
+            // A second de-registration accumulated on this handle: promote the inline Action to a
+            // PendingDeregistration holder that preserves the ordering / partial-failure / rollback
+            // semantics for the multi-de-registration (retarget-recovery replay) case.
+            PendingDeregistration promoted = new();
+            promoted.Add((Action)existing);
+            promoted.Add(deregistration);
+            _deregistrations[handle] = promoted;
+        }
+
+        // Logical de-registration count for a _deregistrations value (inline Action == 1).
+        private static int DeregistrationCount(object value) =>
+            value is PendingDeregistration pending ? pending.Count : 1;
+
+        // Invokes the de-registration tail [startIndex..) for a _deregistrations value. For the
+        // inline Action (logical Count 1, index 0): on success it is consumed (shouldRemove = true);
+        // on throw it is KEPT (retryable, shouldRemove = false); a rollback pass (startIndex &gt; 0)
+        // leaves the baseline entry untouched. For a holder it delegates to InvokeFrom, mutating the
+        // holder in place. Mirrors the prior PendingDeregistration-only semantics exactly.
+        private static Exception InvokeDeregistration(
+            object value,
+            int startIndex,
+            out bool shouldRemove
+        )
+        {
+            if (value is PendingDeregistration pending)
+            {
+                Exception holderException = pending.InvokeFrom(startIndex);
+                shouldRemove = pending.Count == 0;
+                return holderException;
+            }
+
+            if (startIndex > 0)
+            {
+                // Rollback baseline pass: the inline head (logical index 0) is below the requested
+                // tail, so leave it untouched.
+                shouldRemove = false;
+                return null;
+            }
+
+            try
+            {
+                ((Action)value)?.Invoke();
+                shouldRemove = true;
+                return null;
+            }
+            catch (Exception exception)
+            {
+                // Keep the failed de-registration (retryable), exactly as the holder form does.
+                shouldRemove = false;
+                return exception;
+            }
         }
 
         private Dictionary<MessageRegistrationHandle, int> SnapshotDeregistrationCounts()
         {
             Dictionary<MessageRegistrationHandle, int> snapshot = new(_deregistrations.Count);
-            foreach (
-                KeyValuePair<
-                    MessageRegistrationHandle,
-                    PendingDeregistration
-                > entry in _deregistrations
-            )
+            foreach (KeyValuePair<MessageRegistrationHandle, object> entry in _deregistrations)
             {
-                snapshot[entry.Key] = entry.Value.Count;
+                snapshot[entry.Key] = DeregistrationCount(entry.Value);
             }
 
             return snapshot;
@@ -2277,7 +2334,7 @@ namespace DxMessaging.Core
             {
                 foreach (MessageRegistrationHandle handle in _handleQueue)
                 {
-                    if (!_deregistrations.TryGetValue(handle, out PendingDeregistration pending))
+                    if (!_deregistrations.TryGetValue(handle, out object value))
                     {
                         continue;
                     }
@@ -2290,19 +2347,23 @@ namespace DxMessaging.Core
                             startIndex = baselineCount;
                         }
 
-                        if (startIndex >= pending.Count)
+                        if (startIndex >= DeregistrationCount(value))
                         {
                             continue;
                         }
                     }
 
-                    Exception exception = pending.InvokeFrom(startIndex);
+                    Exception exception = InvokeDeregistration(
+                        value,
+                        startIndex,
+                        out bool shouldRemove
+                    );
                     if (exception != null)
                     {
                         firstException ??= exception;
                     }
 
-                    if (pending.Count == 0)
+                    if (shouldRemove)
                     {
                         _deregistrations.Remove(handle);
                     }
@@ -2408,10 +2469,14 @@ namespace DxMessaging.Core
         /// </example>
         public void RemoveRegistration(MessageRegistrationHandle handle)
         {
-            if (_deregistrations.TryGetValue(handle, out PendingDeregistration pending))
+            if (_deregistrations.TryGetValue(handle, out object value))
             {
-                Exception deregistrationException = pending.InvokeFrom(0);
-                if (pending.Count == 0)
+                Exception deregistrationException = InvokeDeregistration(
+                    value,
+                    0,
+                    out bool shouldRemove
+                );
+                if (shouldRemove)
                 {
                     _deregistrations.Remove(handle);
                 }
@@ -2428,16 +2493,16 @@ namespace DxMessaging.Core
             RemoveRegistrationState(handle);
         }
 
-        // Tracks the live de-registration Action(s) for a single handle. The common
-        // case is EXACTLY ONE de-registration per handle (a staging function registers
-        // once and returns one de-registration Action), so the head Action is stored
-        // INLINE rather than always in a List<Action>. Eagerly allocating a List plus
-        // its backing array per handle cost two managed allocations on every
-        // registration (uniformly across every kind); the inline head pays neither, and
-        // a rare second de-registration for the same handle -- a re-entrant
-        // retarget-recovery replay can stage one beyond the rollback baseline -- spills
-        // to a lazily-allocated overflow list. This stays a class (mutated in place
-        // through the _deregistrations dictionary), so reference semantics and every
+        // Holds the live de-registration Actions for a single handle in the MULTI-de-registration
+        // case (2+). The common case is EXACTLY ONE de-registration per handle (a staging function
+        // registers once and returns one de-registration Action); that single Action is stored
+        // INLINE as the _deregistrations dictionary value, so the common path allocates no
+        // PendingDeregistration object at all (see AddDeregistration / InvokeDeregistration). This
+        // holder is allocated only when a rare second de-registration accumulates on the same
+        // handle -- a re-entrant retarget-recovery replay can stage one beyond the rollback
+        // baseline -- at which point the inline Action is promoted into this holder's inline head
+        // and the second spills to a lazily-allocated overflow list. This stays a class (mutated in
+        // place through the _deregistrations dictionary), so reference semantics and every
         // call site are unchanged; only the storage shape changed.
         //
         // Invariant: when Count > 0 the head lives in _hasHead/_head and is the LOGICAL
