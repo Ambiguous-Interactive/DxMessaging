@@ -2283,6 +2283,15 @@ namespace DxMessaging.Core
             private readonly object _userHandler;
             private readonly int _priority;
 
+            // Strongly-typed views of _userHandler, resolved ONCE at Register() time
+            // (cold) so the per-dispatch augmented invoker calls a typed field directly
+            // -- no per-dispatch castclass or kind-switch (which would add an O(handlers)
+            // cost on the hot dispatch path). Exactly one is set per registration kind.
+            private Action<T> _scalarAction;
+            private MessageHandler.FastHandler<T> _scalarFast;
+            private Action<InstanceId, T> _contextAction;
+            private MessageHandler.FastHandlerWithContext<T> _contextFast;
+
             internal TargetedRegistration(
                 MessageRegistrationToken token,
                 RegistrationKind kind,
@@ -2305,62 +2314,70 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.TargetedHandlerAction:
+                        _scalarAction = (Action<T>)_userHandler;
                         return messageHandler.RegisterTargetedMessageHandler(
                             _context,
-                            (Action<T>)_userHandler,
-                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            _scalarAction,
+                            AugmentedScalarAction,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.TargetedHandlerFast:
+                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return messageHandler.RegisterTargetedMessageHandler(
                             _context,
-                            (MessageHandler.FastHandler<T>)_userHandler,
-                            AugmentedHandlerScalar,
+                            _scalarFast,
+                            AugmentedScalarFast,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.TargetedPostProcessorAction:
+                        _scalarAction = (Action<T>)_userHandler;
                         return messageHandler.RegisterTargetedPostProcessor(
                             _context,
-                            (Action<T>)_userHandler,
-                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            _scalarAction,
+                            AugmentedScalarAction,
                             _priority,
                             messageBus
                         );
                     case RegistrationKind.TargetedPostProcessorFast:
+                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return messageHandler.RegisterTargetedPostProcessor(
                             _context,
-                            (MessageHandler.FastHandler<T>)_userHandler,
-                            AugmentedHandlerScalar,
+                            _scalarFast,
+                            AugmentedScalarFast,
                             _priority,
                             messageBus
                         );
                     case RegistrationKind.TargetedWithoutTargetingAction:
+                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return messageHandler.RegisterTargetedWithoutTargeting(
-                            (Action<InstanceId, T>)_userHandler,
-                            (MessageHandler.FastHandlerWithContext<T>)AugmentedHandlerContext,
+                            _contextAction,
+                            AugmentedContextAction,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.TargetedWithoutTargetingFast:
+                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return messageHandler.RegisterTargetedWithoutTargeting(
-                            (MessageHandler.FastHandlerWithContext<T>)_userHandler,
-                            AugmentedHandlerContext,
+                            _contextFast,
+                            AugmentedContextFast,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.TargetedWithoutTargetingPostProcessorAction:
+                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                            (Action<InstanceId, T>)_userHandler,
-                            (MessageHandler.FastHandlerWithContext<T>)AugmentedHandlerContext,
+                            _contextAction,
+                            AugmentedContextAction,
                             _priority,
                             messageBus
                         );
                     case RegistrationKind.TargetedWithoutTargetingPostProcessorFast:
+                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                            (MessageHandler.FastHandlerWithContext<T>)_userHandler,
-                            AugmentedHandlerContext,
+                            _contextFast,
+                            AugmentedContextFast,
                             _priority,
                             messageBus
                         );
@@ -2377,23 +2394,13 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Scalar invoker for the targeted handler / post-processor kinds. The
-            // user's handler is the identity/dedup key; this flat invoker runs for the
-            // default slot. Reproduces each former AugmentedHandler body EXACTLY,
-            // including the diagnostics guard and the (message, target) emission data.
-            private void AugmentedHandlerScalar(ref T message)
+            // Scalar invokers (targeted handler / post-processor). The user's handler is
+            // the identity/dedup key; this flat invoker runs for the default slot. Calls
+            // the typed field directly (no castclass) then records the (message, _context)
+            // emission, matching the former AugmentedHandler bodies exactly.
+            private void AugmentedScalarAction(ref T message)
             {
-                switch (_kind)
-                {
-                    case RegistrationKind.TargetedHandlerAction:
-                    case RegistrationKind.TargetedPostProcessorAction:
-                        ((Action<T>)_userHandler)(message);
-                        break;
-                    default:
-                        ((MessageHandler.FastHandler<T>)_userHandler)(ref message);
-                        break;
-                }
-
+                _scalarAction(message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2401,26 +2408,32 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Context invoker for the without-targeting handler / post-processor kinds.
-            // The emission data uses the dispatch-supplied target (the ref param), not
-            // the stored _context (which is default for these kinds), matching the
-            // former AugmentedHandler bodies exactly.
-            private void AugmentedHandlerContext(ref InstanceId target, ref T message)
+            private void AugmentedScalarFast(ref T message)
             {
-                switch (_kind)
+                _scalarFast(ref message);
+                if (Token._diagnosticMode)
                 {
-                    case RegistrationKind.TargetedWithoutTargetingAction:
-                    case RegistrationKind.TargetedWithoutTargetingPostProcessorAction:
-                        ((Action<InstanceId, T>)_userHandler)(target, message);
-                        break;
-                    default:
-                        ((MessageHandler.FastHandlerWithContext<T>)_userHandler)(
-                            ref target,
-                            ref message
-                        );
-                        break;
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, _context));
                 }
+            }
 
+            // Context invokers (without-targeting handler / post-processor). Emission data
+            // uses the dispatch-supplied target (the ref param), not the stored _context
+            // (default for these kinds), matching the former bodies exactly.
+            private void AugmentedContextAction(ref InstanceId target, ref T message)
+            {
+                _contextAction(target, message);
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, target));
+                }
+            }
+
+            private void AugmentedContextFast(ref InstanceId target, ref T message)
+            {
+                _contextFast(ref target, ref message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2435,6 +2448,12 @@ namespace DxMessaging.Core
             private readonly RegistrationKind _kind;
             private readonly object _userHandler;
             private readonly int _priority;
+
+            // Typed views of _userHandler, resolved once at Register() time (cold) so the
+            // per-dispatch invoker calls a typed field directly -- no castclass/switch on
+            // the hot path. Exactly one is set per registration kind.
+            private Action<T> _scalarAction;
+            private MessageHandler.FastHandler<T> _scalarFast;
 
             internal UntargetedRegistration(
                 MessageRegistrationToken token,
@@ -2456,23 +2475,26 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.UntargetedHandlerAction:
+                        _scalarAction = (Action<T>)_userHandler;
                         return messageHandler.RegisterUntargetedMessageHandler(
-                            (Action<T>)_userHandler,
-                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            _scalarAction,
+                            AugmentedScalarAction,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.UntargetedHandlerFast:
+                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return messageHandler.RegisterUntargetedMessageHandler(
-                            (MessageHandler.FastHandler<T>)_userHandler,
-                            AugmentedHandlerScalar,
+                            _scalarFast,
+                            AugmentedScalarFast,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.UntargetedPostProcessorFast:
+                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return messageHandler.RegisterUntargetedPostProcessor(
-                            (MessageHandler.FastHandler<T>)_userHandler,
-                            AugmentedHandlerScalar,
+                            _scalarFast,
+                            AugmentedScalarFast,
                             _priority,
                             messageBus
                         );
@@ -2489,19 +2511,21 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Untargeted scalar invoker. No context: emission data carries the message
+            // Untargeted scalar invokers. No context: emission data carries the message
             // only, matching the former AugmentedHandler bodies exactly.
-            private void AugmentedHandlerScalar(ref T message)
+            private void AugmentedScalarAction(ref T message)
             {
-                if (_kind == RegistrationKind.UntargetedHandlerAction)
+                _scalarAction(message);
+                if (Token._diagnosticMode)
                 {
-                    ((Action<T>)_userHandler)(message);
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message));
                 }
-                else
-                {
-                    ((MessageHandler.FastHandler<T>)_userHandler)(ref message);
-                }
+            }
 
+            private void AugmentedScalarFast(ref T message)
+            {
+                _scalarFast(ref message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2517,6 +2541,14 @@ namespace DxMessaging.Core
             private readonly InstanceId _context;
             private readonly object _userHandler;
             private readonly int _priority;
+
+            // Typed views of _userHandler, resolved once at Register() time (cold) so the
+            // per-dispatch invoker calls a typed field directly -- no castclass/switch on
+            // the hot path. Exactly one is set per registration kind.
+            private Action<T> _scalarAction;
+            private MessageHandler.FastHandler<T> _scalarFast;
+            private Action<InstanceId, T> _contextAction;
+            private MessageHandler.FastHandlerWithContext<T> _contextFast;
 
             internal BroadcastRegistration(
                 MessageRegistrationToken token,
@@ -2540,62 +2572,70 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.BroadcastHandlerAction:
+                        _scalarAction = (Action<T>)_userHandler;
                         return messageHandler.RegisterSourcedBroadcastMessageHandler(
                             _context,
-                            (Action<T>)_userHandler,
-                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            _scalarAction,
+                            AugmentedScalarAction,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.BroadcastHandlerFast:
+                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return messageHandler.RegisterSourcedBroadcastMessageHandler(
                             _context,
-                            (MessageHandler.FastHandler<T>)_userHandler,
-                            AugmentedHandlerScalar,
+                            _scalarFast,
+                            AugmentedScalarFast,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.BroadcastPostProcessorAction:
+                        _scalarAction = (Action<T>)_userHandler;
                         return messageHandler.RegisterSourcedBroadcastPostProcessor(
                             _context,
-                            (Action<T>)_userHandler,
-                            (MessageHandler.FastHandler<T>)AugmentedHandlerScalar,
+                            _scalarAction,
+                            AugmentedScalarAction,
                             _priority,
                             messageBus
                         );
                     case RegistrationKind.BroadcastPostProcessorFast:
+                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return messageHandler.RegisterSourcedBroadcastPostProcessor(
                             _context,
-                            (MessageHandler.FastHandler<T>)_userHandler,
-                            AugmentedHandlerScalar,
+                            _scalarFast,
+                            AugmentedScalarFast,
                             _priority,
                             messageBus
                         );
                     case RegistrationKind.BroadcastWithoutSourceAction:
+                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return messageHandler.RegisterSourcedBroadcastWithoutSource(
-                            (Action<InstanceId, T>)_userHandler,
-                            (MessageHandler.FastHandlerWithContext<T>)AugmentedHandlerContext,
+                            _contextAction,
+                            AugmentedContextAction,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.BroadcastWithoutSourceFast:
+                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return messageHandler.RegisterSourcedBroadcastWithoutSource(
-                            (MessageHandler.FastHandlerWithContext<T>)_userHandler,
-                            AugmentedHandlerContext,
+                            _contextFast,
+                            AugmentedContextFast,
                             priority: _priority,
                             messageBus: messageBus
                         );
                     case RegistrationKind.BroadcastWithoutSourcePostProcessorAction:
+                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                            (Action<InstanceId, T>)_userHandler,
-                            (MessageHandler.FastHandlerWithContext<T>)AugmentedHandlerContext,
+                            _contextAction,
+                            AugmentedContextAction,
                             priority: _priority,
                             messageBus
                         );
                     case RegistrationKind.BroadcastWithoutSourcePostProcessorFast:
+                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                            (MessageHandler.FastHandlerWithContext<T>)_userHandler,
-                            AugmentedHandlerContext,
+                            _contextFast,
+                            AugmentedContextFast,
                             priority: _priority,
                             messageBus
                         );
@@ -2612,21 +2652,11 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Broadcast scalar invoker. Emission data carries the stored source
+            // Broadcast scalar invokers. Emission data carries the stored source
             // (_context), matching the former AugmentedHandler bodies exactly.
-            private void AugmentedHandlerScalar(ref T message)
+            private void AugmentedScalarAction(ref T message)
             {
-                switch (_kind)
-                {
-                    case RegistrationKind.BroadcastHandlerAction:
-                    case RegistrationKind.BroadcastPostProcessorAction:
-                        ((Action<T>)_userHandler)(message);
-                        break;
-                    default:
-                        ((MessageHandler.FastHandler<T>)_userHandler)(ref message);
-                        break;
-                }
-
+                _scalarAction(message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2634,25 +2664,32 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Broadcast context invoker for the without-source kinds. Emission data
-            // uses the dispatch-supplied source (the ref param), not the stored
-            // _context (default for these kinds), matching the former bodies exactly.
-            private void AugmentedHandlerContext(ref InstanceId source, ref T message)
+            private void AugmentedScalarFast(ref T message)
             {
-                switch (_kind)
+                _scalarFast(ref message);
+                if (Token._diagnosticMode)
                 {
-                    case RegistrationKind.BroadcastWithoutSourceAction:
-                    case RegistrationKind.BroadcastWithoutSourcePostProcessorAction:
-                        ((Action<InstanceId, T>)_userHandler)(source, message);
-                        break;
-                    default:
-                        ((MessageHandler.FastHandlerWithContext<T>)_userHandler)(
-                            ref source,
-                            ref message
-                        );
-                        break;
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, _context));
                 }
+            }
 
+            // Broadcast context invokers for the without-source kinds. Emission data uses
+            // the dispatch-supplied source (the ref param), not the stored _context
+            // (default for these kinds), matching the former bodies exactly.
+            private void AugmentedContextAction(ref InstanceId source, ref T message)
+            {
+                _contextAction(source, message);
+                if (Token._diagnosticMode)
+                {
+                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
+                    Token._emissionBuffer.Add(new MessageEmissionData(message, source));
+                }
+            }
+
+            private void AugmentedContextFast(ref InstanceId source, ref T message)
+            {
+                _contextFast(ref source, ref message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2670,9 +2707,16 @@ namespace DxMessaging.Core
         private sealed class GlobalAcceptAllRegistration : Registration
         {
             private readonly RegistrationKind _kind;
-            private readonly object _untargeted;
-            private readonly object _targeted;
-            private readonly object _broadcast;
+
+            // Typed sub-handlers (one shape-trio is set per kind). The per-dispatch
+            // invokers call these directly -- no castclass on the hot global-dispatch
+            // path (the heaviest fan-out, so the castclass cost there was the worst).
+            private readonly Action<IUntargetedMessage> _untargetedAction;
+            private readonly Action<InstanceId, ITargetedMessage> _targetedAction;
+            private readonly Action<InstanceId, IBroadcastMessage> _broadcastAction;
+            private readonly MessageHandler.FastHandler<IUntargetedMessage> _untargetedFast;
+            private readonly MessageHandler.FastHandlerWithContext<ITargetedMessage> _targetedFast;
+            private readonly MessageHandler.FastHandlerWithContext<IBroadcastMessage> _broadcastFast;
 
             internal GlobalAcceptAllRegistration(
                 MessageRegistrationToken token,
@@ -2683,9 +2727,9 @@ namespace DxMessaging.Core
                 : base(token)
             {
                 _kind = RegistrationKind.GlobalAcceptAllAction;
-                _untargeted = untargeted;
-                _targeted = targeted;
-                _broadcast = broadcast;
+                _untargetedAction = untargeted;
+                _targetedAction = targeted;
+                _broadcastAction = broadcast;
             }
 
             internal GlobalAcceptAllRegistration(
@@ -2697,9 +2741,9 @@ namespace DxMessaging.Core
                 : base(token)
             {
                 _kind = RegistrationKind.GlobalAcceptAllFast;
-                _untargeted = untargeted;
-                _targeted = targeted;
-                _broadcast = broadcast;
+                _untargetedFast = untargeted;
+                _targetedFast = targeted;
+                _broadcastFast = broadcast;
             }
 
             public override MessageHandler.HandlerDeregistration Register()
@@ -2709,22 +2753,22 @@ namespace DxMessaging.Core
                 if (_kind == RegistrationKind.GlobalAcceptAllAction)
                 {
                     return messageHandler.RegisterGlobalAcceptAll(
-                        (Action<IUntargetedMessage>)_untargeted,
+                        _untargetedAction,
                         AugmentedUntargetedAction,
-                        (Action<InstanceId, ITargetedMessage>)_targeted,
+                        _targetedAction,
                         AugmentedTargetedAction,
-                        (Action<InstanceId, IBroadcastMessage>)_broadcast,
+                        _broadcastAction,
                         AugmentedBroadcastAction,
                         messageBus
                     );
                 }
 
                 return messageHandler.RegisterGlobalAcceptAll(
-                    (MessageHandler.FastHandler<IUntargetedMessage>)_untargeted,
+                    _untargetedFast,
                     AugmentedUntargetedFast,
-                    (MessageHandler.FastHandlerWithContext<ITargetedMessage>)_targeted,
+                    _targetedFast,
                     AugmentedTargetedFast,
-                    (MessageHandler.FastHandlerWithContext<IBroadcastMessage>)_broadcast,
+                    _broadcastFast,
                     AugmentedBroadcastFast,
                     messageBus
                 );
@@ -2732,7 +2776,7 @@ namespace DxMessaging.Core
 
             private void AugmentedUntargetedAction(IUntargetedMessage message)
             {
-                ((Action<IUntargetedMessage>)_untargeted)(message);
+                _untargetedAction(message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2742,7 +2786,7 @@ namespace DxMessaging.Core
 
             private void AugmentedTargetedAction(InstanceId target, ITargetedMessage message)
             {
-                ((Action<InstanceId, ITargetedMessage>)_targeted)(target, message);
+                _targetedAction(target, message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2752,7 +2796,7 @@ namespace DxMessaging.Core
 
             private void AugmentedBroadcastAction(InstanceId source, IBroadcastMessage message)
             {
-                ((Action<InstanceId, IBroadcastMessage>)_broadcast)(source, message);
+                _broadcastAction(source, message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2762,7 +2806,7 @@ namespace DxMessaging.Core
 
             private void AugmentedUntargetedFast(ref IUntargetedMessage message)
             {
-                ((MessageHandler.FastHandler<IUntargetedMessage>)_untargeted)(ref message);
+                _untargetedFast(ref message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2772,10 +2816,7 @@ namespace DxMessaging.Core
 
             private void AugmentedTargetedFast(ref InstanceId target, ref ITargetedMessage message)
             {
-                ((MessageHandler.FastHandlerWithContext<ITargetedMessage>)_targeted)(
-                    ref target,
-                    ref message
-                );
+                _targetedFast(ref target, ref message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
@@ -2788,10 +2829,7 @@ namespace DxMessaging.Core
                 ref IBroadcastMessage message
             )
             {
-                ((MessageHandler.FastHandlerWithContext<IBroadcastMessage>)_broadcast)(
-                    ref source,
-                    ref message
-                );
+                _broadcastFast(ref source, ref message);
                 if (Token._diagnosticMode)
                 {
                     Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
