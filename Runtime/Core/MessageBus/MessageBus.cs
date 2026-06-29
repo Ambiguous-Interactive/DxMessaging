@@ -5079,16 +5079,14 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            // COLD FALLBACK: the handler was not found in the captured bucket. Mirror the former
-            // closure's top-of-body bucket `version++` (snapshot invalidation), then re-resolve
-            // the live sink only to classify this as a silent stale-after-sweep no-op versus a
-            // genuine over-deregistration. This path is rare (double-deregister or post-sweep);
-            // its extra cost does not touch the steady deregistration cost.
-            if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache staleBucket))
-            {
-                staleBucket.version++;
-            }
-
+            // COLD FALLBACK: the handler was not found in the captured bucket, so this is a no-op
+            // deregistration (post-sweep, or a genuine over-deregistration) -- nothing is removed,
+            // so NO version bump / snapshot invalidation is performed. Bumping here would
+            // spuriously rebuild whichever bucket currently occupies this priority, which after a
+            // full deregister + re-registration at the same priority is the NEW live bucket (the
+            // stale handle must not touch it). Re-resolve the live sink only to CLASSIFY this as a
+            // silent stale-after-sweep no-op versus a genuine over-deregistration. Rare path; not
+            // on the steady deregistration cost.
             MessageCache<HandlerCache<int, HandlerCache>> sinks = ScalarSinkForMethod(
                 registrationMethod
             );
@@ -5286,14 +5284,11 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            // COLD FALLBACK: handler not found in the captured bucket. Mirror the former top-of-body
-            // bucket `version++`, then re-resolve only to classify stale-after-sweep (silent) versus
+            // COLD FALLBACK: handler not found in the captured bucket -> a no-op deregistration
+            // (nothing removed), so NO version bump is performed (it would spuriously rebuild the
+            // bucket currently at this priority -- the NEW live bucket after a full deregister +
+            // re-registration). Re-resolve only to CLASSIFY stale-after-sweep (silent) versus
             // over-deregistration (error). Rare path; not on the steady deregistration cost.
-            if (capturedHandlers.handlers.TryGetValue(priority, out HandlerCache staleBucket))
-            {
-                staleBucket.version++;
-            }
-
             MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks =
                 ContextSinkForMethod(registrationMethod);
             if (IsStaleContextDeregisterAfterSweep<T>(sinks, context, capturedHandlers))
