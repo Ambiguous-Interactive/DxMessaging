@@ -148,12 +148,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DelegatingMessageBus`-style extension point) just forward the new members; from-scratch
   implementers mint handles via the public `MessageBusRegistration(long, object)`
   constructor and read them back in their own `Deregister<T>`.
-  **The Unity-facing surface is unaffected:** `MessageRegistrationToken`,
-  `MessageAwareComponent`, and the `MessageHandler.Register*` facades keep their existing
-  shapes and still return `System.Action`. Only code that talks to `IMessageBus.Register*`
-  **directly** and keeps the returned delegate sees the break. The larger
-  per-registration allocation reduction (collapsing the token/handler closures onto a
-  single per-handle object) is sequenced as a follow-up on top of this contract change.
+  **The Unity-facing surface is unaffected:** `MessageRegistrationToken` and
+  `MessageAwareComponent` keep their existing public shapes. The `MessageHandler.Register*`
+  facades were narrowed from `public` to `internal` (they now return the internal
+  `HandlerDeregistration`, still implicitly an `Action`) as part of this bus<->handler
+  boundary rework -- see the dedicated entry below; only code that called those facades
+  **directly** is affected. The larger per-registration allocation reduction (collapsing the
+  token/handler closures onto a single per-handle `Registration` object) landed on top of this
+  contract change -- see the entries below.
 - The published performance report no longer prints columns of `n/a`. The
   Standalone IL2CPP leg runs in a Release player whose stripped profiler cannot
   measure GC allocations or bytes, so the renderer now OMITS a memory column from a
@@ -251,6 +253,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MixedOrderDeregistrationTests` and the full re-entrancy suite); the public API is unchanged.
   Pinned structurally by a deterministic guard that `_registrations` stores the unified
   `Registration` object, not a `Func`/`Action` wrapper.
+- Deregistration is now O(1) on the steady path. The v4 bus `Deregister<T>` had been
+  re-resolving the sink from the registration method (a `switch` plus `ScalarSinkForMethod` /
+  `ContextSinkForMethod`) and re-walking the whole sink -> type -> [context ->] priority ->
+  handler chain on every call -- even though the leaf handler-cache is already captured on the
+  registration handle. It now operates on that captured cache DIRECTLY, deferring the
+  re-resolution to a cold fallback taken only when the handler is not found there (the rare
+  post-sweep or over-deregistration case, which the fallback classifies as a silent no-op vs an
+  error). This removes the per-deregistration re-resolution that had regressed the
+  deregistration-heavy teardown path, with no change to dispatch, registration allocations, the
+  generation/sweep-staleness/over-deregistration guards, or the public API; the throw-safe
+  ordering (the handler-cache mutation stays after the throwing `IMessageBus.Deregister`) is
+  unchanged. A stale over-deregistration whose `(type, priority)` slot was reused by a different
+  handler now leaves the live registration completely untouched (new
+  `StaleOverDeregistrationTests` regression coverage). The token's de-registration store also
+  records the common first-registration in a single dictionary operation (`TryAdd`) instead of a
+  probe-then-insert pair.
 - The bug-report issue template now offers the package version as a dropdown of
   released versions (with an `Other` fallback) instead of a free-text field, so
   reports carry an exact, valid version. The list is generated from
