@@ -1,6 +1,7 @@
 namespace DxMessaging.Core.MessageBus
 {
     using System;
+    using System.Runtime.CompilerServices;
 
     /// <summary>
     /// Opaque subscription handle returned by the <see cref="IMessageBus"/> registration
@@ -179,17 +180,20 @@ namespace DxMessaging.Core.MessageBus
         /// <inheritdoc />
         public override int GetHashCode()
         {
-            // Reference-identity hashes for the captured refs keep parity with the
-            // ReferenceEquals comparisons above (ref-equal objects hash identically).
+            // Reference-IDENTITY hashes for the captured refs keep parity with the
+            // ReferenceEquals comparisons in Equals: RuntimeHelpers.GetHashCode is the identity
+            // hash, so it stays consistent regardless of any virtual GetHashCode override (e.g.
+            // MessageHandler hashes by owner, and delegates by target/method) and avoids the
+            // unnecessary collisions those overrides would introduce. (null -> 0.)
             int hash = (int)kind;
             hash = (hash * 397) ^ (int)method;
             hash = (hash * 397) ^ priority;
             hash = (hash * 397) ^ generation.GetHashCode();
             hash = (hash * 397) ^ sweepGeneration.GetHashCode();
             hash = (hash * 397) ^ sequence.GetHashCode();
-            hash = (hash * 397) ^ (capturedPrimary?.GetHashCode() ?? 0);
-            hash = (hash * 397) ^ (capturedSecondary?.GetHashCode() ?? 0);
-            hash = (hash * 397) ^ (payload?.GetHashCode() ?? 0);
+            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedPrimary);
+            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedSecondary);
+            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(payload);
             hash = (hash * 397) ^ context.GetHashCode();
             return hash;
         }
