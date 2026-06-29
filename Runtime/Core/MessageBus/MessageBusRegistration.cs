@@ -62,6 +62,16 @@ namespace DxMessaging.Core.MessageBus
         internal readonly long sweepGeneration;
 
         /// <summary>
+        /// A unique per-registration stamp (the bus tick at registration time). It does NOT
+        /// participate in deregistration (the sink is re-resolved without it); its sole purpose is
+        /// to make two handles from distinct <c>Register*</c> calls compare UNEQUAL even when they
+        /// bump the same handler's refcount (same generation/caches/payload/priority/method). This
+        /// preserves the pre-v4 semantics where each registration returned a distinct deregistration
+        /// delegate, so handles remain safe to store in a set/map keyed by value.
+        /// </summary>
+        internal readonly long sequence;
+
+        /// <summary>
         /// The captured identity anchor for the over-deregistration / stale-after-sweep checks:
         /// the per-type <c>HandlerCache</c> (<see cref="Kind.Handler"/>) or the
         /// <c>InterceptorCache</c> (interceptor kinds). Unused for
@@ -96,6 +106,7 @@ namespace DxMessaging.Core.MessageBus
             int priority,
             long generation,
             long sweepGeneration,
+            long sequence,
             object capturedPrimary,
             object capturedSecondary,
             object payload,
@@ -107,6 +118,7 @@ namespace DxMessaging.Core.MessageBus
             this.priority = priority;
             this.generation = generation;
             this.sweepGeneration = sweepGeneration;
+            this.sequence = sequence;
             this.capturedPrimary = capturedPrimary;
             this.capturedSecondary = capturedSecondary;
             this.payload = payload;
@@ -122,8 +134,18 @@ namespace DxMessaging.Core.MessageBus
         /// such a handle as a no-op (it owns no store for it).
         /// </summary>
         public MessageBusRegistration(long externalId, object externalState)
-            : this(Kind.External, default, 0, externalId, 0L, null, null, externalState, default)
-        { }
+            : this(
+                Kind.External,
+                default,
+                0,
+                externalId,
+                0L,
+                0L,
+                null,
+                null,
+                externalState,
+                default
+            ) { }
 
         /// <summary>The invalid/empty handle. Deregistering it is a silent no-op.</summary>
         public static readonly MessageBusRegistration None = default;
@@ -144,6 +166,7 @@ namespace DxMessaging.Core.MessageBus
             && priority == other.priority
             && generation == other.generation
             && sweepGeneration == other.sweepGeneration
+            && sequence == other.sequence
             && ReferenceEquals(capturedPrimary, other.capturedPrimary)
             && ReferenceEquals(capturedSecondary, other.capturedSecondary)
             && ReferenceEquals(payload, other.payload)
@@ -163,6 +186,7 @@ namespace DxMessaging.Core.MessageBus
             hash = (hash * 397) ^ priority;
             hash = (hash * 397) ^ generation.GetHashCode();
             hash = (hash * 397) ^ sweepGeneration.GetHashCode();
+            hash = (hash * 397) ^ sequence.GetHashCode();
             hash = (hash * 397) ^ (capturedPrimary?.GetHashCode() ?? 0);
             hash = (hash * 397) ^ (capturedSecondary?.GetHashCode() ?? 0);
             hash = (hash * 397) ^ (payload?.GetHashCode() ?? 0);

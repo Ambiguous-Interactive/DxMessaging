@@ -6,6 +6,7 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
+    using UnityEngine;
 
     /// <summary>
     /// Pins the v4 opaque-handle contract for <see cref="MessageBusRegistration"/>: the
@@ -74,6 +75,47 @@ namespace DxMessaging.Tests.Runtime.Core
             // A handle minted by a custom IMessageBus (kind == External) owns no store on the
             // built-in MessageBus, so deregistering it here must be a no-op (no throw).
             Assert.DoesNotThrow(() => bus.Deregister<SimpleUntargetedMessage>(in external));
+        }
+
+        [Test]
+        public void RefcountRegistrationsMintDistinctHandles()
+        {
+            GameObject go = new(nameof(RefcountRegistrationsMintDistinctHandles));
+            try
+            {
+                MessageHandler handler = new(go) { active = true };
+                IMessageBus bus = MessageHandler.MessageBus;
+
+                // Two distinct Register* calls for the SAME (handler, type, priority) bump the
+                // handler's refcount. Pre-v4 each returned a distinct deregistration delegate;
+                // the v4 handles must likewise be UNEQUAL so a consumer that stores handles in a
+                // set/map and deregisters per-unique-handle does not under-deregister (leak).
+                MessageBusRegistration first = bus.RegisterUntargeted<SimpleUntargetedMessage>(
+                    handler
+                );
+                MessageBusRegistration second = bus.RegisterUntargeted<SimpleUntargetedMessage>(
+                    handler
+                );
+                try
+                {
+                    Assert.AreNotEqual(
+                        first,
+                        second,
+                        "Two refcount registrations must mint unequal handles."
+                    );
+                    Assert.IsTrue(first != second);
+                }
+                finally
+                {
+                    bus.Deregister<SimpleUntargetedMessage>(in first);
+                    bus.Deregister<SimpleUntargetedMessage>(in second);
+                    handler.active = false;
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
     }
 }

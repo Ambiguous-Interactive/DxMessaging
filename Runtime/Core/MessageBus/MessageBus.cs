@@ -2698,6 +2698,7 @@ namespace DxMessaging.Core.MessageBus
                 0,
                 capturedGeneration,
                 capturedSweepGeneration,
+                touchTick,
                 null,
                 null,
                 messageHandler,
@@ -2791,7 +2792,7 @@ namespace DxMessaging.Core.MessageBus
             where T : IUntargetedMessage
         {
             EnsureAotUntargetedBridge<T>();
-            _ = AdvanceTick();
+            long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _untargetedInterceptsByType.GetOrAdd<T>();
@@ -2846,6 +2847,7 @@ namespace DxMessaging.Core.MessageBus
                 priority,
                 capturedGeneration,
                 0L,
+                touchTick,
                 capturedInterceptors,
                 null,
                 interceptor,
@@ -2861,7 +2863,7 @@ namespace DxMessaging.Core.MessageBus
             where T : ITargetedMessage
         {
             EnsureAotTargetedBridge<T>();
-            _ = AdvanceTick();
+            long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _targetedInterceptsByType.GetOrAdd<T>();
@@ -2916,6 +2918,7 @@ namespace DxMessaging.Core.MessageBus
                 priority,
                 capturedGeneration,
                 0L,
+                touchTick,
                 capturedInterceptors,
                 null,
                 interceptor,
@@ -2931,7 +2934,7 @@ namespace DxMessaging.Core.MessageBus
             where T : IBroadcastMessage
         {
             EnsureAotSourcedBridge<T>();
-            _ = AdvanceTick();
+            long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _broadcastInterceptsByType.GetOrAdd<T>();
@@ -2986,6 +2989,7 @@ namespace DxMessaging.Core.MessageBus
                 priority,
                 capturedGeneration,
                 0L,
+                touchTick,
                 capturedInterceptors,
                 null,
                 interceptor,
@@ -4972,6 +4976,7 @@ namespace DxMessaging.Core.MessageBus
                 priority,
                 capturedGeneration,
                 0L,
+                touchTick,
                 capturedHandlers,
                 null,
                 messageHandler,
@@ -5185,6 +5190,7 @@ namespace DxMessaging.Core.MessageBus
                 priority,
                 capturedGeneration,
                 0L,
+                touchTick,
                 capturedHandlers,
                 capturedBroadcastHandlers,
                 messageHandler,
