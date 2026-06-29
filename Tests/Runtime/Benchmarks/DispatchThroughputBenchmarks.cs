@@ -70,6 +70,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // registration.
         private const int RegistrationMarginalWarmup = 16;
 
+        // Repeated trials for the WARM (JIT pre-warmed) flood scenarios. A single one-shot
+        // wall-clock sample of a ~1 ms operation on a shared CI runner swings run-to-run by
+        // tens of percent (scheduler preemption, a GC landing mid-window). The warm floods are
+        // repeatable (the JIT is already paid, the population is rebuilt per trial), so they run
+        // several trials and report the MINIMUM wall clock -- the floor when the CPU was not
+        // interrupted, the most reproducible estimator (the same philosophy as
+        // AllocationProbe.MeasureMin). The COLD floods stay single-shot because they
+        // deliberately measure one-time first-touch JIT cost, which cannot be re-measured cold.
+        private const int WarmFloodTrials = 7;
+
         [Test, Performance, Category("PerfBench")]
         [TestCaseSource(nameof(DispatchBenchmarkCases))]
         public void DispatchBenchmark(DispatchBenchmarkScenario scenario)
@@ -237,6 +247,54 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
+        // Force a full garbage collection to quiescence so a pending collection cannot land
+        // INSIDE the next timed region and inflate the sample. Call this strictly BEFORE the
+        // measurement stopwatch starts (it is itself untimed); it is the single biggest blip
+        // remover for the ms-scale flood scenarios, which churn many short-lived objects.
+        private static void QuiesceGarbageCollector()
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        // Runs a warm, repeatable flood operation over <see cref="WarmFloodTrials"/> trials and
+        // returns the MINIMUM wall clock (ms) plus the first trial's allocation count/bytes
+        // (deterministic across trials, since each trial does identical work). Each trial builds
+        // fresh scope state UNTIMED, GC-quiesces, then times exactly one operation. Used by the
+        // warm-JIT floods to replace a noisy single-shot sample with a reproducible floor.
+        private static (double minMilliseconds, long allocations, long bytes) MeasureWarmFloodMin(
+            Func<BenchmarkRegistrationScope> setUpTrial,
+            Action<BenchmarkRegistrationScope> timedOperation
+        )
+        {
+            double minMilliseconds = double.MaxValue;
+            long allocations = AllocationProbe.Unmeasured;
+            long bytes = AllocationProbe.Unmeasured;
+            for (int trial = 0; trial < WarmFloodTrials; trial++)
+            {
+                using BenchmarkRegistrationScope scope = setUpTrial();
+                QuiesceGarbageCollector();
+                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
+                long startTimestamp = Stopwatch.GetTimestamp();
+                timedOperation(scope);
+                long endTimestamp = Stopwatch.GetTimestamp();
+                AllocationProbe.AllocationSample sample = window.SampleBoth();
+                double milliseconds = TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d;
+                if (milliseconds < minMilliseconds)
+                {
+                    minMilliseconds = milliseconds;
+                }
+                if (trial == 0)
+                {
+                    allocations = sample.Allocations;
+                    bytes = sample.Bytes;
+                }
+            }
+
+            return (minMilliseconds, allocations, bytes);
+        }
+
         private static DispatchBenchmarkResult MeasureRegistrationFlood()
         {
             Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
@@ -244,6 +302,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // recorder spans the timed region; its overhead is negligible against the
             // JIT-dominated flood). NEVER GC.GetAllocatedBytesForCurrentThread(): it
             // returns 0 for every allocation under Unity's Boehm GC (see AllocationProbe).
+            // Single-shot by design (first-touch JIT cannot be re-measured cold); GC-quiesce
+            // first so a pending collection cannot land inside the timed window.
+            QuiesceGarbageCollector();
             using AllocationProbe.Window window = AllocationProbe.BeginWindow();
             long startTimestamp = Stopwatch.GetTimestamp();
             using (BenchmarkRegistrationScope scope = new())
@@ -289,24 +350,26 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
-            using AllocationProbe.Window window = AllocationProbe.BeginWindow();
-            long startTimestamp = Stopwatch.GetTimestamp();
-            using (BenchmarkRegistrationScope scope = new())
-            {
-                for (int index = 0; index < builders.Length; index++)
+            // Warm + repeatable: run several trials (fresh empty scope each) and report the
+            // MINIMUM wall clock so a single scheduler/GC blip cannot dominate the published
+            // number. Each trial times only the 1000-builder registration pass.
+            (double minMilliseconds, long allocations, long bytes) = MeasureWarmFloodMin(
+                static () => new BenchmarkRegistrationScope(),
+                scope =>
                 {
-                    builders[index](scope.PrimaryToken);
+                    for (int index = 0; index < builders.Length; index++)
+                    {
+                        builders[index](scope.PrimaryToken);
+                    }
                 }
-            }
-            long endTimestamp = Stopwatch.GetTimestamp();
-            AllocationProbe.AllocationSample sample = window.SampleBoth();
+            );
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit),
                 runIndex: -1,
-                sample.Allocations,
-                sample.Bytes,
-                TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+                allocations,
+                bytes,
+                minMilliseconds
             );
         }
 
@@ -426,6 +489,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     builders[index](scope.PrimaryToken);
                 }
 
+                // Single-shot by design (first-touch JIT of the teardown path); GC-quiesce so a
+                // pending collection cannot land inside the timed UnregisterAll.
+                QuiesceGarbageCollector();
                 using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 scope.PrimaryToken.UnregisterAll();
@@ -467,27 +533,28 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 warmupScope.PrimaryToken.UnregisterAll();
             }
 
-            using (BenchmarkRegistrationScope scope = new())
-            {
-                for (int index = 0; index < builders.Length; index++)
+            // Warm + repeatable: run several trials and report the MINIMUM wall clock. Each trial
+            // registers a fresh 1000-handler population UNTIMED, then times only UnregisterAll.
+            (double minMilliseconds, long allocations, long bytes) = MeasureWarmFloodMin(
+                () =>
                 {
-                    builders[index](scope.PrimaryToken);
-                }
+                    BenchmarkRegistrationScope scope = new();
+                    for (int index = 0; index < builders.Length; index++)
+                    {
+                        builders[index](scope.PrimaryToken);
+                    }
+                    return scope;
+                },
+                scope => scope.PrimaryToken.UnregisterAll()
+            );
 
-                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
-                long startTimestamp = Stopwatch.GetTimestamp();
-                scope.PrimaryToken.UnregisterAll();
-                long endTimestamp = Stopwatch.GetTimestamp();
-                AllocationProbe.AllocationSample sample = window.SampleBoth();
-
-                return DispatchBenchmarkResult.ForRegistrationScenario(
-                    GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit),
-                    runIndex: -1,
-                    sample.Allocations,
-                    sample.Bytes,
-                    TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
-                );
-            }
+            return DispatchBenchmarkResult.ForRegistrationScenario(
+                GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit),
+                runIndex: -1,
+                allocations,
+                bytes,
+                minMilliseconds
+            );
         }
 
         // The cold dispatch flood: the JIT-inclusive first-touch dispatch hitch, stabilized

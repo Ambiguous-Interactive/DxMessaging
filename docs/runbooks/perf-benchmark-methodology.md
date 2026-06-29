@@ -109,7 +109,11 @@ they are report-only -- rendered as wall clock, never gated.
   cold flood times both the Mono JIT compile and the registration data-structure
   work; the warm-JIT flood isolates the data-structure cost by paying the JIT bill
   first. Under IL2CPP/AOT the generics are precompiled, so cold and warm-JIT are
-  approximately equal.
+  approximately equal. Because the warm-JIT flood is repeatable (the JIT is already
+  paid and a fresh population is rebuilt per trial), it runs
+  `DispatchThroughputBenchmarks.WarmFloodTrials` trials and reports the MINIMUM wall
+  clock -- the floor when the CPU was not preempted, the most reproducible estimator
+  (the same philosophy as `AllocationProbe.MeasureMin`).
 - **Deregistration floods.** `DeregistrationFlood_1000Types_Cold` and
   `DeregistrationFlood_1000Types_WarmJit` are the teardown mirror of the
   registration floods. Each stages the same 1000 cached flood builders on a live
@@ -118,8 +122,21 @@ they are report-only -- rendered as wall clock, never gated.
   handler. The cold variant pays the Mono JIT compile of that path on its first
   call; the warm-JIT variant pre-pays it on a throwaway bus (register then
   `UnregisterAll`) and times the teardown of a fresh, fully populated token, so it
-  isolates the data-structure dismantle cost. Both are wall-clock rows, symmetric
-  with the registration floods.
+  isolates the data-structure dismantle cost. Like the registration floods, the
+  warm-JIT deregistration flood is repeatable and reports the MINIMUM over
+  `WarmFloodTrials` trials. Both are wall-clock rows, symmetric with the
+  registration floods.
+- **Noise control on the wall-clock floods.** A single one-shot sample of a ~1 ms
+  operation on a shared CI runner swings run-to-run by tens of percent (scheduler
+  preemption, or a GC landing inside the timed window). Two mitigations: (1) the
+  WARM/repeatable floods report the minimum over `WarmFloodTrials` trials (above);
+  (2) EVERY flood (cold and warm) calls `QuiesceGarbageCollector()` -- a full
+  `GC.Collect` + `WaitForPendingFinalizers` + `GC.Collect` -- STRICTLY BEFORE the
+  measurement stopwatch starts, so a pending collection cannot land inside the timed
+  region and inflate the sample. The COLD floods stay single-shot (their whole point
+  is the one-time first-touch JIT cost, which cannot be re-measured cold), but are
+  GC-quiesced. These floods are report-only (never gated -- see below), so the only
+  effect is more trustworthy published numbers.
 
 The cold counterpart to `BenchmarkProtocol.Measure` is
 `BenchmarkProtocol.MeasureColdLatency`. It runs K trials; each trial builds fresh
