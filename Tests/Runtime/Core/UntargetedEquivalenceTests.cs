@@ -43,7 +43,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             IMessageBus bus = MessageHandler.MessageBus;
             bool cancel = true;
-            Action dereg = bus.RegisterUntargetedInterceptor(
+            MessageBusRegistration dereg = bus.RegisterUntargetedInterceptor(
                 (ref SimpleUntargetedMessage _) => !cancel
             );
             try
@@ -60,7 +60,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             finally
             {
-                dereg();
+                bus.Deregister<SimpleUntargetedMessage>(in dereg);
             }
         }
 

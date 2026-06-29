@@ -1499,7 +1499,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnRegistration = false;
             }
 
-            public override Action RegisterUntargeted<T>(
+            public override MessageBusRegistration RegisterUntargeted<T>(
                 MessageHandler messageHandler,
                 int priority = 0
             )
@@ -1530,21 +1530,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnDeregistration = false;
             }
 
-            public override Action RegisterUntargeted<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
+            public override void Deregister<T>(in MessageBusRegistration registration)
             {
-                Action innerDeregister = base.RegisterUntargeted<T>(messageHandler, priority);
-                return () =>
+                if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
                 {
-                    if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
-                    {
-                        throw new InvalidOperationException("Deregistration failure.");
-                    }
+                    throw new InvalidOperationException("Deregistration failure.");
+                }
 
-                    innerDeregister();
-                };
+                base.Deregister<T>(in registration);
             }
         }
 
@@ -1567,26 +1560,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnDeregistration = false;
             }
 
-            public override Action RegisterUntargeted<T>(
-                MessageHandler messageHandler,
-                int priority = 0
-            )
+            public override void Deregister<T>(in MessageBusRegistration registration)
             {
-                Action innerDeregister = base.RegisterUntargeted<T>(messageHandler, priority);
-                return () =>
+                if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
                 {
-                    if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
+                    if (_successfulDeregistrationsBeforeThrow == 0)
                     {
-                        if (_successfulDeregistrationsBeforeThrow == 0)
-                        {
-                            throw new InvalidOperationException("Deregistration failure.");
-                        }
-
-                        --_successfulDeregistrationsBeforeThrow;
+                        throw new InvalidOperationException("Deregistration failure.");
                     }
 
-                    innerDeregister();
-                };
+                    --_successfulDeregistrationsBeforeThrow;
+                }
+
+                base.Deregister<T>(in registration);
             }
         }
 
@@ -1618,7 +1604,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnRestoreRegistration = false;
             }
 
-            public override Action RegisterUntargeted<T>(
+            public override MessageBusRegistration RegisterUntargeted<T>(
                 MessageHandler messageHandler,
                 int priority = 0
             )
@@ -1628,27 +1614,28 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new InvalidOperationException("Restore registration failure.");
                 }
 
-                Action innerDeregister = base.RegisterUntargeted<T>(messageHandler, priority);
-                return () =>
+                return base.RegisterUntargeted<T>(messageHandler, priority);
+            }
+
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                if (typeof(T) == typeof(SimpleUntargetedMessage))
                 {
-                    if (typeof(T) == typeof(SimpleUntargetedMessage))
+                    ++DeregistrationAttempts;
+                }
+
+                if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
+                {
+                    if (_successfulDeregistrationsBeforeThrow == 0)
                     {
-                        ++DeregistrationAttempts;
+                        _throwOnRestoreRegistration = true;
+                        throw new InvalidOperationException("Deregistration failure.");
                     }
 
-                    if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
-                    {
-                        if (_successfulDeregistrationsBeforeThrow == 0)
-                        {
-                            _throwOnRestoreRegistration = true;
-                            throw new InvalidOperationException("Deregistration failure.");
-                        }
+                    --_successfulDeregistrationsBeforeThrow;
+                }
 
-                        --_successfulDeregistrationsBeforeThrow;
-                    }
-
-                    innerDeregister();
-                };
+                base.Deregister<T>(in registration);
             }
         }
 
@@ -1666,7 +1653,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnRegistrationAfterDrain = false;
             }
 
-            public override Action RegisterUntargeted<T>(
+            public override MessageBusRegistration RegisterUntargeted<T>(
                 MessageHandler messageHandler,
                 int priority = 0
             )
@@ -1677,15 +1664,16 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new InvalidOperationException("Restore registration failure.");
                 }
 
-                Action innerDeregister = base.RegisterUntargeted<T>(messageHandler, priority);
-                return () =>
+                return base.RegisterUntargeted<T>(messageHandler, priority);
+            }
+
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                base.Deregister<T>(in registration);
+                if (typeof(T) == typeof(SimpleUntargetedMessage) && RegisteredUntargeted == 0)
                 {
-                    innerDeregister();
-                    if (typeof(T) == typeof(SimpleUntargetedMessage) && RegisteredUntargeted == 0)
-                    {
-                        _throwOnRegistrationAfterDrain = true;
-                    }
-                };
+                    _throwOnRegistrationAfterDrain = true;
+                }
             }
         }
 
@@ -1715,7 +1703,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _throwOnDeregistration = false;
             }
 
-            public override Action RegisterUntargeted<T>(
+            public override MessageBusRegistration RegisterUntargeted<T>(
                 MessageHandler messageHandler,
                 int priority = 0
             )
@@ -1730,16 +1718,17 @@ namespace DxMessaging.Tests.Runtime.Core
                     ++_registrationAttempts;
                 }
 
-                Action innerDeregister = base.RegisterUntargeted<T>(messageHandler, priority);
-                return () =>
-                {
-                    if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
-                    {
-                        throw new InvalidOperationException("Rollback deregistration failure.");
-                    }
+                return base.RegisterUntargeted<T>(messageHandler, priority);
+            }
 
-                    innerDeregister();
-                };
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                if (_throwOnDeregistration && typeof(T) == typeof(SimpleUntargetedMessage))
+                {
+                    throw new InvalidOperationException("Rollback deregistration failure.");
+                }
+
+                base.Deregister<T>(in registration);
             }
         }
 
@@ -1771,7 +1760,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _deregistrationFailuresRemaining = 0;
             }
 
-            public override Action RegisterUntargeted<T>(
+            public override MessageBusRegistration RegisterUntargeted<T>(
                 MessageHandler messageHandler,
                 int priority = 0
             )
@@ -1786,21 +1775,22 @@ namespace DxMessaging.Tests.Runtime.Core
                     ++_registrationAttempts;
                 }
 
-                Action innerDeregister = base.RegisterUntargeted<T>(messageHandler, priority);
-                return () =>
-                {
-                    if (typeof(T) == typeof(SimpleUntargetedMessage))
-                    {
-                        ++DeregistrationAttempts;
-                        if (_deregistrationFailuresRemaining > 0)
-                        {
-                            --_deregistrationFailuresRemaining;
-                            throw new InvalidOperationException("Rollback deregistration failure.");
-                        }
-                    }
+                return base.RegisterUntargeted<T>(messageHandler, priority);
+            }
 
-                    innerDeregister();
-                };
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                if (typeof(T) == typeof(SimpleUntargetedMessage))
+                {
+                    ++DeregistrationAttempts;
+                    if (_deregistrationFailuresRemaining > 0)
+                    {
+                        --_deregistrationFailuresRemaining;
+                        throw new InvalidOperationException("Rollback deregistration failure.");
+                    }
+                }
+
+                base.Deregister<T>(in registration);
             }
         }
 

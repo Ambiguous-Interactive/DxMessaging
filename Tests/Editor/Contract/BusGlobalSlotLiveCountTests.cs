@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Editor.Contract
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.MessageBus.Internal;
+    using DxMessaging.Core.Messages;
     using NUnit.Framework;
 
     /// <summary>
@@ -128,10 +129,10 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwnerA, bus) { active = true };
             try
             {
-                Action dereg = bus.RegisterGlobalAcceptAll(handler);
+                MessageBusRegistration dereg = bus.RegisterGlobalAcceptAll(handler);
                 Assert.AreEqual(1, bus.RegisteredGlobalAcceptAll);
 
-                dereg();
+                bus.Deregister<IMessage>(in dereg);
 
                 Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll);
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
@@ -152,13 +153,13 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwnerA, bus) { active = true };
             try
             {
-                Action dereg1 = bus.RegisterGlobalAcceptAll(handler);
+                MessageBusRegistration dereg1 = bus.RegisterGlobalAcceptAll(handler);
                 _ = bus.RegisterGlobalAcceptAll(handler);
 
                 // Refcount: 0 -> 1 -> 2; liveCount went 0 -> 1, stays 1.
                 Assert.AreEqual(1, bus.RegisteredGlobalAcceptAll);
 
-                dereg1();
+                bus.Deregister<IMessage>(in dereg1);
 
                 // Refcount: 2 -> 1; the dictionary entry is still present, so
                 // liveCount must stay 1 (only the final 1 -> 0 transition
@@ -185,8 +186,8 @@ namespace DxMessaging.Tests.Editor.Contract
             {
                 MessagingDebug.LogFunction = (_, _) => { };
 
-                Action dereg = bus.RegisterGlobalAcceptAll(handler);
-                dereg();
+                MessageBusRegistration dereg = bus.RegisterGlobalAcceptAll(handler);
+                bus.Deregister<IMessage>(in dereg);
 
                 Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll);
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
@@ -195,7 +196,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
                 // Second invocation is over-deregistration: the early-exit
                 // branch must NOT decrement liveCount.
-                dereg();
+                bus.Deregister<IMessage>(in dereg);
 
                 Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll);
                 slot = ReadGlobalSlot(bus);
@@ -220,7 +221,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.IsTrue(slot.IsEmpty, "Fresh slot must report IsEmpty.");
 
-                Action dereg = bus.RegisterGlobalAcceptAll(handler);
+                MessageBusRegistration dereg = bus.RegisterGlobalAcceptAll(handler);
                 slot = ReadGlobalSlot(bus);
                 Assert.IsFalse(
                     slot.IsEmpty,
@@ -228,7 +229,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 );
                 slot.DebugAssertLiveCountInvariant();
 
-                dereg();
+                bus.Deregister<IMessage>(in dereg);
                 slot = ReadGlobalSlot(bus);
                 Assert.IsTrue(
                     slot.IsEmpty,

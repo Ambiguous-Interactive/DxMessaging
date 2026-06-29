@@ -31,6 +31,7 @@ DxMessaging.Core.MessageBus.IMessageBusProvider
 DxMessaging.Core.MessageBus.IMessageRegistrationBuilder
 DxMessaging.Core.MessageBus.MessageBus
 DxMessaging.Core.MessageBus.MessageBusRebindMode
+DxMessaging.Core.MessageBus.MessageBusRegistration
 DxMessaging.Core.MessageBus.MessageRegistrationBuildException
 DxMessaging.Core.MessageBus.MessageRegistrationBuildOptions
 DxMessaging.Core.MessageBus.MessageRegistrationBuilder

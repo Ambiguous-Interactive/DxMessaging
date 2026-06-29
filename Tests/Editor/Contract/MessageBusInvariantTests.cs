@@ -155,8 +155,11 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwnerA, bus) { active = true };
             try
             {
-                Action deregister = bus.RegisterTargeted<TargetedProbeMessage>(Target, handler);
-                deregister();
+                MessageBusRegistration deregister = bus.RegisterTargeted<TargetedProbeMessage>(
+                    Target,
+                    handler
+                );
+                bus.Deregister<TargetedProbeMessage>(in deregister);
 
                 IMessageBus.TrimResult result = bus.Trim(force: true);
 
@@ -187,11 +190,11 @@ namespace DxMessaging.Tests.Editor.Contract
                 ref InterceptorProbeMessage _
             ) => true;
 
-            Action deregister = bus.RegisterUntargetedInterceptor(interceptor);
+            MessageBusRegistration deregister = bus.RegisterUntargetedInterceptor(interceptor);
             Assert.AreEqual(1, bus.RegisteredInterceptors);
             Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1);
 
-            deregister();
+            bus.Deregister<InterceptorProbeMessage>(in deregister);
             Assert.AreEqual(0, bus.RegisteredInterceptors);
 
             ISweepable sweepable = MessageBus.SweepableTypeCaches.Single(row =>
@@ -266,12 +269,12 @@ namespace DxMessaging.Tests.Editor.Contract
                 ref InterceptorProbeMessage _
             ) => true;
 
-            Action staleDeregister = bus.RegisterUntargetedInterceptor(interceptor);
-            staleDeregister();
+            MessageBusRegistration staleDeregister = bus.RegisterUntargetedInterceptor(interceptor);
+            bus.Deregister<InterceptorProbeMessage>(in staleDeregister);
             _ = bus.Trim(force: true);
 
             _ = bus.RegisterUntargetedInterceptor(interceptor);
-            staleDeregister();
+            bus.Deregister<InterceptorProbeMessage>(in staleDeregister);
 
             Assert.AreEqual(
                 1,
@@ -290,12 +293,12 @@ namespace DxMessaging.Tests.Editor.Contract
             };
             try
             {
-                Action staleDeregister = bus.RegisterGlobalAcceptAll(handler);
-                staleDeregister();
+                MessageBusRegistration staleDeregister = bus.RegisterGlobalAcceptAll(handler);
+                bus.Deregister<IMessage>(in staleDeregister);
                 _ = bus.Trim(force: true);
 
-                Action currentDeregister = bus.RegisterGlobalAcceptAll(handler);
-                staleDeregister();
+                MessageBusRegistration currentDeregister = bus.RegisterGlobalAcceptAll(handler);
+                bus.Deregister<IMessage>(in staleDeregister);
 
                 Assert.AreEqual(
                     1,
@@ -303,7 +306,7 @@ namespace DxMessaging.Tests.Editor.Contract
                     "A stale GlobalAcceptAll deregister closure from an evicted global slot must not remove a later registration."
                 );
 
-                currentDeregister();
+                bus.Deregister<IMessage>(in currentDeregister);
                 Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll);
             }
             finally
@@ -320,14 +323,13 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwnerA, bus) { active = true };
             try
             {
-                Action staleDeregister = bus.RegisterUntargeted<UntargetedDispatchProbeMessage>(
-                    handler
-                );
-                staleDeregister();
+                MessageBusRegistration staleDeregister =
+                    bus.RegisterUntargeted<UntargetedDispatchProbeMessage>(handler);
+                bus.Deregister<UntargetedDispatchProbeMessage>(in staleDeregister);
                 Assert.AreEqual(2, bus.Log.Registrations.Count);
 
                 _ = bus.Trim(force: true);
-                staleDeregister();
+                bus.Deregister<UntargetedDispatchProbeMessage>(in staleDeregister);
 
                 Assert.AreEqual(
                     2,
@@ -349,15 +351,15 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwnerA, bus) { active = true };
             try
             {
-                Action staleDeregister = bus.RegisterTargeted<TargetedProbeMessage>(
+                MessageBusRegistration staleDeregister = bus.RegisterTargeted<TargetedProbeMessage>(
                     Target,
                     handler
                 );
-                staleDeregister();
+                bus.Deregister<TargetedProbeMessage>(in staleDeregister);
                 Assert.AreEqual(2, bus.Log.Registrations.Count);
 
                 _ = bus.Trim(force: true);
-                staleDeregister();
+                bus.Deregister<TargetedProbeMessage>(in staleDeregister);
 
                 Assert.AreEqual(
                     2,

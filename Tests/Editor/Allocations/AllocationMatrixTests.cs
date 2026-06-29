@@ -106,52 +106,23 @@ namespace DxMessaging.Tests.Editor.Allocations
             (PerEmitDiagnosticsByteBudget + 15L) / 16L;
 
         /// <summary>
-        /// Cumulative BYTE allocation budget for 32 trim calls after warm-up.
-        /// Trim can perform small fixed bookkeeping work while walking dirty
-        /// candidates, but repeated calls must stay bounded and independent of
-        /// normal dispatch hot-path allocations. Retained for documentation
-        /// only; the assertion uses the count budget below because the Boehm-GC
-        /// byte delta is always 0 (see <see cref="AllocationProbe"/>).
-        /// </summary>
-        private const long TrimAllocBudget = 4 * 1024L;
-
-        /// <summary>
-        /// Managed-allocation CALL-count budget for the 32-trim measured window,
-        /// derived from <see cref="TrimAllocBudget"/> as <c>ceil(byteBudget / 16)</c>
-        /// (16 = minimum managed object size on 64-bit). Generous enough never to
-        /// false-fail on incidental bookkeeping yet still trips a gross regression.
-        /// </summary>
-        private const long TrimAllocCountBudget = (TrimAllocBudget + 15L) / 16L;
-
-        /// <summary>
         /// How many times <see cref="AllocationProbe.MeasureMin"/> measures an
-        /// allocation-count window before taking the minimum. A single window in a warm,
-        /// long-lived editor domain intermittently spikes far above the operation's true
-        /// cost (a GC/heap-state-dependent pool miss or backing-array resize that fires in
-        /// one window and not the next); the spikes only ADD to the floor, so the minimum
-        /// over a handful of attempts converges to the stable per-operation cost. Measured
-        /// distribution on the host editor: <c>bus.Trim()</c>x32 read a median of ~57 with
-        /// a floor of ~9 and rare spikes past 4000, and over half of windows already fell
-        /// under budget, so a handful of attempts make a false budget breach very unlikely.
-        /// We deliberately keep the count modest (and avoid a per-attempt forced collection;
-        /// see <see cref="AllocationProbe.MeasureMin"/>) so the repeated measurement does not
-        /// grow the long-lived editor heap enough to perturb other allocation tests. Cold CI
-        /// legs run a fresh domain and read the floor on the first attempt; the extra
-        /// attempts are harmless there.
+        /// allocation-count window before taking the minimum, for the registration /
+        /// deregistration / diagnostics-augmented-registration budgets below. A single
+        /// window in a warm, long-lived editor domain intermittently spikes far above the
+        /// operation's true cost (a GC/heap-state-dependent pool miss or backing-array
+        /// resize that fires in one window and not the next); the spikes only ADD to the
+        /// floor, so the minimum over a handful of attempts converges to the stable
+        /// per-operation cost. We deliberately keep the count modest (and avoid a
+        /// per-attempt forced collection; see <see cref="AllocationProbe.MeasureMin"/>) so
+        /// the repeated measurement does not grow the long-lived editor heap enough to
+        /// perturb other allocation tests. Cold CI legs run a fresh domain and read the
+        /// floor on the first attempt; the extra attempts are harmless there. (Trim and the
+        /// dirty-target reuse path no longer measure a GC.Alloc count at all -- they assert
+        /// the deterministic <see cref="IMessageBus.TrimResult"/> / pool Hits/Misses
+        /// counters instead, which need no denoising.)
         /// </summary>
         private const int AllocationMeasurementAttempts = 8;
-
-        /// <summary>
-        /// Allocation-count budget for the dirty-target reuse path. A cold CI domain reads
-        /// 0, but a long-lived warm editor adds a few fixed allocations per mark-batch from
-        /// process-global static registry growth that min-over-attempts cannot subtract
-        /// (accumulated state, not per-window noise; measured floor ~3-4). The budget is a
-        /// small CONSTANT well above that floor and well below the smallest reuse-break cost
-        /// (~targetCount for the larger parameterizations), so it stays green warm yet still
-        /// trips if reuse degrades to a per-target allocation. The tight Hits/Misses
-        /// assertions remain the exact pooling proof.
-        /// </summary>
-        private const long DirtyTargetReuseAllocCountBudget = 16;
 
         // Managed-allocation CALL-count budgets for the registration / deregistration /
         // diagnostics-augmented-registration paths, replacing the vacuous (Boehm-GC)
@@ -179,6 +150,12 @@ namespace DxMessaging.Tests.Editor.Allocations
         private const long PerAugmentedRegistrationCountBudget = PerRegistrationCountBudget;
 
         private const int DirtyTargetPoolRetainedEntryCount = 64;
+
+        // Number of mark/return reuse cycles the deterministic dirty-target reuse test runs
+        // to accumulate a clear pool Hits/Misses signal. This is a plain loop count (the test
+        // reads exact pool counters, NOT a GC.Alloc probe), so it is unrelated to the
+        // probe-denoising AllocationMeasurementAttempts above.
+        private const int DirtyTargetReuseCycles = 8;
 
         // The InstanceId values below are arbitrary 32-bit integers that
         // distinguish the targeted/source/owner participants from each other
@@ -642,15 +619,35 @@ namespace DxMessaging.Tests.Editor.Allocations
         }
 
         /// <summary>
-        /// Pins explicit forced trim to a small bounded allocation budget
-        /// across the same 32-iteration measurement window used by the emit
-        /// allocation assertions. The setup creates a fresh dirty empty slot
-        /// for the selected message kind and prewarms one trim call so any
-        /// one-time bookkeeping does not contaminate the measured loop.
+        /// Pins the bounded-work contract of the explicit forced-trim path
+        /// DETERMINISTICALLY across two axes: (1) the first forced trim reclaims a fresh
+        /// dirty candidate, and every subsequent forced trim is an idempotent no-op -- it
+        /// evicts zero type and target slots and leaves the live type-slot count unchanged
+        /// (via <see cref="IMessageBus.TrimResult"/>); and (2) those repeated forced trims
+        /// rent NO fresh pooled collection -- the <c>DxPools</c> total Miss count stays flat
+        /// across the loop -- so a no-op forced trim allocates nothing. Together they prove
+        /// repeated trimming never does unbounded per-call work, for EVERY kind.
+        /// <para>
+        /// This replaces a former <c>GC.Alloc</c>-recorder count budget measured over a
+        /// 32-trim window. That budget was inherently warm-editor-flaky: a forced trim's
+        /// true cost is a handful of allocations, but the recorder attributes ambient
+        /// background-editor allocations to whatever window is open, so a single window
+        /// intermittently spiked into the thousands and even the minimum over several
+        /// attempts breached the budget run-to-run (it passed only on the cold CI domain).
+        /// The <see cref="IMessageBus.TrimResult"/> eviction counts and the <c>DxPools</c>
+        /// Miss counter are both exact and need no allocation probe, so they are
+        /// backend-independent and never flake. Forced trim (<c>force: true</c>) makes the
+        /// bus's idle check return <c>true</c> unconditionally, so a single pass evicts
+        /// everything eligible -- which is why the first trim reclaims and the rest observe a
+        /// clean bus. The complementary "trim RETURNS pooled collections on reclaim" half of
+        /// the contract (the keyed kinds) is pinned separately and deterministically by
+        /// <see cref="DirtyTargetTrimReturnsInstanceIdCollectionsToPools"/>, and the
+        /// dispatch / register / deregister zero-allocation rows above cover the hot paths.
+        /// </para>
         /// </summary>
         [Test]
         [Category("Allocation")]
-        public void TrimIsBoundedAlloc(
+        public void RepeatedForcedTrimIsIdempotentAfterReclaim(
             [ValueSource(
                 typeof(MessageScenarios),
                 nameof(MessageScenarios.AllKindsIncludingWithoutContext)
@@ -664,78 +661,87 @@ namespace DxMessaging.Tests.Editor.Allocations
                 {
                     Action emit = BuildEmitClosure(scenario, bus);
 
-                    // Take the minimum allocation over several attempts: a single window
-                    // in the warm editor intermittently spikes above the true cost (see
-                    // AllocationMeasurementAttempts). Each attempt re-creates a fresh dirty
-                    // candidate (the prior attempt's forced trims already evicted it) so
-                    // the measured block always has a slot to reclaim.
-                    AllocationProbe.MinimumMeasurement<TrimAttemptDiagnostics> measurement =
-                        AllocationProbe.MeasureMinWithDiagnostics(
-                            AllocationMeasurementAttempts,
-                            prepare: () =>
-                            {
-                                _ = bus.Trim(force: true);
-                                CreateFreshTrimCandidate(scenario, token, emit);
-                            },
-                            operation: () =>
-                            {
-                                int typeSlotsEvicted = 0;
-                                int targetSlotsEvicted = 0;
-                                int pooledCollectionsEvicted = 0;
-                                IMessageBus.TrimResult lastResult = default;
-                                for (
-                                    int i = 0;
-                                    i < AllocationAssertions.DefaultMeasuredIterations;
-                                    ++i
-                                )
-                                {
-                                    IMessageBus.TrimResult result = bus.Trim(force: true);
-                                    typeSlotsEvicted += result.TypeSlotsEvicted;
-                                    targetSlotsEvicted += result.TargetSlotsEvicted;
-                                    pooledCollectionsEvicted += result.PooledCollectionsEvicted;
-                                    lastResult = result;
-                                }
+                    // Start from a clean bus, then create exactly one fresh dirty candidate
+                    // (register, emit, remove) for the selected kind so the first forced
+                    // trim has a slot to reclaim.
+                    _ = bus.Trim(force: true);
+                    CreateFreshTrimCandidate(scenario, token, emit);
 
-                                return new TrimAttemptDiagnostics(
-                                    typeSlotsEvicted,
-                                    targetSlotsEvicted,
-                                    pooledCollectionsEvicted,
-                                    lastResult.LiveTypeSlotsRemaining
-                                );
-                            }
-                        );
-                    long gcAllocations = measurement.GcAllocations;
-                    if (gcAllocations == AllocationProbe.Unmeasured)
+                    IMessageBus.TrimResult first = bus.Trim(force: true);
+                    Assert.Greater(
+                        first.TypeSlotsEvicted + first.TargetSlotsEvicted,
+                        0,
+                        $"Trim-{scenario.Kind}: the first forced trim must reclaim the fresh "
+                            + "dirty candidate slot."
+                    );
+
+                    int stableLiveTypeSlots = first.LiveTypeSlotsRemaining;
+
+                    // Snapshot the DxPools rental counter AFTER reclaim. Repeated forced
+                    // trims on a now-clean bus must rent NOTHING fresh from the shared pools
+                    // (a sweep returns/evicts collections, it never rents), so the total
+                    // Misses must stay flat across the loop. This deterministically pins the
+                    // "no per-call allocation" half of the bounded-work contract for EVERY
+                    // kind -- including the scalar and without-context kinds that
+                    // DirtyTargetTrimReturnsInstanceIdCollectionsToPools (keyed-only) does not
+                    // cover -- with no allocation probe, so it never flakes.
+                    long poolMissesAfterReclaim = TotalPoolMisses();
+
+                    // Every subsequent forced trim is a deterministic no-op: nothing is
+                    // dirty, so it evicts zero type/target slots and leaves the live
+                    // type-slot count unchanged. A regression that made repeated forced
+                    // trims do per-call work (the unbounded behavior the former GC.Alloc
+                    // budget guarded against) would evict again or drift the live count.
+                    for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
-                        Assert.Ignore(
-                            $"Trim-{scenario.Kind}: the GC.Alloc allocation probe is "
-                                + "non-functional on this backend, so the trim allocation "
-                                + "budget cannot be evaluated."
+                        IMessageBus.TrimResult repeat = bus.Trim(force: true);
+                        Assert.AreEqual(
+                            0,
+                            repeat.TypeSlotsEvicted,
+                            $"Trim-{scenario.Kind}: forced trim #{i + 2} must evict no type "
+                                + "slots after the candidate was reclaimed (idempotent)."
+                        );
+                        Assert.AreEqual(
+                            0,
+                            repeat.TargetSlotsEvicted,
+                            $"Trim-{scenario.Kind}: forced trim #{i + 2} must evict no target "
+                                + "slots after the candidate was reclaimed (idempotent)."
+                        );
+                        Assert.AreEqual(
+                            stableLiveTypeSlots,
+                            repeat.LiveTypeSlotsRemaining,
+                            $"Trim-{scenario.Kind}: forced trim #{i + 2} must leave the live "
+                                + "type-slot count stable after reclaim (idempotent)."
                         );
                     }
 
-                    Assert.That(
-                        gcAllocations,
-                        Is.LessThanOrEqualTo(TrimAllocCountBudget),
-                        $"Trim-{scenario.Kind} allocated a minimum of {gcAllocations} GC "
-                            + $"allocations across {AllocationAssertions.DefaultMeasuredIterations} "
-                            + $"trims (over {AllocationMeasurementAttempts} attempts), exceeding "
-                            + $"the count budget of {TrimAllocCountBudget}. "
-                            + $"Minimum attempt={measurement.AttemptIndex + 1}/"
-                            + $"{AllocationMeasurementAttempts}; "
-                            + $"total type evicted={measurement.Diagnostics.TypeSlotsEvicted}, "
-                            + $"total target evicted={measurement.Diagnostics.TargetSlotsEvicted}, "
-                            + $"total pooled evicted={measurement.Diagnostics.PooledCollectionsEvicted}, "
-                            + $"final live type slots={measurement.Diagnostics.LiveTypeSlotsRemaining}."
-                    );
-                    Assert.Greater(
-                        measurement.Diagnostics.EvictedSlots,
-                        0,
-                        $"Trim-{scenario.Kind} must reclaim at least one slot during the "
-                            + "minimum-allocation measured loop."
+                    Assert.AreEqual(
+                        poolMissesAfterReclaim,
+                        TotalPoolMisses(),
+                        $"Trim-{scenario.Kind}: the {AllocationAssertions.DefaultMeasuredIterations} "
+                            + "repeated forced trims on a clean bus must rent no fresh pooled "
+                            + "collection (DxPools total Misses stays flat) -- a no-op forced trim "
+                            + "allocates nothing."
                     );
                 }
             );
+        }
+
+        // Sum of the rent-miss counters across every DxPools collection pool. A pool Miss
+        // is recorded only when a Rent finds the pool empty and allocates a fresh
+        // collection, so a flat total across an operation proves that operation rented
+        // nothing new -- a deterministic, probe-free allocation signal.
+        private static long TotalPoolMisses()
+        {
+            PoolDiagnosticsSnapshot pools = DxPools.DescribeAll();
+            return pools.InstanceIdDicts.Misses
+                + pools.InstanceIdLists.Misses
+                + pools.InstanceIdSets.Misses
+                + pools.ObjectLists.Misses
+                + pools.ObjectStacks.Misses
+                + pools.IntSets.Misses
+                + pools.TypedHandlerContextDicts.Misses
+                + pools.TypedHandlerPriorityDicts.Misses;
         }
 
         /// <summary>
@@ -933,56 +939,30 @@ namespace DxMessaging.Tests.Editor.Allocations
                     long listHitsBefore = afterWarmup.InstanceIdLists.Hits;
                     long setHitsBefore = afterWarmup.InstanceIdSets.Hits;
 
-                    // Reuse contract: marking dirty targets must rent warmed pooled
-                    // storage rather than allocate per target, so its cost is a small
-                    // CONSTANT independent of targetCount -- not O(targetCount). We count
-                    // managed allocation CALLS via AllocationProbe (a
-                    // GC.GetAllocatedBytesForCurrentThread byte delta is vacuously 0 under
-                    // Unity's Boehm GC) and take the MINIMUM over several attempts, because a
-                    // single warm-editor window spikes intermittently (see
-                    // AllocationMeasurementAttempts). Each attempt returns the prior marks to
-                    // the pool (Trim) then marks a fresh disjoint id range, so every attempt
-                    // rents the warmed storage.
-                    //
-                    // The budget is a small constant, not zero: a cold CI domain reads 0
-                    // here, but a long-lived warm editor carries process-global static
-                    // registry growth (message-type indexing accumulated over a session)
-                    // that adds a few fixed allocations per mark-batch which min-over-attempts
-                    // cannot subtract (it is accumulated state, not per-window noise). The
-                    // constant budget still proves the contract: if reuse broke, marking
-                    // targetCount targets would allocate ~targetCount (far above the budget
-                    // for the larger counts), and the tight Hits/Misses assertions below pin
-                    // the pooling behavior exactly.
+                    // Reuse contract: marking dirty targets must rent warmed pooled storage
+                    // rather than allocate per target, so its cost is a small CONSTANT
+                    // independent of targetCount -- not O(targetCount). This is proven
+                    // DETERMINISTICALLY by the pool Hits/Misses counters below (no allocation
+                    // probe): a healthy reuse path rents the warmed list/set on every mark
+                    // batch (Hits climb) and NEVER allocates a fresh one (Misses stay flat).
+                    // Run several disjoint mark/return cycles so the counters accumulate a
+                    // clear signal; each cycle returns the prior marks to the pool (Trim)
+                    // then marks a fresh disjoint id range, so every cycle rents the warmed
+                    // storage. A former GC.Alloc count budget also guarded this, but it was
+                    // warm-editor-flaky (the recorder's ambient floor sat at the budget) and
+                    // strictly WEAKER than the exact Misses-equality back-stop here -- a
+                    // regression to per-target rent-and-allocate records a pool miss even at
+                    // targetCount=1, which the count budget could not distinguish from the
+                    // warm-editor floor -- so the budget was removed.
                     int markBase = 0x2425_0000;
-                    long gcAllocations = AllocationProbe.MeasureMin(
-                        AllocationMeasurementAttempts,
-                        prepare: () => bus.Trim(force: false),
-                        operation: () =>
-                        {
-                            MarkDirtyTargets(markDirtyTarget, markBase, targetCount);
-                            markBase += 0x0001_0000;
-                        }
-                    );
+                    for (int cycle = 0; cycle < DirtyTargetReuseCycles; ++cycle)
+                    {
+                        _ = bus.Trim(force: false);
+                        MarkDirtyTargets(markDirtyTarget, markBase, targetCount);
+                        markBase += 0x0001_0000;
+                    }
                     PoolDiagnosticsSnapshot afterReuse = DxPools.DescribeAll();
 
-                    if (gcAllocations == AllocationProbe.Unmeasured)
-                    {
-                        Assert.Ignore(
-                            "Dirty-target tracking: the GC.Alloc allocation probe is "
-                                + "non-functional on this backend, so the zero-allocation "
-                                + "contract cannot be evaluated."
-                        );
-                    }
-                    Assert.That(
-                        gcAllocations,
-                        Is.LessThanOrEqualTo(DirtyTargetReuseAllocCountBudget),
-                        $"Dirty-target tracking must reuse warmed InstanceId list/set storage "
-                            + $"with at most a small constant allocation (not one per target), "
-                            + $"but the minimum over {AllocationMeasurementAttempts} attempts was "
-                            + $"{gcAllocations} GC allocations for targetCount={targetCount}, "
-                            + $"exceeding the budget of {DirtyTargetReuseAllocCountBudget}. A value "
-                            + $"near targetCount indicates reuse degraded to per-target allocation."
-                    );
                     Assert.Greater(
                         afterReuse.InstanceIdLists.Hits,
                         listHitsBefore,
@@ -1000,12 +980,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                             + $"after={FormatPoolDiagnostics(afterReuse.InstanceIdSets)}."
                     );
 
-                    // The exact "no fresh allocation" back-stop: every prepare returns the
-                    // collection to the pool before its mark batch rents it, so a healthy
-                    // reuse path NEVER misses the pool across the attempts. A regression to
-                    // per-target rent-and-allocate would record a pool miss here even at
-                    // targetCount=1, where the count budget alone cannot distinguish one
-                    // extra allocation from the constant warm-editor floor.
+                    // The exact "no fresh allocation" back-stop: every cycle returns the
+                    // collection to the pool (Trim) before its mark batch rents it, so a
+                    // healthy reuse path NEVER misses the pool across the cycles. A
+                    // regression to per-target rent-and-allocate would record a pool miss
+                    // here even at targetCount=1 -- a deterministic signal that needs no
+                    // allocation probe and never flakes in the warm editor.
                     Assert.AreEqual(
                         afterWarmup.InstanceIdLists.Misses,
                         afterReuse.InstanceIdLists.Misses,
@@ -1189,32 +1169,6 @@ namespace DxMessaging.Tests.Editor.Allocations
                     }
                 }
             }
-        }
-
-        private readonly struct TrimAttemptDiagnostics
-        {
-            public TrimAttemptDiagnostics(
-                int typeSlotsEvicted,
-                int targetSlotsEvicted,
-                int pooledCollectionsEvicted,
-                int liveTypeSlotsRemaining
-            )
-            {
-                TypeSlotsEvicted = typeSlotsEvicted;
-                TargetSlotsEvicted = targetSlotsEvicted;
-                PooledCollectionsEvicted = pooledCollectionsEvicted;
-                LiveTypeSlotsRemaining = liveTypeSlotsRemaining;
-            }
-
-            public int TypeSlotsEvicted { get; }
-
-            public int TargetSlotsEvicted { get; }
-
-            public int PooledCollectionsEvicted { get; }
-
-            public int LiveTypeSlotsRemaining { get; }
-
-            public int EvictedSlots => TypeSlotsEvicted + TargetSlotsEvicted;
         }
 
         private static void NoOpUntargeted(ref SimpleUntargetedMessage message) { }

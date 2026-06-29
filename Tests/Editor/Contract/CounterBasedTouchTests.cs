@@ -90,14 +90,14 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
             try
             {
-                Action deregistration = bus.RegisterGlobalAcceptAll(handler);
+                MessageBusRegistration deregistration = bus.RegisterGlobalAcceptAll(handler);
                 IEvictableSlot slot = ReadGlobalSlot(bus);
                 long tick = ReadBusTick(bus);
 
                 Assert.Greater(tick, 0);
                 Assert.AreEqual(tick, slot.LastTouchTicks);
 
-                deregistration();
+                bus.Deregister<IMessage>(in deregistration);
             }
             finally
             {
@@ -145,11 +145,11 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
             try
             {
-                Action deregistration = bus.RegisterGlobalAcceptAll(handler);
+                MessageBusRegistration deregistration = bus.RegisterGlobalAcceptAll(handler);
                 IEvictableSlot slot = ReadGlobalSlot(bus);
                 long registerTick = ReadBusTick(bus);
 
-                deregistration();
+                bus.Deregister<IMessage>(in deregistration);
                 long deregisterTick = ReadBusTick(bus);
 
                 Assert.Greater(deregisterTick, registerTick);
@@ -168,14 +168,14 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
             try
             {
-                Action staleDeregistration = bus.RegisterGlobalAcceptAll(handler);
+                MessageBusRegistration staleDeregistration = bus.RegisterGlobalAcceptAll(handler);
                 IEvictableSlot slot = ReadGlobalSlot(bus);
 
                 InvokeResetState(bus);
                 long tickAfterReset = ReadBusTick(bus);
                 long touchAfterReset = slot.LastTouchTicks;
 
-                staleDeregistration();
+                bus.Deregister<IMessage>(in staleDeregistration);
 
                 Assert.AreEqual(tickAfterReset, ReadBusTick(bus));
                 Assert.AreEqual(touchAfterReset, slot.LastTouchTicks);

@@ -326,7 +326,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     typeof(Action<ProbeMessage>),
                     typeof(Action<ProbeMessage>),
-                    typeof(Action),
+                    typeof(MessageBusRegistration),
                     typeof(int),
                     typeof(IMessageBus),
                 },
@@ -338,12 +338,18 @@ namespace DxMessaging.Tests.Editor.Contract
             Action<ProbeMessage> original = _ => { };
             Action<ProbeMessage> augmented = _ => { };
             Action firstDeregistration = (Action)
-                addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus });
+                (MessageHandler.HandlerDeregistration)
+                    addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus });
             Action secondDeregistration = (Action)
-                addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus });
+                (MessageHandler.HandlerDeregistration)
+                    addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus });
             Action<ProbeMessage> otherOriginal = _ => { };
             Action distinctDeregistration = (Action)
-                addMethod.Invoke(handler, new object[] { otherOriginal, augmented, null, 19, bus });
+                (MessageHandler.HandlerDeregistration)
+                    addMethod.Invoke(
+                        handler,
+                        new object[] { otherOriginal, augmented, null, 19, bus }
+                    );
 
             Array slots = ReadArrayField(handler, "_slots");
             object populated = slots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
@@ -487,7 +493,7 @@ namespace DxMessaging.Tests.Editor.Contract
                     typeof(InstanceId),
                     typeof(Action<ProbeMessage>),
                     typeof(Action<ProbeMessage>),
-                    typeof(Action),
+                    typeof(MessageBusRegistration),
                     typeof(int),
                     typeof(IMessageBus),
                 },
@@ -500,10 +506,11 @@ namespace DxMessaging.Tests.Editor.Contract
             Action<ProbeMessage> original = _ => { };
             Action<ProbeMessage> augmented = _ => { };
             _ = (Action)
-                addMethod.Invoke(
-                    handler,
-                    new object[] { target, original, augmented, null, 17, bus }
-                );
+                (MessageHandler.HandlerDeregistration)
+                    addMethod.Invoke(
+                        handler,
+                        new object[] { target, original, augmented, null, 17, bus }
+                    );
 
             Array slots = ReadArrayField(handler, "_slots");
             TypedSlot<ProbeMessage> slot =
@@ -597,10 +604,11 @@ namespace DxMessaging.Tests.Editor.Contract
 
             object oldHandler = MakeFreshTypedHandler();
             Action oldDeregistration = (Action)
-                addMethod.Invoke(
-                    oldHandler,
-                    new object[] { target, original, augmented, null, 17, bus }
-                );
+                (MessageHandler.HandlerDeregistration)
+                    addMethod.Invoke(
+                        oldHandler,
+                        new object[] { target, original, augmented, null, 17, bus }
+                    );
             TypedSlot<ProbeMessage> oldSlot =
                 (TypedSlot<ProbeMessage>)
                     ReadArrayField(oldHandler, "_slots")
@@ -609,10 +617,11 @@ namespace DxMessaging.Tests.Editor.Contract
 
             object newHandler = MakeFreshTypedHandler();
             Action newDeregistration = (Action)
-                addMethod.Invoke(
-                    newHandler,
-                    new object[] { target, original, augmented, null, 17, bus }
-                );
+                (MessageHandler.HandlerDeregistration)
+                    addMethod.Invoke(
+                        newHandler,
+                        new object[] { target, original, augmented, null, 17, bus }
+                    );
             TypedSlot<ProbeMessage> newSlot =
                 (TypedSlot<ProbeMessage>)
                     ReadArrayField(newHandler, "_slots")
@@ -803,7 +812,7 @@ namespace DxMessaging.Tests.Editor.Contract
                     typeof(InstanceId),
                     typeof(Action<ProbeMessage>),
                     typeof(Action<ProbeMessage>),
-                    typeof(Action),
+                    typeof(MessageBusRegistration),
                     typeof(int),
                     typeof(IMessageBus),
                 },

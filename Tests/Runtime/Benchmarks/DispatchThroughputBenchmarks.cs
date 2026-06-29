@@ -35,6 +35,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         PostProcessingHeavyFourPostProcessors,
         RegistrationFlood1000TypesFromColdBus,
         RegistrationFlood1000TypesWarmJit,
+        UntargetedRegistrationMarginal,
+        TargetedRegistrationMarginal,
+        BroadcastRegistrationMarginal,
         DeregistrationFlood1000TypesCold,
         DeregistrationFlood1000TypesWarmJit,
         UntargetedFirstDispatchCold,
@@ -52,6 +55,30 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static readonly InstanceId Target = new(31001);
         private static readonly InstanceId Source = new(31002);
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
+
+        // Marginal registration scenarios register this many additional handlers of a
+        // SINGLE already-warmed message type, then report the allocation count/bytes for
+        // the batch (so per-registration cost ~= the reported count / this value). A large
+        // batch keeps the per-operation allocation floor well above warm-editor ambient
+        // GC.Alloc noise, mirroring the "total over a window" benchmark methodology the
+        // flood scenarios use.
+        private const int RegistrationMarginalCount = 1000;
+
+        // Untimed warm-up registrations (registered then removed) that pay the one-time
+        // per-type dispatch-structure build + DxPools warm-up BEFORE the measured region,
+        // so the window captures only the MARGINAL cost of an additional same-type
+        // registration.
+        private const int RegistrationMarginalWarmup = 16;
+
+        // Repeated trials for the WARM (JIT pre-warmed) flood scenarios. A single one-shot
+        // wall-clock sample of a ~1 ms operation on a shared CI runner swings run-to-run by
+        // tens of percent (scheduler preemption, a GC landing mid-window). The warm floods are
+        // repeatable (the JIT is already paid, the population is rebuilt per trial), so they run
+        // several trials and report the MINIMUM wall clock -- the floor when the CPU was not
+        // interrupted, the most reproducible estimator (the same philosophy as
+        // AllocationProbe.MeasureMin). The COLD floods stay single-shot because they
+        // deliberately measure one-time first-touch JIT cost, which cannot be re-measured cold.
+        private const int WarmFloodTrials = 7;
 
         [Test, Performance, Category("PerfBench")]
         [TestCaseSource(nameof(DispatchBenchmarkCases))]
@@ -107,6 +134,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     return MeasureRegistrationFlood();
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
                     return MeasureRegistrationFloodWarmJit();
+                case DispatchBenchmarkScenario.UntargetedRegistrationMarginal:
+                case DispatchBenchmarkScenario.TargetedRegistrationMarginal:
+                case DispatchBenchmarkScenario.BroadcastRegistrationMarginal:
+                    return MeasureRegistrationMarginal(scenario);
                 case DispatchBenchmarkScenario.DeregistrationFlood1000TypesCold:
                     return MeasureDeregistrationFlood();
                 case DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit:
@@ -216,6 +247,54 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
+        // Force a full garbage collection to quiescence so a pending collection cannot land
+        // INSIDE the next timed region and inflate the sample. Call this strictly BEFORE the
+        // measurement stopwatch starts (it is itself untimed); it is the single biggest blip
+        // remover for the ms-scale flood scenarios, which churn many short-lived objects.
+        private static void QuiesceGarbageCollector()
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        // Runs a warm, repeatable flood operation over <see cref="WarmFloodTrials"/> trials and
+        // returns the MINIMUM wall clock (ms) plus the first trial's allocation count/bytes
+        // (deterministic across trials, since each trial does identical work). Each trial builds
+        // fresh scope state UNTIMED, GC-quiesces, then times exactly one operation. Used by the
+        // warm-JIT floods to replace a noisy single-shot sample with a reproducible floor.
+        private static (double minMilliseconds, long allocations, long bytes) MeasureWarmFloodMin(
+            Func<BenchmarkRegistrationScope> setUpTrial,
+            Action<BenchmarkRegistrationScope> timedOperation
+        )
+        {
+            double minMilliseconds = double.MaxValue;
+            long allocations = AllocationProbe.Unmeasured;
+            long bytes = AllocationProbe.Unmeasured;
+            for (int trial = 0; trial < WarmFloodTrials; trial++)
+            {
+                using BenchmarkRegistrationScope scope = setUpTrial();
+                QuiesceGarbageCollector();
+                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
+                long startTimestamp = Stopwatch.GetTimestamp();
+                timedOperation(scope);
+                long endTimestamp = Stopwatch.GetTimestamp();
+                AllocationProbe.AllocationSample sample = window.SampleBoth();
+                double milliseconds = TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d;
+                if (milliseconds < minMilliseconds)
+                {
+                    minMilliseconds = milliseconds;
+                }
+                if (trial == 0)
+                {
+                    allocations = sample.Allocations;
+                    bytes = sample.Bytes;
+                }
+            }
+
+            return (minMilliseconds, allocations, bytes);
+        }
+
         private static DispatchBenchmarkResult MeasureRegistrationFlood()
         {
             Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
@@ -223,6 +302,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // recorder spans the timed region; its overhead is negligible against the
             // JIT-dominated flood). NEVER GC.GetAllocatedBytesForCurrentThread(): it
             // returns 0 for every allocation under Unity's Boehm GC (see AllocationProbe).
+            // Single-shot by design (first-touch JIT cannot be re-measured cold); GC-quiesce
+            // first so a pending collection cannot land inside the timed window.
+            QuiesceGarbageCollector();
             using AllocationProbe.Window window = AllocationProbe.BeginWindow();
             long startTimestamp = Stopwatch.GetTimestamp();
             using (BenchmarkRegistrationScope scope = new())
@@ -268,20 +350,118 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
+            // Warm + repeatable: run several trials (fresh empty scope each) and report the
+            // MINIMUM wall clock so a single scheduler/GC blip cannot dominate the published
+            // number. Each trial times only the 1000-builder registration pass.
+            (double minMilliseconds, long allocations, long bytes) = MeasureWarmFloodMin(
+                static () => new BenchmarkRegistrationScope(),
+                scope =>
+                {
+                    for (int index = 0; index < builders.Length; index++)
+                    {
+                        builders[index](scope.PrimaryToken);
+                    }
+                }
+            );
+
+            return DispatchBenchmarkResult.ForRegistrationScenario(
+                GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit),
+                runIndex: -1,
+                allocations,
+                bytes,
+                minMilliseconds
+            );
+        }
+
+        // The per-kind MARGINAL registration cost: how much an ADDITIONAL registration of
+        // an already-registered (warm) message type allocates -- the steady-state cost a
+        // component pays when it registers another handler, and the surface the registration
+        // allocation work (token-side staging closure, handle, by-value metadata, the
+        // PendingDeregistration holder, and the bus-side de-registration closures) reduced.
+        // Distinct no-op handler delegates are pre-built OUTSIDE the measured window (each
+        // captures its index so the compiler cannot fold them to one cached delegate), which
+        // (a) keeps the user's handler-delegate allocation out of the measured number and
+        // (b) avoids any same-handler refcount-bump fast path, so every measured call is a
+        // genuine new registration. The published Standalone IL2CPP leg strips the GC.Alloc
+        // profiler, so its allocation columns read n/a; the in-editor PlayMode (Mono) leg
+        // supplies the real per-kind registration allocation numbers in the rendered doc.
+        private static DispatchBenchmarkResult MeasureRegistrationMarginal(
+            DispatchBenchmarkScenario scenario
+        )
+        {
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.UntargetedRegistrationMarginal:
+                    return MeasureRegistrationMarginal<SimpleUntargetedMessage>(
+                        scenario,
+                        static (token, handler) => token.RegisterUntargeted(handler)
+                    );
+                case DispatchBenchmarkScenario.TargetedRegistrationMarginal:
+                    return MeasureRegistrationMarginal<SimpleTargetedMessage>(
+                        scenario,
+                        static (token, handler) => token.RegisterTargeted(Target, handler)
+                    );
+                case DispatchBenchmarkScenario.BroadcastRegistrationMarginal:
+                    return MeasureRegistrationMarginal<SimpleBroadcastMessage>(
+                        scenario,
+                        static (token, handler) => token.RegisterBroadcast(Source, handler)
+                    );
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+            }
+        }
+
+        private static DispatchBenchmarkResult MeasureRegistrationMarginal<T>(
+            DispatchBenchmarkScenario scenario,
+            Func<
+                MessageRegistrationToken,
+                MessageHandler.FastHandler<T>,
+                MessageRegistrationHandle
+            > register
+        )
+            where T : DxMessaging.Core.IMessage
+        {
+            int total = RegistrationMarginalWarmup + RegistrationMarginalCount;
+
+            // Pre-build distinct handler delegates OUTSIDE the measured window. Each captures
+            // its index so the C# compiler cannot collapse them into a single cached static
+            // delegate, guaranteeing every registration is a genuine new one.
+            MessageHandler.FastHandler<T>[] handlers = new MessageHandler.FastHandler<T>[total];
+            for (int index = 0; index < total; index++)
+            {
+                int captured = index;
+                handlers[index] = (ref T message) =>
+                {
+                    // Reference the captured index so each delegate is a distinct closure
+                    // instance (the compiler cannot fold them to one cached static delegate),
+                    // guaranteeing every registration is genuinely new rather than a
+                    // same-delegate refcount bump. The message is intentionally ignored.
+                    _ = captured;
+                };
+            }
+
+            using BenchmarkRegistrationScope scope = new();
+            MessageRegistrationToken token = scope.PrimaryToken;
+
+            // Warm the type's dispatch structure + the global DxPools (register then remove)
+            // so the timed region measures only the marginal cost.
+            for (int index = 0; index < RegistrationMarginalWarmup; index++)
+            {
+                MessageRegistrationHandle warm = register(token, handlers[index]);
+                token.RemoveRegistration(warm);
+            }
+
             using AllocationProbe.Window window = AllocationProbe.BeginWindow();
             long startTimestamp = Stopwatch.GetTimestamp();
-            using (BenchmarkRegistrationScope scope = new())
+            for (int index = RegistrationMarginalWarmup; index < total; index++)
             {
-                for (int index = 0; index < builders.Length; index++)
-                {
-                    builders[index](scope.PrimaryToken);
-                }
+                _ = register(token, handlers[index]);
             }
             long endTimestamp = Stopwatch.GetTimestamp();
             AllocationProbe.AllocationSample sample = window.SampleBoth();
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
-                GetScenarioName(DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit),
+                GetScenarioName(scenario),
                 runIndex: -1,
                 sample.Allocations,
                 sample.Bytes,
@@ -309,6 +489,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     builders[index](scope.PrimaryToken);
                 }
 
+                // Single-shot by design (first-touch JIT of the teardown path); GC-quiesce so a
+                // pending collection cannot land inside the timed UnregisterAll.
+                QuiesceGarbageCollector();
                 using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 scope.PrimaryToken.UnregisterAll();
@@ -350,27 +533,28 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 warmupScope.PrimaryToken.UnregisterAll();
             }
 
-            using (BenchmarkRegistrationScope scope = new())
-            {
-                for (int index = 0; index < builders.Length; index++)
+            // Warm + repeatable: run several trials and report the MINIMUM wall clock. Each trial
+            // registers a fresh 1000-handler population UNTIMED, then times only UnregisterAll.
+            (double minMilliseconds, long allocations, long bytes) = MeasureWarmFloodMin(
+                () =>
                 {
-                    builders[index](scope.PrimaryToken);
-                }
+                    BenchmarkRegistrationScope scope = new();
+                    for (int index = 0; index < builders.Length; index++)
+                    {
+                        builders[index](scope.PrimaryToken);
+                    }
+                    return scope;
+                },
+                scope => scope.PrimaryToken.UnregisterAll()
+            );
 
-                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
-                long startTimestamp = Stopwatch.GetTimestamp();
-                scope.PrimaryToken.UnregisterAll();
-                long endTimestamp = Stopwatch.GetTimestamp();
-                AllocationProbe.AllocationSample sample = window.SampleBoth();
-
-                return DispatchBenchmarkResult.ForRegistrationScenario(
-                    GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit),
-                    runIndex: -1,
-                    sample.Allocations,
-                    sample.Bytes,
-                    TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
-                );
-            }
+            return DispatchBenchmarkResult.ForRegistrationScenario(
+                GetScenarioName(DispatchBenchmarkScenario.DeregistrationFlood1000TypesWarmJit),
+                runIndex: -1,
+                allocations,
+                bytes,
+                minMilliseconds
+            );
         }
 
         // The cold dispatch flood: the JIT-inclusive first-touch dispatch hitch, stabilized

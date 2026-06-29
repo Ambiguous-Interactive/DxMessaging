@@ -50,8 +50,15 @@ the code. In short:
   saving is one reload per PlayMode leg, and the persistent-domain path the
   `MessageTypeIdStabilityTests` fix protects is a local back-to-back-run property,
   not a CI one.
-- **One teardown frame, not one per object.** `MessagingTestBase.UnityCleanup`
-  queues every tracked destroy, then yields a single drain frame.
+- **One teardown frame, not one per object.** Deferred destroys are batched and
+  flushed in a single drain frame regardless of object count. In the normal
+  lifecycle the synchronous `[TearDown] Cleanup()` queues the tracked destroys and
+  the NEXT test's `UnitySetup` drains them in one frame before `Reset()` (verified
+  via the MCP loop on 6000.4: `[TearDown]` runs before `[UnityTearDown]`, so
+  `UnityCleanup` sees an already-cleared `_spawned` and its own drain is skipped).
+  That single `UnitySetup` yield is the residual per-test frame and is load-bearing
+  (fixtures that call `Object.Destroy` directly rely on it), so it cannot be removed
+  even by making the tracked teardown synchronous.
 - **`[UnityTest]` only when you yield.** A no-yield coroutine test is a synchronous
   test paying coroutine overhead; prefer `[Test]` where the lifecycle allows
   (a `[Test]` in a PlayMode assembly still runs in play mode). Pinned by the

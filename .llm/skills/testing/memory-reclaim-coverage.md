@@ -149,7 +149,11 @@ matrices, include an explicit `MemoryReclaim` leg.
 `AllocationMatrixTests` owns dispatch allocation guarantees. Reclamation work
 that changes trim or post-trim emit behavior needs allocation coverage:
 
-- Forced trim should remain bounded by `TrimAllocBudget`.
+- Repeated forced trim should be idempotent after the first reclaim (the first
+  force-trim evicts the dirty candidate; every subsequent force-trim evicts no
+  type/target slots and leaves the live type-slot count stable), pinned
+  DETERMINISTICALLY via the `IMessageBus.TrimResult` eviction counts rather than a
+  `GC.Alloc` count budget (which was warm-editor-flaky).
 - Emitting after a partial trim should remain zero-allocation.
 - Allocation tests that exercise multiple message kinds must use
   `MessageScenarios.AllKinds`.

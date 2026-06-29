@@ -2,9 +2,9 @@
 title: "Benchmark Methodology: Total Over One Window"
 id: "benchmark-methodology-total-over-window"
 category: "performance"
-version: "1.7.0"
+version: "1.8.0"
 created: "2026-06-07"
-updated: "2026-06-27"
+updated: "2026-06-28"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -205,16 +205,22 @@ required work.
 
 Warm-up is per scenario. `DispatchBenchmarkScenarios.WarmupEmits(scenario)`
 returns `WarmupEmits` (10,000) for every dispatch scenario except the
-registration and deregistration floods and the cold first-dispatch scenarios,
-which return 0 so they measure one-time or first-touch cost rather than steady
-state. `ComparisonScenarios.WarmupEmits(scenario)`
+registration (flood and per-kind marginal) and deregistration floods and the cold
+first-dispatch scenarios, which return 0 so they measure one-time, marginal, or
+first-touch cost rather than steady state. `ComparisonScenarios.WarmupEmits(scenario)`
 applies the same policy to the comparison bridges. The
 `BenchmarkProtocol.WarmupEmits = 10_000` constant stays the default; the
 per-scenario function is the only place that count diverges.
 
 Registration scenarios are the one documented exception to the throughput
 report shape: they report wall-clock milliseconds for one-time setup cost
-instead of steady-state emits per second.
+instead of steady-state emits per second. The three per-kind MARGINAL
+registration scenarios (`{Untargeted,Targeted,Broadcast}Registration_Marginal`)
+register 1000 more handlers of one already-warmed message type, using distinct
+pre-built handler delegates so the measured window captures only the registration
+machinery (not the handler delegate, and not a same-handler refcount bump); their
+allocation count/bytes (the published per-kind registration cost) populate on the
+profiler-bearing in-editor leg and read `n/a` on the stripped Standalone leg.
 
 ## The Byte Companion: gcAllocatedBytes
 

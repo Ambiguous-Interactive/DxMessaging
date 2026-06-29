@@ -98,7 +98,7 @@
 | [Array Pooling with ArrayPool and Custom Pools Part 1](./performance/array-pooling-part-1.md)                      | [ok] 204    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 56  | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Auto-Load Singleton Attribute](./performance/singleton-autoload.md)                                               | [draft] 111 | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
-| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [warn] 419  | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
+| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [warn] 425  | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
 | [Cache Builder Configuration](./performance/cache-eviction-builder.md)                                             | [ok] 203    | [intermediate] | [stable] | [risk: high]     | caching, builder        |
 | [Cache Eviction Implementation](./performance/cache-eviction-implementation.md)                                    | [draft] 90  | [advanced]     | [stable] | [risk: high]     | caching, eviction       |
 | [Cache Eviction Implementation Part 1](./performance/cache-eviction-implementation-part-1.md)                      | [ok] 244    | [intermediate] | [stable] | [risk: low]      | migration, split        |
@@ -107,7 +107,7 @@
 | [Collection Pooling with RAII Pattern Part 1](./performance/collection-pooling-part-1.md)                          | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Collection Pooling with RAII Pattern Part 2](./performance/collection-pooling-part-2.md)                          | [draft] 56  | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [warn] 296  | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path      |
-| [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 197    | [advanced]     | [stable] | [risk: critical] | memory, reclamation     |
+| [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 202    | [advanced]     | [stable] | [risk: critical] | memory, reclamation     |
 | [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 198    | [advanced]     | [stable] | [risk: critical] | sweep, eviction         |
 | [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 176    | [advanced]     | [stable] | [risk: high]     | caching, memory         |
 | [Mono vs IL2CPP Optimization Split](./performance/mono-vs-il2cpp-optimization-split.md)                            | [ok] 216    | [advanced]     | [stable] | [risk: high]     | performance, mono       |
@@ -174,20 +174,20 @@
 
 | Skill                                                                                                   | Lines       | Complexity     | Status   | Performance      | Tags                         |
 | ------------------------------------------------------------------------------------------------------- | ----------- | -------------- | -------- | ---------------- | ---------------------------- |
-| [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 395  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
+| [Allocation Coverage Required for Dispatch](./testing/allocation-coverage-required-for-dispatch.md)     | [warn] 425  | [intermediate] | [stable] | [risk: critical] | testing, allocation          |
 | [Benchmarks Run in the Highest-Fidelity Scope](./testing/benchmarks-run-in-highest-fidelity-scope.md)   | [ok] 183    | [intermediate] | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Comparison Parity and Package Single Source](./testing/comparison-parity-and-package-single-source.md) | [warn] 304  | [advanced]     | [stable] | [risk: medium]   | testing, benchmarks          |
 | [Data-Driven Coverage Patterns](./testing/test-coverage-data-driven.md)                                 | [ok] 172    | [intermediate] | [stable] | [risk: none]     | testing, data-driven         |
 | [Data-Driven Test Sources](./testing/data-driven-tests-sources.md)                                      | [ok] 255    | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Test Usage Patterns](./testing/data-driven-tests-usage.md)                                 | [draft] 107 | [intermediate] | [stable] | [risk: none]     | testing, parameterized       |
 | [Data-Driven Tests with TestCaseSource](./testing/data-driven-tests.md)                                 | [ok] 196    | [intermediate] | [stable] | [risk: low]      | testing, parameterized       |
-| [Fast Unity Tests: Reload, Frame Tax, and Anti-Patterns](./testing/fast-unity-tests.md)                 | [warn] 265  | [intermediate] | [stable] | [risk: none]     | testing, performance         |
+| [Fast Unity Tests: Reload, Frame Tax, and Anti-Patterns](./testing/fast-unity-tests.md)                 | [warn] 276  | [intermediate] | [stable] | [risk: none]     | testing, performance         |
 | [Git and Parser Robustness in CI/CD](./testing/git-workflow-robustness.md)                              | [ok] 213    | [intermediate] | [stable] | [risk: none]     | testing, git                 |
 | [Git and Parser Robustness in CI/CD Part 1](./testing/git-workflow-robustness-part-1.md)                | [ok] 187    | [intermediate] | [stable] | [risk: low]      | migration, split             |
 | [Inspector Overlay Invariants for MessageAwareComponent](./testing/inspector-overlay-invariants.md)     | [ok] 152    | [intermediate] | [stable] | [risk: low]      | testing, editor              |
 | [LeakWatcher: Detecting Registration Leaks in Tests](./testing/leak-watcher-usage.md)                   | [ok] 259    | [basic]        | [stable] | [risk: low]      | testing, leaks               |
 | [Lifecycle Edge-Case Test Coverage](./testing/lifecycle-edge-coverage.md)                               | [ok] 248    | [intermediate] | [stable] | [risk: none]     | testing, lifecycle           |
-| [Memory Reclaim Coverage](./testing/memory-reclaim-coverage.md)                                         | [ok] 183    | [intermediate] | [stable] | [risk: high]     | testing, memory              |
+| [Memory Reclaim Coverage](./testing/memory-reclaim-coverage.md)                                         | [ok] 187    | [intermediate] | [stable] | [risk: high]     | testing, memory              |
 | [Shared Fixtures: Generic Base](./testing/shared-test-fixtures-generic-base.md)                         | [ok] 185    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |
 | [Shared Fixtures: Reference Counting](./testing/shared-test-fixtures-reference-counting.md)             | [ok] 252    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |
 | [Shared Test Fixtures with Reference Counting](./testing/shared-test-fixtures.md)                       | [ok] 165    | [advanced]     | [stable] | [risk: high]     | testing, fixtures            |

@@ -18,6 +18,9 @@ const { deriveScope, alignTable } = require("./render-perf-doc.js");
 const REGISTRATION_SCENARIOS = new Set([
   "RegistrationFlood_1000Types_FromColdBus",
   "RegistrationFlood_1000Types_WarmJit",
+  "UntargetedRegistration_Marginal",
+  "TargetedRegistration_Marginal",
+  "BroadcastRegistration_Marginal",
   "DeregistrationFlood_1000Types_Cold",
   "DeregistrationFlood_1000Types_WarmJit",
   "UntargetedFirstDispatch_Cold",

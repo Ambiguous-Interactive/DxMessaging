@@ -83,6 +83,48 @@ namespace DxMessaging.Core.Internal
         /// invalidation. Idempotent.
         /// </summary>
         void Reset();
+
+        /// <summary>
+        /// Non-generic membership probe over the cache's entries map. The
+        /// per-handle teardown object (which carries no delegate-shape type
+        /// argument) uses this instead of a typed
+        /// <c>entries.ContainsKey</c> so it can decide whether the
+        /// over-deregistration silent-no-op guard fires without down-casting
+        /// to the concrete <c>HandlerActionCache&lt;TDelegate&gt;</c>.
+        /// </summary>
+        /// <param name="originalHandler">
+        /// The dedup/identity key (boxed delegate) the teardown captured at
+        /// registration time; cast back to the cache's delegate shape by the
+        /// implementation.
+        /// </param>
+        /// <returns>True iff an entry exists for the handler.</returns>
+        bool ContainsEntry(object originalHandler);
+
+        /// <summary>
+        /// Bumps <see cref="Version"/> by one. Mirrors the explicit
+        /// <c>version++</c> the legacy deregistration closure performed at the
+        /// top of its body (before the bus deregister call) so any in-flight
+        /// dispatch snapshot detects invalidation at the same point.
+        /// </summary>
+        void BumpVersion();
+
+        /// <summary>
+        /// Non-generic decrement-or-remove for the captured handler entry.
+        /// Mirrors the EXACT refcount logic the legacy deregistration closure
+        /// used: if the entry's refcount is at or below one, removes it from
+        /// both the entries map and the insertion-order list and bumps
+        /// <see cref="Version"/> a second time (reporting
+        /// <paramref name="wasLastForEntry"/> = true so the caller can
+        /// decrement the owning slot's live count); otherwise decrements the
+        /// refcount in place, preserving the first registration's handler /
+        /// flat invoker.
+        /// </summary>
+        /// <param name="originalHandler">The dedup/identity key (boxed delegate).</param>
+        /// <param name="wasLastForEntry">
+        /// True iff this call removed the entry (the refcount reached zero).
+        /// </param>
+        /// <returns>True iff an entry existed for the handler.</returns>
+        bool DeregisterEntry(object originalHandler, out bool wasLastForEntry);
     }
 
     /// <summary>

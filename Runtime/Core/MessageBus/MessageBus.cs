@@ -2562,7 +2562,10 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterUntargeted<T>(MessageHandler messageHandler, int priority = 0)
+        public MessageBusRegistration RegisterUntargeted<T>(
+            MessageHandler messageHandler,
+            int priority = 0
+        )
             where T : IUntargetedMessage
         {
             EnsureAotUntargetedBridge<T>();
@@ -2575,7 +2578,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterTargeted<T>(
+        public MessageBusRegistration RegisterTargeted<T>(
             InstanceId target,
             MessageHandler messageHandler,
             int priority = 0
@@ -2593,7 +2596,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterSourcedBroadcast<T>(
+        public MessageBusRegistration RegisterSourcedBroadcast<T>(
             InstanceId source,
             MessageHandler messageHandler,
             int priority = 0
@@ -2611,7 +2614,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterSourcedBroadcastWithoutSource<T>(
+        public MessageBusRegistration RegisterSourcedBroadcastWithoutSource<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
@@ -2627,7 +2630,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterTargetedWithoutTargeting<T>(
+        public MessageBusRegistration RegisterTargetedWithoutTargeting<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
@@ -2643,7 +2646,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterGlobalAcceptAll(MessageHandler messageHandler)
+        public MessageBusRegistration RegisterGlobalAcceptAll(MessageHandler messageHandler)
         {
             long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
@@ -2689,88 +2692,107 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             long capturedSweepGeneration = _globalSlotSweepGeneration;
-            return () =>
+            return new MessageBusRegistration(
+                MessageBusRegistration.Kind.GlobalAcceptAll,
+                RegistrationMethod.GlobalAcceptAll,
+                0,
+                capturedGeneration,
+                capturedSweepGeneration,
+                touchTick,
+                null,
+                null,
+                messageHandler,
+                default
+            );
+        }
+
+        /// <summary>
+        /// Re-expression of the former <see cref="RegisterGlobalAcceptAll"/> closure body: the
+        /// global accept-all deregistration. Behaviour and both generation guards are unchanged.
+        /// </summary>
+        private void DeregisterGlobalAcceptAll(in MessageBusRegistration reg)
+        {
+            // Generation guard: see DeregisterScalarHandler. The global slot guards on BOTH the
+            // reset generation and the global-slot sweep generation.
+            if (
+                reg.generation != _resetGeneration
+                || reg.sweepGeneration != _globalSlotSweepGeneration
+            )
             {
-                // Generation guard: see InternalRegisterUntargeted for the
-                // rationale. Skip silently when the closure outlived a Reset.
-                if (
-                    capturedGeneration != _resetGeneration
-                    || capturedSweepGeneration != _globalSlotSweepGeneration
+                return;
+            }
+
+            MessageHandler messageHandler = (MessageHandler)reg.payload;
+            Type type = typeof(IMessage);
+
+            long deregisterTouchTick = AdvanceTick();
+            InvalidateDispatchPlans();
+            _globalSlots.version++;
+            _log.Log(
+                new MessagingRegistration(
+                    messageHandler.owner,
+                    type,
+                    RegistrationType.Deregister,
+                    RegistrationMethod.GlobalAcceptAll
                 )
+            );
+            if (!_globalSlots.sharedHandlers.TryGetValue(messageHandler, out int count))
+            {
+                if (MessagingDebug.enabled)
                 {
-                    return;
+                    MessagingDebug.Log(
+                        LogLevel.Error,
+                        "Received over-deregistration of GlobalAcceptAll for MessageHandler {0}. Check to make sure you're not calling (de)registration multiple times.",
+                        messageHandler
+                    );
                 }
 
-                long deregisterTouchTick = AdvanceTick();
-                InvalidateDispatchPlans();
-                _globalSlots.version++;
-                _log.Log(
-                    new MessagingRegistration(
-                        messageHandler.owner,
-                        type,
-                        RegistrationType.Deregister,
-                        RegistrationMethod.GlobalAcceptAll
-                    )
-                );
-                if (!_globalSlots.sharedHandlers.TryGetValue(messageHandler, out count))
-                {
-                    if (MessagingDebug.enabled)
-                    {
-                        MessagingDebug.Log(
-                            LogLevel.Error,
-                            "Received over-deregistration of GlobalAcceptAll for MessageHandler {0}. Check to make sure you're not calling (de)registration multiple times.",
-                            messageHandler
-                        );
-                    }
+                return;
+            }
 
-                    return;
-                }
+            _globalSlots.lastTouchTicks = deregisterTouchTick;
+            if (count <= 1)
+            {
+                _ = _globalSlots.sharedHandlers.Remove(messageHandler);
+                MarkDirtyHandler(messageHandler);
+                _globalSlotSweepCandidate = true;
+                // Final-removal of this handler from sharedHandlers is the 1 -> 0 transition that
+                // mirrors back into liveCount. Partial deregistration (count > 1) leaves liveCount
+                // alone -- the dictionary entry is still present.
+                _globalSlots.liveCount--;
+            }
+            else
+            {
+                _globalSlots.sharedHandlers[messageHandler] = count - 1;
+            }
 
-                _globalSlots.lastTouchTicks = deregisterTouchTick;
-                if (count <= 1)
-                {
-                    _ = _globalSlots.sharedHandlers.Remove(messageHandler);
-                    MarkDirtyHandler(messageHandler);
-                    _globalSlotSweepCandidate = true;
-                    // Final-removal of this handler from sharedHandlers is the
-                    // 1 -> 0 transition that mirrors back into liveCount.
-                    // Partial deregistration (count > 1) leaves liveCount
-                    // alone -- the dictionary entry is still present.
-                    _globalSlots.liveCount--;
-                }
-                else
-                {
-                    _globalSlots.sharedHandlers[messageHandler] = count - 1;
-                }
-
-                StageGlobalDispatchSnapshot<IUntargetedMessage>(
-                    this,
-                    _globalSlots,
-                    DispatchKind.Untargeted
-                );
-                StageGlobalDispatchSnapshot<ITargetedMessage>(
-                    this,
-                    _globalSlots,
-                    DispatchKind.Targeted
-                );
-                StageGlobalDispatchSnapshot<IBroadcastMessage>(
-                    this,
-                    _globalSlots,
-                    DispatchKind.Broadcast
-                );
-                DebugAssertGlobalLiveCount();
-            };
+            StageGlobalDispatchSnapshot<IUntargetedMessage>(
+                this,
+                _globalSlots,
+                DispatchKind.Untargeted
+            );
+            StageGlobalDispatchSnapshot<ITargetedMessage>(
+                this,
+                _globalSlots,
+                DispatchKind.Targeted
+            );
+            StageGlobalDispatchSnapshot<IBroadcastMessage>(
+                this,
+                _globalSlots,
+                DispatchKind.Broadcast
+            );
+            DebugAssertGlobalLiveCount();
         }
 
         /// <inheritdoc />
-        public Action RegisterUntargetedInterceptor<T>(
+        public MessageBusRegistration RegisterUntargetedInterceptor<T>(
             UntargetedInterceptor<T> interceptor,
             int priority = 0
         )
             where T : IUntargetedMessage
         {
             EnsureAotUntargetedBridge<T>();
-            _ = AdvanceTick();
+            long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _untargetedInterceptsByType.GetOrAdd<T>();
@@ -2819,107 +2841,29 @@ namespace DxMessaging.Core.MessageBus
             );
 
             long capturedGeneration = _resetGeneration;
-            return () =>
-            {
-                // Generation guard: see InternalRegisterUntargeted for the
-                // rationale. Skip silently when the closure outlived a Reset.
-                if (capturedGeneration != _resetGeneration)
-                {
-                    return;
-                }
-                if (
-                    IsStaleInterceptorDeregisterAfterSweep<T>(
-                        _untargetedInterceptsByType,
-                        capturedInterceptors
-                    )
-                )
-                {
-                    return;
-                }
-
-                _ = AdvanceTick();
-                InvalidateDispatchPlans();
-                prioritizedInterceptors.lastTouchTicks = _tickCounter;
-                MarkDirtyType<T>();
-                _log.Log(
-                    new MessagingRegistration(
-                        InstanceId.EmptyId,
-                        type,
-                        RegistrationType.Deregister,
-                        RegistrationMethod.Interceptor
-                    )
-                );
-                bool removed = false;
-                if (_uniqueInterceptorsAndPriorities.TryGetValue(interceptor, out priorityCount))
-                {
-                    if (priorityCount.TryGetValue(priority, out count))
-                    {
-                        if (1 < count)
-                        {
-                            priorityCount[priority] = count - 1;
-                        }
-                        else
-                        {
-                            removed = true;
-                            _ = priorityCount.Remove(priority);
-                        }
-                    }
-
-                    if (priorityCount.Count == 0)
-                    {
-                        _uniqueInterceptorsAndPriorities.Remove(interceptor);
-                    }
-                }
-                else if (MessagingDebug.enabled)
-                {
-                    MessagingDebug.Log(
-                        LogLevel.Error,
-                        "Received over-deregistration of Interceptor {0}. Check to make sure you're not calling (de)registration multiple times.",
-                        interceptor
-                    );
-                }
-
-                bool complete = false;
-                if (removed)
-                {
-                    if (_untargetedInterceptsByType.TryGetValue<T>(out prioritizedInterceptors))
-                    {
-                        if (
-                            prioritizedInterceptors.handlers.TryGetValue(
-                                priority,
-                                out List<object> interceptors
-                            )
-                        )
-                        {
-                            complete = interceptors.Remove(interceptor);
-                            if (interceptors.Count == 0)
-                            {
-                                _ = prioritizedInterceptors.handlers.Remove(priority);
-                            }
-                        }
-                    }
-
-                    if (!complete && MessagingDebug.enabled)
-                    {
-                        MessagingDebug.Log(
-                            LogLevel.Error,
-                            "Received over-deregistration of Interceptor {0}. Check to make sure you're not calling (de)registration multiple times.",
-                            interceptor
-                        );
-                    }
-                }
-            };
+            return new MessageBusRegistration(
+                MessageBusRegistration.Kind.UntargetedInterceptor,
+                RegistrationMethod.Interceptor,
+                priority,
+                capturedGeneration,
+                0L,
+                touchTick,
+                capturedInterceptors,
+                null,
+                interceptor,
+                default
+            );
         }
 
         /// <inheritdoc />
-        public Action RegisterTargetedInterceptor<T>(
+        public MessageBusRegistration RegisterTargetedInterceptor<T>(
             TargetedInterceptor<T> interceptor,
             int priority = 0
         )
             where T : ITargetedMessage
         {
             EnsureAotTargetedBridge<T>();
-            _ = AdvanceTick();
+            long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _targetedInterceptsByType.GetOrAdd<T>();
@@ -2968,107 +2912,29 @@ namespace DxMessaging.Core.MessageBus
             );
 
             long capturedGeneration = _resetGeneration;
-            return () =>
-            {
-                // Generation guard: see InternalRegisterUntargeted for the
-                // rationale. Skip silently when the closure outlived a Reset.
-                if (capturedGeneration != _resetGeneration)
-                {
-                    return;
-                }
-                if (
-                    IsStaleInterceptorDeregisterAfterSweep<T>(
-                        _targetedInterceptsByType,
-                        capturedInterceptors
-                    )
-                )
-                {
-                    return;
-                }
-
-                _ = AdvanceTick();
-                InvalidateDispatchPlans();
-                prioritizedInterceptors.lastTouchTicks = _tickCounter;
-                MarkDirtyType<T>();
-                _log.Log(
-                    new MessagingRegistration(
-                        InstanceId.EmptyId,
-                        type,
-                        RegistrationType.Deregister,
-                        RegistrationMethod.Interceptor
-                    )
-                );
-                bool removed = false;
-                if (_uniqueInterceptorsAndPriorities.TryGetValue(interceptor, out priorityCount))
-                {
-                    if (priorityCount.TryGetValue(priority, out count))
-                    {
-                        if (1 < count)
-                        {
-                            priorityCount[priority] = count - 1;
-                        }
-                        else
-                        {
-                            removed = true;
-                            _ = priorityCount.Remove(priority);
-                        }
-                    }
-
-                    if (priorityCount.Count == 0)
-                    {
-                        _uniqueInterceptorsAndPriorities.Remove(interceptor);
-                    }
-                }
-                else if (MessagingDebug.enabled)
-                {
-                    MessagingDebug.Log(
-                        LogLevel.Error,
-                        "Received over-deregistration of Interceptor {0}. Check to make sure you're not calling (de)registration multiple times.",
-                        interceptor
-                    );
-                }
-
-                bool complete = false;
-                if (removed)
-                {
-                    if (_targetedInterceptsByType.TryGetValue<T>(out prioritizedInterceptors))
-                    {
-                        if (
-                            prioritizedInterceptors.handlers.TryGetValue(
-                                priority,
-                                out List<object> interceptors
-                            )
-                        )
-                        {
-                            complete = interceptors.Remove(interceptor);
-                            if (interceptors.Count == 0)
-                            {
-                                _ = prioritizedInterceptors.handlers.Remove(priority);
-                            }
-                        }
-                    }
-
-                    if (!complete && MessagingDebug.enabled)
-                    {
-                        MessagingDebug.Log(
-                            LogLevel.Error,
-                            "Received over-deregistration of Interceptor {0}. Check to make sure you're not calling (de)registration multiple times.",
-                            interceptor
-                        );
-                    }
-                }
-            };
+            return new MessageBusRegistration(
+                MessageBusRegistration.Kind.TargetedInterceptor,
+                RegistrationMethod.Interceptor,
+                priority,
+                capturedGeneration,
+                0L,
+                touchTick,
+                capturedInterceptors,
+                null,
+                interceptor,
+                default
+            );
         }
 
         /// <inheritdoc />
-        public Action RegisterBroadcastInterceptor<T>(
+        public MessageBusRegistration RegisterBroadcastInterceptor<T>(
             BroadcastInterceptor<T> interceptor,
             int priority = 0
         )
             where T : IBroadcastMessage
         {
             EnsureAotSourcedBridge<T>();
-            _ = AdvanceTick();
+            long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
             InterceptorCache<object> prioritizedInterceptors =
                 _broadcastInterceptsByType.GetOrAdd<T>();
@@ -3117,96 +2983,18 @@ namespace DxMessaging.Core.MessageBus
             );
 
             long capturedGeneration = _resetGeneration;
-            return () =>
-            {
-                // Generation guard: see InternalRegisterUntargeted for the
-                // rationale. Skip silently when the closure outlived a Reset.
-                if (capturedGeneration != _resetGeneration)
-                {
-                    return;
-                }
-                if (
-                    IsStaleInterceptorDeregisterAfterSweep<T>(
-                        _broadcastInterceptsByType,
-                        capturedInterceptors
-                    )
-                )
-                {
-                    return;
-                }
-
-                _ = AdvanceTick();
-                InvalidateDispatchPlans();
-                prioritizedInterceptors.lastTouchTicks = _tickCounter;
-                MarkDirtyType<T>();
-                _log.Log(
-                    new MessagingRegistration(
-                        InstanceId.EmptyId,
-                        type,
-                        RegistrationType.Deregister,
-                        RegistrationMethod.Interceptor
-                    )
-                );
-                bool removed = false;
-                if (_uniqueInterceptorsAndPriorities.TryGetValue(interceptor, out priorityCount))
-                {
-                    if (priorityCount.TryGetValue(priority, out count))
-                    {
-                        if (1 < count)
-                        {
-                            priorityCount[priority] = count - 1;
-                        }
-                        else
-                        {
-                            removed = true;
-                            _ = priorityCount.Remove(priority);
-                        }
-                    }
-
-                    if (priorityCount.Count == 0)
-                    {
-                        _uniqueInterceptorsAndPriorities.Remove(interceptor);
-                    }
-                }
-                else if (MessagingDebug.enabled)
-                {
-                    MessagingDebug.Log(
-                        LogLevel.Error,
-                        "Received over-deregistration of Interceptor {0}. Check to make sure you're not calling (de)registration multiple times.",
-                        interceptor
-                    );
-                }
-
-                bool complete = false;
-                if (removed)
-                {
-                    if (_broadcastInterceptsByType.TryGetValue<T>(out prioritizedInterceptors))
-                    {
-                        if (
-                            prioritizedInterceptors.handlers.TryGetValue(
-                                priority,
-                                out List<object> interceptors
-                            )
-                        )
-                        {
-                            complete = interceptors.Remove(interceptor);
-                            if (interceptors.Count == 0)
-                            {
-                                _ = prioritizedInterceptors.handlers.Remove(priority);
-                            }
-                        }
-                    }
-
-                    if (!complete && MessagingDebug.enabled)
-                    {
-                        MessagingDebug.Log(
-                            LogLevel.Error,
-                            "Received over-deregistration of Interceptor {0}. Check to make sure you're not calling (de)registration multiple times.",
-                            interceptor
-                        );
-                    }
-                }
-            };
+            return new MessageBusRegistration(
+                MessageBusRegistration.Kind.BroadcastInterceptor,
+                RegistrationMethod.Interceptor,
+                priority,
+                capturedGeneration,
+                0L,
+                touchTick,
+                capturedInterceptors,
+                null,
+                interceptor,
+                default
+            );
         }
 
         private bool IsStaleInterceptorDeregisterAfterSweep<T>(
@@ -3221,7 +3009,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterUntargetedPostProcessor<T>(
+        public MessageBusRegistration RegisterUntargetedPostProcessor<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
@@ -3237,7 +3025,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterTargetedPostProcessor<T>(
+        public MessageBusRegistration RegisterTargetedPostProcessor<T>(
             InstanceId target,
             MessageHandler messageHandler,
             int priority = 0
@@ -3255,7 +3043,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterTargetedWithoutTargetingPostProcessor<T>(
+        public MessageBusRegistration RegisterTargetedWithoutTargetingPostProcessor<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
@@ -3271,7 +3059,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterBroadcastPostProcessor<T>(
+        public MessageBusRegistration RegisterBroadcastPostProcessor<T>(
             InstanceId source,
             MessageHandler messageHandler,
             int priority = 0
@@ -3289,7 +3077,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <inheritdoc />
-        public Action RegisterBroadcastWithoutSourcePostProcessor<T>(
+        public MessageBusRegistration RegisterBroadcastWithoutSourcePostProcessor<T>(
             MessageHandler messageHandler,
             int priority = 0
         )
@@ -5122,7 +4910,7 @@ namespace DxMessaging.Core.MessageBus
             return true;
         }
 
-        private Action InternalRegisterUntargeted<T>(
+        private MessageBusRegistration InternalRegisterUntargeted<T>(
             MessageHandler messageHandler,
             MessageCache<HandlerCache<int, HandlerCache>> sinks,
             RegistrationMethod registrationMethod,
@@ -5182,48 +4970,65 @@ namespace DxMessaging.Core.MessageBus
             );
 
             long capturedGeneration = _resetGeneration;
-            return () =>
+            return new MessageBusRegistration(
+                MessageBusRegistration.Kind.Handler,
+                registrationMethod,
+                priority,
+                capturedGeneration,
+                0L,
+                touchTick,
+                capturedHandlers,
+                null,
+                messageHandler,
+                default
+            );
+        }
+
+        /// <summary>
+        /// Re-expression of the former <see cref="InternalRegisterUntargeted{T}"/> closure body:
+        /// the scalar (untargeted / without-context) handler deregistration. Behaviour and the
+        /// four reentrancy invariants are unchanged; the closure's captured locals are read from
+        /// <paramref name="reg"/>'s fields instead, and the sink is re-resolved from the method.
+        /// </summary>
+        private void DeregisterScalarHandler<T>(in MessageBusRegistration reg)
+            where T : IMessage
+        {
+            // Generation guard: if ResetState() ran after this handle was captured (e.g. a
+            // deferred Object.Destroy fires after a domain-reload-style reset), silently no-op
+            // rather than logging a misleading over-deregistration error.
+            if (reg.generation != _resetGeneration)
             {
-                // Generation guard: if ResetState() ran after this closure was
-                // captured (e.g. a deferred Object.Destroy fires after a
-                // domain-reload-style reset), silently no-op rather than
-                // logging a misleading over-deregistration error.
-                if (capturedGeneration != _resetGeneration)
-                {
-                    return;
-                }
+                return;
+            }
 
-                long deregisterTouchTick = AdvanceTick();
-                InvalidateDispatchPlans();
-                cache.version++;
-                if (
-                    !sinks.TryGetValue<T>(out handlers)
-                    || !ReferenceEquals(handlers, capturedHandlers)
-                    || !handlers.handlers.TryGetValue(priority, out cache)
-                    || !cache.handlers.TryGetValue(messageHandler, out count)
-                )
-                {
-                    if (
-                        capturedHandlers.handlers.Count == 0
-                        && !ReferenceEquals(handlers, capturedHandlers)
-                    )
-                    {
-                        return;
-                    }
+            MessageHandler messageHandler = (MessageHandler)reg.payload;
+            HandlerCache<int, HandlerCache> capturedHandlers =
+                (HandlerCache<int, HandlerCache>)reg.capturedPrimary;
+            int priority = reg.priority;
+            RegistrationMethod registrationMethod = reg.method;
+            SlotKey slotKey = RegistrationMethodAxes.GetSlotKey(registrationMethod);
+            Type type = typeof(T);
+            InstanceId handlerOwnerId = messageHandler.owner;
 
-                    if (MessagingDebug.enabled)
-                    {
-                        MessagingDebug.Log(
-                            LogLevel.Error,
-                            "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
-                            type,
-                            messageHandler
-                        );
-                    }
+            long deregisterTouchTick = AdvanceTick();
+            InvalidateDispatchPlans();
 
-                    return;
-                }
-
+            // FAST PATH: operate on the captured leaf handler-cache (already pinned on the
+            // handle at registration time) DIRECTLY, without re-resolving the sink from the
+            // method (ScalarSinkForMethod) or re-walking sinks->type->priority->handler. When
+            // the generation guard above has passed and the captured bucket still holds this
+            // handler, the captured leaf IS the live sink entry (handles are unique and never
+            // reused), so the re-resolution + ReferenceEquals identity check is redundant. The
+            // sweep-staleness / over-deregistration classification only matters when the handler
+            // is NOT found, so it is deferred to the cold fallback below. This removes the
+            // per-deregistration sink re-resolution (the measured cold-path regression source)
+            // while preserving every guard and the throw-safe ordering (this method performs no
+            // user callback; the throwing IMessageBus.Deregister boundary is the caller's).
+            if (
+                capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                && cache.handlers.TryGetValue(messageHandler, out int count)
+            )
+            {
                 _log.Log(
                     new MessagingRegistration(
                         handlerOwnerId,
@@ -5232,30 +5037,28 @@ namespace DxMessaging.Core.MessageBus
                         registrationMethod
                     )
                 );
-                Touch(handlers, deregisterTouchTick);
-                handlers.version++;
-                handler = cache.handlers;
+                Touch(capturedHandlers, deregisterTouchTick);
+                capturedHandlers.version++;
+                cache.version++;
+                Dictionary<MessageHandler, int> handler = cache.handlers;
                 if (count <= 1)
                 {
-                    bool complete = handler.Remove(messageHandler);
-                    // List.Remove is O(n) over the same-priority bucket.
-                    // Accepted tradeoff (here and at the context-path sibling
-                    // site): buckets are small in practice, removal is a cold
-                    // churn path, and the list keeps dispatch-order rebuilds
-                    // allocation-free while preserving first-registration
-                    // order, unlike Dictionary enumeration whose freed slots
-                    // are reused LIFO. Mirrors the MessageHandler-side
+                    _ = handler.Remove(messageHandler);
+                    // List.Remove is O(n) over the same-priority bucket. Accepted tradeoff (here
+                    // and at the context-path sibling site): buckets are small in practice,
+                    // removal is a cold churn path, and the list keeps dispatch-order rebuilds
+                    // allocation-free while preserving first-registration order, unlike Dictionary
+                    // enumeration whose freed slots are reused LIFO. Mirrors the MessageHandler-side
                     // insertionOrder tradeoff.
                     _ = cache.insertionOrder.Remove(messageHandler);
                     MarkDirtyHandler(messageHandler);
-                    cache.version++;
                     // do not mutate cache.cache here; let next read rebuild from handlers
 
                     if (handler.Count == 0)
                     {
-                        _ = handlers.handlers.Remove(priority);
+                        _ = capturedHandlers.handlers.Remove(priority);
                         // remove priority from order
-                        List<int> order = handlers.order;
+                        List<int> order = capturedHandlers.order;
                         int removeIdx = order.IndexOf(priority);
                         if (removeIdx >= 0)
                         {
@@ -5263,30 +5066,51 @@ namespace DxMessaging.Core.MessageBus
                         }
                     }
 
-                    if (handlers.handlers.Count == 0)
+                    if (capturedHandlers.handlers.Count == 0)
                     {
                         MarkDirtyType<T>();
-                    }
-
-                    if (!complete && MessagingDebug.enabled)
-                    {
-                        MessagingDebug.Log(
-                            LogLevel.Error,
-                            "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
-                            type,
-                            messageHandler
-                        );
                     }
                 }
                 else
                 {
                     handler[messageHandler] = count - 1;
                 }
-                StageDispatchSnapshot<T>(this, handlers, slotKey);
-            };
+                StageDispatchSnapshot<T>(this, capturedHandlers, slotKey);
+                return;
+            }
+
+            // COLD FALLBACK: the handler was not found in the captured bucket, so this is a no-op
+            // deregistration (post-sweep, or a genuine over-deregistration) -- nothing is removed,
+            // so NO version bump / snapshot invalidation is performed. Bumping here would
+            // spuriously rebuild whichever bucket currently occupies this priority, which after a
+            // full deregister + re-registration at the same priority is the NEW live bucket (the
+            // stale handle must not touch it). Re-resolve the live sink only to CLASSIFY this as a
+            // silent stale-after-sweep no-op versus a genuine over-deregistration. Rare path; not
+            // on the steady deregistration cost.
+            MessageCache<HandlerCache<int, HandlerCache>> sinks = ScalarSinkForMethod(
+                registrationMethod
+            );
+            _ = sinks.TryGetValue<T>(out HandlerCache<int, HandlerCache> handlers);
+            if (
+                capturedHandlers.handlers.Count == 0
+                && !ReferenceEquals(handlers, capturedHandlers)
+            )
+            {
+                return;
+            }
+
+            if (MessagingDebug.enabled)
+            {
+                MessagingDebug.Log(
+                    LogLevel.Error,
+                    "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
+                    type,
+                    messageHandler
+                );
+            }
         }
 
-        private Action InternalRegisterWithContext<T>(
+        private MessageBusRegistration InternalRegisterWithContext<T>(
             InstanceId context,
             MessageHandler messageHandler,
             MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks,
@@ -5362,45 +5186,59 @@ namespace DxMessaging.Core.MessageBus
             StageDispatchSnapshot<T>(this, handlers, slotKey);
 
             long capturedGeneration = _resetGeneration;
-            return () =>
+            return new MessageBusRegistration(
+                MessageBusRegistration.Kind.Handler,
+                registrationMethod,
+                priority,
+                capturedGeneration,
+                0L,
+                touchTick,
+                capturedHandlers,
+                capturedBroadcastHandlers,
+                messageHandler,
+                context
+            );
+        }
+
+        /// <summary>
+        /// Re-expression of the former <see cref="InternalRegisterWithContext{T}"/> closure body:
+        /// the keyed (targeted / sourced-broadcast) handler deregistration. Behaviour and the four
+        /// reentrancy invariants are unchanged; the closure's captured locals are read from
+        /// <paramref name="reg"/>'s fields, and the sink is re-resolved from the method.
+        /// </summary>
+        private void DeregisterContextHandler<T>(in MessageBusRegistration reg)
+            where T : IMessage
+        {
+            // Generation guard: see DeregisterScalarHandler for the rationale. Skip silently when
+            // the handle outlived a Reset.
+            if (reg.generation != _resetGeneration)
             {
-                // Generation guard: see InternalRegisterUntargeted for the
-                // rationale. Skip silently when the closure outlived a Reset.
-                if (capturedGeneration != _resetGeneration)
-                {
-                    return;
-                }
+                return;
+            }
 
-                long deregisterTouchTick = AdvanceTick();
-                InvalidateDispatchPlans();
-                cache.version++;
-                if (
-                    !sinks.TryGetValue<T>(out broadcastHandlers)
-                    || !ReferenceEquals(broadcastHandlers, capturedBroadcastHandlers)
-                    || !broadcastHandlers.TryGetValue(context, out handlers)
-                    || !ReferenceEquals(handlers, capturedHandlers)
-                    || !handlers.handlers.TryGetValue(priority, out cache)
-                    || !cache.handlers.TryGetValue(messageHandler, out count)
-                )
-                {
-                    if (IsStaleContextDeregisterAfterSweep<T>(sinks, context, capturedHandlers))
-                    {
-                        return;
-                    }
+            MessageHandler messageHandler = (MessageHandler)reg.payload;
+            HandlerCache<int, HandlerCache> capturedHandlers =
+                (HandlerCache<int, HandlerCache>)reg.capturedPrimary;
+            InstanceId context = reg.context;
+            int priority = reg.priority;
+            RegistrationMethod registrationMethod = reg.method;
+            SlotKey slotKey = RegistrationMethodAxes.GetSlotKey(registrationMethod);
+            Type type = typeof(T);
 
-                    if (MessagingDebug.enabled)
-                    {
-                        MessagingDebug.Log(
-                            LogLevel.Error,
-                            "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
-                            type,
-                            messageHandler
-                        );
-                    }
+            long deregisterTouchTick = AdvanceTick();
+            InvalidateDispatchPlans();
 
-                    return;
-                }
-
+            // FAST PATH: operate on the captured per-context leaf handler-cache directly, without
+            // re-resolving the sink (ContextSinkForMethod) or re-walking sinks->type->context->
+            // priority->handler. See DeregisterScalarHandler for the full rationale and the
+            // sweep-staleness argument (the context sweep, like the scalar sweep, only evicts
+            // EMPTY caches, so a found handler is never in a swept/detached cache). Throw-safe:
+            // no user callback runs here.
+            if (
+                capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
+                && cache.handlers.TryGetValue(messageHandler, out int count)
+            )
+            {
                 _log.Log(
                     new MessagingRegistration(
                         context,
@@ -5409,23 +5247,23 @@ namespace DxMessaging.Core.MessageBus
                         registrationMethod
                     )
                 );
-                Touch(handlers, deregisterTouchTick);
-                handler = cache.handlers;
+                Touch(capturedHandlers, deregisterTouchTick);
+                cache.version++;
+                Dictionary<MessageHandler, int> handler = cache.handlers;
                 if (count <= 1)
                 {
-                    bool complete = handler.Remove(messageHandler);
-                    // O(n) List.Remove: see the tradeoff comment at the
-                    // scalar-path sibling site in InternalRegisterUntargeted.
+                    _ = handler.Remove(messageHandler);
+                    // O(n) List.Remove: see the tradeoff comment at the scalar-path sibling site in
+                    // DeregisterScalarHandler.
                     _ = cache.insertionOrder.Remove(messageHandler);
                     MarkDirtyHandler(messageHandler);
-                    cache.version++;
                     // do not mutate cache.cache here; let next read rebuild from handlers
                     if (handler.Count == 0)
                     {
-                        handlers.version++;
-                        _ = handlers.handlers.Remove(priority);
+                        capturedHandlers.version++;
+                        _ = capturedHandlers.handlers.Remove(priority);
                         // remove priority from order
-                        List<int> order = handlers.order;
+                        List<int> order = capturedHandlers.order;
                         int removeIdx = order.IndexOf(priority);
                         if (removeIdx >= 0)
                         {
@@ -5433,28 +5271,264 @@ namespace DxMessaging.Core.MessageBus
                         }
                     }
 
-                    if (handlers.handlers.Count == 0)
+                    if (capturedHandlers.handlers.Count == 0)
                     {
                         MarkDirtyTarget<T>(context);
-                    }
-
-                    if (!complete && MessagingDebug.enabled)
-                    {
-                        MessagingDebug.Log(
-                            LogLevel.Error,
-                            "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
-                            type,
-                            messageHandler
-                        );
                     }
                 }
                 else
                 {
                     handler[messageHandler] = count - 1;
                 }
-                StageDispatchSnapshot<T>(this, handlers, slotKey);
-            };
+                StageDispatchSnapshot<T>(this, capturedHandlers, slotKey);
+                return;
+            }
+
+            // COLD FALLBACK: handler not found in the captured bucket -> a no-op deregistration
+            // (nothing removed), so NO version bump is performed (it would spuriously rebuild the
+            // bucket currently at this priority -- the NEW live bucket after a full deregister +
+            // re-registration). Re-resolve only to CLASSIFY stale-after-sweep (silent) versus
+            // over-deregistration (error). Rare path; not on the steady deregistration cost.
+            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks =
+                ContextSinkForMethod(registrationMethod);
+            if (IsStaleContextDeregisterAfterSweep<T>(sinks, context, capturedHandlers))
+            {
+                return;
+            }
+
+            if (MessagingDebug.enabled)
+            {
+                MessagingDebug.Log(
+                    LogLevel.Error,
+                    "Received over-deregistration of {0} for {1}. Check to make sure you're not calling (de)registration multiple times.",
+                    type,
+                    messageHandler
+                );
+            }
         }
+
+        /// <inheritdoc />
+        public void Deregister<T>(in MessageBusRegistration registration)
+            where T : IMessage
+        {
+            switch (registration.kind)
+            {
+                case MessageBusRegistration.Kind.Handler:
+                    if (IsContextMethod(registration.method))
+                    {
+                        DeregisterContextHandler<T>(in registration);
+                    }
+                    else
+                    {
+                        DeregisterScalarHandler<T>(in registration);
+                    }
+                    break;
+                case MessageBusRegistration.Kind.UntargetedInterceptor:
+                case MessageBusRegistration.Kind.TargetedInterceptor:
+                case MessageBusRegistration.Kind.BroadcastInterceptor:
+                    DeregisterInterceptor<T>(in registration);
+                    break;
+                case MessageBusRegistration.Kind.GlobalAcceptAll:
+                    DeregisterGlobalAcceptAll(in registration);
+                    break;
+                default:
+                    // Kind.None is the empty/sentinel handle (no-op); Kind.External handles are
+                    // minted by a foreign IMessageBus implementation and own no store here.
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Re-expression of the former interceptor closure body. The interceptor store is selected
+        /// by <see cref="MessageBusRegistration.kind"/> (all three interceptor registrars log the
+        /// single <see cref="RegistrationMethod.Interceptor"/>, so the method cannot discriminate).
+        /// </summary>
+        private void DeregisterInterceptor<T>(in MessageBusRegistration reg)
+            where T : IMessage
+        {
+            // Generation guard: see DeregisterScalarHandler.
+            if (reg.generation != _resetGeneration)
+            {
+                return;
+            }
+
+            MessageCache<InterceptorCache<object>> interceptsByType = reg.kind switch
+            {
+                MessageBusRegistration.Kind.UntargetedInterceptor => _untargetedInterceptsByType,
+                MessageBusRegistration.Kind.TargetedInterceptor => _targetedInterceptsByType,
+                MessageBusRegistration.Kind.BroadcastInterceptor => _broadcastInterceptsByType,
+                _ => null,
+            };
+            if (interceptsByType == null)
+            {
+                return;
+            }
+
+            InterceptorCache<object> capturedInterceptors =
+                (InterceptorCache<object>)reg.capturedPrimary;
+            object interceptor = reg.payload;
+            int priority = reg.priority;
+
+            if (IsStaleInterceptorDeregisterAfterSweep<T>(interceptsByType, capturedInterceptors))
+            {
+                return;
+            }
+
+            _ = AdvanceTick();
+            InvalidateDispatchPlans();
+            capturedInterceptors.lastTouchTicks = _tickCounter;
+            MarkDirtyType<T>();
+            _log.Log(
+                new MessagingRegistration(
+                    InstanceId.EmptyId,
+                    typeof(T),
+                    RegistrationType.Deregister,
+                    RegistrationMethod.Interceptor
+                )
+            );
+            bool removed = false;
+            if (
+                _uniqueInterceptorsAndPriorities.TryGetValue(
+                    interceptor,
+                    out Dictionary<int, int> priorityCount
+                )
+            )
+            {
+                if (priorityCount.TryGetValue(priority, out int count))
+                {
+                    if (1 < count)
+                    {
+                        priorityCount[priority] = count - 1;
+                    }
+                    else
+                    {
+                        removed = true;
+                        _ = priorityCount.Remove(priority);
+                    }
+                }
+
+                if (priorityCount.Count == 0)
+                {
+                    _uniqueInterceptorsAndPriorities.Remove(interceptor);
+                }
+            }
+            else if (MessagingDebug.enabled)
+            {
+                MessagingDebug.Log(
+                    LogLevel.Error,
+                    "Received over-deregistration of Interceptor {0}. Check to make sure you're not calling (de)registration multiple times.",
+                    interceptor
+                );
+            }
+
+            bool complete = false;
+            if (removed)
+            {
+                if (
+                    interceptsByType.TryGetValue<T>(
+                        out InterceptorCache<object> prioritizedInterceptors
+                    )
+                )
+                {
+                    if (
+                        prioritizedInterceptors.handlers.TryGetValue(
+                            priority,
+                            out List<object> interceptors
+                        )
+                    )
+                    {
+                        complete = interceptors.Remove(interceptor);
+                        if (interceptors.Count == 0)
+                        {
+                            _ = prioritizedInterceptors.handlers.Remove(priority);
+                        }
+                    }
+                }
+
+                if (!complete && MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Error,
+                        "Received over-deregistration of Interceptor {0}. Check to make sure you're not calling (de)registration multiple times.",
+                        interceptor
+                    );
+                }
+            }
+        }
+
+        /// <summary>
+        /// True for the keyed (targeted / sourced-broadcast) handler registration methods, whose
+        /// deregistration runs <see cref="DeregisterContextHandler{T}"/>; false for the scalar
+        /// (untargeted / without-context) methods. Mirrors the register-side sink routing.
+        /// </summary>
+        private static bool IsContextMethod(RegistrationMethod method) =>
+            method switch
+            {
+                RegistrationMethod.Targeted
+                or RegistrationMethod.Broadcast
+                or RegistrationMethod.TargetedPostProcessor
+                or RegistrationMethod.BroadcastPostProcessor => true,
+                _ => false,
+            };
+
+        /// <summary>
+        /// Reverse of the register-side hardcoded scalar-sink selection (e.g.
+        /// <c>_scalarSinks[BusSinkIndex.UntargetedHandleDefault]</c>): maps a scalar handler method
+        /// back to its sink so <see cref="DeregisterScalarHandler{T}"/> can re-resolve it.
+        /// </summary>
+        private MessageCache<HandlerCache<int, HandlerCache>> ScalarSinkForMethod(
+            RegistrationMethod method
+        ) =>
+            method switch
+            {
+                RegistrationMethod.Untargeted => _scalarSinks[BusSinkIndex.UntargetedHandleDefault],
+                RegistrationMethod.BroadcastWithoutSource => _scalarSinks[
+                    BusSinkIndex.BroadcastHandleWithoutContext
+                ],
+                RegistrationMethod.TargetedWithoutTargeting => _scalarSinks[
+                    BusSinkIndex.TargetedHandleWithoutContext
+                ],
+                RegistrationMethod.UntargetedPostProcessor => _scalarSinks[
+                    BusSinkIndex.UntargetedPostProcessDefault
+                ],
+                RegistrationMethod.TargetedWithoutTargetingPostProcessor => _scalarSinks[
+                    BusSinkIndex.TargetedPostProcessWithoutContext
+                ],
+                RegistrationMethod.BroadcastWithoutSourcePostProcessor => _scalarSinks[
+                    BusSinkIndex.BroadcastPostProcessWithoutContext
+                ],
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(method),
+                    method,
+                    "Not a scalar handler registration method."
+                ),
+            };
+
+        /// <summary>
+        /// Reverse of the register-side hardcoded context-sink selection: maps a keyed handler
+        /// method back to its sink so <see cref="DeregisterContextHandler{T}"/> can re-resolve it.
+        /// </summary>
+        private MessageCache<
+            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
+        > ContextSinkForMethod(RegistrationMethod method) =>
+            method switch
+            {
+                RegistrationMethod.Targeted => _contextSinks[BusContextIndex.TargetedHandleDefault],
+                RegistrationMethod.Broadcast => _contextSinks[
+                    BusContextIndex.BroadcastHandleDefault
+                ],
+                RegistrationMethod.TargetedPostProcessor => _contextSinks[
+                    BusContextIndex.TargetedPostProcessDefault
+                ],
+                RegistrationMethod.BroadcastPostProcessor => _contextSinks[
+                    BusContextIndex.BroadcastPostProcessDefault
+                ],
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(method),
+                    method,
+                    "Not a context handler registration method."
+                ),
+            };
 
         private static bool IsStaleContextDeregisterAfterSweep<T>(
             MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks,
