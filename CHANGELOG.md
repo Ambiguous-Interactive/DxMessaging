@@ -135,8 +135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   liveness / over-deregistration, token idempotency, no counter underflow -- are unchanged).
   Custom `IMessageBus` implementers that wrap `MessageBus` (the
   `DelegatingMessageBus`-style extension point) just forward the new members; from-scratch
-  implementers mint handles via the public `new MessageBusRegistration(long externalId,
-object externalState)` constructor and read them back in their own `Deregister<T>`.
+  implementers mint handles via the public `MessageBusRegistration(long, object)`
+  constructor and read them back in their own `Deregister<T>`.
   **The Unity-facing surface is unaffected:** `MessageRegistrationToken`,
   `MessageAwareComponent`, and the `MessageHandler.Register*` facades keep their existing
   shapes and still return `System.Action`. Only code that talks to `IMessageBus.Register*`
