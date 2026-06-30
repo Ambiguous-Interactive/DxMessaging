@@ -257,13 +257,13 @@ test("standalone static-check workflows are not reintroduced", () => {
 test("release workflows pin App write scopes and denied-push diagnostics", () => {
   const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
   const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
-  assert.match(
-    prepare,
-    /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n          permission-pull-requests: write\n[\s\S]*- name: Push the release branch and open the PR[\s\S]*\n          recovery_dir="artifacts\/release-prepare"\n[\s\S]*git format-patch -1 --stdout[\s\S]*release branch push failure[\s\S]*Confirm the App has Pull requests: write[\s\S]*- name: Upload failed release preparation patch[\s\S]*\n          path: artifacts\/release-prepare\/\n          if-no-files-found: ignore\n/
-  );
+  for (const [name, source, pattern] of [
+    ["prepare App scopes", prepare, /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n          permission-pull-requests: write\n/],
+    ["prepare recovery patch", prepare, /- name: Push the release branch and open the PR[\s\S]*\n          recovery_dir="artifacts\/release-prepare"\n[\s\S]*git format-patch -1 --stdout/],
+    ["prepare diagnostics", prepare, /- name: Push the release branch and open the PR[\s\S]*release branch push failure[\s\S]*Confirm the App has Pull requests: write/],
+    ["prepare recovery upload", prepare, /- name: Upload failed release preparation patch[\s\S]*\n          path: artifacts\/release-prepare\/\n          if-no-files-found: ignore\n/],
+    ["tag App scope", tag, /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n/],
+    ["tag diagnostics", tag, /- name: Create and push the annotated release tag[\s\S]*\n          push_status=\$\{PIPESTATUS\[0\]\}\n[\s\S]*release tag push failure[\s\S]*Manual fallback:/]
+  ]) assert.match(source, pattern, name);
   assert.doesNotMatch(prepare, /\.artifacts\/release-prepare/);
-  assert.match(
-    tag,
-    /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n[\s\S]*- name: Create and push the annotated release tag[\s\S]*\n          push_status=\$\{PIPESTATUS\[0\]\}\n[\s\S]*release tag push failure[\s\S]*Manual fallback:/
-  );
 });
