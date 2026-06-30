@@ -16,10 +16,7 @@
     "com.unity.ugui": "1.0.0",
     "com.unity.modules.unitywebrequest": "1.0.0",
     "com.unity.modules.unitywebrequestwww": "1.0.0",
-    "com.unity.modules.assetbundle": "1.0.0",
-    "com.unity.modules.accessibility": "1.0.0",
-    "com.unity.modules.adaptiveperformance": "1.0.0",
-    "com.unity.modules.vectorgraphics": "1.0.0"
+    "com.unity.modules.assetbundle": "1.0.0"
   },
   "scopedRegistries": [
     {

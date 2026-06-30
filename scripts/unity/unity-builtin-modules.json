@@ -1,7 +1,6 @@
 {
-  "description": "Single source of truth for the Unity built-in module set the ephemeral .unitypackage export project must enable. This is the dependency set a fresh Unity 2022.3 project lists in Packages/manifest.json; an empty `dependencies: {}` enables NONE of these, which is what broke the v3.1.0 .unitypackage export (UnityEngine.IMGUIModule absent -> EditorGUIUtility/GUIUtility CS0012). Read by scripts/unity/export-unitypackage.ps1 (writes the manifest) and scripts/__tests__/export-unitypackage-stage.test.js (asserts the manifest). All built-in packages (modules + uGUI) ship inside the editor install, so listing them needs no network. See .llm/skills/github-actions/release-asset-and-notes-invariants.md.",
+  "description": "Single source of truth for the Unity built-in package set the ephemeral .unitypackage export project must enable. Keep this list compatible with the pinned release editor in .github/unity-versions.json; do not copy newer editor default manifests wholesale. An empty `dependencies: {}` enables NONE of these, which is what broke the v3.1.0 .unitypackage export (UnityEngine.IMGUIModule absent -> EditorGUIUtility/GUIUtility CS0012). Read by scripts/unity/export-unitypackage.ps1 (writes the manifest) and scripts/__tests__/export-unitypackage-stage.test.js (asserts the manifest). All listed packages ship inside the release editor install, so listing them needs no network. See .llm/skills/github-actions/release-asset-and-notes-invariants.md.",
   "dependencies": {
-    "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.androidjni": "1.0.0",
     "com.unity.modules.animation": "1.0.0",
