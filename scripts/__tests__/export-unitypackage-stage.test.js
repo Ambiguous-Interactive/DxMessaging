@@ -306,6 +306,7 @@ test("export-unitypackage -StageOnly rejects destructive ProjectPath values befo
 // Single source of truth for the built-in module set the ephemeral export
 // project must enable; both export-unitypackage.ps1 and this guard read it.
 const MODULE_DATA_PATH = path.join(REPO_ROOT, "scripts", "unity", "unity-builtin-modules.json");
+const RELEASE_UNITY_2022_UNSUPPORTED_MODULES = ["com.unity.modules.accessibility"];
 
 test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) => {
   if (!HAS_PWSH) {
@@ -321,22 +322,19 @@ test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) =>
       fs.readFileSync(path.join(projectPath, "Packages", "manifest.json"), "utf8")
     );
     const deps = manifest.dependencies || {};
+    const hasDependency = (id) => Object.prototype.hasOwnProperty.call(deps, id);
 
-    // The proven v3.1.0 failure: EditorGUIUtility's base GUIUtility lives in
-    // UnityEngine.IMGUIModule, which an empty `dependencies: {}` never enables.
     assert.ok(
-      Object.prototype.hasOwnProperty.call(deps, "com.unity.modules.imgui"),
+      hasDependency("com.unity.modules.imgui"),
       "manifest must enable com.unity.modules.imgui (the module that broke v3.1.0)"
     );
 
-    // Every entry in the single-source data file must reach the manifest, so the
-    // export project compiles the payload exactly like a default Unity project.
     const required = JSON.parse(fs.readFileSync(MODULE_DATA_PATH, "utf8")).dependencies;
     for (const id of Object.keys(required)) {
-      assert.ok(
-        Object.prototype.hasOwnProperty.call(deps, id),
-        `manifest is missing required dependency ${id}`
-      );
+      assert.ok(hasDependency(id), `manifest is missing required dependency ${id}`);
+    }
+    for (const id of RELEASE_UNITY_2022_UNSUPPORTED_MODULES) {
+      assert.equal(hasDependency(id), false, `${id} is not resolvable by Unity 2022.3`);
     }
   } finally {
     fs.rmSync(stagingRoot, { recursive: true, force: true });

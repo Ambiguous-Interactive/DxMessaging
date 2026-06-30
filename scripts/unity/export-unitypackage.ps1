@@ -725,11 +725,12 @@ foreach ($relativeFolder in $folderMetaRelativePaths) {
 # UnityEngine.IMGUIModule (and the rest), so the staged payload fails to compile
 # the instant it touches an IMGUI type (e.g. EditorGUIUtility, whose base class
 # GUIUtility lives there), Unity aborts batchmode, and ExportPackage never runs.
-# That is exactly what broke the v3.1.0 export. The canonical fresh-2022.3 module
-# set is the single source of truth in scripts/unity/unity-builtin-modules.json
-# (a default consumer project lists the full set; every entry ships inside the
-# editor, so no network is needed); the package's own UPM dependencies merge on
-# top. See .llm/skills/github-actions/release-asset-and-notes-invariants.md.
+# That is exactly what broke the v3.1.0 export. The release-editor-compatible
+# built-in package set is the single source of truth in
+# scripts/unity/unity-builtin-modules.json. Do not copy newer editor default
+# manifests wholesale; every listed package must resolve in the pinned release
+# editor without network access. The package's own UPM dependencies merge on top.
+# See .llm/skills/github-actions/release-asset-and-notes-invariants.md.
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'Packages') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'ProjectSettings') | Out-Null
 New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($projectPath, 'Assets', 'Editor')) | Out-Null
