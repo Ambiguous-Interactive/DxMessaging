@@ -259,11 +259,11 @@ test("release workflows pin App write scopes and denied-push diagnostics", () =>
   const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
   assert.match(
     prepare,
-    /permission-contents: write[\s\S]*permission-pull-requests: write[\s\S]*recovery_dir="artifacts\/release-prepare"[\s\S]*git format-patch -1 --stdout[\s\S]*release branch push failure[\s\S]*path: artifacts\/release-prepare\//
+    /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n          permission-pull-requests: write\n[\s\S]*- name: Push the release branch and open the PR[\s\S]*\n          recovery_dir="artifacts\/release-prepare"\n[\s\S]*git format-patch -1 --stdout[\s\S]*release branch push failure[\s\S]*Confirm the App has Pull requests: write[\s\S]*- name: Upload failed release preparation patch[\s\S]*\n          path: artifacts\/release-prepare\/\n          if-no-files-found: ignore\n/
   );
   assert.doesNotMatch(prepare, /\.artifacts\/release-prepare/);
   assert.match(
     tag,
-    /permission-contents: write[\s\S]*push_status=\$\{PIPESTATUS\[0\]\}[\s\S]*release tag push failure[\s\S]*Manual fallback:/
+    /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n[\s\S]*- name: Create and push the annotated release tag[\s\S]*\n          push_status=\$\{PIPESTATUS\[0\]\}\n[\s\S]*release tag push failure[\s\S]*Manual fallback:/
   );
 });
