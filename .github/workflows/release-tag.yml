@@ -135,6 +135,7 @@ jobs:
         with:
           app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
           private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+          permission-contents: write
 
       - name: Create and push the annotated release tag
         if: >-
@@ -151,6 +152,23 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "${TAG}" -m "Release ${TAG}" "${GITHUB_SHA}"
           auth_header="$(printf 'x-access-token:%s' "${GH_PUSH_TOKEN}" | base64 | tr -d '\n')"
+          push_log="${RUNNER_TEMP}/release-tag-push.log"
+          set +e
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
-            push origin "refs/tags/${TAG}"
+            push origin "refs/tags/${TAG}" 2>&1 | tee "${push_log}"
+          push_status=${PIPESTATUS[0]}
+          set -e
+          if [ "${push_status}" -ne 0 ]; then
+            echo "::group::release tag push failure"
+            cat "${push_log}" || true
+            echo "::endgroup::"
+            message="Failed to push ${TAG} with the auto-commit GitHub App token. "
+            message+="Confirm the App is installed on ${GITHUB_REPOSITORY}, has Contents: write, "
+            message+="and is allowed by any ruleset that targets release tags. Manual fallback: "
+            message+="git fetch origin ${GITHUB_REF_NAME} && "
+            message+="git tag -a ${TAG} -m \"Release ${TAG}\" ${GITHUB_SHA} && "
+            message+="git push origin ${TAG}"
+            echo "::error::${message}"
+            exit "${push_status}"
+          fi
           echo "::notice::Pushed ${TAG} at ${GITHUB_SHA}; the tag-triggered Release workflow takes over from here."

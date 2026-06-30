@@ -46,7 +46,9 @@ The normal path never creates the tag by hand:
 1. Dispatch `.github/workflows/release-prepare.yml` from the default branch
    (bump kind or explicit version). It opens a `release/vX.Y.Z` PR containing
    the version bump, the rotated changelog, the synced banner, and the
-   regenerated `llms.txt`.
+   regenerated `llms.txt`. The auto-commit GitHub App must have Contents write
+   and Pull requests write, and no matching rule may block its `release/*`
+   branch push or `v*` tag push.
 1. Squash-merge that PR with its default `release: vX.Y.Z` title.
 1. `.github/workflows/release-tag.yml` validates the merged commit and pushes
    the annotated tag `vX.Y.Z` with the auto-commit GitHub App token, which

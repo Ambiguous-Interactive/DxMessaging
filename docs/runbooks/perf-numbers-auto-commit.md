@@ -33,6 +33,15 @@ built-in `GITHUB_TOKEN`. The built-in token cannot push to a protected branch:
 branch-protection bypass actor and GitHub blocks the push by design. A dedicated
 GitHub App that **is** allowed to bypass the protection does the push instead.
 
+The release pipeline uses the same App token: `release-prepare.yml` pushes the
+`release/vX.Y.Z` branch and opens the release pull request, then
+`release-tag.yml` pushes the annotated `vX.Y.Z` tag after that PR is merged. A
+denied release-branch push that mentions `bot-auto-commit[bot]` and
+`Permission to ... denied` means the App token can be minted but cannot write
+that ref. Check the App installation, **Contents: Read and write**, **Pull
+requests: Read and write**, and any branch or tag rulesets that target
+`release/*` or `v*`.
+
 App-token pushes **do** re-trigger workflows (only the built-in `GITHUB_TOKEN`
 suppresses that). Recursion is therefore broken at the trigger: the `push`
 trigger has `paths-ignore: [docs/architecture/performance.md]`, so the doc-only
@@ -106,6 +115,11 @@ that ruleset (not just the classic rule) is what blocks the push, add the App to
 its **Bypass list** as well -- both systems are enforced independently, so the
 pushing actor must satisfy every rule that targets the branch.
 
+Release branches and release tags are not the default branch, so the default
+branch bypass above is not enough if an organization or repository ruleset also
+targets `release/*` branches or `v*` tags. Either exclude those refs from the
+rule or add the App as a bypass actor/allowed pusher for that rule too.
+
 ### Step 4 -- store the credentials as Actions secrets
 
 Add these as repository (or organization) **Actions** secrets:
@@ -115,9 +129,11 @@ Add these as repository (or organization) **Actions** secrets:
    including the `-----BEGIN...` and `-----END...` lines.
 
 The workflow reads both via `actions/create-github-app-token`. The same App and
-secrets back every auto-commit workflow that pushes to the default branch -- both
-`perf-numbers.yml` and `update-llms-txt.yml` use them, so this one provisioning
-unblocks both at once.
+secrets back every auto-commit workflow that writes repository refs:
+`perf-numbers.yml`, `update-llms-txt.yml`,
+`update-issue-template-versions.yml`, `release-prepare.yml`, and
+`release-tag.yml`. This one provisioning unblocks the doc auto-commits and the
+release branch/tag handoff.
 
 ## Fallback pull request prerequisites
 

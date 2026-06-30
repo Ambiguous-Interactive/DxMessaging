@@ -122,11 +122,7 @@ test("static CI checks stay consolidated behind CI Success", () => {
   const ciSuccess = getJobBlock(source, "ci-success");
   assert.match(ciSuccess, /\n    name: CI Success\n/);
   assert.match(ciSuccess, /\n    if: \$\{\{ always\(\) \}\}\n/);
-  // Pin the fail-closed aggregator action identity to a versioned tag, not one
-  // exact version: re-actors/alls-green is what makes empty allowed-skips/failures
-  // gate every leg. The `@...vN` shape tolerates deliberate, dependabot-tracked
-  // version bumps (so the test never cries wolf) while still rejecting a floating
-  // @main/@master ref on the gate action.
+  // Pin the fail-closed aggregator action to a versioned tag, not @main/@master.
   assert.match(ciSuccess, /uses: re-actors\/alls-green@[\w./-]*v\d/);
   assert.match(ciSuccess, /allowed-skips: ""/);
   assert.match(ciSuccess, /allowed-failures: ""/);
@@ -256,4 +252,18 @@ test("standalone static-check workflows are not reintroduced", () => {
       `${workflow} is consolidated into ci.yml; do not restore it as a separate required gate`
     );
   }
+});
+
+test("release workflows pin App write scopes and denied-push diagnostics", () => {
+  const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
+  const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
+  for (const [name, source, pattern] of [
+    ["prepare App scopes", prepare, /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n          permission-pull-requests: write\n/],
+    ["prepare recovery patch", prepare, /- name: Push the release branch and open the PR[\s\S]*\n          recovery_dir="artifacts\/release-prepare"\n[\s\S]*git format-patch -1 --stdout/],
+    ["prepare diagnostics", prepare, /- name: Push the release branch and open the PR[\s\S]*release branch push failure[\s\S]*has Contents: write[\s\S]*ruleset or branch rule[\s\S]*recovery patch was written/],
+    ["prepare recovery upload", prepare, /- name: Upload failed release preparation patch[\s\S]*\n          path: artifacts\/release-prepare\/\n          if-no-files-found: ignore\n/],
+    ["tag App scope", tag, /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n/],
+    ["tag diagnostics", tag, /- name: Create and push the annotated release tag[\s\S]*\n          push_status=\$\{PIPESTATUS\[0\]\}\n[\s\S]*release tag push failure[\s\S]*Manual fallback:/]
+  ]) assert.match(source, pattern, name);
+  assert.doesNotMatch(prepare, /\.artifacts\/release-prepare/);
 });

@@ -1,7 +1,8 @@
 name: Release Prepare
 
 # Manual entry point of the release pipeline. Dispatched from the DEFAULT
-# branch, it computes the next version (bump or explicit), rewrites
+# branch, it first validates the GitHub App token needed to publish the
+# release PR, computes the next version (bump or explicit), rewrites
 # package.json, rotates CHANGELOG.md's Unreleased section under the new
 # version heading, syncs the banner SVG, re-runs the script tests and
 # validators against the bumped tree, and opens a `release/vX.Y.Z` pull
@@ -82,9 +83,23 @@ jobs:
             echo "::warning::AUTO_COMMIT_APP_* secrets are not set; dry-run continues but a real run would fail."
           fi
 
+      - name: Generate the auto-commit GitHub App token
+        id: app-token
+        if: ${{ !inputs.dry-run }}
+        # Request only the release-prepare scopes this workflow needs. If the App
+        # installation no longer grants them, fail here before spending time
+        # preparing a release tree that cannot be published.
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          token: ${{ steps.app-token.outputs.token || github.token }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -178,16 +193,6 @@ jobs:
           echo "::endgroup::"
           echo "Dry run complete; nothing was pushed."
 
-      - name: Generate the auto-commit GitHub App token
-        id: app-token
-        if: ${{ !inputs.dry-run }}
-        # The action's v3 metadata requires app-id; keep this name aligned
-        # with actionlint instead of using legacy aliases.
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
-          private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
-
       - name: Push the release branch and open the PR
         if: ${{ !inputs.dry-run }}
         env:
@@ -207,10 +212,35 @@ jobs:
           # omitted artifact is regenerated, passes validate:all, then is silently
           # dropped from the release commit.
           git add package.json CHANGELOG.md docs/images/DxMessaging-banner.svg llms.txt .github/ISSUE_TEMPLATE/bug_report.yml
+          if git diff --cached --quiet -- package.json CHANGELOG.md docs/images/DxMessaging-banner.svg llms.txt .github/ISSUE_TEMPLATE/bug_report.yml; then
+            echo "::error::Release preparation staged no changes; refusing to create an empty release commit."
+            exit 1
+          fi
           git commit -m "release: ${TAG}"
+
+          recovery_dir="artifacts/release-prepare"
+          mkdir -p "${recovery_dir}"
+          git format-patch -1 --stdout > "${recovery_dir}/release-${TAG}.patch"
+          git show --stat --oneline --decorate --no-renames HEAD > "${recovery_dir}/release-${TAG}.stat.txt"
+
           auth_header="$(printf 'x-access-token:%s' "${GH_PUSH_TOKEN}" | base64 | tr -d '\n')"
+          push_log="${RUNNER_TEMP}/release-push.log"
+          set +e
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
-            push origin "HEAD:refs/heads/${BRANCH}"
+            push origin "HEAD:refs/heads/${BRANCH}" 2>&1 | tee "${push_log}"
+          push_status=${PIPESTATUS[0]}
+          set -e
+          if [ "${push_status}" -ne 0 ]; then
+            echo "::group::release branch push failure"
+            cat "${push_log}" || true
+            echo "::endgroup::"
+            message="Failed to push ${BRANCH} with the auto-commit GitHub App token. "
+            message+="Confirm the App is installed on ${GITHUB_REPOSITORY}, has Contents: write, "
+            message+="and is allowed by any ruleset or branch rule that targets release branches. "
+            message+="A recovery patch was written to ${recovery_dir}/release-${TAG}.patch."
+            echo "::error::${message}"
+            exit "${push_status}"
+          fi
 
           # Excerpt the rotated changelog section for the PR body via the single
           # shared extractor (the same scripts/release module release.yml and
@@ -241,9 +271,31 @@ jobs:
             echo "1. The Unity Asset Store upload stays MANUAL: download the asset-store-submission artifact and follow docs/runbooks/asset-store-publishing.md."
           } > "${pr_body_file}"
 
-          GH_TOKEN="${GH_PUSH_TOKEN}" gh pr create \
+          pr_create_err="${RUNNER_TEMP}/release-pr-create.err"
+          set +e
+          pr_create_out="$(GH_TOKEN="${GH_PUSH_TOKEN}" gh pr create \
             --repo "${GITHUB_REPOSITORY}" \
             --base "${DEFAULT_BRANCH}" \
             --head "${BRANCH}" \
             --title "release: ${TAG}" \
-            --body-file "${pr_body_file}"
+            --body-file "${pr_body_file}" 2>"${pr_create_err}")"
+          pr_create_status=$?
+          set -e
+          if [ "${pr_create_status}" -ne 0 ]; then
+            compare_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${DEFAULT_BRANCH}...${BRANCH}"
+            message="Pushed ${BRANCH}, but PR creation failed. The release commit is preserved on the branch; "
+            message+="open the PR manually if needed: ${compare_url}. Confirm the App has Pull requests: write."
+            echo "::error::${message}"
+            echo "gh stdout: ${pr_create_out}"
+            cat "${pr_create_err}" || true
+            exit "${pr_create_status}"
+          fi
+          echo "${pr_create_out}"
+
+      - name: Upload failed release preparation patch
+        if: ${{ failure() && !inputs.dry-run }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-prepare-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-prepare/
+          if-no-files-found: ignore
