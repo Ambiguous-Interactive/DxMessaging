@@ -7,7 +7,6 @@ const path = require("node:path");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
-const CI_WORKFLOW = path.join(WORKFLOW_DIR, "ci.yml");
 
 const CONSOLIDATED_WORKFLOWS = [
   "actionlint.yml",
@@ -57,7 +56,7 @@ const STATIC_CHILD_JOBS = [
 ];
 
 function readCiWorkflow() {
-  return fs.readFileSync(CI_WORKFLOW, "utf8");
+  return fs.readFileSync(path.join(WORKFLOW_DIR, "ci.yml"), "utf8");
 }
 
 function escapeRegExp(value) {
@@ -255,7 +254,8 @@ test("standalone static-check workflows are not reintroduced", () => {
 });
 
 test("release workflows pin App write scopes and denied-push diagnostics", () => {
-  const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8"), tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
+  const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
+  const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
   for (const [name, source, pattern] of [
     ["prepare App scopes", getStepBlock(getJobBlock(prepare, "prepare"), "Generate the auto-commit GitHub App token"), /permission-contents: write[\s\S]*permission-pull-requests: write/],
     ["prepare formatting", getStepBlock(getJobBlock(prepare, "prepare"), "Validate the prepared tree"), /npm run format:check/],
