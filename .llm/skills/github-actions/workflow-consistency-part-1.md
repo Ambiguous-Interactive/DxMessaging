@@ -120,7 +120,7 @@ intentional and documented in the workflow.
 
 Use **double quotes** for all strings (matches Prettier YAML defaults):
 
-```yaml
+```text
 # Correct
 node-version: "22.18.0"
 cache: "npm"
