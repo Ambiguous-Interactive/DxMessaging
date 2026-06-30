@@ -7,7 +7,6 @@ const path = require("node:path");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
-const CI_WORKFLOW = path.join(WORKFLOW_DIR, "ci.yml");
 
 const CONSOLIDATED_WORKFLOWS = [
   "actionlint.yml",
@@ -57,7 +56,7 @@ const STATIC_CHILD_JOBS = [
 ];
 
 function readCiWorkflow() {
-  return fs.readFileSync(CI_WORKFLOW, "utf8");
+  return fs.readFileSync(path.join(WORKFLOW_DIR, "ci.yml"), "utf8");
 }
 
 function escapeRegExp(value) {
@@ -258,8 +257,9 @@ test("release workflows pin App write scopes and denied-push diagnostics", () =>
   const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
   const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
   for (const [name, source, pattern] of [
-    ["prepare App scopes", prepare, /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n          permission-pull-requests: write\n/],
-    ["prepare recovery patch", prepare, /- name: Push the release branch and open the PR[\s\S]*\n          recovery_dir="artifacts\/release-prepare"\n[\s\S]*git format-patch -1 --stdout/],
+    ["prepare App scopes", getStepBlock(getJobBlock(prepare, "prepare"), "Generate the auto-commit GitHub App token"), /permission-contents: write[\s\S]*permission-pull-requests: write/],
+    ["prepare fatal formatting", getStepBlock(getJobBlock(prepare, "prepare"), "Validate the prepared tree"), /^(?![\s\S]*\n        continue-on-error:)(?:(?!\n          set \+e\n)[\s\S])*\n          set -euo pipefail\n(?:(?!\n          set \+e\n)[\s\S])*\n          npm run format:check\n/],
+    ["prepare validation before publishing", getJobBlock(prepare, "prepare"), /^(?:(?!\n      - name: Push|\b(?:git\s+[^\n]*\bpush|push origin|gh pr create)\b)[\s\S])*- name: Validate the prepared tree[\s\S]*- name: Push the release branch and open the PR[\s\S]*\n          recovery_dir="artifacts\/release-prepare"\n[\s\S]*git format-patch -1 --stdout/],
     ["prepare diagnostics", prepare, /- name: Push the release branch and open the PR[\s\S]*release branch push failure[\s\S]*has Contents: write[\s\S]*ruleset or branch rule[\s\S]*recovery patch was written/],
     ["prepare recovery upload", prepare, /- name: Upload failed release preparation patch[\s\S]*\n          path: artifacts\/release-prepare\/\n          if-no-files-found: ignore\n/],
     ["tag App scope", tag, /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n/],

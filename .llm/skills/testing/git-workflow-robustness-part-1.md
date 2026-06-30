@@ -34,7 +34,7 @@ CommonMark defines specific rules for code spans with multiple backticks:
 
 #### Examples
 
-````markdown
+````text
 `code` -> <code>code</code>
 `code` -> <code>code</code>
 `` `code` `` -> <code>`code`</code>

@@ -151,6 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           npm test
+          npm run format:check
           npm run validate:all
 
       - name: Resolve the prepared version
