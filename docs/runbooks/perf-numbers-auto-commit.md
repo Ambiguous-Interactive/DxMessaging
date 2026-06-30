@@ -36,11 +36,11 @@ GitHub App that **is** allowed to bypass the protection does the push instead.
 The release pipeline uses the same App token: `release-prepare.yml` pushes the
 `release/vX.Y.Z` branch and opens the release pull request, then
 `release-tag.yml` pushes the annotated `vX.Y.Z` tag after that PR is merged. A
-denied release-branch push such as `Permission to ... denied to
-bot-auto-commit[bot]` means the App token can be minted but cannot write that
-ref. Check the App installation, **Contents: Read and write**, **Pull requests:
-Read and write**, and any branch or tag rulesets that target `release/*` or
-`v*`.
+denied release-branch push that mentions `bot-auto-commit[bot]` and
+`Permission to ... denied` means the App token can be minted but cannot write
+that ref. Check the App installation, **Contents: Read and write**, **Pull
+requests: Read and write**, and any branch or tag rulesets that target
+`release/*` or `v*`.
 
 App-token pushes **do** re-trigger workflows (only the built-in `GITHUB_TOKEN`
 suppresses that). Recursion is therefore broken at the trigger: the `push`
