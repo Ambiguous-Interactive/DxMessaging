@@ -78,7 +78,11 @@ The release pipeline runs dispatch, PR, tag, publish:
    `npm run validate:all` against the bumped tree, and opens a
    `release/vX.Y.Z` pull request with the auto-commit GitHub App
    (`AUTO_COMMIT_APP_ID` / `AUTO_COMMIT_APP_PRIVATE_KEY`). The `dry-run`
-   input prints the prepared diff and stops without pushing.
+   input prints the prepared diff and stops without pushing. If the App token
+   cannot push the release branch, the failed run uploads a
+   `release-prepare-recovery-*` artifact containing a patch for the prepared
+   release commit; fix the App installation/permissions or matching branch
+   rules, then rerun the workflow.
 1. A maintainer reviews the release PR and squash-merges it, keeping the
    default `release: vX.Y.Z` title.
 1. `.github/workflows/release-tag.yml` sees the release commit on the default
@@ -86,7 +90,8 @@ The release pipeline runs dispatch, PR, tag, publish:
    `## [X.Y.Z]` changelog heading, tag absent) and pushes the annotated tag
    `vX.Y.Z` with the App token. When the App secrets are absent it prints the
    manual `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
-   commands as a warning instead.
+   commands as a warning instead. If the App token exists but cannot write the
+   tag ref, the job fails with the same manual fallback commands.
 1. The tag fires `.github/workflows/release.yml`, which performs the gates
    below.
 
