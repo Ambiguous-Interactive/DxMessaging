@@ -49,6 +49,137 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void TokenDiagnosticModeStampsTraceIdsAndRegistrationHandles()
+        {
+            GameObject host = new(nameof(TokenDiagnosticModeStampsTraceIdsAndRegistrationHandles));
+            _spawned.Add(host);
+            MessageHandler handler = new(host) { active = true };
+            MessageBus customBus = new() { DiagnosticsMode = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, customBus);
+            token.DiagnosticMode = true;
+            token.Enable();
+
+            int count = 0;
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                _ => ++count
+            );
+
+            SimpleUntargetedMessage message = new();
+            customBus.UntargetedBroadcast(ref message);
+
+            CyclicBuffer<MessageEmissionData> busEmissions = GetEmissionBuffer(customBus);
+            CyclicBuffer<MessageEmissionData> tokenEmissions = GetEmissionBuffer(token);
+
+            Assert.AreEqual(1, count);
+            Assert.AreEqual(1, busEmissions.Count);
+            Assert.AreEqual(1, tokenEmissions.Count);
+            Assert.Greater(
+                busEmissions[0].traceId,
+                0,
+                "Bus-side diagnostics must stamp the dispatch trace id."
+            );
+            Assert.AreEqual(
+                busEmissions[0].traceId,
+                tokenEmissions[0].traceId,
+                "Token-side diagnostics must use the same trace id as the bus emission."
+            );
+            Assert.AreEqual(
+                default(MessageRegistrationHandle),
+                busEmissions[0].registrationHandle,
+                "Bus-side diagnostics are emission records, not delivery records."
+            );
+            Assert.AreEqual(
+                handle,
+                tokenEmissions[0].registrationHandle,
+                "Token-side diagnostics must identify the delivered registration."
+            );
+
+            token.Dispose();
+            handler.active = false;
+        }
+
+        [Test]
+        public void TokenDiagnosticModeLeavesTraceIdZeroOutsideBusDispatch()
+        {
+            GameObject host = new(nameof(TokenDiagnosticModeLeavesTraceIdZeroOutsideBusDispatch));
+            _spawned.Add(host);
+            MessageBus customBus = new() { DiagnosticsMode = true };
+            MessageHandler handler = new(host, customBus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, customBus);
+            token.DiagnosticMode = true;
+            token.Enable();
+
+            int count = 0;
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                _ => ++count
+            );
+
+            SimpleUntargetedMessage message = new();
+            handler.HandleUntargetedMessage(ref message, customBus, priority: 0);
+
+            CyclicBuffer<MessageEmissionData> busEmissions = GetEmissionBuffer(customBus);
+            CyclicBuffer<MessageEmissionData> tokenEmissions = GetEmissionBuffer(token);
+
+            Assert.AreEqual(1, count);
+            Assert.AreEqual(
+                0,
+                busEmissions.Count,
+                "Direct handler dispatch is not a bus emission and must not create a bus trace record."
+            );
+            Assert.AreEqual(1, tokenEmissions.Count);
+            Assert.AreEqual(
+                0,
+                tokenEmissions[0].traceId,
+                "Token diagnostics outside a concrete bus dispatch must not reuse a stale emission id."
+            );
+            Assert.AreEqual(handle, tokenEmissions[0].registrationHandle);
+
+            token.Dispose();
+            handler.active = false;
+        }
+
+        [Test]
+        public void TokenTraceIdUsesLiveRegistrationBusAfterPreserveRetarget()
+        {
+            GameObject host = new(nameof(TokenTraceIdUsesLiveRegistrationBusAfterPreserveRetarget));
+            _spawned.Add(host);
+            MessageBus originalBus = new() { DiagnosticsMode = true };
+            MessageBus newBus = new() { DiagnosticsMode = true };
+            MessageHandler handler = new(host, originalBus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, originalBus);
+            token.DiagnosticMode = true;
+            token.Enable();
+
+            int count = 0;
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                _ => ++count
+            );
+
+            token.RetargetMessageBus(newBus, MessageBusRebindMode.PreserveRegistrations);
+
+            SimpleUntargetedMessage message = new();
+            originalBus.UntargetedBroadcast(ref message);
+
+            CyclicBuffer<MessageEmissionData> originalBusEmissions = GetEmissionBuffer(originalBus);
+            CyclicBuffer<MessageEmissionData> newBusEmissions = GetEmissionBuffer(newBus);
+            CyclicBuffer<MessageEmissionData> tokenEmissions = GetEmissionBuffer(token);
+
+            Assert.AreEqual(1, count);
+            Assert.AreEqual(1, originalBusEmissions.Count);
+            Assert.AreEqual(0, newBusEmissions.Count);
+            Assert.AreEqual(1, tokenEmissions.Count);
+            Assert.AreEqual(
+                originalBusEmissions[0].traceId,
+                tokenEmissions[0].traceId,
+                "Preserved registrations must trace against the bus that still owns the live delegate."
+            );
+            Assert.AreEqual(handle, tokenEmissions[0].registrationHandle);
+
+            token.Dispose();
+            handler.active = false;
+        }
+
+        [Test]
         public void ActionRegistrationDiagnosticsRecordedThroughFlatBusDispatch(
             [ValueSource(
                 typeof(MessageScenarios),

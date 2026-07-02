@@ -11,6 +11,8 @@ copyright: Copyright &copy; 2017-2026 Wallstop Studios
 theme:
   name: material
   language: en
+  logo: images/dx-mark.svg
+  favicon: images/dx-mark.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -27,8 +29,8 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   font:
-    text: Roboto
-    code: Roboto Mono
+    text: Hanken Grotesk
+    code: JetBrains Mono
   features:
     - announce.dismiss
     - content.action.edit

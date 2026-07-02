@@ -17,7 +17,9 @@ namespace DxMessaging.Core.Diagnostics
     /// that excludes DxMessaging internals for easier debugging.
     ///
     /// The <see cref="context"/> contains the relevant <see cref="InstanceId"/> for targeted/broadcast messages
-    /// (target or source respectively) and is null for untargeted messages.
+    /// (target or source respectively) and is null for untargeted messages. Runtime records emitted by a
+    /// <see cref="MessageBus.MessageBus"/> also carry a <see cref="traceId"/> that token-local delivery records can
+    /// use to join a bus emission to the registrations that observed it.
     /// </remarks>
     public readonly struct MessageEmissionData
     {
@@ -34,14 +36,40 @@ namespace DxMessaging.Core.Diagnostics
         public readonly string stackTrace;
 
         /// <summary>
+        /// Dispatch trace identifier shared by bus-side emission records and token-side delivery records.
+        /// </summary>
+        public readonly long traceId;
+
+        /// <summary>
+        /// Registration handle that observed this message; default for bus-side emission records.
+        /// </summary>
+        public readonly MessageRegistrationHandle registrationHandle;
+
+        /// <summary>
         /// Creates a new diagnostic record for an emitted message.
         /// </summary>
         /// <param name="message">The message that was emitted.</param>
         /// <param name="context">Target or source depending on message category; null for untargeted.</param>
         public MessageEmissionData(IMessage message, InstanceId? context = null)
+            : this(message, context, traceId: 0, registrationHandle: default) { }
+
+        internal MessageEmissionData(IMessage message, long traceId)
+            : this(message, context: null, traceId, registrationHandle: default) { }
+
+        internal MessageEmissionData(IMessage message, InstanceId? context, long traceId)
+            : this(message, context, traceId, registrationHandle: default) { }
+
+        internal MessageEmissionData(
+            IMessage message,
+            InstanceId? context,
+            long traceId,
+            MessageRegistrationHandle registrationHandle
+        )
         {
             this.message = message;
             this.context = context;
+            this.traceId = traceId;
+            this.registrationHandle = registrationHandle;
             stackTrace = GetAccurateStackTrace();
         }
 

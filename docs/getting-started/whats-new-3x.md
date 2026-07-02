@@ -68,6 +68,49 @@ centralizes global diagnostics targets, the editor message-buffer size, the
 domain-reload warning suppression, the base-call analyzer toggle and ignore list,
 and the optional Unity console bridge that feeds the inspector overlay.
 
+## Dedicated editor diagnostics windows
+
+The Inspector is no longer the only diagnostics surface. 3.x also adds
+dedicated windows under **Tools > Wallstop Studios > DxMessaging**:
+
+- **Message Monitor** shows recent global-bus emissions in most-recent-first
+  order, including message type, context, stack trace, filtering, selected-entry
+  details, typed `type:` / `message:` / `context:` / `stack:` filters, visible
+  active-filter summary and Clear action, visible message-type/context lanes
+  with Filter shortcuts, exact quoted context shortcuts, Copy JSON export, and a
+  component diagnostics panel for loaded scene
+  `MessagingComponent` instances.
+- **Flow Graph** shows loaded-scene registration topology, route-map call
+  shares, route-kind mix, widest target-component fan-out, hottest visible
+  routes, most-routed targets, inactive routed-target hints, no-call route hints,
+  visible traced-route coverage, busiest traced-route, traced-message, and
+  traced-target share, visible message lanes grouped by message type, visible
+  target lanes grouped by target component, visible trace context volume and
+  share, visible trace route-kind lanes grouped by traced registration kind,
+  visible trace message lanes grouped by traced message type, visible trace
+  target lanes grouped by traced target component, visible trace-id lanes grouped
+  by positive trace id, visible trace context lanes grouped by normalized
+  context, visible trace-id breadth, visible trace-message/target/path
+  concentration, visible flow corridors grouped by trace message and target
+  component, message/component/registration-edge details,
+  selected component/message route-health and busiest traced-route details,
+  selected-component busiest traced-message details, selected-message
+  busiest traced-target details, selected-component, selected-message, and
+  selected-route visible traced-share details, selected-component,
+  selected-message, and selected-route trace context volume and delivery,
+  trace-id breadth, selected-component trace-message, selected-message
+  trace-target, busiest-context-share, busiest-path, and busiest-path-share
+  breakdowns, Copy JSON export, exact recent traced delivery counts, and recent
+  trace-path/context evidence, including exact trace-id export arrays, distinct
+  trace-id counts, visible trace-route-kind lanes, visible trace-id lanes,
+  widest visible trace ids, busiest trace context share, busiest trace-message,
+  trace-target, and trace-path shares, when diagnostics capture token delivery
+  records with positive trace ids.
+
+See the [Diagnostics guide](../guides/diagnostics.md) for the current semantics.
+Trace paths are recent evidence aggregates, not a replacement for a full
+architecture diagram.
+
 ## Tune memory reclamation
 
 3.x adds runtime controls for the bus's internal pools so long-running games can

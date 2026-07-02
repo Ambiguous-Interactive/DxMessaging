@@ -7,8 +7,17 @@
 *.userosscache
 *.sln.docstates
 
+design-system/
+design-system.meta
+design-system-old/
+design-system-old.meta
+design-system.zip
+design-system.zip.meta
+
 # MkDocs build output
 site/
+_site/
+_site.meta
 
 # Test coverage output
 coverage/

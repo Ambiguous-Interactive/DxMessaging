@@ -19,7 +19,10 @@ namespace DxMessaging.Editor.Testing
         private static readonly MessageEmissionData[] EmptyEmissions =
             Array.Empty<MessageEmissionData>();
 
-        internal static MessagingComponentInspectorState Capture(MessagingComponent component)
+        internal static MessagingComponentInspectorState Capture(
+            MessagingComponent component,
+            bool resolveSerializedProviderBus = true
+        )
         {
             if (component == null)
             {
@@ -43,7 +46,10 @@ namespace DxMessaging.Editor.Testing
                 .Select(pair => CreateListenerView(pair.Key, pair.Value))
                 .ToList();
 
-            ProviderDiagnosticsView providerDiagnostics = CreateProviderDiagnostics(component);
+            ProviderDiagnosticsView providerDiagnostics = CreateProviderDiagnostics(
+                component,
+                resolveSerializedProviderBus
+            );
 
             return new MessagingComponentInspectorState(
                 globalDiagnosticsEnabled,
@@ -80,7 +86,8 @@ namespace DxMessaging.Editor.Testing
         }
 
         internal static ProviderDiagnosticsView CreateProviderDiagnostics(
-            MessagingComponent component
+            MessagingComponent component,
+            bool resolveSerializedProviderBus = true
         )
         {
             bool autoConfigure = component.AutoConfigureSerializedProviderOnAwake;
@@ -91,7 +98,7 @@ namespace DxMessaging.Editor.Testing
             bool serializedProviderMissingWarning = autoConfigure && !hasSerializedProvider;
 
             bool serializedProviderNullBusWarning = false;
-            if (hasSerializedProvider)
+            if (hasSerializedProvider && resolveSerializedProviderBus)
             {
                 IMessageBus resolvedBus = component.SerializedProviderHandle.ResolveBus();
                 serializedProviderNullBusWarning = resolvedBus == null;

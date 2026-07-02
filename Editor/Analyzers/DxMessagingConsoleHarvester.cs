@@ -84,13 +84,13 @@ namespace DxMessaging.Editor.Analyzers
     /// </para>
     /// <para>
     /// The inspector overlay reads its snapshot from the unified per-FQN map populated here on
-    /// every rescan. Use the menu <c>Tools > DxMessaging > Rescan Base-Call Warnings</c> for a
+    /// every rescan. Use the menu <c>Tools > Wallstop Studios > DxMessaging > Rescan Base-Call Warnings</c> for a
     /// manual force-rescan.
     /// </para>
     /// <para>
     /// <see cref="IsAvailable"/> stays <c>true</c> as long as the static constructor itself does
     /// not throw -- the IL scanner is always wired, so the overlay never falls back to its
-    /// degraded "harvester unavailable" HelpBox in normal operation. <see cref="LogEntriesAvailable"/>
+    /// degraded "harvester unavailable" warning surface in normal operation. <see cref="LogEntriesAvailable"/>
     /// continues to report whether the legacy reflection layer is bindable, for diagnostics only.
     /// </para>
     /// </remarks>
@@ -187,7 +187,7 @@ namespace DxMessaging.Editor.Analyzers
         // or whether it was loaded eagerly from `Library/DxMessaging/baseCallReport.json` in the
         // static ctor and has not yet been overwritten. The inspector overlay reads this to
         // distinguish "fresh-this-session" warnings from cached-from-previous-session warnings;
-        // when the cache is showing, we annotate the HelpBox with a small suffix so the user
+        // when the cache is showing, we annotate the warning surface so the user
         // understands the data may be stale until the first post-reload scan completes.
         //
         // Default `false`: the static ctor's `LoadFromDisk` runs first, so by the time anything
@@ -241,7 +241,7 @@ namespace DxMessaging.Editor.Analyzers
         /// constructor itself throws (a hard initialization failure). The LogEntries reflection
         /// layer is the optional source -- see <see cref="LogEntriesAvailable"/> for that flag.
         /// The inspector overlay reads this property to decide whether to render its degraded
-        /// HelpBox, so the contract here is "should the overlay attempt to render at all".
+        /// warning surface, so the contract here is "should the overlay attempt to render at all".
         /// </remarks>
         public static bool IsAvailable { get; private set; } = true;
 
@@ -259,11 +259,11 @@ namespace DxMessaging.Editor.Analyzers
         /// loaded eagerly by the static constructor.
         /// </summary>
         /// <remarks>
-        /// The inspector overlay reads this to annotate its HelpBox: when <c>false</c> AND a
-        /// warning is being shown, the overlay appends a "(cached from previous session --
-        /// refreshing...)" suffix so the user knows the data is from yesterday's scan and a fresh
+        /// The inspector overlay reads this to annotate its warning surface: when <c>false</c> AND a
+        /// warning is being shown, the overlay adds a "Report is cached from previous session;
+        /// refreshing..." note so the user knows the data is from yesterday's scan and a fresh
         /// one is in flight. The flag is set inside <see cref="RescanNow"/> and never reset, so
-        /// the suffix disappears as soon as the first post-reload scan lands and stays gone for
+        /// the note disappears as soon as the first post-reload scan lands and stays gone for
         /// the rest of the session.
         /// </remarks>
         public static bool IsFreshThisSession => _isFreshThisSession;

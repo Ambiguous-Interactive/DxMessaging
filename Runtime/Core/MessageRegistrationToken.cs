@@ -134,6 +134,22 @@ namespace DxMessaging.Core
                 IMessageBus.GlobalMessageBufferSize
             );
 
+        internal void RecordDiagnosticEmission(
+            MessageRegistrationHandle handle,
+            IMessageBus messageBus,
+            IMessage message,
+            InstanceId? context = null
+        )
+        {
+            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
+            long traceId =
+                messageBus is DxMessaging.Core.MessageBus.MessageBus concreteBus
+                && concreteBus.IsDispatching
+                    ? concreteBus.EmissionId
+                    : 0;
+            _emissionBuffer.Add(new MessageEmissionData(message, context, traceId, handle));
+        }
+
         private IMessageBus _messageBus;
         private bool _enabled;
         private bool _diagnosticMode = IMessageBus.ShouldEnableDiagnostics();
@@ -2263,6 +2279,7 @@ namespace DxMessaging.Core
         {
             protected readonly MessageRegistrationToken Token;
             public MessageRegistrationHandle Handle;
+            private IMessageBus _registeredMessageBus;
 
             protected Registration(MessageRegistrationToken token)
             {
@@ -2276,6 +2293,18 @@ namespace DxMessaging.Core
             // the staging closure at call time -- the staging closure also read the
             // field, not a snapshot).
             public abstract MessageHandler.HandlerDeregistration Register();
+
+            protected IMessageBus ResolveRegistrationMessageBus()
+            {
+                IMessageBus messageBus = Token._messageBus;
+                _registeredMessageBus = messageBus ?? Token._messageHandler?.DefaultMessageBus;
+                return messageBus;
+            }
+
+            protected void RecordDiagnosticEmission(IMessage message, InstanceId? context = null)
+            {
+                Token.RecordDiagnosticEmission(Handle, _registeredMessageBus, message, context);
+            }
         }
 
         private sealed class TargetedRegistration<T> : Registration
@@ -2313,7 +2342,7 @@ namespace DxMessaging.Core
             public override MessageHandler.HandlerDeregistration Register()
             {
                 MessageHandler messageHandler = Token._messageHandler;
-                IMessageBus messageBus = Token._messageBus;
+                IMessageBus messageBus = ResolveRegistrationMessageBus();
                 switch (_kind)
                 {
                     case RegistrationKind.TargetedHandlerAction:
@@ -2406,8 +2435,7 @@ namespace DxMessaging.Core
                 _scalarAction(message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, _context));
+                    RecordDiagnosticEmission(message, _context);
                 }
             }
 
@@ -2416,8 +2444,7 @@ namespace DxMessaging.Core
                 _scalarFast(ref message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, _context));
+                    RecordDiagnosticEmission(message, _context);
                 }
             }
 
@@ -2429,8 +2456,7 @@ namespace DxMessaging.Core
                 _contextAction(target, message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, target));
+                    RecordDiagnosticEmission(message, target);
                 }
             }
 
@@ -2439,8 +2465,7 @@ namespace DxMessaging.Core
                 _contextFast(ref target, ref message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, target));
+                    RecordDiagnosticEmission(message, target);
                 }
             }
         }
@@ -2474,7 +2499,7 @@ namespace DxMessaging.Core
             public override MessageHandler.HandlerDeregistration Register()
             {
                 MessageHandler messageHandler = Token._messageHandler;
-                IMessageBus messageBus = Token._messageBus;
+                IMessageBus messageBus = ResolveRegistrationMessageBus();
                 switch (_kind)
                 {
                     case RegistrationKind.UntargetedHandlerAction:
@@ -2521,8 +2546,7 @@ namespace DxMessaging.Core
                 _scalarAction(message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message));
+                    RecordDiagnosticEmission(message);
                 }
             }
 
@@ -2531,8 +2555,7 @@ namespace DxMessaging.Core
                 _scalarFast(ref message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message));
+                    RecordDiagnosticEmission(message);
                 }
             }
         }
@@ -2571,7 +2594,7 @@ namespace DxMessaging.Core
             public override MessageHandler.HandlerDeregistration Register()
             {
                 MessageHandler messageHandler = Token._messageHandler;
-                IMessageBus messageBus = Token._messageBus;
+                IMessageBus messageBus = ResolveRegistrationMessageBus();
                 switch (_kind)
                 {
                     case RegistrationKind.BroadcastHandlerAction:
@@ -2662,8 +2685,7 @@ namespace DxMessaging.Core
                 _scalarAction(message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, _context));
+                    RecordDiagnosticEmission(message, _context);
                 }
             }
 
@@ -2672,8 +2694,7 @@ namespace DxMessaging.Core
                 _scalarFast(ref message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, _context));
+                    RecordDiagnosticEmission(message, _context);
                 }
             }
 
@@ -2685,8 +2706,7 @@ namespace DxMessaging.Core
                 _contextAction(source, message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, source));
+                    RecordDiagnosticEmission(message, source);
                 }
             }
 
@@ -2695,8 +2715,7 @@ namespace DxMessaging.Core
                 _contextFast(ref source, ref message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, source));
+                    RecordDiagnosticEmission(message, source);
                 }
             }
         }
@@ -2752,7 +2771,7 @@ namespace DxMessaging.Core
             public override MessageHandler.HandlerDeregistration Register()
             {
                 MessageHandler messageHandler = Token._messageHandler;
-                IMessageBus messageBus = Token._messageBus;
+                IMessageBus messageBus = ResolveRegistrationMessageBus();
                 if (_kind == RegistrationKind.GlobalAcceptAllAction)
                 {
                     return messageHandler.RegisterGlobalAcceptAll(
@@ -2782,8 +2801,7 @@ namespace DxMessaging.Core
                 _untargetedAction(message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message));
+                    RecordDiagnosticEmission(message);
                 }
             }
 
@@ -2792,8 +2810,7 @@ namespace DxMessaging.Core
                 _targetedAction(target, message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, target));
+                    RecordDiagnosticEmission(message, target);
                 }
             }
 
@@ -2802,8 +2819,7 @@ namespace DxMessaging.Core
                 _broadcastAction(source, message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, source));
+                    RecordDiagnosticEmission(message, source);
                 }
             }
 
@@ -2812,8 +2828,7 @@ namespace DxMessaging.Core
                 _untargetedFast(ref message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message));
+                    RecordDiagnosticEmission(message);
                 }
             }
 
@@ -2822,8 +2837,7 @@ namespace DxMessaging.Core
                 _targetedFast(ref target, ref message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, target));
+                    RecordDiagnosticEmission(message, target);
                 }
             }
 
@@ -2835,8 +2849,7 @@ namespace DxMessaging.Core
                 _broadcastFast(ref source, ref message);
                 if (Token._diagnosticMode)
                 {
-                    Token._callCounts[Handle] = Token._callCounts.GetValueOrDefault(Handle) + 1;
-                    Token._emissionBuffer.Add(new MessageEmissionData(message, source));
+                    RecordDiagnosticEmission(message, source);
                 }
             }
         }

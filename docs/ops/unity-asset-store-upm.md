@@ -40,6 +40,16 @@ DxMessaging is a UPM package with package ID
 - No build artifacts, IDE files, local runbooks, `.llm`, `.github`, scripts,
   tests, devcontainer files, or Unity test harness files ship in the package.
 - Every shipped Unity-relevant path has a paired `.meta` file.
+- Image assets in `package.json` `files` are limited to assets referenced by
+  shipped package docs. Today that means the README banner at
+  `docs/images/DxMessaging-banner.svg` and its `.meta`; the MkDocs
+  logo/favicon mark at `docs/images/dx-mark.svg` is tracked for GitHub Pages
+  only, because the generated documentation site is not part of the npm/UPM
+  payload.
+- The ignored `design-system/` source tree, design scraps, and exploration PNGs
+  are not release assets. If a future package-shipped document references another
+  brand image, add that image and its `.meta` to `package.json` `files` in the
+  same change and re-run package validation.
 
 Run:
 
@@ -117,8 +127,9 @@ Do not describe npm or GitHub provenance as Unity Asset Store signing.
 
 - The publisher account is not approved for UPM publishing.
 - Package metadata links point to the old GitHub organization.
-- Asset Store submission asks for documentation included offline, while the
-  npm package excludes `docs/**`.
+- Asset Store submission asks for documentation included offline. The npm
+  package includes only the README banner image under `docs/images/`, not the
+  full generated documentation site.
 - The `.unitypackage` export job failed. The release is atomic, so the whole
   release (including the npm publish) is blocked rather than shipping without
   the `.unitypackage`; fix the export and re-run the release workflow.

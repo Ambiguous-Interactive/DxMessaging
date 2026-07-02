@@ -1,31 +1,37 @@
-# DxMessaging for Unity
+# DxMessaging
 
 <p align="center">
-  <img src="docs/images/DxMessaging-banner.svg" alt="DxMessaging - Type-safe messaging system for Unity" width="800"/>
+  <img src="docs/images/DxMessaging-banner.svg" alt="DxMessaging - Decoupled, simple systems for Unity" width="800"/>
 </p>
 
 <p align="center">
   <a href="https://ambiguous-interactive.github.io/DxMessaging/">
-    <img src="https://img.shields.io/badge/Full_Documentation-Visit_the_Docs_Site-2ea44f?style=for-the-badge" alt="Full Documentation" />
+    <img src="https://img.shields.io/badge/Docs-ambiguous--interactive.github.io-f4a836?style=for-the-badge" alt="Documentation" />
   </a>
 </p>
 
 [![Unity](https://img.shields.io/badge/Unity-2021.3+-black.svg)](https://unity.com/releases/editor/archive)<br/>
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)<br/>
+[![License: MIT](https://img.shields.io/badge/License-MIT-f4a836.svg)](LICENSE.md)<br/>
 [![openupm](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging?label=openupm&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.wallstop-studios.dxmessaging/)<br/>
 [![Version](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging.svg)](https://www.npmjs.com/package/com.wallstop-studios.dxmessaging)<br/>
-[![Performance: Standalone (IL2CPP)](<https://img.shields.io/badge/Performance-Standalone%20(IL2CPP)-blueviolet.svg>)](docs/architecture/performance.md)<br/>
+[![Performance: Standalone (IL2CPP)](<https://img.shields.io/badge/Performance-Standalone%20(IL2CPP)-f4a836.svg>)](docs/architecture/performance.md)<br/>
 [![Markdown Link Validity](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml)
 
-> **🤖 AI Assistance Disclosure:**
+> **AI Assistance Disclosure:**
 >
 > This project has been actively developed and maintained by human authors for over a decade. Recent versions have utilized AI assistance for documentation, test coverage, and performance optimizations.
 
-**DxMessaging is a type-safe messaging system** that replaces sprawling C# events, brittle UnityEvents, and global static event buses with an observable and lifecycle-managed communication pattern.
+**DxMessaging is a synchronous, type-safe Unity message bus for decoupled, simple systems.** It replaces sprawling C# events, brittle UnityEvents, and global static event buses with explicit message contracts, lifecycle-managed registrations, and editor-visible routing.
 
-Think of it as: A messaging system designed for decoupled game systems.
+Use it when one system needs to announce a fact, command a target, or broadcast from a source without keeping a direct scene reference to the receiver.
 
-Need install instructions? Try [OpenUPM](https://openupm.com/packages/com.wallstop-studios.dxmessaging/) (recommended) or see the [Install Guide](docs/getting-started/install.md) for Git URLs, scoped registries, and more.
+```bash
+openupm add com.wallstop-studios.dxmessaging
+```
+
+The core taxonomy is small: **Untargeted** announcements, **Targeted** commands, and **Broadcast** facts from a source. Diagnostics are built around that model: Message Monitor shows recent emissions and filters, Flow Graph shows registration topology and trace evidence, and the Inspector overlay catches `MessageAwareComponent` lifecycle mistakes.
+
+See the [Install Guide](docs/getting-started/install.md) for Git URL, scoped registry, and release tarball options.
 
 ## Table of Contents
 
@@ -605,37 +611,75 @@ void OnDamage(ref TookDamage msg) {
 - Block messages during cutscenes
 - Log/audit sensitive actions
 
-### Built-in Inspector Diagnostics
+### Built-in Editor Diagnostics
 
 **The problem with normal events:** "Which event fired? When? Who handled it? In what order?" = unknown
 
-**DxMessaging solution:** Click any `MessageAwareComponent` in the Inspector:
+**DxMessaging solution:** turn on diagnostics in the Inspector or Project Settings, then use the
+dedicated Unity editor tools under **Tools > Wallstop Studios > DxMessaging**.
 
-#### Message History (last 50)
+#### Message Monitor
 
-- `[12:34:56.123] HealthChanged`
-  - amount: 25
-  - priority: 0
-  - handlers: 3
-- `[12:34:55.987] ItemAdded`
-  - itemId: 42, count: 1
-  - priority: 5
-  - handlers: 2
+- Recent global-bus emissions, most-recent first
+- Message type, context, and stack trace details
+- Plain text filtering, `type:` / `message:` / `context:` / `stack:` field
+  filters, an active-filter summary with Clear, and Copy JSON export
+- Visible message-type lanes showing per-filter entry counts, context breadth,
+  and message-volume share, plus context lanes showing context volume and
+  message breadth, with row-level Filter shortcuts and exact quoted context
+  shortcuts
+- Loaded-scene `MessagingComponent` diagnostics, including listener counts,
+  registrations, calls, local messages, and provider warnings
 
-##### Active Registrations
+#### Flow Graph
 
-- [x] HealthChanged (priority: 0, called: 847 times)
-- [x] ItemAdded (priority: 5, called: 23 times)
-- [x] TookDamage (priority: 10, called: 1,203 times)
+- Component nodes, message-type nodes, and registration edges
+- Route-map route-kind mix, call shares, widest-message target-component
+  fan-out, most-routed target, inactive routed-target, hottest-route, and
+  no-call route summaries, recent traced-route coverage, busiest traced-route,
+  traced-message, and traced-target share, visible message lanes grouped by
+  message type, visible target lanes grouped by target component, visible trace
+  route-kind lanes grouped by traced registration kind, visible trace message
+  lanes grouped by traced message type, visible trace target lanes grouped by
+  traced target component, visible trace-id lanes grouped by positive trace id,
+  visible trace context lanes grouped by normalized context, visible trace
+  context volume and share, visible trace-id
+  breadth, visible trace-target/path concentration, selected
+  component/message route-health and busiest traced-route details, selected
+  component busiest traced-message details, selected message busiest
+  traced-target details, selected
+  component/message/route visible traced-share details, and selected
+  component/message/route trace context volume, trace context delivery,
+  busiest-context-share, trace-id breadth, selected component trace-message,
+  selected message trace-target, busiest-path, and busiest-path-share details
+- Recent global/listener emission evidence
+- Exact recent traced delivery counts per registration edge
+- Recent trace-path/context aggregates, including busiest trace context share,
+  busiest trace message/target/path shares, visible flow corridors by
+  message/target pair, visible trace route-kind lanes by traced registration
+  kind, visible trace message lanes by traced message type, visible trace target
+  lanes by traced target component, visible trace context lanes by normalized
+  context, visible trace-id lanes by positive trace id, widest visible trace id
+  by path count, and exact trace-id export arrays when diagnostics capture token
+  delivery records with positive trace ids
+
+#### Inspector integration
+
+Click any `MessagingComponent` in the Inspector for component-local diagnostics
+and any `MessageAwareComponent` subclass for base-call warning surfaces.
 
 #### Real-world debugging scenarios
 
-- "Did my message fire?" -> Check history, see timestamp
-- "Why didn't my handler run?" -> Check registrations, see if it's active
-- "What's firing too often?" -> Sort by call count
-- "What's the execution order?" -> Sort by priority
+- "Did my message fire?" -> Check Message Monitor history.
+- "Why didn't my handler run?" -> Check registrations and Flow Graph edges.
+- "What's firing too often?" -> Compare call counts in component and route summaries.
+- "Which source/target context was involved?" -> Check Message Monitor context
+  and Flow Graph trace paths.
 
 **No more:** Setting 50 breakpoints and stepping through code for 30 minutes.
+
+See [Diagnostics](docs/guides/diagnostics.md) for the current editor tooling and
+trace-path semantics.
 
 ### Local Bus Islands for Testing
 
@@ -654,8 +698,9 @@ public void TestAchievementSystem() {
     // Test in isolation
     _ = token.RegisterBroadcastWithoutSource<EnemyKilled>(achievements.OnKill);
 
+    var gameObject = new GameObject();
     var msg = new EnemyKilled("Boss");
-    msg.EmitGameObjectBroadcast(enemy, testBus);  // Only this test sees it
+    msg.EmitGameObjectBroadcast(gameObject, testBus);  // Only this test sees it
 
     Assert.IsTrue(achievements.Unlocked("BossSlayer"));
 }
@@ -693,7 +738,7 @@ public void TestAchievementSystem() {
 
 - [Unity Integration](docs/guides/unity-integration.md) -- MessagingComponent deep dive
 - [Targeting & Context](docs/concepts/targeting-and-context.md) -- GameObject vs Component
-- [Diagnostics](docs/guides/diagnostics.md) -- Inspector tools and debugging
+- [Diagnostics](docs/guides/diagnostics.md) -- editor tools, traces, and debugging
 - [Memory Reclamation](docs/guides/memory-reclamation.md) -- idle eviction, explicit Trim, and tuning the runtime settings asset
 
 Important: Inheritance with MessageAwareComponent

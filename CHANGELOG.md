@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Flow Graph now includes visible trace-id lanes and visible trace route-kind
+  lanes over visible trace paths, reporting path-membership breadth or
+  route-kind delivery breadth plus message, target, and context details without
+  changing export schema v5.
+- Message Monitor now includes visible message-type and context lanes over the
+  current filter, reporting entry counts, distinct context/message breadth,
+  entry share, context lists, message lists, and row-level Filter shortcuts,
+  including exact quoted context shortcuts, without changing JSON export.
+- Message Monitor filtering now supports typed `type:`, `message:`,
+  `context:`, and `stack:` facets over captured entry fields while preserving
+  existing plain text matching, supports quoted typed values with spaces, and
+  displays the active typed or plain filter with a Clear action.
+
 ## [3.2.0]
 
 ### Added

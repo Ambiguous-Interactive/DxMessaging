@@ -59,6 +59,7 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         public long EmissionId => 0 < _dispatchDepth ? _scopedEmissionId : _emissionId;
         internal long TickCounter => _tickCounter;
+        internal bool IsDispatching => _dispatchDepth > 0;
 
         private const long DefaultIdleEvictionTicks = 30;
         private const double DefaultEvictionTickIntervalSeconds = 5d;
@@ -3170,7 +3171,7 @@ namespace DxMessaging.Core.MessageBus
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
             {
-                _emissionBuffer.Add(new MessageEmissionData(typedMessage));
+                _emissionBuffer.Add(new MessageEmissionData(typedMessage, emissionId));
             }
 
             if (plan.fastPath)
@@ -3412,7 +3413,7 @@ namespace DxMessaging.Core.MessageBus
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
             {
-                _emissionBuffer.Add(new MessageEmissionData(typedMessage, target));
+                _emissionBuffer.Add(new MessageEmissionData(typedMessage, target, emissionId));
             }
 
             // Fast lane: no interceptors, no global accept-all, no
@@ -4041,7 +4042,7 @@ namespace DxMessaging.Core.MessageBus
             long touchTick = AdvanceTick();
             if (_diagnosticsMode)
             {
-                _emissionBuffer.Add(new MessageEmissionData(typedMessage, source));
+                _emissionBuffer.Add(new MessageEmissionData(typedMessage, source, emissionId));
             }
 
             // Fast lane: no interceptors, no global accept-all, no

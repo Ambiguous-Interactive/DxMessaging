@@ -105,10 +105,14 @@ export manifest to "fix" a sample -- gate the sample instead.
 succeeds (plain `needs` gating, no `always()` escape hatch). A failed export
 blocks the IRREVERSIBLE npm publish too, so neither npm nor the Release ever
 advertises a version whose `.unitypackage` is missing. The Stage step treats a
-missing/empty file as a HARD error, and a final step asserts the published
-release carries all four assets (`.tgz` + `.sha256`, `.unitypackage` +
-`.sha256`). Recovery is to fix the export and re-run; the npm publish step is
-re-runnable (it skips a version already on the registry).
+missing/empty file as a HARD error. Before npm publish, the
+`asset-store-submission.js` generator also stages the Asset Store artifact from
+the checked release files, tracked store media, `STORE-LISTING.md`, and the
+matching changelog section; missing or stale store collateral fails before the
+registry action. A final step asserts the published release carries all four
+assets (`.tgz` + `.sha256`, `.unitypackage` + `.sha256`). Recovery is to fix the
+export or store collateral and re-run; the npm publish step is re-runnable (it
+skips a version already on the registry).
 
 ## Guards (red-green)
 
@@ -119,6 +123,10 @@ re-runnable (it skips a version already on the registry).
   and asserts `Packages/manifest.json` enables `com.unity.modules.imgui` and
   every entry of `unity-builtin-modules.json` -- it reproduces the v3.1.0 compile
   failure at the staging level, no licensed editor required.
+- `scripts/__tests__/asset-store-submission.test.js` pins the staged Asset Store
+  artifact: release files, checksums, `STORE-LISTING.md`, store media, generated
+  classic/UPM checklists, and `MANIFEST.json`, with stale checksum and missing
+  media failures.
 - The `unitypackage` job + the post-publish asset check are the integration
   backstop on a real release.
 

@@ -72,7 +72,9 @@ editor), NOT inside the devcontainer. The container ships no local Unity build. 
 - Sandbox restriction: `using System.Reflection;` is rejected in `Unity_RunCommand` snippets -- fully qualify (`System.Reflection.Assembly`) instead.
 - The published IL2CPP-Release headline comes from the CI leg (self-hosted Windows, `scripts/unity/run-ci-tests.ps1`), not the local MCP loop; the MCP loop is the local Mono/editor signal. The CI host project is generated under `.artifacts/unity/projects/<version>-<mode>/` -- see [UPM Test Harness](./skills/unity/upm-test-harness.md).
 - License (CI only): see [Unity License Bootstrap](./skills/unity/unity-license-bootstrap.md). CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and guarantees a `-returnlicense` on every exit path.
-- For source-generator tests (no Unity), use `dotnet test SourceGenerators/...Tests`
+- For source-generator tests (no Unity), use `dotnet test SourceGenerators/...Tests`.
+- For docs sample/reference guards (no Unity), use
+  `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`.
 
 ## GitHub Actions / CI Runners
 
@@ -172,7 +174,7 @@ The agent runs from inside the slim devcontainer (.NET 9/10 base + Node + docs t
 - Ordered lists must follow MD029 `one` style (`1.` for each item).
 - Internal fragment links must match GitHub/markdownlint heading slugs exactly (MD051).
 - Documentation and `///` XML doc comments must be pure ASCII; see [ASCII-Only Documentation Policy](./skills/documentation/ascii-only-docs.md).
-- Every C# code sample in docs - inline, fenced, and XML `<code>` blocks - must compile; see [Code Samples Must Compile](./skills/documentation/code-samples-must-compile.md) and keep the `DocsSnippetCompilationTests` suite green.
+- Every C# code sample in docs - inline, fenced, template-embedded, and XML `<code>` blocks - must compile; see [Code Samples Must Compile](./skills/documentation/code-samples-must-compile.md) and keep `.docs-tests` green.
 - Documentation prose must avoid LLM-style filler, marketing adjectives, hedge transitions, and vague quantifiers; see [Human-Prose Documentation Policy](./skills/documentation/human-prose-policy.md).
 - Subclasses of `MessageAwareComponent` MUST call `base.<method>()` from every guarded lifecycle override; see [MessageAwareComponent Base-Call Contract](./skills/unity/base-call-contract.md).
 - When editing `Runtime/Core/Configuration/DxMessagingRuntimeSettings.cs` or its provider, update `docs/reference/runtime-settings.md` and `docs/guides/memory-reclamation.md` in the same change; see [Memory Reclamation Documentation Maintenance](./skills/documentation/memory-reclamation-docs.md).

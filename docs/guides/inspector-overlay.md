@@ -8,8 +8,8 @@ nothing -- every handler you registered silently fails to fire. This page
 is the user-facing tour of how the package surfaces the problem and how
 you fix it.
 
-This guide covers when warnings appear, what the Inspector HelpBox looks
-like, the three actions it offers, the Project Settings panel, and the
+This guide covers when warnings appear, what the Inspector warning surfaces
+look like, the three actions they offer, the Project Settings panel, and the
 manual rescan menu. For the full reference -- every diagnostic id,
 exact detection policy, suppression precedence, and Unity 2021 setup
 notes -- see [Roslyn Analyzers & Diagnostics](../reference/analyzers.md).
@@ -28,9 +28,9 @@ two things happen in parallel:
    Console with the corresponding `DXMSG###` id and a message that
    names the offending type and method.
 1. **At Inspector time**, the overlay reads the cached scan from
-   `Library/DxMessaging/baseCallReport.json` and renders a HelpBox at
-   the very top of every `MessageAwareComponent` subclass's Inspector
-   that has at least one missing base call.
+   `Library/DxMessaging/baseCallReport.json` and renders a warning
+   panel at the very top of every `MessageAwareComponent` subclass's
+   Inspector that has at least one missing base call.
 
 You see both surfaces by default. The Console warning is authoritative
 for CI builds (the analyzer is activated for Unity's C# compiler through
@@ -41,32 +41,44 @@ wiring a prefab.
 !!! tip
 Severity is per-project tunable. Add lines like `dotnet_diagnostic.DXMSG006.severity = error` to your `.editorconfig` to upgrade missing base calls into a build break, or `severity = none` to silence one project-wide. See [Suppression precedence](../reference/analyzers.md#suppression-precedence) for the full ordering.
 
-## The HelpBox
+## The Warning Surfaces
 
-When the overlay decides to render, it draws a single Unity `HelpBox`
-above your component's Inspector body, followed by a horizontal row of
-action buttons.
+When the overlay decides to render for the normal DxMessaging-owned
+component inspector, it draws a compact UI Toolkit panel above your
+component's Inspector body, followed by a horizontal row of action
+buttons. User-defined custom editors for specific `MessageAwareComponent`
+subclasses keep their normal inspector body; the package injects the
+same warning data through Unity's component-header hook as an IMGUI
+HelpBox so the user's editor can stay in charge of its body.
 
-![Inspector overlay warning HelpBox (DXMSG009 implicit-hide example) at the top of a MessageAwareComponent subclass Inspector](../images/inspector-overlay/dxmsg009-overlay.png)
+![Inspector overlay warning panel (DXMSG009 implicit-hide example) at the top of a MessageAwareComponent subclass Inspector](../images/inspector-overlay/dxmsg009-overlay.png)
 
-The text follows this shape:
+The panel follows this shape:
 
-> `<FullyQualifiedTypeName>` has lifecycle methods that don't chain to
-> MessageAwareComponent (`<comma-separated method list>`) -- DxMessaging will
-> not function on this component.
-> See docs/reference/analyzers.md.
+- **Title:** `Missing MessageAwareComponent base calls`
+- **Body:** `<FullyQualifiedTypeName> has lifecycle methods that do not chain to MessageAwareComponent. DxMessaging will not function on this component.`
+- **Method list:** one row per missing method, such as `OnEnable:
+'<type>' overrides MessageAwareComponent.OnEnable but does not call
+base.OnEnable(); handlers will not be re-enabled when this component
+is enabled.`
 
 When the cache is stale (immediately after a domain reload, before the
-first post-reload scan completes), the message above is followed by a
-trailing `(cached from previous session -- refreshing...)` line on a new
-paragraph -- see
+first post-reload scan completes), the panel includes a
+`Report is cached from previous session; refreshing...` line -- see
 [Cached-from-previous-session annotation](#cached-from-previous-session-annotation)
 below.
 
-`<comma-separated method list>` is taken straight from the analyzer's
-per-type report -- typically one of `Awake`, `OnEnable`, `OnDisable`,
-`OnDestroy`, or `RegisterMessageHandlers`. A single component can list
-multiple methods if more than one override is broken.
+The custom-editor IMGUI path uses Unity's native `HelpBox` instead of
+the retained UI Toolkit panel. Its text names the fully-qualified type,
+lists the missing methods, includes the same per-method consequence
+lines, points to `docs/reference/analyzers.md`, and appends
+`(cached from previous session; refreshing...)` while the cache is stale.
+It exposes the same **Open Script** and **Ignore this type** actions.
+
+The method list is taken straight from the analyzer's per-type report
+-- typically one of `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or
+`RegisterMessageHandlers`. A single component can list multiple methods
+if more than one override is broken.
 
 ### Cached-from-previous-session annotation
 
@@ -74,16 +86,18 @@ After a domain reload -- when you enter Play Mode, recompile, or open the
 Editor -- the overlay needs a moment to rebuild its scan. Rather than
 flashing an empty Inspector and then suddenly showing a warning, the
 package eagerly loads the previous session's cache from
-`Library/DxMessaging/baseCallReport.json` so the HelpBox is visible
+`Library/DxMessaging/baseCallReport.json` so the warning is visible
 immediately.
 
-While that cached data is being refreshed, the HelpBox annotates the
-trailing line of its message with `(cached from previous session --
-refreshing...)`.
+While that cached data is being refreshed, the warning panel includes
+the stale-cache note `Report is cached from previous session;
+refreshing...`. The IMGUI header-hook path appends
+`(cached from previous session; refreshing...)` to the HelpBox body
+instead.
 
 Once the first post-reload scan completes (typically within a single
 editor tick after assembly reload completes), the harvester flips its
-`IsFreshThisSession` flag and the suffix disappears. You do not need to
+`IsFreshThisSession` flag and the note disappears. You do not need to
 do anything -- the Inspector repaints automatically. The annotation
 exists so you understand the data is from the previous session in the
 unlikely event you have just edited the offending source code and the
@@ -92,9 +106,9 @@ fixed.
 
 ## Three Inspector Actions
 
-Below the HelpBox the overlay draws a horizontal action row. The
-buttons that appear depend on whether the component's fully-qualified
-type name is currently in the project ignore list.
+Below the warning surface the overlay draws a horizontal action row.
+The buttons that appear depend on whether the component's
+fully-qualified type name is currently in the project ignore list.
 
 ### Default (warning) state
 
@@ -108,23 +122,22 @@ When the component is **not** ignored, you see two buttons:
 - **Ignore this type** -- appends the component's fully-qualified type
   name to the ignore list in `Assets/Editor/DxMessagingSettings.asset`;
   the generated sidecar is refreshed for the analyzer. The next
-  Inspector repaint flips the HelpBox into its info shape (below).
+  Inspector repaint flips the overlay into its info shape (below).
   The mutation is deferred to the next editor frame so the current GUI
   cycle completes cleanly -- there is no perceptible delay.
 
 ### Ignored state
 
-When the component **is** in the ignore list, the HelpBox is the blue
-info shape -- the analyzer noticed this would normally be a problem,
-but you have explicitly opted out -- and the action row collapses to a
-single button:
+When the component **is** in the ignore list, the overlay shows the info
+shape -- the type is explicitly excluded from the base-call check -- and
+the action row collapses to a single button:
 
 ![Stop ignoring action for an excluded type](../images/inspector-overlay/inspector-ignored.png)
 
 - **Stop ignoring** -- removes the component's fully-qualified type
-  name from the ignore list. On the next frame the HelpBox flips back
-  to its warning shape if the underlying analyzer warnings still
-  apply.
+  name from the ignore list. The ignored info state clears on the next
+  repaint; if the type still violates the rule, the warning returns
+  after the next fresh scan, compile, or manual rescan.
 
 !!! warning
 Adding a type to the ignore list silences the **overlay** and the compile-time
@@ -141,10 +154,13 @@ it.
 
 ## Project Settings Panel
 
-The package registers a Project Settings page under **Project
-Settings > Wallstop Studios > DxMessaging**. The currently-rendered controls are:
+The package registers a UI Toolkit Project Settings page under
+**Project Settings > Wallstop Studios > DxMessaging**. The page is
+split into three sections:
 
 ![DxMessaging Project Settings panel](../images/inspector-overlay/project-settings-panel.png)
+
+### Diagnostics
 
 - **Diagnostics Targets** -- flags-enum field (`Off`, `Editor`,
   `Runtime`, `All`) controlling where global diagnostics are enabled.
@@ -152,29 +168,34 @@ Settings > Wallstop Studios > DxMessaging**. The currently-rendered controls are
 - **Message Buffer Size** -- integer; the default ring-buffer size
   used by every newly-created bus and token when diagnostics are
   active. Defaults to `IMessageBus.DefaultMessageBufferSize`.
+
+### Editor Safety
+
 - **Suppress Domain Reload Warning** -- checkbox; disables the warning
   Unity shows when "Enter Play Mode Options" skips a domain reload.
   DxMessaging still resets its statics, so the warning is noise on
   most projects.
 
+### Inspector Checks
+
+- **Base-Call Check Enabled** -- master toggle for the Inspector
+  overlay. When `false`, the overlay is silenced; the underlying
+  analyzer still emits the Console warning unless `.editorconfig`
+  says otherwise.
+- **Use Console Bridge** -- opt-in legacy bridge that unions Unity
+  Console / compiler-message warnings into the IL-reflection scan.
+  Default off.
+
 The settings asset itself lives at
 `Assets/Editor/DxMessagingSettings.asset` and stores additional
 fields the overlay relies on:
 
-- The master toggle for the base-call check, exposed on the asset
-  Inspector field `DxMessagingSettings.BaseCallCheckEnabled`. When
-  `false`, the overlay is silenced; the underlying analyzer still
-  emits the Console warning unless `.editorconfig` says otherwise.
 - The project ignore list
   (`DxMessagingSettings.BaseCallIgnoredTypes`), edited from the asset
   Inspector at `Assets/Editor/DxMessagingSettings.asset` (the Project
   Settings panel does not currently expose the ignore list). Mirrored
   to the sidecar `Assets/Editor/DxMessaging.BaseCallIgnore.txt` that
   the analyzer reads via `csc.rsp`'s `-additionalfile:` switch.
-- An opt-in legacy console-scrape bridge, exposed on the asset
-  Inspector field `DxMessagingSettings.UseConsoleBridge`, that
-  augments the IL-reflection scanner's snapshot with warnings
-  harvested from Unity's `LogEntries` store. Default off.
 
 !!! note
 The Inspector overlay's **Ignore this type** / **Stop ignoring** buttons read and write the same ignore-list field that the settings asset exposes. You can also bulk-edit the list directly from the asset Inspector.
@@ -198,9 +219,10 @@ when you have just toggled the master setting, edited the ignore
 list outside of Unity, or want to confirm that a fix has cleared a
 warning before the next domain reload.
 
-The rescan is a no-op while Unity is mid-compile or mid-import; the
-menu entry is a no-op when the harvester is mid-compile and
-reschedules itself for the next safe tick.
+The menu action is a no-op while Unity is mid-compile or mid-import.
+Automatic scheduled scans requeue for the next safe tick; if you click
+the menu during the blocked window, click it again after Unity finishes
+compiling or importing.
 
 ## Worked Example
 
@@ -236,13 +258,14 @@ public sealed class HealthComponent : MessageAwareComponent
 After the next compile, the Console shows a `DXMSG006` warning
 naming `Game.HealthComponent.OnEnable`. When you click into a
 GameObject that has `HealthComponent` attached, the Inspector
-renders the overlay HelpBox at the top of the component:
+renders the overlay warning panel at the top of the component:
 
-![HealthComponent Inspector with the missing-base-call HelpBox visible](../images/inspector-overlay/worked-example-before.png)
+![HealthComponent Inspector with the missing-base-call warning panel visible](../images/inspector-overlay/worked-example-before.png)
 
-The HelpBox names `OnEnable` in its missing-method list and points
-you at the analyzer reference. **Open Script** jumps you to the
-offending override.
+The panel names `OnEnable` in its missing-method list and gives the
+runtime consequence for the missing base call. **Open Script** opens
+the component source file; when line data is available, it opens at
+that line.
 
 ### Fixing it
 
@@ -256,11 +279,13 @@ protected override void OnEnable()
 }
 ```
 
-After the next compile (or **Tools > Wallstop Studios > DxMessaging > Rescan Base-Call
-Warnings**), the HelpBox disappears and the `DXMSG006` Console entry
-is gone:
+After the next compile, the `DXMSG006` Console entry is gone. The
+Inspector warning disappears after the compile-triggered scan refreshes
+the report; if the Console is already clean but the Inspector still
+shows cached data, run **Tools > Wallstop Studios > DxMessaging > Rescan Base-Call
+Warnings** to refresh the overlay snapshot:
 
-![Same HealthComponent Inspector with the HelpBox cleared after the fix](../images/inspector-overlay/worked-example-after.png)
+![Same HealthComponent Inspector with the warning panel cleared after the fix](../images/inspector-overlay/worked-example-after.png)
 
 That is the entire loop: warning > fix > silence.
 

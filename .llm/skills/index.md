@@ -74,7 +74,7 @@
 | [GitHub Actions Workflow Consistency Part 1](./github-actions/workflow-consistency-part-1.md)          | [ok] 243   | [intermediate] | [stable] | [risk: low]    | migration, split        |
 | [Lychee Link Checker Configuration Management](./github-actions/lychee-configuration.md)               | [ok] 249   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd   |
 | [Lychee Link Checker Configuration Management Part 1](./github-actions/lychee-configuration-part-1.md) | [draft] 66 | [intermediate] | [stable] | [risk: low]    | migration, split        |
-| [Release Asset and Notes Invariants](./github-actions/release-asset-and-notes-invariants.md)           | [ok] 134   | [intermediate] | [stable] | [risk: none]   | github-actions, release |
+| [Release Asset and Notes Invariants](./github-actions/release-asset-and-notes-invariants.md)           | [ok] 142   | [intermediate] | [stable] | [risk: none]   | github-actions, release |
 | [Unity Version Single Source of Truth](./github-actions/unity-version-single-source.md)                | [ok] 199   | [intermediate] | [stable] | [risk: low]    | github-actions, ci-cd   |
 
 ## Packaging
