@@ -117,16 +117,19 @@ The release workflow performs these gates:
 1. Export a classic `.unitypackage` from the npm payload on the self-hosted
    Windows runner (`scripts/unity/export-unitypackage.ps1`); the job follows
    the same Unity license and organization-lock discipline as the test jobs.
+1. Assemble the `asset-store-submission` workflow artifact before the npm
+   publish. The tested generator copies the `.unitypackage`, the `.tgz`,
+   checksums, store media, `STORE-LISTING.md`, and generated classic/UPM upload
+   checklists plus `MANIFEST.json`. Missing store collateral fails here before
+   the irreversible registry action.
 1. Publish to npm with Trusted Publishing and provenance.
 1. Create or update the GitHub Release. The body is the matching `## [version]`
    `CHANGELOG.md` section plus an install footer, rendered by the shared
    `scripts/release/release-notes.js` extractor. Assets are the `.tgz`, its
    `.sha256`, the `.unitypackage`, and its `.sha256`; a final step asserts the
    published release carries all four.
-1. Assemble the `asset-store-submission` workflow artifact (the
-   `.unitypackage`, the `.tgz`, checksums, and a generated
-   `SUBMISSION-CHECKLIST.md`) for the manual Unity Asset Store upload; the
-   release-time procedure is the
+1. Upload the already-generated `asset-store-submission` workflow artifact for
+   the manual Unity Asset Store upload; the release-time procedure is the
    [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md)
    (account onboarding: [Unity Asset Store UPM](./unity-asset-store-upm.md)).
 

@@ -217,7 +217,7 @@ The Enemy doesn't know (or care) who needs to know about the damage. It just ann
 ### The Code Flow
 
 1. **[Enemy.cs](./Enemy.cs)** detects it took damage
-1. **Enemy** calls: `this.EmitBroadcast(new TookDamage(amount))`
+1. **Enemy** creates `TookDamage tookDamage = new TookDamage(amount)` and calls `tookDamage.EmitGameObjectBroadcast(gameObject)`
 1. **UIOverlay** receives it via `RegisterBroadcastWithoutSource`
 1. **UIOverlay** displays the damage event
 
@@ -357,7 +357,7 @@ token.RegisterBroadcastWithoutSource<TookDamage>(OnTookDamage);
 
 **Use for**: Events that multiple systems care about
 
-**Key characteristic**: Uses `EmitBroadcast` to send messages
+**Key characteristic**: Uses `EmitGameObjectBroadcast(gameObject)` to send messages from its GameObject
 
 ### Pattern 4: The Orchestrator (Boot)
 
@@ -420,7 +420,7 @@ Try modifying the sample:
 |------------|--------|---------|
 | Send to everyone | Untargeted | `var paused = new GamePaused(); paused.Emit();` |
 | Send to specific Component | Targeted | `var heal = new Heal(10); heal.EmitComponentTargeted(playerComponent);` |
-| Announce an event | Broadcast | `this.EmitBroadcast(new Exploded())` |
+| Announce an event | Broadcast | `var exploded = new Exploded(); exploded.EmitGameObjectBroadcast(gameObject);` |
 | Listen to everything | `RegisterBroadcastWithoutSource` | `token.RegisterBroadcastWithoutSource<Damage>(OnDamage)` |
 | Listen to specific source | `RegisterComponentBroadcast` | `token.RegisterComponentBroadcast<Fire>(weapon, OnFire)` |
 | Receive targeted messages | `RegisterComponentTargeted` | `token.RegisterComponentTargeted<Heal>(this, OnHeal)` |

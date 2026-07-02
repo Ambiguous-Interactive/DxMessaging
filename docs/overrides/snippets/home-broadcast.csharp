@@ -1,0 +1,37 @@
+using DxMessaging.Core;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Unity;
+using UnityEngine;
+
+[DxBroadcastMessage]
+[DxAutoConstructor]
+public readonly partial struct TookDamage
+{
+    public readonly int Amount;
+}
+
+public sealed class DamageFeed : MessageAwareComponent
+{
+    protected override void RegisterMessageHandlers()
+    {
+        base.RegisterMessageHandlers();
+
+        // Token belongs to this listener, not the object taking damage.
+        _ = Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
+    }
+
+    private void OnAnyDamage(InstanceId source, TookDamage message)
+    {
+        // React to damage from any source.
+    }
+}
+
+public sealed class EnemyHealth : MonoBehaviour
+{
+    public void ApplyHit(int amount)
+    {
+        TookDamage tookDamage = new TookDamage(amount);
+        tookDamage.EmitGameObjectBroadcast(gameObject);
+    }
+}

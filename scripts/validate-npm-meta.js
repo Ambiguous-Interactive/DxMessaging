@@ -326,7 +326,10 @@ function validateCsharpMetaFiles(relativePaths, options = {}) {
   };
 }
 
-function collectTrackedCsharpMetaPaths(execFileSyncImpl = execFileSync) {
+function collectTrackedCsharpMetaPaths(
+  execFileSyncImpl = execFileSync,
+  existsSyncImpl = fs.existsSync
+) {
   try {
     const output = execFileSyncImpl("git", ["ls-files", "-z", "--", "*.cs.meta"], {
       cwd: REPO_ROOT,
@@ -336,6 +339,7 @@ function collectTrackedCsharpMetaPaths(execFileSyncImpl = execFileSync) {
     return String(output || "")
       .split("\0")
       .filter(Boolean)
+      .filter((relativePath) => existsSyncImpl(path.join(REPO_ROOT, relativePath)))
       .sort();
   } catch (error) {
     const detail = describeProcessFailure(error.stderr, error.message);
@@ -346,7 +350,7 @@ function collectTrackedCsharpMetaPaths(execFileSyncImpl = execFileSync) {
 function validateRepositoryCsharpMetaFiles(options = {}) {
   const relativePaths = Array.isArray(options.relativePaths)
     ? options.relativePaths
-    : collectTrackedCsharpMetaPaths(options.execFileSync);
+    : collectTrackedCsharpMetaPaths(options.execFileSync, options.existsSync);
   return validateCsharpMetaFiles(relativePaths, options);
 }
 

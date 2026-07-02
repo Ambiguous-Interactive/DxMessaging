@@ -114,11 +114,11 @@ public readonly partial struct TookDamage { public readonly int amount; }
 
 // Broadcast from GameObject
 var damage = new TookDamage(5);
-damage.EmitGameObjectBroadcast(enemyGameObject);
+damage.EmitGameObjectBroadcast(gameObject);
 
 // Register for broadcasts from this GameObject
-_ = token.RegisterGameObjectBroadcast<TookDamage>(enemyGameObject, OnEnemyDamage);
-// Yes OnEnemyDamage fires when damage.EmitGameObjectBroadcast(enemyGameObject) is called
+_ = token.RegisterGameObjectBroadcast<TookDamage>(gameObject, OnDamage);
+// Yes OnDamage fires when damage.EmitGameObjectBroadcast(gameObject) is called
 
 // Register for broadcasts from this Component
 _ = token.RegisterComponentBroadcast<TookDamage>(enemyComponent, OnComponentDamage);
@@ -257,11 +257,12 @@ void OnAnyDamage(ref InstanceId source, ref TookDamage msg)
     // You get the source as a parameter so you know WHO took damage
 }
 
-// Now when ANYONE broadcasts damage...
-damage.EmitFrom(enemy);     // OnAnyDamage fires with source = enemy
-damage.EmitFrom(player);    // OnAnyDamage fires with source = player
-damage.EmitFrom(boss);      // OnAnyDamage fires with source = boss
+// When this component broadcasts damage...
+damage.EmitFrom(gameObject); // OnAnyDamage fires with source = gameObject
 ```
+
+Each other component that emits the same message uses its own `gameObject` as the source, so the
+global listener still receives damage from every object.
 
 #### Use cases
 
@@ -275,23 +276,21 @@ damage.EmitFrom(boss);      // OnAnyDamage fires with source = boss
 You can have BOTH specific listeners AND global listeners for the same message:
 
 ```csharp
-// Specific listener: only cares about player damage
-_ = playerToken.RegisterGameObjectBroadcast<TookDamage>(playerGameObject, OnPlayerDamage);
+// Specific listener: only cares about this source
+_ = playerToken.RegisterGameObjectBroadcast<TookDamage>(gameObject, OnDamage);
 
 // Global listener: cares about ALL damage
 _ = analyticsToken.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
 
-// When player takes damage
-damage.EmitFrom(playerGameObject);
-// Yes OnPlayerDamage fires (specific listener)
+// When this object takes damage
+damage.EmitFrom(gameObject);
+// Yes OnDamage fires (specific listener)
 // Yes OnAnyDamage fires (global listener)
 // Both fire!
-
-// When enemy takes damage
-damage.EmitFrom(enemyGameObject);
-// No OnPlayerDamage does NOT fire (wrong source)
-// Yes OnAnyDamage fires (global listener catches everything)
 ```
+
+If a different object emits the same message from its own `gameObject`, the global listener still
+fires, while the source-specific listener above does not.
 
 ### Real-World Example: Combat System
 
@@ -436,7 +435,7 @@ See [Troubleshooting](../reference/troubleshooting.md) for more debugging tips.
 | Operation              | GameObject Variant                             | Component Variant                              |
 | ---------------------- | ---------------------------------------------- | ---------------------------------------------- |
 | **Emit Targeted**      | `msg.EmitGameObjectTargeted(go)`               | `msg.EmitComponentTargeted(comp)`              |
-| **Emit Broadcast**     | `msg.EmitGameObjectBroadcast(go)`              | `msg.EmitComponentBroadcast(comp)`             |
+| **Emit Broadcast**     | `msg.EmitGameObjectBroadcast(gameObject)`      | `msg.EmitComponentBroadcast(this)`             |
 | **Register Targeted**  | `RegisterGameObjectTargeted<T>(go, handler)`   | `RegisterComponentTargeted<T>(comp, handler)`  |
 | **Register Broadcast** | `RegisterGameObjectBroadcast<T>(go, handler)`  | `RegisterComponentBroadcast<T>(comp, handler)` |
 | **Global Targeted**    | `RegisterTargetedWithoutTargeting<T>(handler)` | (Same -- no distinction)                       |

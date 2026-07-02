@@ -20,7 +20,8 @@ const {
   runValidation,
   validateCsharpMetaFiles,
   validatePackEntries,
-  validatePublishedFilesArePairedWithMetas
+  validatePublishedFilesArePairedWithMetas,
+  validateRepositoryCsharpMetaFiles
 } = validateNpmMeta;
 
 const FORBIDDEN_PATH_CASES = [
@@ -148,6 +149,20 @@ test("validateCsharpMetaFiles aggregates invalid tracked C# meta diagnostics", (
       reason: "is missing the standard MonoImporter block for Unity C# scripts"
     }
   ]);
+});
+
+test("validateRepositoryCsharpMetaFiles ignores tracked metas deleted in the working tree", () => {
+  const result = validateRepositoryCsharpMetaFiles({
+    execFileSync: () => "Present.cs.meta\0Deleted.cs.meta\0",
+    existsSync: (filePath) => path.basename(filePath) !== "Deleted.cs.meta",
+    readFileSync: (filePath) => {
+      assert.notEqual(path.basename(filePath), "Deleted.cs.meta");
+      return VALID_CSHARP_META;
+    }
+  });
+
+  assert.equal(result.checked, 1);
+  assert.deepEqual(result.invalid, []);
 });
 
 test("runValidation --repo-cs-metas-only reports invalid tracked C# metas", () => {

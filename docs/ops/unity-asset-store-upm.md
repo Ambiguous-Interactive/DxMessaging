@@ -43,9 +43,9 @@ DxMessaging is a UPM package with package ID
 - Image assets in `package.json` `files` are limited to assets referenced by
   shipped package docs. Today that means the README banner at
   `docs/images/DxMessaging-banner.svg` and its `.meta`; the MkDocs
-  logo/favicon mark at `docs/images/dx-mark.svg` is tracked for GitHub Pages
-  only, because the generated documentation site is not part of the npm/UPM
-  payload.
+  `dxmessaging-mark.svg` logo, favicon, Open Graph image, and store media are
+  tracked for GitHub Pages and release staging only, because the generated
+  documentation site is not part of the npm/UPM payload.
 - The ignored `design-system/` source tree, design scraps, and exploration PNGs
   are not release assets. If a future package-shipped document references another
   brand image, add that image and its `.meta` to `package.json` `files` in the
@@ -66,7 +66,10 @@ artifact containing:
 - the `.unitypackage` exported by `scripts/unity/export-unitypackage.ps1`
 - the npm `.tgz` (the exact UPM payload, for reference and diffing)
 - `.sha256` checksums for both
-- a generated `SUBMISSION-CHECKLIST.md` with the version and upload steps
+- `STORE-LISTING.md`
+- tracked store media under `media/`
+- generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`, and
+  `MANIFEST.json`
 
 The export stages the `npm pack` payload into an ephemeral Unity project
 under `Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:

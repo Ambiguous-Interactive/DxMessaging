@@ -40,7 +40,7 @@ public class Player : MessageAwareComponent {
     void Heal(int amount) {
         health += amount;
         var healed = new PlayerHealed(amount);
-        healed.EmitBroadcast(this);
+        healed.EmitGameObjectBroadcast(gameObject);
         // Done! UI, audio, analytics all react automatically.
     }
 }

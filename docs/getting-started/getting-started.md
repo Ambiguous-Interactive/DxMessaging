@@ -205,7 +205,7 @@ _ = Token.RegisterGameObjectTargeted<Heal>(playerGO, OnPlayerHealed);
 
 // Emit (broadcasts always require a source)
 var damage = new TookDamage(25);
-damage.EmitGameObjectBroadcast(enemyGO);  // enemyGO is the source
+damage.EmitGameObjectBroadcast(gameObject);  // this GameObject is the source
 var heal = new Heal(10);
 heal.EmitGameObjectTargeted(playerGO);
 ```

@@ -72,7 +72,11 @@ test("real README banner exposes sync anchors", () => {
   const result = analyzeBanner({ repoRoot });
   assert.equal(result.currentVersion, readPackageVersion(path.join(repoRoot, "package.json")));
   assert.equal(result.currentTestCountLabel, result.testCountLabel);
-  assert.ok(result.svgContent.includes("Router-branded DxMessaging banner"));
+  assert.ok(result.svgContent.includes("DxKit-family amber DxMessaging banner"));
+  assert.ok(result.svgContent.includes("Decoupled, simple systems."));
+  assert.ok(result.svgContent.includes("#f4a836"));
+  assert.ok(!result.svgContent.includes("Hanken Grotesk"));
+  assert.ok(!result.svgContent.includes("#6d5ef6"));
 });
 
 test("readPackageVersion returns semver and rejects invalid versions", (t) => {
@@ -98,6 +102,13 @@ test("syncBanner updates the SVG badge, never stages, and is idempotent", () => 
       "[Test]\npublic void One() {}\n[Test]\npublic void Two() {}\n",
       "utf8"
     );
+    const docsTestsDir = path.join(repoRoot, ".docs-tests");
+    fs.mkdirSync(docsTestsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(docsTestsDir, "DocsSnippetCompilationTests.cs"),
+      "[Test]\npublic void DocsOne() {}\n",
+      "utf8"
+    );
     const svgPath = path.join(repoRoot, "docs", "images", "DxMessaging-banner.svg");
     fs.mkdirSync(path.dirname(svgPath), { recursive: true });
     const svg = `<svg>${getVersionBadge("0.0.1")}\n<text data-sync="test-count">900+ Tests</text></svg>`;
@@ -106,12 +117,12 @@ test("syncBanner updates the SVG badge, never stages, and is idempotent", () => 
     const first = syncBanner({ repoRoot });
     assert.equal(first.updated, true);
     assert.equal(first.version, "9.9.9");
-    assert.equal(first.testCount, 2);
-    assert.equal(first.testCountLabel, "2+ Tests");
+    assert.equal(first.testCount, 3);
+    assert.equal(first.testCountLabel, "3+ Tests");
 
     const updatedSvg = fs.readFileSync(svgPath, "utf8");
     assert.ok(updatedSvg.includes(">v9.9.9</text>"));
-    assert.ok(updatedSvg.includes("2+ Tests"));
+    assert.ok(updatedSvg.includes("3+ Tests"));
 
     const second = syncBanner({ repoRoot });
     assert.equal(second.updated, false);

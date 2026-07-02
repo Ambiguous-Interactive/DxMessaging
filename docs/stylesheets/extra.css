@@ -1,987 +1,395 @@
-/* Custom styling for DxMessaging documentation */
+/* ============================================================
+ * DxMessaging - MkDocs Material theme
+ * Dx family system: shared skeleton, amber product hue.
+ * Fonts: Space Grotesk (display) / IBM Plex Sans (body, via
+ * mkdocs.yml font.text) / JetBrains Mono (code, via font.code).
+ * ============================================================ */
 
-/* ============================================
-   CSS Custom Properties
-   ============================================ */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap");
 
 :root {
-  /* DxMessaging brand direction */
-  --dx-violet: #6d5ef6;
-  --dx-violet-light: #8b7dff;
-  --dx-lilac: #a78bfa;
-  --dx-cyan: #22d3ee;
-  --dx-cyan-dark: #0ea5c0;
-  --dx-green: #34d399;
-  --dx-amber: #fbbf24;
-  --dx-rose: #fb6a78;
-  --dx-ink: #16131f;
-  --dx-paper: #fbfafe;
-  --dx-paper-line: #e9e6f2;
-  --dx-muted: #6b6478;
-
-  --md-primary-fg-color: #5b4de0;
-  --md-primary-fg-color--light: #8b7dff;
-  --md-primary-fg-color--dark: #3426a8;
-  --md-accent-fg-color: var(--dx-cyan-dark);
-
-  /* ----------------------------------------------------------
-     Mermaid Theme Colors (Reference Only)
-     ----------------------------------------------------------
-     These CSS variables are NOT used by Mermaid.js directly.
-     Mermaid initialization is handled by mermaid-config.js,
-     which defines its own inline color values.
-
-     These variables are retained for:
-     - Documentation of the intended color scheme
-     - Potential use in custom CSS targeting SVG elements
-     - Consistency reference when updating mermaid-config.js
-     ---------------------------------------------------------- */
-
-  /* Light theme Mermaid colors */
-  --mermaid-primary-bg: #e3f2fd;
-  --mermaid-primary-text: #1565c0;
-  --mermaid-primary-border: #1976d2;
-
-  --mermaid-success-bg: #e8f5e9;
-  --mermaid-success-text: #2e7d32;
-  --mermaid-success-border: #388e3c;
-
-  --mermaid-warning-bg: #fff3e0;
-  --mermaid-warning-text: #c43e00;
-  --mermaid-warning-border: #f57c00;
-
-  --mermaid-danger-bg: #ffebee;
-  --mermaid-danger-text: #c62828;
-  --mermaid-danger-border: #d32f2f;
-
-  --mermaid-neutral-bg: #eceff1;
-  --mermaid-neutral-text: #37474f;
-  --mermaid-neutral-border: #607d8b;
-
-  --mermaid-accent-bg: #f3e5f5;
-  --mermaid-accent-text: #6a1b9a;
-  --mermaid-accent-border: #8e24aa;
-
-  /* ----------------------------------------------------------
-     Syntax Highlighting Color Palette (Light Theme)
-     ----------------------------------------------------------
-     Pygments token classes for C#:
-     - .k   = Keywords (public, class, void, return, if, etc.)
-     - .kt  = Built-in types (int, string, bool, float, var)
-     - .nf  = Function/method definitions
-     - .nc  = Class/struct definitions
-     - .na  = Attributes ([Serializable], [Test])
-     - .nn  = Namespaces
-     - .n   = Generic names (method calls, variables, type refs - mixed)
-     - .s   = Strings
-     - .mi/.mf = Numbers (integer/float)
-     - .c1/.cm = Comments (single-line/multi-line)
-     - .o   = Operators
-     - .p   = Punctuation
-
-     Color Strategy:
-     - Keywords: Blue (control flow, modifiers)
-     - Types (.kt, .nc): Teal/Cyan (type-related tokens)
-     - Functions (.nf): Purple/Magenta (callable things)
-     - Attributes: Orange (metadata/decorators)
-     - Namespaces: Slate gray (organizational)
-     - Generic names (.n): Dark gray (neutral, since mixed content)
-     - Strings: Green (literal values)
-     - Numbers: Brown/Sienna (numeric literals)
-     - Comments: Gray italic (de-emphasized)
-     ---------------------------------------------------------- */
-
-  /* Keywords: vibrant blue - stands out for control flow */
-  --md-code-hl-keyword-color: #0550ae;
-
-  /* Built-in types: teal - distinct "type" feel
-     NOTE: Material theme does NOT map .kt tokens to this variable.
-     Material maps .kt (built-in types like int, string, bool) to
-     --md-code-hl-keyword-color instead. We define this for reference
-     only; actual .kt styling uses direct selectors below. */
-  --md-code-hl-builtin-color: #0f766e;
-
-  /* Function definitions: purple/magenta - callable emphasis */
-  --md-code-hl-function-color: #8250df;
-
-  /* Strings: green - literal value indication */
-  --md-code-hl-string-color: #116329;
-
-  /* Numbers: brown/sienna - numeric literals */
-  --md-code-hl-number-color: #953800;
-
-  /* Comments: gray - de-emphasized (darkened for WCAG AA 4.5:1+ contrast) */
-  --md-code-hl-comment-color: #5c6570;
-
-  /* Operators: dark slate - structural but not distracting */
-  --md-code-hl-operator-color: #24292f;
-
-  /* Punctuation: dark gray - structural */
-  --md-code-hl-punctuation-color: #24292f;
-
-  /* Generic names (.n): neutral color (JavaScript adds semantic classes)
-     Pygments classifies many tokens as generic .n (Name) tokens.
-     The csharp-highlight.js script post-processes code blocks to add
-     semantic classes (.n-type, .n-method, .n-param, .n-var) which are
-     then styled with distinct colors via direct selectors below. */
-  --md-code-hl-name-color: #24292f;
-
-  /* Special tokens (defined via direct selectors below):
-     - Attributes (.na): #bc4c00 (orange - metadata)
-     - Class defs (.nc): #0f766e (teal - type color, matches .kt)
-     - Namespaces (.nn): #57606a (slate - organizational)
-     - Semantic .n tokens: see .n-type, .n-method, .n-param, .n-var
-  */
+  --dxm-amber: #f4a836;
+  --dxm-amber-soft: #ffd48e;
+  --dxm-ember: #ec4661; /* Targeted (taxonomy only) */
+  --dxm-blue: #7fa6d8; /* Untargeted */
+  --dxm-green: #7fb88a; /* Broadcast */
+  --dxm-route-untargeted: var(--dxm-blue);
+  --dxm-route-targeted: var(--dxm-ember);
+  --dxm-route-broadcast: var(--dxm-green);
+  --dxm-eyebrow-color: var(--dxm-amber);
+  --dxm-window-bg: #0a0e13;
+  --dxm-window-border: #1d2531;
+  --dxm-window-bar-bg: #11161d;
+  --dxm-window-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.6);
+  --dxm-chip-bg: #0a0e13;
+  --dxm-chip-border: #1d2531;
 }
 
+/* Route and panel colors adjust on Press paper so light mode stays readable. */
+[data-md-color-scheme="default"] {
+  --dxm-route-untargeted: #35618f;
+  --dxm-route-targeted: #b8324b;
+  --dxm-route-broadcast: #386e46;
+  --dxm-eyebrow-color: #8a5d00;
+  --dxm-window-bg: #faf8f3;
+  --dxm-window-border: #e4dfd1;
+  --dxm-window-bar-bg: #f4f1ea;
+  --dxm-window-shadow: 0 24px 48px -32px rgba(27, 24, 19, 0.35);
+  --dxm-chip-bg: #f4f1ea;
+  --dxm-chip-border: #e4dfd1;
+}
+
+/* ============= DARK (default) - scheme: slate ============= */
 [data-md-color-scheme="slate"] {
-  --dx-bg: #0b0a14;
-  --dx-surface: #14111e;
-  --dx-raised: #1e1a2e;
-  --dx-line: #272232;
-  --dx-edge: #332c45;
-  --dx-text: #f5f3fb;
-  --dx-text-muted: #bbb5cc;
-  --dx-text-subtle: #837c95;
+  --md-default-bg-color: #0d1117;
+  --md-default-fg-color: #e9eef4;
+  --md-default-fg-color--light: #9aa3af;
+  --md-default-fg-color--lighter: #6b7480;
+  --md-default-fg-color--lightest: #232c38;
 
-  --md-default-bg-color: var(--dx-bg);
-  --md-default-fg-color: var(--dx-text);
-  --md-default-fg-color--light: var(--dx-text-muted);
-  --md-default-fg-color--lighter: var(--dx-text-subtle);
-  --md-typeset-a-color: var(--dx-cyan);
-  --md-code-bg-color: var(--dx-surface);
-  --md-code-fg-color: #d7d2e3;
-  --md-accent-fg-color: var(--dx-cyan);
+  --md-primary-fg-color: #0d1117;
+  --md-primary-bg-color: #e9eef4;
+  --md-accent-fg-color: #f4a836;
 
-  /* Dark theme Mermaid colors (see :root for usage notes) */
-  --mermaid-primary-bg: #1e3a5f;
-  --mermaid-primary-text: #90caf9;
-  --mermaid-primary-border: #42a5f5;
+  --md-typeset-color: #c9d2dc;
+  --md-typeset-a-color: #f4a836;
 
-  --mermaid-success-bg: #1b3d2e;
-  --mermaid-success-text: #81c784;
-  --mermaid-success-border: #66bb6a;
+  --md-code-bg-color: #0c1016;
+  --md-code-fg-color: #c9d2dc;
+  --md-code-hl-color: rgba(244, 168, 54, 0.12);
+  --dxm-code-keyword: #ffcf70;
+  --dxm-code-type: #78d6b0;
+  --dxm-code-method: #8bb8ff;
+  --dxm-code-string: #f49aa8;
+  --dxm-code-comment: #788494;
+  --dxm-code-number: #c8a6ff;
+  --dxm-code-attribute: #f59e5b;
+  --dxm-code-namespace: #9ed0ff;
+  --dxm-code-operator: #d3dae6;
 
-  --mermaid-warning-bg: #3d2e1a;
-  --mermaid-warning-text: #ffb74d;
-  --mermaid-warning-border: #ffa726;
-
-  --mermaid-danger-bg: #3d1a1a;
-  --mermaid-danger-text: #ef9a9a;
-  --mermaid-danger-border: #ef5350;
-
-  --mermaid-neutral-bg: #2d2d2d;
-  --mermaid-neutral-text: #b0bec5;
-  --mermaid-neutral-border: #546e7a;
-
-  --mermaid-accent-bg: #2d1f3d;
-  --mermaid-accent-text: #ce93d8;
-  --mermaid-accent-border: #ab47bc;
-
-  /* ----------------------------------------------------------
-     Syntax Highlighting Color Palette (Dark/Slate Theme)
-     ----------------------------------------------------------
-     Same token mapping as light theme, with colors adjusted
-     for dark background contrast and readability.
-     ---------------------------------------------------------- */
-
-  /* Keywords: bright blue */
-  --md-code-hl-keyword-color: #79c0ff;
-
-  /* Built-in types: cyan/teal
-     NOTE: Not used by Material for .kt tokens (see :root comment).
-     Actual .kt styling uses direct selectors below. */
-  --md-code-hl-builtin-color: #5fd4d4;
-
-  /* Function definitions: light purple/lavender */
-  --md-code-hl-function-color: #d2a8ff;
-
-  /* Strings: light green */
-  --md-code-hl-string-color: #a5d6a7;
-
-  /* Numbers: light orange/peach */
-  --md-code-hl-number-color: #ffa657;
-
-  /* Comments: muted gray */
-  --md-code-hl-comment-color: #8b949e;
-
-  /* Operators: light gray */
-  --md-code-hl-operator-color: #c9d1d9;
-
-  /* Punctuation: light gray */
-  --md-code-hl-punctuation-color: #c9d1d9;
-
-  /* Generic names (.n): neutral color (JavaScript adds semantic classes)
-     Same as light theme - csharp-highlight.js adds semantic classes. */
-  --md-code-hl-name-color: #c9d1d9;
+  --md-footer-bg-color: #0a0e13;
+  --md-footer-bg-color--dark: #070a0e;
 }
 
-/* ============================================
-   Code block styling
-   ============================================ */
-.md-typeset code {
-  font-size: 0.85em;
+/* ============= LIGHT - scheme: default (Press paper) ============= */
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #f4f1ea;
+  --md-default-fg-color: #1b1813;
+  --md-default-fg-color--light: #5f5a4f;
+  --md-default-fg-color--lighter: #9a948a;
+  --md-default-fg-color--lightest: #e4dfd1;
+
+  --md-primary-fg-color: #f4f1ea;
+  --md-primary-bg-color: #1b1813;
+  --md-accent-fg-color: #b07d1f;
+
+  --md-typeset-color: #46423a;
+  --md-typeset-a-color: #b07d1f;
+
+  --md-code-bg-color: #faf8f3;
+  --md-code-fg-color: #46423a;
+  --dxm-code-keyword: #8a5d00;
+  --dxm-code-type: #14624a;
+  --dxm-code-method: #245f9e;
+  --dxm-code-string: #9b263e;
+  --dxm-code-comment: #6f695d;
+  --dxm-code-number: #7148a6;
+  --dxm-code-attribute: #a64f12;
+  --dxm-code-namespace: #286b87;
+  --dxm-code-operator: #4c463d;
 }
 
-.md-header__button.md-logo img,
-.md-header__button.md-logo svg {
-  height: 1.6rem;
-  width: 1.6rem;
-}
-
+/* ============= TYPE ============= */
 .md-typeset h1,
 .md-typeset h2,
-.md-typeset h3 {
-  font-weight: 800;
+.md-typeset h3,
+.md-header__topic,
+.md-nav__title {
+  font-family: "Space Grotesk", var(--md-text-font-family, sans-serif);
+  font-weight: 700;
   letter-spacing: 0;
 }
 
-.md-typeset .md-button {
+.md-typeset h1 {
+  color: var(--md-default-fg-color);
+}
+
+/* Eyebrow-style h5 (optional utility) */
+.md-typeset h5 {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dxm-eyebrow-color);
+}
+
+/* ============= HEADER / NAV ============= */
+.md-header {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+.md-tabs {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Active nav item: contained pill, never a left accent bar */
+.md-nav__link--active,
+.md-nav__item .md-nav__link--active {
+  color: var(--dxm-amber);
+  background: rgba(244, 168, 54, 0.1);
+  border: 1px solid rgba(244, 168, 54, 0.28);
+  border-radius: 7px;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+/* ============= ADMONITIONS - contained, no left-edge accent ============= */
+.md-typeset .admonition,
+.md-typeset details {
+  border-width: 1px;
+  border-left-width: 1px !important;
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 0.72rem;
+}
+.md-typeset .admonition-title,
+.md-typeset summary {
+  background: transparent !important;
+  font-weight: 700;
+}
+.md-typeset .admonition.note {
+  background: rgba(127, 166, 216, 0.06);
+  border-color: rgba(127, 166, 216, 0.35);
+}
+
+.md-typeset .note > .admonition-title {
+  color: var(--dxm-blue);
+}
+
+.md-typeset .admonition.tip {
+  background: rgba(127, 184, 138, 0.06);
+  border-color: rgba(127, 184, 138, 0.35);
+}
+
+.md-typeset .tip > .admonition-title {
+  color: var(--dxm-green);
+}
+
+.md-typeset .admonition.warning {
+  background: rgba(244, 168, 54, 0.07);
+  border-color: rgba(244, 168, 54, 0.4);
+}
+
+.md-typeset .warning > .admonition-title {
+  color: var(--dxm-amber);
+}
+
+.md-typeset .admonition.danger {
+  background: rgba(236, 70, 97, 0.07);
+  border-color: rgba(236, 70, 97, 0.4);
+}
+
+.md-typeset .danger > .admonition-title {
+  color: var(--dxm-ember);
+}
+
+/* ============= CODE ============= */
+.md-typeset pre > code {
   border-radius: 8px;
 }
 
-.md-typeset .md-button--primary {
-  background: var(--dx-violet);
-  border-color: var(--dx-violet);
-  color: #ffffff;
+.md-typeset .highlight {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
 }
 
+.md-typeset .highlight .k,
+.md-typeset .highlight .kd,
+.md-typeset .highlight .kn,
+.md-typeset .highlight .kr {
+  color: var(--dxm-code-keyword);
+  font-weight: 700;
+}
+
+.md-typeset .highlight .kt,
+.md-typeset .highlight .nc,
+.md-typeset .highlight .nb,
+.md-typeset .highlight .bp {
+  color: var(--dxm-code-type);
+}
+
+.md-typeset .highlight .nf,
+.md-typeset .highlight .fm {
+  color: var(--dxm-code-method);
+}
+
+.md-typeset .highlight .s,
+.md-typeset .highlight .s1,
+.md-typeset .highlight .s2,
+.md-typeset .highlight .sc {
+  color: var(--dxm-code-string);
+}
+
+.md-typeset .highlight .c,
+.md-typeset .highlight .c1,
+.md-typeset .highlight .cm,
+.md-typeset .highlight .cs {
+  color: var(--dxm-code-comment);
+  font-style: italic;
+}
+
+.md-typeset .highlight .m,
+.md-typeset .highlight .mi,
+.md-typeset .highlight .mf,
+.md-typeset .highlight .mh {
+  color: var(--dxm-code-number);
+}
+
+.md-typeset .highlight .na {
+  color: var(--dxm-code-attribute);
+}
+
+.md-typeset .highlight .nn {
+  color: var(--dxm-code-namespace);
+}
+
+.md-typeset .highlight .o {
+  color: var(--dxm-code-operator);
+}
+
+.md-typeset .highlight .dxm-cs-access {
+  color: var(--dxm-code-attribute);
+}
+
+.md-typeset .highlight .dxm-cs-readonly {
+  color: var(--dxm-code-number);
+}
+
+.md-typeset .highlight .dxm-cs-partial {
+  color: var(--dxm-code-namespace);
+}
+
+.md-typeset .highlight .dxm-cs-declaration {
+  color: var(--dxm-code-type);
+}
+
+/* Domain-aware taxonomy coloring (spans added by docs/hooks.py). Placed after
+   the generic token rules so equal-specificity route colors win. */
+.md-typeset .highlight .dxm-route-untargeted {
+  color: var(--dxm-route-untargeted);
+}
+
+.md-typeset .highlight .dxm-route-targeted {
+  color: var(--dxm-route-targeted);
+}
+
+.md-typeset .highlight .dxm-route-broadcast {
+  color: var(--dxm-route-broadcast);
+}
+
+.md-typeset .highlight .dxm-msgtype {
+  font-weight: 600;
+}
+
+.md-typeset code {
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+
+/* ============= BUTTONS ============= */
+/* Material colors secondary buttons with --md-primary-fg-color, which this
+   theme repoints at the page background - declare explicit colors instead. */
+.md-typeset .md-button {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 9px;
+  color: var(--md-default-fg-color);
+  font-weight: 600;
+}
+.md-typeset .md-button:hover,
+.md-typeset .md-button:focus {
+  background-color: rgba(244, 168, 54, 0.08);
+  border-color: var(--dxm-amber);
+  color: var(--dxm-amber);
+}
+.md-typeset .md-button:focus-visible {
+  outline: 2px solid var(--dxm-amber-soft);
+  outline-offset: 2px;
+}
+.md-typeset .md-button--primary {
+  background-color: var(--dxm-amber);
+  border-color: var(--dxm-amber);
+  color: #0d1117;
+}
 .md-typeset .md-button--primary:hover,
 .md-typeset .md-button--primary:focus {
-  background: #5b4de0;
-  border-color: #5b4de0;
+  background-color: var(--dxm-amber-soft);
+  border-color: var(--dxm-amber-soft);
+  color: #0d1117;
 }
 
-/* ============================================
-   Home page
-   ============================================ */
-.md-typeset .dx-home-hero {
-  align-items: stretch;
-  background:
-    linear-gradient(90deg, rgba(109, 94, 246, 0.16), rgba(34, 211, 238, 0.06)),
-    var(--dx-bg, #fbfafe);
-  border: 1px solid var(--dx-paper-line);
-  border-radius: 8px;
-  color: var(--dx-text, var(--dx-ink));
+/* ============= HOMEPAGE CONTENT ============= */
+.dx-home-feature-grid {
   display: grid;
-  gap: 1.25rem;
-  grid-template-columns: 1fr;
-  margin: 0 0 2rem;
-  overflow: hidden;
-  padding: clamp(1.25rem, 3vw, 2rem);
-  position: relative;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin: 1.2rem 0 1.5rem;
 }
 
-[data-md-color-scheme="slate"] .md-typeset .dx-home-hero {
-  border-color: var(--dx-line);
+@media (max-width: 760px) {
+  .dx-home-feature-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-.md-typeset .dx-home-brand {
-  align-items: center;
-  color: var(--dx-muted);
-  display: flex;
-  font-family: var(--md-code-font-family);
-  font-size: 0.66rem;
-  font-weight: 700;
-  gap: 0.65rem;
-  letter-spacing: 0;
-  margin-bottom: 1.4rem;
-  text-transform: uppercase;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-brand {
-  color: var(--dx-text-subtle);
-}
-
-.md-typeset .dx-home-brand img {
-  height: 3rem;
-  width: 3rem;
-}
-
-.md-typeset .dx-home-hero h1 {
-  color: inherit;
-  font-size: clamp(2.25rem, 5vw, 3.6rem);
-  hyphens: none;
-  line-height: 1.02;
-  margin: 0;
-  overflow-wrap: normal;
-  word-break: normal;
-}
-
-.md-typeset .dx-home-hero p {
-  color: var(--dx-muted);
-  font-size: 1.05rem;
-  line-height: 1.55;
-  margin: 1rem 0 1.4rem;
-  max-width: 38rem;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-hero p {
-  color: var(--dx-text-muted);
-}
-
-.md-typeset .dx-home-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-actions .md-button:not(.md-button--primary) {
-  border-color: rgba(34, 211, 238, 0.52);
-  color: var(--dx-cyan);
-}
-
-[data-md-color-scheme="slate"]
-  .md-typeset
-  .dx-home-actions
-  .md-button:not(.md-button--primary):hover,
-[data-md-color-scheme="slate"]
-  .md-typeset
-  .dx-home-actions
-  .md-button:not(.md-button--primary):focus {
-  background: rgba(34, 211, 238, 0.12);
-  border-color: var(--dx-cyan);
-}
-
-.md-typeset .dx-home-signal {
-  align-self: center;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--dx-paper-line);
-  border-radius: 8px;
+.dx-home-feature-grid section {
   min-width: 0;
-  padding: 1rem;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-signal {
-  background: var(--dx-surface);
-  border-color: var(--dx-line);
-}
-
-.md-typeset .dx-home-signal__title {
-  color: var(--dx-ink);
-  font-family: var(--md-code-font-family);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  margin-bottom: 1rem;
-  text-transform: uppercase;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-signal__title {
-  color: var(--dx-text);
-}
-
-.md-typeset .dx-home-signal__path {
-  align-items: center;
-  display: flex;
-  gap: 0.45rem;
-  margin-bottom: 1rem;
-}
-
-.md-typeset .dx-home-signal__node,
-.md-typeset .dx-home-signal__hub {
-  align-items: center;
-  aspect-ratio: 1;
+  padding: 0.9rem;
+  border: 1px solid rgba(244, 168, 54, 0.26);
   border-radius: 8px;
-  display: inline-flex;
-  flex: 0 0 auto;
-  font-family: var(--md-code-font-family);
-  font-size: 0.76rem;
-  font-weight: 800;
-  justify-content: center;
+  background: rgba(244, 168, 54, 0.05);
 }
 
-.md-typeset .dx-home-signal__node {
-  background: #ffffff;
-  border: 1px solid var(--dx-paper-line);
-  color: var(--dx-violet);
-  width: 2.1rem;
+.dx-home-feature-grid h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
 }
 
-[data-md-color-scheme="slate"] .md-typeset .dx-home-signal__node {
-  background: var(--dx-raised);
-  border-color: var(--dx-edge);
-  color: var(--dx-cyan);
-}
-
-.md-typeset .dx-home-signal__hub {
-  background: var(--dx-violet);
-  box-shadow: 0 0 0 0.35rem rgba(109, 94, 246, 0.14);
-  width: 1.45rem;
-}
-
-.md-typeset .dx-home-signal__line {
-  background: linear-gradient(90deg, var(--dx-violet), var(--dx-cyan));
-  border-radius: 999px;
-  flex: 1 1 1.8rem;
-  height: 0.16rem;
-  min-width: 1.2rem;
-}
-
-.md-typeset .dx-home-signal__rows {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.md-typeset .dx-home-signal__rows span {
-  border: 1px solid var(--dx-paper-line);
-  border-radius: 8px;
-  color: var(--dx-muted);
-  display: block;
-  font-size: 0.76rem;
-  padding: 0.45rem 0.55rem;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-signal__rows span {
-  border-color: var(--dx-line);
-  color: var(--dx-text-subtle);
-}
-
-.md-typeset .dx-home-telemetry-band {
-  display: grid;
-  gap: 0.8rem;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  margin: -0.9rem 0 2rem;
-}
-
-.md-typeset .dx-home-telemetry-item {
-  background: #ffffff;
-  border: 1px solid var(--dx-paper-line);
-  border-top: 0.2rem solid var(--dx-violet);
-  border-radius: 8px;
-  color: var(--dx-ink);
-  display: grid;
-  gap: 0.5rem;
-  min-height: 8.4rem;
-  padding: 0.85rem 0.95rem;
-}
-
-.md-typeset .dx-home-telemetry-item:nth-child(2) {
-  border-top-color: var(--dx-cyan-dark);
-}
-
-.md-typeset .dx-home-telemetry-item:nth-child(3) {
-  border-top-color: var(--dx-green);
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-telemetry-item {
-  background: var(--dx-surface);
-  border-color: var(--dx-line);
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-telemetry-item:nth-child(1) {
-  border-top-color: var(--dx-lilac);
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-telemetry-item:nth-child(2) {
-  border-top-color: var(--dx-cyan);
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-telemetry-item:nth-child(3) {
-  border-top-color: var(--dx-green);
-}
-
-.md-typeset .dx-home-telemetry-item__label {
-  color: var(--dx-muted);
-  font-family: var(--md-code-font-family);
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-telemetry-item__label {
-  color: var(--dx-text-subtle);
-}
-
-.md-typeset .dx-home-telemetry-item strong {
-  color: var(--dx-ink);
-  display: block;
-  font-size: 0.94rem;
-  line-height: 1.35;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-telemetry-item strong {
-  color: var(--dx-text);
-}
-
-.md-typeset .dx-home-telemetry-item small {
-  color: var(--dx-muted);
-  display: block;
-  font-size: 0.76rem;
-  line-height: 1.5;
+.dx-home-feature-grid p {
   margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.55;
 }
 
-[data-md-color-scheme="slate"] .md-typeset .dx-home-telemetry-item small {
-  color: var(--dx-text-subtle);
+/* ============= TABLES / RULES ============= */
+.md-typeset hr {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
 }
 
-.md-typeset .dx-home-telemetry-route {
-  align-items: center;
-  display: flex;
-  gap: 0.35rem;
-  max-width: 12rem;
-}
-
-.md-typeset .dx-home-telemetry-route span {
-  align-items: center;
-  aspect-ratio: 1;
-  background: var(--dx-paper);
-  border: 1px solid var(--dx-paper-line);
+.md-typeset table:not([class]) {
+  border: 1px solid var(--md-default-fg-color--lightest);
   border-radius: 8px;
-  color: var(--dx-violet);
-  display: inline-flex;
-  flex: 0 0 auto;
-  font-family: var(--md-code-font-family);
-  font-size: 0.7rem;
-  font-weight: 800;
-  justify-content: center;
-  width: 1.75rem;
 }
 
-[data-md-color-scheme="slate"] .md-typeset .dx-home-telemetry-route span {
-  background: var(--dx-raised);
-  border-color: var(--dx-edge);
-  color: var(--dx-cyan);
-}
-
-.md-typeset .dx-home-telemetry-route i {
-  background: linear-gradient(90deg, var(--dx-violet), var(--dx-cyan));
+/* ============= TAXONOMY BADGES (use in markdown via attr_list) =============
+   Example: `[Untargeted]{ .dxm-badge .dxm-untargeted }` */
+.dxm-badge {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0;
   border-radius: 999px;
-  flex: 1 1 1.2rem;
-  height: 0.13rem;
-  min-width: 0.7rem;
+  padding: 0.15em 0.7em;
+  border: 1px solid;
 }
-
-.md-typeset .dx-home-link-grid,
-.md-typeset .dx-home-feature-grid {
-  display: grid;
-  gap: 0.8rem;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  margin: 1rem 0 1.5rem;
-}
-
-.md-typeset .dx-home-link,
-.md-typeset .dx-home-feature-grid section {
-  background: #ffffff;
-  border: 1px solid var(--dx-paper-line);
-  border-radius: 8px;
-  display: block;
-  padding: 0.9rem 1rem;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-link,
-[data-md-color-scheme="slate"] .md-typeset .dx-home-feature-grid section {
-  background: var(--dx-surface);
-  border-color: var(--dx-line);
-}
-
-.md-typeset .dx-home-link span {
-  color: var(--dx-violet);
-  display: block;
-  font-weight: 800;
-  margin-bottom: 0.2rem;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-link span {
-  color: var(--dx-cyan);
-}
-
-.md-typeset .dx-home-link small,
-.md-typeset .dx-home-feature-grid p {
-  color: var(--dx-muted);
-  display: block;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  margin: 0;
-}
-
-[data-md-color-scheme="slate"] .md-typeset .dx-home-link small,
-[data-md-color-scheme="slate"] .md-typeset .dx-home-feature-grid p {
-  color: var(--dx-text-subtle);
-}
-
-.md-typeset .dx-home-feature-grid h3 {
-  color: inherit;
-  font-size: 0.96rem;
-  margin: 0 0 0.45rem;
-}
-
-@media screen and (max-width: 48rem) {
-  .md-typeset .dx-home-hero {
-    gap: 0.95rem;
-    margin-bottom: 1.35rem;
-    padding: 0.95rem;
-  }
-
-  .md-typeset .dx-home-brand {
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .md-typeset .dx-home-brand img {
-    height: 2.35rem;
-    width: 2.35rem;
-  }
-
-  .md-typeset .dx-home-hero h1 {
-    font-size: 2.1rem;
-    line-height: 1.04;
-  }
-
-  .md-typeset .dx-home-hero p {
-    font-size: 0.96rem;
-    line-height: 1.42;
-    margin: 0.7rem 0 0.9rem;
-  }
-
-  .md-typeset .dx-home-actions {
-    gap: 0.45rem;
-  }
-
-  .md-typeset .dx-home-actions .md-button {
-    padding: 0.55rem 0.8rem;
-    text-align: center;
-    width: 100%;
-  }
-
-  .md-typeset .dx-home-signal {
-    padding: 0.65rem;
-  }
-
-  .md-typeset .dx-home-signal__title {
-    margin-bottom: 0.7rem;
-  }
-
-  .md-typeset .dx-home-signal__path {
-    gap: 0.35rem;
-    margin-bottom: 0.7rem;
-  }
-
-  .md-typeset .dx-home-signal__node {
-    font-size: 0.68rem;
-    width: 1.7rem;
-  }
-
-  .md-typeset .dx-home-signal__hub {
-    box-shadow: 0 0 0 0.26rem rgba(109, 94, 246, 0.14);
-    width: 1.15rem;
-  }
-
-  .md-typeset .dx-home-signal__line {
-    flex-basis: 0.9rem;
-    min-width: 0.7rem;
-  }
-
-  .md-typeset .dx-home-signal__rows {
-    gap: 0.35rem;
-  }
-
-  .md-typeset .dx-home-signal__rows span {
-    font-size: 0.72rem;
-    padding: 0.34rem 0.45rem;
-  }
-
-  .md-typeset .dx-home-telemetry-band {
-    margin-top: -0.55rem;
-  }
-}
-
-/* ============================================
-   Pygments Token-Specific Syntax Highlighting
-   ============================================
-   These selectors target specific Pygments token classes
-   that don't have corresponding Material theme CSS variables.
-   This provides maximum differentiation for C# code blocks.
-   ============================================ */
-
-/* --- Light Theme Token Colors --- */
-
-/* Keywords (.k, .kd, .kn, .kp, .kr) - blue for control flow & modifiers */
-.md-typeset .highlight .k {
-  color: #0550ae;
-}
-.md-typeset .highlight .kd {
-  color: #0550ae;
-}
-.md-typeset .highlight .kn {
-  color: #0550ae;
-}
-.md-typeset .highlight .kp {
-  color: #0550ae;
-}
-.md-typeset .highlight .kr {
-  color: #0550ae;
-}
-
-/* .kt = Built-in types (int, string, bool, float, var, etc.)
-   Teal color - Material theme maps .kt to keyword-color, so we
-   override with a direct selector to distinguish types from keywords */
-.md-typeset .highlight .kt {
-  color: #0f766e;
-}
-
-/* .na = Attributes (e.g., [Serializable], [Test], [DxTargetedMessage])
-   Orange color to make metadata/decorators stand out */
-.md-typeset .highlight .na {
-  color: #bc4c00;
-}
-
-/* .nc = Class/struct definitions at declaration site
-   Teal to match built-in types (.kt) - both are "type" concepts */
-.md-typeset .highlight .nc {
-  color: #0f766e;
-}
-
-/* .nn = Namespace names
-   Slate gray - organizational/structural, not as prominent */
-.md-typeset .highlight .nn {
-  color: #57606a;
-}
-
-/* Generic names (.n) - base color (will be overridden by semantic classes)
-   Pygments classifies many tokens as .n. JavaScript post-processing
-   adds semantic classes (.n-type, .n-method, .n-param, .n-var) for
-   better differentiation. Fallback to neutral for unclassified tokens. */
-.md-typeset .highlight .n {
-  color: #24292f;
-}
-
-/* Semantic Name Token Colors (added by csharp-highlight.js)
-   These classes are dynamically added based on contextual analysis:
-   - .n-type: Type names (PascalCase, after keywords, in generic params)
-   - .n-method: Method names (followed by ( or <...>()
-   - .n-param: Parameter names (after type, before , or = or ))
-   - .n-var: Variable names (camelCase, other contexts) */
-
-/* Types: teal - matches .kt (built-in types) and .nc (class definitions) */
-.md-typeset .highlight .n.n-type {
-  color: #0f766e;
-}
-
-/* Methods: purple - matches .nf (function definitions) */
-.md-typeset .highlight .n.n-method {
-  color: #8250df;
-}
-
-/* Parameters: coral/orange - distinct from types, methods, and keywords */
-.md-typeset .highlight .n.n-param {
-  color: #cf5c36;
-}
-
-/* Variables: slate gray - de-emphasized but readable */
-.md-typeset .highlight .n.n-var {
-  color: #57606a;
-}
-
-/* Strings (.s, .s1, .s2) - green for literal values */
-.md-typeset .highlight .s {
-  color: #116329;
-}
-.md-typeset .highlight .s1 {
-  color: #116329;
-}
-.md-typeset .highlight .s2 {
-  color: #116329;
-}
-
-/* Comments (.c, .c1, .cm) - gray italic, de-emphasized */
-.md-typeset .highlight .c {
-  color: #5c6570;
-}
-.md-typeset .highlight .c1 {
-  color: #5c6570;
-}
-.md-typeset .highlight .cm {
-  color: #5c6570;
-}
-
-/* Numbers (.m, .mi, .mf) - brown/sienna for numeric literals */
-.md-typeset .highlight .m {
-  color: #953800;
-}
-.md-typeset .highlight .mi {
-  color: #953800;
-}
-.md-typeset .highlight .mf {
-  color: #953800;
-}
-
-/* Operators (.o) - dark slate, structural */
-.md-typeset .highlight .o {
-  color: #24292f;
-}
-
-/* Punctuation (.p) - dark gray, structural */
-.md-typeset .highlight .p {
-  color: #24292f;
-}
-
-/* --- Dark Theme Token Colors --- */
-
-/* Keywords: bright blue */
-[data-md-color-scheme="slate"] .md-typeset .highlight .k {
-  color: #79c0ff;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .kd {
-  color: #79c0ff;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .kn {
-  color: #79c0ff;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .kp {
-  color: #79c0ff;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .kr {
-  color: #79c0ff;
-}
-
-/* Built-in types: cyan/teal - distinct from keywords */
-[data-md-color-scheme="slate"] .md-typeset .highlight .kt {
-  color: #5fd4d4;
-}
-
-/* Attributes: light orange */
-[data-md-color-scheme="slate"] .md-typeset .highlight .na {
-  color: #f0883e;
-}
-
-/* Class definitions: light cyan/teal */
-[data-md-color-scheme="slate"] .md-typeset .highlight .nc {
-  color: #5fd4d4;
-}
-
-/* Namespaces: light blue-gray (distinct from comments which use #8b949e) */
-[data-md-color-scheme="slate"] .md-typeset .highlight .nn {
-  color: #a8b1ba;
-}
-
-/* Generic names: neutral light gray (will be overridden by semantic classes) */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n {
-  color: #c9d1d9;
-}
-
-/* Semantic Name Token Colors for Dark Theme (added by csharp-highlight.js) */
-
-/* Types: light cyan/teal - matches .kt and .nc */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n.n-type {
-  color: #5fd4d4;
-}
-
-/* Methods: lavender - matches .nf (function definitions) */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n.n-method {
-  color: #d2a8ff;
-}
-
-/* Parameters: peach/salmon - distinct from types, methods, and keywords */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n.n-param {
-  color: #ffb088;
-}
-
-/* Variables: light gray - de-emphasized but readable */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n.n-var {
-  color: #a8b1ba;
-}
-
-/* Strings: light green */
-[data-md-color-scheme="slate"] .md-typeset .highlight .s {
-  color: #a5d6a7;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .s1 {
-  color: #a5d6a7;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .s2 {
-  color: #a5d6a7;
-}
-
-/* Comments: muted gray */
-[data-md-color-scheme="slate"] .md-typeset .highlight .c {
-  color: #8b949e;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .c1 {
-  color: #8b949e;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .cm {
-  color: #8b949e;
-}
-
-/* Numbers: light orange/peach */
-[data-md-color-scheme="slate"] .md-typeset .highlight .m {
-  color: #ffa657;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .mi {
-  color: #ffa657;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .mf {
-  color: #ffa657;
-}
-
-/* Operators: light gray */
-[data-md-color-scheme="slate"] .md-typeset .highlight .o {
-  color: #c9d1d9;
-}
-
-/* Punctuation: light gray */
-[data-md-color-scheme="slate"] .md-typeset .highlight .p {
-  color: #c9d1d9;
-}
-
-/* ============================================
-   Mermaid diagram container
-   ============================================ */
-.mermaid {
-  text-align: center;
-  margin: 1em 0;
-}
-
-/* Ensure diagrams are visible in dark mode */
-[data-md-color-scheme="slate"] .mermaid {
-  background-color: transparent;
-}
-
-/* SVG text readability in dark mode */
-[data-md-color-scheme="slate"] .mermaid svg {
-  max-width: 100%;
-}
-
-/* Ensure proper text contrast in dark mode for inline diagram text.
-   Using html selector for higher specificity to avoid !important. */
-html[data-md-color-scheme="slate"] body .mermaid svg .node text,
-html[data-md-color-scheme="slate"] body .mermaid svg .cluster-label text,
-html[data-md-color-scheme="slate"] body .mermaid svg .edgeLabel text,
-[data-md-color-scheme="slate"] .md-content .mermaid .node text,
-[data-md-color-scheme="slate"] .md-content .mermaid .cluster-label text,
-[data-md-color-scheme="slate"] .md-content .mermaid .edgeLabel text {
-  fill: var(--mermaid-neutral-text);
-}
-
-/* ============================================
-   Unity-specific admonition
-   ============================================ */
-.md-typeset .admonition.unity,
-.md-typeset details.unity {
-  border-color: #222c37;
-}
-
-.md-typeset .unity > .admonition-title,
-.md-typeset .unity > summary {
-  background-color: rgba(34, 44, 55, 0.1);
+.dxm-untargeted {
+  color: var(--dxm-blue);
+  border-color: rgba(127, 166, 216, 0.45);
 }
 
-.md-typeset .unity > .admonition-title::before,
-.md-typeset .unity > summary::before {
-  background-color: #222c37;
-  /* Unity cube icon using mask */
-  -webkit-mask-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l6.9 3.45L12 11.09 5.1 7.63 12 4.18zM4 8.82l7 3.5v7.86l-7-3.5V8.82zm9 11.36v-7.86l7-3.5v7.86l-7 3.5z"/></svg>');
-  mask-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l6.9 3.45L12 11.09 5.1 7.63 12 4.18zM4 8.82l7 3.5v7.86l-7-3.5V8.82zm9 11.36v-7.86l7-3.5v7.86l-7 3.5z"/></svg>');
+.dxm-targeted {
+  color: var(--dxm-ember);
+  border-color: rgba(236, 70, 97, 0.45);
 }
 
-/* ============================================
-   Feature grid for homepage
-   ============================================ */
-.md-typeset .grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 1rem;
+.dxm-broadcast {
+  color: var(--dxm-green);
+  border-color: rgba(127, 184, 138, 0.45);
 }

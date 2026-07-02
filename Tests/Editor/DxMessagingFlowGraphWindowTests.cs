@@ -8,6 +8,7 @@ namespace DxMessaging.Tests.Editor
     using Core.Diagnostics;
     using Core.MessageBus;
     using Core.Messages;
+    using DxMessaging.Editor;
     using DxMessaging.Editor.Windows;
     using DxMessaging.Unity;
     using NUnit.Framework;
@@ -215,6 +216,187 @@ namespace DxMessaging.Tests.Editor
                 edges[0].Q<Label>(DxMessagingFlowGraphWindow.EdgeLabelName).text,
                 Does.Contain("FlowGraphMessage -> Root/Listener")
             );
+        }
+
+        [Test]
+        public void BuildGraphUiColorsRouteRowsByRegistrationTaxonomy()
+        {
+            FlowGraphSnapshot snapshot = new(
+                new[]
+                {
+                    new FlowGraphComponentNode(
+                        "component:1",
+                        "Root/Listener",
+                        "MessagingComponent",
+                        activeInHierarchy: true,
+                        listenerCount: 1,
+                        registrationCount: 2,
+                        callCount: 5,
+                        localMessageCount: 0
+                    ),
+                },
+                new[] { new FlowGraphMessageNode("FlowGraphMessage", 2, 5) },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        "FlowGraphMessage",
+                        "component:1",
+                        "Root/Listener",
+                        "TargetedWithoutTargeting",
+                        registrationCount: 1,
+                        callCount: 3
+                    ),
+                    new FlowGraphEdge(
+                        "FlowGraphMessage",
+                        "component:1",
+                        "Root/Listener",
+                        "BroadcastPostProcessor",
+                        registrationCount: 1,
+                        callCount: 2
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
+
+            string routeMapSummary = root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName)
+                .Q<Label>(DxMessagingFlowGraphWindow.RouteMapSummaryLabelName)
+                .text;
+            Assert.That(routeMapSummary, Does.Contain("Route kinds: Broadcast 1, Targeted 1"));
+            string messageLaneSummary = root.Q<VisualElement>(MessageLanesName)
+                .Query<VisualElement>(className: MessageLaneRowClassName)
+                .First()
+                .Q<Label>(MessageLaneSummaryLabelName)
+                .text;
+            Assert.That(messageLaneSummary, Does.Contain("Route kinds: Broadcast, Targeted"));
+            Assert.That(messageLaneSummary, Does.Not.Contain("TargetedWithoutTargeting"));
+            string targetLaneSummary = root.Q<VisualElement>(TargetLanesName)
+                .Query<VisualElement>(className: TargetLaneRowClassName)
+                .First()
+                .Q<Label>(TargetLaneSummaryLabelName)
+                .text;
+            Assert.That(targetLaneSummary, Does.Contain("Route kinds: Broadcast, Targeted"));
+            Assert.That(targetLaneSummary, Does.Not.Contain("BroadcastPostProcessor"));
+
+            Dictionary<string, VisualElement> edgesByKind = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.EdgeRowClassName
+                )
+                .ToList()
+                .ToDictionary(
+                    row =>
+                        row.Q<Label>(DxMessagingFlowGraphWindow.EdgeLabelName)
+                            .text.Contains("BroadcastPostProcessor")
+                            ? "Broadcast"
+                            : "Targeted",
+                    StringComparer.Ordinal
+                );
+
+            AssertColor(
+                edgesByKind["Targeted"].style.borderLeftColor.value,
+                DxMessagingEditorPalette.Targeted
+            );
+            AssertColor(
+                edgesByKind["Broadcast"].style.borderLeftColor.value,
+                DxMessagingEditorPalette.Broadcast
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiColorsVisibleTraceLanesFromEditorPalette()
+        {
+            FlowGraphSnapshot snapshot = new(
+                Array.Empty<FlowGraphComponentNode>(),
+                Array.Empty<FlowGraphMessageNode>(),
+                Array.Empty<FlowGraphEdge>(),
+                new[]
+                {
+                    new FlowGraphTracePath(
+                        "FlowGraphMessage",
+                        "source: { Id = 42 }",
+                        "component:1",
+                        "Root/Listener",
+                        "BroadcastPostProcessor",
+                        recentTracedDeliveryCount: 2,
+                        traceIds: new long[] { 101 }
+                    ),
+                    new FlowGraphTracePath(
+                        "FlowGraphMessage",
+                        "source: { Id = 42 }",
+                        "component:1",
+                        "Root/Listener",
+                        "BroadcastWithoutSourcePostProcessor",
+                        recentTracedDeliveryCount: 3,
+                        traceIds: new long[] { 101 }
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
+
+            List<VisualElement> routeKindRows = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.VisibleTraceRouteKindLaneRowClassName
+                )
+                .ToList();
+            Assert.That(routeKindRows.Count, Is.EqualTo(1));
+            Assert.That(
+                routeKindRows[0]
+                    .Q<Label>(
+                        DxMessagingFlowGraphWindow.VisibleTraceRouteKindLaneRouteKindLabelName
+                    )
+                    .text,
+                Is.EqualTo("Broadcast")
+            );
+            string traceMessageSummary = FirstRow(
+                    DxMessagingFlowGraphWindow.VisibleTraceMessageLaneRowClassName
+                )
+                .Q<Label>(DxMessagingFlowGraphWindow.VisibleTraceMessageLaneSummaryLabelName)
+                .text;
+            Assert.That(traceMessageSummary, Does.Contain("Route kinds: Broadcast"));
+            Assert.That(traceMessageSummary, Does.Not.Contain("BroadcastPostProcessor"));
+            Assert.That(
+                traceMessageSummary,
+                Does.Not.Contain("BroadcastWithoutSourcePostProcessor")
+            );
+
+            AssertColor(
+                FirstRow(
+                    DxMessagingFlowGraphWindow.VisibleTraceRouteKindLaneRowClassName
+                ).style.borderLeftColor.value,
+                DxMessagingEditorPalette.Broadcast
+            );
+            AssertColor(
+                FirstRow(
+                    DxMessagingFlowGraphWindow.VisibleTraceIdLaneRowClassName
+                ).style.borderLeftColor.value,
+                DxMessagingEditorPalette.Trace
+            );
+            AssertColor(
+                FirstRow(
+                    DxMessagingFlowGraphWindow.VisibleTraceMessageLaneRowClassName
+                ).style.borderLeftColor.value,
+                DxMessagingEditorPalette.TraceMessage
+            );
+            AssertColor(
+                FirstRow(
+                    DxMessagingFlowGraphWindow.VisibleTraceTargetLaneRowClassName
+                ).style.borderLeftColor.value,
+                DxMessagingEditorPalette.TraceTarget
+            );
+            AssertColor(
+                FirstRow(
+                    DxMessagingFlowGraphWindow.VisibleContextLaneRowClassName
+                ).style.borderLeftColor.value,
+                DxMessagingEditorPalette.Amber
+            );
+
+            VisualElement FirstRow(string className)
+            {
+                return root.Query<VisualElement>(className: className).First();
+            }
         }
 
         [Test]
@@ -6593,6 +6775,14 @@ namespace DxMessaging.Tests.Editor
                 + messageBus.RegisteredInterceptors
                 + messageBus.RegisteredPostProcessors
                 + messageBus.RegisteredGlobalAcceptAll;
+        }
+
+        private static void AssertColor(Color actual, Color expected)
+        {
+            Assert.That(actual.r, Is.EqualTo(expected.r).Within(0.001f));
+            Assert.That(actual.g, Is.EqualTo(expected.g).Within(0.001f));
+            Assert.That(actual.b, Is.EqualTo(expected.b).Within(0.001f));
+            Assert.That(actual.a, Is.EqualTo(expected.a).Within(0.001f));
         }
 
         private static string RenderRouteMapSummary(FlowGraphSnapshot snapshot)

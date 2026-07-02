@@ -64,3 +64,17 @@ test("package-shipped markdown local images are included in package files", () =
     );
   assert.deepEqual(missing, []);
 });
+
+test("release and store media stay out of the shipped package allowlist", () => {
+  const packageFiles = new Set(PACKAGE.files || []);
+  for (const asset of [
+    "docs/images/dxmessaging-og-1200x630.png",
+    "docs/images/dxmessaging-store-card-420x280.png",
+    "docs/images/dxmessaging-store-icon-320.png",
+    "docs/images/favicon-32.png",
+    "docs/images/icon-256.png"
+  ]) {
+    assert.equal(isPackaged(packageFiles, asset), false, asset);
+    assert.equal(isPackaged(packageFiles, `${asset}.meta`), false, `${asset}.meta`);
+  }
+});

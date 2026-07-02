@@ -1,74 +1,74 @@
-<!-- cspell:words Hanken labelledby describedby -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200" role="img" aria-labelledby="dxmsgBannerTitle" aria-describedby="dxmsgBannerDesc">
-  <title id="dxmsgBannerTitle">DxMessaging: typed Unity messaging</title>
-  <desc id="dxmsgBannerDesc">A Router-branded DxMessaging banner for typed Unity messages, lifecycle-managed listeners, and inspector visibility.</desc>
+  <title id="dxmsgBannerTitle">DxMessaging: decoupled Unity messaging</title>
+  <desc id="dxmsgBannerDesc">A DxKit-family amber DxMessaging banner for decoupled, simple Unity systems.</desc>
   <defs>
     <linearGradient id="dxBannerBackground" x1="0" y1="0" x2="800" y2="200" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#171226"/>
-      <stop offset="0.56" stop-color="#0f1224"/>
-      <stop offset="1" stop-color="#071b24"/>
+      <stop stop-color="#0d1117"/>
+      <stop offset="0.62" stop-color="#10151d"/>
+      <stop offset="1" stop-color="#1b1813"/>
     </linearGradient>
-    <linearGradient id="dxBannerAccent" x1="54" y1="32" x2="714" y2="172" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8b7dff"/>
-      <stop offset="0.5" stop-color="#6d5ef6"/>
-      <stop offset="1" stop-color="#22d3ee"/>
+    <linearGradient id="dxBannerAmber" x1="40" y1="32" x2="742" y2="164" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd48e"/>
+      <stop offset="0.48" stop-color="#f4a836"/>
+      <stop offset="1" stop-color="#b07d1f"/>
     </linearGradient>
     <filter id="dxBannerSoftShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.28"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.32"/>
     </filter>
   </defs>
 
-  <rect width="800" height="200" rx="0" fill="url(#dxBannerBackground)"/>
-  <path d="M0 152 C120 126 176 184 304 152 C456 114 526 152 800 88 L800 200 L0 200 Z" fill="#22d3ee" opacity="0.05"/>
-  <path d="M0 38 C148 70 282 20 414 52 C548 84 634 66 800 34" fill="none" stroke="#8b7dff" stroke-width="1" opacity="0.14"/>
-  <path d="M0 54 C176 86 288 40 424 70 C562 100 650 82 800 50" fill="none" stroke="#22d3ee" stroke-width="1" opacity="0.1"/>
+  <rect width="800" height="200" fill="url(#dxBannerBackground)"/>
+  <path d="M0 150 C112 126 178 170 302 142 C444 110 538 134 800 72 L800 200 L0 200 Z" fill="#f4a836" opacity="0.06"/>
+  <path d="M0 38 C154 66 274 28 414 52 C558 78 650 62 800 34" fill="none" stroke="#f4a836" stroke-width="1.2" opacity="0.2"/>
+  <path d="M0 58 C168 88 296 48 432 72 C568 96 658 82 800 54" fill="none" stroke="#ffd48e" stroke-width="1.2" opacity="0.12"/>
 
   <g transform="translate(34 42)" filter="url(#dxBannerSoftShadow)">
-    <polygon points="44,0 82,22 82,66 44,88 6,66 6,22" fill="url(#dxBannerAccent)" opacity="0.12"/>
-    <polygon points="44,0 82,22 82,66 44,88 6,66 6,22" fill="none" stroke="url(#dxBannerAccent)" stroke-width="3" stroke-linejoin="round"/>
-    <path d="M44 44 L44 13 M44 44 L74 62 M44 44 L14 62" stroke="url(#dxBannerAccent)" stroke-width="2.5" stroke-linecap="round" opacity="0.62"/>
-    <circle cx="44" cy="13" r="4.7" fill="#8b7dff"/>
-    <circle cx="74" cy="62" r="4.7" fill="#6d5ef6"/>
-    <circle cx="14" cy="62" r="4.7" fill="#22d3ee"/>
-    <circle cx="44" cy="44" r="7" fill="#f5f3fb"/>
+    <polygon points="44,0 82,22 82,66 44,88 6,66 6,22" fill="#0d1117" stroke="#222b36" stroke-width="1.5" stroke-linejoin="round"/>
+    <polygon points="44,7 76,25 76,63 44,81 12,63 12,25" fill="none" stroke="url(#dxBannerAmber)" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M44 44 L44 18 M44 44 L70 60 M44 44 L18 60" stroke="#ffd48e" stroke-width="2.8" stroke-linecap="round"/>
+    <circle cx="44" cy="15" r="4.3" fill="#ffd48e"/>
+    <circle cx="74" cy="62" r="4.3" fill="#ffd48e"/>
+    <circle cx="14" cy="62" r="4.3" fill="#ffd48e"/>
+    <circle cx="44" cy="44" r="7" fill="#ffd48e"/>
   </g>
 
-  <g transform="translate(132 45)">
-    <text x="0" y="0" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="700" letter-spacing="1.6" fill="#bbb5cc">UNITY / C# / MIT</text>
-    <text x="0" y="48" font-family="'Hanken Grotesk', 'Segoe UI', sans-serif" font-size="47" font-weight="800" letter-spacing="0" fill="#f5f3fb">DxMessaging</text>
-    <text x="0" y="80" font-family="'Hanken Grotesk', 'Segoe UI', sans-serif" font-size="15" font-weight="600" letter-spacing="0" fill="#bbb5cc">Typed messages. Managed listeners. Inspector visibility.</text>
+  <g transform="translate(132 44)">
+    <text x="0" y="0" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="700" letter-spacing="0" fill="#9aa3af">UNITY / C# / MIT</text>
+    <text x="0" y="46" font-family="'Space Grotesk', 'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="44" font-weight="700" letter-spacing="0" fill="#e9eef4">DxMessaging</text>
+    <text x="0" y="78" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="17" font-weight="700" letter-spacing="0" fill="#f4a836">Decoupled, simple systems.</text>
+    <text x="0" y="103" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="13" font-weight="500" letter-spacing="0" fill="#9aa3af">Typed routes. Managed listeners. Editor visibility.</text>
   </g>
 
-  <g transform="translate(132 147)" font-family="'Hanken Grotesk', 'Segoe UI', sans-serif" font-size="12" font-weight="800">
-    <rect x="0" y="0" width="108" height="28" rx="8" fill="#6d5ef6"/>
-    <text x="54" y="18" text-anchor="middle" fill="#ffffff">OpenUPM</text>
-    <rect x="120" y="0" width="112" height="28" rx="8" fill="none" stroke="#22d3ee" stroke-width="1.5"/>
-    <text data-sync="test-count" x="176" y="18" text-anchor="middle" fill="#22d3ee">1400+ Tests</text>
+  <g transform="translate(132 150)" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="12" font-weight="800">
+    <rect x="0" y="0" width="108" height="28" rx="8" fill="#f4a836"/>
+    <text x="54" y="18" text-anchor="middle" fill="#0d1117">OpenUPM</text>
+    <rect x="120" y="0" width="112" height="28" rx="8" fill="none" stroke="#7fb88a" stroke-width="1.5"/>
+    <text data-sync="test-count" x="176" y="18" text-anchor="middle" fill="#7fb88a">1500+ Tests</text>
     <!-- Version text must contain vX.Y.Z for version sync. -->
-    <rect x="244" y="0" width="76" height="28" rx="8" fill="#14111e" stroke="#332c45" stroke-width="1"/>
-    <text data-sync="version" x="282" y="18" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="11" font-weight="800" fill="#f5f3fb">v3.2.0</text>
+    <rect x="244" y="0" width="76" height="28" rx="8" fill="#0c1016" stroke="#232c38" stroke-width="1"/>
+    <text data-sync="version" x="282" y="18" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="11" font-weight="800" fill="#e9eef4">v3.2.0</text>
   </g>
 
-  <g transform="translate(536 44)" filter="url(#dxBannerSoftShadow)">
-    <rect x="0" y="0" width="226" height="118" rx="8" fill="#14111e" stroke="#332c45"/>
-    <text x="18" y="27" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="800" letter-spacing="0.8" fill="#f5f3fb">ONE BUS, THREE ROUTES</text>
+  <g transform="translate(536 42)" filter="url(#dxBannerSoftShadow)">
+    <rect x="0" y="0" width="226" height="120" rx="8" fill="#0c1016" stroke="#232c38"/>
+    <text x="18" y="27" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="800" letter-spacing="0" fill="#e9eef4">ONE BUS, THREE ROUTES</text>
     <g transform="translate(14 47)">
-      <rect x="0" y="0" width="27" height="27" rx="6" fill="#1e1a2e" stroke="#332c45"/>
-      <text x="13.5" y="17.5" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="800" fill="#22d3ee">U</text>
-      <line x1="35" y1="13.5" x2="62" y2="13.5" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" opacity="0.78"/>
-      <rect x="69" y="3" width="21" height="21" rx="6" fill="#6d5ef6"/>
-      <line x1="98" y1="13.5" x2="126" y2="13.5" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" opacity="0.78"/>
-      <rect x="134" y="0" width="27" height="27" rx="6" fill="#1e1a2e" stroke="#332c45"/>
-      <text x="147.5" y="17.5" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="800" fill="#22d3ee">T</text>
-      <line x1="169" y1="13.5" x2="176" y2="13.5" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" opacity="0.78"/>
-      <rect x="184" y="0" width="27" height="27" rx="6" fill="#1e1a2e" stroke="#332c45"/>
-      <text x="197.5" y="17.5" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="800" fill="#22d3ee">B</text>
+      <rect x="0" y="0" width="27" height="27" rx="6" fill="#111823" stroke="#232c38"/>
+      <text x="13.5" y="17.5" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="800" fill="#7fa6d8">U</text>
+      <line x1="35" y1="13.5" x2="62" y2="13.5" stroke="#f4a836" stroke-width="2.4" stroke-linecap="round" opacity="0.82"/>
+      <rect x="69" y="3" width="21" height="21" rx="6" fill="#f4a836"/>
+      <line x1="98" y1="13.5" x2="126" y2="13.5" stroke="#f4a836" stroke-width="2.4" stroke-linecap="round" opacity="0.82"/>
+      <rect x="134" y="0" width="27" height="27" rx="6" fill="#111823" stroke="#232c38"/>
+      <text x="147.5" y="17.5" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="800" fill="#ec4661">T</text>
+      <line x1="169" y1="13.5" x2="176" y2="13.5" stroke="#f4a836" stroke-width="2.4" stroke-linecap="round" opacity="0.82"/>
+      <rect x="184" y="0" width="27" height="27" rx="6" fill="#111823" stroke="#232c38"/>
+      <text x="197.5" y="17.5" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="10" font-weight="800" fill="#7fb88a">B</text>
     </g>
-    <g transform="translate(18 86)" font-family="'Hanken Grotesk', 'Segoe UI', sans-serif" font-size="10" font-weight="700">
-      <rect x="0" y="0" width="190" height="20" rx="6" fill="none" stroke="#272232"/>
-      <text x="10" y="14" fill="#837c95">Typed dispatch, no scene references</text>
+    <g transform="translate(18 88)" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="10" font-weight="700">
+      <rect x="0" y="0" width="190" height="20" rx="6" fill="none" stroke="#232c38"/>
+      <text x="10" y="14" fill="#9aa3af">No direct scene references</text>
     </g>
   </g>
 
-  <text x="762" y="190" text-anchor="end" font-family="'Hanken Grotesk', 'Segoe UI', sans-serif" font-size="10" font-weight="700" letter-spacing="0.5" fill="#837c95">Wallstop Studios</text>
+  <text x="762" y="190" text-anchor="end" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="10" font-weight="700" letter-spacing="0" fill="#6b7480">Wallstop Studios</text>
 </svg>

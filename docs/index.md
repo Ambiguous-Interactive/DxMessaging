@@ -1,92 +1,24 @@
 ---
 title: Home
-description: Synchronous, type-safe messaging for Unity
+description: Decoupled, simple systems for Unity
+template: home.html
+hide:
+  - navigation
+  - toc
 ---
-
-<section class="dx-home-hero">
-  <div class="dx-home-hero__copy">
-    <div class="dx-home-brand">
-      <img src="images/dx-mark.svg" alt="" />
-      <span>Unity / C# / MIT</span>
-    </div>
-    <h1>DxMessaging</h1>
-    <p>
-      A synchronous message bus for Unity projects that need typed messages,
-      lifecycle-managed registrations, and Unity editor visibility without direct
-      component references.
-    </p>
-    <div class="dx-home-actions">
-      <a class="md-button md-button--primary" href="getting-started/">Get started</a>
-      <a class="md-button" href="https://github.com/Ambiguous-Interactive/DxMessaging">View source</a>
-    </div>
-  </div>
-  <div class="dx-home-signal" aria-label="DxMessaging signal path">
-    <div class="dx-home-signal__title">One bus, three routes</div>
-    <div class="dx-home-signal__path">
-      <span class="dx-home-signal__node">U</span>
-      <span class="dx-home-signal__line"></span>
-      <span class="dx-home-signal__hub"></span>
-      <span class="dx-home-signal__line"></span>
-      <span class="dx-home-signal__node">T</span>
-      <span class="dx-home-signal__line"></span>
-      <span class="dx-home-signal__node">B</span>
-    </div>
-    <div class="dx-home-signal__rows">
-      <span>Untargeted announcements</span>
-      <span>Targeted commands</span>
-      <span>Broadcast facts</span>
-    </div>
-  </div>
-</section>
-
-<section class="dx-home-telemetry-band" aria-label="DxMessaging diagnostics coverage">
-  <a class="dx-home-telemetry-item" href="guides/diagnostics/">
-    <span class="dx-home-telemetry-item__label">Message routes</span>
-    <span class="dx-home-telemetry-route" aria-hidden="true">
-      <span>U</span>
-      <i></i>
-      <span>T</span>
-      <i></i>
-      <span>B</span>
-    </span>
-    <small>Untargeted, targeted, and broadcast paths stay visible in Message Monitor and Flow Graph.</small>
-  </a>
-  <a class="dx-home-telemetry-item" href="guides/diagnostics/#flow-graph">
-    <span class="dx-home-telemetry-item__label">Trace paths</span>
-    <strong>Context / target / delivery</strong>
-    <small>Flow Graph views expose recent trace evidence without changing the runtime dispatch model.</small>
-  </a>
-  <a class="dx-home-telemetry-item" href="guides/inspector-overlay/">
-    <span class="dx-home-telemetry-item__label">Editor tools</span>
-    <strong>Monitor / Graph / Inspector</strong>
-    <small>Use package-owned tools for message history, route topology, and component-local warnings.</small>
-  </a>
-</section>
 
 ## Start Here
 
-<div class="dx-home-link-grid">
-  <a class="dx-home-link" href="getting-started/quick-start/">
-    <span>Quick Start</span>
-    <small>Define, register, and emit your first message.</small>
-  </a>
-  <a class="dx-home-link" href="concepts/mental-model/">
-    <span>Mental Model</span>
-    <small>Choose between untargeted, targeted, and broadcast messages.</small>
-  </a>
-  <a class="dx-home-link" href="guides/inspector-overlay/">
-    <span>Inspector Tools</span>
-    <small>Use diagnostics and base-call warnings inside Unity.</small>
-  </a>
-  <a class="dx-home-link" href="guides/diagnostics/">
-    <span>Message Monitor</span>
-    <small>Inspect emissions, trace paths, and registration topology.</small>
-  </a>
-  <a class="dx-home-link" href="architecture/performance/">
-    <span>Performance</span>
-    <small>Read the current published benchmark tables.</small>
-  </a>
-</div>
+- [Quick Start](getting-started/quick-start.md) - Define, register, and emit
+  your first message.
+- [Mental Model](concepts/mental-model.md) - Choose between untargeted,
+  targeted, and broadcast messages.
+- [Inspector Tools](guides/inspector-overlay.md) - Use diagnostics and
+  base-call warnings inside Unity.
+- [Message Monitor](guides/diagnostics.md) - Inspect emissions, trace paths, and
+  registration topology.
+- [Performance](architecture/performance.md) - Read the current published
+  benchmark tables.
 
 ## Install
 
@@ -150,20 +82,20 @@ public sealed class HealButton : MonoBehaviour
 
 <div class="dx-home-feature-grid">
   <section>
-    <h3>Lifecycle-managed listeners</h3>
-    <p>Registrations follow their token or component, so teardown lives with ownership.</p>
+    <h3>Simple primitives</h3>
+    <p>Three message shapes - untargeted, targeted, broadcast - and nothing else to learn. Each contract is an explicit typed struct, and no system holds a reference to any other.</p>
   </section>
   <section>
-    <h3>Typed message contracts</h3>
-    <p>Message shapes are C# structs, with source generators for IDs and constructors.</p>
+    <h3>Easy to use</h3>
+    <p>Define a struct, register a handler, emit. Registration tokens follow their owner's lifecycle, so handlers remove themselves - no manual unsubscribe, no leaked listeners.</p>
   </section>
   <section>
-    <h3>Editor visibility</h3>
-    <p>Diagnostics expose recent messages, listener state, trace paths, and base-call warnings.</p>
+    <h3>Small edits, big impact</h3>
+    <p>The same simple primitives decouple entire systems. Wiring a feature in is one registration; removing it is deleting that line. Interceptors, handler priorities, and global observers layer on without touching existing code.</p>
   </section>
   <section>
-    <h3>Allocation-aware dispatch</h3>
-    <p>Hot-path dispatch is measured in CI and documented from the latest published baseline.</p>
+    <h3>High performance</h3>
+    <p>Struct messages and by-ref handlers keep steady-state dispatch at zero allocation. Type-indexed routing stays O(1), with published results around 10 ns per handler.</p>
   </section>
 </div>
 

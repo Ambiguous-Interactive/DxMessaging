@@ -2,7 +2,7 @@
 /**
  * Cross-platform banner sync.
  * Keeps docs/images/DxMessaging-banner.svg aligned with package.json version
- * and the rounded C# test count (Tests/ + SourceGenerators/).
+ * and the rounded C# test count (Tests/ + SourceGenerators/ + .docs-tests/).
  *
  * Usage:
  *   node scripts/sync-banner-version.js [--check]
@@ -25,7 +25,7 @@ const VERSION_VALUE_PATTERN =
 const TEST_COUNT_PATTERN =
   /(<text\b(?=[^>]*\bdata-sync="test-count")[^>]*>)(\d+\+ Tests)(<\/text>)/;
 const TEST_FILE_NAME_PATTERN = /(?:Test|Tests)\.cs$/;
-const TEST_ROOTS = ["Tests", "SourceGenerators"];
+const TEST_ROOTS = ["Tests", "SourceGenerators", ".docs-tests"];
 
 function stripSourceComments(content) {
   return content.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");

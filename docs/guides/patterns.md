@@ -158,7 +158,7 @@ public readonly partial struct TookDamage { public readonly int amount; }
 
 // Sender
 var hit = new TookDamage(5);
-hit.EmitGameObjectBroadcast(enemyGO);
+hit.EmitGameObjectBroadcast(gameObject);
 
 // Listener: observe every source
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyTookDamage);

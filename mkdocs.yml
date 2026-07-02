@@ -1,6 +1,6 @@
-site_name: DxMessaging Documentation
+site_name: DxMessaging
 site_url: https://ambiguous-interactive.github.io/DxMessaging/
-site_description: High-performance type-safe messaging library for Unity
+site_description: Decoupled, simple systems for Unity
 site_author: Wallstop Studios
 repo_name: Ambiguous-Interactive/DxMessaging
 repo_url: https://github.com/Ambiguous-Interactive/DxMessaging
@@ -10,26 +10,27 @@ copyright: Copyright &copy; 2017-2026 Wallstop Studios
 
 theme:
   name: material
+  custom_dir: docs/overrides
   language: en
-  logo: images/dx-mark.svg
-  favicon: images/dx-mark.svg
+  logo: images/dxmessaging-mark.svg
+  favicon: images/favicon-32.png
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
-        icon: material/brightness-4
+        icon: material/weather-night
         name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
   font:
-    text: Hanken Grotesk
+    text: IBM Plex Sans
     code: JetBrains Mono
   features:
     - announce.dismiss
@@ -154,7 +155,6 @@ extra_css:
 extra_javascript:
   - https://unpkg.com/mermaid@11/dist/mermaid.min.js
   - javascripts/mermaid-config.js
-  - javascripts/csharp-highlight.js
 
 # Internal maintainer documentation (release/CI operations and runbooks) is kept in
 # the repository for contributors but excluded from the published, customer-facing

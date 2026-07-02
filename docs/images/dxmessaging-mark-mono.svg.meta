@@ -4,9 +4,9 @@ ScriptedImporter:
   internalIDToNameTable: []
   externalObjects: {}
   serializedVersion: 2
-  userData:
-  assetBundleName:
-  assetBundleVariant:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
   script: {fileID: 12408, guid: 0000000000000000e000000000000000, type: 0}
   svgType: 3
   texturedSpriteMeshType: 0
@@ -39,7 +39,7 @@ ScriptedImporter:
   useSVGPixelsPerUnit: 0
   spriteData:
     TessellationDetail: 0
-    SpriteName:
+    SpriteName: 
     SpritePivot: {x: 0, y: 0}
     SpriteAlignment: 0
     SpriteBorder: {x: 0, y: 0, z: 0, w: 0}
@@ -49,5 +49,5 @@ ScriptedImporter:
       y: 0
       width: 0
       height: 0
-    SpriteID:
+    SpriteID: 
     PhysicsOutlines: []

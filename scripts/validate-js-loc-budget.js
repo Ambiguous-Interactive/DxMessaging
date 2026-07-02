@@ -30,7 +30,9 @@ const path = require("path");
 // 070 omit all-unmeasured (n/a) memory columns/matrices/delta-segments so the
 //     profiler-stripped IL2CPP leg stops publishing vacuous n/a (renderer column +
 //     matrix gating, delta segment gating, red-green tests): 13140.
-const TOTAL_BUDGET = 13140;
+// 071 tested Asset Store submission generator (manifest, store media, classic
+//     and UPM checklists) replacing inline release shell: 13600.
+const TOTAL_BUDGET = 13600;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

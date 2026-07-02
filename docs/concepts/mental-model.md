@@ -146,9 +146,9 @@ public readonly partial struct TookDamage
     public readonly int amount;
 }
 
-// Emit from a specific source
+// Emit from this GameObject
 TookDamage damage = new TookDamage(25);
-damage.EmitGameObjectBroadcast(thisEnemy);
+damage.EmitGameObjectBroadcast(gameObject);
 ```
 
 **Use when:** Something happened to an entity, and other systems might want to know about it. The entity doesn't care who's listening.
@@ -347,13 +347,13 @@ The library provides primitives. You compose them into patterns that fit your ga
 
 ## Common Patterns at a Glance
 
-| Pattern               | Message Type | Registration                          | Emission                          |
-| --------------------- | ------------ | ------------------------------------- | --------------------------------- |
-| Global setting change | Untargeted   | `RegisterUntargeted<T>`               | `msg.EmitUntargeted()`            |
-| Command to entity     | Targeted     | `RegisterGameObjectTargeted<T>`       | `msg.EmitGameObjectTargeted(go)`  |
-| Something happened    | Broadcast    | `RegisterGameObjectBroadcast<T>`      | `msg.EmitGameObjectBroadcast(go)` |
-| Observe all of type   | Targeted     | `RegisterTargetedWithoutTargeting<T>` | (normal emission)                 |
-| Observe all sources   | Broadcast    | `RegisterBroadcastWithoutSource<T>`   | (normal emission)                 |
+| Pattern               | Message Type | Registration                          | Emission                                  |
+| --------------------- | ------------ | ------------------------------------- | ----------------------------------------- |
+| Global setting change | Untargeted   | `RegisterUntargeted<T>`               | `msg.EmitUntargeted()`                    |
+| Command to entity     | Targeted     | `RegisterGameObjectTargeted<T>`       | `msg.EmitGameObjectTargeted(go)`          |
+| Something happened    | Broadcast    | `RegisterGameObjectBroadcast<T>`      | `msg.EmitGameObjectBroadcast(gameObject)` |
+| Observe all of type   | Targeted     | `RegisterTargetedWithoutTargeting<T>` | (normal emission)                         |
+| Observe all sources   | Broadcast    | `RegisterBroadcastWithoutSource<T>`   | (normal emission)                         |
 
 ## Common Mistakes
 

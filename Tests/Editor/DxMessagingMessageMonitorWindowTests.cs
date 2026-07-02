@@ -9,6 +9,7 @@ namespace DxMessaging.Tests.Editor
     using Core.Diagnostics;
     using Core.MessageBus;
     using Core.Messages;
+    using DxMessaging.Editor;
     using DxMessaging.Editor.Windows;
     using DxMessaging.Unity;
     using NUnit.Framework;
@@ -187,6 +188,50 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 rows[1].Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
                 Is.EqualTo(nameof(OlderMessage))
+            );
+        }
+
+        [Test]
+        public void BuildMonitorUiRendersTaxonomyChipForKnownMessageKinds()
+        {
+            MessageMonitorEntry untargeted = CreateEntry(new OlderMessage(), null);
+            MessageMonitorEntry targeted = CreateEntry(new NewerMessage(), new InstanceId(123));
+            MessageMonitorEntry broadcast = CreateEntry(
+                new BroadcastMessage(),
+                new InstanceId(456)
+            );
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { untargeted, targeted, broadcast }
+            );
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
+
+            Dictionary<string, VisualElement> rowsByType = root.Query<VisualElement>(
+                    className: DxMessagingMessageMonitorWindow.RowClassName
+                )
+                .ToList()
+                .ToDictionary(
+                    row => row.Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text,
+                    StringComparer.Ordinal
+                );
+
+            AssertTaxonomyRow(
+                rowsByType[nameof(OlderMessage)],
+                "Untargeted",
+                DxMessagingEditorPalette.Untargeted
+            );
+            AssertTaxonomyRow(
+                rowsByType[nameof(NewerMessage)],
+                "Targeted",
+                DxMessagingEditorPalette.Targeted
+            );
+            AssertTaxonomyRow(
+                rowsByType[nameof(BroadcastMessage)],
+                "Broadcast",
+                DxMessagingEditorPalette.Broadcast
             );
         }
 
@@ -1876,6 +1921,27 @@ namespace DxMessaging.Tests.Editor
             return MessageMonitorEntry.FromEmission(new MessageEmissionData(message, context));
         }
 
+        private static void AssertTaxonomyRow(
+            VisualElement row,
+            string expectedKind,
+            Color expectedColor
+        )
+        {
+            Label kind = row.Q<Label>(DxMessagingMessageMonitorWindow.RouteKindLabelName);
+            Assert.That(kind, Is.Not.Null);
+            Assert.That(kind.text, Is.EqualTo(expectedKind));
+            AssertColor(row.style.borderLeftColor.value, expectedColor);
+            AssertColor(kind.style.color.value, expectedColor);
+        }
+
+        private static void AssertColor(Color actual, Color expected)
+        {
+            Assert.That(actual.r, Is.EqualTo(expected.r).Within(0.001f));
+            Assert.That(actual.g, Is.EqualTo(expected.g).Within(0.001f));
+            Assert.That(actual.b, Is.EqualTo(expected.b).Within(0.001f));
+            Assert.That(actual.a, Is.EqualTo(expected.a).Within(0.001f));
+        }
+
         private static void SendClick(VisualElement element)
         {
             Assert.That(element, Is.Not.Null, "Cannot click a missing visual element.");
@@ -1916,6 +1982,8 @@ namespace DxMessaging.Tests.Editor
         private readonly struct OlderMessage : IUntargetedMessage { }
 
         private readonly struct NewerMessage : ITargetedMessage { }
+
+        private readonly struct BroadcastMessage : IBroadcastMessage { }
 
         private static class CollisionOne
         {

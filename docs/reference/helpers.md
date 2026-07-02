@@ -580,10 +580,10 @@ heal.EmitComponentTargeted(playerComponent);
 
 // Broadcast - GameObject overload
 var dmg = new TookDamage(25);
-dmg.EmitGameObjectBroadcast(enemyGameObject);
+dmg.EmitGameObjectBroadcast(gameObject);
 
 // Broadcast - Component overload
-dmg.EmitComponentBroadcast(enemyComponent);
+dmg.EmitComponentBroadcast(this);
 
 // String convenience (for quick prototyping)
 "LevelCompleted".Emit();
