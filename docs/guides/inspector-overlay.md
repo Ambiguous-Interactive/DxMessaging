@@ -17,7 +17,7 @@ notes -- see [Roslyn Analyzers & Diagnostics](../reference/analyzers.md).
 **Screenshot status:** The images in this guide are draft/stale capture assets
 and are not final publishable screenshots yet. The screenshot manifest tracks
 the exact recapture requirements in
-[docs/images/inspector-overlay/README.md](../images/inspector-overlay/README.md).
+[the inspector-overlay image README](../images/inspector-overlay/README.md).
 
 ## When a Warning Appears
 
