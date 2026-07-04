@@ -85,6 +85,12 @@ coverage.meta
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
 
+# Generated test-runner output (e.g. Playwright's test-results/.last-run.json).
+# Not a source folder and not a Unity asset, so neither the folder nor its
+# generated sidecar meta should be committed.
+test-results/
+test-results.meta
+
 # NUNIT
 *.VisualState.xml
 TestResult.xml

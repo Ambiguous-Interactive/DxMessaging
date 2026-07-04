@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" fill="none" role="img" aria-label="DxMessaging mark">
-  <polygon points="88,48 68,82.64 28,82.64 8,48 28,13.36 68,13.36" fill="none" stroke="#f4a836" stroke-width="4.5"></polygon>
-  <path d="M48,48 L48,20 M48,48 L72,62 M48,48 L24,62" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round"></path>
-  <circle cx="48" cy="15" r="3.4" fill="#ffd48e"></circle>
-  <circle cx="77" cy="64" r="3.4" fill="#ffd48e"></circle>
-  <circle cx="19" cy="64" r="3.4" fill="#ffd48e"></circle>
-  <circle cx="48" cy="48" r="6" fill="#ffd48e"></circle>
-</svg>
