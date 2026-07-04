@@ -142,11 +142,10 @@
   padding-right: 0.5rem;
 }
 
-/* ============= ADMONITIONS - contained, no left-edge accent ============= */
+/* ============= ADMONITIONS - contained complete border ============= */
 .md-typeset .admonition,
 .md-typeset details {
   border-width: 1px;
-  border-left-width: 1px !important;
   border-radius: 8px;
   box-shadow: none;
   font-size: 0.72rem;

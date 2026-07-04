@@ -101,6 +101,11 @@
       "path": "Samples~/UI Buttons + Inspector"
     },
     {
+      "displayName": "Diagnostics Tooling Exerciser",
+      "description": "Deterministic scene that drives Message Monitor, Flow Graph, Inspector diagnostics, and Project Settings with all DxMessaging route kinds.",
+      "path": "Samples~/Diagnostics Tooling Exerciser"
+    },
+    {
       "displayName": "Dependency Injection",
       "description": "Integration samples for Zenject, VContainer, and Reflex showing IMessageRegistrationBuilder usage with container lifecycles.",
       "path": "Samples~/DI"

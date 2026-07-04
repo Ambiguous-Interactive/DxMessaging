@@ -14,6 +14,11 @@ manual rescan menu. For the full reference -- every diagnostic id,
 exact detection policy, suppression precedence, and Unity 2021 setup
 notes -- see [Roslyn Analyzers & Diagnostics](../reference/analyzers.md).
 
+**Screenshot status:** The images in this guide are draft/stale capture assets
+and are not final publishable screenshots yet. The screenshot manifest tracks
+the exact recapture requirements in
+[docs/images/inspector-overlay/README.md](../images/inspector-overlay/README.md).
+
 ## When a Warning Appears
 
 Whenever your code triggers one of the base-call diagnostics
@@ -185,20 +190,19 @@ split into three sections:
 - **Use Console Bridge** -- opt-in legacy bridge that unions Unity
   Console / compiler-message warnings into the IL-reflection scan.
   Default off.
+- **Ignored Base-Call Types** -- fully-qualified
+  `MessageAwareComponent` type names excluded from the overlay and
+  analyzer. The overlay's **Ignore this type** / **Stop ignoring**
+  buttons edit the same list.
 
 The settings asset itself lives at
-`Assets/Editor/DxMessagingSettings.asset` and stores additional
-fields the overlay relies on:
-
-- The project ignore list
-  (`DxMessagingSettings.BaseCallIgnoredTypes`), edited from the asset
-  Inspector at `Assets/Editor/DxMessagingSettings.asset` (the Project
-  Settings panel does not currently expose the ignore list). Mirrored
-  to the sidecar `Assets/Editor/DxMessaging.BaseCallIgnore.txt` that
-  the analyzer reads via `csc.rsp`'s `-additionalfile:` switch.
+`Assets/Editor/DxMessagingSettings.asset`. The ignored-types list is
+mirrored to the sidecar
+`Assets/Editor/DxMessaging.BaseCallIgnore.txt` that the analyzer reads
+via `csc.rsp`'s `-additionalfile:` switch.
 
 !!! note
-The Inspector overlay's **Ignore this type** / **Stop ignoring** buttons read and write the same ignore-list field that the settings asset exposes. You can also bulk-edit the list directly from the asset Inspector.
+The Inspector overlay's **Ignore this type** / **Stop ignoring** buttons read and write the same ignore-list field that Project Settings exposes. You can also bulk-edit the list directly from the settings asset Inspector.
 
 For the field-by-field semantics -- including the ScriptableObject
 behaviour around `OnValidate` regenerating the sidecar -- see

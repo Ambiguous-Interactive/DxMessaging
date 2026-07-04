@@ -14,7 +14,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 157   |
+| Total Skills | 158   |
 | Categories   | 8     |
 
 ---
@@ -28,7 +28,7 @@
 - [Scripting](#scripting) (9)
 - [Solid](#solid) (15)
 - [Testing](#testing) (39)
-- [Unity](#unity) (10)
+- [Unity](#unity) (11)
 
 ---
 
@@ -41,7 +41,7 @@
 | [Changelog Entry Writing and Anti-Patterns Part 1](./documentation/changelog-entry-writing-part-1.md) | [draft] 55  | [intermediate] | [stable] | [risk: low]  | migration, split                  |
 | [Changelog Management](./documentation/changelog-management.md)                                       | [ok] 228    | [basic]        | [stable] | [risk: none] | changelog, documentation          |
 | [Changelog Release Workflow](./documentation/changelog-release-workflow.md)                           | [ok] 249    | [basic]        | [stable] | [risk: none] | changelog, release-workflow       |
-| [Code Samples Must Compile](./documentation/code-samples-must-compile.md)                             | [ok] 132    | [basic]        | [stable] | [risk: none] | documentation, code-samples       |
+| [Code Samples Must Compile](./documentation/code-samples-must-compile.md)                             | [ok] 134    | [basic]        | [stable] | [risk: none] | documentation, code-samples       |
 | [Documentation Code Samples](./documentation/documentation-code-samples.md)                           | [ok] 212    | [basic]        | [stable] | [risk: none] | documentation, code-samples       |
 | [Documentation Code Samples Part 1](./documentation/documentation-code-samples-part-1.md)             | [draft] 81  | [intermediate] | [stable] | [risk: low]  | migration, split                  |
 | [Documentation Style Guide](./documentation/documentation-style-guide.md)                             | [ok] 203    | [basic]        | [stable] | [risk: none] | documentation, style              |
@@ -222,6 +222,7 @@
 | [MessageAwareComponent Base-Call Contract](./unity/base-call-contract.md)   | [warn] 266 | [intermediate] | [stable] | [risk: none] | unity, analyzer      |
 | [Unity CI Matrix](./unity/unity-ci-matrix.md)                               | [ok] 225   | [intermediate] | [stable] | [risk: low]  | unity, ci            |
 | [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 219   | [intermediate] | [stable] | [risk: none] | unity, cli           |
+| [Unity Editor Design System](./unity/editor-design-system.md)               | [ok] 145   | [basic]        | [stable] | [risk: low]  | unity, editor        |
 | [Unity License Bootstrap](./unity/unity-license-bootstrap.md)               | [ok] 194   | [basic]        | [stable] | [risk: none] | unity, license       |
 | [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 273 | [intermediate] | [stable] | [risk: none] | unity, serial        |
 | [Unity MCP Test Loop](./unity/mcp-test-loop.md)                             | [ok] 207   | [intermediate] | [stable] | [risk: none] | unity, mcp           |

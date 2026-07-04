@@ -359,7 +359,7 @@ When DxMessaging suppresses a base-call check, it consults the following sources
 
 1. **Method-level attribute** -- `[DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]` placed directly on the override.
 1. **Class-level attribute** -- `[DxIgnoreMissingBaseCall]` placed on the type declaration; suppresses all guarded overrides inside that type.
-1. **Project ignore list** -- fully-qualified type names mirrored to the generated `Assets/Editor/DxMessaging.BaseCallIgnore.txt` sidecar (one per line). Manage entries with the Inspector overlay's **Ignore this type** / **Stop ignoring** actions, or by editing the ignore-list field on `Assets/Editor/DxMessagingSettings.asset`.
+1. **Project ignore list** -- fully-qualified type names mirrored to the generated `Assets/Editor/DxMessaging.BaseCallIgnore.txt` sidecar (one per line). Manage entries with the Inspector overlay's **Ignore this type** / **Stop ignoring** actions, from **Project Settings > Wallstop Studios > DxMessaging > Inspector Checks > Ignored Base-Call Types**, or by editing the ignore-list field on `Assets/Editor/DxMessagingSettings.asset`.
 1. **`.editorconfig` rule** -- `dotnet_diagnostic.DXMSG006.severity = none` (or `DXMSG007.severity = none`, `DXMSG009.severity = none`, `DXMSG010.severity = none`) disables the diagnostic project-wide.
 
 ```csharp

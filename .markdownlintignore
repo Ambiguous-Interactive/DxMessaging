@@ -4,8 +4,7 @@ Library/
 obj/
 Temp/
 Samples~/
-design-system/
-design-system-old/
+design-system*/
 /.github/
 /progress/
 /.artifacts/

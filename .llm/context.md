@@ -189,6 +189,7 @@ Use the index above and then select the most relevant skill pages. Frequently us
 - Test quality and investigation guidance under `./skills/testing/`
 - Workflow robustness under `./skills/github-actions/`
 - Unity test workflow under `./skills/unity/` (see mcp-test-loop, unity-license-bootstrap, unity-license-return-guarantee, upm-test-harness, devcontainer-cache-contract, unity-ci-matrix, unity-perf-test-isolation)
+- Unity editor design-system guidance under `./skills/unity/editor-design-system.md`
 
 ## Split File Maintenance
 
@@ -209,6 +210,7 @@ Use the index above and then select the most relevant skill pages. Frequently us
 - [Memory Reclaim Coverage](./skills/testing/memory-reclaim-coverage.md)
 - [DxMessaging Memory Reclamation](./skills/performance/memory-reclamation.md)
 - [MessageAwareComponent Base-Call Contract](./skills/unity/base-call-contract.md)
+- [Unity Editor Design System](./skills/unity/editor-design-system.md)
 - [Unity MCP Test Loop](./skills/unity/mcp-test-loop.md)
 - [Unity License Bootstrap](./skills/unity/unity-license-bootstrap.md)
 - [Unity License Return Guarantee](./skills/unity/unity-license-return-guarantee.md)

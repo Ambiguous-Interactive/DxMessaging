@@ -679,7 +679,10 @@ and any `MessageAwareComponent` subclass for base-call warning surfaces.
 **No more:** Setting 50 breakpoints and stepping through code for 30 minutes.
 
 See [Diagnostics](docs/guides/diagnostics.md) for the current editor tooling and
-trace-path semantics.
+trace-path semantics. The
+[Diagnostics Tooling Exerciser](Samples~/Diagnostics%20Tooling%20Exerciser/README.md)
+sample imports a deterministic scene that drives Message Monitor, Flow Graph,
+Inspector diagnostics, and Project Settings together.
 
 ### Local Bus Islands for Testing
 
@@ -917,6 +920,7 @@ Import samples from Package Manager:
 
 - **[Mini Combat](Samples~/Mini%20Combat/README.md)** -- Simple combat with Heal/Damage messages
 - **[UI Buttons + Inspector](Samples~/UI%20Buttons%20%2B%20Inspector/README.md)** -- Interactive diagnostics demo
+- **[Diagnostics Tooling Exerciser](Samples~/Diagnostics%20Tooling%20Exerciser/README.md)** -- Deterministic scene for Message Monitor, Flow Graph, Inspector diagnostics, and Project Settings
 
 ## Requirements
 
@@ -953,7 +957,7 @@ DxMessaging publishes machine-readable context for AI agents through [llms.txt](
 
 - **[llms.txt](llms.txt)** -- Complete project overview, API reference, and context in a single file
 - **[Repository Guidelines](.llm/context.md)** -- Coding standards and development workflows
-- **[AI Agent Skills](.llm/skills/)** -- 157+ specialized skill documents covering documentation, testing, GitHub Actions, and more
+- **[AI Agent Skills](.llm/skills/)** -- 158+ specialized skill documents covering documentation, testing, GitHub Actions, and more
 
 The `llms.txt` file is automatically updated via CI/CD to stay current with project changes. It includes:
 

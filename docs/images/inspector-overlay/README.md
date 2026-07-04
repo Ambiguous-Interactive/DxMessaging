@@ -32,6 +32,32 @@ automatically.
 - **Privacy:** Make sure no user-specific paths, Unity license badges, or
   third-party asset thumbnails leak into the frame.
 
+## Automation status
+
+Unity MCP scene/camera captures are suitable for scene-layout checks, but the
+current host setup has not yet proven a complete editor-window screenshot path
+for these docs targets. On 2026-07-03,
+`UnityEditorInternal.InternalEditorUtility.ReadScreenPixel` probes captured the
+visible VS Code desktop instead of Unity editor windows, even when MCP-reported
+Unity window coordinates were used. A later synchronous Win32/GDI `PrintWindow`
+probe captured a separate Unity utility window correctly after vertically
+flipping the `GetDIBits` rows. The same synchronous path captured the actual
+Project Settings window with correct content when rows used their original
+order, but the host editor stayed in Pro/dark skin and the image still included
+OS chrome. A live editor-skin switch later changed the host to
+Personal/light-theme asynchronously, but the follow-up Project Settings capture
+timed out without writing an artifact and left Unity MCP unresponsive. The
+delayed callback attempt also stalled, and the path has not yet been proven
+against the Inspector or menu cascade targets. Do not overwrite the tracked
+Inspector overlay PNGs until the actual target artifact is Personal/light-theme,
+cropped per this manifest, visually inspected, and Unity has a clean
+post-capture console and editor-window list.
+
+Do not switch editor skins as part of automation. Start from an editor that is
+already in Personal/light theme, record `EditorGUIUtility.isProSkin` and the
+`UserSkin` editor preference before capture, and abort if the editor is not
+already in the expected skin.
+
 ## Capture target: Unity 2022 LTS
 
 Unless an entry explicitly says otherwise, capture in **Unity 2022.3 LTS** with
@@ -97,7 +123,7 @@ warning color rail. Recommended dimensions: 720px wide.
 ### `project-settings-panel.png`
 
 The **Project Settings > Wallstop Studios > DxMessaging** page, captured as it currently
-renders. The provider exposes five controls across three sections (see
+renders. The provider exposes six controls across three sections (see
 `Editor/Settings/DxMessagingSettingsProvider.cs`):
 
 - **Diagnostics / Diagnostics Targets** -- `PropertyField` for the
@@ -107,18 +133,18 @@ renders. The provider exposes five controls across three sections (see
 - **Editor Safety / Suppress Domain Reload Warning** -- boolean checkbox.
 - **Inspector Checks / Base-Call Check Enabled** -- boolean toggle.
 - **Inspector Checks / Use Console Bridge** -- boolean toggle.
+- **Inspector Checks / Ignored Base-Call Types** -- editable list of fully-qualified
+  `MessageAwareComponent` type names excluded from overlay/analyzer base-call
+  warnings.
 
 Capture the entire DxMessaging section of the Project Settings window
 plus the breadcrumb that shows "DxMessaging" is selected in the left
 sidebar. Recommended dimensions: 1024px-1200px wide. Unity 2022.3 LTS,
-light theme. Recapture if/when more controls are wired into the
-provider -- for now the ignore-list field
-(`BaseCallIgnoredTypes`) still lives on the asset Inspector at
-`Assets/Editor/DxMessagingSettings.asset`, not here.
+light theme. Include the Ignored Base-Call Types list even if it is empty.
 
 Current asset status: the tracked PNG is a stale dark-theme capture of the old
-three-control page. Recapture this image before treating the Inspector Overlay
-guide's screenshot set as publishable.
+three-control page and does not show the ignored-types list. Recapture this image
+before treating the Inspector Overlay guide's screenshot set as publishable.
 
 ### `tools-menu-rescan.png`
 
@@ -190,6 +216,9 @@ missing-method list the overlay always shows. Recommended dimensions:
 1. Run `mkdocs build --strict` locally to confirm no link warnings
    surface; the build should be silent because the docs already
    reference the `.png` filename.
+1. Record the pre-capture and post-capture `EditorGUIUtility.isProSkin` and
+   `UserSkin` values. Do not rely on live skin switching to produce the required
+   Personal/light-theme artifact.
 1. Update the sibling `.meta` file's GUID if Unity regenerates it on
    the next import. Every screenshot must have a matching `.meta`
    file (this is a hard requirement of the project's Unity-asset

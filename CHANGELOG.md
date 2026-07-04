@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a **Diagnostics Tooling Exerciser** sample scene that deterministically
+  drives Message Monitor, Flow Graph, Inspector diagnostics, and Project
+  Settings with untargeted, targeted, broadcast, exact-source broadcast,
+  broadcast-without-source, and `RegisterGlobalAcceptAll` routes.
+- Project Settings now exposes the **Ignored Base-Call Types** list under
+  Inspector Checks, so project-level base-call suppressions can be reviewed and
+  edited from the same settings page as the overlay toggles.
 - Flow Graph now includes visible trace-id lanes and visible trace route-kind
   lanes over visible trace paths, reporting path-membership breadth or
   route-kind delivery breadth plus message, target, and context details without
