@@ -37,11 +37,12 @@ namespace DxMessaging.Tests.Editor
             window.hideFlags = HideFlags.HideAndDontSave;
             // Headless CI runs Unity with -nographics. EditorWindow.Show() still builds
             // the panel/visual tree these tests query and dispatch events against, but it
-            // logs a benign "No graphic device is available to initialize the view." error
-            // (repeated on repaints). NUnit fails a test on any unexpected error log, so
-            // when no GPU is present tolerate rendering-only errors for the shown-window
-            // lifetime; CloseTrackedWindows restores strictness. Runs with a real graphics
-            // device (e.g. the local editor) keep full log strictness.
+            // logs benign "No graphic device is available to initialize the view./show the
+            // window." errors (repeated on repaints and while destroying editors/objects in
+            // teardown). NUnit fails a test on any unexpected error log, so when no GPU is
+            // present tolerate rendering-only errors for the rest of the test. Unity's
+            // per-test LogScope resets this to false for the next test, so it cannot leak.
+            // Runs with a real graphics device (e.g. the local editor) keep full strictness.
             if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
             {
                 LogAssert.ignoreFailingMessages = true;
@@ -66,10 +67,12 @@ namespace DxMessaging.Tests.Editor
         {
             CloseWindows(windows);
             CloseWindows(CreatedWindows);
-            // Restore log strictness after any nographics tolerance enabled by ShowWindow,
-            // so it cannot leak into a later test. Reset after closing so the benign
-            // rendering errors emitted while tearing down the window are still tolerated.
-            LogAssert.ignoreFailingMessages = false;
+            // Intentionally do NOT reset LogAssert.ignoreFailingMessages here. Fixtures run
+            // more teardown after this call (e.g. DestroyImmediate of inspector editors and
+            // scene objects) which, in -nographics, re-emits the benign "No graphic device"
+            // error; resetting mid-teardown would let those slip through as unexpected logs.
+            // Unity gives each test a fresh LogScope (ignoreFailingMessages defaults back to
+            // false next test), so the nographics tolerance ShowWindow enabled cannot leak.
         }
 
         private static void CloseWindows(List<EditorWindow> windows)
