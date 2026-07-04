@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed the README banner (`docs/images/DxMessaging-banner.svg`): added
+  vertical separation between the tagline and the badge row, replaced the badges
+  with **Simple**, **MIT**, and the synced version, and re-drew the right panel
+  as one bus spine dispatching three aligned, color-coded message dots along
+  routes to labeled **Untargeted**, **Targeted**, and **Broadcast** destinations.
+- Simplified banner sync (`scripts/sync-banner-version.js`) to track only the
+  package version; the auto-derived test-count badge and its file-walking logic
+  were removed, along with the now-unneeded test-source triggers in the CI banner
+  gate and the pre-commit hook.
+
 ### Added
 
 - Added a **Diagnostics Tooling Exerciser** sample scene that deterministically

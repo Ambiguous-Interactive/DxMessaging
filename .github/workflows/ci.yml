@@ -128,7 +128,7 @@ jobs:
           set_output actionlint \
             "(^\.github/workflows/|^\.github/actionlint\.yaml$|^\.github/unity-versions\.json$|^scripts/validate-unity-versions\.js$)"
           set_output banner \
-            "(^docs/images/DxMessaging-banner\.svg$|^scripts/sync-banner-version\.js$|^package\.json$|^Tests/|^SourceGenerators/|^\.docs-tests/|$ci_workflow)"
+            "(^docs/images/DxMessaging-banner\.svg$|^scripts/sync-banner-version\.js$|^package\.json$|$ci_workflow)"
           set_output csharpier \
             "(\.cs$|^\.config/dotnet-tools\.json$|(^|/)\.csharpierrc[^/]*$|(^|/)\.csharpierignore$|(^|/)\.editorconfig$|$ci_workflow)"
           set_output docs \
