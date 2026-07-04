@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor
 {
     using System.Collections.Generic;
+    using DxMessaging.Editor;
     using DxMessaging.Editor.Settings;
     using NUnit.Framework;
     using UnityEditor;
@@ -38,16 +39,26 @@ namespace DxMessaging.Tests.Editor
             DxMessagingSettingsProvider.BuildSettingsUi(root, serializedSettings);
 
             Assert.That(root.ClassListContains(DxMessagingSettingsProvider.RootClassName), Is.True);
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.WindowClassName), Is.False);
             List<VisualElement> sections = root.Query<VisualElement>(
                     className: DxMessagingSettingsProvider.SectionClassName
                 )
                 .ToList();
             Assert.That(sections.Count, Is.EqualTo(3));
+            Assert.That(
+                sections.TrueForAll(section =>
+                    section.ClassListContains(DxMessagingEditorTheme.CardClassName)
+                ),
+                Is.True
+            );
+            Assert.That(sections.TrueForAll(HasCompleteBorder), Is.True);
             AssertBoundField(root, nameof(DxMessagingSettings._diagnosticsTargets));
             AssertBoundField(root, nameof(DxMessagingSettings._messageBufferSize));
             AssertBoundField(root, nameof(DxMessagingSettings._suppressDomainReloadWarning));
             AssertToggle(root, nameof(DxMessagingSettings._baseCallCheckEnabled), true);
             AssertToggle(root, nameof(DxMessagingSettings._useConsoleBridge), false);
+            AssertBoundField(root, nameof(DxMessagingSettings._baseCallIgnoredTypes));
         }
 
         [Test]
@@ -63,7 +74,7 @@ namespace DxMessaging.Tests.Editor
 
             List<PropertyField> fields = root.Query<PropertyField>().ToList();
             List<Label> labels = root.Query<Label>().ToList();
-            Assert.That(fields.Count, Is.EqualTo(3));
+            Assert.That(fields.Count, Is.EqualTo(4));
             Assert.That(labels.Exists(label => label.text == "Stale child"), Is.False);
         }
 
@@ -112,6 +123,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(provider.keywords, Does.Contain("Inspector Checks"));
             Assert.That(provider.keywords, Does.Contain("Base-Call Check Enabled"));
             Assert.That(provider.keywords, Does.Contain("Use Console Bridge"));
+            Assert.That(provider.keywords, Does.Contain("Ignored Base-Call Types"));
         }
 
         private DxMessagingSettings CreateSettings()
@@ -147,6 +159,28 @@ namespace DxMessaging.Tests.Editor
                 Is.True
             );
             Assert.That(toggle.tooltip, Is.Not.Empty);
+        }
+
+        private static bool HasCompleteBorder(VisualElement element)
+        {
+            Color borderColor = element.style.borderTopColor.value;
+            return element.style.borderTopWidth.value == DxMessagingEditorTheme.CompleteBorderWidth
+                && element.style.borderRightWidth.value
+                    == DxMessagingEditorTheme.CompleteBorderWidth
+                && element.style.borderBottomWidth.value
+                    == DxMessagingEditorTheme.CompleteBorderWidth
+                && element.style.borderLeftWidth.value == DxMessagingEditorTheme.CompleteBorderWidth
+                && SameColor(element.style.borderRightColor.value, borderColor)
+                && SameColor(element.style.borderBottomColor.value, borderColor)
+                && SameColor(element.style.borderLeftColor.value, borderColor);
+        }
+
+        private static bool SameColor(Color actual, Color expected)
+        {
+            return Mathf.Approximately(actual.r, expected.r)
+                && Mathf.Approximately(actual.g, expected.g)
+                && Mathf.Approximately(actual.b, expected.b)
+                && Mathf.Approximately(actual.a, expected.a);
         }
     }
 }

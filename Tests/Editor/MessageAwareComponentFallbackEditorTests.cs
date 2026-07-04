@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Editor
     using System;
     using System.Collections.Generic;
     using System.Reflection;
+    using DxMessaging.Editor;
     using DxMessaging.Editor.Analyzers;
     using DxMessaging.Editor.CustomEditors;
     using DxMessaging.Editor.Settings;
@@ -27,6 +28,7 @@ namespace DxMessaging.Tests.Editor
 
         private readonly List<Object> _createdObjects = new();
         private readonly List<UnityEditor.Editor> _createdEditors = new();
+        private readonly List<EditorWindow> _createdWindows = new();
         private bool _previousBaseCallCheckEnabled;
         private bool _baseCallCheckOverridden;
 
@@ -62,6 +64,8 @@ namespace DxMessaging.Tests.Editor
                 }
             }
             _createdEditors.Clear();
+
+            EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
 
             foreach (Object instance in _createdObjects)
             {
@@ -428,10 +432,18 @@ namespace DxMessaging.Tests.Editor
                 root.ClassListContains(MessageAwareComponentInspectorView.StateInfoClassName),
                 Is.True
             );
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
             Assert.That(
-                root.Q<VisualElement>(MessageAwareComponentInspectorView.SeverityRailName),
-                Is.Not.Null
+                root.ClassListContains(DxMessagingEditorTheme.AdmonitionClassName),
+                Is.True
             );
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.NoteClassName), Is.True);
+            Assert.That(
+                root.Query<VisualElement>(className: "dxmessaging-inspector-warning__rail")
+                    .ToList(),
+                Is.Empty
+            );
+            AssertCompleteBorder(root, DxMessagingEditorPalette.Untargeted);
             Assert.That(
                 root.Q<Label>(MessageAwareComponentInspectorView.TitleLabelName).text,
                 Does.Contain("Inspector overlay unavailable")
@@ -524,6 +536,13 @@ namespace DxMessaging.Tests.Editor
                 root.ClassListContains(MessageAwareComponentInspectorView.StateWarningClassName),
                 Is.True
             );
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
+            Assert.That(
+                root.ClassListContains(DxMessagingEditorTheme.AdmonitionClassName),
+                Is.True
+            );
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.WarningClassName), Is.True);
+            AssertCompleteBorder(root, DxMessagingEditorPalette.Amber);
             Assert.That(
                 root.Q<Label>(MessageAwareComponentInspectorView.TitleLabelName).text,
                 Does.Contain("Missing MessageAwareComponent base calls")
@@ -638,6 +657,14 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(openScript, Is.Not.Null);
             Assert.That(ignoreType, Is.Not.Null);
+            Assert.That(
+                openScript.ClassListContains(DxMessagingEditorTheme.ButtonGhostClassName),
+                Is.True
+            );
+            Assert.That(
+                ignoreType.ClassListContains(DxMessagingEditorTheme.ButtonGhostClassName),
+                Is.True
+            );
             Assert.That(openScript.enabledSelf, Is.False);
             Assert.That(ignoreType.enabledSelf, Is.False);
         }
@@ -655,6 +682,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(root, Is.Not.Null);
             Assert.That(root.name, Is.EqualTo(MessageAwareComponentFallbackEditor.RootName));
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
             Assert.That(
                 root.ClassListContains(MessageAwareComponentFallbackEditor.RootClassName),
                 Is.True
@@ -895,7 +923,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(settings._baseCallIgnoredTypes, Is.Empty);
             Assert.That(scheduledMutations.Count, Is.EqualTo(1));
 
-            scheduledMutations[0].Invoke();
+            EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(scheduledMutations[0].Invoke);
 
             Assert.That(settings._baseCallIgnoredTypes, Is.EquivalentTo(new[] { fullName }));
             Assert.That(
@@ -957,7 +985,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(settings._baseCallIgnoredTypes, Is.EquivalentTo(new[] { fullName }));
             Assert.That(scheduledMutations.Count, Is.EqualTo(1));
 
-            scheduledMutations[0].Invoke();
+            EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(scheduledMutations[0].Invoke);
 
             Assert.That(settings._baseCallIgnoredTypes, Is.Empty);
             Assert.That(
@@ -1011,7 +1039,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(settings._baseCallIgnoredTypes, Is.Empty);
             Assert.That(scheduledMutations.Count, Is.EqualTo(1));
 
-            scheduledMutations[0].Invoke();
+            EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(scheduledMutations[0].Invoke);
 
             Assert.That(settings._baseCallIgnoredTypes, Is.EquivalentTo(new[] { fullName }));
         }
@@ -1046,7 +1074,7 @@ namespace DxMessaging.Tests.Editor
             );
 
             SendClick(ignoreType);
-            scheduledMutations[0].Invoke();
+            EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(scheduledMutations[0].Invoke);
 
             Assert.That(repaintRequests, Is.EqualTo(1));
         }
@@ -1086,7 +1114,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(settings._baseCallIgnoredTypes, Is.EquivalentTo(new[] { fullName }));
             Assert.That(scheduledMutations.Count, Is.EqualTo(1));
 
-            scheduledMutations[0].Invoke();
+            EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(scheduledMutations[0].Invoke);
 
             Assert.That(settings._baseCallIgnoredTypes, Is.Empty);
         }
@@ -1334,11 +1362,43 @@ namespace DxMessaging.Tests.Editor
             return $"{methodName}: {BaseCallTypeScannerCore.GetMissingBaseConsequenceLine(methodName, fullName)}";
         }
 
+        private static void AssertCompleteBorder(VisualElement element, Color expectedColor)
+        {
+            Assert.That(
+                element.style.borderTopWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderRightWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderBottomWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderLeftWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            AssertColor(element.style.borderTopColor.value, expectedColor);
+            AssertColor(element.style.borderRightColor.value, expectedColor);
+            AssertColor(element.style.borderBottomColor.value, expectedColor);
+            AssertColor(element.style.borderLeftColor.value, expectedColor);
+        }
+
+        private static void AssertColor(Color actual, Color expected)
+        {
+            Assert.That(actual.r, Is.EqualTo(expected.r).Within(0.001f));
+            Assert.That(actual.g, Is.EqualTo(expected.g).Within(0.001f));
+            Assert.That(actual.b, Is.EqualTo(expected.b).Within(0.001f));
+            Assert.That(actual.a, Is.EqualTo(expected.a).Within(0.001f));
+        }
+
         private void AttachToShownWindow(VisualElement root)
         {
-            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
-            _createdObjects.Add(window);
-            window.Show();
+            EditorWindow window = EditorWindowTestUtility.CreateWindow();
+            _createdWindows.Add(window);
+            EditorWindowTestUtility.ShowWindow(window);
             window.rootVisualElement.Add(root);
         }
 

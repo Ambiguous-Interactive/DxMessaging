@@ -128,19 +128,14 @@ namespace DxMessaging.Tests.Editor
             {
                 if (!string.IsNullOrWhiteSpace(assetPath))
                 {
-                    AssetDatabase.DeleteAsset(assetPath);
+                    EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                        AssetDatabase.DeleteAsset(assetPath)
+                    );
                 }
             }
             _createdAssetPaths.Clear();
 
-            foreach (EditorWindow window in _createdWindows)
-            {
-                if (window != null)
-                {
-                    window.Close();
-                }
-            }
-            _createdWindows.Clear();
+            EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
 
             if (MessageHandler.MessageBus is MessageBus messageBus)
             {
@@ -185,12 +180,35 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             Assert.That(root.ClassListContains(DxMessagingFlowGraphWindow.RootClassName), Is.True);
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.WindowClassName), Is.True);
+            Assert.That(
+                root.Query<VisualElement>(className: DxMessagingFlowGraphWindow.ToolbarClassName)
+                    .First()
+                    .ClassListContains(DxMessagingEditorTheme.ToolbarClassName),
+                Is.True
+            );
             Assert.That(
                 root.Q<Label>(DxMessagingFlowGraphWindow.StatusLabelName).text,
                 Does.Contain("1 components")
             );
             Assert.That(root.Q<TextField>(DxMessagingFlowGraphWindow.FilterFieldName), Is.Not.Null);
+            Assert.That(
+                root.Q<TextField>(DxMessagingFlowGraphWindow.FilterFieldName)
+                    .ClassListContains(DxMessagingEditorTheme.SearchClassName),
+                Is.True
+            );
             Assert.That(root.Q<Button>(DxMessagingFlowGraphWindow.ExportButtonName), Is.Not.Null);
+            Assert.That(
+                root.Q<Button>(DxMessagingFlowGraphWindow.ExportButtonName)
+                    .ClassListContains(DxMessagingEditorTheme.ToolButtonClassName),
+                Is.True
+            );
+            Label routeMapKind = root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName)
+                .Query<VisualElement>(className: DxMessagingFlowGraphWindow.RouteMapRouteClassName)
+                .First()
+                .Q<Label>(DxMessagingFlowGraphWindow.RouteMapRouteKindLabelName);
+            AssertRouteKindBadge(routeMapKind, DxMessagingEditorPalette.UntargetedKind);
             Assert.That(
                 root.Query<VisualElement>(
                         className: DxMessagingFlowGraphWindow.ComponentNodeClassName
@@ -212,9 +230,14 @@ namespace DxMessaging.Tests.Editor
                 )
                 .ToList();
             Assert.That(edges.Count, Is.EqualTo(1));
+            Assert.That(edges[0].ClassListContains(DxMessagingEditorTheme.CardClassName), Is.True);
             Assert.That(
                 edges[0].Q<Label>(DxMessagingFlowGraphWindow.EdgeLabelName).text,
                 Does.Contain("FlowGraphMessage -> Root/Listener")
+            );
+            AssertRouteKindBadge(
+                edges[0].Q<Label>(DxMessagingFlowGraphWindow.EdgeRouteKindLabelName),
+                DxMessagingEditorPalette.UntargetedKind
             );
         }
 
@@ -293,14 +316,8 @@ namespace DxMessaging.Tests.Editor
                     StringComparer.Ordinal
                 );
 
-            AssertColor(
-                edgesByKind["Targeted"].style.borderLeftColor.value,
-                DxMessagingEditorPalette.Targeted
-            );
-            AssertColor(
-                edgesByKind["Broadcast"].style.borderLeftColor.value,
-                DxMessagingEditorPalette.Broadcast
-            );
+            AssertCompleteBorder(edgesByKind["Targeted"], DxMessagingEditorPalette.Targeted);
+            AssertCompleteBorder(edgesByKind["Broadcast"], DxMessagingEditorPalette.Broadcast);
         }
 
         [Test]
@@ -347,6 +364,14 @@ namespace DxMessaging.Tests.Editor
                     .Q<Label>(
                         DxMessagingFlowGraphWindow.VisibleTraceRouteKindLaneRouteKindLabelName
                     )
+                    .ClassListContains(DxMessagingEditorTheme.TypeBadgeClassName),
+                Is.True
+            );
+            Assert.That(
+                routeKindRows[0]
+                    .Q<Label>(
+                        DxMessagingFlowGraphWindow.VisibleTraceRouteKindLaneRouteKindLabelName
+                    )
                     .text,
                 Is.EqualTo("Broadcast")
             );
@@ -362,34 +387,24 @@ namespace DxMessaging.Tests.Editor
                 Does.Not.Contain("BroadcastWithoutSourcePostProcessor")
             );
 
-            AssertColor(
-                FirstRow(
-                    DxMessagingFlowGraphWindow.VisibleTraceRouteKindLaneRowClassName
-                ).style.borderLeftColor.value,
+            AssertCompleteBorder(
+                FirstRow(DxMessagingFlowGraphWindow.VisibleTraceRouteKindLaneRowClassName),
                 DxMessagingEditorPalette.Broadcast
             );
-            AssertColor(
-                FirstRow(
-                    DxMessagingFlowGraphWindow.VisibleTraceIdLaneRowClassName
-                ).style.borderLeftColor.value,
+            AssertCompleteBorder(
+                FirstRow(DxMessagingFlowGraphWindow.VisibleTraceIdLaneRowClassName),
                 DxMessagingEditorPalette.Trace
             );
-            AssertColor(
-                FirstRow(
-                    DxMessagingFlowGraphWindow.VisibleTraceMessageLaneRowClassName
-                ).style.borderLeftColor.value,
+            AssertCompleteBorder(
+                FirstRow(DxMessagingFlowGraphWindow.VisibleTraceMessageLaneRowClassName),
                 DxMessagingEditorPalette.TraceMessage
             );
-            AssertColor(
-                FirstRow(
-                    DxMessagingFlowGraphWindow.VisibleTraceTargetLaneRowClassName
-                ).style.borderLeftColor.value,
+            AssertCompleteBorder(
+                FirstRow(DxMessagingFlowGraphWindow.VisibleTraceTargetLaneRowClassName),
                 DxMessagingEditorPalette.TraceTarget
             );
-            AssertColor(
-                FirstRow(
-                    DxMessagingFlowGraphWindow.VisibleContextLaneRowClassName
-                ).style.borderLeftColor.value,
+            AssertCompleteBorder(
+                FirstRow(DxMessagingFlowGraphWindow.VisibleContextLaneRowClassName),
                 DxMessagingEditorPalette.Amber
             );
 
@@ -397,6 +412,95 @@ namespace DxMessaging.Tests.Editor
             {
                 return root.Query<VisualElement>(className: className).First();
             }
+        }
+
+        [Test]
+        public void BuildGraphUiUsesCompleteBordersForRouteAndLaneGroups()
+        {
+            FlowGraphSnapshot snapshot = new(
+                new[]
+                {
+                    new FlowGraphComponentNode(
+                        "component:1",
+                        "Root/Listener",
+                        "MessagingComponent",
+                        activeInHierarchy: true,
+                        listenerCount: 1,
+                        registrationCount: 1,
+                        callCount: 4,
+                        localMessageCount: 0
+                    ),
+                },
+                new[] { new FlowGraphMessageNode("FlowGraphMessage", 1, 4) },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        "FlowGraphMessage",
+                        "component:1",
+                        "Root/Listener",
+                        "TargetedWithoutTargeting",
+                        registrationCount: 1,
+                        callCount: 4
+                    ),
+                },
+                new[]
+                {
+                    new FlowGraphTracePath(
+                        "FlowGraphMessage",
+                        "target: { Id = 42 }",
+                        "component:1",
+                        "Root/Listener",
+                        "TargetedWithoutTargeting",
+                        recentTracedDeliveryCount: 4,
+                        traceIds: new long[] { 101, 102 }
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
+
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName),
+                DxMessagingEditorPalette.BorderPanel
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleMessageLanesName),
+                DxMessagingEditorPalette.BorderPanel
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleTargetLanesName),
+                DxMessagingEditorPalette.BorderPanel
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleFlowCorridorsName),
+                DxMessagingEditorPalette.BorderPanel
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleTraceRouteKindLanesName),
+                DxMessagingEditorPalette.BorderStrong
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleTraceIdLanesName),
+                DxMessagingEditorPalette.BorderStrong
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleTraceMessageLanesName),
+                DxMessagingEditorPalette.BorderStrong
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleTraceTargetLanesName),
+                DxMessagingEditorPalette.BorderStrong
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleContextLanesName),
+                DxMessagingEditorPalette.BorderStrong
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.TracePathsName),
+                DxMessagingEditorPalette.BorderPanel
+            );
         }
 
         [Test]
@@ -5988,7 +6092,7 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 Action<string> onSelectionChanged = null;
                 onSelectionChanged = selectedItemKey =>
@@ -6055,7 +6159,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -6068,7 +6172,7 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 Action<string> onSelectionChanged = null;
                 onSelectionChanged = selectedItemKey =>
@@ -6126,7 +6230,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -6184,6 +6288,20 @@ namespace DxMessaging.Tests.Editor
                 Does.Contain("serialized provider missing")
             );
             Assert.That(
+                root.Q<Label>(DxMessagingFlowGraphWindow.WarningLabelName)
+                    .ClassListContains(DxMessagingEditorTheme.AdmonitionClassName),
+                Is.True
+            );
+            Assert.That(
+                root.Q<Label>(DxMessagingFlowGraphWindow.WarningLabelName)
+                    .ClassListContains(DxMessagingEditorTheme.WarningClassName),
+                Is.True
+            );
+            AssertCompleteBorder(
+                root.Q<Label>(DxMessagingFlowGraphWindow.WarningLabelName),
+                DxMessagingEditorPalette.Amber
+            );
+            Assert.That(
                 root.Q<Button>(DxMessagingFlowGraphWindow.ExportButtonName).enabledSelf,
                 Is.True
             );
@@ -6202,7 +6320,7 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 DxMessagingFlowGraphWindow.BuildGraphUi(
                     root,
@@ -6267,7 +6385,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -6689,7 +6807,10 @@ namespace DxMessaging.Tests.Editor
             try
             {
                 prefabHost.AddComponent<MessagingComponent>();
-                GameObject prefabAsset = PrefabUtility.SaveAsPrefabAsset(prefabHost, prefabPath);
+                GameObject prefabAsset = null;
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                    prefabAsset = PrefabUtility.SaveAsPrefabAsset(prefabHost, prefabPath)
+                );
                 Assert.That(prefabAsset, Is.Not.Null);
                 Object.DestroyImmediate(prefabHost);
                 prefabHost = null;
@@ -6697,8 +6818,10 @@ namespace DxMessaging.Tests.Editor
                 MessagingComponent prefabComponent = prefabAsset.GetComponent<MessagingComponent>();
                 Assert.That(prefabComponent, Is.Not.Null);
                 Assert.That(EditorUtility.IsPersistent(prefabComponent), Is.True);
-                MessagingComponent[] unfiltered =
-                    Resources.FindObjectsOfTypeAll<MessagingComponent>();
+                MessagingComponent[] unfiltered = Array.Empty<MessagingComponent>();
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                    unfiltered = Resources.FindObjectsOfTypeAll<MessagingComponent>()
+                );
                 Assert.That(unfiltered, Has.Member(sceneComponent));
                 Assert.That(unfiltered, Has.Member(prefabComponent));
 
@@ -6783,6 +6906,56 @@ namespace DxMessaging.Tests.Editor
             Assert.That(actual.g, Is.EqualTo(expected.g).Within(0.001f));
             Assert.That(actual.b, Is.EqualTo(expected.b).Within(0.001f));
             Assert.That(actual.a, Is.EqualTo(expected.a).Within(0.001f));
+        }
+
+        private static void AssertCompleteBorder(VisualElement element, Color expectedColor)
+        {
+            Assert.That(
+                element.style.borderTopWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderRightWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderBottomWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderLeftWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            AssertColor(element.style.borderTopColor.value, expectedColor);
+            AssertColor(element.style.borderRightColor.value, expectedColor);
+            AssertColor(element.style.borderBottomColor.value, expectedColor);
+            AssertColor(element.style.borderLeftColor.value, expectedColor);
+        }
+
+        private static void AssertRouteKindBadge(Label label, string expectedKind)
+        {
+            Assert.That(label, Is.Not.Null);
+            Assert.That(label.text, Is.EqualTo(expectedKind));
+            Assert.That(
+                label.ClassListContains(DxMessagingEditorTheme.TypeBadgeClassName),
+                Is.True
+            );
+            Assert.That(label.ClassListContains(ExpectedTypeBadgeClass(expectedKind)), Is.True);
+        }
+
+        private static string ExpectedTypeBadgeClass(string routeKind)
+        {
+            switch (routeKind)
+            {
+                case DxMessagingEditorPalette.UntargetedKind:
+                    return DxMessagingEditorTheme.TypeBadgeUntargetedClassName;
+                case DxMessagingEditorPalette.TargetedKind:
+                    return DxMessagingEditorTheme.TypeBadgeTargetedClassName;
+                case DxMessagingEditorPalette.BroadcastKind:
+                    return DxMessagingEditorTheme.TypeBadgeBroadcastClassName;
+                default:
+                    return DxMessagingEditorTheme.TypeBadgeClassName;
+            }
         }
 
         private static string RenderRouteMapSummary(FlowGraphSnapshot snapshot)
@@ -7454,7 +7627,7 @@ namespace DxMessaging.Tests.Editor
 
         private EditorWindow CreateTrackedEditorWindow()
         {
-            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            EditorWindow window = EditorWindowTestUtility.CreateWindow();
             _createdWindows.Add(window);
             return window;
         }

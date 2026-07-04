@@ -25,6 +25,7 @@ namespace DxMessaging.Tests.Editor
     {
         private readonly List<Object> _createdObjects = new();
         private readonly List<string> _createdAssetPaths = new();
+        private readonly List<EditorWindow> _createdWindows = new();
         private const string MessageTypeLanesName = "dxmessaging-monitor-message-type-lanes";
         private const string MessageTypeLaneScrollViewName =
             "dxmessaging-monitor-message-type-lane-scroll";
@@ -90,10 +91,14 @@ namespace DxMessaging.Tests.Editor
             {
                 if (!string.IsNullOrWhiteSpace(assetPath))
                 {
-                    AssetDatabase.DeleteAsset(assetPath);
+                    EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                        AssetDatabase.DeleteAsset(assetPath)
+                    );
                 }
             }
             _createdAssetPaths.Clear();
+
+            EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
 
             if (MessageHandler.MessageBus is MessageBus messageBus)
             {
@@ -133,6 +138,21 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(
                 root.ClassListContains(DxMessagingMessageMonitorWindow.RootClassName),
+                Is.True
+            );
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.ThemeClassName), Is.True);
+            Assert.That(root.ClassListContains(DxMessagingEditorTheme.WindowClassName), Is.True);
+            Assert.That(
+                root.Query<VisualElement>(
+                        className: DxMessagingMessageMonitorWindow.ToolbarClassName
+                    )
+                    .First()
+                    .ClassListContains(DxMessagingEditorTheme.ToolbarClassName),
+                Is.True
+            );
+            Assert.That(
+                root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName)
+                    .ClassListContains(DxMessagingEditorTheme.ToolButtonClassName),
                 Is.True
             );
             Assert.That(
@@ -494,6 +514,7 @@ namespace DxMessaging.Tests.Editor
             VisualElement summary = root.Q<VisualElement>(ActiveFilterSummaryName);
             Assert.That(summary, Is.Not.Null);
             Assert.That(summary.style.display.value, Is.EqualTo(DisplayStyle.Flex));
+            AssertCompleteBorder(summary, DxMessagingEditorPalette.Amber);
             Assert.That(
                 summary.Q<Label>(ActiveFilterSummaryLabelName).text,
                 Is.EqualTo("Active typed filters")
@@ -576,12 +597,12 @@ namespace DxMessaging.Tests.Editor
                 capacity: 8,
                 entries: new[] { newer, older }
             );
-            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            EditorWindow window = CreateTrackedEditorWindow();
             string observedFilter = null;
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 DxMessagingMessageMonitorWindow.BuildMonitorUi(
                     root,
@@ -608,7 +629,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -622,11 +643,11 @@ namespace DxMessaging.Tests.Editor
                 capacity: 8,
                 entries: new[] { newer, older }
             );
-            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 DxMessagingMessageMonitorWindow.BuildMonitorUi(
                     root,
@@ -677,7 +698,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -801,6 +822,32 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void BuildMonitorUiUsesCompleteBordersForVisibleLaneGroups()
+        {
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[]
+                {
+                    new MessageMonitorEntry(nameof(OlderMessage), "Context: Player", string.Empty),
+                    new MessageMonitorEntry(nameof(NewerMessage), "Context: HUD", string.Empty),
+                }
+            );
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
+
+            AssertCompleteBorder(
+                root.Q<VisualElement>(MessageTypeLanesName),
+                DxMessagingEditorPalette.BorderPanel
+            );
+            AssertCompleteBorder(
+                root.Q<VisualElement>(ContextLanesName),
+                DxMessagingEditorPalette.BorderPanel
+            );
+        }
+
+        [Test]
         public void BuildMonitorUiScopesVisibleContextLanesToFilteredEntries()
         {
             MessageMonitorEntry older = new(nameof(OlderMessage), "Context: Enemy", string.Empty);
@@ -847,11 +894,11 @@ namespace DxMessaging.Tests.Editor
                 capacity: 8,
                 entries: new[] { player, enemy }
             );
-            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 DxMessagingMessageMonitorWindow.BuildMonitorUi(
                     root,
@@ -909,7 +956,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -927,11 +974,11 @@ namespace DxMessaging.Tests.Editor
                 capacity: 8,
                 entries: new[] { ship, player }
             );
-            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 DxMessagingMessageMonitorWindow.BuildMonitorUi(
                     root,
@@ -985,7 +1032,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -1121,13 +1168,13 @@ namespace DxMessaging.Tests.Editor
                 capacity: 8,
                 entries: new[] { newer, older }
             );
-            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            EditorWindow window = CreateTrackedEditorWindow();
             string observedFilter = null;
             int observedSelectedEntryIndex = -1;
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 DxMessagingMessageMonitorWindow.BuildMonitorUi(
                     root,
@@ -1174,7 +1221,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -1408,11 +1455,11 @@ namespace DxMessaging.Tests.Editor
                 capacity: 8,
                 entries: new[] { newer, older }
             );
-            EditorWindow window = ScriptableObject.CreateInstance<EditorWindow>();
+            EditorWindow window = CreateTrackedEditorWindow();
 
             try
             {
-                window.Show();
+                EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
                 DxMessagingMessageMonitorWindow.BuildMonitorUi(
                     root,
@@ -1463,7 +1510,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                window.Close();
+                EditorWindowTestUtility.CloseWindow(window);
             }
         }
 
@@ -1516,6 +1563,7 @@ namespace DxMessaging.Tests.Editor
                 DxMessagingMessageMonitorWindow.ComponentPanelName
             );
             Assert.That(panel, Is.Not.Null);
+            AssertCompleteBorder(panel, DxMessagingEditorPalette.BorderPanel);
 
             List<VisualElement> rows = root.Query<VisualElement>(
                     className: DxMessagingMessageMonitorWindow.ComponentRowClassName
@@ -1526,6 +1574,7 @@ namespace DxMessaging.Tests.Editor
                 Is.Not.Null
             );
             Assert.That(rows.Count, Is.EqualTo(1));
+            AssertCompleteBorder(rows[0], DxMessagingEditorPalette.Amber);
             Assert.That(
                 rows[0].Q<Label>(DxMessagingMessageMonitorWindow.ComponentNameLabelName).text,
                 Does.Contain("Root/Emitter")
@@ -1695,7 +1744,10 @@ namespace DxMessaging.Tests.Editor
             try
             {
                 prefabHost.AddComponent<MessagingComponent>();
-                GameObject prefabAsset = PrefabUtility.SaveAsPrefabAsset(prefabHost, prefabPath);
+                GameObject prefabAsset = null;
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                    prefabAsset = PrefabUtility.SaveAsPrefabAsset(prefabHost, prefabPath)
+                );
                 Assert.That(prefabAsset, Is.Not.Null);
                 Object.DestroyImmediate(prefabHost);
                 prefabHost = null;
@@ -1703,13 +1755,18 @@ namespace DxMessaging.Tests.Editor
                 MessagingComponent prefabComponent = prefabAsset.GetComponent<MessagingComponent>();
                 Assert.That(prefabComponent, Is.Not.Null);
                 Assert.That(EditorUtility.IsPersistent(prefabComponent), Is.True);
-                MessagingComponent[] unfiltered =
-                    Resources.FindObjectsOfTypeAll<MessagingComponent>();
+                MessagingComponent[] unfiltered = Array.Empty<MessagingComponent>();
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                    unfiltered = Resources.FindObjectsOfTypeAll<MessagingComponent>()
+                );
                 Assert.That(unfiltered, Has.Member(sceneComponent));
                 Assert.That(unfiltered, Has.Member(prefabComponent));
 
                 IReadOnlyList<ComponentMonitorEntry> components =
-                    DxMessagingMessageMonitorWindow.CaptureComponentSnapshots();
+                    Array.Empty<ComponentMonitorEntry>();
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                    components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots()
+                );
 
                 Assert.That(
                     components.Any(component => component.HierarchyPath == sceneName),
@@ -1778,7 +1835,10 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(EditorSceneManager.IsPreviewSceneObject(previewHost), Is.True);
 
                 IReadOnlyList<ComponentMonitorEntry> components =
-                    DxMessagingMessageMonitorWindow.CaptureComponentSnapshots();
+                    Array.Empty<ComponentMonitorEntry>();
+                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                    components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots()
+                );
 
                 Assert.That(
                     components.Any(component => component.HierarchyPath == sceneName),
@@ -1930,8 +1990,49 @@ namespace DxMessaging.Tests.Editor
             Label kind = row.Q<Label>(DxMessagingMessageMonitorWindow.RouteKindLabelName);
             Assert.That(kind, Is.Not.Null);
             Assert.That(kind.text, Is.EqualTo(expectedKind));
-            AssertColor(row.style.borderLeftColor.value, expectedColor);
-            AssertColor(kind.style.color.value, expectedColor);
+            Assert.That(row.ClassListContains(DxMessagingEditorTheme.CardClassName), Is.True);
+            Assert.That(kind.ClassListContains(DxMessagingEditorTheme.TypeBadgeClassName), Is.True);
+            Assert.That(kind.ClassListContains(ExpectedTypeBadgeClass(expectedKind)), Is.True);
+            AssertCompleteBorder(row, expectedColor);
+        }
+
+        private static void AssertCompleteBorder(VisualElement element, Color expectedColor)
+        {
+            Assert.That(
+                element.style.borderTopWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderRightWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderBottomWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            Assert.That(
+                element.style.borderLeftWidth.value,
+                Is.EqualTo(DxMessagingEditorTheme.CompleteBorderWidth)
+            );
+            AssertColor(element.style.borderTopColor.value, expectedColor);
+            AssertColor(element.style.borderRightColor.value, expectedColor);
+            AssertColor(element.style.borderBottomColor.value, expectedColor);
+            AssertColor(element.style.borderLeftColor.value, expectedColor);
+        }
+
+        private static string ExpectedTypeBadgeClass(string routeKind)
+        {
+            switch (routeKind)
+            {
+                case DxMessagingEditorPalette.UntargetedKind:
+                    return DxMessagingEditorTheme.TypeBadgeUntargetedClassName;
+                case DxMessagingEditorPalette.TargetedKind:
+                    return DxMessagingEditorTheme.TypeBadgeTargetedClassName;
+                case DxMessagingEditorPalette.BroadcastKind:
+                    return DxMessagingEditorTheme.TypeBadgeBroadcastClassName;
+                default:
+                    return string.Empty;
+            }
         }
 
         private static void AssertColor(Color actual, Color expected)
@@ -1977,6 +2078,13 @@ namespace DxMessaging.Tests.Editor
                 _createdObjects.Add(unityObject);
             }
             return unityObject;
+        }
+
+        private EditorWindow CreateTrackedEditorWindow()
+        {
+            EditorWindow window = EditorWindowTestUtility.CreateWindow();
+            _createdWindows.Add(window);
+            return window;
         }
 
         private readonly struct OlderMessage : IUntargetedMessage { }
