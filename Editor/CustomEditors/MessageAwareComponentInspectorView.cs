@@ -136,7 +136,7 @@ namespace DxMessaging.Editor.CustomEditors
                 CreateLabel(
                     BodyLabelName,
                     BodyClassName,
-                    $"{state.FullName} has lifecycle methods that do not chain to MessageAwareComponent. DxMessaging will not function on this component.",
+                    $"{state.FullName} has lifecycle methods that do not chain to MessageAwareComponent. DxMessaging will not function on this component. See docs/reference/analyzers.md.",
                     bold: false
                 )
             );
