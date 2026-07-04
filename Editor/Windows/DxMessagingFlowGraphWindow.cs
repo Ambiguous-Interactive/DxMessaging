@@ -1271,11 +1271,12 @@ namespace DxMessaging.Editor.Windows
 
         private static MessagingComponent[] FindMessagingComponentsInLoadedScenes()
         {
-#if UNITY_6000_0_OR_NEWER
-            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
-                FindObjectsInactive.Include
-            );
-#elif UNITY_2023_1_OR_NEWER
+#if UNITY_2023_1_OR_NEWER
+            // FindObjectsByType's two-argument (FindObjectsInactive, FindObjectsSortMode)
+            // overload exists across all 2023.1+ editors, including every 6000.x. The
+            // one-argument FindObjectsByType(FindObjectsInactive) convenience overload only
+            // exists on some 6000.x patch releases (e.g. 6000.4, not 6000.3), so always pass
+            // both arguments to stay portable across the whole 6000.x range.
             return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None
