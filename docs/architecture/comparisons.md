@@ -1434,8 +1434,9 @@ public void TestAchievementSystem() {
     var testBus = new MessageBus();
     var token = MessageRegistrationToken.Create(achievementHandler, testBus);
 
+    var gameObject = new GameObject();
     var msg = new EnemyKilled("Boss", 10);
-    msg.EmitGameObjectBroadcast(enemy, testBus);
+    msg.EmitGameObjectBroadcast(gameObject, testBus);
 
     Assert.IsTrue(achievementSystem.Unlocked("BossSlayer"));
 }

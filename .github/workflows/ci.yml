@@ -128,17 +128,17 @@ jobs:
           set_output actionlint \
             "(^\.github/workflows/|^\.github/actionlint\.yaml$|^\.github/unity-versions\.json$|^scripts/validate-unity-versions\.js$)"
           set_output banner \
-            "(^docs/images/DxMessaging-banner\.svg$|^scripts/sync-banner-version\.js$|^package\.json$|^Tests/|^SourceGenerators/|$ci_workflow)"
+            "(^docs/images/DxMessaging-banner\.svg$|^scripts/sync-banner-version\.js$|^package\.json$|^Tests/|^SourceGenerators/|^\.docs-tests/|$ci_workflow)"
           set_output csharpier \
             "(\.cs$|^\.config/dotnet-tools\.json$|(^|/)\.csharpierrc[^/]*$|(^|/)\.csharpierignore$|(^|/)\.editorconfig$|$ci_workflow)"
           set_output docs \
             "(^docs/|^mkdocs\.yml$|^requirements-docs\.txt$|$ci_workflow)"
           set_output docs_links \
             "(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$|$ci_workflow)"
-          # docs/*.md is a dotnet trigger because the dotnet job compiles and scans the
-          # published docs (DocsSnippetCompilationTests, DocsObsoleteApiReferenceTests).
+          # docs/*.md, README.md, and Samples~/*.md are dotnet triggers because the
+          # dotnet job compiles and scans them in WallstopStudios.DxMessaging.Docs.Tests.
           set_output dotnet \
-            "(\.cs$|\.csproj$|\.sln$|^Runtime/Analyzers/|^SourceGenerators/|^docs/.*\.(md|markdown)$|^\.config/dotnet-tools\.json$|$ci_workflow)"
+            "(\.cs$|\.csproj$|\.sln$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'
@@ -374,6 +374,19 @@ jobs:
           --configuration Release
           /p:CopyAnalyzerPayload=false
           --collect:"XPlat Code Coverage"
+
+      - name: Restore docs tests
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        working-directory: .docs-tests
+        run: dotnet restore WallstopStudios.DxMessaging.Docs.Tests.csproj
+
+      - name: Run docs tests
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        working-directory: .docs-tests
+        run: >
+          dotnet test
+          WallstopStudios.DxMessaging.Docs.Tests.csproj
+          --configuration Release
 
       - name: Verify committed analyzer payload is current
         if: ${{ needs.changes.outputs.dotnet != 'false' }}

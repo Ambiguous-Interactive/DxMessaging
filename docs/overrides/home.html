@@ -1,0 +1,781 @@
+{% extends "main.html" %} {% block styles %} {{ super() }}
+<style>
+  .md-content__inner {
+    max-width: none;
+    padding-top: 0;
+  }
+
+  .md-content__inner > .md-content__button {
+    display: none;
+  }
+
+  .dxm-hero {
+    align-items: center;
+    display: grid;
+    gap: 2.6rem;
+    grid-template-columns: 1.05fr 0.95fr;
+    padding: 2.6rem 0 2rem;
+  }
+
+  @media (max-width: 1180px) {
+    .dxm-hero {
+      gap: 1.8rem;
+      grid-template-columns: minmax(0, 1fr) minmax(24rem, 0.95fr);
+    }
+  }
+
+  @media (max-width: 960px) {
+    .dxm-hero {
+      grid-template-columns: 1fr;
+      padding-top: 1.5rem;
+    }
+  }
+
+  .dxm-brand-lockup {
+    align-items: center;
+    display: inline-flex;
+    gap: 1rem;
+    margin-bottom: 1.1rem;
+  }
+
+  .dxm-brand-lockup img {
+    filter: drop-shadow(0 0 28px rgba(244, 168, 54, 0.35));
+    flex: 0 0 auto;
+    height: 4.8rem;
+    width: 4.8rem;
+  }
+
+  /* The dark mark and its amber glow smudge on Press paper; swap per scheme. */
+  .dxm-mark--light,
+  [data-md-color-scheme="default"] .dxm-mark--dark {
+    display: none;
+  }
+
+  [data-md-color-scheme="default"] .dxm-mark--light {
+    display: inline;
+    filter: none;
+  }
+
+  /* Card glyphs are fixed-hue art; swap to darkened variants on Press paper. */
+  .dxm-glyph--light,
+  [data-md-color-scheme="default"] .dxm-glyph--dark {
+    display: none;
+  }
+
+  [data-md-color-scheme="default"] .dxm-glyph--light {
+    display: inline;
+  }
+
+  .dxm-wordmark {
+    color: var(--md-default-fg-color);
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 1.7rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .dxm-wordmark span {
+    color: var(--dxm-eyebrow-color);
+  }
+
+  .dxm-eyebrow {
+    color: var(--dxm-eyebrow-color);
+    font-family: var(--md-code-font-family);
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .dxm-h1 {
+    color: var(--md-default-fg-color);
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.06;
+    margin: 0.7rem 0 0;
+  }
+
+  .dxm-sub {
+    color: var(--md-default-fg-color--light);
+    font-size: 0.86rem;
+    line-height: 1.55;
+    margin-top: 0.9rem;
+    max-width: 32rem;
+  }
+
+  .dxm-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.4rem;
+  }
+
+  .dxm-install {
+    align-items: center;
+    background: var(--md-code-bg-color);
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 8px;
+    color: var(--md-typeset-color);
+    display: flex;
+    font-family: var(--md-code-font-family);
+    font-size: 0.64rem;
+    gap: 0.5rem;
+    margin-top: 1.1rem;
+    max-width: 26rem;
+    padding: 0.55rem 0.7rem;
+    white-space: normal;
+  }
+
+  .dxm-install .prompt {
+    color: var(--md-default-fg-color--light);
+  }
+
+  .dxm-install .command {
+    flex: 1;
+  }
+
+  .dxm-copy {
+    background: transparent;
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 6px;
+    color: var(--md-default-fg-color--light);
+    cursor: pointer;
+    flex: 0 0 auto;
+    font-family: var(--md-code-font-family);
+    font-size: 0.55rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .dxm-copy:hover,
+  .dxm-copy:focus-visible {
+    border-color: var(--dxm-amber);
+    color: var(--dxm-amber);
+  }
+
+  .dxm-copy.is-copied {
+    border-color: var(--dxm-route-broadcast);
+    color: var(--dxm-route-broadcast);
+  }
+
+  /* Soft amber wash behind the code window (dark scheme only). */
+  .dxm-hero-glow {
+    min-width: 0;
+    position: relative;
+  }
+
+  /* Bleed vertically only: horizontal bleed would widen the page scroll area. */
+  .dxm-hero-glow::before {
+    background: radial-gradient(closest-side, rgba(244, 168, 54, 0.1), transparent 70%);
+    content: "";
+    inset: -15% 0;
+    pointer-events: none;
+    position: absolute;
+    z-index: -1;
+  }
+
+  [data-md-color-scheme="default"] .dxm-hero-glow::before {
+    display: none;
+  }
+
+  .dxm-window {
+    background: var(--dxm-window-bg);
+    border: 1px solid var(--dxm-window-border);
+    border-radius: 13px;
+    box-shadow: var(--dxm-window-shadow);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Progressive enhancement: tint the window toward the selected route. */
+  .dxm-window:has(#dxm-sample-untargeted:checked) {
+    border-color: rgba(127, 166, 216, 0.35);
+    box-shadow:
+      var(--dxm-window-shadow),
+      0 0 48px -24px rgba(127, 166, 216, 0.35);
+  }
+
+  .dxm-window:has(#dxm-sample-targeted:checked) {
+    border-color: rgba(236, 70, 97, 0.35);
+    box-shadow:
+      var(--dxm-window-shadow),
+      0 0 48px -24px rgba(236, 70, 97, 0.35);
+  }
+
+  .dxm-window:has(#dxm-sample-broadcast:checked) {
+    border-color: rgba(127, 184, 138, 0.35);
+    box-shadow:
+      var(--dxm-window-shadow),
+      0 0 48px -24px rgba(127, 184, 138, 0.35);
+  }
+
+  /* Ink on paper: keep the route border tint in light mode but drop the haze. */
+  [data-md-color-scheme="default"] .dxm-window:has(#dxm-sample-untargeted:checked),
+  [data-md-color-scheme="default"] .dxm-window:has(#dxm-sample-targeted:checked),
+  [data-md-color-scheme="default"] .dxm-window:has(#dxm-sample-broadcast:checked) {
+    box-shadow: var(--dxm-window-shadow);
+  }
+
+  .dxm-window-bar {
+    align-items: center;
+    background: var(--dxm-window-bar-bg);
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.6rem 0.8rem;
+  }
+
+  .dxm-window-bar span.dot {
+    border-radius: 50%;
+    display: inline-block;
+    height: 11px;
+    width: 11px;
+  }
+
+  .dxm-window-bar .name {
+    color: var(--md-default-fg-color--light);
+    font-family: var(--md-code-font-family);
+    font-size: 0.6rem;
+    margin-left: 0.4rem;
+  }
+
+  .dxm-window pre {
+    background: transparent;
+    font-size: 0.66rem;
+    line-height: 1.85;
+    margin: 0;
+    padding: 1rem 1.1rem;
+  }
+
+  .dxm-sample-tabs {
+    position: relative;
+  }
+
+  .dxm-sample-radio {
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+  }
+
+  .dxm-sample-labels {
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    display: grid;
+    gap: 0.35rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 0.55rem 0.65rem;
+  }
+
+  .dxm-sample-label {
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: var(--md-default-fg-color--light);
+    cursor: pointer;
+    display: inline-flex;
+    font-family: var(--md-code-font-family);
+    font-size: 0.58rem;
+    gap: 0.35rem;
+    justify-content: center;
+    line-height: 1.2;
+    padding: 0.4rem 0.35rem;
+    text-align: center;
+  }
+
+  .dxm-sample-label i {
+    border-radius: 50%;
+    display: inline-block;
+    flex: 0 0 auto;
+    height: 7px;
+    width: 7px;
+  }
+
+  .dxm-sample-label:hover {
+    color: var(--md-default-fg-color);
+  }
+
+  /* The radios are visually hidden, so surface keyboard focus on their labels. */
+  #dxm-sample-untargeted:focus-visible ~ .dxm-sample-labels label[for="dxm-sample-untargeted"],
+  #dxm-sample-targeted:focus-visible ~ .dxm-sample-labels label[for="dxm-sample-targeted"],
+  #dxm-sample-broadcast:focus-visible ~ .dxm-sample-labels label[for="dxm-sample-broadcast"] {
+    outline: 2px solid var(--dxm-amber-soft);
+    outline-offset: 2px;
+  }
+
+  /* Active tab takes its route color. */
+  #dxm-sample-untargeted:checked ~ .dxm-sample-labels label[for="dxm-sample-untargeted"] {
+    background: rgba(127, 166, 216, 0.14);
+    border-color: rgba(127, 166, 216, 0.45);
+    color: var(--dxm-route-untargeted);
+  }
+
+  #dxm-sample-targeted:checked ~ .dxm-sample-labels label[for="dxm-sample-targeted"] {
+    background: rgba(236, 70, 97, 0.14);
+    border-color: rgba(236, 70, 97, 0.45);
+    color: var(--dxm-route-targeted);
+  }
+
+  #dxm-sample-broadcast:checked ~ .dxm-sample-labels label[for="dxm-sample-broadcast"] {
+    background: rgba(127, 184, 138, 0.14);
+    border-color: rgba(127, 184, 138, 0.45);
+    color: var(--dxm-route-broadcast);
+  }
+
+  .dxm-sample-panels {
+    display: grid;
+    min-height: 21.5rem;
+  }
+
+  .dxm-sample-panel {
+    grid-area: 1 / 1;
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  #dxm-sample-untargeted:checked ~ .dxm-sample-panels .dxm-sample-panel--untargeted,
+  #dxm-sample-targeted:checked ~ .dxm-sample-panels .dxm-sample-panel--targeted,
+  #dxm-sample-broadcast:checked ~ .dxm-sample-panels .dxm-sample-panel--broadcast {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .dxm-window .highlight {
+    border: 0;
+    border-radius: 0;
+    margin: 0;
+  }
+
+  .dxm-window .highlight pre {
+    margin: 0;
+    max-height: 25.5rem;
+    overflow: auto;
+    padding: 0.9rem 1rem 1rem;
+  }
+
+  .dxm-window .highlight code {
+    font-size: 0.62rem;
+    line-height: 1.78;
+  }
+
+  .dxm-window .highlight .filename {
+    display: none;
+  }
+
+  @media (max-width: 520px) {
+    .dxm-brand-lockup img {
+      height: 3.4rem;
+      width: 3.4rem;
+    }
+
+    .dxm-wordmark {
+      font-size: 1.25rem;
+    }
+
+    .dxm-h1 {
+      font-size: 2.15rem;
+    }
+
+    .dxm-sample-label {
+      font-size: 0.52rem;
+      padding-left: 0.2rem;
+      padding-right: 0.2rem;
+    }
+
+    .dxm-window .highlight code {
+      font-size: 0.56rem;
+    }
+  }
+
+  .dxm-visually-hidden {
+    block-size: 1px;
+    clip-path: inset(50%);
+    inline-size: 1px;
+    margin: -1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+  }
+
+  .dxm-cards {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(3, 1fr);
+    padding: 0.6rem 0 2.4rem;
+  }
+
+  @media (max-width: 960px) {
+    .dxm-cards {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .dxm-card {
+    background: var(--md-code-bg-color);
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    padding: 1.2rem 1.3rem;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .dxm-card {
+      transition:
+        transform 0.18s ease,
+        border-color 0.18s ease;
+    }
+  }
+
+  .dxm-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .dxm-card--untargeted:hover {
+    border-color: rgba(127, 166, 216, 0.45);
+  }
+
+  .dxm-card--targeted:hover {
+    border-color: rgba(236, 70, 97, 0.45);
+  }
+
+  .dxm-card--broadcast:hover {
+    border-color: rgba(127, 184, 138, 0.45);
+  }
+
+  .dxm-card-head {
+    align-items: flex-start;
+    display: flex;
+    gap: 0.6rem;
+    justify-content: space-between;
+  }
+
+  .dxm-card-head img {
+    flex: 0 0 auto;
+  }
+
+  .dxm-card .k {
+    align-items: center;
+    display: flex;
+    font-family: var(--md-code-font-family);
+    font-size: 0.58rem;
+    gap: 0.45rem;
+    letter-spacing: 0.1em;
+    padding-top: 0.35rem;
+  }
+
+  .dxm-card .k i {
+    border-radius: 50%;
+    display: inline-block;
+    flex: 0 0 auto;
+    height: 8px;
+    width: 8px;
+  }
+
+  .dxm-card h3 {
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0.55rem 0 0.35rem;
+  }
+
+  .dxm-card p {
+    color: var(--md-default-fg-color--light);
+    font-size: 0.7rem;
+    line-height: 1.55;
+    margin: 0 0 0.8rem;
+  }
+
+  .dxm-card-chip {
+    background: var(--dxm-chip-bg);
+    border: 1px solid var(--dxm-chip-border);
+    border-radius: 7px;
+    display: inline-block;
+    font-family: var(--md-code-font-family);
+    font-size: 0.6rem;
+    margin-top: auto;
+    padding: 0.4rem 0.55rem;
+    width: fit-content;
+  }
+
+  .dxm-trust {
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    border-top: 1px solid var(--md-default-fg-color--lightest);
+    color: var(--md-default-fg-color--light);
+    display: flex;
+    flex-wrap: wrap;
+    font-family: var(--md-code-font-family);
+    font-size: 0.62rem;
+    gap: 0.4rem 1.4rem;
+    margin-bottom: 2.2rem;
+    padding: 0.7rem 0;
+  }
+
+  .dxm-trust b {
+    color: var(--md-default-fg-color);
+    font-weight: 600;
+  }
+</style>
+{% endblock %} {% block content %}
+
+<div class="dxm-hero">
+  <div>
+    <div class="dxm-brand-lockup">
+      <img
+        class="dxm-mark--dark"
+        src="{{ 'images/dxmessaging-mark.svg' | url }}"
+        alt=""
+        width="96"
+        height="96"
+      />
+      <img
+        class="dxm-mark--light"
+        src="{{ 'images/dxmessaging-mark-light.svg' | url }}"
+        alt=""
+        width="96"
+        height="96"
+      />
+      <span class="dxm-wordmark">Dx<span>Messaging</span></span>
+    </div>
+    <div class="dxm-eyebrow">
+      Unity 2021.3+ &nbsp;&middot;&nbsp; MIT &nbsp;&middot;&nbsp; zero allocation
+    </div>
+    <h1 class="dxm-h1">Decoupled, simple systems.</h1>
+    <p class="dxm-sub">
+      Send a typed message and any system reacts, with no reference back to the sender. Three
+      message types, about 10 ns per handler, zero GC.
+    </p>
+    <div class="dxm-actions">
+      <a href="getting-started/" class="md-button md-button--primary">Get started</a>
+      <a href="https://github.com/Ambiguous-Interactive/DxMessaging" class="md-button"
+        >View on GitHub</a
+      >
+    </div>
+    <div class="dxm-install">
+      <span class="prompt" aria-hidden="true">$</span>
+      <span class="command">openupm add com.wallstop-studios.dxmessaging</span>
+      <button
+        class="dxm-copy"
+        type="button"
+        data-dxm-copy="openupm add com.wallstop-studios.dxmessaging"
+        aria-label="Copy install command"
+        hidden
+      >
+        copy
+      </button>
+    </div>
+  </div>
+  <div class="dxm-hero-glow">
+    <div class="dxm-window">
+      <div class="dxm-window-bar">
+        <span class="dot" style="background: #ec4661"></span>
+        <span class="dot" style="background: #f4a836"></span>
+        <span class="dot" style="background: #3d8a55"></span>
+        <span class="name">MessageSamples.cs</span>
+      </div>
+      <div class="dxm-sample-tabs" role="radiogroup" aria-label="Hero code examples">
+        <input
+          class="dxm-sample-radio"
+          type="radio"
+          name="dxm-hero-sample"
+          id="dxm-sample-untargeted"
+        />
+        <input
+          class="dxm-sample-radio"
+          type="radio"
+          name="dxm-hero-sample"
+          id="dxm-sample-targeted"
+          checked
+        />
+        <input
+          class="dxm-sample-radio"
+          type="radio"
+          name="dxm-hero-sample"
+          id="dxm-sample-broadcast"
+        />
+        <div class="dxm-sample-labels">
+          <label class="dxm-sample-label" for="dxm-sample-untargeted"
+            ><i style="background: #7fa6d8"></i>Untargeted</label
+          >
+          <label class="dxm-sample-label" for="dxm-sample-targeted"
+            ><i style="background: #ec4661"></i>Targeted</label
+          >
+          <label class="dxm-sample-label" for="dxm-sample-broadcast"
+            ><i style="background: #7fb88a"></i>Broadcast</label
+          >
+        </div>
+        <div class="dxm-sample-panels">
+          <div
+            class="dxm-sample-panel dxm-sample-panel--untargeted"
+            data-dxm-hero-example="untargeted"
+          >
+            {{ highlight_csharp_file("home-untargeted.csharp") }}
+          </div>
+          <div class="dxm-sample-panel dxm-sample-panel--targeted" data-dxm-hero-example="targeted">
+            {{ highlight_csharp_file("home-targeted.csharp") }}
+          </div>
+          <div
+            class="dxm-sample-panel dxm-sample-panel--broadcast"
+            data-dxm-hero-example="broadcast"
+          >
+            {{ highlight_csharp_file("home-broadcast.csharp") }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dxm-trust">
+  <span><b>MIT</b> License</span>
+  <span><b>zero</b> dependencies</span>
+  <span><b>O(1)</b> routing</span>
+  <span><b>zero</b> allocation</span>
+  <span><b>~10ns</b> / handler</span>
+  <span><b>sources</b> OpenUPM &middot; npm &middot; Git</span>
+</div>
+
+<h2 class="dxm-visually-hidden">The three message types</h2>
+<div class="dxm-cards">
+  <div class="dxm-card dxm-card--untargeted">
+    <div class="dxm-card-head">
+      <div class="k" style="color: var(--dxm-route-untargeted)">
+        <i style="background: #7fa6d8"></i>01 &middot; UNTARGETED
+      </div>
+      <img
+        class="dxm-glyph--dark"
+        src="{{ 'images/glyph-untargeted.svg' | url }}"
+        alt=""
+        width="44"
+        height="44"
+      /><img
+        class="dxm-glyph--light"
+        src="{{ 'images/glyph-untargeted-light.svg' | url }}"
+        alt=""
+        width="44"
+        height="44"
+      />
+    </div>
+    <h3>Announce to all</h3>
+    <p>
+      A global message with no sender and no target. Anything listening hears it. The PA system.
+    </p>
+    <code class="dxm-card-chip"
+      ><span style="color: var(--dxm-route-untargeted)">[DxUntargetedMessage]</span></code
+    >
+  </div>
+  <div class="dxm-card dxm-card--targeted">
+    <div class="dxm-card-head">
+      <div class="k" style="color: var(--dxm-route-targeted)">
+        <i style="background: #ec4661"></i>02 &middot; TARGETED
+      </div>
+      <img
+        class="dxm-glyph--dark"
+        src="{{ 'images/glyph-targeted.svg' | url }}"
+        alt=""
+        width="44"
+        height="44"
+      /><img
+        class="dxm-glyph--light"
+        src="{{ 'images/glyph-targeted-light.svg' | url }}"
+        alt=""
+        width="44"
+        height="44"
+      />
+    </div>
+    <h3>Command one</h3>
+    <p>A message to one specific GameObject. Only that object receives it. The addressed letter.</p>
+    <code class="dxm-card-chip"
+      ><span style="color: var(--dxm-route-targeted)">[DxTargetedMessage]</span></code
+    >
+  </div>
+  <div class="dxm-card dxm-card--broadcast">
+    <div class="dxm-card-head">
+      <div class="k" style="color: var(--dxm-route-broadcast)">
+        <i style="background: #7fb88a"></i>03 &middot; BROADCAST
+      </div>
+      <img
+        class="dxm-glyph--dark"
+        src="{{ 'images/glyph-broadcast.svg' | url }}"
+        alt=""
+        width="44"
+        height="44"
+      /><img
+        class="dxm-glyph--light"
+        src="{{ 'images/glyph-broadcast-light.svg' | url }}"
+        alt=""
+        width="44"
+        height="44"
+      />
+    </div>
+    <h3>Emit a fact</h3>
+    <p>A fact from a known source. Listeners can filter by who sent it. The radio station.</p>
+    <code class="dxm-card-chip"
+      ><span style="color: var(--dxm-route-broadcast)">[DxBroadcastMessage]</span></code
+    >
+  </div>
+</div>
+
+{{ page.content }}
+
+<script>
+  (function () {
+    function bindCopyButtons() {
+      if (!navigator.clipboard) {
+        return;
+      }
+
+      document.querySelectorAll(".dxm-copy[data-dxm-copy]").forEach(function (button) {
+        button.hidden = false;
+        if (button.dataset.dxmBound) {
+          return;
+        }
+        button.dataset.dxmBound = "true";
+        button.setAttribute("aria-live", "polite");
+
+        var resetTimer = 0;
+        function setState(text, copied) {
+          button.classList.toggle("is-copied", copied);
+          button.textContent = text;
+          button.setAttribute("aria-label", "Copy install command: " + text);
+        }
+
+        button.addEventListener("click", function () {
+          navigator.clipboard.writeText(button.dataset.dxmCopy).then(
+            function () {
+              setState("copied", true);
+              window.clearTimeout(resetTimer);
+              resetTimer = window.setTimeout(function () {
+                setState("copy", false);
+              }, 1500);
+            },
+            function () {
+              setState("copy failed", false);
+              window.clearTimeout(resetTimer);
+              resetTimer = window.setTimeout(function () {
+                setState("copy", false);
+              }, 2500);
+            }
+          );
+        });
+      });
+    }
+
+    /* Material's instant navigation replaces the DOM without a page load;
+       document$ re-fires on every navigation when it is available. Guard the
+       subscription so revisiting the homepage does not stack subscribers. */
+    if (typeof document$ !== "undefined") {
+      if (!window.__dxmCopySubscribed) {
+        window.__dxmCopySubscribed = true;
+        document$.subscribe(bindCopyButtons);
+      }
+    } else if (document.readyState !== "loading") {
+      bindCopyButtons();
+    } else {
+      document.addEventListener("DOMContentLoaded", bindCopyButtons);
+    }
+  })();
+</script>
+{% endblock %}

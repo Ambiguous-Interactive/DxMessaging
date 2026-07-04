@@ -8,11 +8,11 @@ These shorthands provide concise syntax for sending messages, but they come with
 
 Three methods that work on any message:
 
-| Method                 | Purpose                   | Message Type         | Example                                           |
-| ---------------------- | ------------------------- | -------------------- | ------------------------------------------------- |
-| **`Emit()`**           | Send globally to everyone | `IUntargetedMessage` | `var m = new SceneLoaded(1); m.Emit();`           |
-| **`EmitAt(target)`**   | Send to a specific target | `ITargetedMessage`   | `var m = new Heal(10); m.EmitAt(playerId);`       |
-| **`EmitFrom(source)`** | Broadcast from a source   | `IBroadcastMessage`  | `var m = new TookDamage(5); m.EmitFrom(enemyId);` |
+| Method                     | Purpose                        | Message Type         | Example                                              |
+| -------------------------- | ------------------------------ | -------------------- | ---------------------------------------------------- |
+| **`Emit()`**               | Send globally to everyone      | `IUntargetedMessage` | `var m = new SceneLoaded(1); m.Emit();`              |
+| **`EmitAt(target)`**       | Send to a specific target      | `ITargetedMessage`   | `var m = new Heal(10); m.EmitAt(playerId);`          |
+| **`EmitFrom(gameObject)`** | Broadcast from this GameObject | `IBroadcastMessage`  | `var m = new TookDamage(5); m.EmitFrom(gameObject);` |
 
 ## Quick Start Examples
 
@@ -42,7 +42,7 @@ var heal = new Heal(10);
 heal.EmitAt(player); // Targeted: only the player receives this
 
 var damage = new TookDamage(5);
-damage.EmitFrom(enemy); // Broadcast: listeners interested in enemy damage receive this
+damage.EmitFrom(gameObject); // Broadcast: listeners interested in this object receive this
 ```
 
 ### Bus-First Helpers
@@ -130,7 +130,7 @@ heal.EmitAt(player); // Only the player receives this
 - UI updates for specific panels
 - State changes for specific objects
 
-### `EmitFrom(source)` -- Broadcast from Source
+### `EmitFrom(gameObject)` -- Broadcast from Self
 
 **When to use:** Announcements where the source identity matters.
 
@@ -140,7 +140,7 @@ heal.EmitAt(player); // Only the player receives this
 public readonly partial struct TookDamage { public readonly int amount; }
 
 var damage = new TookDamage(5);
-damage.EmitFrom(enemy);  // Anyone interested in this enemy receives it
+damage.EmitFrom(gameObject);  // Anyone interested in this object receives it
 ```
 
 #### Use cases
@@ -239,8 +239,7 @@ When you're working with `InstanceId` directly (tests, non-Unity systems):
 InstanceId targetId = GetTarget();
 heal.EmitAt(targetId); // Clean and clear
 
-InstanceId sourceId = GetSource();
-damage.EmitFrom(sourceId); // Clean and clear
+damage.EmitFrom(gameObject); // This GameObject is the broadcast source
 ```
 
 **Pros:** Concise and readable, no GameObject/Component ambiguity
@@ -251,11 +250,11 @@ damage.EmitFrom(sourceId); // Clean and clear
 
 DxMessaging includes three built-in string message types for rapid prototyping:
 
-| String Type   | Message Class          | Shorthand                 | Use Case                            |
-| ------------- | ---------------------- | ------------------------- | ----------------------------------- |
-| **Global**    | `GlobalStringMessage`  | `"text".Emit()`           | Debug notifications                 |
-| **Targeted**  | `StringMessage`        | `"text".EmitAt(target)`   | Commands to specific objects        |
-| **Broadcast** | `SourcedStringMessage` | `"text".EmitFrom(source)` | Announcements from specific objects |
+| String Type   | Message Class          | Shorthand                     | Use Case                       |
+| ------------- | ---------------------- | ----------------------------- | ------------------------------ |
+| **Global**    | `GlobalStringMessage`  | `"text".Emit()`               | Debug notifications            |
+| **Targeted**  | `StringMessage`        | `"text".EmitAt(target)`       | Commands to specific objects   |
+| **Broadcast** | `SourcedStringMessage` | `"text".EmitFrom(gameObject)` | Announcements from this object |
 
 ### Examples
 
@@ -302,7 +301,7 @@ var localBus = new MessageBus();
 
 msg.Emit(localBus);              // Emit to specific bus
 msg.EmitAt(target, localBus);    // Target on specific bus
-msg.EmitFrom(source, localBus);  // Broadcast on specific bus
+msg.EmitFrom(gameObject, localBus);  // Broadcast on specific bus
 ```
 
 ### When to use
@@ -342,7 +341,7 @@ If a handler isn't firing, first suspect a GameObject vs Component mismatch. See
 1. **Correct message type?**
    - Untargeted messages use `Emit()`
    - Targeted messages use `EmitAt(target)`
-   - Broadcast messages use `EmitFrom(source)`
+   - Broadcast messages use `EmitFrom(gameObject)`
 
 1. **Registration succeeded?**
    - Check that you assigned the return value (even `_`) to ensure registration happened
@@ -372,7 +371,7 @@ See [Diagnostics](../guides/diagnostics.md) for more debugging tools.
 | **Targeted to GameObject**    | `msg.EmitAt(gameObject)`   | `msg.EmitGameObjectTargeted(gameObject)`  |
 | **Targeted to Component**     | `msg.EmitAt(component)`    | `msg.EmitComponentTargeted(component)`    |
 | **Broadcast from GameObject** | `msg.EmitFrom(gameObject)` | `msg.EmitGameObjectBroadcast(gameObject)` |
-| **Broadcast from Component**  | `msg.EmitFrom(component)`  | `msg.EmitComponentBroadcast(component)`   |
+| **Broadcast from Component**  | `msg.EmitFrom(this)`       | `msg.EmitComponentBroadcast(this)`        |
 | **Non-Unity InstanceId**      | `msg.EmitAt(id)`           | `msg.EmitTargeted(id)`                    |
 
 ### Our recommendation

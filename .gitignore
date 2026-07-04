@@ -7,8 +7,23 @@
 *.userosscache
 *.sln.docstates
 
+design-system/
+design-system.meta
+design-system-1/
+design-system-1.meta
+design-system-old/
+design-system-old.meta
+design-system-old-1/
+design-system-old-1.meta
+design-system-old-2/
+design-system-old-2.meta
+design-system.zip
+design-system.zip.meta
+
 # MkDocs build output
 site/
+_site/
+_site.meta
 
 # Test coverage output
 coverage/
@@ -69,6 +84,12 @@ coverage.meta
 # MSTest test Results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
+
+# Generated test-runner output (e.g. Playwright's test-results/.last-run.json).
+# Not a source folder and not a Unity asset, so neither the folder nor its
+# generated sidecar meta should be committed.
+test-results/
+test-results.meta
 
 # NUNIT
 *.VisualState.xml

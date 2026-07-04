@@ -45,6 +45,10 @@
     "SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.meta",
     "CHANGELOG.md",
     "CHANGELOG.md.meta",
+    "docs.meta",
+    "docs/images.meta",
+    "docs/images/DxMessaging-banner.svg",
+    "docs/images/DxMessaging-banner.svg.meta",
     "LICENSE.md",
     "LICENSE.md.meta",
     "README.md",
@@ -61,7 +65,7 @@
     "format": "prettier --write \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "lint:markdown": "markdownlint-cli2 \"**/*.md\" \"**/*.markdown\"",
-    "check:spelling": "cspell --no-progress --no-summary \"**/*.{md,markdown,cs,json,yml,yaml,ps1,js}\"",
+    "check:spelling": "cspell --no-progress --no-summary .",
     "sync:banner": "node scripts/sync-banner-version.js",
     "check:banner": "node scripts/sync-banner-version.js --check",
     "update:llms-txt": "node scripts/update-llms-txt.js",
@@ -95,6 +99,11 @@
       "displayName": "UI Buttons + Inspector",
       "description": "UI-driven message emissions and a global observer demonstrating inspector diagnostics and RegisterGlobalAcceptAll.",
       "path": "Samples~/UI Buttons + Inspector"
+    },
+    {
+      "displayName": "Diagnostics Tooling Exerciser",
+      "description": "Deterministic scene that drives Message Monitor, Flow Graph, Inspector diagnostics, and Project Settings with all DxMessaging route kinds.",
+      "path": "Samples~/Diagnostics Tooling Exerciser"
     },
     {
       "displayName": "Dependency Injection",

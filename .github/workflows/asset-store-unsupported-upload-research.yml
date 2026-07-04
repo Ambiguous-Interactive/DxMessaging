@@ -1,0 +1,49 @@
+name: Asset Store Unsupported Upload Research
+
+on:
+  workflow_dispatch:
+    inputs:
+      acknowledge_risks:
+        description: "Type I understand to confirm this is research-only and must not upload."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  quarantine:
+    name: Quarantined research brief
+    runs-on: ubuntu-latest
+    environment: asset-store-experimental
+    timeout-minutes: 5
+    steps:
+      - name: Refuse accidental execution
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.acknowledge_risks }}" != "I understand" ]; then
+            echo "::error::This workflow is quarantined. Re-run manually with acknowledge_risks set to 'I understand'."
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE}" != "branch" ]; then
+            echo "::error::Research workflow may run only from a branch, never from tags or releases."
+            exit 1
+          fi
+
+      - name: Document unsupported upload risk
+        run: |
+          set -euo pipefail
+          cat <<'RISK'
+          This workflow is a research quarantine only. It must not upload to the
+          Unity Asset Store, persist Unity publisher credentials, harvest browser
+          sessions, or call undocumented publisher endpoints.
+
+          Research topics that stay outside release.yml:
+          - BatchSubmitter-style Editor API automation.
+          - Hybrid Packages / Asset Store UPM early-access flows.
+          - Official Unity changes that might introduce a supported non-interactive API.
+
+          Before any CI upload wiring exists, Unity must document a supported
+          non-interactive upload path with service credentials that do not depend
+          on an interactive Unity ID session or 2FA browser cookie.
+          RISK

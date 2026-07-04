@@ -55,6 +55,25 @@ updates:
       - dependency-name: "System.Reflection.Metadata"
       - dependency-name: "System.Runtime.CompilerServices.Unsafe"
 
+  # NuGet: documentation tests - uses the same Roslyn test harness policy
+  - package-ecosystem: "nuget"
+    directory: "/.docs-tests"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+    groups:
+      docs-tests-all:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+    ignore:
+      # Keep Roslyn aligned with the source-generator test harness.
+      - dependency-name: "Microsoft.CodeAnalysis*"
+      - dependency-name: "System.Collections.Immutable"
+      - dependency-name: "System.Reflection.Metadata"
+      - dependency-name: "System.Runtime.CompilerServices.Unsafe"
+
   # npm/UPM: package.json at repo root (Unity package manifest)
   - package-ecosystem: "npm"
     directory: "/"

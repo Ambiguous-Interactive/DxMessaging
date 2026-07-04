@@ -1,0 +1,90 @@
+/* ============================================================
+ * DxMessaging Design Tokens
+ * Apply to an editor root via DxMessagingEditorTheme.Apply(root)
+ * in C#. The helper adds ".dx-theme" plus the editor-skin class.
+ * Every value below is a var() consumed by DxMessagingTheme.uss.
+ * ============================================================ */
+
+.dx-theme {
+    /* ---- Brand accent: amber (the DxMessaging hue) ---- */
+    --dx-accent: #f4a836;
+    --dx-accent-soft: #ffd48e;
+    --dx-accent-ink: #0d1117;      /* text/glyph sitting on amber */
+
+    /* ---- Message taxonomy: one hue per type ---- */
+    --dx-untargeted: #7fa6d8;      /* blue  */
+    --dx-targeted: #ec4661;        /* ember */
+    --dx-broadcast: #7fb88a;       /* green */
+    --dx-untargeted-text: #a9c4e2; /* readable on dark rows */
+    --dx-targeted-text: #f4c3cc;
+    --dx-broadcast-text: #a8d3b2;
+
+    /* ---- Semantic ---- */
+    --dx-record: #e5484d;
+    --dx-ok: #7fb88a;
+
+    /* ---- Brand surfaces (docs / branded chrome) ---- */
+    --dx-ink: #0d1117;
+    --dx-panel: #11161d;
+    --dx-brand-border: #232c38;
+
+    /* ---- Native editor grays (dark skin) ---- */
+    --dx-tool-window: #333333;
+    --dx-tool-tabstrip: #282828;
+    --dx-tool-toolbar: #383838;
+    --dx-tool-field: #2c2c2c;
+    --dx-tool-card: #282828;
+    --dx-tool-card-border: #222222;
+    --dx-tool-border: #191919;
+    --dx-tool-border-soft: #262626;
+    --dx-tool-header: #303030;
+    --dx-tool-row-a: #373737;
+    --dx-tool-row-b: #343434;
+    --dx-tool-selected: #2c5d87;
+    --dx-tool-btn: #424242;
+    --dx-tool-btn-hover: #4a4a4a;
+    --dx-tool-btn-border: #2a2a2a;
+
+    /* ---- Text ---- */
+    --dx-text: #e2e2e2;
+    --dx-text-dim: #d8d8d8;
+    --dx-text-muted: #8f8f8f;
+    --dx-text-faint: #6b7480;
+
+    /* ---- Radii ---- */
+    --dx-r-chip: 5px;
+    --dx-r-btn: 6px;
+    --dx-r-card: 7px;
+    --dx-r-window: 9px;
+}
+
+/* ---- Light editor skin: "Press" paper ---- */
+.dx-theme.dx-light {
+    --dx-accent: #b07d1f;
+    --dx-accent-ink: #ffffff;
+
+    --dx-untargeted-text: #35536f;
+    --dx-targeted-text: #a3283b;
+    --dx-broadcast-text: #33684a;
+
+    --dx-tool-window: #f4f1ea;
+    --dx-tool-tabstrip: #ece7db;
+    --dx-tool-toolbar: #efeadf;
+    --dx-tool-field: #ffffff;
+    --dx-tool-card: #faf8f3;
+    --dx-tool-card-border: #e4dfd1;
+    --dx-tool-border: #d9d3c4;
+    --dx-tool-border-soft: #e4dfd1;
+    --dx-tool-header: #ece7db;
+    --dx-tool-row-a: #faf8f3;
+    --dx-tool-row-b: #f1ede3;
+    --dx-tool-selected: #dfeaf5;
+    --dx-tool-btn: #ffffff;
+    --dx-tool-btn-hover: #f3efe6;
+    --dx-tool-btn-border: #d9d3c4;
+
+    --dx-text: #1b1813;
+    --dx-text-dim: #46423a;
+    --dx-text-muted: #6b6559;
+    --dx-text-faint: #9a948a;
+}

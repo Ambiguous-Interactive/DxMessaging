@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\</SolutionDir>
+    <ArtifactsRoot Condition="'$(ArtifactsRoot)' == ''"
+      >$(SolutionDir).artifacts/$(MSBuildProjectName)/</ArtifactsRoot>
+    <BaseIntermediateOutputPath>$(ArtifactsRoot)obj/</BaseIntermediateOutputPath>
+    <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)/</IntermediateOutputPath>
+    <OutputPath>$(ArtifactsRoot)bin/$(Configuration)/</OutputPath>
+    <VSTestResultsDirectory>$(ArtifactsRoot)TestResults/</VSTestResultsDirectory>
+    <LangVersion>13.0</LangVersion>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+</Project>

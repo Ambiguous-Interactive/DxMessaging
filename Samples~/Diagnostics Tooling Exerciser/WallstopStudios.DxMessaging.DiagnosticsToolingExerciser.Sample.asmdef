@@ -1,0 +1,13 @@
+{
+  "name": "WallstopStudios.DxMessaging.DiagnosticsToolingExerciser.Sample",
+  "rootNamespace": "WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser",
+  "references": ["WallstopStudios.DxMessaging"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "noEngineReferences": false
+}

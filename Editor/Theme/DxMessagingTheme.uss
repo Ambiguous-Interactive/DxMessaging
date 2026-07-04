@@ -1,0 +1,255 @@
+/* ============================================================
+ * DxMessaging Theme Components (built on DxTokens.uss)
+ * Reusable USS classes for editor tooling. Load AFTER DxTokens.uss.
+ *
+ * FONTS: Unity editor UI uses the built-in font by default. To use
+ * the brand fonts, import the TTFs (see README) and uncomment the
+ * -unity-font-definition lines below.
+ * ============================================================ */
+
+/* .dx-brand-font    { -unity-font-definition: url("/Packages/com.wallstop-studios.dxmessaging/Editor/Fonts/SpaceGrotesk-Bold.ttf"); } */
+/* .dx-mono          { -unity-font-definition: url("/Packages/com.wallstop-studios.dxmessaging/Editor/Fonts/JetBrainsMono-Regular.ttf"); } */
+
+/* ---------- window shell ---------- */
+.dx-window {
+    flex-grow: 1;
+    background-color: var(--dx-tool-window);
+    color: var(--dx-text);
+    font-size: 12px;
+}
+
+/* ---------- toolbar ---------- */
+.dx-toolbar {
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    padding-left: 8px;
+    padding-right: 8px;
+    background-color: var(--dx-tool-toolbar);
+    border-bottom-width: 1px;
+    border-bottom-color: var(--dx-tool-border-soft);
+}
+.dx-sep {
+    width: 1px;
+    height: 20px;
+    margin-left: 4px;
+    margin-right: 4px;
+    background-color: var(--dx-tool-btn-border);
+}
+.dx-tool-btn {
+    height: 26px;
+    min-width: 26px;
+    padding-left: 8px;
+    padding-right: 8px;
+    margin-right: 6px;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--dx-tool-btn);
+    border-width: 1px;
+    border-color: var(--dx-tool-btn-border);
+    border-radius: var(--dx-r-btn);
+    color: var(--dx-text);
+}
+.dx-tool-btn:hover { background-color: var(--dx-tool-btn-hover); }
+
+/* record toggle */
+.dx-record {
+    flex-direction: row;
+    align-items: center;
+    height: 26px;
+    padding-left: 10px;
+    padding-right: 11px;
+    margin-right: 6px;
+    background-color: var(--dx-tool-btn);
+    border-width: 1px;
+    border-color: var(--dx-tool-btn-border);
+    border-radius: var(--dx-r-btn);
+    color: var(--dx-text);
+}
+.dx-record > .unity-toggle__input { display: none; }
+.dx-record:checked { border-color: var(--dx-record); }
+
+/* search */
+.dx-search {
+    width: 260px;
+    margin-left: 2px;
+    margin-right: 2px;
+}
+
+/* ---------- taxonomy chips (U / T / B) ---------- */
+.dx-chip {
+    width: 22px;
+    height: 20px;
+    margin-right: 6px;
+    border-radius: var(--dx-r-chip);
+    -unity-text-align: middle-center;
+    -unity-font-style: bold;
+    font-size: 10px;
+    color: #0d1117;
+}
+.dx-chip--u { background-color: var(--dx-untargeted); }
+.dx-chip--t { background-color: var(--dx-targeted); }
+.dx-chip--b { background-color: var(--dx-broadcast); }
+.dx-filter { opacity: 0.45; }
+.dx-filter:checked { opacity: 1; }
+
+/* taxonomy dots */
+.dx-dot { width: 7px; height: 7px; border-radius: 4px; margin-right: 6px; }
+.dx-dot--u { background-color: var(--dx-untargeted); }
+.dx-dot--t { background-color: var(--dx-targeted); }
+.dx-dot--b { background-color: var(--dx-broadcast); }
+
+/* type badge in detail header */
+.dx-typebadge {
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    border-radius: var(--dx-r-chip);
+    -unity-font-style: bold;
+    font-size: 10px;
+    color: #0d1117;
+}
+.dx-typebadge--u { background-color: var(--dx-untargeted); }
+.dx-typebadge--t { background-color: var(--dx-targeted); }
+.dx-typebadge--b { background-color: var(--dx-broadcast); }
+
+/* ---------- list ---------- */
+.dx-list-header {
+    flex-direction: row;
+    align-items: center;
+    height: 26px;
+    background-color: var(--dx-tool-header);
+    border-bottom-width: 1px;
+    border-bottom-color: var(--dx-tool-border-soft);
+    color: var(--dx-text-muted);
+    font-size: 9px;
+    -unity-font-style: bold;
+}
+.dx-col-time { width: 78px; padding-left: 14px; }
+.dx-col-type { width: 110px; }
+.dx-col-msg { flex-grow: 1; flex-shrink: 1; }
+.dx-col-route { width: 210px; }
+.dx-col-count { width: 36px; -unity-text-align: middle-center; }
+
+.dx-row {
+    flex-direction: row;
+    align-items: center;
+    height: 28px;
+    background-color: var(--dx-tool-row-a);
+}
+.dx-row--alt { background-color: var(--dx-tool-row-b); }
+.dx-row__time { width: 78px; padding-left: 14px; color: var(--dx-text-muted); font-size: 10px; }
+.dx-row__type { width: 110px; flex-direction: row; align-items: center; }
+.dx-row__msg { flex-grow: 1; flex-shrink: 1; color: var(--dx-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-row__route { width: 210px; color: var(--dx-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-row__count { width: 36px; -unity-text-align: middle-center; color: var(--dx-text-muted); font-size: 10px; }
+
+.unity-collection-view__item--selected .dx-row,
+.unity-list-view__item--selected .dx-row { background-color: var(--dx-tool-selected); }
+.unity-collection-view__item--selected .dx-row__msg,
+.unity-list-view__item--selected .dx-row__msg { color: #ffffff; -unity-font-style: bold; }
+.unity-collection-view__item--selected .dx-row__time,
+.unity-collection-view__item--selected .dx-row__route,
+.unity-collection-view__item--selected .dx-row__count { color: #d5e3f0; }
+
+/* ---------- detail pane ---------- */
+.dx-detail { background-color: #2f2f2f; padding-left: 14px; padding-right: 14px; padding-top: 12px; padding-bottom: 12px; }
+.dx-theme.dx-light .dx-detail { background-color: #efeadf; }
+
+.dx-detail__head { flex-direction: row; align-items: center; margin-bottom: 10px; }
+.dx-detail__title { -unity-font-style: bold; font-size: 16px; color: var(--dx-text); margin-left: 9px; }
+.dx-detail__frame { color: var(--dx-text-muted); font-size: 10px; }
+
+.dx-card {
+    background-color: var(--dx-tool-card);
+    border-width: 1px;
+    border-color: var(--dx-tool-card-border);
+    border-radius: var(--dx-r-card);
+    padding-left: 11px;
+    padding-right: 11px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    margin-bottom: 8px;
+}
+.dx-card__label {
+    font-size: 9px;
+    letter-spacing: 0.6px;
+    color: var(--dx-text-muted);
+    -unity-font-style: bold;
+    margin-bottom: 6px;
+}
+.dx-kv { flex-direction: row; align-items: center; margin-bottom: 3px; }
+.dx-kv__k { width: 74px; color: var(--dx-text-muted); font-size: 11px; }
+.dx-kv__v { flex-grow: 1; color: var(--dx-text-dim); font-size: 11px; }
+.dx-prio { padding-left: 6px; padding-right: 6px; border-radius: 4px; background-color: var(--dx-accent-soft); color: #0d1117; -unity-font-style: bold; font-size: 9px; }
+
+/* ---------- buttons ---------- */
+.dx-btn-accent {
+    background-color: var(--dx-accent);
+    color: var(--dx-accent-ink);
+    -unity-font-style: bold;
+    border-width: 0;
+    border-radius: var(--dx-r-btn);
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+}
+.dx-btn-accent:hover { background-color: var(--dx-accent-soft); }
+.dx-btn-ghost {
+    background-color: var(--dx-tool-btn);
+    border-width: 1px;
+    border-color: var(--dx-tool-btn-border);
+    border-radius: var(--dx-r-btn);
+    color: var(--dx-text);
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+}
+.dx-btn-ghost:hover { background-color: var(--dx-tool-btn-hover); }
+
+/* ---------- footer ---------- */
+.dx-footer {
+    flex-direction: row;
+    align-items: center;
+    height: 28px;
+    padding-left: 14px;
+    padding-right: 14px;
+    background-color: var(--dx-tool-header);
+    border-top-width: 1px;
+    border-top-color: var(--dx-tool-border-soft);
+    color: var(--dx-text-muted);
+    font-size: 10px;
+}
+.dx-footer__stat { margin-right: 18px; flex-direction: row; }
+.dx-footer__num { color: var(--dx-text-dim); margin-right: 4px; }
+
+/* ---------- empty state (the one place the mark appears in a tool) ---------- */
+.dx-empty { flex-grow: 1; align-items: center; justify-content: center; }
+.dx-empty__title { font-size: 13px; -unity-font-style: bold; color: var(--dx-text); margin-top: 12px; }
+.dx-empty__body { font-size: 11px; color: var(--dx-text-muted); margin-top: 6px; white-space: normal; max-width: 260px; -unity-text-align: middle-center; }
+
+/* ---------- admonitions (contained complete border) ---------- */
+.dx-admonition { border-width: 1px; border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
+.dx-admonition__title { -unity-font-style: bold; font-size: 12px; margin-bottom: 5px; }
+.dx-note    { background-color: rgba(127, 166, 216, 0.06); border-color: rgba(127, 166, 216, 0.35); }
+.dx-note .dx-admonition__title { color: var(--dx-untargeted); }
+.dx-tip     { background-color: rgba(127, 184, 138, 0.06); border-color: rgba(127, 184, 138, 0.35); }
+.dx-tip .dx-admonition__title { color: var(--dx-broadcast); }
+.dx-warning { background-color: rgba(244, 168, 54, 0.07); border-color: rgba(244, 168, 54, 0.40); }
+.dx-warning .dx-admonition__title { color: var(--dx-accent); }
+.dx-danger  { background-color: rgba(236, 70, 97, 0.07); border-color: rgba(236, 70, 97, 0.40); }
+.dx-danger .dx-admonition__title { color: var(--dx-targeted); }
+
+/* ---------- inspector section (DxMessaging region in a component) ---------- */
+.dx-inspector { border-width: 1px; border-color: var(--dx-brand-border); border-radius: var(--dx-r-card); margin-top: 6px; overflow: hidden; }
+.dx-inspector__head { flex-direction: row; align-items: center; background-color: var(--dx-panel); padding: 7px 11px; border-bottom-width: 1px; border-bottom-color: var(--dx-brand-border); }
+.dx-inspector__title { color: var(--dx-accent-soft); -unity-font-style: bold; font-size: 11px; margin-left: 8px; }
+.dx-inspector__meta { color: var(--dx-text-faint); font-size: 10px; }
+.dx-sub { flex-direction: row; align-items: center; padding: 3px 0; }
+.dx-sub__name { flex-grow: 1; color: var(--dx-text-dim); font-size: 12px; }
+.dx-sub__meta { color: var(--dx-text-muted); font-size: 10px; margin-right: 8px; }
+.dx-sub__live { width: 7px; height: 7px; border-radius: 4px; background-color: var(--dx-ok); }
+.dx-sub__idle { width: 7px; height: 7px; border-radius: 4px; background-color: #4a4a4a; }

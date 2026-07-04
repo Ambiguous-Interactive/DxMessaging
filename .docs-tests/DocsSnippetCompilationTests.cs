@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using NUnit.Framework;
 
-namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
+namespace WallstopStudios.DxMessaging.Docs.Tests;
 
 [TestFixture]
 public sealed class DocsSnippetCompilationTests
@@ -54,10 +54,9 @@ public sealed class DocsSnippetCompilationTests
         // that are not real bugs in the documentation. Note: CS1612 is never
         // produced by this stub setup -- the broken "new X().Emit()" pattern
         // surfaces as CS1510 (which we intentionally ignore, see below), so
-        // this harness cannot detect that bug class semantically. The textual
-        // doc-pattern lint that previously guarded it was retired in the
-        // tooling simplification, so that bug class is currently unguarded;
-        // reviewers must catch it manually in doc snippets.
+        // the Roslyn pass cannot detect that bug class semantically. The
+        // DocumentationDoesNotEmitStructMessagesFromTemporaries text guard
+        // covers that pattern instead.
         "CS0027", // keyword 'this' is not available in the current context
         "CS0115", // no suitable method found to override (snippet defines class without true base wired)
         "CS1512", // 'base' is not available in the current context
@@ -73,15 +72,14 @@ public sealed class DocsSnippetCompilationTests
         // surface because the test compilation does not load the full runtime
         // assembly; doc snippets reference real APIs (RegisterUntargeted<T>,
         // [DxAutoConstructor]-generated constructors, etc.) whose stubs are
-        // intentionally minimal in GeneratorTestUtilities.SharedStubs. There is
-        // no longer an automated defense against the "new X().Emit()" bug
-        // class (the textual doc-pattern lint was retired); review doc
-        // snippets for it manually. The
-        // compilation test cannot reliably catch that specific bug here: the
+        // intentionally minimal in DocsSnippetCompiler.SharedStubs. There is
+        // The compilation test cannot reliably catch the "new X().Emit()" bug
+        // class here: the
         // stub setup produces CS1510 (not CS1612) for the broken pattern,
         // and CS1510 must remain in the ignore list to suppress unrelated
         // false-positives on legitimate snippets that reference unstubbed
-        // ref-returning members.
+        // ref-returning members. The text guard below is the automated defense
+        // for that bug class.
         "CS0102", // type already contains a definition (partial declarations re-merged in script)
         "CS0111", // type already defines member with same parameter types
         "CS0260", // missing partial modifier on declaration
@@ -90,7 +88,7 @@ public sealed class DocsSnippetCompilationTests
         "CS0453", // type must be non-nullable value type (placeholder strings as messages)
         "CS0501", // method must declare body (partial members not generated)
         "CS0579", // duplicate attribute (auto-generated partials would dedupe in real build)
-        "CS1510", // ref or out value must be assignable. Kept in ignore list because stub-only compilation produces CS1510 noise on legitimate snippets that touch unstubbed ref-returning APIs; this means the harness CANNOT catch the "new X().Emit()" struct-rvalue bug; that class has no automated guard since the textual doc-pattern lint was retired, so it must be caught in review.
+        "CS1510", // ref or out value must be assignable. Kept in ignore list because stub-only compilation produces CS1510 noise on legitimate snippets that touch unstubbed ref-returning APIs; the text guard below catches the "new X().Emit()" struct-rvalue bug class.
         "CS1739", // overload doesn't have parameter named (placeholder constructors)
         "CS0305", // generic type requires N type arguments (placeholder collections)
         "CS0104", // ambiguous reference (UnityEngine.Object vs System.Object script collision)
@@ -129,6 +127,35 @@ public sealed class DocsSnippetCompilationTests
             System.Text.RegularExpressions.RegexOptions.Compiled
         );
 
+    private static readonly System.Text.RegularExpressions.Regex HtmlCodeElementRegex = new(
+        @"<code(?<attrs>[^>]*)>(?<body>.*?)</code>",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+            | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex JinjaSetBlockRegex = new(
+        @"{%-?\s*set\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*-?%}(?<body>.*?){%-?\s*endset\s*-?%}",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+            | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex TemporaryEmitRegex = new(
+        @"(?:(?<![A-Za-z0-9_.])\(\s*new\s+(?:[A-Z][A-Za-z0-9_]*\.)*[A-Z][A-Za-z0-9_]*(?:<[^>\r\n]+>)?\s*\([^;\r\n]*\)\s*\)|(?<![A-Za-z0-9_.(])\bnew\s+(?:[A-Z][A-Za-z0-9_]*\.)*[A-Z][A-Za-z0-9_]*(?:<[^>\r\n]+>)?\s*\([^;\r\n]*\))\s*\.\s*Emit[A-Za-z0-9_]*\s*\(",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex BroadcastSourceRegex = new(
+        @"\.(?<method>EmitGameObjectBroadcast|EmitComponentBroadcast|EmitFrom)\s*\(\s*(?<source>[^,\)\r\n]+)",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex LegacyBroadcastRegex = new(
+        @"\.\s*EmitBroadcast\s*\(",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
+
     // Constants for signature detection thresholds
     private const double ApiSignatureRatioThreshold = 0.30;
     private const int MinimumApiSignatureLinesForDetection = 2;
@@ -151,7 +178,7 @@ using UnityEngine;
 {snippet}
 """;
 
-        var diagnostics = GeneratorTestUtilities
+        var diagnostics = DocsSnippetCompiler
             .CompileSnippet(source)
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .ToArray();
@@ -185,14 +212,13 @@ using UnityEngine;
         // IgnoredSnippetDiagnosticIds tolerates the expected "missing
         // identifier / missing type / overload mismatch" family.
         //
-        // IMPORTANT: this harness does NOT catch the "new StructMessage().Emit()"
+        // IMPORTANT: this Roslyn pass does NOT catch the "new StructMessage().Emit()"
         // bug class. The stub setup produces CS1510 (not CS1612) for that
         // pattern, and CS1510 must remain ignored to keep legitimate snippets
         // that touch unstubbed ref-returning members from triggering false
-        // positives. The textual lint that previously guarded this class of bug
-        // was retired in the tooling simplification, so it is currently
-        // unguarded; review doc snippets for it manually.
-        var diagnostics = GeneratorTestUtilities
+        // positives. DocumentationDoesNotEmitStructMessagesFromTemporaries
+        // covers that pattern textually.
+        var diagnostics = DocsSnippetCompiler
             .CompileDocSnippet(snippet)
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .ToArray();
@@ -211,6 +237,76 @@ using UnityEngine;
                 $"Documentation snippet in {markdownPath} failed to compile:{System.Environment.NewLine}{message}"
             );
         }
+    }
+
+    [TestCaseSource(nameof(GetHtmlOverrideCSharpSnippets))]
+    public void HtmlOverrideCSharpSnippetsCompile(string htmlPath, string snippet)
+    {
+        Assert.That(
+            snippet,
+            Is.Not.Empty,
+            $"Snippet extracted from {htmlPath} should not be empty."
+        );
+
+        var diagnostics = DocsSnippetCompiler
+            .CompileDocSnippet(snippet)
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .ToArray();
+
+        var actionableDiagnostics = diagnostics
+            .Where(d => !IgnoredSnippetDiagnosticIds.Contains(d.Id))
+            .ToArray();
+
+        if (actionableDiagnostics.Length > 0)
+        {
+            string message = string.Join(
+                System.Environment.NewLine,
+                actionableDiagnostics.Select(d => d.ToString())
+            );
+            Assert.Fail(
+                $"HTML override snippet in {htmlPath} failed to compile:{System.Environment.NewLine}{message}"
+            );
+        }
+    }
+
+    [Test]
+    public void DocumentationDoesNotEmitStructMessagesFromTemporaries()
+    {
+        var violations = GetTemporaryEmitDocumentationSources()
+            .SelectMany(source =>
+                FindTemporaryEmitViolations(source.Path, source.Text)
+                    .Select(violation => $"{source.Path}:{violation.Line}: {violation.Text}")
+            )
+            .ToArray();
+
+        Assert.That(
+            violations,
+            Is.Empty,
+            "Docs must assign struct messages to locals before Emit* calls:"
+                + System.Environment.NewLine
+                + string.Join(System.Environment.NewLine, violations)
+        );
+    }
+
+    [Test]
+    public void BroadcastExamplesUseSelfAsSource()
+    {
+        var violations = GetBroadcastExampleSources()
+            .SelectMany(source =>
+                FindNonSelfBroadcastSourceViolations(source.Path, source.Text)
+                    .Select(violation => $"{source.Path}:{violation.Line}: {violation.Text}")
+            )
+            .ToArray();
+
+        Assert.That(
+            violations,
+            Is.Empty,
+            "Broadcast examples should model self-broadcasting: "
+                + "EmitGameObjectBroadcast(gameObject), EmitComponentBroadcast(this), or "
+                + "EmitFrom(gameObject/this). Offending references:"
+                + System.Environment.NewLine
+                + string.Join(System.Environment.NewLine, violations)
+        );
     }
 
     private static IEnumerable<TestCaseData> GetDocumentationSnippets()
@@ -234,6 +330,57 @@ using UnityEngine;
         }
     }
 
+    private static IEnumerable<TestCaseData> GetHtmlOverrideCSharpSnippets()
+    {
+        string docsRoot = ResolveDocsRoot();
+        string overridesRoot = Path.Combine(docsRoot, "overrides");
+        if (!Directory.Exists(overridesRoot))
+        {
+            yield break;
+        }
+
+        int testIndex = 0;
+        foreach (
+            string htmlPath in Directory.GetFiles(
+                overridesRoot,
+                "*.html",
+                SearchOption.AllDirectories
+            )
+        )
+        {
+            foreach (string snippet in ExtractHtmlCSharpSnippets(htmlPath))
+            {
+                if (ShouldSkipSnippet(snippet))
+                {
+                    continue;
+                }
+
+                yield return new TestCaseData(htmlPath, snippet).SetName(
+                    $"{Path.GetFileName(htmlPath)} html #{testIndex++}"
+                );
+            }
+        }
+
+        foreach (
+            string samplePath in Directory.GetFiles(
+                overridesRoot,
+                "*.csharp",
+                SearchOption.AllDirectories
+            )
+        )
+        {
+            string snippet = File.ReadAllText(samplePath);
+            if (ShouldSkipSnippet(snippet))
+            {
+                continue;
+            }
+
+            yield return new TestCaseData(samplePath, snippet).SetName(
+                $"{Path.GetFileName(samplePath)} override sample #{testIndex++}"
+            );
+        }
+    }
+
     // ---- 3.4.2: inline-code-from-tables compilation ----------------------
 
     [TestCaseSource(nameof(GetInlineTableSnippets))]
@@ -250,7 +397,7 @@ using UnityEngine;
         // expression, not a top-level type declaration).
         string wrapped = "void __InlineProbe() {\n" + snippet + "\n}\n";
 
-        var diagnostics = GeneratorTestUtilities
+        var diagnostics = DocsSnippetCompiler
             .CompileDocSnippet(wrapped)
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .ToArray();
@@ -407,7 +554,7 @@ using UnityEngine;
             $"XML <code> snippet extracted from {sourcePath} should not be empty."
         );
 
-        var diagnostics = GeneratorTestUtilities
+        var diagnostics = DocsSnippetCompiler
             .CompileDocSnippet(snippet)
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .ToArray();
@@ -479,24 +626,7 @@ using UnityEngine;
 
     private static IEnumerable<string> ExtractXmlDocCodeBlocks(string sourcePath)
     {
-        string content = File.ReadAllText(sourcePath);
-        // Strip the leading `///` from each line first, joining adjacent doc
-        // comment lines into a single text block. Then locate <code>...</code>
-        // and <example><code>...</code></example> regions inside that text.
-        var stripped = new System.Text.StringBuilder(content.Length);
-        foreach (string rawLine in content.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n'))
-        {
-            string trim = rawLine.TrimStart();
-            if (trim.StartsWith("///"))
-            {
-                stripped.AppendLine(trim.Substring(3).TrimStart());
-            }
-            else
-            {
-                stripped.AppendLine();
-            }
-        }
-        string text = stripped.ToString();
+        string text = ExtractXmlDocumentationText(sourcePath);
 
         int searchFrom = 0;
         while (searchFrom < text.Length)
@@ -519,6 +649,29 @@ using UnityEngine;
         }
     }
 
+    private static string ExtractXmlDocumentationText(string sourcePath)
+    {
+        string content = File.ReadAllText(sourcePath);
+        // Strip the leading `///` from each line first, joining adjacent doc
+        // comment lines into a single text block. Then locate <code>...</code>
+        // and <example><code>...</code></example> regions inside that text.
+        var stripped = new System.Text.StringBuilder(content.Length);
+        foreach (string rawLine in content.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n'))
+        {
+            string trim = rawLine.TrimStart();
+            if (trim.StartsWith("///"))
+            {
+                stripped.AppendLine(trim.Substring(3).TrimStart());
+            }
+            else
+            {
+                stripped.AppendLine();
+            }
+        }
+
+        return stripped.ToString();
+    }
+
     private static string DecodeXmlEntities(string s)
     {
         return s.Replace("&lt;", "<")
@@ -526,6 +679,11 @@ using UnityEngine;
             .Replace("&amp;", "&")
             .Replace("&quot;", "\"")
             .Replace("&apos;", "'");
+    }
+
+    private static string DecodeHtmlEntities(string s)
+    {
+        return System.Net.WebUtility.HtmlDecode(s);
     }
 
     private static string ResolveRepoRoot()
@@ -554,6 +712,89 @@ using UnityEngine;
     private static string ExtractFirstCodeBlock(string markdownPath, string infoString)
     {
         return ExtractCodeBlocks(markdownPath, infoString).FirstOrDefault() ?? string.Empty;
+    }
+
+    [Test]
+    public void ExtractHtmlCSharpSnippetsFindsPlainCodeAndJinjaSetBlocks()
+    {
+        const string html = """
+<div>
+  <pre><code>using DxMessaging.Core.Extensions;
+Heal heal = new Heal(10);
+heal.EmitGameObjectTargeted(player);</code></pre>
+  {% set dxm_targeted_sample -%}
+using DxMessaging.Unity;
+Heal heal = new Heal(50);
+heal.EmitGameObjectTargeted(player);
+  {%- endset %}
+</div>
+""";
+
+        string[] snippets = ExtractHtmlCSharpSnippetsFromText("home.html", html).ToArray();
+
+        Assert.That(snippets, Has.Length.EqualTo(2));
+        Assert.That(snippets[0], Does.Contain("using DxMessaging.Core.Extensions;"));
+        Assert.That(snippets[1], Does.Contain("Heal heal = new Heal(50);"));
+    }
+
+    [Test]
+    public void TemporaryEmitPatternReportsInvalidExamplesButSkipsExplicitNegativeExamples()
+    {
+        const string text = """
+Heal heal = new Heal(10);
+heal.EmitGameObjectTargeted(player);
+new Damage(5).EmitGameObjectBroadcast(enemy);
+Do not emit from temporaries: new Heal(10).Emit() won't compile.
+""";
+
+        var violations = FindTemporaryEmitViolations("sample.md", text).ToArray();
+
+        Assert.That(violations, Has.Length.EqualTo(1));
+        Assert.That(violations[0].Line, Is.EqualTo(3));
+        Assert.That(violations[0].Text, Does.Contain("new Damage(5).EmitGameObjectBroadcast"));
+    }
+
+    [TestCase("new Heal(10).EmitGameObjectTargeted(player);", true)]
+    [TestCase("(new Heal(10)).EmitGameObjectTargeted(player);", true)]
+    [TestCase("new Combat.Heal(10).EmitGameObjectTargeted(player);", true)]
+    [TestCase("new Heal(10)\n    .EmitGameObjectTargeted(player);", true)]
+    [TestCase("Build(new Heal(10)).EmitGameObjectTargeted(player);", false)]
+    [TestCase("Heal heal = new Heal(10); heal.EmitGameObjectTargeted(player);", false)]
+    public void TemporaryEmitPatternDetectsOnlyDirectTemporaryEmitCalls(
+        string text,
+        bool expectedViolation
+    )
+    {
+        var violations = FindTemporaryEmitViolations("sample.md", text).ToArray();
+
+        Assert.That(violations.Length > 0, Is.EqualTo(expectedViolation));
+    }
+
+    [TestCase("message.EmitGameObjectBroadcast(gameObject);", false)]
+    [TestCase("message.EmitGameObjectBroadcast(gameObject, testBus);", false)]
+    [TestCase("message.EmitComponentBroadcast(this);", false)]
+    [TestCase("message.EmitComponentBroadcast(this, testBus);", false)]
+    [TestCase("message.EmitFrom(gameObject);", false)]
+    [TestCase("message.EmitFrom(gameObject, testBus);", false)]
+    [TestCase("message.EmitFrom(this);", false)]
+    [TestCase("message.EmitGameObjectBroadcast(GameObject source);", false)]
+    [TestCase("message.EmitComponentBroadcast(Component source);", false)]
+    [TestCase("message.EmitGameObjectBroadcast(enemy);", true)]
+    [TestCase("message.EmitGameObjectBroadcast(playerGameObject);", true)]
+    [TestCase("message.EmitComponentBroadcast(enemyComponent);", true)]
+    [TestCase("message.EmitFrom(enemy);", true)]
+    [TestCase("message.EmitFrom(source);", true)]
+    [TestCase("message.EmitFrom(sourceId);", true)]
+    [TestCase("message.EmitBroadcast(source);", true)]
+    [TestCase("this.EmitBroadcast(new Exploded());", true)]
+    public void BroadcastSourcePatternAllowsOnlySelfSourcesAndApiSignatures(
+        string text,
+        bool expectedViolation
+    )
+    {
+        var violations = FindNonSelfBroadcastSourceViolations("sample.md", text).ToArray();
+
+        Assert.That(violations.Length > 0, Is.EqualTo(expectedViolation));
     }
 
     private static IEnumerable<string> ExtractCodeBlocks(string markdownPath, string infoString)
@@ -587,6 +828,363 @@ using UnityEngine;
 
             builder.AppendLine(rawLine);
         }
+    }
+
+    private static IEnumerable<string> ExtractHtmlCSharpSnippets(string htmlPath)
+    {
+        return ExtractHtmlCSharpSnippetsFromText(htmlPath, File.ReadAllText(htmlPath));
+    }
+
+    private static IEnumerable<string> ExtractHtmlCSharpSnippetsFromText(
+        string htmlPath,
+        string html
+    )
+    {
+        foreach (System.Text.RegularExpressions.Match match in HtmlCodeElementRegex.Matches(html))
+        {
+            string attrs = match.Groups["attrs"].Value;
+            string body = DecodeHtmlEntities(match.Groups["body"].Value).Trim();
+            if (!LooksLikeCSharpSnippet(htmlPath, attrs, body))
+            {
+                continue;
+            }
+
+            yield return body;
+        }
+
+        foreach (System.Text.RegularExpressions.Match match in JinjaSetBlockRegex.Matches(html))
+        {
+            string name = match.Groups["name"].Value;
+            string body = match.Groups["body"].Value.Trim();
+            if (!LooksLikeCSharpSnippet(htmlPath, name, body))
+            {
+                continue;
+            }
+
+            yield return body;
+        }
+    }
+
+    private static bool LooksLikeCSharpSnippet(string sourceName, string hint, string snippet)
+    {
+        if (string.IsNullOrWhiteSpace(snippet))
+        {
+            return false;
+        }
+
+        string combined = $"{sourceName}\n{hint}\n{snippet}";
+        return combined.Contains("csharp", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("DxMessaging", StringComparison.Ordinal)
+            || combined.Contains("[Dx", StringComparison.Ordinal)
+            || combined.Contains(".Emit", StringComparison.Ordinal)
+            || combined.Contains("Token.Register", StringComparison.Ordinal);
+    }
+
+    private static IEnumerable<(string Path, string Text)> GetTemporaryEmitDocumentationSources()
+    {
+        string docsRoot = ResolveDocsRoot();
+        string repoRoot = ResolveRepoRoot();
+        foreach (
+            string markdownPath in Directory.GetFiles(docsRoot, "*.md", SearchOption.AllDirectories)
+        )
+        {
+            yield return (markdownPath, File.ReadAllText(markdownPath));
+        }
+
+        foreach (
+            string csharpPath in Directory.GetFiles(
+                docsRoot,
+                "*.csharp",
+                SearchOption.AllDirectories
+            )
+        )
+        {
+            yield return (csharpPath, File.ReadAllText(csharpPath));
+        }
+
+        string overridesRoot = Path.Combine(docsRoot, "overrides");
+        if (Directory.Exists(overridesRoot))
+        {
+            foreach (
+                string htmlPath in Directory.GetFiles(
+                    overridesRoot,
+                    "*.html",
+                    SearchOption.AllDirectories
+                )
+            )
+            {
+                yield return (htmlPath, DecodeHtmlEntities(File.ReadAllText(htmlPath)));
+            }
+        }
+
+        string readmePath = Path.Combine(repoRoot, "README.md");
+        if (File.Exists(readmePath))
+        {
+            yield return (readmePath, File.ReadAllText(readmePath));
+        }
+
+        string samplesRoot = Path.Combine(repoRoot, "Samples~");
+        if (Directory.Exists(samplesRoot))
+        {
+            foreach (string path in EnumerateTextFiles(samplesRoot, "*.md"))
+            {
+                yield return (path, File.ReadAllText(path));
+            }
+
+            foreach (string path in EnumerateTextFiles(samplesRoot, "*.cs"))
+            {
+                yield return (path, File.ReadAllText(path));
+            }
+        }
+
+        foreach (string root in CSharpScanRoots)
+        {
+            string absRoot = Path.Combine(repoRoot, root);
+            if (!Directory.Exists(absRoot))
+            {
+                continue;
+            }
+
+            foreach (
+                string sourcePath in Directory.GetFiles(
+                    absRoot,
+                    "*.cs",
+                    SearchOption.AllDirectories
+                )
+            )
+            {
+                string normalized = sourcePath.Replace('\\', '/');
+                if (
+                    normalized.Contains("/obj/")
+                    || normalized.Contains("/bin/")
+                    || normalized.Contains("/.artifacts/")
+                )
+                {
+                    continue;
+                }
+
+                string xmlDocumentationText = ExtractXmlDocumentationText(sourcePath);
+                if (!string.IsNullOrWhiteSpace(xmlDocumentationText))
+                {
+                    yield return (sourcePath, DecodeXmlEntities(xmlDocumentationText));
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<(string Path, string Text)> GetBroadcastExampleSources()
+    {
+        string repoRoot = ResolveRepoRoot();
+        string docsRoot = ResolveDocsRoot();
+
+        foreach (string path in EnumerateTextFiles(docsRoot, "*.md"))
+        {
+            yield return (path, File.ReadAllText(path));
+        }
+
+        foreach (string path in EnumerateTextFiles(docsRoot, "*.csharp"))
+        {
+            yield return (path, File.ReadAllText(path));
+        }
+
+        foreach (string path in EnumerateTextFiles(docsRoot, "*.html"))
+        {
+            yield return (path, DecodeHtmlEntities(File.ReadAllText(path)));
+        }
+
+        string readmePath = Path.Combine(repoRoot, "README.md");
+        if (File.Exists(readmePath))
+        {
+            yield return (readmePath, File.ReadAllText(readmePath));
+        }
+
+        string samplesRoot = Path.Combine(repoRoot, "Samples~");
+        if (Directory.Exists(samplesRoot))
+        {
+            foreach (string path in EnumerateTextFiles(samplesRoot, "*.md"))
+            {
+                yield return (path, File.ReadAllText(path));
+            }
+
+            foreach (string path in EnumerateTextFiles(samplesRoot, "*.cs"))
+            {
+                yield return (path, File.ReadAllText(path));
+            }
+        }
+
+        foreach (string root in CSharpScanRoots)
+        {
+            string absRoot = Path.Combine(repoRoot, root);
+            if (!Directory.Exists(absRoot))
+            {
+                continue;
+            }
+
+            foreach (string sourcePath in EnumerateTextFiles(absRoot, "*.cs"))
+            {
+                string xmlDocumentationText = ExtractXmlDocumentationText(sourcePath);
+                if (!string.IsNullOrWhiteSpace(xmlDocumentationText))
+                {
+                    yield return (sourcePath, DecodeXmlEntities(xmlDocumentationText));
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateTextFiles(string root, string pattern)
+    {
+        return Directory
+            .GetFiles(root, pattern, SearchOption.AllDirectories)
+            .Where(path =>
+            {
+                string normalized = path.Replace('\\', '/');
+                return !normalized.Contains("/obj/")
+                    && !normalized.Contains("/bin/")
+                    && !normalized.Contains("/.artifacts/");
+            })
+            .OrderBy(path => path, StringComparer.Ordinal);
+    }
+
+    private static IEnumerable<(int Line, string Text)> FindTemporaryEmitViolations(
+        string sourcePath,
+        string text
+    )
+    {
+        string normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
+        string[] lines = normalized.Split('\n');
+        int lineIndex = 0;
+        int lineOffset = 0;
+        foreach (
+            System.Text.RegularExpressions.Match match in TemporaryEmitRegex.Matches(normalized)
+        )
+        {
+            while (
+                lineIndex < lines.Length - 1
+                && match.Index >= lineOffset + lines[lineIndex].Length + 1
+            )
+            {
+                lineOffset += lines[lineIndex].Length + 1;
+                lineIndex++;
+            }
+
+            int lineNumber = lineIndex + 1;
+            if (IsExplicitNegativeTemporaryEmitExample(lines, lineIndex))
+            {
+                continue;
+            }
+
+            string lineText = lineIndex < lines.Length ? lines[lineIndex].Trim() : match.Value;
+            yield return (lineNumber, lineText);
+        }
+    }
+
+    private static readonly string[] NegativeCompileMarkers =
+    {
+        "won't compile",
+        "will not compile",
+        "does not compile",
+        "do not compile",
+        "don't compile",
+        "cannot compile",
+        "do not emit from temporaries",
+        "don't emit from temporaries",
+    };
+
+    private static bool HasNegativeCompileMarker(string line)
+    {
+        string lowered = line.ToLowerInvariant();
+        foreach (string marker in NegativeCompileMarkers)
+        {
+            if (lowered.Contains(marker, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsExplicitNegativeTemporaryEmitExample(string[] lines, int lineIndex)
+    {
+        // A deliberately-bad example labels itself on the SAME line as the temporary
+        // emit (inline prose or comment). A marker on the preceding line only counts
+        // when that line is a code comment, so ordinary explanatory prose that merely
+        // mentions compilation cannot silently suppress a real `new ...().Emit*`
+        // violation on the following line.
+        if (HasNegativeCompileMarker(lines[lineIndex]))
+        {
+            return true;
+        }
+
+        if (lineIndex > 0)
+        {
+            string previous = lines[lineIndex - 1].TrimStart();
+            if (
+                previous.StartsWith("//", StringComparison.Ordinal)
+                && HasNegativeCompileMarker(previous)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<(int Line, string Text)> FindNonSelfBroadcastSourceViolations(
+        string sourcePath,
+        string text
+    )
+    {
+        string[] lines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        {
+            string line = lines[lineIndex];
+            if (LegacyBroadcastRegex.IsMatch(line) && !IsApiSignatureBroadcastLine(line))
+            {
+                yield return (lineIndex + 1, line.Trim());
+            }
+
+            foreach (
+                System.Text.RegularExpressions.Match match in BroadcastSourceRegex.Matches(line)
+            )
+            {
+                string method = match.Groups["method"].Value;
+                string source = match.Groups["source"].Value.Trim();
+
+                if (IsAllowedBroadcastSource(method, source, line))
+                {
+                    continue;
+                }
+
+                yield return (lineIndex + 1, line.Trim());
+            }
+        }
+    }
+
+    private static bool IsAllowedBroadcastSource(string method, string source, string line)
+    {
+        string normalizedSource = source.Trim();
+        if (method == "EmitGameObjectBroadcast")
+        {
+            return normalizedSource == "gameObject" || IsApiSignatureBroadcastLine(line);
+        }
+
+        if (method == "EmitComponentBroadcast")
+        {
+            return normalizedSource == "this" || IsApiSignatureBroadcastLine(line);
+        }
+
+        return normalizedSource == "gameObject"
+            || normalizedSource == "this"
+            || IsApiSignatureBroadcastLine(line);
+    }
+
+    private static bool IsApiSignatureBroadcastLine(string line)
+    {
+        return line.Contains("GameObject source", StringComparison.Ordinal)
+            || line.Contains("Component source", StringComparison.Ordinal)
+            || line.Contains("InstanceId source", StringComparison.Ordinal);
     }
 
     private static string ResolveDocsRoot()

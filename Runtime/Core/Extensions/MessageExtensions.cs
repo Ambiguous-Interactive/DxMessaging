@@ -23,10 +23,9 @@ namespace DxMessaging.Core.Extensions
     /// var heal = new Heal(10);
     /// heal.EmitTargeted(target);
     ///
-    /// // Broadcast (from source)
-    /// var source = (DxMessaging.Core.InstanceId)gameObject;
+    /// // Broadcast (from this GameObject)
     /// var dmg = new TookDamage(5);
-    /// dmg.EmitBroadcast(source);
+    /// dmg.EmitGameObjectBroadcast(gameObject);
     ///
     /// // Unity conveniences
     /// var hello = new StringMessage("Hello");
@@ -334,11 +333,11 @@ namespace DxMessaging.Core.Extensions
         /// public readonly partial struct TookDamage { public readonly int amount; }
         ///
         /// var dmg = new TookDamage(5);
-        /// dmg.EmitFrom((InstanceId)gameObject);        // OK: from GameObject
         /// dmg.EmitGameObjectBroadcast(gameObject);     // explicit, preferred in Unity code
+        /// dmg.EmitFrom(gameObject);                    // shorthand from the same GameObject
         ///
         /// // Pitfall: identifies the Component as source (won't match GO-source registrations)
-        /// dmg.EmitFrom((InstanceId)this);
+        /// dmg.EmitComponentBroadcast(this);
         /// </code>
         /// </example>
         public static void EmitFrom<TMessage>(

@@ -45,6 +45,13 @@ sanctioned non-interactive path exists. Because none does, the project does
 manual, backed by the staged artifact below. This is revisited each release; see
 [Re-evaluating automation](#re-evaluating-automation).
 
+Unsupported upload experiments are quarantined in the manual-only
+`Asset Store Unsupported Upload Research` workflow. It has no tag trigger,
+requires the protected `asset-store-experimental` environment, and is limited to
+documenting risks around BatchSubmitter-style Editor API automation, Hybrid
+Packages / UPM early-access flows, and any future official Unity API. It must
+not upload, store publisher credentials, or harvest Unity ID browser sessions.
+
 ## What the release pipeline stages for you
 
 Every tagged release runs the `publish` job in
@@ -60,8 +67,13 @@ exact inputs for the Asset Store upload:
   sources replaced by the shipped `Runtime/Analyzers/` RoslynAnalyzer DLLs);
 - the npm `.tgz` (the exact UPM payload, for reference and diffing);
 - `.sha256` checksums for both;
-- a generated `SUBMISSION-CHECKLIST.md` carrying the version, the pinned build
-  editor (Unity 2022.3.45f1), and the manual upload steps.
+- `STORE-LISTING.md` copied from the tracked listing draft;
+- the tracked store media under `media/`;
+- generated `CLASSIC-UPLOAD-CHECKLIST.md` and
+  `UPM-UPLOAD-CHECKLIST.md` files carrying package metadata and the matching
+  changelog section;
+- `MANIFEST.json` with filenames, sizes, and SHA-256 hashes for the staged
+  files.
 
 The `.unitypackage` is also attached to the GitHub Release, so a maintainer can
 grab it from either place. The pipeline stops at staging; it never contacts the
@@ -74,8 +86,10 @@ Run this once the release workflow for the tag is green.
 1. **Get the payload.** Download the `asset-store-submission` artifact from the
    release workflow run (Actions tab -> the `release` run for the tag ->
    Artifacts), or download the `.unitypackage` from the matching GitHub Release
-   assets. Open `SUBMISSION-CHECKLIST.md` from the artifact and keep it beside
-   you -- it is generated for this exact version.
+   assets. Open `CLASSIC-UPLOAD-CHECKLIST.md` from the artifact and keep it
+   beside you -- it is generated for this exact version. Use
+   `UPM-UPLOAD-CHECKLIST.md` only if the publisher account has Unity's UPM
+   Asset Store early access.
 1. **Verify integrity.** Confirm the `.unitypackage` SHA-256 matches its
    `.sha256` sidecar before uploading (use `Get-FileHash` on Windows,
    `shasum -a 256` elsewhere). This catches a truncated download before it

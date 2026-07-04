@@ -2,7 +2,7 @@
 /**
  * Cross-platform banner sync.
  * Keeps docs/images/DxMessaging-banner.svg aligned with package.json version
- * and the rounded C# test count (Tests/ + SourceGenerators/).
+ * and the rounded C# test count (Tests/ + SourceGenerators/ + .docs-tests/).
  *
  * Usage:
  *   node scripts/sync-banner-version.js [--check]
@@ -19,12 +19,13 @@ const path = require("path");
 const { walkFiles } = require("./lib/repo-files");
 
 const VERSION_PATTERN =
-  /<!-- Version badge \(top right\).*?-->\s*<g[^>]*>\s*<rect[^>]*\/>\s*<text[^>]*>v\d+\.\d+\.\d+[^<]*<\/text>\s*<\/g>/s;
-const VERSION_VALUE_PATTERN = />v(\d+\.\d+\.\d+[^<]*)<\/text>/;
+  /(<text\b(?=[^>]*\bdata-sync="version")[^>]*>v)(\d+\.\d+\.\d+[^<]*)(<\/text>)/;
+const VERSION_VALUE_PATTERN =
+  /<text\b(?=[^>]*\bdata-sync="version")[^>]*>v(\d+\.\d+\.\d+[^<]*)<\/text>/;
 const TEST_COUNT_PATTERN =
-  /(<text(?=[^>]*\bx="20")(?=[^>]*\by="13")(?=[^>]*\bfill="#00d9ff")[^>]*>)(\d+\+ Tests)(<\/text>)/;
+  /(<text\b(?=[^>]*\bdata-sync="test-count")[^>]*>)(\d+\+ Tests)(<\/text>)/;
 const TEST_FILE_NAME_PATTERN = /(?:Test|Tests)\.cs$/;
-const TEST_ROOTS = ["Tests", "SourceGenerators"];
+const TEST_ROOTS = ["Tests", "SourceGenerators", ".docs-tests"];
 
 function stripSourceComments(content) {
   return content.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
@@ -35,8 +36,7 @@ function countTestMarkers(filePath, content) {
     return 0;
   }
   const source = stripSourceComments(content);
-  return (source.match(/\[(?:UnityTest|Test|TestCase|TestCaseSource|Theory|Fact)\b/g) ?? [])
-    .length;
+  return (source.match(/\[(?:UnityTest|Test|TestCase|TestCaseSource|Theory|Fact)\b/g) ?? []).length;
 }
 
 function getRepositoryTestFiles(repoRoot) {
@@ -72,10 +72,10 @@ function roundTestCount(testCount) {
 }
 
 function getVersionBadge(version) {
-  return `<!-- Version badge (top right) - text must contain vX.Y.Z for version sync -->
-  <g transform="translate(720, 18)">
-    <rect x="0" y="0" width="62" height="22" rx="11" ry="11" fill="#e94560" opacity="0.95" filter="url(#softShadow)"/>
-    <text x="31" y="15" text-anchor="middle" font-family="'SF Mono', 'Fira Code', monospace" font-size="11" font-weight="700" fill="#ffffff" letter-spacing="0.5">v${version}</text>
+  return `<!-- Version text must contain vX.Y.Z for version sync. -->
+  <g transform="translate(244, 0)">
+    <rect x="0" y="0" width="76" height="28" rx="8" fill="#14111e" stroke="#332c45" stroke-width="1"/>
+    <text data-sync="version" x="38" y="18" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="11" font-weight="800" fill="#f5f3fb">v${version}</text>
   </g>`;
 }
 
@@ -105,7 +105,10 @@ function syncBanner(options = {}) {
     };
   }
 
-  let updatedSvg = analysis.svgContent.replace(VERSION_PATTERN, getVersionBadge(analysis.version));
+  let updatedSvg = analysis.svgContent.replace(
+    VERSION_PATTERN,
+    (_whole, prefix, _oldVersion, suffix) => `${prefix}${analysis.version}${suffix}`
+  );
   updatedSvg = updatedSvg.replace(
     TEST_COUNT_PATTERN,
     (_whole, prefix, _oldLabel, suffix) => `${prefix}${analysis.testCountLabel}${suffix}`

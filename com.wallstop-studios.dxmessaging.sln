@@ -4,11 +4,15 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SourceGenerators", "SourceGenerators", "{C03C8CAA-D0B1-310A-0C7E-67BC14B87CB1}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documentation", "Documentation", "{1E67D7C9-B2CB-4920-B008-2F6B213CA8BB}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WallstopStudios.DxMessaging.SourceGenerators", "SourceGenerators\WallstopStudios.DxMessaging.SourceGenerators\WallstopStudios.DxMessaging.SourceGenerators.csproj", "{50C6E19D-8B21-919A-A9BB-1AAFAE92D548}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WallstopStudios.DxMessaging.SourceGenerators.Tests", "SourceGenerators\WallstopStudios.DxMessaging.SourceGenerators.Tests\WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj", "{8B884BA3-4017-4F4A-9D47-96CFD3E8ED21}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WallstopStudios.DxMessaging.Analyzer", "SourceGenerators\WallstopStudios.DxMessaging.Analyzer\WallstopStudios.DxMessaging.Analyzer.csproj", "{29778D32-41E1-4D01-AF3D-5AA0BE7DC879}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WallstopStudios.DxMessaging.Docs.Tests", ".docs-tests\WallstopStudios.DxMessaging.Docs.Tests.csproj", "{31A28B82-BD56-4963-B502-4008C5461E75}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -56,6 +60,18 @@ Global
 		{29778D32-41E1-4D01-AF3D-5AA0BE7DC879}.Release|x64.Build.0 = Release|Any CPU
 		{29778D32-41E1-4D01-AF3D-5AA0BE7DC879}.Release|x86.ActiveCfg = Release|Any CPU
 		{29778D32-41E1-4D01-AF3D-5AA0BE7DC879}.Release|x86.Build.0 = Release|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Debug|x64.Build.0 = Debug|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Debug|x86.Build.0 = Debug|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Release|Any CPU.Build.0 = Release|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Release|x64.ActiveCfg = Release|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Release|x64.Build.0 = Release|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Release|x86.ActiveCfg = Release|Any CPU
+		{31A28B82-BD56-4963-B502-4008C5461E75}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -64,6 +80,7 @@ Global
 		{50C6E19D-8B21-919A-A9BB-1AAFAE92D548} = {C03C8CAA-D0B1-310A-0C7E-67BC14B87CB1}
 		{8B884BA3-4017-4F4A-9D47-96CFD3E8ED21} = {C03C8CAA-D0B1-310A-0C7E-67BC14B87CB1}
 		{29778D32-41E1-4D01-AF3D-5AA0BE7DC879} = {C03C8CAA-D0B1-310A-0C7E-67BC14B87CB1}
+		{31A28B82-BD56-4963-B502-4008C5461E75} = {1E67D7C9-B2CB-4920-B008-2F6B213CA8BB}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {AF2EA467-188D-4BA6-806F-3B26A1A4B688}

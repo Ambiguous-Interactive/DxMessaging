@@ -1,485 +1,394 @@
-/* Custom styling for DxMessaging documentation */
+/* ============================================================
+ * DxMessaging - MkDocs Material theme
+ * Dx family system: shared skeleton, amber product hue.
+ * Fonts: Space Grotesk (display) / IBM Plex Sans (body, via
+ * mkdocs.yml font.text) / JetBrains Mono (code, via font.code).
+ * ============================================================ */
 
-/* ============================================
-   CSS Custom Properties
-   ============================================ */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap");
 
 :root {
-  /* ----------------------------------------------------------
-     Mermaid Theme Colors (Reference Only)
-     ----------------------------------------------------------
-     These CSS variables are NOT used by Mermaid.js directly.
-     Mermaid initialization is handled by mermaid-config.js,
-     which defines its own inline color values.
-
-     These variables are retained for:
-     - Documentation of the intended color scheme
-     - Potential use in custom CSS targeting SVG elements
-     - Consistency reference when updating mermaid-config.js
-     ---------------------------------------------------------- */
-
-  /* Light theme Mermaid colors */
-  --mermaid-primary-bg: #e3f2fd;
-  --mermaid-primary-text: #1565c0;
-  --mermaid-primary-border: #1976d2;
-
-  --mermaid-success-bg: #e8f5e9;
-  --mermaid-success-text: #2e7d32;
-  --mermaid-success-border: #388e3c;
-
-  --mermaid-warning-bg: #fff3e0;
-  --mermaid-warning-text: #c43e00;
-  --mermaid-warning-border: #f57c00;
-
-  --mermaid-danger-bg: #ffebee;
-  --mermaid-danger-text: #c62828;
-  --mermaid-danger-border: #d32f2f;
-
-  --mermaid-neutral-bg: #eceff1;
-  --mermaid-neutral-text: #37474f;
-  --mermaid-neutral-border: #607d8b;
-
-  --mermaid-accent-bg: #f3e5f5;
-  --mermaid-accent-text: #6a1b9a;
-  --mermaid-accent-border: #8e24aa;
-
-  /* ----------------------------------------------------------
-     Syntax Highlighting Color Palette (Light Theme)
-     ----------------------------------------------------------
-     Pygments token classes for C#:
-     - .k   = Keywords (public, class, void, return, if, etc.)
-     - .kt  = Built-in types (int, string, bool, float, var)
-     - .nf  = Function/method definitions
-     - .nc  = Class/struct definitions
-     - .na  = Attributes ([Serializable], [Test])
-     - .nn  = Namespaces
-     - .n   = Generic names (method calls, variables, type refs - mixed)
-     - .s   = Strings
-     - .mi/.mf = Numbers (integer/float)
-     - .c1/.cm = Comments (single-line/multi-line)
-     - .o   = Operators
-     - .p   = Punctuation
-
-     Color Strategy:
-     - Keywords: Blue (control flow, modifiers)
-     - Types (.kt, .nc): Teal/Cyan (type-related tokens)
-     - Functions (.nf): Purple/Magenta (callable things)
-     - Attributes: Orange (metadata/decorators)
-     - Namespaces: Slate gray (organizational)
-     - Generic names (.n): Dark gray (neutral, since mixed content)
-     - Strings: Green (literal values)
-     - Numbers: Brown/Sienna (numeric literals)
-     - Comments: Gray italic (de-emphasized)
-     ---------------------------------------------------------- */
-
-  /* Keywords: vibrant blue - stands out for control flow */
-  --md-code-hl-keyword-color: #0550ae;
-
-  /* Built-in types: teal - distinct "type" feel
-     NOTE: Material theme does NOT map .kt tokens to this variable.
-     Material maps .kt (built-in types like int, string, bool) to
-     --md-code-hl-keyword-color instead. We define this for reference
-     only; actual .kt styling uses direct selectors below. */
-  --md-code-hl-builtin-color: #0f766e;
-
-  /* Function definitions: purple/magenta - callable emphasis */
-  --md-code-hl-function-color: #8250df;
-
-  /* Strings: green - literal value indication */
-  --md-code-hl-string-color: #116329;
-
-  /* Numbers: brown/sienna - numeric literals */
-  --md-code-hl-number-color: #953800;
-
-  /* Comments: gray - de-emphasized (darkened for WCAG AA 4.5:1+ contrast) */
-  --md-code-hl-comment-color: #5c6570;
-
-  /* Operators: dark slate - structural but not distracting */
-  --md-code-hl-operator-color: #24292f;
-
-  /* Punctuation: dark gray - structural */
-  --md-code-hl-punctuation-color: #24292f;
-
-  /* Generic names (.n): neutral color (JavaScript adds semantic classes)
-     Pygments classifies many tokens as generic .n (Name) tokens.
-     The csharp-highlight.js script post-processes code blocks to add
-     semantic classes (.n-type, .n-method, .n-param, .n-var) which are
-     then styled with distinct colors via direct selectors below. */
-  --md-code-hl-name-color: #24292f;
-
-  /* Special tokens (defined via direct selectors below):
-     - Attributes (.na): #bc4c00 (orange - metadata)
-     - Class defs (.nc): #0f766e (teal - type color, matches .kt)
-     - Namespaces (.nn): #57606a (slate - organizational)
-     - Semantic .n tokens: see .n-type, .n-method, .n-param, .n-var
-  */
+  --dxm-amber: #f4a836;
+  --dxm-amber-soft: #ffd48e;
+  --dxm-ember: #ec4661; /* Targeted (taxonomy only) */
+  --dxm-blue: #7fa6d8; /* Untargeted */
+  --dxm-green: #7fb88a; /* Broadcast */
+  --dxm-route-untargeted: var(--dxm-blue);
+  --dxm-route-targeted: var(--dxm-ember);
+  --dxm-route-broadcast: var(--dxm-green);
+  --dxm-eyebrow-color: var(--dxm-amber);
+  --dxm-window-bg: #0a0e13;
+  --dxm-window-border: #1d2531;
+  --dxm-window-bar-bg: #11161d;
+  --dxm-window-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.6);
+  --dxm-chip-bg: #0a0e13;
+  --dxm-chip-border: #1d2531;
 }
 
+/* Route and panel colors adjust on Press paper so light mode stays readable. */
+[data-md-color-scheme="default"] {
+  --dxm-route-untargeted: #35618f;
+  --dxm-route-targeted: #b8324b;
+  --dxm-route-broadcast: #386e46;
+  --dxm-eyebrow-color: #8a5d00;
+  --dxm-window-bg: #faf8f3;
+  --dxm-window-border: #e4dfd1;
+  --dxm-window-bar-bg: #f4f1ea;
+  --dxm-window-shadow: 0 24px 48px -32px rgba(27, 24, 19, 0.35);
+  --dxm-chip-bg: #f4f1ea;
+  --dxm-chip-border: #e4dfd1;
+}
+
+/* ============= DARK (default) - scheme: slate ============= */
 [data-md-color-scheme="slate"] {
-  /* Dark theme Mermaid colors (see :root for usage notes) */
-  --mermaid-primary-bg: #1e3a5f;
-  --mermaid-primary-text: #90caf9;
-  --mermaid-primary-border: #42a5f5;
+  --md-default-bg-color: #0d1117;
+  --md-default-fg-color: #e9eef4;
+  --md-default-fg-color--light: #9aa3af;
+  --md-default-fg-color--lighter: #6b7480;
+  --md-default-fg-color--lightest: #232c38;
 
-  --mermaid-success-bg: #1b3d2e;
-  --mermaid-success-text: #81c784;
-  --mermaid-success-border: #66bb6a;
+  --md-primary-fg-color: #0d1117;
+  --md-primary-bg-color: #e9eef4;
+  --md-accent-fg-color: #f4a836;
 
-  --mermaid-warning-bg: #3d2e1a;
-  --mermaid-warning-text: #ffb74d;
-  --mermaid-warning-border: #ffa726;
+  --md-typeset-color: #c9d2dc;
+  --md-typeset-a-color: #f4a836;
 
-  --mermaid-danger-bg: #3d1a1a;
-  --mermaid-danger-text: #ef9a9a;
-  --mermaid-danger-border: #ef5350;
+  --md-code-bg-color: #0c1016;
+  --md-code-fg-color: #c9d2dc;
+  --md-code-hl-color: rgba(244, 168, 54, 0.12);
+  --dxm-code-keyword: #ffcf70;
+  --dxm-code-type: #78d6b0;
+  --dxm-code-method: #8bb8ff;
+  --dxm-code-string: #f49aa8;
+  --dxm-code-comment: #788494;
+  --dxm-code-number: #c8a6ff;
+  --dxm-code-attribute: #f59e5b;
+  --dxm-code-namespace: #9ed0ff;
+  --dxm-code-operator: #d3dae6;
 
-  --mermaid-neutral-bg: #2d2d2d;
-  --mermaid-neutral-text: #b0bec5;
-  --mermaid-neutral-border: #546e7a;
-
-  --mermaid-accent-bg: #2d1f3d;
-  --mermaid-accent-text: #ce93d8;
-  --mermaid-accent-border: #ab47bc;
-
-  /* ----------------------------------------------------------
-     Syntax Highlighting Color Palette (Dark/Slate Theme)
-     ----------------------------------------------------------
-     Same token mapping as light theme, with colors adjusted
-     for dark background contrast and readability.
-     ---------------------------------------------------------- */
-
-  /* Keywords: bright blue */
-  --md-code-hl-keyword-color: #79c0ff;
-
-  /* Built-in types: cyan/teal
-     NOTE: Not used by Material for .kt tokens (see :root comment).
-     Actual .kt styling uses direct selectors below. */
-  --md-code-hl-builtin-color: #5fd4d4;
-
-  /* Function definitions: light purple/lavender */
-  --md-code-hl-function-color: #d2a8ff;
-
-  /* Strings: light green */
-  --md-code-hl-string-color: #a5d6a7;
-
-  /* Numbers: light orange/peach */
-  --md-code-hl-number-color: #ffa657;
-
-  /* Comments: muted gray */
-  --md-code-hl-comment-color: #8b949e;
-
-  /* Operators: light gray */
-  --md-code-hl-operator-color: #c9d1d9;
-
-  /* Punctuation: light gray */
-  --md-code-hl-punctuation-color: #c9d1d9;
-
-  /* Generic names (.n): neutral color (JavaScript adds semantic classes)
-     Same as light theme - csharp-highlight.js adds semantic classes. */
-  --md-code-hl-name-color: #c9d1d9;
+  --md-footer-bg-color: #0a0e13;
+  --md-footer-bg-color--dark: #070a0e;
 }
 
-/* ============================================
-   Code block styling
-   ============================================ */
-.md-typeset code {
-  font-size: 0.85em;
+/* ============= LIGHT - scheme: default (Press paper) ============= */
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #f4f1ea;
+  --md-default-fg-color: #1b1813;
+  --md-default-fg-color--light: #5f5a4f;
+  --md-default-fg-color--lighter: #9a948a;
+  --md-default-fg-color--lightest: #e4dfd1;
+
+  --md-primary-fg-color: #f4f1ea;
+  --md-primary-bg-color: #1b1813;
+  --md-accent-fg-color: #b07d1f;
+
+  --md-typeset-color: #46423a;
+  --md-typeset-a-color: #b07d1f;
+
+  --md-code-bg-color: #faf8f3;
+  --md-code-fg-color: #46423a;
+  --dxm-code-keyword: #8a5d00;
+  --dxm-code-type: #14624a;
+  --dxm-code-method: #245f9e;
+  --dxm-code-string: #9b263e;
+  --dxm-code-comment: #6f695d;
+  --dxm-code-number: #7148a6;
+  --dxm-code-attribute: #a64f12;
+  --dxm-code-namespace: #286b87;
+  --dxm-code-operator: #4c463d;
 }
 
-/* ============================================
-   Pygments Token-Specific Syntax Highlighting
-   ============================================
-   These selectors target specific Pygments token classes
-   that don't have corresponding Material theme CSS variables.
-   This provides maximum differentiation for C# code blocks.
-   ============================================ */
+/* ============= TYPE ============= */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-header__topic,
+.md-nav__title {
+  font-family: "Space Grotesk", var(--md-text-font-family, sans-serif);
+  font-weight: 700;
+  letter-spacing: 0;
+}
 
-/* --- Light Theme Token Colors --- */
+.md-typeset h1 {
+  color: var(--md-default-fg-color);
+}
 
-/* Keywords (.k, .kd, .kn, .kp, .kr) - blue for control flow & modifiers */
-.md-typeset .highlight .k {
-  color: #0550ae;
+/* Eyebrow-style h5 (optional utility) */
+.md-typeset h5 {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dxm-eyebrow-color);
 }
-.md-typeset .highlight .kd {
-  color: #0550ae;
+
+/* ============= HEADER / NAV ============= */
+.md-header {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
 }
-.md-typeset .highlight .kn {
-  color: #0550ae;
+.md-tabs {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
 }
-.md-typeset .highlight .kp {
-  color: #0550ae;
+
+/* Active nav item: contained pill, never a left accent bar */
+.md-nav__link--active,
+.md-nav__item .md-nav__link--active {
+  color: var(--dxm-amber);
+  background: rgba(244, 168, 54, 0.1);
+  border: 1px solid rgba(244, 168, 54, 0.28);
+  border-radius: 7px;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
 }
+
+/* ============= ADMONITIONS - contained complete border ============= */
+.md-typeset .admonition,
+.md-typeset details {
+  border-width: 1px;
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 0.72rem;
+}
+.md-typeset .admonition-title,
+.md-typeset summary {
+  background: transparent !important;
+  font-weight: 700;
+}
+.md-typeset .admonition.note {
+  background: rgba(127, 166, 216, 0.06);
+  border-color: rgba(127, 166, 216, 0.35);
+}
+
+.md-typeset .note > .admonition-title {
+  color: var(--dxm-blue);
+}
+
+.md-typeset .admonition.tip {
+  background: rgba(127, 184, 138, 0.06);
+  border-color: rgba(127, 184, 138, 0.35);
+}
+
+.md-typeset .tip > .admonition-title {
+  color: var(--dxm-green);
+}
+
+.md-typeset .admonition.warning {
+  background: rgba(244, 168, 54, 0.07);
+  border-color: rgba(244, 168, 54, 0.4);
+}
+
+.md-typeset .warning > .admonition-title {
+  color: var(--dxm-amber);
+}
+
+.md-typeset .admonition.danger {
+  background: rgba(236, 70, 97, 0.07);
+  border-color: rgba(236, 70, 97, 0.4);
+}
+
+.md-typeset .danger > .admonition-title {
+  color: var(--dxm-ember);
+}
+
+/* ============= CODE ============= */
+.md-typeset pre > code {
+  border-radius: 8px;
+}
+
+.md-typeset .highlight {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+}
+
+.md-typeset .highlight .k,
+.md-typeset .highlight .kd,
+.md-typeset .highlight .kn,
 .md-typeset .highlight .kr {
-  color: #0550ae;
+  color: var(--dxm-code-keyword);
+  font-weight: 700;
 }
 
-/* .kt = Built-in types (int, string, bool, float, var, etc.)
-   Teal color - Material theme maps .kt to keyword-color, so we
-   override with a direct selector to distinguish types from keywords */
-.md-typeset .highlight .kt {
-  color: #0f766e;
+.md-typeset .highlight .kt,
+.md-typeset .highlight .nc,
+.md-typeset .highlight .nb,
+.md-typeset .highlight .bp {
+  color: var(--dxm-code-type);
 }
 
-/* .na = Attributes (e.g., [Serializable], [Test], [DxTargetedMessage])
-   Orange color to make metadata/decorators stand out */
+.md-typeset .highlight .nf,
+.md-typeset .highlight .fm {
+  color: var(--dxm-code-method);
+}
+
+.md-typeset .highlight .s,
+.md-typeset .highlight .s1,
+.md-typeset .highlight .s2,
+.md-typeset .highlight .sc {
+  color: var(--dxm-code-string);
+}
+
+.md-typeset .highlight .c,
+.md-typeset .highlight .c1,
+.md-typeset .highlight .cm,
+.md-typeset .highlight .cs {
+  color: var(--dxm-code-comment);
+  font-style: italic;
+}
+
+.md-typeset .highlight .m,
+.md-typeset .highlight .mi,
+.md-typeset .highlight .mf,
+.md-typeset .highlight .mh {
+  color: var(--dxm-code-number);
+}
+
 .md-typeset .highlight .na {
-  color: #bc4c00;
+  color: var(--dxm-code-attribute);
 }
 
-/* .nc = Class/struct definitions at declaration site
-   Teal to match built-in types (.kt) - both are "type" concepts */
-.md-typeset .highlight .nc {
-  color: #0f766e;
-}
-
-/* .nn = Namespace names
-   Slate gray - organizational/structural, not as prominent */
 .md-typeset .highlight .nn {
-  color: #57606a;
+  color: var(--dxm-code-namespace);
 }
 
-/* Generic names (.n) - base color (will be overridden by semantic classes)
-   Pygments classifies many tokens as .n. JavaScript post-processing
-   adds semantic classes (.n-type, .n-method, .n-param, .n-var) for
-   better differentiation. Fallback to neutral for unclassified tokens. */
-.md-typeset .highlight .n {
-  color: #24292f;
-}
-
-/* Semantic Name Token Colors (added by csharp-highlight.js)
-   These classes are dynamically added based on contextual analysis:
-   - .n-type: Type names (PascalCase, after keywords, in generic params)
-   - .n-method: Method names (followed by ( or <...>()
-   - .n-param: Parameter names (after type, before , or = or ))
-   - .n-var: Variable names (camelCase, other contexts) */
-
-/* Types: teal - matches .kt (built-in types) and .nc (class definitions) */
-.md-typeset .highlight .n.n-type {
-  color: #0f766e;
-}
-
-/* Methods: purple - matches .nf (function definitions) */
-.md-typeset .highlight .n.n-method {
-  color: #8250df;
-}
-
-/* Parameters: coral/orange - distinct from types, methods, and keywords */
-.md-typeset .highlight .n.n-param {
-  color: #cf5c36;
-}
-
-/* Variables: slate gray - de-emphasized but readable */
-.md-typeset .highlight .n.n-var {
-  color: #57606a;
-}
-
-/* Strings (.s, .s1, .s2) - green for literal values */
-.md-typeset .highlight .s {
-  color: #116329;
-}
-.md-typeset .highlight .s1 {
-  color: #116329;
-}
-.md-typeset .highlight .s2 {
-  color: #116329;
-}
-
-/* Comments (.c, .c1, .cm) - gray italic, de-emphasized */
-.md-typeset .highlight .c {
-  color: #5c6570;
-}
-.md-typeset .highlight .c1 {
-  color: #5c6570;
-}
-.md-typeset .highlight .cm {
-  color: #5c6570;
-}
-
-/* Numbers (.m, .mi, .mf) - brown/sienna for numeric literals */
-.md-typeset .highlight .m {
-  color: #953800;
-}
-.md-typeset .highlight .mi {
-  color: #953800;
-}
-.md-typeset .highlight .mf {
-  color: #953800;
-}
-
-/* Operators (.o) - dark slate, structural */
 .md-typeset .highlight .o {
-  color: #24292f;
+  color: var(--dxm-code-operator);
 }
 
-/* Punctuation (.p) - dark gray, structural */
-.md-typeset .highlight .p {
-  color: #24292f;
+.md-typeset .highlight .dxm-cs-access {
+  color: var(--dxm-code-attribute);
 }
 
-/* --- Dark Theme Token Colors --- */
-
-/* Keywords: bright blue */
-[data-md-color-scheme="slate"] .md-typeset .highlight .k {
-  color: #79c0ff;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .kd {
-  color: #79c0ff;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .kn {
-  color: #79c0ff;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .kp {
-  color: #79c0ff;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .kr {
-  color: #79c0ff;
+.md-typeset .highlight .dxm-cs-readonly {
+  color: var(--dxm-code-number);
 }
 
-/* Built-in types: cyan/teal - distinct from keywords */
-[data-md-color-scheme="slate"] .md-typeset .highlight .kt {
-  color: #5fd4d4;
+.md-typeset .highlight .dxm-cs-partial {
+  color: var(--dxm-code-namespace);
 }
 
-/* Attributes: light orange */
-[data-md-color-scheme="slate"] .md-typeset .highlight .na {
-  color: #f0883e;
+.md-typeset .highlight .dxm-cs-declaration {
+  color: var(--dxm-code-type);
 }
 
-/* Class definitions: light cyan/teal */
-[data-md-color-scheme="slate"] .md-typeset .highlight .nc {
-  color: #5fd4d4;
+/* Domain-aware taxonomy coloring (spans added by docs/hooks.py). Placed after
+   the generic token rules so equal-specificity route colors win. */
+.md-typeset .highlight .dxm-route-untargeted {
+  color: var(--dxm-route-untargeted);
 }
 
-/* Namespaces: light blue-gray (distinct from comments which use #8b949e) */
-[data-md-color-scheme="slate"] .md-typeset .highlight .nn {
-  color: #a8b1ba;
+.md-typeset .highlight .dxm-route-targeted {
+  color: var(--dxm-route-targeted);
 }
 
-/* Generic names: neutral light gray (will be overridden by semantic classes) */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n {
-  color: #c9d1d9;
+.md-typeset .highlight .dxm-route-broadcast {
+  color: var(--dxm-route-broadcast);
 }
 
-/* Semantic Name Token Colors for Dark Theme (added by csharp-highlight.js) */
-
-/* Types: light cyan/teal - matches .kt and .nc */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n.n-type {
-  color: #5fd4d4;
+.md-typeset .highlight .dxm-msgtype {
+  font-weight: 600;
 }
 
-/* Methods: lavender - matches .nf (function definitions) */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n.n-method {
-  color: #d2a8ff;
+.md-typeset code {
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
 }
 
-/* Parameters: peach/salmon - distinct from types, methods, and keywords */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n.n-param {
-  color: #ffb088;
+/* ============= BUTTONS ============= */
+/* Material colors secondary buttons with --md-primary-fg-color, which this
+   theme repoints at the page background - declare explicit colors instead. */
+.md-typeset .md-button {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 9px;
+  color: var(--md-default-fg-color);
+  font-weight: 600;
+}
+.md-typeset .md-button:hover,
+.md-typeset .md-button:focus {
+  background-color: rgba(244, 168, 54, 0.08);
+  border-color: var(--dxm-amber);
+  color: var(--dxm-amber);
+}
+.md-typeset .md-button:focus-visible {
+  outline: 2px solid var(--dxm-amber-soft);
+  outline-offset: 2px;
+}
+.md-typeset .md-button--primary {
+  background-color: var(--dxm-amber);
+  border-color: var(--dxm-amber);
+  color: #0d1117;
+}
+.md-typeset .md-button--primary:hover,
+.md-typeset .md-button--primary:focus {
+  background-color: var(--dxm-amber-soft);
+  border-color: var(--dxm-amber-soft);
+  color: #0d1117;
 }
 
-/* Variables: light gray - de-emphasized but readable */
-[data-md-color-scheme="slate"] .md-typeset .highlight .n.n-var {
-  color: #a8b1ba;
-}
-
-/* Strings: light green */
-[data-md-color-scheme="slate"] .md-typeset .highlight .s {
-  color: #a5d6a7;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .s1 {
-  color: #a5d6a7;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .s2 {
-  color: #a5d6a7;
-}
-
-/* Comments: muted gray */
-[data-md-color-scheme="slate"] .md-typeset .highlight .c {
-  color: #8b949e;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .c1 {
-  color: #8b949e;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .cm {
-  color: #8b949e;
-}
-
-/* Numbers: light orange/peach */
-[data-md-color-scheme="slate"] .md-typeset .highlight .m {
-  color: #ffa657;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .mi {
-  color: #ffa657;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight .mf {
-  color: #ffa657;
-}
-
-/* Operators: light gray */
-[data-md-color-scheme="slate"] .md-typeset .highlight .o {
-  color: #c9d1d9;
-}
-
-/* Punctuation: light gray */
-[data-md-color-scheme="slate"] .md-typeset .highlight .p {
-  color: #c9d1d9;
-}
-
-/* ============================================
-   Mermaid diagram container
-   ============================================ */
-.mermaid {
-  text-align: center;
-  margin: 1em 0;
-}
-
-/* Ensure diagrams are visible in dark mode */
-[data-md-color-scheme="slate"] .mermaid {
-  background-color: transparent;
-}
-
-/* SVG text readability in dark mode */
-[data-md-color-scheme="slate"] .mermaid svg {
-  max-width: 100%;
-}
-
-/* Ensure proper text contrast in dark mode for inline diagram text.
-   Using html selector for higher specificity to avoid !important. */
-html[data-md-color-scheme="slate"] body .mermaid svg .node text,
-html[data-md-color-scheme="slate"] body .mermaid svg .cluster-label text,
-html[data-md-color-scheme="slate"] body .mermaid svg .edgeLabel text,
-[data-md-color-scheme="slate"] .md-content .mermaid .node text,
-[data-md-color-scheme="slate"] .md-content .mermaid .cluster-label text,
-[data-md-color-scheme="slate"] .md-content .mermaid .edgeLabel text {
-  fill: var(--mermaid-neutral-text);
-}
-
-/* ============================================
-   Unity-specific admonition
-   ============================================ */
-.md-typeset .admonition.unity,
-.md-typeset details.unity {
-  border-color: #222c37;
-}
-
-.md-typeset .unity > .admonition-title,
-.md-typeset .unity > summary {
-  background-color: rgba(34, 44, 55, 0.1);
-}
-
-.md-typeset .unity > .admonition-title::before,
-.md-typeset .unity > summary::before {
-  background-color: #222c37;
-  /* Unity cube icon using mask */
-  -webkit-mask-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l6.9 3.45L12 11.09 5.1 7.63 12 4.18zM4 8.82l7 3.5v7.86l-7-3.5V8.82zm9 11.36v-7.86l7-3.5v7.86l-7 3.5z"/></svg>');
-  mask-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l6.9 3.45L12 11.09 5.1 7.63 12 4.18zM4 8.82l7 3.5v7.86l-7-3.5V8.82zm9 11.36v-7.86l7-3.5v7.86l-7 3.5z"/></svg>');
-}
-
-/* ============================================
-   Feature grid for homepage
-   ============================================ */
-.md-typeset .grid {
+/* ============= HOMEPAGE CONTENT ============= */
+.dx-home-feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin: 1.2rem 0 1.5rem;
+}
+
+@media (max-width: 760px) {
+  .dx-home-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dx-home-feature-grid section {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid rgba(244, 168, 54, 0.26);
+  border-radius: 8px;
+  background: rgba(244, 168, 54, 0.05);
+}
+
+.dx-home-feature-grid h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.dx-home-feature-grid p {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+/* ============= TABLES / RULES ============= */
+.md-typeset hr {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset table:not([class]) {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+}
+
+/* ============= TAXONOMY BADGES (use in markdown via attr_list) =============
+   Example: `[Untargeted]{ .dxm-badge .dxm-untargeted }` */
+.dxm-badge {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0;
+  border-radius: 999px;
+  padding: 0.15em 0.7em;
+  border: 1px solid;
+}
+.dxm-untargeted {
+  color: var(--dxm-blue);
+  border-color: rgba(127, 166, 216, 0.45);
+}
+
+.dxm-targeted {
+  color: var(--dxm-ember);
+  border-color: rgba(236, 70, 97, 0.45);
+}
+
+.dxm-broadcast {
+  color: var(--dxm-green);
+  border-color: rgba(127, 184, 138, 0.45);
 }

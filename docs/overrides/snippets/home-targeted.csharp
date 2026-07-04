@@ -1,0 +1,17 @@
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Unity;
+
+[DxTargetedMessage]
+[DxAutoConstructor]
+public readonly partial struct Heal
+{
+    public readonly int Amount;
+}
+
+// Register on the player that can receive heals.
+Token.RegisterGameObjectTargeted<Heal>(gameObject, OnHeal);
+
+// Send from any system.
+Heal heal = new Heal(50);
+heal.EmitGameObjectTargeted(player);

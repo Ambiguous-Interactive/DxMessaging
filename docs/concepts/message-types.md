@@ -110,9 +110,9 @@ public readonly partial struct TookDamage
     public readonly int amount;
 }
 
-// Emit from a source (GameObject)
+// Emit from this GameObject
 var hit = new TookDamage(5);
-hit.EmitGameObjectBroadcast(enemyGameObject);
+hit.EmitGameObjectBroadcast(gameObject);
 ```
 
 ## Organizing Messages with Nested Types
@@ -148,7 +148,7 @@ var heal = new CombatEvents.Heal(10, showEffect: true);
 heal.EmitComponentTargeted(player);
 
 var damage = new CombatEvents.TookDamage(5);  // Uses DamageType.Physical
-damage.EmitGameObjectBroadcast(enemy);
+damage.EmitGameObjectBroadcast(gameObject);
 ```
 
 ### Benefits

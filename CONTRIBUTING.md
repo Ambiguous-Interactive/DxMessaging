@@ -64,7 +64,7 @@ Prettier keeps YAML formatting consistent but does not automatically wrap long Y
 Two strict rules apply to all documentation (Markdown files and `///` XML doc comments) and to every C# code sample:
 
 1. **ASCII-only.** Pure ASCII is required. Real Unicode emojis are allowed only on callout lines (lines starting with `>`), capped at five per file. See the [ASCII-only documentation guideline](./.llm/skills/documentation/ascii-only-docs.md).
-1. **Code samples must compile.** Every C# snippet - inline backticks, fenced blocks, table cells, and XML `<code>` blocks - must compile against the snippet harness. See the [Code samples must compile guideline](./.llm/skills/documentation/code-samples-must-compile.md) and run the `DocsSnippetCompilationTests` suite under `SourceGenerators/`.
+1. **Code samples must compile.** Every C# snippet - inline backticks, fenced blocks, table cells, and XML `<code>` blocks - must compile against the snippet harness. See the [Code samples must compile guideline](./.llm/skills/documentation/code-samples-must-compile.md) and run `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`.
 
 ## NPM Package Validation
 

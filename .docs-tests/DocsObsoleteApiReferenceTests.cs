@@ -8,7 +8,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NUnit.Framework;
 
-namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
+namespace WallstopStudios.DxMessaging.Docs.Tests;
 
 /// <summary>
 /// Drift-guard ensuring the published documentation under <c>docs/</c> never teaches an

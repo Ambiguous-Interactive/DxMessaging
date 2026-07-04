@@ -128,12 +128,12 @@ Like a news broadcast - comes from one source, anyone can tune in.
 [DxAutoConstructor]
 public readonly partial struct TookDamage { public readonly int amount; }
 
-// Broadcast from enemy
+// Broadcast from this object
 var dmg = new TookDamage(25);
-dmg.EmitGameObjectBroadcast(enemyObject);
+dmg.EmitGameObjectBroadcast(gameObject);
 
-// UI can listen to specific enemy
-_ = token.RegisterGameObjectBroadcast<TookDamage>(enemyObject, OnThisEnemy);
+// UI can listen to this source
+_ = token.RegisterGameObjectBroadcast<TookDamage>(gameObject, OnThisDamage);
 
 // OR achievement system can listen to ALL enemies
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyEnemy);
@@ -510,7 +510,7 @@ msg.EmitComponentTargeted(player1);
 msg.EmitComponentTargeted(player2);  // Feels wrong, right?
 
 // DO: Use broadcast so everyone can listen
-msg.EmitGameObjectBroadcast(enemy);  // Now anyone can observe this enemy
+msg.EmitGameObjectBroadcast(gameObject);  // Now anyone can observe this source
 ```
 
 ### "What if I forget to unsubscribe?"

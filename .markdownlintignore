@@ -4,6 +4,7 @@ Library/
 obj/
 Temp/
 Samples~/
+design-system*/
 /.github/
 /progress/
 /.artifacts/
