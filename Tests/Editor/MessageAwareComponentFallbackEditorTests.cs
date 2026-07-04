@@ -54,6 +54,11 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
+            // Destroying inspector editors/objects below repaints the inspector, which in
+            // -nographics CI logs benign "No graphic device is available" errors. Unity
+            // resets LogAssert tolerance per phase, so re-assert it for the teardown phase
+            // (headless only; graphics runs keep full strictness).
+            EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
             MessageAwareComponentInspectorOverlay.ResetTestSeams();
 
             foreach (UnityEditor.Editor editor in _createdEditors)

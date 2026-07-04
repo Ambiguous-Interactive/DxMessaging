@@ -35,20 +35,28 @@ namespace DxMessaging.Tests.Editor
             }
 
             window.hideFlags = HideFlags.HideAndDontSave;
-            // Headless CI runs Unity with -nographics. EditorWindow.Show() still builds
-            // the panel/visual tree these tests query and dispatch events against, but it
-            // logs benign "No graphic device is available to initialize the view./show the
-            // window." errors (repeated on repaints and while destroying editors/objects in
-            // teardown). NUnit fails a test on any unexpected error log, so when no GPU is
-            // present tolerate rendering-only errors for the rest of the test. Unity's
-            // per-test LogScope resets this to false for the next test, so it cannot leak.
-            // Runs with a real graphics device (e.g. the local editor) keep full strictness.
+            SuppressHeadlessWindowRenderErrors();
+            window.Show();
+            window.hideFlags = HideFlags.HideAndDontSave;
+        }
+
+        /// <summary>
+        /// Headless CI runs Unity with -nographics, where showing a window and repainting
+        /// the inspector (including while destroying editors/objects during teardown) logs
+        /// benign "No graphic device is available to initialize the view. / show the window."
+        /// errors. NUnit fails a test on any unexpected error log, and Unity resets
+        /// <see cref="LogAssert.ignoreFailingMessages"/> per phase, so tests that show windows
+        /// must re-assert tolerance in every phase where these errors can fire (the test body
+        /// via <see cref="ShowWindow"/>, and teardown for inspector-editor destruction). Only
+        /// active when no graphics device is present, so runs with a real GPU keep full log
+        /// strictness; Unity's per-test LogScope clears the flag for the next test.
+        /// </summary>
+        internal static void SuppressHeadlessWindowRenderErrors()
+        {
             if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
             {
                 LogAssert.ignoreFailingMessages = true;
             }
-            window.Show();
-            window.hideFlags = HideFlags.HideAndDontSave;
         }
 
         internal static void CloseWindow(EditorWindow window)
