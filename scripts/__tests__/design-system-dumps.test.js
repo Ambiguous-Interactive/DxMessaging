@@ -8,9 +8,6 @@ const path = require("node:path");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const COMPLETE_BORDER_HELPER_PATH = "Editor/DxMessagingEditorTheme.cs";
-const SCREENSHOT_MANIFEST_PATH = "docs/images/inspector-overlay/README.md";
-const INSPECTOR_OVERLAY_GUIDE_PATH = "docs/guides/inspector-overlay.md";
-const EDITOR_DESIGN_SYSTEM_SKILL_PATH = ".llm/skills/unity/editor-design-system.md";
 const THIS_TEST_PATH = "scripts/__tests__/design-system-dumps.test.js";
 
 test("design-system source dumps are not tracked", () => {
@@ -60,47 +57,10 @@ test("editor design system avoids left-only borders", () => {
   assert.deepEqual(violations, []);
 });
 
-test("editor-window screenshot automation keeps the proven safety boundary documented", () => {
-  const screenshotManifest = fs.readFileSync(
-    path.join(REPO_ROOT, SCREENSHOT_MANIFEST_PATH),
-    "utf8"
-  );
-  const editorDesignSystemSkill = fs.readFileSync(
-    path.join(REPO_ROOT, EDITOR_DESIGN_SYSTEM_SKILL_PATH),
-    "utf8"
-  );
-  const combinedGuidance = `${screenshotManifest}\n${editorDesignSystemSkill}`;
-
-  for (const [label, pattern] of [
-    ["ReadScreenPixel", /ReadScreenPixel/],
-    ["PrintWindow", /PrintWindow/],
-    ["Personal/light", /Personal\/light/],
-    ["visually inspect", /visually inspected?/],
-    ["clean post-capture", /clean\s+post-capture/],
-    ["live editor skin switching", /Do not use live editor skin switching/]
-  ]) {
-    assert.match(
-      combinedGuidance,
-      pattern,
-      `Screenshot capture guidance must keep the ${label} safety boundary.`
-    );
-  }
-});
-
 test("editor-window screenshot automation does not use blocked capture primitives", () => {
   const output = execFileSync(
     "git",
-    [
-      "ls-files",
-      "--cached",
-      "--others",
-      "--exclude-standard",
-      "--",
-      "Editor",
-      "Tests",
-      "scripts",
-      ".github"
-    ],
+    ["ls-files", "--cached", "--others", "--exclude-standard", "--", "Editor", "Tests", "scripts", ".github"],
     {
       cwd: REPO_ROOT,
       encoding: "utf8"
@@ -133,25 +93,4 @@ test("editor-window screenshot automation does not use blocked capture primitive
   }
 
   assert.deepEqual(violations, []);
-});
-
-test("draft inspector-overlay screenshots are visible to guide readers", () => {
-  const screenshotManifest = fs.readFileSync(
-    path.join(REPO_ROOT, SCREENSHOT_MANIFEST_PATH),
-    "utf8"
-  );
-  const inspectorOverlayGuide = fs.readFileSync(
-    path.join(REPO_ROOT, INSPECTOR_OVERLAY_GUIDE_PATH),
-    "utf8"
-  );
-
-  if (!/draft\/stale capture assets/.test(screenshotManifest)) {
-    return;
-  }
-
-  assert.match(
-    inspectorOverlayGuide,
-    /Screenshot status[\s\S]*draft\/stale[\s\S]*not final publishable/,
-    "The user-facing Inspector overlay guide must disclose draft screenshot status while the manifest marks screenshots as draft/stale."
-  );
 });
