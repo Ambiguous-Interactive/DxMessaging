@@ -1078,21 +1078,57 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         }
     }
 
+    private static readonly string[] NegativeCompileMarkers =
+    {
+        "won't compile",
+        "will not compile",
+        "does not compile",
+        "do not compile",
+        "don't compile",
+        "cannot compile",
+        "do not emit from temporaries",
+        "don't emit from temporaries",
+    };
+
+    private static bool HasNegativeCompileMarker(string line)
+    {
+        string lowered = line.ToLowerInvariant();
+        foreach (string marker in NegativeCompileMarkers)
+        {
+            if (lowered.Contains(marker, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsExplicitNegativeTemporaryEmitExample(string[] lines, int lineIndex)
     {
-        int start = Math.Max(0, lineIndex - 1);
-        int end = Math.Min(lines.Length - 1, lineIndex);
-        string context = string.Join(" ", lines[start..(end + 1)]).ToLowerInvariant();
+        // A deliberately-bad example labels itself on the SAME line as the temporary
+        // emit (inline prose or comment). A marker on the preceding line only counts
+        // when that line is a code comment, so ordinary explanatory prose that merely
+        // mentions compilation cannot silently suppress a real `new ...().Emit*`
+        // violation on the following line.
+        if (HasNegativeCompileMarker(lines[lineIndex]))
+        {
+            return true;
+        }
 
-        return context.Contains("won't compile", StringComparison.Ordinal)
-            || context.Contains("will not compile", StringComparison.Ordinal)
-            || context.Contains("does not compile", StringComparison.Ordinal)
-            || context.Contains("do not compile", StringComparison.Ordinal)
-            || context.Contains("don't compile", StringComparison.Ordinal)
-            || context.Contains("cannot compile", StringComparison.Ordinal)
-            || context.Contains("not compile", StringComparison.Ordinal)
-            || context.Contains("do not emit from temporaries", StringComparison.Ordinal)
-            || context.Contains("don't emit from temporaries", StringComparison.Ordinal);
+        if (lineIndex > 0)
+        {
+            string previous = lines[lineIndex - 1].TrimStart();
+            if (
+                previous.StartsWith("//", StringComparison.Ordinal)
+                && HasNegativeCompileMarker(previous)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static IEnumerable<(int Line, string Text)> FindNonSelfBroadcastSourceViolations(
