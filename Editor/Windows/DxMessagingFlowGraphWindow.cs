@@ -29,6 +29,8 @@ namespace DxMessaging.Editor.Windows
         internal const string RouteMapName = "dxmessaging-flow-graph-route-map";
         internal const string RouteMapRouteClassName = "dxmessaging-flow-graph-route-map-route";
         internal const string RouteMapMessageLabelName = "dxmessaging-flow-graph-route-map-message";
+        internal const string RouteMapRouteKindLabelName =
+            "dxmessaging-flow-graph-route-map-route-kind";
         internal const string RouteMapTargetLabelName = "dxmessaging-flow-graph-route-map-target";
         internal const string RouteMapSummaryLabelName = "dxmessaging-flow-graph-route-map-summary";
         internal const string VisibleMessageLanesName = "dxmessaging-flow-graph-message-lanes";
@@ -138,6 +140,7 @@ namespace DxMessaging.Editor.Windows
         internal const string NodeNameLabelName = "dxmessaging-flow-graph-node-name";
         internal const string NodeSummaryLabelName = "dxmessaging-flow-graph-node-summary";
         internal const string EdgeLabelName = "dxmessaging-flow-graph-edge-label";
+        internal const string EdgeRouteKindLabelName = "dxmessaging-flow-graph-edge-route-kind";
         internal const string DetailsPaneName = "dxmessaging-flow-graph-details";
         internal const string DetailsTitleLabelName = "dxmessaging-flow-graph-details-title";
         internal const string DetailsBodyLabelName = "dxmessaging-flow-graph-details-body";
@@ -157,14 +160,14 @@ namespace DxMessaging.Editor.Windows
         public static void Open()
         {
             DxMessagingFlowGraphWindow window = GetWindow<DxMessagingFlowGraphWindow>();
-            window.titleContent = new GUIContent(Title);
+            window.titleContent = new GUIContent(Title, DxMessagingEditorTheme.LoadIcon());
             window.minSize = new Vector2(520, 360);
             window.Refresh();
         }
 
         private void CreateGUI()
         {
-            titleContent = new GUIContent(Title);
+            titleContent = new GUIContent(Title, DxMessagingEditorTheme.LoadIcon());
             Refresh();
         }
 
@@ -250,7 +253,7 @@ namespace DxMessaging.Editor.Windows
 
         internal static FlowGraphSnapshot CaptureSnapshot()
         {
-            MessagingComponent[] components = Resources.FindObjectsOfTypeAll<MessagingComponent>();
+            MessagingComponent[] components = FindMessagingComponentsInLoadedScenes();
             return CaptureSnapshot(components.Where(IsSceneComponent));
         }
 
@@ -440,6 +443,7 @@ namespace DxMessaging.Editor.Windows
             }
 
             root.Clear();
+            DxMessagingEditorTheme.ApplyWindow(root);
             root.AddToClassList(RootClassName);
             root.style.paddingTop = 10;
             root.style.paddingRight = 12;
@@ -453,6 +457,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement toolbar = new();
             toolbar.AddToClassList(ToolbarClassName);
+            toolbar.AddToClassList(DxMessagingEditorTheme.ToolbarClassName);
             toolbar.style.flexDirection = FlexDirection.Row;
             toolbar.style.alignItems = Align.Center;
             toolbar.style.justifyContent = Justify.SpaceBetween;
@@ -556,6 +561,7 @@ namespace DxMessaging.Editor.Windows
                         ? "No MessagingComponent registrations are loaded in open scenes."
                         : "No graph items match the current filter.";
                 Label empty = new(emptyText) { name = EmptyStateLabelName };
+                empty.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
                 empty.style.whiteSpace = WhiteSpace.Normal;
                 content.Add(empty);
             }
@@ -642,7 +648,17 @@ namespace DxMessaging.Editor.Windows
             foreach (string warning in visibleSnapshot.Warnings)
             {
                 Label warningLabel = new(warning) { name = WarningLabelName };
+                warningLabel.AddToClassList(DxMessagingEditorTheme.AdmonitionClassName);
+                warningLabel.AddToClassList(DxMessagingEditorTheme.WarningClassName);
+                DxMessagingEditorTheme.ApplyCompleteBorder(
+                    warningLabel,
+                    DxMessagingEditorPalette.Amber
+                );
                 warningLabel.style.marginTop = 8;
+                warningLabel.style.paddingTop = 8;
+                warningLabel.style.paddingRight = 8;
+                warningLabel.style.paddingBottom = 8;
+                warningLabel.style.paddingLeft = 8;
                 warningLabel.style.whiteSpace = WhiteSpace.Normal;
                 content.Add(warningLabel);
             }
@@ -1253,6 +1269,22 @@ namespace DxMessaging.Editor.Windows
                 && !EditorUtility.IsPersistent(component);
         }
 
+        private static MessagingComponent[] FindMessagingComponentsInLoadedScenes()
+        {
+#if UNITY_6000_0_OR_NEWER
+            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
+                FindObjectsInactive.Include
+            );
+#elif UNITY_2023_1_OR_NEWER
+            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None
+            );
+#else
+            return UnityEngine.Object.FindObjectsOfType<MessagingComponent>(includeInactive: true);
+#endif
+        }
+
         private static string CreateStatusText(FlowGraphSnapshot snapshot)
         {
             return $"{snapshot.ComponentNodes.Count} components | {snapshot.MessageNodes.Count} messages | {snapshot.Edges.Count} edges | {snapshot.TracePaths.Count} trace paths";
@@ -1291,6 +1323,7 @@ namespace DxMessaging.Editor.Windows
             controls.style.marginBottom = 10;
 
             TextField filter = new("Filter") { name = FilterFieldName };
+            filter.AddToClassList(DxMessagingEditorTheme.SearchClassName);
             filter.SetValueWithoutNotify(viewState.FilterText);
             filter.style.flexGrow = 1;
             filter.style.marginRight = 8;
@@ -1311,6 +1344,7 @@ namespace DxMessaging.Editor.Windows
                 name = RefreshButtonName,
                 text = "Refresh",
             };
+            refresh.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             refresh.SetEnabled(onRefresh != null);
             refresh.style.marginRight = 6;
             controls.Add(refresh);
@@ -1320,6 +1354,7 @@ namespace DxMessaging.Editor.Windows
                 name = ExportButtonName,
                 text = "Copy JSON",
             };
+            export.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             SetExportButtonEnabled(export, visibleSnapshot, onCopyExport);
             controls.Add(export);
 
@@ -1429,6 +1464,7 @@ namespace DxMessaging.Editor.Windows
         private static Label CreateSectionTitle(string text)
         {
             Label title = new(text);
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.marginTop = 10;
             title.style.marginBottom = 4;
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -1442,15 +1478,18 @@ namespace DxMessaging.Editor.Windows
         )
         {
             VisualElement routeMap = new() { name = RouteMapName };
-            routeMap.style.borderTopWidth = 1;
-            routeMap.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
-            routeMap.style.borderBottomWidth = 1;
-            routeMap.style.borderBottomColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                routeMap,
+                DxMessagingEditorPalette.BorderPanel
+            );
             routeMap.style.marginBottom = 4;
             routeMap.style.paddingTop = 8;
+            routeMap.style.paddingRight = 8;
             routeMap.style.paddingBottom = 8;
+            routeMap.style.paddingLeft = 8;
 
             Label title = new("Route Map");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             routeMap.Add(title);
 
@@ -1465,6 +1504,7 @@ namespace DxMessaging.Editor.Windows
             if (visibleSnapshot.Edges.Count == 0)
             {
                 Label empty = new("No visible registration routes.");
+                empty.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
                 empty.style.marginTop = 6;
                 routeMap.Add(empty);
                 return routeMap;
@@ -1493,16 +1533,19 @@ namespace DxMessaging.Editor.Windows
         {
             FlowGraphMessageLane[] lanes = BuildVisibleMessageLanes(visibleSnapshot);
             VisualElement messageLanes = new() { name = VisibleMessageLanesName };
-            messageLanes.style.borderTopWidth = 1;
-            messageLanes.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
-            messageLanes.style.borderBottomWidth = 1;
-            messageLanes.style.borderBottomColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                messageLanes,
+                DxMessagingEditorPalette.BorderPanel
+            );
             messageLanes.style.marginTop = 8;
             messageLanes.style.marginBottom = 4;
             messageLanes.style.paddingTop = 8;
+            messageLanes.style.paddingRight = 8;
             messageLanes.style.paddingBottom = 8;
+            messageLanes.style.paddingLeft = 8;
 
             Label title = new("Visible Message Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             messageLanes.Add(title);
 
@@ -1530,12 +1573,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleMessageLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.Amber;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.BorderSoft;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.Amber);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -1582,16 +1623,19 @@ namespace DxMessaging.Editor.Windows
         {
             FlowGraphTargetLane[] lanes = BuildVisibleTargetLanes(visibleSnapshot);
             VisualElement targetLanes = new() { name = VisibleTargetLanesName };
-            targetLanes.style.borderTopWidth = 1;
-            targetLanes.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
-            targetLanes.style.borderBottomWidth = 1;
-            targetLanes.style.borderBottomColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                targetLanes,
+                DxMessagingEditorPalette.BorderPanel
+            );
             targetLanes.style.marginTop = 8;
             targetLanes.style.marginBottom = 4;
             targetLanes.style.paddingTop = 8;
+            targetLanes.style.paddingRight = 8;
             targetLanes.style.paddingBottom = 8;
+            targetLanes.style.paddingLeft = 8;
 
             Label title = new("Visible Target Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             targetLanes.Add(title);
 
@@ -1619,12 +1663,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleTargetLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.AmberSoft;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.BorderSoft;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.AmberSoft);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -1674,16 +1716,19 @@ namespace DxMessaging.Editor.Windows
                 visibleSnapshot.TracePaths
             );
             VisualElement flowCorridors = new() { name = VisibleFlowCorridorsName };
-            flowCorridors.style.borderTopWidth = 1;
-            flowCorridors.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
-            flowCorridors.style.borderBottomWidth = 1;
-            flowCorridors.style.borderBottomColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                flowCorridors,
+                DxMessagingEditorPalette.BorderPanel
+            );
             flowCorridors.style.marginTop = 8;
             flowCorridors.style.marginBottom = 4;
             flowCorridors.style.paddingTop = 8;
+            flowCorridors.style.paddingRight = 8;
             flowCorridors.style.paddingBottom = 8;
+            flowCorridors.style.paddingLeft = 8;
 
             Label title = new("Visible Flow Corridors");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             flowCorridors.Add(title);
 
@@ -1711,12 +1756,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleFlowCorridorRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.AmberSoft;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.BorderSoft;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.AmberSoft);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -1766,16 +1809,19 @@ namespace DxMessaging.Editor.Windows
                 visibleSnapshot.TracePaths
             );
             VisualElement traceRouteKindLanes = new() { name = VisibleTraceRouteKindLanesName };
-            traceRouteKindLanes.style.borderTopWidth = 1;
-            traceRouteKindLanes.style.borderTopColor = DxMessagingEditorPalette.BorderStrong;
-            traceRouteKindLanes.style.borderBottomWidth = 1;
-            traceRouteKindLanes.style.borderBottomColor = DxMessagingEditorPalette.BorderStrong;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                traceRouteKindLanes,
+                DxMessagingEditorPalette.BorderStrong
+            );
             traceRouteKindLanes.style.marginTop = 8;
             traceRouteKindLanes.style.marginBottom = 4;
             traceRouteKindLanes.style.paddingTop = 8;
+            traceRouteKindLanes.style.paddingRight = 8;
             traceRouteKindLanes.style.paddingBottom = 8;
+            traceRouteKindLanes.style.paddingLeft = 8;
 
             Label title = new("Visible Trace Route Kind Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             traceRouteKindLanes.Add(title);
 
@@ -1803,12 +1849,13 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleTraceRouteKindLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.RouteKindColor(lane.RouteKind);
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.Border;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                row,
+                DxMessagingEditorPalette.RouteKindColor(lane.RouteKind)
+            );
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -1819,6 +1866,7 @@ namespace DxMessaging.Editor.Windows
             {
                 name = VisibleTraceRouteKindLaneRouteKindLabelName,
             };
+            DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(routeKind, lane.RouteKind);
             routeKind.style.flexBasis = 0;
             routeKind.style.flexGrow = 1;
             routeKind.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -1858,16 +1906,19 @@ namespace DxMessaging.Editor.Windows
         {
             FlowGraphTraceIdLane[] lanes = BuildVisibleTraceIdLanes(visibleSnapshot.TracePaths);
             VisualElement traceIdLanes = new() { name = VisibleTraceIdLanesName };
-            traceIdLanes.style.borderTopWidth = 1;
-            traceIdLanes.style.borderTopColor = DxMessagingEditorPalette.BorderStrong;
-            traceIdLanes.style.borderBottomWidth = 1;
-            traceIdLanes.style.borderBottomColor = DxMessagingEditorPalette.BorderStrong;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                traceIdLanes,
+                DxMessagingEditorPalette.BorderStrong
+            );
             traceIdLanes.style.marginTop = 8;
             traceIdLanes.style.marginBottom = 4;
             traceIdLanes.style.paddingTop = 8;
+            traceIdLanes.style.paddingRight = 8;
             traceIdLanes.style.paddingBottom = 8;
+            traceIdLanes.style.paddingLeft = 8;
 
             Label title = new("Visible Trace Id Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             traceIdLanes.Add(title);
 
@@ -1895,12 +1946,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleTraceIdLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.Trace;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.Border;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.Trace);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -1952,16 +2001,19 @@ namespace DxMessaging.Editor.Windows
                 visibleSnapshot.TracePaths
             );
             VisualElement traceMessageLanes = new() { name = VisibleTraceMessageLanesName };
-            traceMessageLanes.style.borderTopWidth = 1;
-            traceMessageLanes.style.borderTopColor = DxMessagingEditorPalette.BorderStrong;
-            traceMessageLanes.style.borderBottomWidth = 1;
-            traceMessageLanes.style.borderBottomColor = DxMessagingEditorPalette.BorderStrong;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                traceMessageLanes,
+                DxMessagingEditorPalette.BorderStrong
+            );
             traceMessageLanes.style.marginTop = 8;
             traceMessageLanes.style.marginBottom = 4;
             traceMessageLanes.style.paddingTop = 8;
+            traceMessageLanes.style.paddingRight = 8;
             traceMessageLanes.style.paddingBottom = 8;
+            traceMessageLanes.style.paddingLeft = 8;
 
             Label title = new("Visible Trace Message Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             traceMessageLanes.Add(title);
 
@@ -1989,12 +2041,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleTraceMessageLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.TraceMessage;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.Border;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.TraceMessage);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -2044,16 +2094,19 @@ namespace DxMessaging.Editor.Windows
                 visibleSnapshot.TracePaths
             );
             VisualElement traceTargetLanes = new() { name = VisibleTraceTargetLanesName };
-            traceTargetLanes.style.borderTopWidth = 1;
-            traceTargetLanes.style.borderTopColor = DxMessagingEditorPalette.BorderStrong;
-            traceTargetLanes.style.borderBottomWidth = 1;
-            traceTargetLanes.style.borderBottomColor = DxMessagingEditorPalette.BorderStrong;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                traceTargetLanes,
+                DxMessagingEditorPalette.BorderStrong
+            );
             traceTargetLanes.style.marginTop = 8;
             traceTargetLanes.style.marginBottom = 4;
             traceTargetLanes.style.paddingTop = 8;
+            traceTargetLanes.style.paddingRight = 8;
             traceTargetLanes.style.paddingBottom = 8;
+            traceTargetLanes.style.paddingLeft = 8;
 
             Label title = new("Visible Trace Target Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             traceTargetLanes.Add(title);
 
@@ -2081,12 +2134,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleTraceTargetLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.TraceTarget;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.Border;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.TraceTarget);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -2136,16 +2187,19 @@ namespace DxMessaging.Editor.Windows
         {
             FlowGraphContextLane[] lanes = BuildVisibleContextLanes(visibleSnapshot.TracePaths);
             VisualElement contextLanes = new() { name = VisibleContextLanesName };
-            contextLanes.style.borderTopWidth = 1;
-            contextLanes.style.borderTopColor = DxMessagingEditorPalette.BorderStrong;
-            contextLanes.style.borderBottomWidth = 1;
-            contextLanes.style.borderBottomColor = DxMessagingEditorPalette.BorderStrong;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                contextLanes,
+                DxMessagingEditorPalette.BorderStrong
+            );
             contextLanes.style.marginTop = 8;
             contextLanes.style.marginBottom = 4;
             contextLanes.style.paddingTop = 8;
+            contextLanes.style.paddingRight = 8;
             contextLanes.style.paddingBottom = 8;
+            contextLanes.style.paddingLeft = 8;
 
             Label title = new("Visible Trace Context Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             contextLanes.Add(title);
 
@@ -2173,12 +2227,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleContextLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.Amber;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.Border;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.Amber);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -2222,16 +2274,19 @@ namespace DxMessaging.Editor.Windows
         private static VisualElement CreateTracePaths(FlowGraphVisibleSnapshot visibleSnapshot)
         {
             VisualElement tracePaths = new() { name = TracePathsName };
-            tracePaths.style.borderTopWidth = 1;
-            tracePaths.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
-            tracePaths.style.borderBottomWidth = 1;
-            tracePaths.style.borderBottomColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                tracePaths,
+                DxMessagingEditorPalette.BorderPanel
+            );
             tracePaths.style.marginTop = 8;
             tracePaths.style.marginBottom = 4;
             tracePaths.style.paddingTop = 8;
+            tracePaths.style.paddingRight = 8;
             tracePaths.style.paddingBottom = 8;
+            tracePaths.style.paddingLeft = 8;
 
             Label title = new("Recent Trace Paths");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             tracePaths.Add(title);
 
@@ -2260,12 +2315,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(TracePathRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.Amber;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.BorderSoft;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.Amber);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -3455,14 +3508,13 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(RouteMapRouteClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.RouteKindColor(
-                edge.RegistrationTypeName
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                row,
+                DxMessagingEditorPalette.RouteKindColor(edge.RegistrationTypeName)
             );
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.BorderSoft;
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -3482,6 +3534,13 @@ namespace DxMessaging.Editor.Windows
             message.style.unityFontStyleAndWeight = FontStyle.Bold;
             message.style.whiteSpace = WhiteSpace.Normal;
             row.Add(message);
+
+            Label routeKind = CreateRouteKindBadge(
+                edge.RegistrationTypeName,
+                RouteMapRouteKindLabelName
+            );
+            routeKind.style.marginLeft = 8;
+            row.Add(routeKind);
 
             Label summary = new(
                 $"{edge.RegistrationTypeName} | Registrations: {edge.RegistrationCount} | Calls: {edge.CallCount} | Recent traced: {edge.RecentTracedDeliveryCount} | Share: {callShareText}"
@@ -3611,18 +3670,17 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(EdgeRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             ApplySelection(row, selected);
             if (onSelectionChanged != null)
             {
                 string selectionKey = CreateEdgeSelectionKey(edge);
                 row.RegisterCallback<ClickEvent>(_ => onSelectionChanged.Invoke(selectionKey));
             }
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.RouteKindColor(
-                edge.RegistrationTypeName
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                row,
+                DxMessagingEditorPalette.RouteKindColor(edge.RegistrationTypeName)
             );
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.BorderSoft;
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -3637,6 +3695,14 @@ namespace DxMessaging.Editor.Windows
             };
             label.style.unityFontStyleAndWeight = FontStyle.Bold;
             row.Add(label);
+
+            Label routeKind = CreateRouteKindBadge(
+                edge.RegistrationTypeName,
+                EdgeRouteKindLabelName
+            );
+            routeKind.style.marginTop = 4;
+            row.Add(routeKind);
+
             Label summary = new(
                 $"Registrations: {edge.RegistrationCount} | Calls: {edge.CallCount} | Recent traced deliveries: {edge.RecentTracedDeliveryCount}"
             )
@@ -3646,6 +3712,21 @@ namespace DxMessaging.Editor.Windows
             summary.style.marginTop = 2;
             row.Add(summary);
             return row;
+        }
+
+        private static Label CreateRouteKindBadge(string routeKindText, string name)
+        {
+            string normalizedKind = DxMessagingEditorPalette.NormalizeRouteKind(routeKindText);
+            string labelText = string.IsNullOrWhiteSpace(normalizedKind)
+                ? string.IsNullOrWhiteSpace(routeKindText)
+                    ? "<unknown route kind>"
+                    : routeKindText.Trim()
+                : normalizedKind;
+            Label routeKind = new(labelText) { name = name };
+            DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(routeKind, routeKindText);
+            routeKind.style.unityFontStyleAndWeight = FontStyle.Bold;
+            routeKind.style.whiteSpace = WhiteSpace.Normal;
+            return routeKind;
         }
 
         private static void ApplySelection(VisualElement row, bool selected)
@@ -3663,10 +3744,8 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(className);
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = borderColor;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.BorderSoft;
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, borderColor);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -3681,12 +3760,14 @@ namespace DxMessaging.Editor.Windows
         )
         {
             VisualElement details = new() { name = DetailsPaneName };
+            details.AddToClassList(DxMessagingEditorTheme.CardClassName);
             details.style.borderTopWidth = 1;
             details.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
             details.style.marginTop = 10;
             details.style.paddingTop = 8;
 
             Label title = new(CreateDetailsTitle(selectedItem)) { name = DetailsTitleLabelName };
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.whiteSpace = WhiteSpace.Normal;
             details.Add(title);

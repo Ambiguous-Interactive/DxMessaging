@@ -112,6 +112,7 @@ namespace DxMessaging.Editor.CustomEditors
             }
 
             VisualElement root = new() { name = RootName };
+            DxMessagingEditorTheme.Apply(root);
             root.AddToClassList(RootClassName);
 
             VisualElement warningHost = new() { name = WarningHostName };

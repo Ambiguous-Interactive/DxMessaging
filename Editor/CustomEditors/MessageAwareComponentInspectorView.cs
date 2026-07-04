@@ -10,7 +10,6 @@ namespace DxMessaging.Editor.CustomEditors
     internal static class MessageAwareComponentInspectorView
     {
         internal const string RootName = "dxmessaging-inspector-warning";
-        internal const string SeverityRailName = "dxmessaging-inspector-warning-rail";
         internal const string TitleLabelName = "dxmessaging-inspector-warning-title";
         internal const string BodyLabelName = "dxmessaging-inspector-warning-body";
         internal const string MethodListName = "dxmessaging-inspector-warning-methods";
@@ -24,7 +23,6 @@ namespace DxMessaging.Editor.CustomEditors
         internal const string StateNoneClassName = "dxmessaging-inspector-warning--none";
         internal const string StateInfoClassName = "dxmessaging-inspector-warning--info";
         internal const string StateWarningClassName = "dxmessaging-inspector-warning--warning";
-        internal const string SeverityRailClassName = "dxmessaging-inspector-warning__rail";
         internal const string TitleClassName = "dxmessaging-inspector-warning__title";
         internal const string BodyClassName = "dxmessaging-inspector-warning__body";
         internal const string MethodListClassName = "dxmessaging-inspector-warning__methods";
@@ -35,7 +33,6 @@ namespace DxMessaging.Editor.CustomEditors
 
         private static readonly Color InfoColor = DxMessagingEditorPalette.Untargeted;
         private static readonly Color WarningColor = DxMessagingEditorPalette.Amber;
-        private static readonly Color BorderColor = DxMessagingEditorPalette.BorderPanel;
 
         internal static VisualElement Create(
             MessageAwareComponentInspectorState state,
@@ -83,6 +80,7 @@ namespace DxMessaging.Editor.CustomEditors
         private static VisualElement CreateRoot(MessageAwareComponentInspectorState state)
         {
             VisualElement root = new() { name = RootName };
+            DxMessagingEditorTheme.Apply(root);
             root.AddToClassList(RootClassName);
             root.style.marginTop = 6;
             root.style.marginBottom = 6;
@@ -107,11 +105,12 @@ namespace DxMessaging.Editor.CustomEditors
             VisualElement root,
             string titleText,
             string bodyText,
-            Color railColor
+            Color borderColor
         )
         {
-            ConfigurePanel(root, railColor);
-            root.Add(CreateSeverityRail(railColor));
+            ConfigurePanel(root, borderColor);
+            root.AddToClassList(DxMessagingEditorTheme.AdmonitionClassName);
+            root.AddToClassList(DxMessagingEditorTheme.NoteClassName);
             root.Add(CreateLabel(TitleLabelName, TitleClassName, titleText, bold: true));
             root.Add(CreateLabel(BodyLabelName, BodyClassName, bodyText, bold: false));
         }
@@ -123,7 +122,8 @@ namespace DxMessaging.Editor.CustomEditors
         )
         {
             ConfigurePanel(root, WarningColor);
-            root.Add(CreateSeverityRail(WarningColor));
+            root.AddToClassList(DxMessagingEditorTheme.AdmonitionClassName);
+            root.AddToClassList(DxMessagingEditorTheme.WarningClassName);
             root.Add(
                 CreateLabel(
                     TitleLabelName,
@@ -171,30 +171,13 @@ namespace DxMessaging.Editor.CustomEditors
             );
         }
 
-        private static void ConfigurePanel(VisualElement root, Color railColor)
+        private static void ConfigurePanel(VisualElement root, Color borderColor)
         {
-            root.style.borderLeftWidth = 3;
-            root.style.borderLeftColor = railColor;
-            root.style.borderTopWidth = 1;
-            root.style.borderTopColor = BorderColor;
-            root.style.borderRightWidth = 1;
-            root.style.borderRightColor = BorderColor;
-            root.style.borderBottomWidth = 1;
-            root.style.borderBottomColor = BorderColor;
+            DxMessagingEditorTheme.ApplyCompleteBorder(root, borderColor);
             root.style.paddingTop = 8;
             root.style.paddingRight = 10;
             root.style.paddingBottom = 8;
             root.style.paddingLeft = 10;
-        }
-
-        private static VisualElement CreateSeverityRail(Color railColor)
-        {
-            VisualElement rail = new() { name = SeverityRailName };
-            rail.AddToClassList(SeverityRailClassName);
-            rail.style.height = 2;
-            rail.style.marginBottom = 5;
-            rail.style.backgroundColor = railColor;
-            return rail;
         }
 
         private static Label CreateLabel(string name, string className, string text, bool bold)
@@ -244,6 +227,7 @@ namespace DxMessaging.Editor.CustomEditors
         {
             Button button = new() { name = name, text = text };
             button.AddToClassList(ActionButtonClassName);
+            button.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
             if (action != null)
             {
                 button.RegisterCallback<ClickEvent>(_ => action.Invoke(state));

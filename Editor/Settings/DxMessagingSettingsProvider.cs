@@ -46,6 +46,9 @@ namespace DxMessaging.Editor.Settings
         private const string UseConsoleBridgeLabel = "Use Console Bridge";
         private const string UseConsoleBridgeTooltip =
             "Also harvest compiler/analyzer warnings from Unity's console in addition to the IL scanner.";
+        private const string BaseCallIgnoredTypesLabel = "Ignored Base-Call Types";
+        private const string BaseCallIgnoredTypesTooltip =
+            "Fully-qualified MessageAwareComponent type names excluded from the Inspector overlay and base-call analyzer.";
 
         private static readonly Color AccentColor = DxMessagingEditorPalette.Amber;
         private static readonly Color SectionBorderColor = DxMessagingEditorPalette.BorderPanel;
@@ -120,6 +123,12 @@ namespace DxMessaging.Editor.Settings
                     UseConsoleBridgeTooltip,
                     settings => settings.UseConsoleBridge
                 );
+                DrawPropertyField(
+                    _messagingSettings,
+                    nameof(DxMessagingSettings._baseCallIgnoredTypes),
+                    BaseCallIgnoredTypesLabel,
+                    BaseCallIgnoredTypesTooltip
+                );
 
                 _messagingSettings.ApplyModifiedProperties();
             }
@@ -144,6 +153,8 @@ namespace DxMessaging.Editor.Settings
             }
 
             rootElement.Clear();
+            DxMessagingEditorTheme.Apply(rootElement);
+            rootElement.RemoveFromClassList(DxMessagingEditorTheme.WindowClassName);
             rootElement.AddToClassList(RootClassName);
             rootElement.style.maxWidth = 720;
             rootElement.style.paddingTop = 10;
@@ -211,6 +222,12 @@ namespace DxMessaging.Editor.Settings
                         UseConsoleBridgeLabel,
                         UseConsoleBridgeTooltip,
                         settings => settings.UseConsoleBridge
+                    ),
+                    CreatePropertyField(
+                        serializedSettings,
+                        nameof(DxMessagingSettings._baseCallIgnoredTypes),
+                        BaseCallIgnoredTypesLabel,
+                        BaseCallIgnoredTypesTooltip
                     )
                 )
             );
@@ -226,10 +243,8 @@ namespace DxMessaging.Editor.Settings
         {
             VisualElement section = new();
             section.AddToClassList(SectionClassName);
-            section.style.borderLeftWidth = 3;
-            section.style.borderLeftColor = AccentColor;
-            section.style.borderTopWidth = 1;
-            section.style.borderTopColor = SectionBorderColor;
+            section.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            DxMessagingEditorTheme.ApplyCompleteBorder(section, SectionBorderColor);
             section.style.marginBottom = 10;
             section.style.paddingTop = 10;
             section.style.paddingRight = 10;
@@ -237,6 +252,7 @@ namespace DxMessaging.Editor.Settings
             section.style.paddingLeft = 12;
 
             Label heading = new(title);
+            heading.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             heading.style.fontSize = 13;
             heading.style.marginBottom = 2;
             section.Add(heading);
@@ -420,6 +436,7 @@ namespace DxMessaging.Editor.Settings
                         InspectorChecksSectionTitle,
                         BaseCallCheckEnabledLabel,
                         UseConsoleBridgeLabel,
+                        BaseCallIgnoredTypesLabel,
                         "Wallstop",
                         "Wallstop Studios",
                     }

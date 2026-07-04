@@ -100,14 +100,14 @@ namespace DxMessaging.Editor.Windows
         public static void Open()
         {
             DxMessagingMessageMonitorWindow window = GetWindow<DxMessagingMessageMonitorWindow>();
-            window.titleContent = new GUIContent(Title);
+            window.titleContent = new GUIContent(Title, DxMessagingEditorTheme.LoadIcon());
             window.minSize = new Vector2(420, 320);
             window.Refresh();
         }
 
         private void CreateGUI()
         {
-            titleContent = new GUIContent(Title);
+            titleContent = new GUIContent(Title, DxMessagingEditorTheme.LoadIcon());
             Refresh();
         }
 
@@ -252,6 +252,7 @@ namespace DxMessaging.Editor.Windows
 
             root.Clear();
             componentEntries ??= Array.Empty<ComponentMonitorEntry>();
+            DxMessagingEditorTheme.ApplyWindow(root);
             root.AddToClassList(RootClassName);
             root.style.paddingTop = 10;
             root.style.paddingRight = 12;
@@ -260,6 +261,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement toolbar = new();
             toolbar.AddToClassList(ToolbarClassName);
+            toolbar.AddToClassList(DxMessagingEditorTheme.ToolbarClassName);
             toolbar.style.flexDirection = FlexDirection.Row;
             toolbar.style.justifyContent = Justify.SpaceBetween;
             toolbar.style.alignItems = Align.Center;
@@ -349,7 +351,7 @@ namespace DxMessaging.Editor.Windows
 
         internal static IReadOnlyList<ComponentMonitorEntry> CaptureComponentSnapshots()
         {
-            MessagingComponent[] components = Resources.FindObjectsOfTypeAll<MessagingComponent>();
+            MessagingComponent[] components = FindMessagingComponentsInLoadedScenes();
             return CaptureComponentSnapshots(components.Where(IsSceneComponent));
         }
 
@@ -576,15 +578,18 @@ namespace DxMessaging.Editor.Windows
         {
             MessageMonitorTypeLane[] lanes = BuildVisibleMessageTypeLanes(entries);
             VisualElement lanesRoot = new() { name = VisibleMessageTypeLanesName };
-            lanesRoot.style.borderTopWidth = 1;
-            lanesRoot.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
-            lanesRoot.style.borderBottomWidth = 1;
-            lanesRoot.style.borderBottomColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                lanesRoot,
+                DxMessagingEditorPalette.BorderPanel
+            );
             lanesRoot.style.marginBottom = 8;
             lanesRoot.style.paddingTop = 8;
+            lanesRoot.style.paddingRight = 8;
             lanesRoot.style.paddingBottom = 8;
+            lanesRoot.style.paddingLeft = 8;
 
             Label title = new("Visible Message Type Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             lanesRoot.Add(title);
 
@@ -622,15 +627,18 @@ namespace DxMessaging.Editor.Windows
         {
             MessageMonitorContextLane[] lanes = BuildVisibleContextLanes(entries);
             VisualElement lanesRoot = new() { name = VisibleContextLanesName };
-            lanesRoot.style.borderTopWidth = 1;
-            lanesRoot.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
-            lanesRoot.style.borderBottomWidth = 1;
-            lanesRoot.style.borderBottomColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                lanesRoot,
+                DxMessagingEditorPalette.BorderPanel
+            );
             lanesRoot.style.marginBottom = 8;
             lanesRoot.style.paddingTop = 8;
+            lanesRoot.style.paddingRight = 8;
             lanesRoot.style.paddingBottom = 8;
+            lanesRoot.style.paddingLeft = 8;
 
             Label title = new("Visible Context Lanes");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             lanesRoot.Add(title);
 
@@ -667,12 +675,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleMessageTypeLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.Amber;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.Border;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.Amber);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -727,12 +733,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(VisibleContextLaneRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.AmberSoft;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.Border;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.AmberSoft);
             row.style.marginTop = 6;
             row.style.paddingTop = 7;
             row.style.paddingRight = 8;
@@ -786,6 +790,7 @@ namespace DxMessaging.Editor.Windows
         )
         {
             Button button = new() { name = name, text = "Filter" };
+            button.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
             button.tooltip = $"Filter to {filterText}";
             button.SetEnabled(onFilterRequested != null && !string.IsNullOrWhiteSpace(filterText));
             button.RegisterCallback<ClickEvent>(_ => onFilterRequested?.Invoke(filterText));
@@ -1017,6 +1022,7 @@ namespace DxMessaging.Editor.Windows
             controls.Add(filterRow);
 
             TextField filter = new("Filter") { name = FilterFieldName };
+            filter.AddToClassList(DxMessagingEditorTheme.SearchClassName);
             filter.SetValueWithoutNotify(viewState.FilterText);
             filter.tooltip =
                 "Use plain text, or field filters such as type:, message:, context:, and stack:.";
@@ -1068,6 +1074,7 @@ namespace DxMessaging.Editor.Windows
                 name = RefreshButtonName,
                 text = "Refresh",
             };
+            refresh.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             refresh.SetEnabled(onRefresh != null);
             refresh.style.marginRight = 6;
             filterRow.Add(refresh);
@@ -1077,6 +1084,7 @@ namespace DxMessaging.Editor.Windows
                 name = ExportButtonName,
                 text = "Copy JSON",
             };
+            export.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             SetExportButtonEnabled(export, snapshot, viewState.FilterText, onCopyExport);
             filterRow.Add(export);
 
@@ -1092,6 +1100,7 @@ namespace DxMessaging.Editor.Windows
         private static VisualElement CreateActiveFilterSummary(string filterText, Action onClear)
         {
             VisualElement summary = new() { name = ActiveFilterSummaryName };
+            summary.AddToClassList(DxMessagingEditorTheme.CardClassName);
             summary.style.flexDirection = FlexDirection.Row;
             summary.style.alignItems = Align.Center;
             summary.style.marginTop = 6;
@@ -1099,10 +1108,7 @@ namespace DxMessaging.Editor.Windows
             summary.style.paddingRight = 6;
             summary.style.paddingBottom = 5;
             summary.style.paddingLeft = 8;
-            summary.style.borderLeftWidth = 3;
-            summary.style.borderLeftColor = DxMessagingEditorPalette.Amber;
-            summary.style.borderTopWidth = 1;
-            summary.style.borderTopColor = DxMessagingEditorPalette.Border;
+            DxMessagingEditorTheme.ApplyCompleteBorder(summary, DxMessagingEditorPalette.Amber);
 
             UpdateActiveFilterSummary(summary, filterText, onClear);
             return summary;
@@ -1146,6 +1152,7 @@ namespace DxMessaging.Editor.Windows
             summary.Add(label);
 
             Button clear = new() { name = ActiveFilterClearButtonName, text = "Clear" };
+            clear.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
             clear.RegisterCallback<ClickEvent>(_ => onClear?.Invoke());
             clear.style.marginRight = 8;
             clear.style.flexShrink = 0;
@@ -1173,14 +1180,10 @@ namespace DxMessaging.Editor.Windows
                 tokenLabel.style.paddingRight = 5;
                 tokenLabel.style.paddingBottom = 2;
                 tokenLabel.style.paddingLeft = 5;
-                tokenLabel.style.borderTopWidth = 1;
-                tokenLabel.style.borderRightWidth = 1;
-                tokenLabel.style.borderBottomWidth = 1;
-                tokenLabel.style.borderLeftWidth = 1;
-                tokenLabel.style.borderTopColor = DxMessagingEditorPalette.Border;
-                tokenLabel.style.borderRightColor = DxMessagingEditorPalette.Border;
-                tokenLabel.style.borderBottomColor = DxMessagingEditorPalette.Border;
-                tokenLabel.style.borderLeftColor = DxMessagingEditorPalette.Border;
+                DxMessagingEditorTheme.ApplyCompleteBorder(
+                    tokenLabel,
+                    DxMessagingEditorPalette.Border
+                );
                 tokenLabel.style.whiteSpace = WhiteSpace.Normal;
                 tokenScroll.Add(tokenLabel);
             }
@@ -1236,6 +1239,22 @@ namespace DxMessaging.Editor.Windows
                 && component.gameObject.scene.IsValid()
                 && !EditorSceneManager.IsPreviewSceneObject(component.gameObject)
                 && !EditorUtility.IsPersistent(component);
+        }
+
+        private static MessagingComponent[] FindMessagingComponentsInLoadedScenes()
+        {
+#if UNITY_6000_0_OR_NEWER
+            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
+                FindObjectsInactive.Include
+            );
+#elif UNITY_2023_1_OR_NEWER
+            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None
+            );
+#else
+            return UnityEngine.Object.FindObjectsOfType<MessagingComponent>(includeInactive: true);
+#endif
         }
 
         private static ComponentMonitorEntry CreateComponentMonitorEntry(
@@ -1357,6 +1376,7 @@ namespace DxMessaging.Editor.Windows
         private static void AddEmptyState(VisualElement root, string text)
         {
             Label empty = new(text) { name = EmptyStateLabelName };
+            empty.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
             empty.style.whiteSpace = WhiteSpace.Normal;
             empty.style.marginTop = 8;
             root.Add(empty);
@@ -1371,11 +1391,9 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(RowClassName);
-            row.style.borderLeftWidth = 3;
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
             Color routeColor = DxMessagingEditorPalette.RouteKindColor(entry.RouteKind);
-            row.style.borderLeftColor = routeColor;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.BorderStrong;
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, routeColor);
             row.style.marginBottom = 8;
             row.style.paddingTop = 8;
             row.style.paddingRight = 8;
@@ -1398,7 +1416,7 @@ namespace DxMessaging.Editor.Windows
             if (!string.IsNullOrWhiteSpace(routeKind))
             {
                 Label kind = new(routeKind) { name = RouteKindLabelName };
-                kind.style.color = routeColor;
+                DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(kind, routeKind);
                 kind.style.marginTop = 2;
                 kind.style.unityFontStyleAndWeight = FontStyle.Bold;
                 row.Add(kind);
@@ -1424,12 +1442,15 @@ namespace DxMessaging.Editor.Windows
         )
         {
             VisualElement panel = new() { name = ComponentPanelName };
-            panel.style.borderTopWidth = 1;
-            panel.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(panel, DxMessagingEditorPalette.BorderPanel);
             panel.style.marginTop = 10;
             panel.style.paddingTop = 8;
+            panel.style.paddingRight = 8;
+            panel.style.paddingBottom = 8;
+            panel.style.paddingLeft = 8;
 
             Label title = new($"Component Diagnostics ({componentEntries.Count})");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             panel.Add(title);
 
@@ -1439,6 +1460,7 @@ namespace DxMessaging.Editor.Windows
                 {
                     name = ComponentEmptyStateLabelName,
                 };
+                empty.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
                 empty.style.whiteSpace = WhiteSpace.Normal;
                 empty.style.marginTop = 6;
                 panel.Add(empty);
@@ -1465,10 +1487,8 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = new();
             row.AddToClassList(ComponentRowClassName);
-            row.style.borderLeftWidth = 3;
-            row.style.borderLeftColor = DxMessagingEditorPalette.Amber;
-            row.style.borderTopWidth = 1;
-            row.style.borderTopColor = DxMessagingEditorPalette.Border;
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.Amber);
             row.style.marginTop = 8;
             row.style.paddingTop = 8;
             row.style.paddingRight = 8;
@@ -1509,6 +1529,7 @@ namespace DxMessaging.Editor.Windows
                 {
                     name = ComponentWarningLabelName,
                 };
+                warning.AddToClassList(DxMessagingEditorTheme.WarningClassName);
                 warning.style.marginTop = 4;
                 warning.style.whiteSpace = WhiteSpace.Normal;
                 row.Add(warning);
@@ -1520,12 +1541,14 @@ namespace DxMessaging.Editor.Windows
         private static VisualElement CreateDetailsPane(MessageMonitorEntry entry)
         {
             VisualElement details = new() { name = DetailsPaneName };
+            details.AddToClassList(DxMessagingEditorTheme.CardClassName);
             details.style.borderTopWidth = 1;
             details.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
             details.style.marginTop = 8;
             details.style.paddingTop = 8;
 
             Label title = new("Details");
+            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             details.Add(title);
 
