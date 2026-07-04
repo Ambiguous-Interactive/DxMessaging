@@ -35,6 +35,17 @@ namespace DxMessaging.Tests.Editor
             }
 
             window.hideFlags = HideFlags.HideAndDontSave;
+            // Headless CI runs Unity with -nographics. EditorWindow.Show() still builds
+            // the panel/visual tree these tests query and dispatch events against, but it
+            // logs a benign "No graphic device is available to initialize the view." error
+            // (repeated on repaints). NUnit fails a test on any unexpected error log, so
+            // when no GPU is present tolerate rendering-only errors for the shown-window
+            // lifetime; CloseTrackedWindows restores strictness. Runs with a real graphics
+            // device (e.g. the local editor) keep full log strictness.
+            if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+            {
+                LogAssert.ignoreFailingMessages = true;
+            }
             window.Show();
             window.hideFlags = HideFlags.HideAndDontSave;
         }
@@ -55,6 +66,10 @@ namespace DxMessaging.Tests.Editor
         {
             CloseWindows(windows);
             CloseWindows(CreatedWindows);
+            // Restore log strictness after any nographics tolerance enabled by ShowWindow,
+            // so it cannot leak into a later test. Reset after closing so the benign
+            // rendering errors emitted while tearing down the window are still tolerated.
+            LogAssert.ignoreFailingMessages = false;
         }
 
         private static void CloseWindows(List<EditorWindow> windows)
