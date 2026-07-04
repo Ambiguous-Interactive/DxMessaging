@@ -65,7 +65,7 @@
     "format": "prettier --write \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "lint:markdown": "markdownlint-cli2 \"**/*.md\" \"**/*.markdown\"",
-    "check:spelling": "cspell --no-progress --no-summary \"**/*.{md,markdown,cs,json,yml,yaml,ps1,js}\"",
+    "check:spelling": "cspell --no-progress --no-summary .",
     "sync:banner": "node scripts/sync-banner-version.js",
     "check:banner": "node scripts/sync-banner-version.js --check",
     "update:llms-txt": "node scripts/update-llms-txt.js",
