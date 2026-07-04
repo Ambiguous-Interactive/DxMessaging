@@ -9,6 +9,11 @@ const path = require("node:path");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const COMPLETE_BORDER_HELPER_PATH = "Editor/DxMessagingEditorTheme.cs";
 const THIS_TEST_PATH = "scripts/__tests__/design-system-dumps.test.js";
+// The blocked capture primitives are C#/text identifiers, so only scan text sources.
+// This skips binary assets (PNG icons, etc.) that would otherwise be decoded as UTF-8
+// for nothing -- avoiding needless work and memory spikes on non-text files.
+const TEXT_SOURCE_PATTERN =
+  /\.(cs|js|cjs|mjs|uss|uxml|md|markdown|json|jsonc|yml|yaml|ps1|sh|txt|asmdef|asmref|xml|html)$/i;
 
 test("design-system source dumps are not tracked", () => {
   const output = execFileSync("git", ["ls-files", "design-system*"], {
@@ -60,7 +65,17 @@ test("editor design system avoids left-only borders", () => {
 test("editor-window screenshot automation does not use blocked capture primitives", () => {
   const output = execFileSync(
     "git",
-    ["ls-files", "--cached", "--others", "--exclude-standard", "--", "Editor", "Tests", "scripts", ".github"],
+    [
+      "ls-files",
+      "--cached",
+      "--others",
+      "--exclude-standard",
+      "--",
+      "Editor",
+      "Tests",
+      "scripts",
+      ".github"
+    ],
     {
       cwd: REPO_ROOT,
       encoding: "utf8"
@@ -73,7 +88,7 @@ test("editor-window screenshot automation does not use blocked capture primitive
   ];
 
   for (const relativePath of output.split("\n").filter(Boolean)) {
-    if (relativePath === THIS_TEST_PATH) {
+    if (relativePath === THIS_TEST_PATH || !TEXT_SOURCE_PATTERN.test(relativePath)) {
       continue;
     }
 
