@@ -1311,14 +1311,14 @@ namespace DxMessaging.Tests.Editor
                     .ToList(),
                 Is.Empty
             );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName).text,
-                Is.EqualTo("No matches")
+            Label emptyTitle = root.Q<Label>(
+                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
             );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("No messages match")
-            );
+            Assert.That(emptyTitle, Is.Not.Null);
+            Assert.That(emptyTitle.text, Is.EqualTo("No matches"));
+            Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
+            Assert.That(emptyBody, Is.Not.Null);
+            Assert.That(emptyBody.text, Does.Contain("No messages match"));
             Assert.That(
                 root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName),
                 Is.Null
@@ -1736,14 +1736,14 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new[] { component });
 
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName).text,
-                Is.EqualTo("Diagnostics are Off")
+            Label emptyTitle = root.Q<Label>(
+                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
             );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("Enable diagnostics")
-            );
+            Assert.That(emptyTitle, Is.Not.Null);
+            Assert.That(emptyTitle.text, Is.EqualTo("Diagnostics are Off"));
+            Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
+            Assert.That(emptyBody, Is.Not.Null);
+            Assert.That(emptyBody.text, Does.Contain("Enable diagnostics"));
             Assert.That(
                 root.Query<VisualElement>(
                         className: DxMessagingMessageMonitorWindow.ComponentRowClassName
