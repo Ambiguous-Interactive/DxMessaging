@@ -26,6 +26,7 @@ namespace DxMessaging.Editor.Windows
         internal const string ExportButtonName = "dxmessaging-flow-graph-export";
         internal const string ContentName = "dxmessaging-flow-graph-content";
         internal const string EmptyStateLabelName = "dxmessaging-flow-graph-empty";
+        internal const string EmptyStateTitleLabelName = "dxmessaging-flow-graph-empty-title";
         internal const string RouteMapName = "dxmessaging-flow-graph-route-map";
         internal const string RouteMapRouteClassName = "dxmessaging-flow-graph-route-map-route";
         internal const string RouteMapMessageLabelName = "dxmessaging-flow-graph-route-map-message";
@@ -552,17 +553,22 @@ namespace DxMessaging.Editor.Windows
 
             if (!hasGraphItems && !hasWarnings)
             {
-                string emptyText =
+                bool noRegistrations =
                     snapshot.ComponentNodes.Count == 0
                     && snapshot.MessageNodes.Count == 0
                     && snapshot.Edges.Count == 0
                     && snapshot.TracePaths.Count == 0
-                    && snapshot.Warnings.Count == 0
-                        ? "No MessagingComponent registrations are loaded in open scenes."
-                        : "No graph items match the current filter.";
-                Label empty = new(emptyText) { name = EmptyStateLabelName };
-                empty.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
-                empty.style.whiteSpace = WhiteSpace.Normal;
+                    && snapshot.Warnings.Count == 0;
+                string emptyTitle = noRegistrations ? "No registrations" : "No matches";
+                string emptyText = noRegistrations
+                    ? "No MessagingComponent registrations are loaded in open scenes."
+                    : "No graph items match the current filter.";
+                VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                    emptyTitle,
+                    emptyText,
+                    bodyName: EmptyStateLabelName,
+                    titleName: EmptyStateTitleLabelName
+                );
                 content.Add(empty);
             }
             else if (hasGraphItems)

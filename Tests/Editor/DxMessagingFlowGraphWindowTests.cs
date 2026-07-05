@@ -6474,9 +6474,19 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
+            Label emptyBody = root.Q<Label>(DxMessagingFlowGraphWindow.EmptyStateLabelName);
+            Assert.That(emptyBody.text, Does.Contain("No MessagingComponent registrations"));
             Assert.That(
-                root.Q<Label>(DxMessagingFlowGraphWindow.EmptyStateLabelName).text,
-                Does.Contain("No MessagingComponent registrations")
+                emptyBody.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName),
+                Is.True
+            );
+            Assert.That(
+                emptyBody.parent.ClassListContains(DxMessagingEditorTheme.EmptyClassName),
+                Is.True
+            );
+            Assert.That(
+                root.Q<Label>(DxMessagingFlowGraphWindow.EmptyStateTitleLabelName).text,
+                Is.EqualTo("No registrations")
             );
             Assert.That(
                 root.Query<VisualElement>(className: DxMessagingFlowGraphWindow.EdgeRowClassName)

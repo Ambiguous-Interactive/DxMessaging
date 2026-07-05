@@ -38,6 +38,7 @@ namespace DxMessaging.Editor.Windows
         internal const string ContentContainerName = "dxmessaging-monitor-content";
         internal const string MessageSectionName = "dxmessaging-monitor-message-section";
         internal const string EmptyStateLabelName = "dxmessaging-monitor-empty";
+        internal const string EmptyStateTitleLabelName = "dxmessaging-monitor-empty-title";
         internal const string MessageTypeLabelName = "dxmessaging-monitor-message-type";
         internal const string RouteKindLabelName = "dxmessaging-monitor-route-kind";
         internal const string ContextLabelName = "dxmessaging-monitor-context";
@@ -291,7 +292,7 @@ namespace DxMessaging.Editor.Windows
             if (!snapshot.Available)
             {
                 root.Add(content);
-                AddEmptyState(content, snapshot.UnavailableReason);
+                AddEmptyState(content, "Monitor unavailable", snapshot.UnavailableReason);
                 content.Add(CreateComponentPanel(componentEntries));
                 return;
             }
@@ -491,7 +492,8 @@ namespace DxMessaging.Editor.Windows
             {
                 AddEmptyState(
                     messageSection,
-                    "Diagnostics are Off. Enable diagnostics to collect message history."
+                    "Diagnostics are Off",
+                    "Enable diagnostics to collect message history."
                 );
                 return;
             }
@@ -500,6 +502,7 @@ namespace DxMessaging.Editor.Windows
             {
                 AddEmptyState(
                     messageSection,
+                    "No messages yet",
                     "Diagnostics are On. No messages have been recorded yet."
                 );
                 return;
@@ -507,7 +510,11 @@ namespace DxMessaging.Editor.Windows
 
             if (filteredEntries.Count == 0)
             {
-                AddEmptyState(messageSection, "No messages match the current filter.");
+                AddEmptyState(
+                    messageSection,
+                    "No matches",
+                    "No messages match the current filter."
+                );
                 return;
             }
 
@@ -1374,11 +1381,14 @@ namespace DxMessaging.Editor.Windows
             return string.Join("/", segments);
         }
 
-        private static void AddEmptyState(VisualElement root, string text)
+        private static void AddEmptyState(VisualElement root, string title, string body)
         {
-            Label empty = new(text) { name = EmptyStateLabelName };
-            empty.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
-            empty.style.whiteSpace = WhiteSpace.Normal;
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                title,
+                body,
+                bodyName: EmptyStateLabelName,
+                titleName: EmptyStateTitleLabelName
+            );
             empty.style.marginTop = 8;
             root.Add(empty);
         }

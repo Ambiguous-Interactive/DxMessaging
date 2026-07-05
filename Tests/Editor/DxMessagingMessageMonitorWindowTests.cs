@@ -164,9 +164,23 @@ namespace DxMessaging.Tests.Editor
                     .ToList(),
                 Is.Empty
             );
+            Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
+            Assert.That(emptyBody.text, Does.Contain("Enable"));
             Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("Enable")
+                emptyBody.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName),
+                Is.True
+            );
+            Assert.That(
+                emptyBody.parent.ClassListContains(DxMessagingEditorTheme.EmptyClassName),
+                Is.True
+            );
+            Label emptyTitle = root.Q<Label>(
+                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
+            );
+            Assert.That(emptyTitle, Is.Not.Null);
+            Assert.That(
+                emptyTitle.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName),
+                Is.True
             );
             Assert.That(
                 root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).enabledSelf,
@@ -1668,8 +1682,12 @@ namespace DxMessaging.Tests.Editor
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new[] { component });
 
             Assert.That(
+                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName).text,
+                Is.EqualTo("Diagnostics are Off")
+            );
+            Assert.That(
                 root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("Diagnostics are Off")
+                Does.Contain("Enable diagnostics")
             );
             Assert.That(
                 root.Query<VisualElement>(
