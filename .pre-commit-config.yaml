@@ -61,19 +61,16 @@ repos:
         name: Sync banner version from package.json
         entry: node scripts/sync-banner-version.js
         language: system
-        # always_run (not a files: filter): pre-commit's changed-file list
-        # excludes deletions, so a files: pattern would never fire when a
-        # *Tests.cs file is deleted and the banner test count would go stale
-        # until CI's validate-banner workflow caught it. The script is fast
-        # and idempotent, so run it on every commit.
-        always_run: true
+        # The banner version is derived solely from package.json, so the hook
+        # only needs to run when package.json or the banner itself is staged.
+        files: (^package\.json$|^docs/images/DxMessaging-banner\.svg$)
         pass_filenames: false
         stages:
           - pre-commit
         description: >-
-          Sync package version and test count into the SVG banner. If it
-          rewrites the banner, pre-commit reports the modified file; restage
-          and commit again.
+          Sync the package version into the SVG banner. If it rewrites the
+          banner, pre-commit reports the modified file; restage and commit
+          again.
       - id: prettier
         name: Prettier (markdown, JSON, asmdef, asmref, YAML)
         entry: npx --no-install prettier --write
@@ -99,8 +96,7 @@ repos:
         # .llm/skills/*.md file is deleted, even though llms.txt enumerates
         # the skills directory and would go stale until CI's
         # validate-llms-txt workflow caught it. The --check run is fast and
-        # idempotent, so run it on every commit (same rationale as
-        # sync-banner-version above).
+        # idempotent, so run it on every commit.
         always_run: true
         stages:
           - pre-commit
