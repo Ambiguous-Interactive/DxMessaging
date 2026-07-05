@@ -125,6 +125,23 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void CreateEmptyStateOmitsBodyWhenBlank()
+        {
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                "Title only",
+                body: null,
+                titleName: "title-name"
+            );
+
+            Assert.That(empty.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
+            Assert.That(empty.Q<Label>("title-name"), Is.Not.Null);
+            Assert.That(
+                empty.Query<Label>(className: DxMessagingEditorTheme.EmptyBodyClassName).ToList(),
+                Is.Empty
+            );
+        }
+
+        [Test]
         public void ApplyCompleteBorderSetsUniformOnePixelBorder()
         {
             VisualElement element = new();

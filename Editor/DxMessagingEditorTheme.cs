@@ -145,14 +145,17 @@ namespace DxMessaging.Editor
                 container.Add(titleLabel);
             }
 
-            Label bodyLabel = new(body);
-            if (!string.IsNullOrEmpty(bodyName))
+            if (!string.IsNullOrEmpty(body))
             {
-                bodyLabel.name = bodyName;
+                Label bodyLabel = new(body);
+                if (!string.IsNullOrEmpty(bodyName))
+                {
+                    bodyLabel.name = bodyName;
+                }
+                bodyLabel.AddToClassList(EmptyBodyClassName);
+                bodyLabel.style.whiteSpace = WhiteSpace.Normal;
+                container.Add(bodyLabel);
             }
-            bodyLabel.AddToClassList(EmptyBodyClassName);
-            bodyLabel.style.whiteSpace = WhiteSpace.Normal;
-            container.Add(bodyLabel);
 
             return container;
         }
