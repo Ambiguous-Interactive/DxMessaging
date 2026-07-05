@@ -164,9 +164,24 @@ namespace DxMessaging.Tests.Editor
                     .ToList(),
                 Is.Empty
             );
+            Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
+            Assert.That(emptyBody, Is.Not.Null);
+            Assert.That(emptyBody.text, Does.Contain("Enable"));
             Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("Enable")
+                emptyBody.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName),
+                Is.True
+            );
+            Assert.That(
+                emptyBody.parent.ClassListContains(DxMessagingEditorTheme.EmptyClassName),
+                Is.True
+            );
+            Label emptyTitle = root.Q<Label>(
+                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
+            );
+            Assert.That(emptyTitle, Is.Not.Null);
+            Assert.That(
+                emptyTitle.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName),
+                Is.True
             );
             Assert.That(
                 root.Q<Button>(DxMessagingMessageMonitorWindow.ExportButtonName).enabledSelf,
@@ -175,6 +190,56 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 DxMessagingMessageMonitorWindow.CreateExportText(snapshot, snapshot.Entries),
                 Does.Contain("\"entryCount\": 0")
+            );
+        }
+
+        // The snapshot is built inside the test body (not passed as a parameter) because
+        // MessageMonitorSnapshot is internal, and a public [Test] method may not expose an
+        // internal parameter type (CS0051).
+        [TestCase("unavailable", "Monitor unavailable", "active global bus")]
+        [TestCase("diagnostics-off", "Diagnostics are Off", "Enable diagnostics")]
+        [TestCase("no-messages-yet", "No messages yet", "recorded")]
+        public void BuildMonitorUiEmptyStateHasExpectedTitleAndBody(
+            string state,
+            string expectedTitle,
+            string expectedBodySubstring
+        )
+        {
+            MessageMonitorSnapshot snapshot = state switch
+            {
+                "unavailable" => MessageMonitorSnapshot.Unavailable(
+                    "The active global bus is not the default DxMessaging MessageBus."
+                ),
+                "diagnostics-off" => new MessageMonitorSnapshot(
+                    diagnosticsEnabled: false,
+                    capacity: 8,
+                    entries: Array.Empty<MessageMonitorEntry>()
+                ),
+                _ => new MessageMonitorSnapshot(
+                    diagnosticsEnabled: true,
+                    capacity: 8,
+                    entries: Array.Empty<MessageMonitorEntry>()
+                ),
+            };
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
+
+            Label title = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName);
+            Assert.That(title, Is.Not.Null);
+            Assert.That(title.text, Is.EqualTo(expectedTitle));
+            Assert.That(
+                title.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName),
+                Is.True
+            );
+
+            Label body = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
+            Assert.That(body, Is.Not.Null);
+            Assert.That(body.text, Does.Contain(expectedBodySubstring));
+            Assert.That(body.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName), Is.True);
+            Assert.That(
+                body.parent.ClassListContains(DxMessagingEditorTheme.EmptyClassName),
+                Is.True
             );
         }
 
@@ -1246,10 +1311,14 @@ namespace DxMessaging.Tests.Editor
                     .ToList(),
                 Is.Empty
             );
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("No messages match")
+            Label emptyTitle = root.Q<Label>(
+                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
             );
+            Assert.That(emptyTitle, Is.Not.Null);
+            Assert.That(emptyTitle.text, Is.EqualTo("No matches"));
+            Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
+            Assert.That(emptyBody, Is.Not.Null);
+            Assert.That(emptyBody.text, Does.Contain("No messages match"));
             Assert.That(
                 root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName),
                 Is.Null
@@ -1667,10 +1736,14 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot, new[] { component });
 
-            Assert.That(
-                root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName).text,
-                Does.Contain("Diagnostics are Off")
+            Label emptyTitle = root.Q<Label>(
+                DxMessagingMessageMonitorWindow.EmptyStateTitleLabelName
             );
+            Assert.That(emptyTitle, Is.Not.Null);
+            Assert.That(emptyTitle.text, Is.EqualTo("Diagnostics are Off"));
+            Label emptyBody = root.Q<Label>(DxMessagingMessageMonitorWindow.EmptyStateLabelName);
+            Assert.That(emptyBody, Is.Not.Null);
+            Assert.That(emptyBody.text, Does.Contain("Enable diagnostics"));
             Assert.That(
                 root.Query<VisualElement>(
                         className: DxMessagingMessageMonitorWindow.ComponentRowClassName

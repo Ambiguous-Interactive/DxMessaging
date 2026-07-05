@@ -25,6 +25,8 @@ namespace DxMessaging.Editor
         internal const string SearchClassName = "dx-search";
         internal const string CardClassName = "dx-card";
         internal const string CardLabelClassName = "dx-card__label";
+        internal const string EmptyClassName = "dx-empty";
+        internal const string EmptyTitleClassName = "dx-empty__title";
         internal const string EmptyBodyClassName = "dx-empty__body";
         internal const string ButtonAccentClassName = "dx-btn-accent";
         internal const string ButtonGhostClassName = "dx-btn-ghost";
@@ -114,6 +116,48 @@ namespace DxMessaging.Editor
                     element.AddToClassList(TypeBadgeBroadcastClassName);
                     break;
             }
+        }
+
+        /// <summary>
+        /// Builds a themed empty-state block: a centered <c>.dx-empty</c> container holding an
+        /// optional bold <c>.dx-empty__title</c> headline and a muted, wrapping
+        /// <c>.dx-empty__body</c> detail label. Callers may name the title/body labels so tests
+        /// and callbacks can query them.
+        /// </summary>
+        internal static VisualElement CreateEmptyState(
+            string title,
+            string body,
+            string bodyName = null,
+            string titleName = null
+        )
+        {
+            VisualElement container = new();
+            container.AddToClassList(EmptyClassName);
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                Label titleLabel = new(title);
+                if (!string.IsNullOrWhiteSpace(titleName))
+                {
+                    titleLabel.name = titleName;
+                }
+                titleLabel.AddToClassList(EmptyTitleClassName);
+                container.Add(titleLabel);
+            }
+
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                Label bodyLabel = new(body);
+                if (!string.IsNullOrWhiteSpace(bodyName))
+                {
+                    bodyLabel.name = bodyName;
+                }
+                bodyLabel.AddToClassList(EmptyBodyClassName);
+                bodyLabel.style.whiteSpace = WhiteSpace.Normal;
+                container.Add(bodyLabel);
+            }
+
+            return container;
         }
 
         private static StyleSheet LoadStyleSheet(string path)

@@ -81,6 +81,71 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void CreateEmptyStateBuildsContainerWithTitleAndBody()
+        {
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                "No data",
+                "Nothing to show yet.",
+                bodyName: "body-name",
+                titleName: "title-name"
+            );
+
+            Assert.That(empty.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
+
+            Label title = empty.Q<Label>("title-name");
+            Assert.That(title, Is.Not.Null);
+            Assert.That(title.text, Is.EqualTo("No data"));
+            Assert.That(
+                title.ClassListContains(DxMessagingEditorTheme.EmptyTitleClassName),
+                Is.True
+            );
+
+            Label body = empty.Q<Label>("body-name");
+            Assert.That(body, Is.Not.Null);
+            Assert.That(body.text, Is.EqualTo("Nothing to show yet."));
+            Assert.That(body.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName), Is.True);
+            Assert.That(body.style.whiteSpace.value, Is.EqualTo(WhiteSpace.Normal));
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase("   ")]
+        public void CreateEmptyStateOmitsTitleWhenBlank(string blankTitle)
+        {
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                blankTitle,
+                body: "Body only.",
+                bodyName: "body-name"
+            );
+
+            Assert.That(empty.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
+            Assert.That(
+                empty.Query<Label>(className: DxMessagingEditorTheme.EmptyTitleClassName).ToList(),
+                Is.Empty
+            );
+            Assert.That(empty.Q<Label>("body-name"), Is.Not.Null);
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase("   ")]
+        public void CreateEmptyStateOmitsBodyWhenBlank(string blankBody)
+        {
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                "Title only",
+                blankBody,
+                titleName: "title-name"
+            );
+
+            Assert.That(empty.ClassListContains(DxMessagingEditorTheme.EmptyClassName), Is.True);
+            Assert.That(empty.Q<Label>("title-name"), Is.Not.Null);
+            Assert.That(
+                empty.Query<Label>(className: DxMessagingEditorTheme.EmptyBodyClassName).ToList(),
+                Is.Empty
+            );
+        }
+
+        [Test]
         public void ApplyCompleteBorderSetsUniformOnePixelBorder()
         {
             VisualElement element = new();
