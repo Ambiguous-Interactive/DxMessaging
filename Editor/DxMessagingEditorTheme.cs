@@ -134,10 +134,10 @@ namespace DxMessaging.Editor
             VisualElement container = new();
             container.AddToClassList(EmptyClassName);
 
-            if (!string.IsNullOrEmpty(title))
+            if (!string.IsNullOrWhiteSpace(title))
             {
                 Label titleLabel = new(title);
-                if (!string.IsNullOrEmpty(titleName))
+                if (!string.IsNullOrWhiteSpace(titleName))
                 {
                     titleLabel.name = titleName;
                 }
@@ -145,10 +145,10 @@ namespace DxMessaging.Editor
                 container.Add(titleLabel);
             }
 
-            if (!string.IsNullOrEmpty(body))
+            if (!string.IsNullOrWhiteSpace(body))
             {
                 Label bodyLabel = new(body);
-                if (!string.IsNullOrEmpty(bodyName))
+                if (!string.IsNullOrWhiteSpace(bodyName))
                 {
                     bodyLabel.name = bodyName;
                 }

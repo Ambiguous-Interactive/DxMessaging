@@ -107,11 +107,13 @@ namespace DxMessaging.Tests.Editor
             Assert.That(body.style.whiteSpace.value, Is.EqualTo(WhiteSpace.Normal));
         }
 
-        [Test]
-        public void CreateEmptyStateOmitsTitleWhenBlank()
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase("   ")]
+        public void CreateEmptyStateOmitsTitleWhenBlank(string blankTitle)
         {
             VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
-                title: null,
+                blankTitle,
                 body: "Body only.",
                 bodyName: "body-name"
             );
@@ -124,12 +126,14 @@ namespace DxMessaging.Tests.Editor
             Assert.That(empty.Q<Label>("body-name"), Is.Not.Null);
         }
 
-        [Test]
-        public void CreateEmptyStateOmitsBodyWhenBlank()
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase("   ")]
+        public void CreateEmptyStateOmitsBodyWhenBlank(string blankBody)
         {
             VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
                 "Title only",
-                body: null,
+                blankBody,
                 titleName: "title-name"
             );
 
