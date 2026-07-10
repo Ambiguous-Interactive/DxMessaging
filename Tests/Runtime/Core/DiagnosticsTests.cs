@@ -99,46 +99,6 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void TokenDiagnosticModeLeavesTraceIdZeroOutsideBusDispatch()
-        {
-            GameObject host = new(nameof(TokenDiagnosticModeLeavesTraceIdZeroOutsideBusDispatch));
-            _spawned.Add(host);
-            MessageBus customBus = new() { DiagnosticsMode = true };
-            MessageHandler handler = new(host, customBus) { active = true };
-            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, customBus);
-            token.DiagnosticMode = true;
-            token.Enable();
-
-            int count = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                _ => ++count
-            );
-
-            SimpleUntargetedMessage message = new();
-            handler.HandleUntargetedMessage(ref message, customBus, priority: 0);
-
-            CyclicBuffer<MessageEmissionData> busEmissions = GetEmissionBuffer(customBus);
-            CyclicBuffer<MessageEmissionData> tokenEmissions = GetEmissionBuffer(token);
-
-            Assert.AreEqual(1, count);
-            Assert.AreEqual(
-                0,
-                busEmissions.Count,
-                "Direct handler dispatch is not a bus emission and must not create a bus trace record."
-            );
-            Assert.AreEqual(1, tokenEmissions.Count);
-            Assert.AreEqual(
-                0,
-                tokenEmissions[0].traceId,
-                "Token diagnostics outside a concrete bus dispatch must not reuse a stale emission id."
-            );
-            Assert.AreEqual(handle, tokenEmissions[0].registrationHandle);
-
-            token.Dispose();
-            handler.active = false;
-        }
-
-        [Test]
         public void TokenTraceIdUsesLiveRegistrationBusAfterPreserveRetarget()
         {
             GameObject host = new(nameof(TokenTraceIdUsesLiveRegistrationBusAfterPreserveRetarget));
@@ -190,24 +150,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             RunActionRegistrationDiagnosticsScenario(
                 scenario,
-                legacyHandlerDispatch: false,
                 nameof(ActionRegistrationDiagnosticsRecordedThroughFlatBusDispatch)
-            );
-        }
-
-        [Test]
-        public void ActionRegistrationDiagnosticsRecordedThroughLegacyHandlerDispatch(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
-            )]
-                MessageScenario scenario
-        )
-        {
-            RunActionRegistrationDiagnosticsScenario(
-                scenario,
-                legacyHandlerDispatch: true,
-                nameof(ActionRegistrationDiagnosticsRecordedThroughLegacyHandlerDispatch)
             );
         }
 
@@ -269,7 +212,6 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private void RunActionRegistrationDiagnosticsScenario(
             MessageScenario scenario,
-            bool legacyHandlerDispatch,
             string testName
         )
         {
@@ -292,14 +234,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             try
             {
-                if (legacyHandlerDispatch)
-                {
-                    EmitThroughLegacyHandler(scenario, handler, bus, handler.owner);
-                }
-                else
-                {
-                    EmitThroughBus(scenario, bus, handler.owner);
-                }
+                EmitThroughBus(scenario, bus, handler.owner);
 
                 Assert.AreEqual(
                     1,
@@ -402,64 +337,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     SimpleBroadcastMessage message = new();
                     InstanceId source = context;
                     bus.SourcedBroadcast(ref source, ref message);
-                    return;
-                }
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario.Kind, null);
-            }
-        }
-
-        private static void EmitThroughLegacyHandler(
-            MessageScenario scenario,
-            MessageHandler handler,
-            MessageBus bus,
-            InstanceId context
-        )
-        {
-            switch (scenario.Kind)
-            {
-                case MessageKind.Untargeted:
-                {
-                    SimpleUntargetedMessage message = new();
-                    handler.HandleUntargetedMessage(ref message, bus, priority: 0);
-                    return;
-                }
-                case MessageKind.Targeted:
-                {
-                    SimpleTargetedMessage message = new();
-                    InstanceId target = context;
-                    handler.HandleTargeted(ref target, ref message, bus, priority: 0);
-                    return;
-                }
-                case MessageKind.Broadcast:
-                {
-                    SimpleBroadcastMessage message = new();
-                    InstanceId source = context;
-                    handler.HandleSourcedBroadcast(ref source, ref message, bus, priority: 0);
-                    return;
-                }
-                case MessageKind.TargetedWithoutTargeting:
-                {
-                    SimpleTargetedMessage message = new();
-                    InstanceId target = context;
-                    handler.HandleTargetedWithoutTargeting(
-                        ref target,
-                        ref message,
-                        bus,
-                        priority: 0
-                    );
-                    return;
-                }
-                case MessageKind.BroadcastWithoutSource:
-                {
-                    SimpleBroadcastMessage message = new();
-                    InstanceId source = context;
-                    handler.HandleSourcedBroadcastWithoutSource(
-                        ref source,
-                        ref message,
-                        bus,
-                        priority: 0
-                    );
                     return;
                 }
                 default:

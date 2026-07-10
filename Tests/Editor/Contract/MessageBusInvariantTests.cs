@@ -144,6 +144,55 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
+        public void BusToHandlerCallbacksAreNotPublicApi()
+        {
+            string[] removedTypedCallbacks =
+            {
+                "HandleUntargetedMessage",
+                "HandleUntargetedPostProcessing",
+                "HandleTargeted",
+                "HandleTargetedWithoutTargeting",
+                "HandleTargetedPostProcessing",
+                "HandleTargetedWithoutTargetingPostProcessing",
+                "HandleSourcedBroadcast",
+                "HandleSourcedBroadcastWithoutSource",
+                "HandleSourcedBroadcastPostProcessing",
+                "HandleSourcedBroadcastWithoutSourcePostProcessing",
+            };
+            string[] internalGlobalCallbacks =
+            {
+                "HandleGlobalUntargetedMessage",
+                "HandleGlobalTargetedMessage",
+                "HandleGlobalSourcedBroadcastMessage",
+            };
+
+            MethodInfo[] declaredMethods = typeof(MessageHandler).GetMethods(
+                BindingFlags.Instance
+                    | BindingFlags.Public
+                    | BindingFlags.NonPublic
+                    | BindingFlags.DeclaredOnly
+            );
+            foreach (string callbackName in removedTypedCallbacks)
+            {
+                Assert.That(
+                    declaredMethods.Any(method => method.Name == callbackName),
+                    Is.False,
+                    $"{callbackName} is dead legacy typed-dispatch plumbing and must be removed."
+                );
+            }
+
+            foreach (string callbackName in internalGlobalCallbacks)
+            {
+                MethodInfo callback = declaredMethods.Single(method => method.Name == callbackName);
+                Assert.That(
+                    callback.IsPublic,
+                    Is.False,
+                    $"{callbackName} is MessageBus plumbing and must remain internal."
+                );
+            }
+        }
+
+        [Test]
         public void EveryMessageCacheFieldHasSweepableRegistryEntry()
         {
             string[] fieldNames = GetMessageCacheStorageFields()

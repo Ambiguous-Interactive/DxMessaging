@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Removed the dead typed `MessageHandler.Handle*` callback methods and internalized the
+  three global callbacks still used by the message bus. These methods were nominally
+  public plumbing rather than supported registration APIs; bus dispatch and token
+  registration behavior are unchanged.
 - Refreshed the README banner (`docs/images/DxMessaging-banner.svg`): added
   vertical separation between the tagline and the badge row, replaced the badges
   with **Simple**, **MIT**, and the synced version, and re-drew the right panel
