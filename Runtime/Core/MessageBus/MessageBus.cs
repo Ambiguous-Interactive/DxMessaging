@@ -986,16 +986,16 @@ namespace DxMessaging.Core.MessageBus
 
         internal static IdleSweepRegistryBenchmarkScope IsolateIdleSweepRegistryForBenchmark()
         {
-            return new IdleSweepRegistryBenchmarkScope();
+            return new IdleSweepRegistryBenchmarkScope(IdleSweepBuses);
         }
 
         internal readonly struct IdleSweepRegistryBenchmarkScope : IDisposable
         {
             private readonly List<WeakReference<MessageBus>> _saved;
 
-            internal IdleSweepRegistryBenchmarkScope()
+            internal IdleSweepRegistryBenchmarkScope(List<WeakReference<MessageBus>> saved)
             {
-                _saved = IdleSweepBuses;
+                _saved = saved;
                 IdleSweepBuses = new List<WeakReference<MessageBus>>();
             }
 
