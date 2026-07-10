@@ -115,7 +115,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             private const int TargetIdBase = 0x4D00_0000;
             private const int AlternateTargetIdBase = 0x4D10_0000;
             private const int MissingTargetIdBase = 0x4D20_0000;
-            private readonly MessageBus.IdleSweepRegistryBenchmarkScope _registryScope;
+            private readonly IDisposable _registryScope;
             private readonly MessageRegistrationToken _token;
             private readonly MessageHandler.FastHandler<TargetMapMessage> _handler;
             private readonly InstanceId[] _targets;

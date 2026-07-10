@@ -984,12 +984,12 @@ namespace DxMessaging.Core.MessageBus
             ResetStaticPools();
         }
 
-        internal static IdleSweepRegistryBenchmarkScope IsolateIdleSweepRegistryForBenchmark()
+        internal static IDisposable IsolateIdleSweepRegistryForBenchmark()
         {
             return new IdleSweepRegistryBenchmarkScope(IdleSweepBuses);
         }
 
-        internal readonly struct IdleSweepRegistryBenchmarkScope : IDisposable
+        private sealed class IdleSweepRegistryBenchmarkScope : IDisposable
         {
             private readonly List<WeakReference<MessageBus>> _saved;
 
