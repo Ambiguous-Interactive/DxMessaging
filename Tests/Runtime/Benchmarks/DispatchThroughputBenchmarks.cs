@@ -39,6 +39,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         BroadcastFloodOneHandler,
         InterceptorHeavyFourInterceptors,
         PostProcessingHeavyFourPostProcessors,
+        MessageBusConstruction1000,
+        MessageRegistrationTokenConstruction1000,
         RegistrationFlood1000TypesFromColdBus,
         RegistrationFlood1000TypesWarmJit,
         UntargetedRegistrationMarginal,
@@ -70,6 +72,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // GC.Alloc noise, mirroring the "total over a window" benchmark methodology the
         // flood scenarios use.
         private const int RegistrationMarginalCount = 1000;
+
+        // Construction is a short, one-time operation, so measure a sufficiently large fixed
+        // batch in one Stopwatch + AllocationProbe window. Arrays and required dependencies are
+        // prepared outside that window; every constructed object is retained until it closes.
+        internal const int ConstructionBatchSize = 1000;
 
         // Untimed warm-up registrations (registered then removed) that pay the one-time
         // per-type dispatch-structure build + DxPools warm-up BEFORE the measured region,
@@ -137,6 +144,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             switch (scenario)
             {
+                case DispatchBenchmarkScenario.MessageBusConstruction1000:
+                    return MeasureMessageBusConstruction();
+                case DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000:
+                    return MeasureMessageRegistrationTokenConstruction();
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus:
                     return MeasureRegistrationFlood();
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
@@ -272,6 +283,195 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
+        }
+
+        private static DispatchBenchmarkResult MeasureMessageBusConstruction()
+        {
+            // Pay first-touch constructor/JIT costs outside both measurement passes.
+            MessageBus warmupBus;
+            using (
+                MessageBus.IdleSweepRegistryBenchmarkScope registry =
+                    MessageBus.IsolateIdleSweepRegistryForBenchmark()
+            )
+            {
+                warmupBus = new MessageBus();
+            }
+            MessageBus[] timedBuses = new MessageBus[ConstructionBatchSize];
+            long startTimestamp;
+            long endTimestamp;
+            AllocationProbe.SettleHeapForMeasurement();
+            using (
+                MessageBus.IdleSweepRegistryBenchmarkScope registry =
+                    MessageBus.IsolateIdleSweepRegistryForBenchmark()
+            )
+            {
+                startTimestamp = Stopwatch.GetTimestamp();
+                for (int index = 0; index < timedBuses.Length; index++)
+                {
+                    timedBuses[index] = new MessageBus();
+                }
+                endTimestamp = Stopwatch.GetTimestamp();
+            }
+            Assert.AreEqual(
+                ConstructionBatchSize,
+                CountConstructed(timedBuses),
+                "The construction benchmark must retain every MessageBus through the timed pass."
+            );
+            Array.Clear(timedBuses, 0, timedBuses.Length);
+
+            // Allocation uses a fresh registry and separate pass so GC.Alloc recorder overhead
+            // never distorts the Mono timing result.
+            MessageBus[] allocationBuses = new MessageBus[ConstructionBatchSize];
+            AllocationProbe.SettleHeapForMeasurement();
+            AllocationProbe.AllocationSample sample;
+            using (
+                MessageBus.IdleSweepRegistryBenchmarkScope registry =
+                    MessageBus.IsolateIdleSweepRegistryForBenchmark()
+            )
+            {
+                sample = AllocationProbe.MeasureWithBytes(() =>
+                {
+                    for (int index = 0; index < allocationBuses.Length; index++)
+                    {
+                        allocationBuses[index] = new MessageBus();
+                    }
+                });
+            }
+            Assert.AreEqual(ConstructionBatchSize, CountConstructed(allocationBuses));
+            GC.KeepAlive(warmupBus);
+
+            return DispatchBenchmarkResult.ForWallClockScenario(
+                GetScenarioName(DispatchBenchmarkScenario.MessageBusConstruction1000),
+                runIndex: -1,
+                sample.Allocations,
+                sample.Bytes,
+                TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+            );
+        }
+
+        private static DispatchBenchmarkResult MeasureMessageRegistrationTokenConstruction()
+        {
+            using MessageBus.IdleSweepRegistryBenchmarkScope registry =
+                MessageBus.IsolateIdleSweepRegistryForBenchmark();
+
+            // Token creation requires both a handler and a bus. Build those dependencies before
+            // the measured region so this row isolates token construction and labels that setup
+            // distinction explicitly. Retain and dispose all tokens outside the timing window.
+            MessageBus[] buses = new MessageBus[ConstructionBatchSize];
+            MessageHandler[] handlers = new MessageHandler[ConstructionBatchSize];
+            MessageRegistrationToken[] tokens = new MessageRegistrationToken[ConstructionBatchSize];
+            for (int index = 0; index < ConstructionBatchSize; index++)
+            {
+                MessageBus bus = new();
+                buses[index] = bus;
+                handlers[index] = new MessageHandler(new InstanceId(33000 + index), bus);
+            }
+
+            MessageBus warmupBus = new();
+            MessageHandler warmupHandler = new(new InstanceId(34001), warmupBus);
+            MessageRegistrationToken warmupToken = MessageRegistrationToken.Create(
+                warmupHandler,
+                warmupBus
+            );
+            warmupToken.Dispose();
+
+            long startTimestamp = 0;
+            long endTimestamp = 0;
+            try
+            {
+                AllocationProbe.SettleHeapForMeasurement();
+                startTimestamp = Stopwatch.GetTimestamp();
+                for (int index = 0; index < tokens.Length; index++)
+                {
+                    tokens[index] = MessageRegistrationToken.Create(handlers[index], buses[index]);
+                }
+                endTimestamp = Stopwatch.GetTimestamp();
+                Assert.AreEqual(
+                    ConstructionBatchSize,
+                    CountConstructed(tokens),
+                    "The construction benchmark must retain every MessageRegistrationToken through the timed pass."
+                );
+            }
+            finally
+            {
+                DisposeTokens(tokens);
+            }
+
+            AllocationProbe.SettleHeapForMeasurement();
+            AllocationProbe.AllocationSample sample;
+            try
+            {
+                sample = AllocationProbe.MeasureWithBytes(() =>
+                {
+                    for (int index = 0; index < tokens.Length; index++)
+                    {
+                        tokens[index] = MessageRegistrationToken.Create(
+                            handlers[index],
+                            buses[index]
+                        );
+                    }
+                });
+                Assert.AreEqual(
+                    ConstructionBatchSize,
+                    CountConstructed(tokens),
+                    "The construction benchmark must retain every MessageRegistrationToken through the allocation pass."
+                );
+            }
+            finally
+            {
+                DisposeTokens(tokens);
+            }
+
+            return DispatchBenchmarkResult.ForWallClockScenario(
+                GetScenarioName(DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000),
+                runIndex: -1,
+                sample.Allocations,
+                sample.Bytes,
+                TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+            );
+        }
+
+        private static void DisposeTokens(MessageRegistrationToken[] tokens)
+        {
+            Exception firstException = null;
+            for (int index = tokens.Length - 1; index >= 0; index--)
+            {
+                MessageRegistrationToken token = tokens[index];
+                tokens[index] = null;
+                if (token == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    token.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    firstException ??= exception;
+                }
+            }
+
+            if (firstException != null)
+            {
+                throw firstException;
+            }
+        }
+
+        private static int CountConstructed<T>(T[] instances)
+            where T : class
+        {
+            int count = 0;
+            for (int index = 0; index < instances.Length; index++)
+            {
+                if (instances[index] != null)
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         // Runs a warm, repeatable flood operation over <see cref="WarmFloodTrials"/> trials and
@@ -1636,6 +1836,31 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 gcAllocatedBytes,
                 wallClockMs,
                 isRegistrationScenario: true
+            );
+        }
+
+        /// <summary>
+        /// Builds a generic wall-clock result for one-time work that is not itself a
+        /// registration scenario, such as bus and token construction.
+        /// </summary>
+        public static DispatchBenchmarkResult ForWallClockScenario(
+            string scenario,
+            int runIndex,
+            long gcAllocations,
+            long gcAllocatedBytes,
+            double wallClockMs
+        )
+        {
+            return new DispatchBenchmarkResult(
+                scenario,
+                ResolvePlatform(),
+                ResolveCommit(),
+                runIndex,
+                emitsPerSecond: 0,
+                gcAllocations,
+                gcAllocatedBytes,
+                wallClockMs,
+                isRegistrationScenario: false
             );
         }
 

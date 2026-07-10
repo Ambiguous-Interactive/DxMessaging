@@ -924,7 +924,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
 #if UNITY_2021_3_OR_NEWER
-        private static readonly List<WeakReference<MessageBus>> IdleSweepBuses = new();
+        private static List<WeakReference<MessageBus>> IdleSweepBuses = new();
         private static bool RuntimeSettingsSubscribed;
 
         private static void RegisterForIdleSweeps(MessageBus bus)
@@ -996,6 +996,27 @@ namespace DxMessaging.Core.MessageBus
             IdleSweepBuses.Clear();
             RuntimeSettingsSubscribed = false;
             ResetStaticPools();
+        }
+
+        internal static IdleSweepRegistryBenchmarkScope IsolateIdleSweepRegistryForBenchmark()
+        {
+            return new IdleSweepRegistryBenchmarkScope();
+        }
+
+        internal readonly struct IdleSweepRegistryBenchmarkScope : IDisposable
+        {
+            private readonly List<WeakReference<MessageBus>> _saved;
+
+            internal IdleSweepRegistryBenchmarkScope()
+            {
+                _saved = IdleSweepBuses;
+                IdleSweepBuses = new List<WeakReference<MessageBus>>();
+            }
+
+            public void Dispose()
+            {
+                IdleSweepBuses = _saved;
+            }
         }
 
         private void ApplyRuntimeSettings(DxMessagingRuntimeSettings settings)
@@ -1965,6 +1986,63 @@ namespace DxMessaging.Core.MessageBus
         internal CollectionPoolDiagnostics GetContextDictPoolDiagnosticsForTesting()
         {
             return ContextHandlerByTargetDicts.Snapshot();
+        }
+
+        internal int SweepDirtyTargetSlotForBenchmark<TMessage>(InstanceId target)
+            where TMessage : IMessage
+        {
+            int typeIndex = MessageHelperIndexer<TMessage>.SequentialId;
+            int evicted = 0;
+            for (int sinkIndex = 0; sinkIndex < _contextSinks.Length; ++sinkIndex)
+            {
+                MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink =
+                    _contextSinks[sinkIndex];
+                if (
+                    sink == null
+                    || !sink.TryGetValueAtIndex(
+                        typeIndex,
+                        out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
+                    )
+                    || !handlersByTarget.TryGetValue(
+                        target,
+                        out HandlerCache<int, HandlerCache> handlers
+                    )
+                    || handlers.handlers.Count != 0
+                    || HasActiveDispatchSnapshot(handlers.dispatchState)
+                )
+                {
+                    continue;
+                }
+
+                handlers.Clear();
+                _ = handlersByTarget.Remove(target);
+                evicted++;
+            }
+
+            if (
+                _dirtyTargets.TryGetValue(typeIndex, out List<InstanceId> targets)
+                && _dirtyTargetSets.TryGetValue(typeIndex, out HashSet<InstanceId> targetSet)
+                && targetSet.Remove(target)
+            )
+            {
+                for (int index = targets.Count - 1; index >= 0; --index)
+                {
+                    if (targets[index] != target)
+                    {
+                        continue;
+                    }
+
+                    int lastIndex = targets.Count - 1;
+                    targets[index] = targets[lastIndex];
+                    targets.RemoveAt(lastIndex);
+                    break;
+                }
+            }
+
+            // Deliberately retain the empty per-type context map and dirty-candidate
+            // collections. Returning and immediately renting them would make this row measure
+            // shared pools in addition to the target map. ResetState returns them at teardown.
+            return evicted;
         }
 
         private Dictionary<InstanceId, HandlerCache<int, HandlerCache>> GetOrRentContextMap<T>(

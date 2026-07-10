@@ -62,7 +62,12 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
       "UntargetedFlood_SixteenHandlers_OnePriority",
       "Untargeted Flood (Sixteen Handlers, One Priority)"
     ],
-    ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"]
+    ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"],
+    ["MessageBusConstruction_1000", "Message Bus Construction (1000)"],
+    [
+      "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+      "Registration Token Construction (1000, Prebuilt Handler + Bus)"
+    ]
   ];
 
   for (const [key, label] of expected) {
@@ -281,6 +286,20 @@ test("delta sign is normalized so + is always better and - is always worse", () 
     slowerMore.cells[3].startsWith("-10.00%") && slowerMore.cells[3].includes("5 more allocs"),
     slowerMore.cells[3]
   );
+
+  const construction = "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus";
+  const constructionDelta = compareRow(
+    construction,
+    row(construction, "0.000", "1000", "2.000"),
+    row(construction, "0.000", "1000", "4.000"),
+    0.02
+  );
+  assert.ok(
+    constructionDelta.cells[1].startsWith("4.000 ms") &&
+      constructionDelta.cells[2].startsWith("2.000 ms") &&
+      constructionDelta.cells[3].startsWith("+50.00%"),
+    constructionDelta.cells.join(" | ")
+  );
 });
 
 test("isRegression trips on large throughput drops or allocation growth", () => {
@@ -290,6 +309,12 @@ test("isRegression trips on large throughput drops or allocation growth", () => 
     [row("x", "900000.000"), baseline, false],
     [row("x", "1000000.000", "128"), baseline, true],
     [row("x", "0.000"), row("x", "0.000"), false],
+    [row("x", "0.000", "1"), row("x", "0.000", "0"), true],
+    [
+      row("MessageBusConstruction_1000", "0.000", "-1", "10.400"),
+      row("MessageBusConstruction_1000", "0.000", "-1", "10.000"),
+      false
+    ],
     [row("x", "1000000.000", "-1"), row("x", "1000000.000", "0"), false],
     [row("x", "1000000.000", "5"), row("x", "1000000.000", "-1"), false]
   ];

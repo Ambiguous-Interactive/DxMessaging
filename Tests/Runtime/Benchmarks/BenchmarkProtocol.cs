@@ -498,6 +498,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             switch (scenario)
             {
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus:
+                case DispatchBenchmarkScenario.MessageBusConstruction1000:
+                case DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000:
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
                 case DispatchBenchmarkScenario.UntargetedRegistrationMarginal:
                 case DispatchBenchmarkScenario.TargetedRegistrationMarginal:
@@ -541,6 +543,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "InterceptorHeavy_FourInterceptors",
                 DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>
                     "PostProcessingHeavy_FourPostProcessors",
+                DispatchBenchmarkScenario.MessageBusConstruction1000 =>
+                    "MessageBusConstruction_1000",
+                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000 =>
+                    "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
                     "RegistrationFlood_1000Types_FromColdBus",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>
@@ -595,6 +601,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "Interceptor Heavy (Four Interceptors)",
                 DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>
                     "Post-Processing Heavy (Four Post-Processors)",
+                DispatchBenchmarkScenario.MessageBusConstruction1000 =>
+                    "Message Bus Construction (1000)",
+                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000 =>
+                    "Registration Token Construction (1000, Prebuilt Handler + Bus)",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
                     "Registration Flood (1000 Types, Cold Bus)",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>

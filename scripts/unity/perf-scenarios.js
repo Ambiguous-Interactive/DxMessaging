@@ -23,6 +23,8 @@ const SCENARIO_ORDER = [
   "BroadcastFirstDispatch_Cold",
   "InterceptorHeavy_FourInterceptors",
   "PostProcessingHeavy_FourPostProcessors",
+  "MessageBusConstruction_1000",
+  "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
   "RegistrationFlood_1000Types_FromColdBus",
   "RegistrationFlood_1000Types_WarmJit",
   "UntargetedRegistration_Marginal",
@@ -33,6 +35,21 @@ const SCENARIO_ORDER = [
 ];
 
 const SCENARIOS = new Set(SCENARIO_ORDER);
+
+const WALL_CLOCK_SCENARIOS = new Set([
+  "MessageBusConstruction_1000",
+  "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+  "RegistrationFlood_1000Types_FromColdBus",
+  "RegistrationFlood_1000Types_WarmJit",
+  "UntargetedRegistration_Marginal",
+  "TargetedRegistration_Marginal",
+  "BroadcastRegistration_Marginal",
+  "DeregistrationFlood_1000Types_Cold",
+  "DeregistrationFlood_1000Types_WarmJit",
+  "UntargetedFirstDispatch_Cold",
+  "TargetedFirstDispatch_Cold",
+  "BroadcastFirstDispatch_Cold"
+]);
 
 // Human-readable dispatch scenario labels shown in the Scenario column. These
 // mirror DispatchBenchmarkScenarios.DisplayName in BenchmarkProtocol.cs.
@@ -54,6 +71,9 @@ const DISPATCH_DISPLAY_NAMES = {
   BroadcastFirstDispatch_Cold: "Broadcast First Dispatch (Cold, Distinct Types)",
   InterceptorHeavy_FourInterceptors: "Interceptor Heavy (Four Interceptors)",
   PostProcessingHeavy_FourPostProcessors: "Post-Processing Heavy (Four Post-Processors)",
+  MessageBusConstruction_1000: "Message Bus Construction (1000)",
+  MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus:
+    "Registration Token Construction (1000, Prebuilt Handler + Bus)",
   RegistrationFlood_1000Types_FromColdBus: "Registration Flood (1000 Types, Cold Bus)",
   RegistrationFlood_1000Types_WarmJit: "Registration Flood (1000 Types, Warm JIT)",
   UntargetedRegistration_Marginal: "Untargeted Registration (Marginal, 1000 Same-Type)",
@@ -183,6 +203,7 @@ function deriveScope(platform) {
 module.exports = {
   SCENARIO_ORDER,
   SCENARIOS,
+  WALL_CLOCK_SCENARIOS,
   DISPATCH_DISPLAY_NAMES,
   COMPARISON_SCENARIO_ORDER,
   COMPARISON_SCENARIO_LABELS,

@@ -589,6 +589,20 @@ namespace DxMessaging.Tests.Editor.Allocations
                 "The cold-bus registration flood must perform no warm-up flood so it measures first-touch registration cost."
             );
             Assert.AreEqual(
+                0,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.MessageBusConstruction1000
+                ),
+                "MessageBus construction must not run an emit warm-up."
+            );
+            Assert.AreEqual(
+                0,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000
+                ),
+                "Registration-token construction must not run an emit warm-up."
+            );
+            Assert.AreEqual(
                 BenchmarkProtocol.WarmupEmits,
                 DispatchBenchmarkScenarios.WarmupEmits(
                     DispatchBenchmarkScenario.UntargetedFloodOneHandler
@@ -795,12 +809,17 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Data-driven over the ten wall-clock scenarios (the registration/deregistration
-        // floods, the three per-kind marginal registration scenarios, and the three cold
-        // first-dispatch scenarios). Each is a wall-clock (latency) row, so its result must
-        // report zero throughput and IsWallClockScenario.
+        // Data-driven over every wall-clock scenario: construction, registration /
+        // deregistration floods, marginal registration, and cold first dispatch. Each result
+        // reports latency rather than throughput.
         private static IEnumerable<TestCaseData> WallClockScenarioCases()
         {
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.MessageBusConstruction1000
+            ).SetName("WallClock_MessageBusConstruction1000");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000
+            ).SetName("WallClock_MessageRegistrationTokenConstruction1000");
             yield return new TestCaseData(
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
             ).SetName("WallClock_RegistrationFloodColdBus");
@@ -831,6 +850,34 @@ namespace DxMessaging.Tests.Editor.Allocations
             yield return new TestCaseData(
                 DispatchBenchmarkScenario.BroadcastFirstDispatchCold
             ).SetName("WallClock_BroadcastFirstDispatchCold");
+        }
+
+        [Test]
+        public void ConstructionScenariosKeepStableBatchKeysAndHonestLabels()
+        {
+            Assert.AreEqual(1000, DispatchThroughputBenchmarks.ConstructionBatchSize);
+            Assert.AreEqual(
+                "MessageBusConstruction_1000",
+                DispatchBenchmarkScenarios.Key(DispatchBenchmarkScenario.MessageBusConstruction1000)
+            );
+            Assert.AreEqual(
+                "Message Bus Construction (1000)",
+                DispatchBenchmarkScenarios.DisplayName(
+                    DispatchBenchmarkScenario.MessageBusConstruction1000
+                )
+            );
+            Assert.AreEqual(
+                "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+                DispatchBenchmarkScenarios.Key(
+                    DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000
+                )
+            );
+            Assert.AreEqual(
+                "Registration Token Construction (1000, Prebuilt Handler + Bus)",
+                DispatchBenchmarkScenarios.DisplayName(
+                    DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000
+                )
+            );
         }
 
         // Result-shape lock: every cold/warm-JIT latency scenario reports zero throughput

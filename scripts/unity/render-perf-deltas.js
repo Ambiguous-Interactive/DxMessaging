@@ -6,27 +6,13 @@ const { extractRows } = require("./extract-perf-baseline.js");
 const {
   SCENARIO_ORDER,
   DISPATCH_DISPLAY_NAMES,
+  WALL_CLOCK_SCENARIOS,
   COMPARISON_SCENARIO_ORDER,
   COMPARISON_SCENARIO_LABELS,
   buildComparisonScenarioId,
   parseComparisonScenario
 } = require("./perf-scenarios.js");
 const { deriveScope, alignTable } = require("./render-perf-doc.js");
-
-// Wall-clock scenarios carry emitsPerSecond=0, so the delta table compares
-// wallClockMs and the regression gate skips them.
-const REGISTRATION_SCENARIOS = new Set([
-  "RegistrationFlood_1000Types_FromColdBus",
-  "RegistrationFlood_1000Types_WarmJit",
-  "UntargetedRegistration_Marginal",
-  "TargetedRegistration_Marginal",
-  "BroadcastRegistration_Marginal",
-  "DeregistrationFlood_1000Types_Cold",
-  "DeregistrationFlood_1000Types_WarmJit",
-  "UntargetedFirstDispatch_Cold",
-  "TargetedFirstDispatch_Cold",
-  "BroadcastFirstDispatch_Cold"
-]);
 
 const DXMESSAGING_TECH_KEY = "DxMessaging";
 
@@ -289,7 +275,7 @@ function compareRow(scenario, current, baseline, tolerance) {
   let primaryPct;
   let primaryMoved;
 
-  if (REGISTRATION_SCENARIOS.has(scenario)) {
+  if (WALL_CLOCK_SCENARIOS.has(scenario)) {
     const baselineMs = Number.parseFloat(baseline.wallClockMs);
     const currentMs = Number.parseFloat(current.wallClockMs);
     // Wall clock / latency: lower is better, so a faster run renders as a "+" gain.
@@ -360,6 +346,14 @@ function buildDeltaTable(currentByScenario, baselineByScenario, tolerance, scope
 }
 
 function isRegression(current, baseline, regressionThreshold) {
+  // Allocation regressions are exact gates for every measured row, including wall-clock
+  // scenarios. Only compare real counts; the stripped-player sentinel is never comparable.
+  const currentAllocs = Number.parseInt(current.gcAllocations, 10);
+  const baselineAllocs = Number.parseInt(baseline.gcAllocations, 10);
+  if (allocationsComparable(currentAllocs, baselineAllocs) && currentAllocs > baselineAllocs) {
+    return true;
+  }
+
   const baselineEmits = Number.parseFloat(baseline.emitsPerSecond);
   const currentEmits = Number.parseFloat(current.emitsPerSecond);
   if (!Number.isFinite(baselineEmits) || baselineEmits <= 0) {
@@ -371,11 +365,7 @@ function isRegression(current, baseline, regressionThreshold) {
     return true;
   }
 
-  // Allocation regression: more allocations than baseline. Only gate when both
-  // sides are real counts; an Unmeasured sentinel (-1) is never comparable.
-  const currentAllocs = Number.parseInt(current.gcAllocations, 10);
-  const baselineAllocs = Number.parseInt(baseline.gcAllocations, 10);
-  return allocationsComparable(currentAllocs, baselineAllocs) && currentAllocs > baselineAllocs;
+  return false;
 }
 
 function computeRegressed(currentByScenario, baselineByScenario, regressionThreshold) {
