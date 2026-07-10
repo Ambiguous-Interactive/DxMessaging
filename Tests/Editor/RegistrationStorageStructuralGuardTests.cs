@@ -26,6 +26,11 @@ namespace DxMessaging.Tests.Editor
     /// <see cref="Action"/> wrapper) re-introduces the staging delegate plus its display
     /// class AND the nested AugmentedHandler local-function delegate per registration.
     /// </description></item>
+    /// <item><description>
+    /// <see cref="RegistrationObjectsOwnReusableTeardownState"/> pins the common teardown
+    /// state as value-type fields on the existing registration objects. Allocation-backed
+    /// wrappers remain only for direct handler compatibility and overlapping retry spills.
+    /// </description></item>
     /// </list>
     /// <para>
     /// These guards live in the per-PR EditMode CORRECTNESS leg
@@ -216,6 +221,63 @@ namespace DxMessaging.Tests.Editor
                 ),
                 Is.Null,
                 "A parallel deregistration dictionary duplicates arena state."
+            );
+        }
+
+        [Test]
+        public void RegistrationObjectsOwnReusableTeardownState()
+        {
+            Type registration = typeof(MessageRegistrationToken).GetNestedType(
+                "Registration",
+                BindingFlags.NonPublic
+            );
+            Type typedRegistration = typeof(MessageRegistrationToken).GetNestedType(
+                "Registration`1",
+                BindingFlags.NonPublic
+            );
+            Type interceptorRegistration = typeof(MessageRegistrationToken).GetNestedType(
+                "InterceptorRegistration`1",
+                BindingFlags.NonPublic
+            );
+
+            Assert.That(registration, Is.Not.Null);
+            Assert.That(
+                typeof(MessageHandler.HandlerDeregistration).IsAssignableFrom(registration),
+                Is.True,
+                "The existing Registration object must execute its own common-case teardown."
+            );
+
+            FieldInfo typedState = typedRegistration?.GetField(
+                "_typedDeregistration",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            FieldInfo interceptorState = interceptorRegistration?.GetField(
+                "_deregistration",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(
+                typedState?.FieldType.IsValueType,
+                Is.True,
+                "Typed registrations must embed reusable teardown state rather than a second object."
+            );
+            Assert.That(
+                interceptorState?.FieldType.IsValueType,
+                Is.True,
+                "Interceptor registrations must embed reusable teardown state rather than a second object."
+            );
+            Assert.That(
+                typedRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
+                Has.None.Matches<FieldInfo>(field =>
+                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
+                ),
+                "The typed common path must not retain an allocation-backed teardown wrapper."
+            );
+            Assert.That(
+                interceptorRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
+                Has.None.Matches<FieldInfo>(field =>
+                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
+                ),
+                "The interceptor common path must not retain an allocation-backed teardown wrapper."
             );
         }
 

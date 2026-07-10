@@ -68,7 +68,10 @@ namespace DxMessaging.Core
         // priority, and kind are now plain fields, and the diagnostics-augmented
         // invoker is an instance method bound to the object (the FastHandler<T> handed
         // to MessageHandler is (FastHandler<T>)registration.AugmentedHandlerScalar).
-        // Net ~ -2 managed allocations per registration. The central replay loop pairs
+        // The registration also owns its common teardown state, eliminating the separate
+        // HandlerDeregistration object; an allocation-backed wrapper is created only for
+        // overlapping retry/recovery state. Net ~ -3 managed allocations per registration.
+        // The central replay loop pairs
         // the Registration with its handle and performs the AddDeregistration. The
         // re-entrancy snapshot semantics are unchanged: the replay queue captures the
         // Registration reference (exactly as it previously captured the staging Func),
@@ -1247,12 +1250,7 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                new UntargetedRegistration<T>(
-                    this,
-                    RegistrationKind.UntargetedInterceptor,
-                    interceptor,
-                    priority
-                )
+                new UntargetedInterceptorRegistration<T>(this, interceptor, priority)
             );
         }
 
@@ -1275,13 +1273,7 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                new BroadcastRegistration<T>(
-                    this,
-                    RegistrationKind.BroadcastInterceptor,
-                    default,
-                    interceptor,
-                    priority
-                )
+                new BroadcastInterceptorRegistration<T>(this, interceptor, priority)
             );
         }
 
@@ -1304,13 +1296,7 @@ namespace DxMessaging.Core
             }
 
             return InternalRegister(
-                new TargetedRegistration<T>(
-                    this,
-                    RegistrationKind.TargetedInterceptor,
-                    default,
-                    interceptor,
-                    priority
-                )
+                new TargetedInterceptorRegistration<T>(this, interceptor, priority)
             );
         }
 
@@ -2344,13 +2330,13 @@ namespace DxMessaging.Core
         }
 
         // Holds the live de-registration Actions for a single handle in the MULTI-de-registration
-        // case (2+). The common case is EXACTLY ONE de-registration per handle (a staging function
-        // registers once and returns one de-registration Action); that single Action is stored
-        // INLINE as the _deregistrations dictionary value, so the common path allocates no
+        // case (2+). The common case is EXACTLY ONE de-registration per handle (the existing
+        // Registration object executes its embedded teardown state); that Registration is stored
+        // INLINE as the slot value, so the common path allocates no
         // PendingDeregistration object at all (see AddDeregistration / InvokeDeregistration). This
         // holder is allocated only when a rare second de-registration accumulates on the same
         // handle -- a re-entrant retarget-recovery replay can stage one beyond the rollback
-        // baseline -- at which point the inline Action is promoted into this holder's inline head
+        // baseline -- at which point the inline Registration is promoted into this holder's head
         // and the second spills to a lazily-allocated overflow list. This stays a class (mutated in
         // place through the _deregistrations dictionary), so reference semantics and every
         // call site are unchanged; only the storage shape changed.
@@ -2511,7 +2497,7 @@ namespace DxMessaging.Core
         // user-accepted "unified object, accept the kind-switch" design -- NOT ~14
         // subclasses). GlobalAcceptAllRegistration is non-generic (its sub-handlers
         // are the fixed IMessage facades).
-        private abstract class Registration
+        private abstract class Registration : MessageHandler.HandlerDeregistration
         {
             protected readonly MessageRegistrationToken Token;
             public MessageRegistrationHandle Handle;
@@ -2592,7 +2578,46 @@ namespace DxMessaging.Core
             }
         }
 
-        private sealed class TargetedRegistration<T> : Registration
+        private abstract class Registration<T> : Registration
+            where T : IMessage
+        {
+            private MessageHandler.TypedHandler<T>.TypedHandlerDeregistrationState _typedDeregistration;
+            private bool _hasInlineDeregistration;
+
+            protected Registration(MessageRegistrationToken token)
+                : base(token) { }
+
+            protected MessageHandler.HandlerDeregistration StoreDeregistration(
+                MessageHandler.TypedHandler<T>.TypedHandlerDeregistrationState deregistration
+            )
+            {
+                if (_hasInlineDeregistration)
+                {
+                    return deregistration;
+                }
+
+                _typedDeregistration = deregistration;
+                _hasInlineDeregistration = true;
+                return this;
+            }
+
+            internal override void Deregister()
+            {
+                if (!_hasInlineDeregistration)
+                {
+                    return;
+                }
+
+                _typedDeregistration.Deregister();
+
+                // Clear only after successful teardown. If a custom bus throws, this
+                // registration remains the retryable inline action and any recovery
+                // registration spills into an independent compatibility wrapper.
+                _hasInlineDeregistration = false;
+            }
+        }
+
+        private sealed class TargetedRegistration<T> : Registration<T>
             where T : ITargetedMessage
         {
             private readonly RegistrationKind _kind;
@@ -2645,77 +2670,87 @@ namespace DxMessaging.Core
                 {
                     case RegistrationKind.TargetedHandlerAction:
                         _scalarAction = (Action<T>)_userHandler;
-                        return messageHandler.RegisterTargetedMessageHandler(
-                            _context,
-                            _scalarAction,
-                            AugmentedScalarAction,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterTargetedMessageHandler(
+                                _context,
+                                _scalarAction,
+                                AugmentedScalarAction,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.TargetedHandlerFast:
                         _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
-                        return messageHandler.RegisterTargetedMessageHandler(
-                            _context,
-                            _scalarFast,
-                            AugmentedScalarFast,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterTargetedMessageHandler(
+                                _context,
+                                _scalarFast,
+                                AugmentedScalarFast,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.TargetedPostProcessorAction:
                         _scalarAction = (Action<T>)_userHandler;
-                        return messageHandler.RegisterTargetedPostProcessor(
-                            _context,
-                            _scalarAction,
-                            AugmentedScalarAction,
-                            _priority,
-                            messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterTargetedPostProcessor(
+                                _context,
+                                _scalarAction,
+                                AugmentedScalarAction,
+                                _priority,
+                                messageBus
+                            )
                         );
                     case RegistrationKind.TargetedPostProcessorFast:
                         _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
-                        return messageHandler.RegisterTargetedPostProcessor(
-                            _context,
-                            _scalarFast,
-                            AugmentedScalarFast,
-                            _priority,
-                            messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterTargetedPostProcessor(
+                                _context,
+                                _scalarFast,
+                                AugmentedScalarFast,
+                                _priority,
+                                messageBus
+                            )
                         );
                     case RegistrationKind.TargetedWithoutTargetingAction:
                         _contextAction = (Action<InstanceId, T>)_userHandler;
-                        return messageHandler.RegisterTargetedWithoutTargeting(
-                            _contextAction,
-                            AugmentedContextAction,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterTargetedWithoutTargeting(
+                                _contextAction,
+                                AugmentedContextAction,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.TargetedWithoutTargetingFast:
                         _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
-                        return messageHandler.RegisterTargetedWithoutTargeting(
-                            _contextFast,
-                            AugmentedContextFast,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterTargetedWithoutTargeting(
+                                _contextFast,
+                                AugmentedContextFast,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.TargetedWithoutTargetingPostProcessorAction:
                         _contextAction = (Action<InstanceId, T>)_userHandler;
-                        return messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                            _contextAction,
-                            AugmentedContextAction,
-                            _priority,
-                            messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
+                                _contextAction,
+                                AugmentedContextAction,
+                                _priority,
+                                messageBus
+                            )
                         );
                     case RegistrationKind.TargetedWithoutTargetingPostProcessorFast:
                         _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
-                        return messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                            _contextFast,
-                            AugmentedContextFast,
-                            _priority,
-                            messageBus
-                        );
-                    case RegistrationKind.TargetedInterceptor:
-                        return messageHandler.RegisterTargetedInterceptor(
-                            (IMessageBus.TargetedInterceptor<T>)_userHandler,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
+                                _contextFast,
+                                AugmentedContextFast,
+                                _priority,
+                                messageBus
+                            )
                         );
                     default:
                         throw new InvalidOperationException(
@@ -2768,7 +2803,7 @@ namespace DxMessaging.Core
             }
         }
 
-        private sealed class UntargetedRegistration<T> : Registration
+        private sealed class UntargetedRegistration<T> : Registration<T>
             where T : IUntargetedMessage
         {
             private readonly RegistrationKind _kind;
@@ -2810,33 +2845,33 @@ namespace DxMessaging.Core
                 {
                     case RegistrationKind.UntargetedHandlerAction:
                         _scalarAction = (Action<T>)_userHandler;
-                        return messageHandler.RegisterUntargetedMessageHandler(
-                            _scalarAction,
-                            AugmentedScalarAction,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterUntargetedMessageHandler(
+                                _scalarAction,
+                                AugmentedScalarAction,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.UntargetedHandlerFast:
                         _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
-                        return messageHandler.RegisterUntargetedMessageHandler(
-                            _scalarFast,
-                            AugmentedScalarFast,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterUntargetedMessageHandler(
+                                _scalarFast,
+                                AugmentedScalarFast,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.UntargetedPostProcessorFast:
                         _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
-                        return messageHandler.RegisterUntargetedPostProcessor(
-                            _scalarFast,
-                            AugmentedScalarFast,
-                            _priority,
-                            messageBus
-                        );
-                    case RegistrationKind.UntargetedInterceptor:
-                        return messageHandler.RegisterUntargetedInterceptor(
-                            (IMessageBus.UntargetedInterceptor<T>)_userHandler,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterUntargetedPostProcessor(
+                                _scalarFast,
+                                AugmentedScalarFast,
+                                _priority,
+                                messageBus
+                            )
                         );
                     default:
                         throw new InvalidOperationException(
@@ -2866,7 +2901,7 @@ namespace DxMessaging.Core
             }
         }
 
-        private sealed class BroadcastRegistration<T> : Registration
+        private sealed class BroadcastRegistration<T> : Registration<T>
             where T : IBroadcastMessage
         {
             private readonly RegistrationKind _kind;
@@ -2918,77 +2953,87 @@ namespace DxMessaging.Core
                 {
                     case RegistrationKind.BroadcastHandlerAction:
                         _scalarAction = (Action<T>)_userHandler;
-                        return messageHandler.RegisterSourcedBroadcastMessageHandler(
-                            _context,
-                            _scalarAction,
-                            AugmentedScalarAction,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterSourcedBroadcastMessageHandler(
+                                _context,
+                                _scalarAction,
+                                AugmentedScalarAction,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.BroadcastHandlerFast:
                         _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
-                        return messageHandler.RegisterSourcedBroadcastMessageHandler(
-                            _context,
-                            _scalarFast,
-                            AugmentedScalarFast,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterSourcedBroadcastMessageHandler(
+                                _context,
+                                _scalarFast,
+                                AugmentedScalarFast,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.BroadcastPostProcessorAction:
                         _scalarAction = (Action<T>)_userHandler;
-                        return messageHandler.RegisterSourcedBroadcastPostProcessor(
-                            _context,
-                            _scalarAction,
-                            AugmentedScalarAction,
-                            _priority,
-                            messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterSourcedBroadcastPostProcessor(
+                                _context,
+                                _scalarAction,
+                                AugmentedScalarAction,
+                                _priority,
+                                messageBus
+                            )
                         );
                     case RegistrationKind.BroadcastPostProcessorFast:
                         _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
-                        return messageHandler.RegisterSourcedBroadcastPostProcessor(
-                            _context,
-                            _scalarFast,
-                            AugmentedScalarFast,
-                            _priority,
-                            messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterSourcedBroadcastPostProcessor(
+                                _context,
+                                _scalarFast,
+                                AugmentedScalarFast,
+                                _priority,
+                                messageBus
+                            )
                         );
                     case RegistrationKind.BroadcastWithoutSourceAction:
                         _contextAction = (Action<InstanceId, T>)_userHandler;
-                        return messageHandler.RegisterSourcedBroadcastWithoutSource(
-                            _contextAction,
-                            AugmentedContextAction,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterSourcedBroadcastWithoutSource(
+                                _contextAction,
+                                AugmentedContextAction,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.BroadcastWithoutSourceFast:
                         _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
-                        return messageHandler.RegisterSourcedBroadcastWithoutSource(
-                            _contextFast,
-                            AugmentedContextFast,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterSourcedBroadcastWithoutSource(
+                                _contextFast,
+                                AugmentedContextFast,
+                                priority: _priority,
+                                messageBus: messageBus
+                            )
                         );
                     case RegistrationKind.BroadcastWithoutSourcePostProcessorAction:
                         _contextAction = (Action<InstanceId, T>)_userHandler;
-                        return messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                            _contextAction,
-                            AugmentedContextAction,
-                            priority: _priority,
-                            messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
+                                _contextAction,
+                                AugmentedContextAction,
+                                priority: _priority,
+                                messageBus
+                            )
                         );
                     case RegistrationKind.BroadcastWithoutSourcePostProcessorFast:
                         _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
-                        return messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                            _contextFast,
-                            AugmentedContextFast,
-                            priority: _priority,
-                            messageBus
-                        );
-                    case RegistrationKind.BroadcastInterceptor:
-                        return messageHandler.RegisterBroadcastInterceptor(
-                            (IMessageBus.BroadcastInterceptor<T>)_userHandler,
-                            priority: _priority,
-                            messageBus: messageBus
+                        return StoreDeregistration(
+                            messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
+                                _contextFast,
+                                AugmentedContextFast,
+                                priority: _priority,
+                                messageBus
+                            )
                         );
                     default:
                         throw new InvalidOperationException(
@@ -3039,6 +3084,150 @@ namespace DxMessaging.Core
             }
         }
 
+        private abstract class InterceptorRegistration<T> : Registration
+            where T : IMessage
+        {
+            protected readonly int Priority;
+            private MessageHandler.InterceptorDeregistrationState<T> _deregistration;
+            private bool _hasInlineDeregistration;
+
+            protected InterceptorRegistration(MessageRegistrationToken token, int priority)
+                : base(token)
+            {
+                Priority = priority;
+            }
+
+            protected MessageHandler.HandlerDeregistration StoreDeregistration(
+                MessageHandler.InterceptorDeregistrationState<T> deregistration
+            )
+            {
+                if (_hasInlineDeregistration)
+                {
+                    return deregistration;
+                }
+
+                _deregistration = deregistration;
+                _hasInlineDeregistration = true;
+                return this;
+            }
+
+            internal override void Deregister()
+            {
+                if (!_hasInlineDeregistration)
+                {
+                    return;
+                }
+
+                _deregistration.Deregister();
+                _hasInlineDeregistration = false;
+            }
+        }
+
+        private sealed class UntargetedInterceptorRegistration<T> : InterceptorRegistration<T>
+            where T : IUntargetedMessage
+        {
+            private readonly IMessageBus.UntargetedInterceptor<T> _interceptor;
+
+            internal UntargetedInterceptorRegistration(
+                MessageRegistrationToken token,
+                IMessageBus.UntargetedInterceptor<T> interceptor,
+                int priority
+            )
+                : base(token, priority)
+            {
+                _interceptor = interceptor;
+            }
+
+            public override MessageRegistrationMetadata Metadata =>
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.UntargetedInterceptor,
+                    Priority
+                );
+
+            public override MessageHandler.HandlerDeregistration Register()
+            {
+                return StoreDeregistration(
+                    Token._messageHandler.RegisterUntargetedInterceptor(
+                        _interceptor,
+                        Priority,
+                        ResolveRegistrationMessageBus()
+                    )
+                );
+            }
+        }
+
+        private sealed class TargetedInterceptorRegistration<T> : InterceptorRegistration<T>
+            where T : ITargetedMessage
+        {
+            private readonly IMessageBus.TargetedInterceptor<T> _interceptor;
+
+            internal TargetedInterceptorRegistration(
+                MessageRegistrationToken token,
+                IMessageBus.TargetedInterceptor<T> interceptor,
+                int priority
+            )
+                : base(token, priority)
+            {
+                _interceptor = interceptor;
+            }
+
+            public override MessageRegistrationMetadata Metadata =>
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.TargetedInterceptor,
+                    Priority
+                );
+
+            public override MessageHandler.HandlerDeregistration Register()
+            {
+                return StoreDeregistration(
+                    Token._messageHandler.RegisterTargetedInterceptor(
+                        _interceptor,
+                        Priority,
+                        ResolveRegistrationMessageBus()
+                    )
+                );
+            }
+        }
+
+        private sealed class BroadcastInterceptorRegistration<T> : InterceptorRegistration<T>
+            where T : IBroadcastMessage
+        {
+            private readonly IMessageBus.BroadcastInterceptor<T> _interceptor;
+
+            internal BroadcastInterceptorRegistration(
+                MessageRegistrationToken token,
+                IMessageBus.BroadcastInterceptor<T> interceptor,
+                int priority
+            )
+                : base(token, priority)
+            {
+                _interceptor = interceptor;
+            }
+
+            public override MessageRegistrationMetadata Metadata =>
+                new MessageRegistrationMetadata(
+                    null,
+                    typeof(T),
+                    MessageRegistrationType.BroadcastInterceptor,
+                    Priority
+                );
+
+            public override MessageHandler.HandlerDeregistration Register()
+            {
+                return StoreDeregistration(
+                    Token._messageHandler.RegisterBroadcastInterceptor(
+                        _interceptor,
+                        Priority,
+                        ResolveRegistrationMessageBus()
+                    )
+                );
+            }
+        }
+
         // Global accept-all is non-generic: its three sub-handlers are the fixed
         // IMessage facades. Stores the three user delegates (as object, since the two
         // public overloads differ in delegate shape -- Action vs FastHandler/
@@ -3058,6 +3247,7 @@ namespace DxMessaging.Core
             private readonly MessageHandler.FastHandler<IUntargetedMessage> _untargetedFast;
             private readonly MessageHandler.FastHandlerWithContext<ITargetedMessage> _targetedFast;
             private readonly MessageHandler.FastHandlerWithContext<IBroadcastMessage> _broadcastFast;
+            private MessageHandler.HandlerDeregistration _deregistration;
 
             public override MessageRegistrationMetadata Metadata =>
                 new MessageRegistrationMetadata(
@@ -3101,7 +3291,7 @@ namespace DxMessaging.Core
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
                 if (_kind == RegistrationKind.GlobalAcceptAllAction)
                 {
-                    return messageHandler.RegisterGlobalAcceptAll(
+                    _deregistration = messageHandler.RegisterGlobalAcceptAll(
                         _untargetedAction,
                         AugmentedUntargetedAction,
                         _targetedAction,
@@ -3110,9 +3300,10 @@ namespace DxMessaging.Core
                         AugmentedBroadcastAction,
                         messageBus
                     );
+                    return _deregistration;
                 }
 
-                return messageHandler.RegisterGlobalAcceptAll(
+                _deregistration = messageHandler.RegisterGlobalAcceptAll(
                     _untargetedFast,
                     AugmentedUntargetedFast,
                     _targetedFast,
@@ -3121,6 +3312,12 @@ namespace DxMessaging.Core
                     AugmentedBroadcastFast,
                     messageBus
                 );
+                return _deregistration;
+            }
+
+            internal override void Deregister()
+            {
+                _deregistration?.Deregister();
             }
 
             private void AugmentedUntargetedAction(IUntargetedMessage message)

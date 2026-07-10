@@ -62,6 +62,13 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// <c>RegistrationStorageStructuralGuardTests.RegistrationsStoreUnifiedRegistrationObjectNotFuncOrAction</c>
     /// (deterministic, backend-independent -- in the per-PR EditMode correctness leg).
     /// </description></item>
+    /// <item><description>
+    /// Enabled token registration dropped one further managed-allocation call when the
+    /// existing per-handle Registration object began owning reusable typed/interceptor
+    /// teardown state. Allocation-backed wrappers remain only for direct handler callers
+    /// and overlapping retry spills. Guarded structurally by
+    /// <c>RegistrationStorageStructuralGuardTests.RegistrationObjectsOwnReusableTeardownState</c>.
+    /// </description></item>
     /// </list>
     /// <para>
     /// The counting rows use <see cref="AllocationProbe"/> (the <c>GC.Alloc</c> profiler
@@ -93,7 +100,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         // the minimum over several attempts (see AllocationProbe.MeasureMin).
         private const int MinAttempts = 8;
 
-        // ~14 measured per registration post-change (224 over 16). The window also pays
+        // ~13 measured per registration post-change (208 over 16). The window also pays
         // bus-side flat-array growth whose warm-domain count varies, so this is a
         // gross-regression tripwire (20/registration), not a 1-call-precise bound -- the
         // structural test pins the exact metadata-closure removal. 20 (not 16) leaves
