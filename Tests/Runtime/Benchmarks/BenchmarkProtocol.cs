@@ -517,11 +517,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             return scenario switch
             {
+                DispatchBenchmarkScenario.EmptyBusDispatch => "EmptyBus_Dispatch",
                 DispatchBenchmarkScenario.UntargetedFloodOneHandler => "UntargetedFlood_OneHandler",
+                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority =>
+                    "UntargetedFlood_TwoHandlers_OnePriority",
+                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority =>
+                    "UntargetedFlood_ThreeHandlers_OnePriority",
                 DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority =>
                     "UntargetedFlood_FourHandlers_OnePriority",
                 DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities =>
                     "UntargetedFlood_FourHandlers_FourPriorities",
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority =>
+                    "UntargetedFlood_SixteenHandlers_OnePriority",
+                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler =>
+                    "UntargetedFlood_OneInactiveHandler",
+                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget =>
+                    "TargetedFlood_NoMatchingTarget",
                 DispatchBenchmarkScenario.TargetedFloodOneListener => "TargetedFlood_OneListener",
                 DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
                     "TargetedFlood_SixteenListeners",
@@ -557,12 +568,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             return scenario switch
             {
+                DispatchBenchmarkScenario.EmptyBusDispatch => "Empty Bus Dispatch",
                 DispatchBenchmarkScenario.UntargetedFloodOneHandler =>
                     "Untargeted Flood (One Handler)",
+                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority =>
+                    "Untargeted Flood (Two Handlers, One Priority)",
+                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority =>
+                    "Untargeted Flood (Three Handlers, One Priority)",
                 DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority =>
                     "Untargeted Flood (Four Handlers, One Priority)",
                 DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities =>
                     "Untargeted Flood (Four Handlers, Four Priorities)",
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority =>
+                    "Untargeted Flood (Sixteen Handlers, One Priority)",
+                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler =>
+                    "Untargeted Flood (One Inactive Handler)",
+                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget =>
+                    "Targeted Flood (No Matching Target)",
                 DispatchBenchmarkScenario.TargetedFloodOneListener =>
                     "Targeted Flood (One Listener)",
                 DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>

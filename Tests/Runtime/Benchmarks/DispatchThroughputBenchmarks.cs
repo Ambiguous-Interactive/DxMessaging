@@ -25,9 +25,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public enum DispatchBenchmarkScenario
     {
+        EmptyBusDispatch,
         UntargetedFloodOneHandler,
+        UntargetedFloodTwoHandlersOnePriority,
+        UntargetedFloodThreeHandlersOnePriority,
         UntargetedFloodFourHandlersOnePriority,
         UntargetedFloodFourHandlersFourPriorities,
+        UntargetedFloodSixteenHandlersOnePriority,
+        UntargetedFloodOneInactiveHandler,
+        TargetedFloodNoMatchingTarget,
         TargetedFloodOneListener,
         TargetedFloodSixteenListeners,
         BroadcastFloodOneHandler,
@@ -54,6 +60,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes";
         private static readonly InstanceId Target = new(31001);
         private static readonly InstanceId Source = new(31002);
+        private static readonly InstanceId MissingTarget = new(31003);
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
 
         // Marginal registration scenarios register this many additional handlers of a
@@ -226,18 +233,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // MeasureEmitScenario fail (observed != expected) instead of passing silently.
         // Interceptors do NOT count (AllowUntargeted only gates, it never increments);
         // post-processors DO count (CountPostProcessed increments), plus the one terminal handler.
-        private static int ExpectedHandlerInvocationsPerEmit(DispatchBenchmarkScenario scenario)
+        internal static int ExpectedHandlerInvocationsPerEmit(DispatchBenchmarkScenario scenario)
         {
             switch (scenario)
             {
+                case DispatchBenchmarkScenario.EmptyBusDispatch:
+                case DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler:
+                case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
+                    return 0;
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
                 case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
                 case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
                     return 1;
+                case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
+                    return 2;
+                case DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority:
+                    return 3;
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities:
                     return 4;
+                case DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority:
                 case DispatchBenchmarkScenario.TargetedFloodSixteenListeners:
                     return 16;
                 case DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors:
@@ -680,8 +696,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             switch (scenario)
             {
+                case DispatchBenchmarkScenario.EmptyBusDispatch:
+                    return;
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
                     RegisterUntargeted(scope, handlerInvocations, 0);
+                    return;
+                case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
+                    for (int index = 0; index < 2; index++)
+                    {
+                        RegisterUntargeted(scope, handlerInvocations, 0);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority:
+                    for (int index = 0; index < 3; index++)
+                    {
+                        RegisterUntargeted(scope, handlerInvocations, 0);
+                    }
                     return;
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
                     for (int index = 0; index < 4; index++)
@@ -694,6 +724,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     {
                         RegisterUntargeted(scope, handlerInvocations, priority);
                     }
+                    return;
+                case DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority:
+                    for (int index = 0; index < 16; index++)
+                    {
+                        RegisterUntargeted(scope, handlerInvocations, 0);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler:
+                    RegisterUntargeted(scope, handlerInvocations, 0, active: false);
+                    return;
+                case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
+                    RegisterTargeted(scope, handlerInvocations, 0);
                     return;
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
                     RegisterTargeted(scope, handlerInvocations, 0);
@@ -742,10 +784,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static void RegisterUntargeted(
             BenchmarkRegistrationScope scope,
             InvocationCounter handlerInvocations,
-            int priority
+            int priority,
+            bool active = true
         )
         {
-            MessageRegistrationToken token = scope.CreateToken();
+            MessageRegistrationToken token = scope.CreateToken(active);
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
                 (ref SimpleUntargetedMessage message) => handlerInvocations.Increment(),
                 priority
@@ -784,15 +827,28 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             switch (scenario)
             {
+                case DispatchBenchmarkScenario.EmptyBusDispatch:
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
+                case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
+                case DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority:
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities:
+                case DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority:
+                case DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler:
                 case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
                 case DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors:
                     SimpleUntargetedMessage untargeted = new();
                     for (int index = 0; index < count; index++)
                     {
                         bus.UntargetedBroadcast(ref untargeted);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
+                    SimpleTargetedMessage missingTargetMessage = new();
+                    InstanceId missingTarget = MissingTarget;
+                    for (int index = 0; index < count; index++)
+                    {
+                        bus.TargetedBroadcast(ref missingTarget, ref missingTargetMessage);
                     }
                     return;
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
@@ -815,6 +871,67 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 default:
                     throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
             }
+        }
+
+        internal static DispatchScenarioContractObservation ConfigureAndEmitOnceForContract(
+            DispatchBenchmarkScenario scenario
+        )
+        {
+            using BenchmarkRegistrationScope scope = new();
+            InvocationCounter handlerInvocations = new();
+            ConfigureScenario(scope, scenario, handlerInvocations);
+            int registrationBuckets =
+                scope.Bus.RegisteredUntargeted
+                + scope.Bus.RegisteredTargeted
+                + scope.Bus.RegisteredBroadcast
+                + scope.Bus.RegisteredInterceptors
+                + scope.Bus.RegisteredPostProcessors
+                + scope.Bus.RegisteredGlobalAcceptAll;
+            EmitMany(scope.Bus, scenario, 1);
+            long scenarioFanOut = handlerInvocations.Count;
+
+            handlerInvocations.Reset();
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
+                    SimpleTargetedMessage targeted = new();
+                    InstanceId target = Target;
+                    scope.Bus.TargetedBroadcast(ref target, ref targeted);
+                    break;
+                case DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler:
+                    scope.SetAllHandlersActive(true);
+                    EmitMany(scope.Bus, scenario, 1);
+                    break;
+                default:
+                    EmitMany(scope.Bus, scenario, 1);
+                    break;
+            }
+
+            return new DispatchScenarioContractObservation(
+                scenarioFanOut,
+                handlerInvocations.Count,
+                registrationBuckets
+            );
+        }
+
+        internal readonly struct DispatchScenarioContractObservation
+        {
+            internal DispatchScenarioContractObservation(
+                long scenarioFanOut,
+                long controlFanOut,
+                int registrationBuckets
+            )
+            {
+                ScenarioFanOut = scenarioFanOut;
+                ControlFanOut = controlFanOut;
+                RegistrationBuckets = registrationBuckets;
+            }
+
+            internal long ScenarioFanOut { get; }
+
+            internal long ControlFanOut { get; }
+
+            internal int RegistrationBuckets { get; }
         }
 
         private static bool AllowUntargeted(ref SimpleUntargetedMessage message)
@@ -1353,11 +1470,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 Count++;
             }
+
+            public void Reset()
+            {
+                Count = 0;
+            }
         }
 
         private sealed class BenchmarkRegistrationScope : IDisposable
         {
             private readonly List<MessageRegistrationToken> _tokens = new();
+            private readonly List<MessageHandler> _handlers = new();
             private int _nextOwner = 32000;
 
             public BenchmarkRegistrationScope()
@@ -1370,13 +1493,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public MessageRegistrationToken PrimaryToken { get; }
 
-            public MessageRegistrationToken CreateToken()
+            public MessageRegistrationToken CreateToken(bool active = true)
             {
-                MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = true };
+                MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = active };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, Bus);
                 token.Enable();
+                _handlers.Add(handler);
                 _tokens.Add(token);
                 return token;
+            }
+
+            public void SetAllHandlersActive(bool active)
+            {
+                for (int index = 0; index < _handlers.Count; index++)
+                {
+                    _handlers[index].active = active;
+                }
             }
 
             public void Dispose()

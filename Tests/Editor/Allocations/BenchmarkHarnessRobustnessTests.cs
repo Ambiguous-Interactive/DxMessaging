@@ -410,6 +410,79 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        private static IEnumerable<TestCaseData> DispatchBaselineSetupCases()
+        {
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.EmptyBusDispatch,
+                0,
+                0,
+                0
+            ).SetName("DispatchBaselineSetup_EmptyBus");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget,
+                0,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_TargetedNoMatchingTarget");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority,
+                2,
+                2,
+                1
+            ).SetName("DispatchBaselineSetup_UntargetedTwoFlatEntries");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority,
+                3,
+                3,
+                1
+            ).SetName("DispatchBaselineSetup_UntargetedThreeFlatEntries");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority,
+                16,
+                16,
+                1
+            ).SetName("DispatchBaselineSetup_UntargetedSixteenFlatEntries");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler,
+                0,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_InactiveHandler");
+        }
+
+        [Test]
+        [TestCaseSource(nameof(DispatchBaselineSetupCases))]
+        public void DispatchBaselineScenarioSetupAndSingleEmitMatchDeclaredFanOut(
+            DispatchBenchmarkScenario scenario,
+            int expectedFanOut,
+            int expectedControlFanOut,
+            int expectedRegistrationBuckets
+        )
+        {
+            Assert.AreEqual(
+                expectedFanOut,
+                DispatchThroughputBenchmarks.ExpectedHandlerInvocationsPerEmit(scenario),
+                $"Scenario '{scenario}' must declare the requested exact fan-out."
+            );
+            DispatchThroughputBenchmarks.DispatchScenarioContractObservation observation =
+                DispatchThroughputBenchmarks.ConfigureAndEmitOnceForContract(scenario);
+            Assert.AreEqual(
+                expectedFanOut,
+                observation.ScenarioFanOut,
+                $"Scenario '{scenario}' setup and routing must produce its declared fan-out for one emit."
+            );
+            Assert.AreEqual(
+                expectedControlFanOut,
+                observation.ControlFanOut,
+                $"Scenario '{scenario}' control emit must prove the configured topology is live."
+            );
+            Assert.AreEqual(
+                expectedRegistrationBuckets,
+                observation.RegistrationBuckets,
+                $"Scenario '{scenario}' must configure the expected public bus registration buckets."
+            );
+        }
+
         [Test]
         public void BenchmarkMethodologyConstantsAreLocked()
         {
