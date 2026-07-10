@@ -1,10 +1,13 @@
 #if UNITY_EDITOR
 namespace DxMessaging.Tests.Editor
 {
+    using System.Collections.Generic;
     using System.Reflection;
     using DxMessaging.Core;
+    using DxMessaging.Core.DataStructure;
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
     using NUnit.Framework;
 
     /// <summary>
@@ -51,7 +54,7 @@ namespace DxMessaging.Tests.Editor
     /// on EVERY PR -- not only in the dedicated, perf-gated Allocation scope.
     /// </para>
     /// <para>
-    /// SCOPE (honest): this pins the DIAGNOSTICS-specific lazy win only. The other six
+    /// SCOPE (honest): this pins the DIAGNOSTICS-specific lazy win only. The remaining seven
     /// allocations in a correct <c>Create</c> (the token object plus the eagerly-initialized
     /// <c>_metadata</c>/<c>_registrations</c>/<c>_registrationOrder</c>/<c>_deregistrations</c>/
     /// <c>_registrationReplayQueue</c>/<c>_handleQueue</c> collections) are deliberately NOT
@@ -67,17 +70,20 @@ namespace DxMessaging.Tests.Editor
         private static readonly InstanceId Owner = new InstanceId(0x7A7A_7A7A);
 
         private DiagnosticsTarget _savedDiagnostics;
+        private int _savedBufferSize;
 
         [SetUp]
         public void SaveDiagnostics()
         {
             _savedDiagnostics = IMessageBus.GlobalDiagnosticsTargets;
+            _savedBufferSize = IMessageBus.GlobalMessageBufferSize;
         }
 
         [TearDown]
         public void RestoreDiagnostics()
         {
             IMessageBus.GlobalDiagnosticsTargets = _savedDiagnostics;
+            IMessageBus.GlobalMessageBufferSize = _savedBufferSize;
         }
 
         // Both the common player default (Off) and the diagnostics-enabled case (All): the
@@ -143,6 +149,112 @@ namespace DxMessaging.Tests.Editor
                     + "several managed allocations to every token Create."
             );
         }
+
+        [Test]
+        public void BusConstructionDoesNotEagerlyAllocateDiagnosticsStorage(
+            [Values(DiagnosticsTarget.Off, DiagnosticsTarget.All)] DiagnosticsTarget diagnostics
+        )
+        {
+            IMessageBus.GlobalDiagnosticsTargets = diagnostics;
+            FieldInfo logBacking = typeof(MessageBus).GetField(
+                "_log",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField(
+                "_emissionBufferBacking",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            FieldInfo finalizedRegistrations = typeof(RegistrationLog).GetField(
+                "_finalizedRegistrations",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+
+            Assert.That(logBacking, Is.Not.Null);
+            Assert.That(emissionBufferBacking, Is.Not.Null);
+            Assert.That(finalizedRegistrations, Is.Not.Null);
+
+            MessageBus bus = new MessageBus();
+            Assert.That(
+                logBacking.GetValue(bus),
+                Is.Null,
+                "MessageBus construction must not allocate its disabled registration log."
+            );
+            Assert.That(
+                emissionBufferBacking.GetValue(bus),
+                Is.Null,
+                "MessageBus construction must not allocate its diagnostics emission buffer."
+            );
+
+            RegistrationLog log = bus.Log;
+            Assert.That(log, Is.SameAs(bus.Log), "The lazily-created Log must remain stable.");
+            Assert.That(
+                finalizedRegistrations.GetValue(log),
+                Is.Null,
+                "Accessing the log object alone must not allocate its registration list."
+            );
+
+            IReadOnlyList<MessagingRegistration> registrations = log.Registrations;
+            Assert.That(registrations, Is.Empty);
+            Assert.That(
+                finalizedRegistrations.GetValue(log),
+                Is.SameAs(registrations),
+                "The first Registrations read must materialize the stable live list."
+            );
+        }
+
+        [Test]
+        public void BusEmissionBufferMaterializesOnlyWhenDiagnosticsRecordAnEmission()
+        {
+            IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
+            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField(
+                "_emissionBufferBacking",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            MessageBus bus = new MessageBus { DiagnosticsMode = false };
+            LazyBusDiagnosticsMessage message = default;
+
+            bus.UntargetedBroadcast(ref message);
+            Assert.That(
+                emissionBufferBacking.GetValue(bus),
+                Is.Null,
+                "Diagnostics-off dispatch must not materialize emission history."
+            );
+
+            bus.DiagnosticsMode = true;
+            bus.UntargetedBroadcast(ref message);
+            Assert.That(
+                emissionBufferBacking.GetValue(bus),
+                Is.Not.Null,
+                "The first diagnostics-enabled emission must materialize emission history."
+            );
+        }
+
+        [Test]
+        public void LazyEmissionBufferPreservesConstructionTimeCapacity()
+        {
+            IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
+            IMessageBus.GlobalMessageBufferSize = 2;
+            FieldInfo emissionBufferBacking = typeof(MessageBus).GetField(
+                "_emissionBufferBacking",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            MessageBus bus = new MessageBus { DiagnosticsMode = true };
+
+            IMessageBus.GlobalMessageBufferSize = 7;
+            LazyBusDiagnosticsMessage message = default;
+            bus.UntargetedBroadcast(ref message);
+
+            CyclicBuffer<MessageEmissionData> buffer =
+                (CyclicBuffer<MessageEmissionData>)emissionBufferBacking.GetValue(bus);
+            Assert.That(buffer, Is.Not.Null);
+            Assert.That(
+                buffer.Capacity,
+                Is.EqualTo(2),
+                "Lazy materialization must preserve the capacity captured when this bus was constructed."
+            );
+        }
+
+        private readonly struct LazyBusDiagnosticsMessage : IUntargetedMessage { }
     }
 }
 #endif

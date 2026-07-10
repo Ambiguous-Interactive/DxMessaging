@@ -796,7 +796,7 @@ namespace DxMessaging.Core.MessageBus
             public static bool SourcedRegistered;
         }
 
-        public RegistrationLog Log => _log;
+        public RegistrationLog Log => _log ??= new RegistrationLog();
 
         // Storage trio for typed and global dispatch. _scalarSinks and
         // _contextSinks are SlotKey-indexed arrays of MessageCache (call sites
@@ -1044,7 +1044,8 @@ namespace DxMessaging.Core.MessageBus
             {
                 IMessageBus.GlobalMessageBufferSize = Math.Max(0, settings.MessageBufferSize);
             }
-            _emissionBuffer.Resize(Math.Max(0, IMessageBus.GlobalMessageBufferSize));
+            _emissionBufferCapacity = Math.Max(0, IMessageBus.GlobalMessageBufferSize);
+            _emissionBufferBacking?.Resize(_emissionBufferCapacity);
             _idleEvictionTicks = ComputeIdleEvictionTicks(settings.IdleEvictionSeconds);
             _evictionTickIntervalSeconds = Math.Max(0d, settings.EvictionTickIntervalSeconds);
             _idleEvictionEnabled = settings.EvictionEnabled;
@@ -1202,10 +1203,13 @@ namespace DxMessaging.Core.MessageBus
         private readonly List<MonoBehaviour> _componentCache = new();
 #endif
 
-        private readonly RegistrationLog _log = new();
-        internal readonly CyclicBuffer<MessageEmissionData> _emissionBuffer = new(
-            GlobalMessageBufferSize
-        );
+        private RegistrationLog _log;
+        private CyclicBuffer<MessageEmissionData> _emissionBufferBacking;
+        private int _emissionBufferCapacity = GlobalMessageBufferSize;
+        internal CyclicBuffer<MessageEmissionData> _emissionBuffer =>
+            _emissionBufferBacking ??= new CyclicBuffer<MessageEmissionData>(
+                _emissionBufferCapacity
+            );
 
         private bool _diagnosticsMode = ShouldEnableDiagnostics();
         private bool _loggedReflexiveWarning;
@@ -2564,11 +2568,10 @@ namespace DxMessaging.Core.MessageBus
             _componentCache.Clear();
 #endif
 
-            bool enabled = _log.Enabled;
-            _log.Clear();
-            _log.Enabled = enabled;
-            _emissionBuffer.Resize(GlobalMessageBufferSize);
-            _emissionBuffer.Clear();
+            _log?.Clear();
+            _emissionBufferCapacity = GlobalMessageBufferSize;
+            _emissionBufferBacking?.Resize(_emissionBufferCapacity);
+            _emissionBufferBacking?.Clear();
         }
 
         private void ResetTypedSlotsForReferencedHandlers()
@@ -2754,7 +2757,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 _globalSlots.liveCount++;
             }
-            _log.Log(
+            _log?.Log(
                 new MessagingRegistration(
                     messageHandler.owner,
                     type,
@@ -2818,7 +2821,7 @@ namespace DxMessaging.Core.MessageBus
             long deregisterTouchTick = AdvanceTick();
             InvalidateDispatchPlans();
             _globalSlots.version++;
-            _log.Log(
+            _log?.Log(
                 new MessagingRegistration(
                     messageHandler.owner,
                     type,
@@ -2921,7 +2924,7 @@ namespace DxMessaging.Core.MessageBus
             priorityCount[priority] = count + 1;
 
             Type type = typeof(T);
-            _log.Log(
+            _log?.Log(
                 new MessagingRegistration(
                     InstanceId.EmptyId,
                     type,
@@ -2992,7 +2995,7 @@ namespace DxMessaging.Core.MessageBus
             priorityCount[priority] = count + 1;
 
             Type type = typeof(T);
-            _log.Log(
+            _log?.Log(
                 new MessagingRegistration(
                     InstanceId.EmptyId,
                     type,
@@ -3063,7 +3066,7 @@ namespace DxMessaging.Core.MessageBus
             priorityCount[priority] = count + 1;
 
             Type type = typeof(T);
-            _log.Log(
+            _log?.Log(
                 new MessagingRegistration(
                     InstanceId.EmptyId,
                     type,
@@ -5050,7 +5053,7 @@ namespace DxMessaging.Core.MessageBus
             }
             StageDispatchSnapshot<T>(this, capturedHandlers, slotKey);
             Type type = typeof(T);
-            _log.Log(
+            _log?.Log(
                 new MessagingRegistration(
                     handlerOwnerId,
                     type,
@@ -5119,7 +5122,7 @@ namespace DxMessaging.Core.MessageBus
                 && cache.handlers.TryGetValue(messageHandler, out int count)
             )
             {
-                _log.Log(
+                _log?.Log(
                     new MessagingRegistration(
                         handlerOwnerId,
                         type,
@@ -5264,7 +5267,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             Type type = typeof(T);
-            _log.Log(
+            _log?.Log(
                 new MessagingRegistration(
                     context,
                     type,
@@ -5328,7 +5331,7 @@ namespace DxMessaging.Core.MessageBus
                 && cache.handlers.TryGetValue(messageHandler, out int count)
             )
             {
-                _log.Log(
+                _log?.Log(
                     new MessagingRegistration(
                         context,
                         type,
@@ -5466,7 +5469,7 @@ namespace DxMessaging.Core.MessageBus
             InvalidateDispatchPlans();
             capturedInterceptors.lastTouchTicks = _tickCounter;
             MarkDirtyType<T>();
-            _log.Log(
+            _log?.Log(
                 new MessagingRegistration(
                     InstanceId.EmptyId,
                     typeof(T),
