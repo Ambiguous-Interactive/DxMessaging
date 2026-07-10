@@ -14,6 +14,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 HandlerCardinalityOperation.PriorityDispatch,
                 HandlerCardinalityOperation.PriorityChurn,
+                HandlerCardinalityOperation.HandlerDispatch,
+                HandlerCardinalityOperation.HandlerChurn,
                 HandlerCardinalityOperation.SameHandlerDispatch,
                 HandlerCardinalityOperation.SameHandlerChurn,
             };

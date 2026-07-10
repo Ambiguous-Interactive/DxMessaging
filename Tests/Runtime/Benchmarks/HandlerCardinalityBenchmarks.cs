@@ -14,6 +14,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     {
         PriorityDispatch,
         PriorityChurn,
+        HandlerDispatch,
+        HandlerChurn,
         SameHandlerDispatch,
         SameHandlerChurn,
     }
@@ -43,7 +45,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             using HandlerCardinalityState state = new(
                 benchmarkCase.Cardinality,
-                IsSameHandler(benchmarkCase.Operation)
+                benchmarkCase.Operation
             );
             int warmupOperations = IsDispatch(benchmarkCase.Operation)
                 ? BenchmarkProtocol.WarmupEmits
@@ -103,7 +105,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             using HandlerCardinalityState state = new(
                 benchmarkCase.Cardinality,
-                IsSameHandler(benchmarkCase.Operation)
+                benchmarkCase.Operation
             );
             if (IsDispatch(benchmarkCase.Operation))
             {
@@ -119,6 +121,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static bool IsDispatch(HandlerCardinalityOperation operation) =>
             operation == HandlerCardinalityOperation.PriorityDispatch
+            || operation == HandlerCardinalityOperation.HandlerDispatch
             || operation == HandlerCardinalityOperation.SameHandlerDispatch;
 
         private static bool IsSameHandler(HandlerCardinalityOperation operation) =>
@@ -143,17 +146,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             private readonly MessageRegistrationHandle[] _handles;
             private readonly MessageHandler.FastHandler<CardinalityMessage> _sameHandler;
             private readonly bool _sameHandlerShape;
+            private readonly bool _distinctPriorityShape;
             private int _cursor;
             private long _calls;
 
-            internal HandlerCardinalityState(int cardinality, bool sameHandlerShape)
+            internal HandlerCardinalityState(int cardinality, HandlerCardinalityOperation operation)
             {
                 if (cardinality <= 0)
                 {
                     throw new ArgumentOutOfRangeException(nameof(cardinality));
                 }
 
-                _sameHandlerShape = sameHandlerShape;
+                _sameHandlerShape = IsSameHandler(operation);
+                _distinctPriorityShape =
+                    operation == HandlerCardinalityOperation.PriorityDispatch
+                    || operation == HandlerCardinalityOperation.PriorityChurn;
                 _bus = new MessageBus { DiagnosticsMode = false };
                 MessageHandler messageHandler = new(new InstanceId(0x4843_0001), _bus)
                 {
@@ -185,6 +192,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 switch (operation)
                 {
                     case HandlerCardinalityOperation.PriorityDispatch:
+                    case HandlerCardinalityOperation.HandlerDispatch:
                     case HandlerCardinalityOperation.SameHandlerDispatch:
                     {
                         for (int index = 0; index < count; ++index)
@@ -195,6 +203,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         return;
                     }
                     case HandlerCardinalityOperation.PriorityChurn:
+                    case HandlerCardinalityOperation.HandlerChurn:
                     case HandlerCardinalityOperation.SameHandlerChurn:
                     {
                         for (int index = 0; index < count; ++index)
@@ -226,7 +235,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 return _token.RegisterUntargeted<CardinalityMessage>(
                     _sameHandlerShape ? _sameHandler : _handlers[index],
-                    priority: _sameHandlerShape ? 0 : index
+                    priority: _distinctPriorityShape ? index : 0
                 );
             }
 
@@ -251,6 +260,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             HandlerCardinalityOperation.PriorityDispatch,
             HandlerCardinalityOperation.PriorityChurn,
+            HandlerCardinalityOperation.HandlerDispatch,
+            HandlerCardinalityOperation.HandlerChurn,
             HandlerCardinalityOperation.SameHandlerDispatch,
             HandlerCardinalityOperation.SameHandlerChurn,
         };
