@@ -55,6 +55,40 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
+        public void BusHandlerCachesDoNotRetainLegacySnapshotListsOrEmissionStamps()
+        {
+            Type[] nestedTypes = typeof(MessageBus).GetNestedTypes(BindingFlags.NonPublic);
+            Type keyedCache = nestedTypes.Single(type => type.Name == "HandlerCache`2");
+            Type leafCache = nestedTypes.Single(type => type.Name == "HandlerCache");
+            Type interceptorCache = nestedTypes.Single(type => type.Name == "InterceptorCache`1");
+
+            foreach (Type cacheType in new[] { keyedCache, leafCache })
+            {
+                Assert.That(
+                    cacheType.GetField("cache", DeclaredInstanceFields),
+                    Is.Null,
+                    $"{cacheType.Name} must not eagerly allocate the legacy snapshot list."
+                );
+                Assert.That(
+                    cacheType.GetField("lastSeenVersion", DeclaredInstanceFields),
+                    Is.Null,
+                    $"{cacheType.Name} must not retain unused legacy version stamps."
+                );
+                Assert.That(
+                    cacheType.GetField("lastSeenEmissionId", DeclaredInstanceFields),
+                    Is.Null,
+                    $"{cacheType.Name} must not retain unused legacy emission stamps."
+                );
+            }
+
+            Assert.That(
+                interceptorCache.GetField("lastSeenEmissionId", DeclaredInstanceFields),
+                Is.Null,
+                "InterceptorCache<T> must not retain an unused legacy emission stamp."
+            );
+        }
+
+        [Test]
         public void EveryMessageCacheFieldHasSweepableRegistryEntry()
         {
             string[] fieldNames = GetMessageCacheStorageFields()

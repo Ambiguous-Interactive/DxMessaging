@@ -376,15 +376,12 @@ namespace DxMessaging.Core.MessageBus
         {
             public readonly Dictionary<TKey, TValue> handlers = new();
             public readonly List<TKey> order = new();
-            public readonly List<KeyValuePair<TKey, TValue>> cache = new();
             public long version;
-            public long lastSeenVersion = -1;
-            public long lastSeenEmissionId = -1;
             public long lastTouchTicks;
             public DispatchState dispatchState;
 
             /// <summary>
-            /// Clears all cached handler references and resets the version tracking metadata.
+            /// Clears all handler references and resets the mutation version.
             /// </summary>
             public void Clear()
             {
@@ -393,10 +390,7 @@ namespace DxMessaging.Core.MessageBus
                 // is handled by sweep-driven slot reset paths.
                 handlers.Clear();
                 order.Clear();
-                cache.Clear();
                 version = 0;
-                lastSeenVersion = -1;
-                lastSeenEmissionId = -1;
                 dispatchState?.Reset();
                 dispatchState = null;
             }
@@ -405,13 +399,11 @@ namespace DxMessaging.Core.MessageBus
         private sealed class InterceptorCache<TValue>
         {
             public readonly SortedList<int, List<TValue>> handlers = new();
-            public long lastSeenEmissionId = -1;
             public long lastTouchTicks;
 
             public void Clear()
             {
                 handlers.Clear();
-                lastSeenEmissionId = -1;
                 lastTouchTicks = 0;
             }
         }
@@ -493,13 +485,10 @@ namespace DxMessaging.Core.MessageBus
             // removed when its refcount drops to zero. Mirrors the
             // MessageHandler-side HandlerActionCache.insertionOrder design.
             public readonly List<MessageHandler> insertionOrder = new();
-            public readonly List<MessageHandler> cache = new();
             public long version;
-            public long lastSeenVersion = -1;
-            public long lastSeenEmissionId = -1;
 
             /// <summary>
-            /// Clears all cached handler references and resets the version tracking metadata.
+            /// Clears all handler references and resets the mutation version.
             /// </summary>
             public void Clear()
             {
@@ -508,10 +497,7 @@ namespace DxMessaging.Core.MessageBus
                 // is handled by sweep-driven slot reset paths.
                 handlers.Clear();
                 insertionOrder.Clear();
-                cache.Clear();
                 version = 0;
-                lastSeenVersion = -1;
-                lastSeenEmissionId = -1;
             }
         }
 
@@ -5131,7 +5117,6 @@ namespace DxMessaging.Core.MessageBus
                     // insertionOrder tradeoff.
                     _ = cache.insertionOrder.Remove(messageHandler);
                     MarkDirtyHandler(messageHandler);
-                    // do not mutate cache.cache here; let next read rebuild from handlers
 
                     if (handler.Count == 0)
                     {
@@ -5336,7 +5321,6 @@ namespace DxMessaging.Core.MessageBus
                     // DeregisterScalarHandler.
                     _ = cache.insertionOrder.Remove(messageHandler);
                     MarkDirtyHandler(messageHandler);
-                    // do not mutate cache.cache here; let next read rebuild from handlers
                     if (handler.Count == 0)
                     {
                         capturedHandlers.version++;
