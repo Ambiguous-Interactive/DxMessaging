@@ -89,6 +89,61 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
+        public void DispatchSnapshotCarriesDirectEntryCountAlongsideGlobalBuckets()
+        {
+            Type snapshotType = typeof(MessageBus)
+                .GetNestedTypes(BindingFlags.NonPublic)
+                .Single(type => type.Name == "DispatchSnapshot");
+
+            Assert.That(
+                snapshotType.GetField("entryCount", DeclaredInstanceFields),
+                Is.Not.Null,
+                "Non-global snapshots must carry their flat entry count directly."
+            );
+            Assert.That(
+                snapshotType.GetField("buckets", DeclaredInstanceFields),
+                Is.Not.Null,
+                "Global accept-all snapshots still require priority bucket storage."
+            );
+
+            Type flatType = typeof(MessageBus)
+                .Assembly.GetType("DxMessaging.Core.Internal.FlatDispatch`1", throwOnError: true)
+                .MakeGenericType(typeof(UntargetedDispatchProbeMessage));
+            MethodInfo rent = flatType.BaseType.GetMethod(
+                "Rent",
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy
+            );
+            object flat = rent.Invoke(null, new object[] { 0 });
+            ConstructorInfo flatSnapshotConstructor = snapshotType
+                .GetConstructors(BindingFlags.Instance | BindingFlags.Public)
+                .Single(constructor => constructor.GetParameters().Length == 2);
+            object snapshot = flatSnapshotConstructor.Invoke(new[] { flat, (object)true });
+
+            Assert.That(
+                snapshotType.GetField("bucketCount", DeclaredInstanceFields).GetValue(snapshot),
+                Is.EqualTo(0),
+                "A non-global flat snapshot must not rent count-only priority buckets."
+            );
+            Assert.That(
+                snapshotType.GetField("entryCount", DeclaredInstanceFields).GetValue(snapshot),
+                Is.EqualTo(0),
+                "The zero-entry ownership case must remain representable without buckets."
+            );
+            Assert.That(
+                snapshotType.GetProperty("IsInitialized").GetValue(snapshot),
+                Is.True,
+                "An owned zero-entry flat snapshot must not be confused with the empty singleton."
+            );
+
+            snapshotType.GetMethod("Release").Invoke(snapshot, null);
+            Assert.That(
+                snapshotType.GetField("flat", DeclaredInstanceFields).GetValue(snapshot),
+                Is.Null,
+                "Releasing a zero-entry flat snapshot must return its owned holder."
+            );
+        }
+
+        [Test]
         public void EveryMessageCacheFieldHasSweepableRegistryEntry()
         {
             string[] fieldNames = GetMessageCacheStorageFields()

@@ -68,6 +68,8 @@ namespace DxMessaging.Core.Internal
     /// </summary>
     internal abstract class FlatDispatchArray
     {
+        internal abstract int Count { get; }
+
         internal abstract void Release();
     }
 
@@ -107,6 +109,8 @@ namespace DxMessaging.Core.Internal
 
         internal TEntry[] entries = Array.Empty<TEntry>();
         internal int count;
+
+        internal override int Count => count;
 
         // True while the holder is parked in (or eligible for) the pool;
         // false while it is owned by a live DispatchSnapshot. Guards the

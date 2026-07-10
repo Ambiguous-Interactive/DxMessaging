@@ -193,11 +193,10 @@ namespace DxMessaging.Core.MessageBus
             return ContextHandlerByTargetDicts.Trim(0);
         }
 
-        // One bucket entry per registered MessageHandler. Entry arrays are
-        // populated only for the GLOBAL accept-all snapshots (the only
-        // remaining bucket-walking dispatch path); non-global snapshots carry
-        // count-only buckets (see BuildDispatchSnapshot) because their
-        // dispatch happens exclusively through the resolved flat arrays.
+        // One bucket entry per registered MessageHandler. Bucket arrays are
+        // populated only for GLOBAL accept-all snapshots (the only remaining
+        // bucket-walking dispatch path). Non-global snapshots carry a resolved
+        // flat array and its entry count directly.
         internal readonly struct DispatchEntry
         {
             public DispatchEntry(MessageHandler handler)
@@ -228,11 +227,6 @@ namespace DxMessaging.Core.MessageBus
             public int entryCount;
             public bool pooledEntries;
 
-            public static DispatchBucket CreateEmpty(int priority)
-            {
-                return new DispatchBucket(priority, Array.Empty<DispatchEntry>(), 0, false);
-            }
-
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void ReleaseEntries()
             {
@@ -254,18 +248,42 @@ namespace DxMessaging.Core.MessageBus
             public static readonly DispatchSnapshot Empty = new DispatchSnapshot(
                 Array.Empty<DispatchBucket>(),
                 0,
+                0,
+                false,
                 false
             );
 
-            public DispatchSnapshot(DispatchBucket[] buckets, int count, bool pooled)
+            public DispatchSnapshot(
+                DispatchBucket[] buckets,
+                int bucketCount,
+                int entryCount,
+                bool hasRegistrations,
+                bool pooled
+            )
             {
                 this.buckets = buckets;
-                bucketCount = count;
+                this.bucketCount = bucketCount;
+                this.entryCount = entryCount;
+                this.hasRegistrations = hasRegistrations;
                 _pooled = pooled;
+                _pooledBuckets = pooled;
+            }
+
+            public DispatchSnapshot(FlatDispatchArray flat, bool hasRegistrations)
+            {
+                buckets = Array.Empty<DispatchBucket>();
+                bucketCount = 0;
+                entryCount = flat?.Count ?? 0;
+                this.hasRegistrations = hasRegistrations;
+                this.flat = flat;
+                _pooled = true;
+                _pooledBuckets = false;
             }
 
             public DispatchBucket[] buckets;
             public int bucketCount;
+            public int entryCount;
+            public bool hasRegistrations;
 
             // Resolved flat dispatch entries for every flattened slot kind:
             // untargeted handle/post, targeted/broadcast Default handle/post
@@ -279,8 +297,9 @@ namespace DxMessaging.Core.MessageBus
             // Release().
             public FlatDispatchArray flat;
             private bool _pooled;
+            private readonly bool _pooledBuckets;
 
-            public bool IsEmpty => bucketCount == 0;
+            public bool IsInitialized => !ReferenceEquals(this, Empty);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void Release()
@@ -293,15 +312,21 @@ namespace DxMessaging.Core.MessageBus
                 flat?.Release();
                 flat = null;
 
-                for (int i = 0; i < bucketCount; ++i)
+                if (_pooledBuckets)
                 {
-                    buckets[i].ReleaseEntries();
+                    for (int i = 0; i < bucketCount; ++i)
+                    {
+                        buckets[i].ReleaseEntries();
+                    }
+
+                    Array.Clear(buckets, 0, bucketCount);
+                    DispatchBucketPool.Return(buckets);
                 }
 
-                Array.Clear(buckets, 0, bucketCount);
-                DispatchBucketPool.Return(buckets);
                 buckets = Array.Empty<DispatchBucket>();
                 bucketCount = 0;
+                entryCount = 0;
+                hasRegistrations = false;
                 _pooled = false;
             }
         }
@@ -1704,7 +1729,7 @@ namespace DxMessaging.Core.MessageBus
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HasActiveDispatchSnapshot(DispatchState state)
         {
-            return _dispatchDepth > 0 && state != null && !state.active.IsEmpty;
+            return _dispatchDepth > 0 && state != null && state.active.IsInitialized;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2195,7 +2220,7 @@ namespace DxMessaging.Core.MessageBus
         {
             DispatchSnapshot displaced = snapshot;
             snapshot = DispatchSnapshot.Empty;
-            if (displaced == null || displaced.IsEmpty)
+            if (displaced == null || !displaced.IsInitialized)
             {
                 return;
             }
@@ -3370,7 +3395,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             Touch(sortedHandlers, touchTick);
-            DispatchSnapshot snapshot = prefrozenSnapshot.IsEmpty
+            DispatchSnapshot snapshot = !prefrozenSnapshot.IsInitialized
                 ? AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     sortedHandlers,
@@ -3958,7 +3983,7 @@ namespace DxMessaging.Core.MessageBus
                         target
                     );
                 }
-                else if (targetedPostSnapshot.IsEmpty)
+                else if (!targetedPostSnapshot.IsInitialized)
                 {
                     snapshot = AcquireDispatchSnapshotFast<TMessage>(
                         this,
@@ -3984,7 +4009,7 @@ namespace DxMessaging.Core.MessageBus
                 && postTwt.handlers.Count > 0
             )
             {
-                DispatchSnapshot snapshot = targetedWithoutTargetingPostSnapshot.IsEmpty
+                DispatchSnapshot snapshot = !targetedWithoutTargetingPostSnapshot.IsInitialized
                     ? AcquireDispatchSnapshotFast<TMessage>(
                         this,
                         postTwt,
@@ -4363,15 +4388,15 @@ namespace DxMessaging.Core.MessageBus
                 }
             }
 
-            if (!broadcastPostSnapshot.IsEmpty)
+            if (broadcastPostSnapshot.IsInitialized)
             {
-                // Legacy reporting: a non-empty pre-frozen snapshot counts as
-                // "found" even if every frozen delegate is skipped below.
+                // Legacy reporting: an initialized pre-frozen snapshot counts as
+                // "found" even when it owns zero resolved delegates.
                 foundAnyHandlers = true;
                 _ = DispatchFlatSnapshot(broadcastPostSnapshot, ref typedMessage);
             }
 
-            if (!broadcastWithoutSourcePostSnapshot.IsEmpty)
+            if (broadcastWithoutSourcePostSnapshot.IsInitialized)
             {
                 if (
                     DispatchContextFlatSnapshot(
@@ -4960,7 +4985,7 @@ namespace DxMessaging.Core.MessageBus
             // Empty), acquire lazily here: the legacy path took its first
             // freeze at this point in that case, so a registration made
             // earlier in this emission into a previously-empty sink fires.
-            DispatchSnapshot snapshot = prefrozenSnapshot.IsEmpty
+            DispatchSnapshot snapshot = !prefrozenSnapshot.IsInitialized
                 ? AcquireDispatchSnapshotFast<TMessage>(
                     this,
                     sortedHandlers,
@@ -5724,7 +5749,7 @@ namespace DxMessaging.Core.MessageBus
         {
             DebugAssertAcquireFastPrecondition(handlers);
             DispatchState state = handlers.dispatchState;
-            if (state != null && !state.hasPending && !state.active.IsEmpty)
+            if (state != null && !state.hasPending && state.active.IsInitialized)
             {
                 handlers.lastTouchTicks = messageBus._tickCounter;
                 state.snapshotEmissionId = emissionId;
@@ -5782,7 +5807,7 @@ namespace DxMessaging.Core.MessageBus
 
             if (state.hasPending)
             {
-                if (state.pendingDirty || (hasHandlers && state.pending.IsEmpty))
+                if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                 {
                     ReleaseSnapshot(ref state.pending);
                     state.pending = hasHandlers
@@ -5792,7 +5817,7 @@ namespace DxMessaging.Core.MessageBus
                     state.pendingDirty = false;
                 }
             }
-            else if (state.active.IsEmpty && hasHandlers)
+            else if (!state.active.IsInitialized && hasHandlers)
             {
                 ReleaseSnapshot(ref state.pending);
                 state.pending = BuildDispatchSnapshot<TMessage>(
@@ -5815,7 +5840,7 @@ namespace DxMessaging.Core.MessageBus
                     // ReleaseDisplacedSnapshot defers the release to the
                     // outermost dispatch-lease exit when one is in flight.
                     messageBus.ReleaseDisplacedSnapshot(ref state.active);
-                    if (state.pendingDirty || (hasHandlers && state.pending.IsEmpty))
+                    if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                     {
                         ReleaseSnapshot(ref state.pending);
                         state.pending = hasHandlers
@@ -5835,7 +5860,7 @@ namespace DxMessaging.Core.MessageBus
                     state.hasPending = false;
                     state.pendingDirty = false;
                 }
-                else if (!hasHandlers && !state.active.IsEmpty)
+                else if (!hasHandlers && state.active.IsInitialized)
                 {
                     messageBus.ReleaseDisplacedSnapshot(ref state.active);
                 }
@@ -5859,46 +5884,13 @@ namespace DxMessaging.Core.MessageBus
                 return DispatchSnapshot.Empty;
             }
 
-            List<int> orderedPriorities = handlers.order;
-            int priorityCount = orderedPriorities.Count;
-            DispatchBucket[] buckets = DispatchBucketPool.Rent(priorityCount);
-
-            for (int i = 0; i < priorityCount; ++i)
-            {
-                int priority = orderedPriorities[i];
-                if (
-                    !handlers.handlers.TryGetValue(priority, out HandlerCache cache)
-                    || cache == null
-                )
-                {
-                    buckets[i] = DispatchBucket.CreateEmpty(priority);
-                    continue;
-                }
-
-                Dictionary<MessageHandler, int> handlerLookup = cache.handlers;
-                if (handlerLookup == null || handlerLookup.Count == 0)
-                {
-                    buckets[i] = DispatchBucket.CreateEmpty(priority);
-                    continue;
-                }
-
-                // Count-only bucket: non-global dispatch walks the resolved
-                // flat array exclusively, so the bucket carries the handler
-                // count (consumed by IsEmpty / HasAnyDispatchEntries for the
-                // legacy "found any handlers" reporting) without renting or
-                // filling a DispatchEntry array.
-                DebugAssertBusInsertionOrderInSync(cache);
-                buckets[i] = new DispatchBucket(
-                    priority,
-                    Array.Empty<DispatchEntry>(),
-                    handlerLookup.Count,
-                    pooledEntries: false
-                );
-            }
-
-            DispatchSnapshot snapshot = new DispatchSnapshot(buckets, priorityCount, pooled: true);
-            snapshot.flat = BuildFlatDispatch<TMessage>(messageBus, handlers, slotKey, context);
-            return snapshot;
+            FlatDispatchArray flat = BuildFlatDispatch<TMessage>(
+                messageBus,
+                handlers,
+                slotKey,
+                context
+            );
+            return new DispatchSnapshot(flat, hasRegistrations: true);
         }
 
         /// <summary>
@@ -6299,7 +6291,7 @@ namespace DxMessaging.Core.MessageBus
             DebugAssertFlatShape<FlatDispatch<TMessage>>(flatBase);
             FlatDispatch<TMessage> flat = DxUnsafe.As<FlatDispatch<TMessage>>(flatBase);
             FlatDispatchEntry<TMessage>[] entries = flat.entries;
-            int count = flat.count;
+            int count = snapshot.entryCount;
             long resetGeneration = _resetGeneration;
             for (int i = 0; i < count; ++i)
             {
@@ -6351,7 +6343,7 @@ namespace DxMessaging.Core.MessageBus
                 flatBase
             );
             ContextFlatDispatchEntry<TMessage>[] entries = flat.entries;
-            int count = flat.count;
+            int count = snapshot.entryCount;
             long resetGeneration = _resetGeneration;
             for (int i = 0; i < count; ++i)
             {
@@ -6425,24 +6417,10 @@ namespace DxMessaging.Core.MessageBus
             );
         }
 
-        // IL2CPP check elision: buckets[0..bucketCount) is non-null by snapshot
-        // construction; same justification as DispatchFlatSnapshot.
-        [Il2CppSetOption(Option.NullChecks, false)]
-        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool HasAnyDispatchEntries(DispatchSnapshot snapshot)
         {
-            DispatchBucket[] buckets = snapshot.buckets;
-            int bucketCount = snapshot.bucketCount;
-            for (int i = 0; i < bucketCount; ++i)
-            {
-                if (0 < buckets[i].entryCount)
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return snapshot.hasRegistrations;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -6467,7 +6445,7 @@ namespace DxMessaging.Core.MessageBus
 
             if (state.hasPending)
             {
-                if (state.pendingDirty || (hasHandlers && state.pending.IsEmpty))
+                if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                 {
                     ReleaseSnapshot(ref state.pending);
                     if (hasHandlers)
@@ -6486,7 +6464,7 @@ namespace DxMessaging.Core.MessageBus
                     state.pendingDirty = false;
                 }
             }
-            else if (state.active.IsEmpty && hasHandlers)
+            else if (!state.active.IsInitialized && hasHandlers)
             {
                 ReleaseSnapshot(ref state.pending);
                 state.pending = BuildGlobalDispatchSnapshot<TMessage>(messageBus, handlers, kind);
@@ -6502,7 +6480,7 @@ namespace DxMessaging.Core.MessageBus
                     // snapshot may still be iterated by an outer emission, so
                     // its release is deferred while a dispatch lease is live.
                     messageBus.ReleaseDisplacedSnapshot(ref state.active);
-                    if (state.pendingDirty || (hasHandlers && state.pending.IsEmpty))
+                    if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                     {
                         ReleaseSnapshot(ref state.pending);
                         state.pending = hasHandlers
@@ -6517,7 +6495,7 @@ namespace DxMessaging.Core.MessageBus
                     state.hasPending = false;
                     state.pendingDirty = false;
                 }
-                else if (!hasHandlers && !state.active.IsEmpty)
+                else if (!hasHandlers && state.active.IsInitialized)
                 {
                     messageBus.ReleaseDisplacedSnapshot(ref state.active);
                 }
@@ -6551,7 +6529,13 @@ namespace DxMessaging.Core.MessageBus
             }
 
             buckets[0] = new DispatchBucket(0, entries, entryCount, pooledEntries: true);
-            return new DispatchSnapshot(buckets, 1, pooled: true);
+            return new DispatchSnapshot(
+                buckets,
+                1,
+                entryCount,
+                hasRegistrations: true,
+                pooled: true
+            );
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
