@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -75,6 +76,91 @@ namespace DxMessaging.Tests.Runtime.Core
         )
         {
             Assert.DoesNotThrow(() => testCase.Action());
+        }
+
+        [Test]
+        public void StaleAndForeignHandlesCannotRemoveReusedArenaSlot()
+        {
+            using TokenScope scope = TokenScope.Create();
+            MessageRegistrationHandle stale =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+            scope.Token.RemoveRegistration(stale);
+
+            int invocationCount = 0;
+            MessageRegistrationHandle current =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => ++invocationCount
+                );
+            using TokenScope foreignScope = TokenScope.Create();
+            MessageRegistrationHandle foreign =
+                foreignScope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+
+            Assert.DoesNotThrow(() => scope.Token.RemoveRegistration(stale));
+            Assert.DoesNotThrow(() => scope.Token.RemoveRegistration(foreign));
+
+            SimpleUntargetedMessage message = new();
+            scope.Bus.EmitUntargeted(ref message);
+            Assert.AreEqual(
+                1,
+                invocationCount,
+                "Slot reuse must validate both the slot index and globally unique handle id."
+            );
+
+            scope.Token.RemoveRegistration(current);
+        }
+
+        [Test]
+        public void ArenaGrowthHeadMiddleTailRemovalAndFreeReusePreserveMetadataOrder()
+        {
+            using TokenScope scope = TokenScope.Create();
+            List<MessageRegistrationHandle> original = new();
+            for (int i = 0; i < 6; ++i)
+            {
+                int capture = i;
+                original.Add(
+                    scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                        (ref SimpleUntargetedMessage _) => GC.KeepAlive(capture)
+                    )
+                );
+            }
+
+            CollectionAssert.AreEqual(
+                new[] { 0, 1, 2, 3, 4, 5 },
+                original.Select(handle => handle.Slot),
+                "The initial power-of-two arena growth must allocate consecutive slots."
+            );
+
+            scope.Token.RemoveRegistration(original[0]);
+            scope.Token.RemoveRegistration(original[2]);
+            scope.Token.RemoveRegistration(original[5]);
+
+            MessageRegistrationHandle reuseTail =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+            MessageRegistrationHandle reuseMiddle =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+            MessageRegistrationHandle reuseHead =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+
+            CollectionAssert.AreEqual(
+                new[] { 5, 2, 0 },
+                new[] { reuseTail.Slot, reuseMiddle.Slot, reuseHead.Slot },
+                "The free list must reuse removed tail, middle, and head slots in O(1) LIFO order."
+            );
+            CollectionAssert.AreEqual(
+                new[] { original[1], original[3], original[4], reuseTail, reuseMiddle, reuseHead },
+                scope.Token._metadata.Select(entry => entry.Key),
+                "Metadata enumeration must follow live registration order, not physical slot order."
+            );
         }
 
         [Test]
