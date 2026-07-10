@@ -187,6 +187,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         )
         {
             using BenchmarkRegistrationScope scope = new();
+            Assert.IsFalse(
+                scope.Bus.DiagnosticsMode,
+                "Dispatch throughput rows must isolate the diagnostics-off production path."
+            );
+            Assert.IsFalse(
+                scope.PrimaryToken.DiagnosticMode,
+                "Dispatch throughput rows must not record per-registration diagnostics."
+            );
             InvocationCounter handlerInvocations = new();
             ConfigureScenario(scope, scenario, handlerInvocations);
 
@@ -1675,7 +1683,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public BenchmarkRegistrationScope()
             {
-                Bus = new MessageBus();
+                // Benchmark the production diagnostics-off path regardless of the host
+                // editor's current global diagnostics setting. Editor preferences are
+                // mutable and otherwise turn a zero-allocation dispatch benchmark into
+                // a measurement of diagnostic history recording.
+                Bus = new MessageBus { DiagnosticsMode = false };
                 PrimaryToken = CreateToken();
             }
 
@@ -1687,6 +1699,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = active };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, Bus);
+                token.DiagnosticMode = false;
                 token.Enable();
                 _handlers.Add(handler);
                 _tokens.Add(token);

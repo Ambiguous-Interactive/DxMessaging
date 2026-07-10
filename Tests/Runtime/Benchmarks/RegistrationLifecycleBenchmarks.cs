@@ -299,11 +299,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             public LifecycleState(int cardinality)
             {
                 Cardinality = cardinality;
-                PrimaryBus = new MessageBus();
-                SecondaryBus = new MessageBus();
+                // Keep lifecycle measurements independent of the host editor's mutable
+                // global diagnostics preference. Diagnostics have separate coverage;
+                // these rows characterize registration storage and teardown itself.
+                PrimaryBus = new MessageBus { DiagnosticsMode = false };
+                SecondaryBus = new MessageBus { DiagnosticsMode = false };
                 Counter = new LifecycleCounter();
                 MessageHandler handler = new(new InstanceId(41001), PrimaryBus) { active = true };
                 Token = MessageRegistrationToken.Create(handler, PrimaryBus);
+                Token.DiagnosticMode = false;
                 _handles = new MessageRegistrationHandle[cardinality];
                 _handlers = new MessageHandler.FastHandler<LifecycleMessage>[cardinality];
                 for (int index = 0; index < cardinality; index++)
