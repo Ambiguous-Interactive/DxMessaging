@@ -24,6 +24,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// </summary>
     public sealed class TargetMapBenchmarks
     {
+        private const int ConstructionAllocationAttempts = 8;
+        private const int ConstructionTimingTrials = 7;
+        private static object s_freshConstructionSink;
+
         [Test, Performance, Category("PerfBench")]
         [TestCaseSource(nameof(TargetMapBenchmarkCases))]
         public void TargetMapBenchmark(TargetMapBenchmarkCase benchmarkCase)
@@ -82,6 +86,145 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 targetMapCapacity,
                 state.Invocations
             );
+        }
+
+        [Test, Performance, Category("PerfBench")]
+        [TestCase(1)]
+        [TestCase(4)]
+        [TestCase(16)]
+        [TestCase(256)]
+        [TestCase(4096)]
+        public void TargetMapFreshConstructionBenchmark(int keyCount)
+        {
+            TargetMapConstructionResult result = RunFreshConstruction(keyCount);
+            Debug.Log(result.ToStructuredLog());
+            TestContext.Out.WriteLine(TargetMapConstructionResult.CsvHeader);
+            TestContext.Out.WriteLine(result.ToCsvRow());
+        }
+
+        internal static TargetMapConstructionResult RunFreshConstruction(int keyCount)
+        {
+            InstanceId[] keys = new InstanceId[keyCount];
+            for (int index = 0; index < keys.Length; ++index)
+            {
+                keys[index] = new InstanceId(0x5A00_0000 + index);
+            }
+            object seed = MessageBus.CreateContextMapSeedForBenchmark();
+            object prewarmed = MessageBus.CreatePopulatedContextMapForBenchmark(keys, seed);
+            MessageBus.ObserveContextMapForBenchmark(
+                prewarmed,
+                out int prewarmedCount,
+                out int capacity
+            );
+            Assert.AreEqual(keyCount, prewarmedCount);
+            prewarmed = null;
+
+            int batchSize = ConstructionBatchSize(keyCount);
+            object[] sinks = new object[batchSize];
+            double[] samples = new double[ConstructionTimingTrials];
+            for (int trial = 0; trial < samples.Length; ++trial)
+            {
+                AllocationProbe.SettleHeapForMeasurement();
+                long start = System.Diagnostics.Stopwatch.GetTimestamp();
+                for (int index = 0; index < sinks.Length; ++index)
+                {
+                    sinks[index] = MessageBus.CreatePopulatedContextMapForBenchmark(keys, seed);
+                }
+                long end = System.Diagnostics.Stopwatch.GetTimestamp();
+                for (int index = 0; index < sinks.Length; ++index)
+                {
+                    MessageBus.ObserveContextMapForBenchmark(
+                        sinks[index],
+                        out int count,
+                        out int attemptCapacity
+                    );
+                    Assert.AreEqual(keyCount, count);
+                    capacity = attemptCapacity;
+                    sinks[index] = null;
+                }
+                samples[trial] =
+                    (end - start)
+                    / (double)System.Diagnostics.Stopwatch.Frequency
+                    * 1000d
+                    / batchSize;
+            }
+
+            long minAllocations = long.MaxValue;
+            long minBytes = AllocationProbe.Unmeasured;
+            try
+            {
+                AllocationProbe.SettleHeapForMeasurement();
+                for (int attempt = 0; attempt < ConstructionAllocationAttempts; ++attempt)
+                {
+                    object candidate;
+                    AllocationProbe.AllocationSample sample;
+                    using (AllocationProbe.Window window = AllocationProbe.BeginWindow())
+                    {
+                        candidate = MessageBus.CreatePopulatedContextMapForBenchmark(keys, seed);
+                        sample = window.SampleBoth();
+                    }
+                    s_freshConstructionSink = candidate;
+                    MessageBus.ObserveContextMapForBenchmark(
+                        candidate,
+                        out int count,
+                        out int attemptCapacity
+                    );
+                    Assert.AreEqual(keyCount, count);
+                    if (
+                        AllocationProbe.ShouldReplaceMinimumAttempt(
+                            sample.Allocations,
+                            sample.Bytes,
+                            minAllocations,
+                            minBytes
+                        )
+                    )
+                    {
+                        minAllocations = sample.Allocations;
+                        minBytes = sample.Bytes;
+                        capacity = attemptCapacity;
+                    }
+                    s_freshConstructionSink = null;
+                }
+            }
+            finally
+            {
+                s_freshConstructionSink = null;
+                AllocationProbe.SettleHeapForMeasurement();
+            }
+            if (minAllocations == long.MaxValue)
+            {
+                minAllocations = AllocationProbe.Unmeasured;
+                minBytes = AllocationProbe.Unmeasured;
+            }
+
+            double wallClockMs = BenchmarkProtocol.Median(samples);
+            return new TargetMapConstructionResult(
+                keyCount,
+                wallClockMs,
+                1000d / Math.Max(wallClockMs, double.Epsilon),
+                minAllocations,
+                minBytes,
+                capacity
+            );
+        }
+
+        private static int ConstructionBatchSize(int keyCount)
+        {
+            switch (keyCount)
+            {
+                case 1:
+                    return 1000;
+                case 4:
+                    return 250;
+                case 16:
+                    return 64;
+                case 256:
+                    return 4;
+                case 4096:
+                    return 1;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(keyCount));
+            }
         }
 
         internal static TargetMapContractObservation RunOnceForContract(
@@ -249,11 +392,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     {
                         try
                         {
-                            _registryScope.Dispose();
+                            _registryScope?.Dispose();
                         }
                         finally
                         {
-                            _contextMapPoolScope.Dispose();
+                            _contextMapPoolScope?.Dispose();
                         }
                     }
                 }
@@ -311,6 +454,59 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         private readonly struct TargetMapMessage : ITargetedMessage<TargetMapMessage> { }
+    }
+
+    internal readonly struct TargetMapConstructionResult
+    {
+        internal const string CsvHeader =
+            "keyCount,wallClockMs,operationsPerSecond,gcAllocations,gcAllocatedBytes,targetMapCapacity";
+
+        internal TargetMapConstructionResult(
+            int keyCount,
+            double wallClockMs,
+            double operationsPerSecond,
+            long gcAllocations,
+            long gcAllocatedBytes,
+            int targetMapCapacity
+        )
+        {
+            KeyCount = keyCount;
+            WallClockMs = wallClockMs;
+            OperationsPerSecond = operationsPerSecond;
+            GcAllocations = gcAllocations;
+            GcAllocatedBytes = gcAllocatedBytes;
+            TargetMapCapacity = targetMapCapacity;
+        }
+
+        internal int KeyCount { get; }
+        internal double WallClockMs { get; }
+        internal double OperationsPerSecond { get; }
+        internal long GcAllocations { get; }
+        internal long GcAllocatedBytes { get; }
+        internal int TargetMapCapacity { get; }
+
+        internal string ToStructuredLog() =>
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "DXM_TARGET_MAP_CONSTRUCTION keyCount={0} wallClockMs={1:F6} operationsPerSecond={2:F3} gcAllocations={3} gcAllocatedBytes={4} targetMapCapacity={5}",
+                KeyCount,
+                WallClockMs,
+                OperationsPerSecond,
+                GcAllocations,
+                GcAllocatedBytes,
+                TargetMapCapacity
+            );
+
+        internal string ToCsvRow() =>
+            string.Join(
+                ",",
+                KeyCount.ToString(CultureInfo.InvariantCulture),
+                WallClockMs.ToString("F6", CultureInfo.InvariantCulture),
+                OperationsPerSecond.ToString("F3", CultureInfo.InvariantCulture),
+                GcAllocations.ToString(CultureInfo.InvariantCulture),
+                GcAllocatedBytes.ToString(CultureInfo.InvariantCulture),
+                TargetMapCapacity.ToString(CultureInfo.InvariantCulture)
+            );
     }
 
     public static class TargetMapBenchmarkScenarios
@@ -730,6 +926,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             string structured = result.ToStructuredLog();
             StringAssert.Contains("targetMapEntries=4", structured);
             StringAssert.Contains("targetMapCapacity=7", structured);
+        }
+
+        [TestCase(1)]
+        [TestCase(4)]
+        [TestCase(16)]
+        [TestCase(256)]
+        [TestCase(4096)]
+        public void FreshConstructionReportsDirectTopologyAndSchema(int keyCount)
+        {
+            TargetMapConstructionResult result = TargetMapBenchmarks.RunFreshConstruction(keyCount);
+            Assert.AreEqual(keyCount, result.KeyCount);
+            Assert.GreaterOrEqual(result.TargetMapCapacity, keyCount);
+            Assert.AreEqual(
+                TargetMapConstructionResult.CsvHeader.Split(',').Length,
+                result.ToCsvRow().Split(',').Length
+            );
+            StringAssert.Contains("keyCount=" + keyCount, result.ToStructuredLog());
         }
     }
 }

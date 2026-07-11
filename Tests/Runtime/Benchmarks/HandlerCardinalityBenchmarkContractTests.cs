@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System;
     using System.Collections.Generic;
     using DxMessaging.Core;
+    using DxMessaging.Core.MessageBus;
     using NUnit.Framework;
 
     public sealed class HandlerCardinalityBenchmarkContractTests
@@ -61,6 +62,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int expectedHandlerEntries =
                 sameHandler || distinctPriority ? 1 : benchmarkCase.Cardinality;
             int expectedPriorityEntries = distinctPriority ? benchmarkCase.Cardinality : 1;
+            MessageBus.PriorityStorageObservation busStorage = observation.BusPriorityStorage;
+            Assert.AreEqual(expectedPriorityEntries, busStorage.Entries);
+            Assert.GreaterOrEqual(busStorage.MapCapacity, busStorage.Entries);
+            Assert.GreaterOrEqual(busStorage.OrderCapacity, busStorage.Entries);
             MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
             Assert.AreEqual(expectedPriorityEntries, storage.PriorityEntries);
             Assert.AreEqual(expectedHandlerEntries, storage.HandlerEntries);
@@ -115,7 +120,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test]
         public void ResultSchemaKeepsCsvAndStructuredLogTopologyAligned()
         {
-            HandlerCardinalityBenchmarkResult result = new(
+            HandlerCardinalityBenchmarkResult legacyResult = new(
                 new HandlerCardinalityBenchmarkCase(HandlerCardinalityOperation.HandlerDispatch, 4),
                 1d,
                 -1,
@@ -137,10 +142,72 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 true
             );
 
+            HandlerCardinalityBenchmarkResult result = new(
+                new HandlerCardinalityBenchmarkCase(HandlerCardinalityOperation.HandlerDispatch, 4),
+                1d,
+                -1,
+                -1,
+                2d,
+                3,
+                4,
+                5,
+                6,
+                7,
+                0,
+                7,
+                8,
+                true,
+                9,
+                0,
+                9,
+                10,
+                true,
+                11,
+                12,
+                13
+            );
+
             string[] header = HandlerCardinalityBenchmarkResult.CsvHeader.Split(',');
             string[] row = result.ToCsvRow().Split(',');
+            string[] legacyRow = legacyResult.ToCsvRow().Split(',');
             Assert.AreEqual(header.Length, row.Length);
+            Assert.AreEqual(header.Length, legacyRow.Length);
             Assert.AreEqual("-1", row[2], "Unmeasured operation allocations must stay explicit.");
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    "scenario",
+                    "operationsPerSecond",
+                    "gcAllocations",
+                    "wallClockMs",
+                    "gcAllocatedBytes",
+                    "dispatchFanOut",
+                    "distinctMapEntries",
+                    "liveRegistrations",
+                    "occupiedTypeSlots",
+                    "priorityEntries",
+                    "priorityInlineCapacity",
+                    "priorityMapCapacity",
+                    "priorityOrderCapacity",
+                    "priorityUsesSpillStorage",
+                    "handlerEntries",
+                    "handlerInlineCapacity",
+                    "handlerMapCapacity",
+                    "handlerOrderCapacity",
+                    "handlerUsesSpillStorage",
+                },
+                new ArraySegment<string>(header, 0, 19)
+            );
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    "busPriorityEntries",
+                    "busPriorityMapCapacity",
+                    "busPriorityOrderCapacity",
+                },
+                new ArraySegment<string>(header, 19, 3)
+            );
+            CollectionAssert.AreEqual(new[] { "-1", "-1", "-1" }, legacyRow[^3..]);
 
             string structured = result.ToStructuredLog();
             foreach (string key in header)
@@ -150,13 +217,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         [Test]
-        public void ConstructionMatrixAndResultSchemaCoverBothStorageOwners()
+        public void ConstructionMatrixAndResultSchemaCoverEveryStorageOwner()
         {
             CollectionAssert.AreEquivalent(
                 new[]
                 {
                     HandlerStorageConstructionKind.HandlerCache,
                     HandlerStorageConstructionKind.PrioritySlot,
+                    HandlerStorageConstructionKind.BusPriorityOwner,
                 },
                 (HandlerStorageConstructionKind[])
                     Enum.GetValues(typeof(HandlerStorageConstructionKind))
@@ -180,6 +248,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 StringAssert.Contains(key + "=", structured, $"Missing structured key {key}.");
             }
+        }
+
+        [Test]
+        public void FreshBusPriorityOwnerStartsEmptyWithZeroCapacity()
+        {
+            object owner = MessageBus.CreatePriorityStorageOwnerForBenchmark();
+            Assert.IsTrue(
+                MessageBus.TryObservePriorityStorageOwnerForBenchmark(
+                    owner,
+                    out MessageBus.PriorityStorageObservation observation
+                )
+            );
+            Assert.Zero(observation.Entries);
+            Assert.Zero(observation.MapCapacity);
+            Assert.Zero(observation.OrderCapacity);
         }
 
         private static void AssertStorageCoherent(

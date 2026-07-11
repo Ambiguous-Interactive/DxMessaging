@@ -183,9 +183,53 @@ namespace DxMessaging.Core.MessageBus
             return new CollectionPool<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>>(
                 maxRetained,
                 useLru,
-                factory: static () => new Dictionary<InstanceId, HandlerCache<int, HandlerCache>>(),
+                factory: static () => CreateFreshContextHandlerMap(),
                 onRecycled: static dict => dict.Clear()
             );
+        }
+
+        private static Dictionary<
+            InstanceId,
+            HandlerCache<int, HandlerCache>
+        > CreateFreshContextHandlerMap()
+        {
+            return new Dictionary<InstanceId, HandlerCache<int, HandlerCache>>();
+        }
+
+        internal static object CreateContextMapSeedForBenchmark()
+        {
+            return new HandlerCache<int, HandlerCache>();
+        }
+
+        internal static object CreatePopulatedContextMapForBenchmark(InstanceId[] keys, object seed)
+        {
+            if (keys == null)
+            {
+                throw new ArgumentNullException(nameof(keys));
+            }
+            HandlerCache<int, HandlerCache> typedSeed =
+                seed as HandlerCache<int, HandlerCache>
+                ?? throw new ArgumentException("Unexpected context-map seed type.", nameof(seed));
+            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> map =
+                CreateFreshContextHandlerMap();
+            for (int index = 0; index < keys.Length; ++index)
+            {
+                map[keys[index]] = typedSeed;
+            }
+            return map;
+        }
+
+        internal static void ObserveContextMapForBenchmark(
+            object opaqueMap,
+            out int count,
+            out int capacity
+        )
+        {
+            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> map =
+                opaqueMap as Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
+                ?? throw new ArgumentException("Unexpected context-map type.", nameof(opaqueMap));
+            count = map.Count;
+            capacity = map.EnsureCapacity(0);
         }
 
         private static class ContextHandlerByTargetDictPoolHolder
@@ -872,6 +916,71 @@ namespace DxMessaging.Core.MessageBus
             /// memory measurement.
             /// </summary>
             internal int EmptyHolderPoolCount { get; }
+        }
+
+        internal readonly struct PriorityStorageObservation
+        {
+            internal PriorityStorageObservation(int entries, int mapCapacity, int orderCapacity)
+            {
+                Entries = entries;
+                MapCapacity = mapCapacity;
+                OrderCapacity = orderCapacity;
+            }
+
+            internal int Entries { get; }
+
+            internal int MapCapacity { get; }
+
+            internal int OrderCapacity { get; }
+        }
+
+        internal bool TryObserveUntargetedPriorityStorageForBenchmark<TMessage>(
+            out PriorityStorageObservation observation
+        )
+            where TMessage : IUntargetedMessage
+        {
+            if (
+                !_scalarSinks[BusSinkIndex.UntargetedHandleDefault]
+                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handlers)
+            )
+            {
+                observation = default;
+                return false;
+            }
+
+            observation = ObservePriorityStorage(handlers);
+            return true;
+        }
+
+        internal static object CreatePriorityStorageOwnerForBenchmark()
+        {
+            return new HandlerCache<int, HandlerCache>();
+        }
+
+        internal static bool TryObservePriorityStorageOwnerForBenchmark(
+            object owner,
+            out PriorityStorageObservation observation
+        )
+        {
+            if (owner is not HandlerCache<int, HandlerCache> handlers)
+            {
+                observation = default;
+                return false;
+            }
+
+            observation = ObservePriorityStorage(handlers);
+            return true;
+        }
+
+        private static PriorityStorageObservation ObservePriorityStorage(
+            HandlerCache<int, HandlerCache> handlers
+        )
+        {
+            return new PriorityStorageObservation(
+                handlers.handlers.Count,
+                handlers.handlers.EnsureCapacity(0),
+                handlers.order.Capacity
+            );
         }
 
         /// <summary>

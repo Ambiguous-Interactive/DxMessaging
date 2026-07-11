@@ -88,6 +88,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Assert.AreEqual(benchmarkCase.Cardinality, observation.LiveRegistrations);
             Assert.AreEqual(1, observation.OccupiedTypeSlots);
             MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
+            MessageBus.PriorityStorageObservation busStorage = observation.BusPriorityStorage;
 
             return new HandlerCardinalityBenchmarkResult(
                 benchmarkCase,
@@ -108,7 +109,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 storage.HandlerInlineCapacity,
                 storage.HandlerMapCapacity,
                 storage.HandlerOrderCapacity,
-                storage.HandlerUsesSpillStorage
+                storage.HandlerUsesSpillStorage,
+                busStorage.Entries,
+                busStorage.MapCapacity,
+                busStorage.OrderCapacity
             );
         }
 
@@ -266,8 +270,24 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     checked((int)_calls),
                     _token._metadata.Count,
                     _bus.OccupiedTypeSlots,
+                    ObserveBusPriorityStorage(),
                     ObserveStorage()
                 );
+            }
+
+            internal MessageBus.PriorityStorageObservation ObserveBusPriorityStorage()
+            {
+                if (
+                    !_bus.TryObserveUntargetedPriorityStorageForBenchmark<CardinalityMessage>(
+                        out MessageBus.PriorityStorageObservation storage
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The benchmark must materialize bus-side untargeted priority storage."
+                    );
+                }
+                return storage;
             }
 
             internal MessageHandler.HandlerCacheStorageObservation ObserveStorage()
@@ -321,11 +341,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     {
         HandlerCache,
         PrioritySlot,
+        BusPriorityOwner,
     }
 
     /// <summary>
     /// Isolates the eager object count, bytes, and fixed-batch construction latency of
-    /// the two ordered-map owners. These two rows run once per benchmark execution,
+    /// the handler-entry cache, typed priority slot, and bus priority owner. These rows run once
+    /// per benchmark execution,
     /// independently of the cardinality matrix.
     /// </summary>
     public sealed class HandlerStorageConstructionBenchmarks
@@ -338,6 +360,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test, Performance, Category("PerfBench")]
         [TestCase(HandlerStorageConstructionKind.HandlerCache)]
         [TestCase(HandlerStorageConstructionKind.PrioritySlot)]
+        [TestCase(HandlerStorageConstructionKind.BusPriorityOwner)]
         public void HandlerStorageConstructionBenchmark(HandlerStorageConstructionKind kind)
         {
             HandlerStorageConstructionBenchmarkResult result = RunScenario(kind);
@@ -349,8 +372,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             HandlerStorageConstructionKind kind
         )
         {
-            Assert.AreEqual(1, ConstructBatch(kind, 1));
-            s_constructionSink = null;
+            ValidateFreshConstruction(kind);
 
             double minElapsedSeconds = double.MaxValue;
             for (int trial = 0; trial < TimingTrials; ++trial)
@@ -419,9 +441,33 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         );
                     }
                     return count;
+                case HandlerStorageConstructionKind.BusPriorityOwner:
+                    for (int index = 0; index < count; ++index)
+                    {
+                        s_constructionSink = MessageBus.CreatePriorityStorageOwnerForBenchmark();
+                    }
+                    return count;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
             }
+        }
+
+        private static void ValidateFreshConstruction(HandlerStorageConstructionKind kind)
+        {
+            Assert.AreEqual(1, ConstructBatch(kind, 1));
+            if (kind == HandlerStorageConstructionKind.BusPriorityOwner)
+            {
+                Assert.IsTrue(
+                    MessageBus.TryObservePriorityStorageOwnerForBenchmark(
+                        s_constructionSink,
+                        out MessageBus.PriorityStorageObservation observation
+                    )
+                );
+                Assert.Zero(observation.Entries);
+                Assert.Zero(observation.MapCapacity);
+                Assert.Zero(observation.OrderCapacity);
+            }
+            s_constructionSink = null;
         }
 
         private readonly struct StorageConstructionMessage : IUntargetedMessage { }
@@ -546,12 +592,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int dispatchCalls,
             int liveRegistrations,
             int occupiedTypeSlots,
+            MessageBus.PriorityStorageObservation busPriorityStorage,
             MessageHandler.HandlerCacheStorageObservation storage
         )
         {
             DispatchCalls = dispatchCalls;
             LiveRegistrations = liveRegistrations;
             OccupiedTypeSlots = occupiedTypeSlots;
+            BusPriorityStorage = busPriorityStorage;
             Storage = storage;
         }
 
@@ -561,13 +609,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public int OccupiedTypeSlots { get; }
 
+        public MessageBus.PriorityStorageObservation BusPriorityStorage { get; }
+
         public MessageHandler.HandlerCacheStorageObservation Storage { get; }
     }
 
     public readonly struct HandlerCardinalityBenchmarkResult
     {
         public const string CsvHeader =
-            "scenario,operationsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes,dispatchFanOut,distinctMapEntries,liveRegistrations,occupiedTypeSlots,priorityEntries,priorityInlineCapacity,priorityMapCapacity,priorityOrderCapacity,priorityUsesSpillStorage,handlerEntries,handlerInlineCapacity,handlerMapCapacity,handlerOrderCapacity,handlerUsesSpillStorage";
+            "scenario,operationsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes,dispatchFanOut,distinctMapEntries,liveRegistrations,occupiedTypeSlots,priorityEntries,priorityInlineCapacity,priorityMapCapacity,priorityOrderCapacity,priorityUsesSpillStorage,handlerEntries,handlerInlineCapacity,handlerMapCapacity,handlerOrderCapacity,handlerUsesSpillStorage,busPriorityEntries,busPriorityMapCapacity,busPriorityOrderCapacity";
 
         public HandlerCardinalityBenchmarkResult(
             HandlerCardinalityBenchmarkCase benchmarkCase,
@@ -590,6 +640,55 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int handlerOrderCapacity,
             bool handlerUsesSpillStorage
         )
+            : this(
+                benchmarkCase,
+                operationsPerSecond,
+                gcAllocations,
+                gcAllocatedBytes,
+                wallClockMilliseconds,
+                dispatchFanOut,
+                distinctMapEntries,
+                liveRegistrations,
+                occupiedTypeSlots,
+                priorityEntries,
+                priorityInlineCapacity,
+                priorityMapCapacity,
+                priorityOrderCapacity,
+                priorityUsesSpillStorage,
+                handlerEntries,
+                handlerInlineCapacity,
+                handlerMapCapacity,
+                handlerOrderCapacity,
+                handlerUsesSpillStorage,
+                -1,
+                -1,
+                -1
+            ) { }
+
+        public HandlerCardinalityBenchmarkResult(
+            HandlerCardinalityBenchmarkCase benchmarkCase,
+            double operationsPerSecond,
+            long gcAllocations,
+            long gcAllocatedBytes,
+            double wallClockMilliseconds,
+            int dispatchFanOut,
+            int distinctMapEntries,
+            int liveRegistrations,
+            int occupiedTypeSlots,
+            int priorityEntries,
+            int priorityInlineCapacity,
+            int priorityMapCapacity,
+            int priorityOrderCapacity,
+            bool priorityUsesSpillStorage,
+            int handlerEntries,
+            int handlerInlineCapacity,
+            int handlerMapCapacity,
+            int handlerOrderCapacity,
+            bool handlerUsesSpillStorage,
+            int busPriorityEntries,
+            int busPriorityMapCapacity,
+            int busPriorityOrderCapacity
+        )
         {
             BenchmarkCase = benchmarkCase;
             OperationsPerSecond = operationsPerSecond;
@@ -600,6 +699,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             DistinctMapEntries = distinctMapEntries;
             LiveRegistrations = liveRegistrations;
             OccupiedTypeSlots = occupiedTypeSlots;
+            BusPriorityEntries = busPriorityEntries;
+            BusPriorityMapCapacity = busPriorityMapCapacity;
+            BusPriorityOrderCapacity = busPriorityOrderCapacity;
             PriorityEntries = priorityEntries;
             PriorityInlineCapacity = priorityInlineCapacity;
             PriorityMapCapacity = priorityMapCapacity;
@@ -629,6 +731,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public int LiveRegistrations { get; }
 
         public int OccupiedTypeSlots { get; }
+
+        public int BusPriorityEntries { get; }
+
+        public int BusPriorityMapCapacity { get; }
+
+        public int BusPriorityOrderCapacity { get; }
 
         public int PriorityEntries { get; }
 
@@ -671,7 +779,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 HandlerInlineCapacity.ToString(CultureInfo.InvariantCulture),
                 HandlerMapCapacity.ToString(CultureInfo.InvariantCulture),
                 HandlerOrderCapacity.ToString(CultureInfo.InvariantCulture),
-                HandlerUsesSpillStorage ? "true" : "false"
+                HandlerUsesSpillStorage ? "true" : "false",
+                BusPriorityEntries.ToString(CultureInfo.InvariantCulture),
+                BusPriorityMapCapacity.ToString(CultureInfo.InvariantCulture),
+                BusPriorityOrderCapacity.ToString(CultureInfo.InvariantCulture)
             );
 
         public string ToStructuredLog() =>
@@ -691,7 +802,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             + $"handlerInlineCapacity={HandlerInlineCapacity} "
             + $"handlerMapCapacity={HandlerMapCapacity} "
             + $"handlerOrderCapacity={HandlerOrderCapacity} "
-            + $"handlerUsesSpillStorage={HandlerUsesSpillStorage}]";
+            + $"handlerUsesSpillStorage={HandlerUsesSpillStorage} "
+            + $"busPriorityEntries={BusPriorityEntries} "
+            + $"busPriorityMapCapacity={BusPriorityMapCapacity} "
+            + $"busPriorityOrderCapacity={BusPriorityOrderCapacity}]";
     }
 }
 #endif
