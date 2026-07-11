@@ -2382,7 +2382,7 @@ namespace DxMessaging.Core
 
         internal sealed class HandlerActionCache<T> : DxMessaging.Core.Internal.IHandlerActionCache
         {
-            public struct OrderedEntries
+            internal struct OrderedEntries
             {
                 private const int PhysicalInlineCapacity = 2;
                 private static readonly EqualityComparer<T> s_comparer =
