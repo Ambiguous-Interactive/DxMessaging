@@ -990,7 +990,7 @@ namespace DxMessaging.Core.MessageBus
                 !_scalarSinks[BusSinkIndex.UntargetedHandleDefault]
                     .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handlers)
                 || handlers.dispatchState == null
-                || !handlers.dispatchState.active.IsInitialized
+                || ReferenceEquals(handlers.dispatchState.active, DispatchSnapshot.Empty)
                 || handlers.dispatchState.active.flat == null
             )
             {
