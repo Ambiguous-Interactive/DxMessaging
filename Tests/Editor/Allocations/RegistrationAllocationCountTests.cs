@@ -71,6 +71,13 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// and overlapping retry spills. Guarded structurally by
     /// <c>RegistrationStorageStructuralGuardTests.RegistrationObjectsOwnReusableTeardownState</c>.
     /// </description></item>
+    /// <item><description>
+    /// Global accept-all registration dropped its allocation-backed composite teardown and
+    /// three sub-handler teardown delegates when those states moved into the existing
+    /// registration object by value. Measured by
+    /// <see cref="GlobalAcceptAllMarginalAllocationMaterialityIsMeasured"/> and guarded by the same
+    /// structural teardown-state test.
+    /// </description></item>
     /// </list>
     /// <para>
     /// The counting rows use <see cref="AllocationProbe"/> (the <c>GC.Alloc</c> profiler
@@ -442,32 +449,44 @@ namespace DxMessaging.Tests.Editor.Allocations
                 );
             }
 
-            long typedCount = AllocationProbe.MeasureMin(
-                MinAttempts,
-                prepare: null,
-                operation: () =>
-                {
-                    for (int i = 0; i < MeasuredRegistrations; ++i)
+            int typedRegistrationCountBeforeAttempt = 0;
+            AllocationProbe.MinimumMeasurement<int> typedMeasurement =
+                AllocationProbe.MeasureMinWithDiagnostics(
+                    MinAttempts,
+                    prepare: () => typedRegistrationCountBeforeAttempt = typedToken._metadata.Count,
+                    operation: () =>
                     {
-                        _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
+                        for (int i = 0; i < MeasuredRegistrations; ++i)
+                        {
+                            _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
+                        }
+
+                        return typedToken._metadata.Count - typedRegistrationCountBeforeAttempt;
                     }
-                }
-            );
-            long globalCount = AllocationProbe.MeasureMin(
-                MinAttempts,
-                prepare: null,
-                operation: () =>
-                {
-                    for (int i = 0; i < MeasuredRegistrations; ++i)
+                );
+            int globalRegistrationCountBeforeAttempt = 0;
+            AllocationProbe.MinimumMeasurement<int> globalMeasurement =
+                AllocationProbe.MeasureMinWithDiagnostics(
+                    MinAttempts,
+                    prepare: () =>
+                        globalRegistrationCountBeforeAttempt = globalToken._metadata.Count,
+                    operation: () =>
                     {
-                        _ = globalToken.RegisterGlobalAcceptAll(
-                            globalUntargeted,
-                            globalTargeted,
-                            globalBroadcast
-                        );
+                        for (int i = 0; i < MeasuredRegistrations; ++i)
+                        {
+                            _ = globalToken.RegisterGlobalAcceptAll(
+                                globalUntargeted,
+                                globalTargeted,
+                                globalBroadcast
+                            );
+                        }
+
+                        return globalToken._metadata.Count - globalRegistrationCountBeforeAttempt;
                     }
-                }
-            );
+                );
+
+            long typedCount = typedMeasurement.GcAllocations;
+            long globalCount = globalMeasurement.GcAllocations;
 
             if (
                 typedCount == AllocationProbe.Unmeasured
@@ -477,13 +496,29 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
             }
 
+            Assert.AreEqual(MeasuredRegistrations, typedMeasurement.Diagnostics);
+            Assert.AreEqual(MeasuredRegistrations, globalMeasurement.Diagnostics);
+            int expectedRegistrationCount =
+                WarmupRegistrations + SettleRegistrations + MinAttempts * MeasuredRegistrations;
+            Assert.AreEqual(expectedRegistrationCount, typedToken._metadata.Count);
+            Assert.AreEqual(expectedRegistrationCount, globalToken._metadata.Count);
+            Assert.AreEqual(1, typedBus.RegisteredUntargeted);
+            Assert.AreEqual(1, globalBus.RegisteredGlobalAcceptAll);
             long delta = globalCount - typedCount;
             string measurement =
-                $"global-accept-all-materiality,typed={typedCount},global={globalCount},delta={delta},registrations={MeasuredRegistrations}";
+                $"global-accept-all-materiality,typed={typedCount},global={globalCount},delta={delta},"
+                + $"typedBytes={FormatProbeValue(typedMeasurement.GcAllocatedBytes)},"
+                + $"globalBytes={FormatProbeValue(globalMeasurement.GcAllocatedBytes)},"
+                + $"registrations={MeasuredRegistrations}";
             TestContext.Out.WriteLine(measurement);
             UnityEngine.Debug.Log(measurement);
             Assert.GreaterOrEqual(typedCount, 0);
             Assert.GreaterOrEqual(globalCount, 0);
+        }
+
+        private static string FormatProbeValue(long value)
+        {
+            return value == AllocationProbe.Unmeasured ? "n/a" : value.ToString();
         }
     }
 }

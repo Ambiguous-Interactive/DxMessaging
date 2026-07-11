@@ -728,6 +728,112 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void GlobalAcceptAllDuplicateRefcountSurvivesRemoveDisableAndReenable(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            using TokenScope scope = TokenScope.Create();
+            using LeakWatcher watcher = new(
+                scope.Bus,
+                label: nameof(GlobalAcceptAllDuplicateRefcountSurvivesRemoveDisableAndReenable)
+                    + "_"
+                    + scenario.DisplayName
+            );
+            int calls = 0;
+            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (
+                ref IUntargetedMessage _
+            ) => ++calls;
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted = (
+                ref InstanceId _,
+                ref ITargetedMessage __
+            ) => ++calls;
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast = (
+                ref InstanceId _,
+                ref IBroadcastMessage __
+            ) => ++calls;
+
+            MessageRegistrationHandle first = scope.Token.RegisterGlobalAcceptAll(
+                untargeted,
+                targeted,
+                broadcast
+            );
+            MessageRegistrationHandle second = scope.Token.RegisterGlobalAcceptAll(
+                untargeted,
+                targeted,
+                broadcast
+            );
+
+            InstanceId context = new(ContextInstanceId);
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(1, calls);
+
+            scope.Token.RemoveRegistration(first);
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(2, calls);
+
+            scope.Token.Disable();
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(2, calls);
+
+            scope.Token.Enable();
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(3, calls);
+
+            scope.Token.RemoveRegistration(second);
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(3, calls);
+        }
+
+        [Test]
+        public void GlobalAcceptAllFailedBusTeardownRemainsRetryable()
+        {
+            BusType innerBus = new();
+            FailingGlobalDeregistrationBus bus = new(innerBus);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+
+            try
+            {
+                using LeakWatcher watcher = new(
+                    bus,
+                    label: nameof(GlobalAcceptAllFailedBusTeardownRemainsRetryable)
+                );
+                _ = token.RegisterGlobalAcceptAll(
+                    (ref IUntargetedMessage _) => { },
+                    (ref InstanceId _, ref ITargetedMessage __) => { },
+                    (ref InstanceId _, ref IBroadcastMessage __) => { }
+                );
+                token.Enable();
+
+                Assert.Throws<InvalidOperationException>(token.Disable);
+                Assert.IsTrue(token.Enabled, "A failed global teardown must remain retryable.");
+                Assert.AreEqual(1, innerBus.RegisteredGlobalAcceptAll);
+
+                bus.AllowDeregistrations();
+                Assert.DoesNotThrow(token.Disable);
+                Assert.IsFalse(token.Enabled);
+                Assert.AreEqual(0, innerBus.RegisteredGlobalAcceptAll);
+
+                token.Enable();
+                Assert.AreEqual(1, innerBus.RegisteredGlobalAcceptAll);
+                token.Disable();
+                Assert.AreEqual(0, innerBus.RegisteredGlobalAcceptAll);
+                Assert.AreEqual(
+                    3,
+                    handler.ResetEmptyTypedSlotsForSweep(bus),
+                    "The successful retry and final disable must drain all three embedded "
+                        + "global typed-slot teardown states, not only the bus registration."
+                );
+            }
+            finally
+            {
+                token.Dispose();
+                handler.active = false;
+            }
+        }
+
+        [Test]
         public void EnableFailureRollsBackPartialRegistrations()
         {
             BusType innerBus = new();
@@ -1806,6 +1912,29 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 base.Deregister<T>(in registration);
                 _priorities.Remove(registration);
+            }
+        }
+
+        private sealed class FailingGlobalDeregistrationBus : DelegatingMessageBus
+        {
+            private bool _throwOnDeregistration = true;
+
+            internal FailingGlobalDeregistrationBus(IMessageBus inner)
+                : base(inner) { }
+
+            internal void AllowDeregistrations()
+            {
+                _throwOnDeregistration = false;
+            }
+
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                if (_throwOnDeregistration && typeof(T) == typeof(IMessage))
+                {
+                    throw new InvalidOperationException("Global deregistration failure.");
+                }
+
+                base.Deregister<T>(in registration);
             }
         }
 

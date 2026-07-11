@@ -239,6 +239,10 @@ namespace DxMessaging.Tests.Editor
                 "InterceptorRegistration`1",
                 BindingFlags.NonPublic
             );
+            Type globalRegistration = typeof(MessageRegistrationToken).GetNestedType(
+                "GlobalAcceptAllRegistration",
+                BindingFlags.NonPublic
+            );
 
             Assert.That(registration, Is.Not.Null);
             Assert.That(
@@ -255,6 +259,10 @@ namespace DxMessaging.Tests.Editor
                 "_deregistration",
                 BindingFlags.Instance | BindingFlags.NonPublic
             );
+            FieldInfo globalState = globalRegistration?.GetField(
+                "_deregistration",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
             Assert.That(
                 typedState?.FieldType.IsValueType,
                 Is.True,
@@ -264,6 +272,11 @@ namespace DxMessaging.Tests.Editor
                 interceptorState?.FieldType.IsValueType,
                 Is.True,
                 "Interceptor registrations must embed reusable teardown state rather than a second object."
+            );
+            Assert.That(
+                globalState?.FieldType.IsValueType,
+                Is.True,
+                "Global accept-all registrations must embed their composite teardown state rather than a second object."
             );
             Assert.That(
                 typedRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
@@ -278,6 +291,33 @@ namespace DxMessaging.Tests.Editor
                     field.FieldType == typeof(MessageHandler.HandlerDeregistration)
                 ),
                 "The interceptor common path must not retain an allocation-backed teardown wrapper."
+            );
+            Assert.That(
+                globalRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
+                Has.None.Matches<FieldInfo>(field =>
+                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
+                ),
+                "The global accept-all common path must not retain an allocation-backed teardown wrapper."
+            );
+
+            Type globalStateType = globalState.FieldType;
+            FieldInfo[] componentStates = globalStateType.GetFields(
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(
+                componentStates,
+                Has.Exactly(3)
+                    .Matches<FieldInfo>(field =>
+                        field.FieldType == typeof(MessageHandler.GlobalHandlerDeregistrationState)
+                    ),
+                "The composite global teardown must store three value sub-handler states, not Action wrappers."
+            );
+            Assert.That(
+                componentStates,
+                Has.None.Matches<FieldInfo>(field =>
+                    typeof(Delegate).IsAssignableFrom(field.FieldType)
+                ),
+                "The composite global teardown must not retain delegate-backed teardown wrappers."
             );
         }
 

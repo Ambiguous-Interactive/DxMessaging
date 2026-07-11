@@ -528,25 +528,80 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
+        /// Value teardown for one typed global handler slot. Captures the old closure's
+        /// reset/slot guards, erased cache identity, refcount key, and touch/live-count state.
+        /// </summary>
+        internal readonly struct GlobalHandlerDeregistrationState
+        {
+            private readonly IMessageBus _messageBus;
+            private readonly long _resetGeneration;
+            private readonly TypedGlobalSlot _slot;
+            private readonly long _slotVersion;
+            private readonly IHandlerActionCache _cache;
+            private readonly object _originalHandler;
+
+            internal GlobalHandlerDeregistrationState(
+                IMessageBus messageBus,
+                long resetGeneration,
+                TypedGlobalSlot slot,
+                long slotVersion,
+                IHandlerActionCache cache,
+                object originalHandler
+            )
+            {
+                _messageBus = messageBus;
+                _resetGeneration = resetGeneration;
+                _slot = slot;
+                _slotVersion = slotVersion;
+                _cache = cache;
+                _originalHandler = originalHandler;
+            }
+
+            internal void Deregister()
+            {
+                if (
+                    !global::DxMessaging.Core.MessageBus.MessageBus.IsResetGenerationCurrent(
+                        _messageBus,
+                        _resetGeneration
+                    )
+                    || _slot.version != _slotVersion
+                    || !_cache.ContainsEntry(_originalHandler)
+                )
+                {
+                    return;
+                }
+
+                _cache.BumpVersion();
+                _slot.lastTouchTicks =
+                    global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(_messageBus);
+                _ = _cache.DeregisterEntry(_originalHandler, out bool wasLastForEntry);
+                if (wasLastForEntry)
+                {
+                    _slot.liveCount--;
+                }
+            }
+        }
+
+        /// <summary>
         /// Composite teardown for the global accept-all registration: undoes the
         /// bus-side global registration then the three typed sub-handler
         /// deregistrations, preserving the exact order of the old closure
         /// (<c>messageBus.Deregister&lt;IMessage&gt;(...); untargeted(); targeted(); broadcast();</c>).
         /// </summary>
-        internal sealed class GlobalAcceptAllDeregistration : HandlerDeregistration
+        internal readonly struct GlobalAcceptAllDeregistrationState
         {
             private readonly IMessageBus _messageBus;
             private readonly MessageBusRegistration _messageBusRegistration;
-            private readonly Action _untargetedDeregistration;
-            private readonly Action _targetedDeregistration;
-            private readonly Action _broadcastDeregistration;
+            private readonly GlobalHandlerDeregistrationState _untargetedDeregistration;
+            private readonly GlobalHandlerDeregistrationState _targetedDeregistration;
+            private readonly GlobalHandlerDeregistrationState _broadcastDeregistration;
 
-            internal GlobalAcceptAllDeregistration(
+            internal GlobalAcceptAllDeregistrationState(
                 IMessageBus messageBus,
                 in MessageBusRegistration messageBusRegistration,
-                Action untargetedDeregistration,
-                Action targetedDeregistration,
-                Action broadcastDeregistration
+                GlobalHandlerDeregistrationState untargetedDeregistration,
+                GlobalHandlerDeregistrationState targetedDeregistration,
+                GlobalHandlerDeregistrationState broadcastDeregistration
             )
             {
                 _messageBus = messageBus;
@@ -556,12 +611,40 @@ namespace DxMessaging.Core
                 _broadcastDeregistration = broadcastDeregistration;
             }
 
-            internal override void Deregister()
+            internal void Deregister()
             {
                 _messageBus.Deregister<IMessage>(in _messageBusRegistration);
-                _untargetedDeregistration();
-                _targetedDeregistration();
-                _broadcastDeregistration();
+                _untargetedDeregistration.Deregister();
+                _targetedDeregistration.Deregister();
+                _broadcastDeregistration.Deregister();
+            }
+
+            public static implicit operator HandlerDeregistration(
+                GlobalAcceptAllDeregistrationState state
+            )
+            {
+                return new GlobalAcceptAllDeregistration(state);
+            }
+
+            public static implicit operator Action(GlobalAcceptAllDeregistrationState state)
+            {
+                GlobalAcceptAllDeregistration deregistration = new(state);
+                return deregistration.Deregister;
+            }
+        }
+
+        internal sealed class GlobalAcceptAllDeregistration : HandlerDeregistration
+        {
+            private readonly GlobalAcceptAllDeregistrationState _state;
+
+            internal GlobalAcceptAllDeregistration(GlobalAcceptAllDeregistrationState state)
+            {
+                _state = state;
+            }
+
+            internal override void Deregister()
+            {
+                _state.Deregister();
             }
         }
 
@@ -573,7 +656,7 @@ namespace DxMessaging.Core
         /// <param name="targetedMessageHandler">MessageHandler to accept all BroadcastMessages for all entities.</param>
         /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
         /// <returns>The de-registration action.</returns>
-        internal HandlerDeregistration RegisterGlobalAcceptAll(
+        internal GlobalAcceptAllDeregistrationState RegisterGlobalAcceptAll(
             Action<IUntargetedMessage> originalUntargetedMessageHandler,
             Action<IUntargetedMessage> untargetedMessageHandler,
             Action<InstanceId, ITargetedMessage> originalTargetedMessageHandler,
@@ -589,37 +672,32 @@ namespace DxMessaging.Core
             );
             TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(messageBus);
 
-            Action untargetedDeregistration = typedHandler.AddGlobalUntargetedHandler(
-                originalUntargetedMessageHandler,
-                untargetedMessageHandler,
-                NullDeregistration,
-                messageBus
-            );
-            Action targetedDeregistration = typedHandler.AddGlobalTargetedHandler(
-                originalTargetedMessageHandler,
-                targetedMessageHandler,
-                NullDeregistration,
-                messageBus
-            );
-            Action broadcastDeregistration = typedHandler.AddGlobalBroadcastHandler(
-                originalBroadcastMessageHandler,
-                broadcastMessageHandler,
-                NullDeregistration,
-                messageBus
-            );
+            GlobalHandlerDeregistrationState untargetedDeregistration =
+                typedHandler.AddGlobalUntargetedHandler(
+                    originalUntargetedMessageHandler,
+                    untargetedMessageHandler,
+                    messageBus
+                );
+            GlobalHandlerDeregistrationState targetedDeregistration =
+                typedHandler.AddGlobalTargetedHandler(
+                    originalTargetedMessageHandler,
+                    targetedMessageHandler,
+                    messageBus
+                );
+            GlobalHandlerDeregistrationState broadcastDeregistration =
+                typedHandler.AddGlobalBroadcastHandler(
+                    originalBroadcastMessageHandler,
+                    broadcastMessageHandler,
+                    messageBus
+                );
 
-            return new GlobalAcceptAllDeregistration(
+            return new GlobalAcceptAllDeregistrationState(
                 messageBus,
                 in messageBusDeregistration,
                 untargetedDeregistration,
                 targetedDeregistration,
                 broadcastDeregistration
             );
-
-            void NullDeregistration()
-            {
-                // No-op
-            }
         }
 
         /// <summary>
@@ -630,7 +708,7 @@ namespace DxMessaging.Core
         /// <param name="targetedMessageHandler">MessageHandler to accept all BroadcastMessages for all entities.</param>
         /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
         /// <returns>The de-registration action.</returns>
-        internal HandlerDeregistration RegisterGlobalAcceptAll(
+        internal GlobalAcceptAllDeregistrationState RegisterGlobalAcceptAll(
             FastHandler<IUntargetedMessage> originalUntargetedMessageHandler,
             FastHandler<IUntargetedMessage> untargetedMessageHandler,
             FastHandlerWithContext<ITargetedMessage> originalTargetedMessageHandler,
@@ -646,37 +724,32 @@ namespace DxMessaging.Core
             );
             TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(messageBus);
 
-            Action untargetedDeregistration = typedHandler.AddGlobalUntargetedHandler(
-                originalUntargetedMessageHandler,
-                untargetedMessageHandler,
-                NullDeregistration,
-                messageBus
-            );
-            Action targetedDeregistration = typedHandler.AddGlobalTargetedHandler(
-                originalTargetedMessageHandler,
-                targetedMessageHandler,
-                NullDeregistration,
-                messageBus
-            );
-            Action broadcastDeregistration = typedHandler.AddGlobalBroadcastHandler(
-                originalBroadcastMessageHandler,
-                broadcastMessageHandler,
-                NullDeregistration,
-                messageBus
-            );
+            GlobalHandlerDeregistrationState untargetedDeregistration =
+                typedHandler.AddGlobalUntargetedHandler(
+                    originalUntargetedMessageHandler,
+                    untargetedMessageHandler,
+                    messageBus
+                );
+            GlobalHandlerDeregistrationState targetedDeregistration =
+                typedHandler.AddGlobalTargetedHandler(
+                    originalTargetedMessageHandler,
+                    targetedMessageHandler,
+                    messageBus
+                );
+            GlobalHandlerDeregistrationState broadcastDeregistration =
+                typedHandler.AddGlobalBroadcastHandler(
+                    originalBroadcastMessageHandler,
+                    broadcastMessageHandler,
+                    messageBus
+                );
 
-            return new GlobalAcceptAllDeregistration(
+            return new GlobalAcceptAllDeregistrationState(
                 messageBus,
                 in messageBusDeregistration,
                 untargetedDeregistration,
                 targetedDeregistration,
                 broadcastDeregistration
             );
-
-            void NullDeregistration()
-            {
-                // No-op
-            }
         }
 
         /// <summary>
@@ -4267,12 +4340,10 @@ namespace DxMessaging.Core
             /// Adds a Global UntargetedHandler to listen to all Untargeted Messages of all types, returning the deregistration action.
             /// </summary>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
-            public Action AddGlobalUntargetedHandler(
+            public GlobalHandlerDeregistrationState AddGlobalUntargetedHandler(
                 Action<IUntargetedMessage> originalHandler,
                 Action<IUntargetedMessage> handler,
-                Action deregistration,
                 IMessageBus messageBus
             )
             {
@@ -4280,7 +4351,6 @@ namespace DxMessaging.Core
                     GetOrCreateGlobalSlot(TypedGlobalSlotIndex.UntargetedDefault),
                     originalHandler,
                     handler,
-                    deregistration,
                     messageBus
                 );
             }
@@ -4289,12 +4359,10 @@ namespace DxMessaging.Core
             /// Adds a Global fast UntargetedHandler to listen to all Untargeted Messages of all types, returning the deregistration action.
             /// </summary>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
-            public Action AddGlobalUntargetedHandler(
+            public GlobalHandlerDeregistrationState AddGlobalUntargetedHandler(
                 FastHandler<IUntargetedMessage> originalHandler,
                 FastHandler<IUntargetedMessage> handler,
-                Action deregistration,
                 IMessageBus messageBus
             )
             {
@@ -4302,7 +4370,6 @@ namespace DxMessaging.Core
                     GetOrCreateGlobalSlot(TypedGlobalSlotIndex.UntargetedFast),
                     originalHandler,
                     handler,
-                    deregistration,
                     messageBus
                 );
             }
@@ -4311,12 +4378,10 @@ namespace DxMessaging.Core
             /// Adds a Global TargetedHandler to listen to all Targeted Messages of all types for all entities, returning the deregistration action.
             /// </summary>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
-            public Action AddGlobalTargetedHandler(
+            public GlobalHandlerDeregistrationState AddGlobalTargetedHandler(
                 Action<InstanceId, ITargetedMessage> originalHandler,
                 Action<InstanceId, ITargetedMessage> handler,
-                Action deregistration,
                 IMessageBus messageBus
             )
             {
@@ -4324,7 +4389,6 @@ namespace DxMessaging.Core
                     GetOrCreateGlobalSlot(TypedGlobalSlotIndex.TargetedDefault),
                     originalHandler,
                     handler,
-                    deregistration,
                     messageBus
                 );
             }
@@ -4333,12 +4397,10 @@ namespace DxMessaging.Core
             /// Adds a Global fast TargetedHandler to listen to all Targeted Messages of all types for all entities (along with the target instance id), returning the deregistration action.
             /// </summary>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
-            public Action AddGlobalTargetedHandler(
+            public GlobalHandlerDeregistrationState AddGlobalTargetedHandler(
                 FastHandlerWithContext<ITargetedMessage> originalHandler,
                 FastHandlerWithContext<ITargetedMessage> handler,
-                Action deregistration,
                 IMessageBus messageBus
             )
             {
@@ -4346,7 +4408,6 @@ namespace DxMessaging.Core
                     GetOrCreateGlobalSlot(TypedGlobalSlotIndex.TargetedFast),
                     originalHandler,
                     handler,
-                    deregistration,
                     messageBus
                 );
             }
@@ -4355,12 +4416,10 @@ namespace DxMessaging.Core
             /// Adds a Global BroadcastHandler to listen to all Targeted Messages of all types for all entities, returning the deregistration action.
             /// </summary>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
-            public Action AddGlobalBroadcastHandler(
+            public GlobalHandlerDeregistrationState AddGlobalBroadcastHandler(
                 Action<InstanceId, IBroadcastMessage> originalHandler,
                 Action<InstanceId, IBroadcastMessage> handler,
-                Action deregistration,
                 IMessageBus messageBus
             )
             {
@@ -4368,7 +4427,6 @@ namespace DxMessaging.Core
                     GetOrCreateGlobalSlot(TypedGlobalSlotIndex.BroadcastDefault),
                     originalHandler,
                     handler,
-                    deregistration,
                     messageBus
                 );
             }
@@ -4377,12 +4435,10 @@ namespace DxMessaging.Core
             /// Adds a Global fast BroadcastHandler to listen to all Targeted Messages of all types for all entities (along with the source instance id), returning the deregistration action.
             /// </summary>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
-            public Action AddGlobalBroadcastHandler(
+            public GlobalHandlerDeregistrationState AddGlobalBroadcastHandler(
                 FastHandlerWithContext<IBroadcastMessage> originalHandler,
                 FastHandlerWithContext<IBroadcastMessage> handler,
-                Action deregistration,
                 IMessageBus messageBus
             )
             {
@@ -4390,7 +4446,6 @@ namespace DxMessaging.Core
                     GetOrCreateGlobalSlot(TypedGlobalSlotIndex.BroadcastFast),
                     originalHandler,
                     handler,
-                    deregistration,
                     messageBus
                 );
             }
@@ -6322,11 +6377,10 @@ namespace DxMessaging.Core
                 return actionCache.GetOrCreateFlatInvokerCache<TInvoker>();
             }
 
-            private static Action AddHandler<TU>(
+            private static GlobalHandlerDeregistrationState AddHandler<TU>(
                 TypedGlobalSlot slot,
                 TU originalHandler,
                 TU augmentedHandler,
-                Action deregistration,
                 IMessageBus messageBus
             )
             {
@@ -6361,61 +6415,18 @@ namespace DxMessaging.Core
                     slot.liveCount++;
                 }
 
-                HandlerActionCache<TU> localCache = cache;
-                TypedGlobalSlot localSlot = slot;
                 long localSlotVersion = slot.version;
                 long localResetGeneration =
                     global::DxMessaging.Core.MessageBus.MessageBus.GetResetGeneration(messageBus);
 
-                return () =>
-                {
-                    if (
-                        !global::DxMessaging.Core.MessageBus.MessageBus.IsResetGenerationCurrent(
-                            messageBus,
-                            localResetGeneration
-                        )
-                    )
-                    {
-                        return;
-                    }
-
-                    if (localSlot.version != localSlotVersion)
-                    {
-                        return;
-                    }
-
-                    if (
-                        !localCache.entries.TryGetValue(
-                            originalHandler,
-                            out HandlerActionCache<TU>.Entry localEntry
-                        )
-                    )
-                    {
-                        return;
-                    }
-
-                    localCache.version++;
-
-                    deregistration?.Invoke();
-                    localSlot.lastTouchTicks =
-                        global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
-                            messageBus
-                        );
-
-                    if (localEntry.count <= 1)
-                    {
-                        _ = localCache.entries.Remove(originalHandler);
-                        localCache.version++;
-                        localSlot.liveCount--;
-                        return;
-                    }
-
-                    localEntry = new HandlerActionCache<TU>.Entry(
-                        localEntry.handler,
-                        localEntry.count - 1
-                    );
-                    localCache.entries[originalHandler] = localEntry;
-                };
+                return new GlobalHandlerDeregistrationState(
+                    messageBus,
+                    localResetGeneration,
+                    slot,
+                    localSlotVersion,
+                    cache,
+                    originalHandler
+                );
             }
 
             private static Action AddHandler<TU>(

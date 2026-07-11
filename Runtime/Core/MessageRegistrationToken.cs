@@ -3247,7 +3247,8 @@ namespace DxMessaging.Core
             private readonly MessageHandler.FastHandler<IUntargetedMessage> _untargetedFast;
             private readonly MessageHandler.FastHandlerWithContext<ITargetedMessage> _targetedFast;
             private readonly MessageHandler.FastHandlerWithContext<IBroadcastMessage> _broadcastFast;
-            private MessageHandler.HandlerDeregistration _deregistration;
+            private MessageHandler.GlobalAcceptAllDeregistrationState _deregistration;
+            private bool _hasInlineDeregistration;
 
             public override MessageRegistrationMetadata Metadata =>
                 new MessageRegistrationMetadata(
@@ -3291,33 +3292,55 @@ namespace DxMessaging.Core
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
                 if (_kind == RegistrationKind.GlobalAcceptAllAction)
                 {
-                    _deregistration = messageHandler.RegisterGlobalAcceptAll(
-                        _untargetedAction,
-                        AugmentedUntargetedAction,
-                        _targetedAction,
-                        AugmentedTargetedAction,
-                        _broadcastAction,
-                        AugmentedBroadcastAction,
-                        messageBus
+                    return StoreDeregistration(
+                        messageHandler.RegisterGlobalAcceptAll(
+                            _untargetedAction,
+                            AugmentedUntargetedAction,
+                            _targetedAction,
+                            AugmentedTargetedAction,
+                            _broadcastAction,
+                            AugmentedBroadcastAction,
+                            messageBus
+                        )
                     );
-                    return _deregistration;
                 }
 
-                _deregistration = messageHandler.RegisterGlobalAcceptAll(
-                    _untargetedFast,
-                    AugmentedUntargetedFast,
-                    _targetedFast,
-                    AugmentedTargetedFast,
-                    _broadcastFast,
-                    AugmentedBroadcastFast,
-                    messageBus
+                return StoreDeregistration(
+                    messageHandler.RegisterGlobalAcceptAll(
+                        _untargetedFast,
+                        AugmentedUntargetedFast,
+                        _targetedFast,
+                        AugmentedTargetedFast,
+                        _broadcastFast,
+                        AugmentedBroadcastFast,
+                        messageBus
+                    )
                 );
-                return _deregistration;
             }
 
             internal override void Deregister()
             {
-                _deregistration?.Deregister();
+                if (!_hasInlineDeregistration)
+                {
+                    return;
+                }
+
+                _deregistration.Deregister();
+                _hasInlineDeregistration = false;
+            }
+
+            private MessageHandler.HandlerDeregistration StoreDeregistration(
+                MessageHandler.GlobalAcceptAllDeregistrationState deregistration
+            )
+            {
+                if (_hasInlineDeregistration)
+                {
+                    return deregistration;
+                }
+
+                _deregistration = deregistration;
+                _hasInlineDeregistration = true;
+                return this;
             }
 
             private void AugmentedUntargetedAction(IUntargetedMessage message)

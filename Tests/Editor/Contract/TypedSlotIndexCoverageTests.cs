@@ -649,7 +649,6 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     typeof(Action<IUntargetedMessage>),
                     typeof(Action<IUntargetedMessage>),
-                    typeof(Action),
                     typeof(IMessageBus),
                 },
                 modifiers: null
@@ -662,8 +661,9 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageBus bus = new MessageBus();
             Action<IUntargetedMessage> original = _ => { };
             Action<IUntargetedMessage> augmented = _ => { };
-            Action deregistration = (Action)
-                addMethod.Invoke(handler, new object[] { original, augmented, null, bus });
+            Action deregistration = ToDeregistrationAction(
+                addMethod.Invoke(handler, new object[] { original, augmented, bus })
+            );
 
             Array globalSlots = ReadArrayField(handler, "_globalSlots");
             object populated = globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
@@ -738,7 +738,6 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     typeof(Action<IUntargetedMessage>),
                     typeof(Action<IUntargetedMessage>),
-                    typeof(Action),
                     typeof(IMessageBus),
                 },
                 modifiers: null
@@ -750,8 +749,9 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageBus bus = new MessageBus();
             Action<IUntargetedMessage> original = _ => { };
             Action<IUntargetedMessage> augmented = _ => { };
-            Action staleDeregistration = (Action)
-                addMethod.Invoke(typedHandler, new object[] { original, augmented, null, bus });
+            Action staleDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(typedHandler, new object[] { original, augmented, bus })
+            );
             Array globalSlots = ReadArrayField(typedHandler, "_globalSlots");
 
             staleDeregistration();
@@ -759,8 +759,9 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(1, resetCount);
             Assert.IsNull(globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault));
 
-            Action newDeregistration = (Action)
-                addMethod.Invoke(typedHandler, new object[] { original, augmented, null, bus });
+            Action newDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(typedHandler, new object[] { original, augmented, bus })
+            );
             TypedGlobalSlot newUntargetedSlot = (TypedGlobalSlot)
                 globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
             Assert.AreEqual(1, newUntargetedSlot.liveCount);
