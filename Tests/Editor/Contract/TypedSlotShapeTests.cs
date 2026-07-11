@@ -41,8 +41,6 @@ namespace DxMessaging.Tests.Editor.Contract
         // place when production renames land.
         private const string HandlerActionCacheNestedName = "HandlerActionCache`1";
         private const string EntryNestedName = "Entry";
-        private const string EntriesFieldName = "entries";
-        private const string CacheFieldName = "cache";
         private const string CountFieldName = "count";
 
         private readonly struct ProbeMessage : IUntargetedMessage { }
@@ -347,31 +345,16 @@ namespace DxMessaging.Tests.Editor.Contract
 
         /// <summary>
         /// Pins that <c>MessageHandler.HandlerActionCache&lt;T&gt;</c> implements
-        /// <see cref="IHandlerActionCache"/>. The interface
-        /// is implemented explicitly so the public-facing field shape on the
-        /// nested cache type is unchanged; this test exercises the five
-        /// interface members through an interface-typed reference to confirm
-        /// they all dispatch without exception.
+        /// <see cref="IHandlerActionCache"/>. The interface is implemented
+        /// explicitly; this test exercises its behavior through an
+        /// interface-typed reference without pinning the concrete entry-store
+        /// representation.
         /// </summary>
         [Test]
         public void HandlerActionCacheImplementsIHandlerActionCache()
         {
-            System.Type nested = typeof(DxMessaging.Core.MessageHandler).GetNestedType(
-                HandlerActionCacheNestedName,
-                BindingFlags.NonPublic
-            );
-            Assert.IsNotNull(
-                nested,
-                "MessageHandler.HandlerActionCache<T> nested type must exist."
-            );
-            System.Type closed = nested.MakeGenericType(typeof(System.Action<int>));
-            Assert.IsTrue(
-                typeof(IHandlerActionCache).IsAssignableFrom(closed),
-                "HandlerActionCache<T> must implement IHandlerActionCache."
-            );
-
-            object instance = System.Activator.CreateInstance(closed, nonPublic: true);
-            IHandlerActionCache view = (IHandlerActionCache)instance;
+            MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
+            IHandlerActionCache view = cache;
 
             // Exercise every interface member; failure indicates a misapplied
             // explicit-interface implementation or accidental shadowing.
@@ -391,53 +374,16 @@ namespace DxMessaging.Tests.Editor.Contract
                 "Freshly-constructed HandlerActionCache<T> must report IsEmpty == true."
             );
 
-            // Pre-populate entries + cache via reflection so Reset() has
-            // observable inner state to drain. Both fields are public
-            // readonly; reflection over the closed generic returns the same
-            // collection instances the cache holds, so direct mutation
-            // populates the cache.
-            FieldInfo entriesField = closed.GetField(
-                EntriesFieldName,
-                BindingFlags.Public | BindingFlags.Instance
-            );
-            FieldInfo cacheField = closed.GetField(
-                CacheFieldName,
-                BindingFlags.Public | BindingFlags.Instance
-            );
-            Assert.IsNotNull(entriesField, "HandlerActionCache<T>.entries must exist.");
-            Assert.IsNotNull(cacheField, "HandlerActionCache<T>.cache must exist.");
-            System.Collections.IDictionary entries = (System.Collections.IDictionary)
-                entriesField.GetValue(instance);
-            System.Collections.IList cacheList = (System.Collections.IList)
-                cacheField.GetValue(instance);
-            // Entry is a struct nested inside HandlerActionCache<T> that uses
-            // T as a field type. Per .NET reflection rules, GetNestedType
-            // invoked on a closed outer generic returns the OPEN nested type
-            // whenever the nested type uses the outer's generic parameters
-            // (ContainsGenericParameters == true); it must be re-closed with
-            // the outer's generic arguments before construction or
-            // Activator.CreateInstance throws ArgumentException. The
-            // CloseNestedGeneric helper centralizes that handshake; the
-            // companion test EntryNestedTypeRetainsGenericParameterFromOuter
-            // pins the underlying behavior so future refactors do not regress
-            // back to the naive direct-Activator pattern.
-            System.Type entryType = ReflectionHelpers.CloseNestedGeneric(
-                closed,
-                EntryNestedName,
-                BindingFlags.NonPublic
-            );
-            Assert.IsNotNull(entryType, "HandlerActionCache<T>.Entry nested type must exist.");
-            Assert.IsFalse(
-                entryType.ContainsGenericParameters,
-                "Entry must be fully closed before Activator.CreateInstance; "
-                    + "ReflectionHelpers.CloseNestedGeneric is responsible for closing it."
-            );
+            // Populate the cache through its behavior rather than pinning the
+            // entry store to IDictionary. Reset must drain both registration
+            // state and the materialized dispatch snapshot regardless of the
+            // selected storage representation.
             System.Action<int> handler = _ignored => { };
-            object entry = System.Activator.CreateInstance(entryType, handler, 1);
-            entries[handler] = entry;
-            cacheList.Add(handler);
-            Assert.AreEqual(1, entries.Count);
-            Assert.AreEqual(1, cacheList.Count);
+            cache.entries[handler] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
+            cache.cache.Add(handler);
+            Assert.AreEqual(1, cache.entries.Count);
+            Assert.AreEqual(1, cache.cache.Count);
             Assert.IsFalse(
                 view.IsEmpty,
                 "After populating entries the cache must report IsEmpty == false."
@@ -453,9 +399,74 @@ namespace DxMessaging.Tests.Editor.Contract
                 "Reset() must restore lastSeenEmissionId to an invalid sentinel so "
                     + "emission id 0 still materializes a fresh snapshot."
             );
-            Assert.AreEqual(0, entries.Count, "Reset() must empty entries.");
-            Assert.AreEqual(0, cacheList.Count, "Reset() must empty cache.");
+            Assert.AreEqual(0, cache.entries.Count, "Reset() must empty entries.");
+            Assert.AreEqual(0, cache.cache.Count, "Reset() must empty cache.");
             Assert.IsTrue(view.IsEmpty, "After Reset() the cache must report IsEmpty == true.");
+        }
+
+        [Test]
+        public void HandlerActionCacheOrderedStoragePreservesBoundaryAndSpillReuseBehavior()
+        {
+            MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
+            System.Action<int>[] handlers = Enumerable
+                .Range(0, 3)
+                .Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index)))
+                .ToArray();
+
+            for (int index = 0; index < 2; ++index)
+            {
+                cache.entries[handlers[index]] =
+                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(
+                        handlers[index],
+                        1
+                    );
+            }
+
+            Assert.IsFalse(cache.entries.UsesSpillStorage);
+            Assert.AreEqual(2, cache.entries.InlineCapacity);
+            AssertOrderedKeys(cache, handlers[0], handlers[1]);
+
+            cache.entries[handlers[0]] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[0], 2);
+            AssertOrderedKeys(cache, handlers[0], handlers[1]);
+
+            Assert.IsTrue(cache.entries.Remove(handlers[0]));
+            cache.entries[handlers[0]] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[0], 1);
+            AssertOrderedKeys(cache, handlers[1], handlers[0]);
+
+            cache.entries[handlers[2]] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[2], 1);
+            Assert.IsTrue(cache.entries.UsesSpillStorage);
+            Assert.AreEqual(2, cache.entries.InlineCapacity);
+            Assert.GreaterOrEqual(cache.entries.MapCapacity, 3);
+            Assert.GreaterOrEqual(cache.entries.OrderCapacity, 3);
+            AssertOrderedKeys(cache, handlers[1], handlers[0], handlers[2]);
+
+            int mapCapacity = cache.entries.MapCapacity;
+            int orderCapacity = cache.entries.OrderCapacity;
+            cache.entries.Clear();
+            Assert.Zero(cache.entries.Count);
+            Assert.IsTrue(cache.entries.UsesSpillStorage);
+            Assert.AreEqual(mapCapacity, cache.entries.MapCapacity);
+            Assert.AreEqual(orderCapacity, cache.entries.OrderCapacity);
+
+            cache.entries[handlers[1]] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[1], 1);
+            Assert.IsTrue(cache.entries.UsesSpillStorage);
+            AssertOrderedKeys(cache, handlers[1]);
+        }
+
+        private static void AssertOrderedKeys(
+            MessageHandler.HandlerActionCache<System.Action<int>> cache,
+            params System.Action<int>[] expected
+        )
+        {
+            Assert.AreEqual(expected.Length, cache.entries.Count);
+            for (int index = 0; index < expected.Length; ++index)
+            {
+                Assert.AreEqual(expected[index], cache.entries.KeyAt(index));
+            }
         }
 
         /// <summary>

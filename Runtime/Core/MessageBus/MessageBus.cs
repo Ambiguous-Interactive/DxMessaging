@@ -514,8 +514,9 @@ namespace DxMessaging.Core.MessageBus
             // across components. Invariants: contains exactly the keys of
             // <see cref="handlers"/>; a key is appended on its FIRST
             // registration only (refcount increments do not move it) and
-            // removed when its refcount drops to zero. Mirrors the
-            // MessageHandler-side HandlerActionCache.insertionOrder design.
+            // removed when its refcount drops to zero. The MessageHandler-side
+            // cache keeps this invariant inside one ordered container; the
+            // bus-side map remains a separate candidate.
             public readonly List<MessageHandler> insertionOrder = new();
             public long version;
 

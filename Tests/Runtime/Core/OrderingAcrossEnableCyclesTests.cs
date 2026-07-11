@@ -25,12 +25,10 @@ namespace DxMessaging.Tests.Runtime.Core
     /// Implementation hazard being pinned: Enable() replays staged registrations
     /// by enumerating a Dictionary&lt;MessageRegistrationHandle, Action&gt;
     /// (MessageRegistrationToken._registrations), and the per-priority dispatch
-    /// list is rebuilt by enumerating HandlerActionCache.entries, another
-    /// Dictionary (MessageHandler.GetOrAddNewHandlerStack). Dictionary free-slot
-    /// reuse after Remove/Add churn permutes enumeration order, which would
-    /// silently permute equal-priority dispatch order after a Disable()/Enable()
-    /// cycle. If any assertion below fails, the implementation is leaking
-    /// Dictionary enumeration order as the dispatch contract.
+    /// list must be rebuilt from HandlerActionCache entries in first-registration
+    /// order (MessageHandler.GetOrAddNewHandlerStack). Remove/Add churn must append
+    /// the re-added entry at the tail rather than leak backing-map slot reuse into
+    /// the dispatch contract.
     /// </remarks>
     public sealed class OrderingAcrossEnableCyclesTests : MessagingTestBase
     {

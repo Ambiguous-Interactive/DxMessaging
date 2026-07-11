@@ -1832,10 +1832,10 @@ namespace DxMessaging.Core
                 slot.orderedPriorities.Capacity,
                 true,
                 cache.entries.Count,
-                0,
-                cache.entries.EnsureCapacity(0),
-                cache.insertionOrder.Capacity,
-                true
+                cache.entries.InlineCapacity,
+                cache.entries.MapCapacity,
+                cache.entries.OrderCapacity,
+                cache.entries.UsesSpillStorage
             );
             return true;
         }
@@ -2221,7 +2221,7 @@ namespace DxMessaging.Core
                 && erased is HandlerActionCache<TDelegate> cache
             )
             {
-                return cache.insertionOrder.Count;
+                return cache.entries.Count;
             }
 
             return 0;
@@ -2244,19 +2244,11 @@ namespace DxMessaging.Core
                 return writeIndex;
             }
 
-            List<FastHandler<T>> ordered = cache.insertionOrder;
-            int orderedCount = ordered.Count;
+            int orderedCount = cache.entries.Count;
             for (int i = 0; i < orderedCount; ++i)
             {
-                if (
-                    cache.entries.TryGetValue(
-                        ordered[i],
-                        out HandlerActionCache<FastHandler<T>>.Entry entry
-                    )
-                )
-                {
-                    target[writeIndex++] = new FlatDispatchEntry<T>(this, entry.handler);
-                }
+                HandlerActionCache<FastHandler<T>>.Entry entry = cache.entries.ValueAt(i);
+                target[writeIndex++] = new FlatDispatchEntry<T>(this, entry.handler);
             }
 
             return writeIndex;
@@ -2279,19 +2271,10 @@ namespace DxMessaging.Core
                 return writeIndex;
             }
 
-            List<Action<T>> ordered = cache.insertionOrder;
-            int orderedCount = ordered.Count;
+            int orderedCount = cache.entries.Count;
             for (int i = 0; i < orderedCount; ++i)
             {
-                if (
-                    !cache.entries.TryGetValue(
-                        ordered[i],
-                        out HandlerActionCache<Action<T>>.Entry entry
-                    )
-                )
-                {
-                    continue;
-                }
+                HandlerActionCache<Action<T>>.Entry entry = cache.entries.ValueAt(i);
 
                 // Every default registration path for the flattened slots
                 // supplies the adapter at registration time (AddUntargetedHandler,
@@ -2340,19 +2323,13 @@ namespace DxMessaging.Core
                 return writeIndex;
             }
 
-            List<FastHandlerWithContext<T>> ordered = cache.insertionOrder;
-            int orderedCount = ordered.Count;
+            int orderedCount = cache.entries.Count;
             for (int i = 0; i < orderedCount; ++i)
             {
-                if (
-                    cache.entries.TryGetValue(
-                        ordered[i],
-                        out HandlerActionCache<FastHandlerWithContext<T>>.Entry entry
-                    )
-                )
-                {
-                    target[writeIndex++] = new ContextFlatDispatchEntry<T>(this, entry.handler);
-                }
+                HandlerActionCache<FastHandlerWithContext<T>>.Entry entry = cache.entries.ValueAt(
+                    i
+                );
+                target[writeIndex++] = new ContextFlatDispatchEntry<T>(this, entry.handler);
             }
 
             return writeIndex;
@@ -2375,19 +2352,10 @@ namespace DxMessaging.Core
                 return writeIndex;
             }
 
-            List<Action<InstanceId, T>> ordered = cache.insertionOrder;
-            int orderedCount = ordered.Count;
+            int orderedCount = cache.entries.Count;
             for (int i = 0; i < orderedCount; ++i)
             {
-                if (
-                    !cache.entries.TryGetValue(
-                        ordered[i],
-                        out HandlerActionCache<Action<InstanceId, T>>.Entry entry
-                    )
-                )
-                {
-                    continue;
-                }
+                HandlerActionCache<Action<InstanceId, T>>.Entry entry = cache.entries.ValueAt(i);
 
                 // See FillDefaultFlatEntries: the adapter is created once at
                 // registration time (AddTargetedWithoutTargetingHandler,
@@ -2414,6 +2382,283 @@ namespace DxMessaging.Core
 
         internal sealed class HandlerActionCache<T> : DxMessaging.Core.Internal.IHandlerActionCache
         {
+            public struct OrderedEntries
+            {
+                private const int PhysicalInlineCapacity = 2;
+                private static readonly EqualityComparer<T> s_comparer =
+                    EqualityComparer<T>.Default;
+
+                private int _inlineCount;
+                private T _key0;
+                private T _key1;
+                private Entry _value0;
+                private Entry _value1;
+                private Dictionary<T, Entry> _spillMap;
+                private List<T> _spillOrder;
+
+                public int Count
+                {
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    get => _spillMap?.Count ?? _inlineCount;
+                }
+
+                public int InlineCapacity
+                {
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    get => PhysicalInlineCapacity;
+                }
+
+                public int MapCapacity
+                {
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    get => _spillMap?.EnsureCapacity(0) ?? 0;
+                }
+
+                public int OrderCapacity
+                {
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    get => _spillOrder?.Capacity ?? 0;
+                }
+
+                public bool UsesSpillStorage
+                {
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    get => _spillMap != null;
+                }
+
+                public Entry this[T key]
+                {
+                    set
+                    {
+                        ThrowIfNull(key);
+                        if (_spillMap != null)
+                        {
+                            if (!_spillMap.ContainsKey(key))
+                            {
+                                _spillMap.Add(key, value);
+                                try
+                                {
+                                    _spillOrder.Add(key);
+                                }
+                                catch
+                                {
+                                    _ = _spillMap.Remove(key);
+                                    throw;
+                                }
+                                return;
+                            }
+                            _spillMap[key] = value;
+                            return;
+                        }
+
+                        int index = FindInlineIndex(key);
+                        if (index >= 0)
+                        {
+                            SetInlineValue(index, value);
+                            return;
+                        }
+                        if (_inlineCount < PhysicalInlineCapacity)
+                        {
+                            SetInline(_inlineCount, key, value);
+                            ++_inlineCount;
+                            return;
+                        }
+
+                        Spill();
+                        _spillMap.Add(key, value);
+                        try
+                        {
+                            _spillOrder.Add(key);
+                        }
+                        catch
+                        {
+                            _ = _spillMap.Remove(key);
+                            throw;
+                        }
+                    }
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public bool ContainsKey(T key)
+                {
+                    ThrowIfNull(key);
+                    return _spillMap?.ContainsKey(key) ?? FindInlineIndex(key) >= 0;
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public bool TryGetValue(T key, out Entry value)
+                {
+                    ThrowIfNull(key);
+                    if (_spillMap != null)
+                    {
+                        return _spillMap.TryGetValue(key, out value);
+                    }
+                    int index = FindInlineIndex(key);
+                    if (index >= 0)
+                    {
+                        value = GetInlineValue(index);
+                        return true;
+                    }
+                    value = default;
+                    return false;
+                }
+
+                public bool Remove(T key)
+                {
+                    ThrowIfNull(key);
+                    if (_spillMap != null)
+                    {
+                        if (!_spillMap.Remove(key))
+                        {
+                            return false;
+                        }
+                        _ = _spillOrder.Remove(key);
+                        return true;
+                    }
+                    int index = FindInlineIndex(key);
+                    if (index < 0)
+                    {
+                        return false;
+                    }
+                    int lastIndex = _inlineCount - 1;
+                    for (int moveIndex = index; moveIndex < lastIndex; ++moveIndex)
+                    {
+                        SetInline(
+                            moveIndex,
+                            GetInlineKey(moveIndex + 1),
+                            GetInlineValue(moveIndex + 1)
+                        );
+                    }
+                    ClearInline(lastIndex);
+                    --_inlineCount;
+                    return true;
+                }
+
+                public void Clear()
+                {
+                    if (_spillMap != null)
+                    {
+                        _spillMap.Clear();
+                        _spillOrder.Clear();
+                        return;
+                    }
+                    for (int index = 0; index < _inlineCount; ++index)
+                    {
+                        ClearInline(index);
+                    }
+                    _inlineCount = 0;
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public T KeyAt(int index)
+                {
+                    if (_spillOrder != null)
+                    {
+                        return _spillOrder[index];
+                    }
+                    if ((uint)index >= (uint)_inlineCount)
+                    {
+                        throw new ArgumentOutOfRangeException(nameof(index));
+                    }
+                    return GetInlineKey(index);
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public Entry ValueAt(int index)
+                {
+                    if (_spillOrder != null)
+                    {
+                        return _spillMap[_spillOrder[index]];
+                    }
+                    if ((uint)index >= (uint)_inlineCount)
+                    {
+                        throw new ArgumentOutOfRangeException(nameof(index));
+                    }
+                    return GetInlineValue(index);
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                private int FindInlineIndex(T key)
+                {
+                    if (_inlineCount > 0 && s_comparer.Equals(_key0, key))
+                    {
+                        return 0;
+                    }
+                    if (_inlineCount > 1 && s_comparer.Equals(_key1, key))
+                    {
+                        return 1;
+                    }
+                    return -1;
+                }
+
+                private void Spill()
+                {
+                    Dictionary<T, Entry> map = new(PhysicalInlineCapacity * 2);
+                    List<T> order = new(PhysicalInlineCapacity * 2);
+                    for (int index = 0; index < _inlineCount; ++index)
+                    {
+                        T key = GetInlineKey(index);
+                        map.Add(key, GetInlineValue(index));
+                        order.Add(key);
+                    }
+                    for (int index = 0; index < _inlineCount; ++index)
+                    {
+                        ClearInline(index);
+                    }
+                    _inlineCount = 0;
+                    _spillMap = map;
+                    _spillOrder = order;
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                private T GetInlineKey(int index)
+                {
+                    return index == 0 ? _key0 : _key1;
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                private Entry GetInlineValue(int index)
+                {
+                    return index == 0 ? _value0 : _value1;
+                }
+
+                private void SetInline(int index, T key, Entry value)
+                {
+                    if (index == 0)
+                    {
+                        _key0 = key;
+                        _value0 = value;
+                        return;
+                    }
+                    _key1 = key;
+                    _value1 = value;
+                }
+
+                private void SetInlineValue(int index, Entry value)
+                {
+                    if (index == 0)
+                    {
+                        _value0 = value;
+                        return;
+                    }
+                    _value1 = value;
+                }
+
+                private void ClearInline(int index)
+                {
+                    SetInline(index, default, default);
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                private static void ThrowIfNull(T key)
+                {
+                    if (key is null)
+                    {
+                        throw new ArgumentNullException(nameof(key));
+                    }
+                }
+            }
+
             // Uses outer T as a field type -- reflection callers must close
             // via MakeGenericType(outer.GetGenericArguments()) before passing
             // this type to Activator.CreateInstance. See
@@ -2471,19 +2716,12 @@ namespace DxMessaging.Core
                 public readonly object flatInvoker;
             }
 
-            public readonly Dictionary<T, Entry> entries = new();
-
-            // Original-handler keys in first-registration order. Dictionary
-            // enumeration order is NOT stable across Remove/Add churn (.NET
-            // reuses freed slots LIFO), so dispatch snapshots are rebuilt from
-            // this list instead of from <see cref="entries"/> to honor the
-            // documented "same priority uses registration order" contract.
-            // Invariants: contains exactly the keys of <see cref="entries"/>;
-            // a key is appended on its FIRST registration only (refcount
-            // increments do not move it) and removed when its refcount drops
-            // to zero. Maintained exclusively by the AddHandler* family and
-            // <see cref="DxMessaging.Core.Internal.IHandlerActionCache.Reset"/>.
-            public readonly List<T> insertionOrder = new();
+            // The first two distinct handlers live directly in this object.
+            // The third materializes a dictionary plus an ordered key list;
+            // that spill remains allocated for reuse after removal or reset.
+            // Both representations preserve first-registration order and make
+            // entry/order drift structurally impossible.
+            public OrderedEntries entries;
             public readonly List<T> cache = new();
             private System.Collections.IList _flatInvokerCache;
             public long version;
@@ -2517,7 +2755,7 @@ namespace DxMessaging.Core
                 set => lastSeenEmissionId = value;
             }
 
-            /// <summary>True iff the entries dictionary holds zero handlers.</summary>
+            /// <summary>True iff the ordered entry storage holds zero handlers.</summary>
             bool DxMessaging.Core.Internal.IHandlerActionCache.IsEmpty
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2531,7 +2769,6 @@ namespace DxMessaging.Core
             void DxMessaging.Core.Internal.IHandlerActionCache.Reset()
             {
                 entries.Clear();
-                insertionOrder.Clear();
                 cache.Clear();
                 _flatInvokerCache?.Clear();
                 lastSeenVersion = -1;
@@ -2579,9 +2816,6 @@ namespace DxMessaging.Core
                 if (entry.count <= 1)
                 {
                     _ = entries.Remove(key);
-                    // List.Remove is O(n) over the same-priority bucket;
-                    // accepted (see AddHandlerPreservingPriorityKey).
-                    _ = insertionOrder.Remove(key);
                     version++;
                     wasLastForEntry = true;
                     return true;
@@ -4661,10 +4895,6 @@ namespace DxMessaging.Core
                     );
 
                 cache.entries[originalHandler] = entry;
-                if (firstRegistration)
-                {
-                    cache.insertionOrder.Add(originalHandler);
-                }
                 cache.version++;
                 TypedSlot<T> slot = FindContextSlot(handlersByContext);
                 if (slot != null)
@@ -4752,10 +4982,6 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
-                if (firstRegistration)
-                {
-                    cache.insertionOrder.Add(originalHandler);
-                }
                 cache.version++;
 
                 Dictionary<
@@ -4794,7 +5020,6 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
-                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         // Deliberately keep the priority and context mappings to preserve
                         // frozen snapshots for the current emission.
@@ -5125,7 +5350,7 @@ namespace DxMessaging.Core
                 where TMessage : IMessage
                 where TU : IMessage
             {
-                // Snapshot semantics: do not bail on the live entries dictionary
+                // Snapshot semantics: do not bail on the live entry storage
                 // count. A mid-emit removal can drain entries while the pinned
                 // emission snapshot in cache.cache still holds the handlers we
                 // must invoke. Read the snapshot first and bail only if the
@@ -5133,13 +5358,13 @@ namespace DxMessaging.Core
                 //
                 // Perf note: GetOrAddNewHandlerStack is now invoked on every
                 // call (including for empty caches that the previous fast-path
-                // would have skipped). The cost is one dictionary
+                // would have skipped). The cost is one
                 // emission-id/version compare and -- only when the per-emission
                 // snapshot has not been pinned yet -- a single pass over
                 // cache.entries to materialise an empty list. The win is
                 // correctness across cross-handler mid-emit removals where the
                 // pinned snapshot in cache.cache still holds handlers the live
-                // entries dictionary no longer reaches.
+                // entry storage no longer reaches.
                 if (cache == null)
                 {
                     return;
@@ -5248,7 +5473,7 @@ namespace DxMessaging.Core
             {
                 // Snapshot semantics: see comment on the FastHandler<TU> overload.
                 // The pinned emission snapshot may still hold handlers even when
-                // the live entries dictionary has been drained mid-emit.
+                // the live entry storage has been drained mid-emit.
                 if (cache == null)
                 {
                     return;
@@ -6029,34 +6254,19 @@ namespace DxMessaging.Core
                 long emissionId
             )
             {
-                DebugAssertInsertionOrderInSync(actionCache);
                 if (actionCache.lastSeenEmissionId != emissionId)
                 {
                     if (actionCache.version != actionCache.lastSeenVersion)
                     {
-                        // Rebuild the dispatch snapshot from insertionOrder, NOT from
-                        // the entries dictionary: dictionary enumeration order permutes
-                        // after Remove/Add churn (freed slots are reused LIFO), while
-                        // insertionOrder preserves the documented first-registration
-                        // order for equal-priority handlers. This branch only runs on
-                        // registration churn (version bump), never on steady-state
-                        // dispatch, and allocates nothing (the pooled cache list is
-                        // cleared and refilled in place).
+                        // Rebuild in the ordered map's first-registration order.
+                        // This branch only runs on registration churn, never on
+                        // steady-state dispatch, and reuses the snapshot list.
                         List<TU> list = actionCache.cache;
                         list.Clear();
-                        List<TU> orderedHandlers = actionCache.insertionOrder;
-                        int orderedCount = orderedHandlers.Count;
+                        int orderedCount = actionCache.entries.Count;
                         for (int i = 0; i < orderedCount; ++i)
                         {
-                            if (
-                                actionCache.entries.TryGetValue(
-                                    orderedHandlers[i],
-                                    out HandlerActionCache<TU>.Entry entry
-                                )
-                            )
-                            {
-                                list.Add(entry.handler);
-                            }
+                            list.Add(actionCache.entries.ValueAt(i).handler);
                         }
                         actionCache.lastSeenVersion = actionCache.version;
                     }
@@ -6076,26 +6286,16 @@ namespace DxMessaging.Core
             )
                 where TInvoker : class
             {
-                DebugAssertInsertionOrderInSync(actionCache);
                 if (actionCache.flatInvokerLastSeenEmissionId != emissionId)
                 {
                     if (actionCache.version != actionCache.flatInvokerLastSeenVersion)
                     {
                         List<TInvoker> list = actionCache.GetOrCreateFlatInvokerCache<TInvoker>();
                         list.Clear();
-                        List<TU> orderedHandlers = actionCache.insertionOrder;
-                        int orderedCount = orderedHandlers.Count;
+                        int orderedCount = actionCache.entries.Count;
                         for (int i = 0; i < orderedCount; ++i)
                         {
-                            if (
-                                !actionCache.entries.TryGetValue(
-                                    orderedHandlers[i],
-                                    out HandlerActionCache<TU>.Entry entry
-                                )
-                            )
-                            {
-                                continue;
-                            }
+                            HandlerActionCache<TU>.Entry entry = actionCache.entries.ValueAt(i);
 
                             if (entry.flatInvoker is TInvoker invoker)
                             {
@@ -6120,27 +6320,6 @@ namespace DxMessaging.Core
                 }
 
                 return actionCache.GetOrCreateFlatInvokerCache<TInvoker>();
-            }
-
-            // Asserts insertionOrder stays in lockstep with the entries
-            // dictionary at every dispatch-snapshot read. Drift indicates a
-            // mutation site of HandlerActionCache.entries that forgot to
-            // mirror the change into insertionOrder (AddHandler* family,
-            // deregistration closures, IHandlerActionCache.Reset). Stripped
-            // in Release builds via [Conditional("DEBUG")] -- zero hot-path
-            // cost.
-            [Conditional("DEBUG")]
-            private static void DebugAssertInsertionOrderInSync<TU>(
-                HandlerActionCache<TU> actionCache
-            )
-            {
-                System.Diagnostics.Debug.Assert(
-                    actionCache.insertionOrder.Count == actionCache.entries.Count,
-                    "HandlerActionCache.insertionOrder must mirror entries: every first "
-                        + "registration appends and every final deregistration removes. A "
-                        + "count mismatch means a mutation site skipped the insertionOrder "
-                        + "update and same-priority dispatch order is no longer trustworthy."
-                );
             }
 
             private static Action AddHandler<TU>(
@@ -6176,10 +6355,6 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
-                if (firstRegistration)
-                {
-                    cache.insertionOrder.Add(originalHandler);
-                }
                 cache.version++;
                 if (firstRegistration)
                 {
@@ -6230,7 +6405,6 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
-                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         localSlot.liveCount--;
                         return;
@@ -6293,10 +6467,6 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
-                if (firstRegistration)
-                {
-                    cache.insertionOrder.Add(originalHandler);
-                }
                 cache.version++;
 
                 Dictionary<
@@ -6335,7 +6505,6 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
-                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localCache.entries.Count == 0)
                         {
@@ -6383,10 +6552,6 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
-                if (firstRegistration)
-                {
-                    cache.insertionOrder.Add(originalHandler);
-                }
                 cache.version++;
 
                 HandlerActionCache<TU> localCache = cache;
@@ -6410,7 +6575,6 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
-                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         return;
                     }
@@ -6456,10 +6620,6 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
-                if (firstRegistration)
-                {
-                    cache.insertionOrder.Add(originalHandler);
-                }
                 cache.version++;
 
                 Dictionary<int, HandlerActionCache<TU>> localHandlers = handlers;
@@ -6488,7 +6648,6 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
-                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         if (localCache.entries.Count == 0)
                         {
@@ -6552,10 +6711,6 @@ namespace DxMessaging.Core
                     );
 
                 cache.entries[originalHandler] = entry;
-                if (firstRegistration)
-                {
-                    cache.insertionOrder.Add(originalHandler);
-                }
                 cache.version++;
                 TypedSlot<T> slot = FindPrioritySlot(handlers);
                 if (slot != null)
@@ -6625,10 +6780,6 @@ namespace DxMessaging.Core
                     : new HandlerActionCache<TU>.Entry(entry.handler, entry.count + 1);
 
                 cache.entries[originalHandler] = entry;
-                if (firstRegistration)
-                {
-                    cache.insertionOrder.Add(originalHandler);
-                }
                 cache.version++;
 
                 Dictionary<int, HandlerActionCache<TU>> localHandlers = handlers;
@@ -6657,7 +6808,6 @@ namespace DxMessaging.Core
                     if (localEntry.count <= 1)
                     {
                         _ = localCache.entries.Remove(originalHandler);
-                        _ = localCache.insertionOrder.Remove(originalHandler);
                         localCache.version++;
                         // Intentionally DO NOT remove the priority key here to preserve
                         // the cache handle during an in-flight emission.

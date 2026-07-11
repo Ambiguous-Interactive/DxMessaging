@@ -82,6 +82,36 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
+        [TestCase(2, false)]
+        [TestCase(3, true)]
+        public void HandlerStorageObservationReportsInlineSpillBoundary(
+            int cardinality,
+            bool expectedSpill
+        )
+        {
+            HandlerCardinalityObservation observation =
+                HandlerCardinalityBenchmarks.RunOnceForContract(
+                    new HandlerCardinalityBenchmarkCase(
+                        HandlerCardinalityOperation.HandlerDispatch,
+                        cardinality
+                    )
+                );
+            MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
+            Assert.AreEqual(cardinality, storage.HandlerEntries);
+            Assert.AreEqual(expectedSpill, storage.HandlerUsesSpillStorage);
+            Assert.AreEqual(2, storage.HandlerInlineCapacity);
+            if (expectedSpill)
+            {
+                Assert.GreaterOrEqual(storage.HandlerMapCapacity, cardinality);
+                Assert.GreaterOrEqual(storage.HandlerOrderCapacity, cardinality);
+            }
+            else
+            {
+                Assert.Zero(storage.HandlerMapCapacity);
+                Assert.Zero(storage.HandlerOrderCapacity);
+            }
+        }
+
         [Test]
         public void ResultSchemaKeepsCsvAndStructuredLogTopologyAligned()
         {
