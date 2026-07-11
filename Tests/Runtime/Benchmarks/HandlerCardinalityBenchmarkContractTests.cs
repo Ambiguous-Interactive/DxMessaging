@@ -103,19 +103,36 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 );
             MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
             Assert.AreEqual(cardinality, storage.HandlerEntries);
-            Assert.AreEqual(expectedSpill, storage.HandlerUsesSpillStorage);
-            Assert.AreEqual(2, storage.HandlerInlineCapacity);
-            if (expectedSpill)
+            Assert.AreEqual(cardinality > 2, expectedSpill);
+            if (UsesRegistrationSlotArena)
             {
-                Assert.GreaterOrEqual(storage.HandlerMapCapacity, cardinality);
-                Assert.GreaterOrEqual(storage.HandlerOrderCapacity, cardinality);
+                Assert.AreEqual(expectedSpill, storage.HandlerUsesSpillStorage);
+                Assert.AreEqual(2, storage.HandlerInlineCapacity);
+                if (expectedSpill)
+                {
+                    Assert.GreaterOrEqual(storage.HandlerMapCapacity, cardinality);
+                    Assert.GreaterOrEqual(storage.HandlerOrderCapacity, cardinality);
+                }
+                else
+                {
+                    Assert.Zero(storage.HandlerMapCapacity);
+                    Assert.Zero(storage.HandlerOrderCapacity);
+                }
             }
             else
             {
-                Assert.Zero(storage.HandlerMapCapacity);
-                Assert.Zero(storage.HandlerOrderCapacity);
+                Assert.IsTrue(storage.HandlerUsesSpillStorage);
+                Assert.Zero(storage.HandlerInlineCapacity);
+                Assert.GreaterOrEqual(storage.HandlerMapCapacity, cardinality);
+                Assert.GreaterOrEqual(storage.HandlerOrderCapacity, cardinality);
             }
         }
+
+        private static bool UsesRegistrationSlotArena =>
+            typeof(MessageRegistrationHandle).GetProperty(
+                "Slot",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+            ) != null;
 
         [Test]
         public void ResultSchemaKeepsCsvAndStructuredLogTopologyAligned()

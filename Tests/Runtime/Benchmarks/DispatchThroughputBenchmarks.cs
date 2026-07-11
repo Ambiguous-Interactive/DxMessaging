@@ -107,9 +107,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal const int ConstructionBatchSize = 1000;
 
         // Untimed warm-up registrations that remain live until the whole warm-up set has
-        // been registered, then are removed together. Keeping them live crosses the inline
-        // handler-map boundary and grows the token arena before the measured region, so the
-        // window captures marginal same-type registration rather than first-spill setup.
+        // been registered, then are removed together. Keeping them live grows each revision's
+        // handler and token storage before the measured region, so the window captures marginal
+        // same-type registration rather than first-growth setup.
         private const int RegistrationMarginalWarmup = 16;
 
         // Repeated trials for the WARM (JIT pre-warmed) flood scenarios. A single one-shot
@@ -617,9 +617,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         // The per-kind MARGINAL registration cost: how much an ADDITIONAL registration of
         // an already-registered (warm) message type allocates -- the steady-state cost a
-        // component pays when it registers another handler. The current surface includes the
-        // registration object, token-arena growth, typed handler storage, and bus refcount
-        // updates; prior token/teardown work removed common-path closure and holder allocations.
+        // component pays when it registers another handler. The measured surface includes the
+        // registration object, revision-specific token and teardown storage, typed handler
+        // storage, and bus refcount updates.
         // Distinct no-op handler delegates are pre-built OUTSIDE the measured window (each
         // captures its index so the compiler cannot fold them to one cached delegate), which
         // (a) keeps the user's handler-delegate allocation out of the measured number and
