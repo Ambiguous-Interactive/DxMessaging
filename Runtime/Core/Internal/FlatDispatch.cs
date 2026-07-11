@@ -68,6 +68,23 @@ namespace DxMessaging.Core.Internal
     /// </summary>
     internal abstract class FlatDispatchArray
     {
+        internal abstract int Count { get; }
+
+        /// <summary>
+        /// Physical length of the currently rented entry array. Exposed only for internal
+        /// storage benchmarks; dispatch continues to use <see cref="Count"/> as its bound.
+        /// </summary>
+        internal abstract int Capacity { get; }
+
+        /// <summary>
+        /// Number of released holders currently retained by this holder shape's pool. Released
+        /// holders have already returned their rented arrays and hold <c>Array.Empty</c>,
+        /// so this is empty-holder pool topology, not retained array-memory evidence. Array-pool
+        /// retained bytes require external memory measurement. This benchmark telemetry does not
+        /// participate in rent/release decisions.
+        /// </summary>
+        internal abstract int EmptyHolderPoolCount { get; }
+
         internal abstract void Release();
     }
 
@@ -107,6 +124,21 @@ namespace DxMessaging.Core.Internal
 
         internal TEntry[] entries = Array.Empty<TEntry>();
         internal int count;
+
+        internal override int Count => count;
+
+        internal override int Capacity => entries.Length;
+
+        internal override int EmptyHolderPoolCount
+        {
+            get
+            {
+                lock (HolderPoolLock)
+                {
+                    return HolderPool.Count;
+                }
+            }
+        }
 
         // True while the holder is parked in (or eligible for) the pool;
         // false while it is owned by a live DispatchSnapshot. Guards the

@@ -37,13 +37,62 @@ const {
   deriveScope,
   selectRowsForVersion
 } = require("../unity/render-perf-doc.js");
-const { buildComparisonScenarioId } = require("../unity/perf-scenarios.js");
+const {
+  SCENARIO_ORDER,
+  DISPATCH_DISPLAY_NAMES,
+  buildComparisonScenarioId
+} = require("../unity/perf-scenarios.js");
 
 const PLATFORM = "Unity 6000.3.16f1 Linux PlayMode Mono";
 const STANDALONE_PLATFORM = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)";
 const EDITOR_PLAYMODE_PLATFORM =
   "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
+
+test("dispatch baseline scenarios keep stable order and labels", () => {
+  const expected = [
+    ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
+    ["UntargetedFlood_TwoHandlers_OnePriority", "Untargeted Flood (Two Handlers, One Priority)"],
+    [
+      "UntargetedFlood_ThreeHandlers_OnePriority",
+      "Untargeted Flood (Three Handlers, One Priority)"
+    ],
+    ["UntargetedFlood_OneInactiveHandler", "Untargeted Flood (One Inactive Handler)"],
+    [
+      "UntargetedFlood_SixteenHandlers_OnePriority",
+      "Untargeted Flood (Sixteen Handlers, One Priority)"
+    ],
+    ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"],
+    ["MessageBusConstruction_1000", "Message Bus Construction (1000)"],
+    [
+      "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+      "Registration Token Construction (1000, Prebuilt Handler + Bus)"
+    ]
+  ];
+
+  for (const [key, label] of expected) {
+    assert.ok(SCENARIO_ORDER.includes(key), `${key} must be rendered`);
+    assert.equal(DISPATCH_DISPLAY_NAMES[key], label);
+  }
+
+  assert.ok(
+    SCENARIO_ORDER.indexOf("EmptyBus_Dispatch") <
+      SCENARIO_ORDER.indexOf("UntargetedFlood_OneHandler")
+  );
+  assert.deepEqual(SCENARIO_ORDER.slice(1, 5), [
+    "UntargetedFlood_OneHandler",
+    "UntargetedFlood_TwoHandlers_OnePriority",
+    "UntargetedFlood_ThreeHandlers_OnePriority",
+    "UntargetedFlood_FourHandlers_OnePriority"
+  ]);
+
+  assert.equal(new Set(SCENARIO_ORDER).size, SCENARIO_ORDER.length);
+  assert.deepEqual(
+    [...Object.keys(DISPATCH_DISPLAY_NAMES)].sort(),
+    [...SCENARIO_ORDER].sort(),
+    "every rendered dispatch scenario must have exactly one display label"
+  );
+});
 
 function row(
   scenario,
@@ -237,6 +286,20 @@ test("delta sign is normalized so + is always better and - is always worse", () 
     slowerMore.cells[3].startsWith("-10.00%") && slowerMore.cells[3].includes("5 more allocs"),
     slowerMore.cells[3]
   );
+
+  const construction = "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus";
+  const constructionDelta = compareRow(
+    construction,
+    row(construction, "0.000", "1000", "2.000"),
+    row(construction, "0.000", "1000", "4.000"),
+    0.02
+  );
+  assert.ok(
+    constructionDelta.cells[1].startsWith("4.000 ms") &&
+      constructionDelta.cells[2].startsWith("2.000 ms") &&
+      constructionDelta.cells[3].startsWith("+50.00%"),
+    constructionDelta.cells.join(" | ")
+  );
 });
 
 test("isRegression trips on large throughput drops or allocation growth", () => {
@@ -246,6 +309,12 @@ test("isRegression trips on large throughput drops or allocation growth", () => 
     [row("x", "900000.000"), baseline, false],
     [row("x", "1000000.000", "128"), baseline, true],
     [row("x", "0.000"), row("x", "0.000"), false],
+    [row("x", "0.000", "1"), row("x", "0.000", "0"), true],
+    [
+      row("MessageBusConstruction_1000", "0.000", "-1", "10.400"),
+      row("MessageBusConstruction_1000", "0.000", "-1", "10.000"),
+      false
+    ],
     [row("x", "1000000.000", "-1"), row("x", "1000000.000", "0"), false],
     [row("x", "1000000.000", "5"), row("x", "1000000.000", "-1"), false]
   ];

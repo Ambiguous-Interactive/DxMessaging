@@ -2097,6 +2097,94 @@ namespace DxMessaging.Core
             return false;
         }
 
+        internal bool TryObserveFastPriorityHandlerStorage<T>(
+            IMessageBus messageBus,
+            int slotIndex,
+            int priority,
+            out HandlerCacheStorageObservation observation
+        )
+            where T : IMessage
+        {
+            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
+            {
+                observation = default;
+                return false;
+            }
+
+            TypedSlot<T> slot = typedHandler._slots[slotIndex];
+            if (
+                slot == null
+                || !slot.byPriority.TryGetValue(priority, out IHandlerActionCache erased)
+                || erased is not HandlerActionCache<FastHandler<T>> cache
+            )
+            {
+                observation = default;
+                return false;
+            }
+
+            observation = new HandlerCacheStorageObservation(
+                slot.byPriority.Count,
+                0,
+                slot.byPriority.EnsureCapacity(0),
+                slot.orderedPriorities.Capacity,
+                true,
+                cache.entries.Count,
+                0,
+                cache.entries.EnsureCapacity(0),
+                cache.insertionOrder.Capacity,
+                true
+            );
+            return true;
+        }
+
+        internal readonly struct HandlerCacheStorageObservation
+        {
+            internal HandlerCacheStorageObservation(
+                int priorityEntries,
+                int priorityInlineCapacity,
+                int priorityMapCapacity,
+                int priorityOrderCapacity,
+                bool priorityUsesSpillStorage,
+                int handlerEntries,
+                int handlerInlineCapacity,
+                int handlerMapCapacity,
+                int handlerOrderCapacity,
+                bool handlerUsesSpillStorage
+            )
+            {
+                PriorityEntries = priorityEntries;
+                PriorityInlineCapacity = priorityInlineCapacity;
+                PriorityMapCapacity = priorityMapCapacity;
+                PriorityOrderCapacity = priorityOrderCapacity;
+                PriorityUsesSpillStorage = priorityUsesSpillStorage;
+                HandlerEntries = handlerEntries;
+                HandlerInlineCapacity = handlerInlineCapacity;
+                HandlerMapCapacity = handlerMapCapacity;
+                HandlerOrderCapacity = handlerOrderCapacity;
+                HandlerUsesSpillStorage = handlerUsesSpillStorage;
+            }
+
+            internal int PriorityEntries { get; }
+
+            internal int PriorityInlineCapacity { get; }
+
+            internal int PriorityMapCapacity { get; }
+
+            internal int PriorityOrderCapacity { get; }
+
+            internal bool PriorityUsesSpillStorage { get; }
+
+            internal int HandlerEntries { get; }
+
+            internal int HandlerInlineCapacity { get; }
+
+            internal int HandlerMapCapacity { get; }
+
+            internal int HandlerOrderCapacity { get; }
+
+            internal bool HandlerUsesSpillStorage { get; }
+        }
+
         /// <summary>
         /// Resets empty typed-handler slots associated with
         /// <paramref name="messageBus"/>. The eviction layer calls through

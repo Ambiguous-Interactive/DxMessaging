@@ -26,14 +26,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public enum DispatchBenchmarkScenario
     {
+        EmptyBusDispatch,
         UntargetedFloodOneHandler,
+        UntargetedFloodTwoHandlersOnePriority,
+        UntargetedFloodThreeHandlersOnePriority,
         UntargetedFloodFourHandlersOnePriority,
         UntargetedFloodFourHandlersFourPriorities,
+        UntargetedFloodSixteenHandlersOnePriority,
+        UntargetedFloodOneInactiveHandler,
+        TargetedFloodNoMatchingTarget,
         TargetedFloodOneListener,
         TargetedFloodSixteenListeners,
         BroadcastFloodOneHandler,
         InterceptorHeavyFourInterceptors,
         PostProcessingHeavyFourPostProcessors,
+        MessageBusConstruction1000,
+        MessageRegistrationTokenConstruction1000,
         RegistrationFlood1000TypesFromColdBus,
         RegistrationFlood1000TypesWarmJit,
         UntargetedRegistrationMarginal,
@@ -68,6 +76,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes";
         private static readonly InstanceId Target = new(31001);
         private static readonly InstanceId Source = new(31002);
+        private static readonly InstanceId MissingTarget = new(31003);
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
 
         // Marginal registration scenarios register this many additional handlers of a
@@ -80,16 +89,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         // A single marginal-registration batch completes in less than a millisecond on
         // IL2CPP and is too short to distinguish scheduler noise from a runtime change. Run
-        // several fresh trials after one heap settle and report their minimum.
+        // several fresh trials after one heap settle and report their minimum: the repeatable
+        // floor estimator used by the warm registration/deregistration floods. Do not combine
+        // these trials into one long window: retaining several live 1000-registration
+        // populations forces collections into the clock because registration allocates.
         internal const int RegistrationMarginalTimingTrials = 7;
 
-        // Profiler-bearing Mono runs use repeated fresh allocation populations. Stripped
-        // IL2CPP reports Unmeasured and skips this allocation-only pass.
+        // Allocation windows in a profiler-bearing Mono editor see additive ambient spikes.
+        // Measure fresh, identically warmed populations and keep the minimum exact count,
+        // with bytes from that same attempt. Stripped IL2CPP reports Unmeasured and skips
+        // these allocation-only attempts; they never wrap the latency clock.
         internal const int RegistrationMarginalAllocationAttempts = 8;
 
-        // Untimed warm-up registrations remain live until the whole warm-up set has been
-        // registered, then are removed together. This grows each revision's token and handler
-        // storage before the measured region.
+        // Construction is a short, one-time operation, so measure a sufficiently large fixed
+        // batch in one Stopwatch + AllocationProbe window. Arrays and required dependencies are
+        // prepared outside that window; every constructed object is retained until it closes.
+        internal const int ConstructionBatchSize = 1000;
+
+        // Untimed warm-up registrations that remain live until the whole warm-up set has
+        // been registered, then are removed together. Keeping them live grows each revision's
+        // handler and token storage before the measured region, so the window captures marginal
+        // same-type registration rather than first-growth setup.
         private const int RegistrationMarginalWarmup = 16;
 
         // Repeated trials for the WARM (JIT pre-warmed) flood scenarios. A single one-shot
@@ -152,6 +172,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             switch (scenario)
             {
+                case DispatchBenchmarkScenario.MessageBusConstruction1000:
+                    return MeasureMessageBusConstruction();
+                case DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000:
+                    return MeasureMessageRegistrationTokenConstruction();
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus:
                     return MeasureRegistrationFlood();
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
@@ -191,6 +215,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         )
         {
             using BenchmarkRegistrationScope scope = new();
+            Assert.IsFalse(
+                scope.Bus.DiagnosticsMode,
+                "Dispatch throughput rows must isolate the diagnostics-off production path."
+            );
+            Assert.IsFalse(
+                scope.PrimaryToken.DiagnosticMode,
+                "Dispatch throughput rows must not record per-registration diagnostics."
+            );
             InvocationCounter handlerInvocations = new();
             ConfigureScenario(scope, scenario, handlerInvocations);
 
@@ -248,18 +280,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // MeasureEmitScenario fail (observed != expected) instead of passing silently.
         // Interceptors do NOT count (AllowUntargeted only gates, it never increments);
         // post-processors DO count (CountPostProcessed increments), plus the one terminal handler.
-        private static int ExpectedHandlerInvocationsPerEmit(DispatchBenchmarkScenario scenario)
+        internal static int ExpectedHandlerInvocationsPerEmit(DispatchBenchmarkScenario scenario)
         {
             switch (scenario)
             {
+                case DispatchBenchmarkScenario.EmptyBusDispatch:
+                case DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler:
+                case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
+                    return 0;
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
                 case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
                 case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
                     return 1;
+                case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
+                    return 2;
+                case DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority:
+                    return 3;
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities:
                     return 4;
+                case DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority:
                 case DispatchBenchmarkScenario.TargetedFloodSixteenListeners:
                     return 16;
                 case DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors:
@@ -278,6 +319,185 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
+        }
+
+        private static DispatchBenchmarkResult MeasureMessageBusConstruction()
+        {
+            // Pay first-touch constructor/JIT costs outside both measurement passes.
+            MessageBus warmupBus;
+            using (IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark())
+            {
+                warmupBus = new MessageBus();
+            }
+            MessageBus[] timedBuses = new MessageBus[ConstructionBatchSize];
+            long startTimestamp;
+            long endTimestamp;
+            AllocationProbe.SettleHeapForMeasurement();
+            using (IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark())
+            {
+                startTimestamp = Stopwatch.GetTimestamp();
+                for (int index = 0; index < timedBuses.Length; index++)
+                {
+                    timedBuses[index] = new MessageBus();
+                }
+                endTimestamp = Stopwatch.GetTimestamp();
+            }
+            Assert.AreEqual(
+                ConstructionBatchSize,
+                CountConstructed(timedBuses),
+                "The construction benchmark must retain every MessageBus through the timed pass."
+            );
+            Array.Clear(timedBuses, 0, timedBuses.Length);
+
+            // Allocation uses a fresh registry and separate pass so GC.Alloc recorder overhead
+            // never distorts the Mono timing result.
+            MessageBus[] allocationBuses = new MessageBus[ConstructionBatchSize];
+            AllocationProbe.SettleHeapForMeasurement();
+            AllocationProbe.AllocationSample sample;
+            using (IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark())
+            {
+                sample = AllocationProbe.MeasureWithBytes(() =>
+                {
+                    for (int index = 0; index < allocationBuses.Length; index++)
+                    {
+                        allocationBuses[index] = new MessageBus();
+                    }
+                });
+            }
+            Assert.AreEqual(ConstructionBatchSize, CountConstructed(allocationBuses));
+            GC.KeepAlive(warmupBus);
+
+            return DispatchBenchmarkResult.ForWallClockScenario(
+                GetScenarioName(DispatchBenchmarkScenario.MessageBusConstruction1000),
+                runIndex: -1,
+                sample.Allocations,
+                sample.Bytes,
+                TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+            );
+        }
+
+        private static DispatchBenchmarkResult MeasureMessageRegistrationTokenConstruction()
+        {
+            using IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+
+            // Token creation requires both a handler and a bus. Build those dependencies before
+            // the measured region so this row isolates token construction and labels that setup
+            // distinction explicitly. Retain and dispose all tokens outside the timing window.
+            MessageBus[] buses = new MessageBus[ConstructionBatchSize];
+            MessageHandler[] handlers = new MessageHandler[ConstructionBatchSize];
+            MessageRegistrationToken[] tokens = new MessageRegistrationToken[ConstructionBatchSize];
+            for (int index = 0; index < ConstructionBatchSize; index++)
+            {
+                MessageBus bus = new();
+                buses[index] = bus;
+                handlers[index] = new MessageHandler(new InstanceId(33000 + index), bus);
+            }
+
+            MessageBus warmupBus = new();
+            MessageHandler warmupHandler = new(new InstanceId(34001), warmupBus);
+            MessageRegistrationToken warmupToken = MessageRegistrationToken.Create(
+                warmupHandler,
+                warmupBus
+            );
+            warmupToken.Dispose();
+
+            long startTimestamp = 0;
+            long endTimestamp = 0;
+            try
+            {
+                AllocationProbe.SettleHeapForMeasurement();
+                startTimestamp = Stopwatch.GetTimestamp();
+                for (int index = 0; index < tokens.Length; index++)
+                {
+                    tokens[index] = MessageRegistrationToken.Create(handlers[index], buses[index]);
+                }
+                endTimestamp = Stopwatch.GetTimestamp();
+                Assert.AreEqual(
+                    ConstructionBatchSize,
+                    CountConstructed(tokens),
+                    "The construction benchmark must retain every MessageRegistrationToken through the timed pass."
+                );
+            }
+            finally
+            {
+                DisposeTokens(tokens);
+            }
+
+            AllocationProbe.SettleHeapForMeasurement();
+            AllocationProbe.AllocationSample sample;
+            try
+            {
+                sample = AllocationProbe.MeasureWithBytes(() =>
+                {
+                    for (int index = 0; index < tokens.Length; index++)
+                    {
+                        tokens[index] = MessageRegistrationToken.Create(
+                            handlers[index],
+                            buses[index]
+                        );
+                    }
+                });
+                Assert.AreEqual(
+                    ConstructionBatchSize,
+                    CountConstructed(tokens),
+                    "The construction benchmark must retain every MessageRegistrationToken through the allocation pass."
+                );
+            }
+            finally
+            {
+                DisposeTokens(tokens);
+            }
+
+            return DispatchBenchmarkResult.ForWallClockScenario(
+                GetScenarioName(DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000),
+                runIndex: -1,
+                sample.Allocations,
+                sample.Bytes,
+                TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+            );
+        }
+
+        private static void DisposeTokens(MessageRegistrationToken[] tokens)
+        {
+            Exception firstException = null;
+            for (int index = tokens.Length - 1; index >= 0; index--)
+            {
+                MessageRegistrationToken token = tokens[index];
+                tokens[index] = null;
+                if (token == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    token.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    firstException ??= exception;
+                }
+            }
+
+            if (firstException != null)
+            {
+                throw firstException;
+            }
+        }
+
+        private static int CountConstructed<T>(T[] instances)
+            where T : class
+        {
+            int count = 0;
+            for (int index = 0; index < instances.Length; index++)
+            {
+                if (instances[index] != null)
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         // Runs a warm, repeatable flood operation over <see cref="WarmFloodTrials"/> trials and
@@ -397,9 +617,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         // The per-kind MARGINAL registration cost: how much an ADDITIONAL registration of
         // an already-registered (warm) message type allocates -- the steady-state cost a
-        // component pays when it registers another handler, and the surface the registration
-        // allocation work (token-side staging closure, handle, by-value metadata, the
-        // PendingDeregistration holder, and the bus-side de-registration closures) reduced.
+        // component pays when it registers another handler. The measured surface includes the
+        // registration object, revision-specific token and teardown storage, typed handler
+        // storage, and bus refcount updates.
         // Distinct no-op handler delegates are pre-built OUTSIDE the measured window (each
         // captures its index so the compiler cannot fold them to one cached delegate), which
         // (a) keeps the user's handler-delegate allocation out of the measured number and
@@ -446,12 +666,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int total = RegistrationMarginalWarmup + RegistrationMarginalCount;
             using IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
 
+            // Pre-build distinct handler delegates OUTSIDE the measured window. Each captures
+            // its index so the C# compiler cannot collapse them into a single cached static
+            // delegate, guaranteeing every registration is a genuine new one.
             MessageHandler.FastHandler<T>[] handlers = new MessageHandler.FastHandler<T>[total];
             for (int index = 0; index < total; index++)
             {
                 int captured = index;
                 handlers[index] = (ref T message) =>
                 {
+                    // Reference the captured index so each delegate is a distinct closure
+                    // instance (the compiler cannot fold them to one cached static delegate),
+                    // guaranteeing every registration is genuinely new rather than a
+                    // same-delegate refcount bump. The message is intentionally ignored.
                     _ = captured;
                 };
             }
@@ -459,12 +686,20 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 RegistrationMarginalWarmup
             ];
 
+            // Pre-warm the complete registration path, including token-arena growth and the
+            // handler-map spill path. This throwaway population is outside both measurement
+            // windows; only compiled code and reusable global pool state survive disposal.
             using (BenchmarkRegistrationScope warmupScope = new())
             {
                 WarmRegistrationMarginalScope(warmupScope, handlers, warmupHandles, register);
                 RegisterMarginalBatch(warmupScope.PrimaryToken, handlers, register);
             }
 
+            // A long window is actively misleading here: each population allocates enough
+            // that retaining several of them forces a collection into the clock. Instead,
+            // measure fresh, identically warmed populations independently after one heap
+            // settle and keep the minimum floor. A collection in any later trial becomes a
+            // slow outlier instead of requiring another expensive full-editor collection.
             double milliseconds = double.MaxValue;
             int completedTimingTrials = 0;
             QuiesceGarbageCollector();
@@ -486,8 +721,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     milliseconds = trialMilliseconds;
                 }
             }
-            Assert.AreEqual(RegistrationMarginalTimingTrials, completedTimingTrials);
+            Assert.AreEqual(
+                RegistrationMarginalTimingTrials,
+                completedTimingTrials,
+                "Marginal latency must execute every fresh timing population."
+            );
 
+            // Allocation instrumentation is deliberately separate from the latency clock.
+            // On Mono the GC.Alloc recorder has measurable hook overhead; timing inside its
+            // window made backend comparisons include profiler cost. Repeated fresh
+            // populations reject additive warm-editor noise while pairing bytes with the
+            // same attempt that produced the minimum exact count. A stripped IL2CPP player
+            // has no functional allocation recorder and honestly skips this allocation-only
+            // pass while retaining the validated seven-trial latency result.
             AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation> sample =
                 MeasureRegistrationMarginalAllocation(handlers, warmupHandles, register);
 
@@ -551,6 +797,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         )
             where T : DxMessaging.Core.IMessage
         {
+            // Reclaim the seven timing populations on every backend. On stripped IL2CPP this
+            // is the only cleanup in this helper because allocation probing is unavailable.
             AllocationProbe.SettleHeapForMeasurement();
             if (!AllocationProbe.IsFunctional)
             {
@@ -573,14 +821,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 {
                     using BenchmarkRegistrationScope scope = new();
                     WarmRegistrationMarginalScope(scope, handlers, warmupHandles, register);
+                    RegistrationMarginalPopulation population;
                     AllocationProbe.AllocationSample allocation;
                     using (AllocationProbe.Window window = AllocationProbe.BeginWindow())
                     {
                         RegisterMarginalBatch(scope.PrimaryToken, handlers, register);
                         allocation = window.SampleBoth();
                     }
-                    RegistrationMarginalPopulation population =
-                        ObserveRegistrationMarginalPopulation(scope);
+                    population = ObserveRegistrationMarginalPopulation(scope);
                     AssertRegistrationMarginalPopulation(population);
                     completedAttempts++;
                     if (
@@ -601,10 +849,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
             finally
             {
+                // Every attempt scope has already been disposed, so this collection reclaims
+                // the full registration graphs instead of retaining the final population.
                 AllocationProbe.SettleHeapForMeasurement();
             }
 
-            Assert.AreEqual(RegistrationMarginalAllocationAttempts, completedAttempts);
+            Assert.AreEqual(
+                RegistrationMarginalAllocationAttempts,
+                completedAttempts,
+                "Marginal allocation must execute every fresh measurement population."
+            );
             AssertRegistrationMarginalPopulation(minimumPopulation);
             return new AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation>(
                 minimumCount,
@@ -630,8 +884,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             RegistrationMarginalPopulation population
         )
         {
-            Assert.AreEqual(RegistrationMarginalCount, population.TokenRegistrations);
-            Assert.AreEqual(1, population.BusHandlerEntries);
+            Assert.AreEqual(
+                RegistrationMarginalCount,
+                population.TokenRegistrations,
+                "The measured marginal batch must leave 1,000 live token registrations."
+            );
+            Assert.AreEqual(
+                1,
+                population.BusHandlerEntries,
+                "The measured marginal batch must reach the bus's single refcounted handler entry."
+            );
         }
 
         private readonly struct RegistrationMarginalPopulation
@@ -858,8 +1120,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             switch (scenario)
             {
+                case DispatchBenchmarkScenario.EmptyBusDispatch:
+                    return;
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
                     RegisterUntargeted(scope, handlerInvocations, 0);
+                    return;
+                case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
+                    for (int index = 0; index < 2; index++)
+                    {
+                        RegisterUntargeted(scope, handlerInvocations, 0);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority:
+                    for (int index = 0; index < 3; index++)
+                    {
+                        RegisterUntargeted(scope, handlerInvocations, 0);
+                    }
                     return;
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
                     for (int index = 0; index < 4; index++)
@@ -872,6 +1148,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     {
                         RegisterUntargeted(scope, handlerInvocations, priority);
                     }
+                    return;
+                case DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority:
+                    for (int index = 0; index < 16; index++)
+                    {
+                        RegisterUntargeted(scope, handlerInvocations, 0);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler:
+                    RegisterUntargeted(scope, handlerInvocations, 0, active: false);
+                    return;
+                case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
+                    RegisterTargeted(scope, handlerInvocations, 0);
                     return;
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
                     RegisterTargeted(scope, handlerInvocations, 0);
@@ -920,10 +1208,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static void RegisterUntargeted(
             BenchmarkRegistrationScope scope,
             InvocationCounter handlerInvocations,
-            int priority
+            int priority,
+            bool active = true
         )
         {
-            MessageRegistrationToken token = scope.CreateToken();
+            MessageRegistrationToken token = scope.CreateToken(active);
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
                 (ref SimpleUntargetedMessage message) => handlerInvocations.Increment(),
                 priority
@@ -962,15 +1251,28 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             switch (scenario)
             {
+                case DispatchBenchmarkScenario.EmptyBusDispatch:
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
+                case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
+                case DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority:
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities:
+                case DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority:
+                case DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler:
                 case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
                 case DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors:
                     SimpleUntargetedMessage untargeted = new();
                     for (int index = 0; index < count; index++)
                     {
                         bus.UntargetedBroadcast(ref untargeted);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
+                    SimpleTargetedMessage missingTargetMessage = new();
+                    InstanceId missingTarget = MissingTarget;
+                    for (int index = 0; index < count; index++)
+                    {
+                        bus.TargetedBroadcast(ref missingTarget, ref missingTargetMessage);
                     }
                     return;
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
@@ -993,6 +1295,67 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 default:
                     throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
             }
+        }
+
+        internal static DispatchScenarioContractObservation ConfigureAndEmitOnceForContract(
+            DispatchBenchmarkScenario scenario
+        )
+        {
+            using BenchmarkRegistrationScope scope = new();
+            InvocationCounter handlerInvocations = new();
+            ConfigureScenario(scope, scenario, handlerInvocations);
+            int registrationBuckets =
+                scope.Bus.RegisteredUntargeted
+                + scope.Bus.RegisteredTargeted
+                + scope.Bus.RegisteredBroadcast
+                + scope.Bus.RegisteredInterceptors
+                + scope.Bus.RegisteredPostProcessors
+                + scope.Bus.RegisteredGlobalAcceptAll;
+            EmitMany(scope.Bus, scenario, 1);
+            long scenarioFanOut = handlerInvocations.Count;
+
+            handlerInvocations.Reset();
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
+                    SimpleTargetedMessage targeted = new();
+                    InstanceId target = Target;
+                    scope.Bus.TargetedBroadcast(ref target, ref targeted);
+                    break;
+                case DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler:
+                    scope.SetAllHandlersActive(true);
+                    EmitMany(scope.Bus, scenario, 1);
+                    break;
+                default:
+                    EmitMany(scope.Bus, scenario, 1);
+                    break;
+            }
+
+            return new DispatchScenarioContractObservation(
+                scenarioFanOut,
+                handlerInvocations.Count,
+                registrationBuckets
+            );
+        }
+
+        internal readonly struct DispatchScenarioContractObservation
+        {
+            internal DispatchScenarioContractObservation(
+                long scenarioFanOut,
+                long controlFanOut,
+                int registrationBuckets
+            )
+            {
+                ScenarioFanOut = scenarioFanOut;
+                ControlFanOut = controlFanOut;
+                RegistrationBuckets = registrationBuckets;
+            }
+
+            internal long ScenarioFanOut { get; }
+
+            internal long ControlFanOut { get; }
+
+            internal int RegistrationBuckets { get; }
         }
 
         private static bool AllowUntargeted(ref SimpleUntargetedMessage message)
@@ -1531,6 +1894,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 Count++;
             }
+
+            public void Reset()
+            {
+                Count = 0;
+            }
         }
 
         private sealed class BenchmarkRegistrationScope : IDisposable
@@ -1541,6 +1909,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public BenchmarkRegistrationScope()
             {
+                // Benchmark the production diagnostics-off path regardless of the host
+                // editor's current global diagnostics setting. Editor preferences are
+                // mutable and otherwise turn a zero-allocation dispatch benchmark into
+                // a measurement of diagnostic history recording.
                 Bus = new MessageBus { DiagnosticsMode = false };
                 PrimaryToken = CreateToken();
             }
@@ -1549,15 +1921,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public MessageRegistrationToken PrimaryToken { get; }
 
-            public MessageRegistrationToken CreateToken()
+            public MessageRegistrationToken CreateToken(bool active = true)
             {
-                MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = true };
+                MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = active };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, Bus);
                 token.DiagnosticMode = false;
                 token.Enable();
                 _handlers.Add(handler);
                 _tokens.Add(token);
                 return token;
+            }
+
+            public void SetAllHandlersActive(bool active)
+            {
+                for (int index = 0; index < _handlers.Count; index++)
+                {
+                    _handlers[index].active = active;
+                }
             }
 
             public void Dispose()
@@ -1685,6 +2065,31 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 gcAllocatedBytes,
                 wallClockMs,
                 isRegistrationScenario: true
+            );
+        }
+
+        /// <summary>
+        /// Builds a generic wall-clock result for one-time work that is not itself a
+        /// registration scenario, such as bus and token construction.
+        /// </summary>
+        public static DispatchBenchmarkResult ForWallClockScenario(
+            string scenario,
+            int runIndex,
+            long gcAllocations,
+            long gcAllocatedBytes,
+            double wallClockMs
+        )
+        {
+            return new DispatchBenchmarkResult(
+                scenario,
+                ResolvePlatform(),
+                ResolveCommit(),
+                runIndex,
+                emitsPerSecond: 0,
+                gcAllocations,
+                gcAllocatedBytes,
+                wallClockMs,
+                isRegistrationScenario: false
             );
         }
 
