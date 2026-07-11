@@ -6610,6 +6610,8 @@ namespace DxMessaging.Core.MessageBus
             );
         }
 
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool HasAnyDispatchEntries(DispatchSnapshot snapshot)
         {
