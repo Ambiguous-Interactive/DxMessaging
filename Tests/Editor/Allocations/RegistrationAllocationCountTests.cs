@@ -5,8 +5,10 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
     using DxMessaging.Core.Pooling;
     using DxMessaging.Tests.Editor.Benchmarks;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -132,6 +134,18 @@ namespace DxMessaging.Tests.Editor.Allocations
         private static void NoOpTargetedPostProcessor(ref SimpleTargetedMessage message) { }
 
         private static void NoOpTargetedActionPostProcessor(SimpleTargetedMessage message) { }
+
+        private static void NoOpGlobalUntargeted(ref IUntargetedMessage message) { }
+
+        private static void NoOpGlobalTargeted(
+            ref InstanceId target,
+            ref ITargetedMessage message
+        ) { }
+
+        private static void NoOpGlobalBroadcast(
+            ref InstanceId source,
+            ref IBroadcastMessage message
+        ) { }
 
         private static MessageBus NewBus()
         {
@@ -387,6 +401,89 @@ namespace DxMessaging.Tests.Editor.Allocations
                     + "RegistrationStorageStructuralGuardTests."
                     + "InternalRegisterPassesMetadataByValueNotFactory (per-PR EditMode leg)."
             );
+        }
+
+        [Test]
+        [Category("Allocation")]
+        public void GlobalAcceptAllMarginalAllocationMaterialityIsMeasured()
+        {
+            MessageHandler.FastHandler<SimpleUntargetedMessage> typedHandlerDelegate = NoOp;
+            MessageHandler.FastHandler<IUntargetedMessage> globalUntargeted = NoOpGlobalUntargeted;
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> globalTargeted =
+                NoOpGlobalTargeted;
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> globalBroadcast =
+                NoOpGlobalBroadcast;
+
+            MessageBus typedBus = NewBus();
+            MessageHandler typedHandler = new MessageHandler(Owner, typedBus) { active = true };
+            using LeakWatcher typedLeaks = new(typedBus, label: "typed materiality baseline");
+            using MessageRegistrationToken typedToken = MessageRegistrationToken.Create(
+                typedHandler,
+                typedBus
+            );
+            typedToken.Enable();
+
+            MessageBus globalBus = NewBus();
+            MessageHandler globalHandler = new MessageHandler(Owner, globalBus) { active = true };
+            using LeakWatcher globalLeaks = new(globalBus, label: "global materiality baseline");
+            using MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
+                globalHandler,
+                globalBus
+            );
+            globalToken.Enable();
+
+            for (int i = 0; i < WarmupRegistrations + SettleRegistrations; ++i)
+            {
+                _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
+                _ = globalToken.RegisterGlobalAcceptAll(
+                    globalUntargeted,
+                    globalTargeted,
+                    globalBroadcast
+                );
+            }
+
+            long typedCount = AllocationProbe.MeasureMin(
+                MinAttempts,
+                prepare: null,
+                operation: () =>
+                {
+                    for (int i = 0; i < MeasuredRegistrations; ++i)
+                    {
+                        _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
+                    }
+                }
+            );
+            long globalCount = AllocationProbe.MeasureMin(
+                MinAttempts,
+                prepare: null,
+                operation: () =>
+                {
+                    for (int i = 0; i < MeasuredRegistrations; ++i)
+                    {
+                        _ = globalToken.RegisterGlobalAcceptAll(
+                            globalUntargeted,
+                            globalTargeted,
+                            globalBroadcast
+                        );
+                    }
+                }
+            );
+
+            if (
+                typedCount == AllocationProbe.Unmeasured
+                || globalCount == AllocationProbe.Unmeasured
+            )
+            {
+                Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
+            }
+
+            long delta = globalCount - typedCount;
+            string measurement =
+                $"global-accept-all-materiality,typed={typedCount},global={globalCount},delta={delta},registrations={MeasuredRegistrations}";
+            TestContext.Out.WriteLine(measurement);
+            UnityEngine.Debug.Log(measurement);
+            Assert.GreaterOrEqual(typedCount, 0);
+            Assert.GreaterOrEqual(globalCount, 0);
         }
     }
 }
