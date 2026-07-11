@@ -6677,7 +6677,7 @@ namespace DxMessaging.Core.MessageBus
             DebugAssertFlatShape<FlatDispatch<TMessage>>(flatBase);
             FlatDispatch<TMessage> flat = DxUnsafe.As<FlatDispatch<TMessage>>(flatBase);
             FlatDispatchEntry<TMessage>[] entries = flat.entries;
-            int count = snapshot.entryCount;
+            int count = flat.count;
             long resetGeneration = _resetGeneration;
             for (int i = 0; i < count; ++i)
             {
@@ -6729,7 +6729,7 @@ namespace DxMessaging.Core.MessageBus
                 flatBase
             );
             ContextFlatDispatchEntry<TMessage>[] entries = flat.entries;
-            int count = snapshot.entryCount;
+            int count = flat.count;
             long resetGeneration = _resetGeneration;
             for (int i = 0; i < count; ++i)
             {
