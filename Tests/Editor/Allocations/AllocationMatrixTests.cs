@@ -107,20 +107,21 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         /// <summary>
         /// How many times <see cref="AllocationProbe.MeasureMin"/> measures an
-        /// allocation-count window before taking the minimum, for the registration /
-        /// deregistration / diagnostics-augmented-registration budgets below. A single
-        /// window in a warm, long-lived editor domain intermittently spikes far above the
-        /// operation's true cost (a GC/heap-state-dependent pool miss or backing-array
-        /// resize that fires in one window and not the next); the spikes only ADD to the
-        /// floor, so the minimum over a handful of attempts converges to the stable
-        /// per-operation cost. We deliberately keep the count modest (and avoid a
-        /// per-attempt forced collection; see <see cref="AllocationProbe.MeasureMin"/>) so
-        /// the repeated measurement does not grow the long-lived editor heap enough to
-        /// perturb other allocation tests. Cold CI legs run a fresh domain and read the
-        /// floor on the first attempt; the extra attempts are harmless there. (Trim and the
-        /// dirty-target reuse path no longer measure a GC.Alloc count at all -- they assert
-        /// the deterministic <see cref="IMessageBus.TrimResult"/> / pool Hits/Misses
-        /// counters instead, which need no denoising.)
+        /// allocation-count window before taking the minimum, for the diagnostics-enabled
+        /// emission, registration, deregistration, and diagnostics-augmented-registration
+        /// budgets below. A single window in a warm, long-lived editor domain intermittently
+        /// spikes far above the operation's true cost (a GC/heap-state-dependent pool miss or
+        /// backing-array resize that fires in one window and not the next); the spikes only ADD
+        /// to the floor, so the minimum over a handful of attempts converges to the stable
+        /// per-operation cost. Every attempt repeats the exact same operation batch; no setup is
+        /// hidden between samples. We deliberately keep the count modest (and avoid a per-attempt
+        /// forced collection; see <see cref="AllocationProbe.MeasureMin"/>) so the repeated
+        /// measurement does not grow the long-lived editor heap enough to perturb other allocation
+        /// tests. Cold CI legs run a fresh domain and read the floor on the first attempt; the extra
+        /// attempts are harmless there. (Trim and the dirty-target reuse path no longer measure a
+        /// GC.Alloc count at all -- they assert the deterministic
+        /// <see cref="IMessageBus.TrimResult"/> / pool Hits/Misses counters instead, which need no
+        /// denoising.)
         /// </summary>
         private const int AllocationMeasurementAttempts = 8;
 
@@ -347,13 +348,20 @@ namespace DxMessaging.Tests.Editor.Allocations
                     // AllocationProbe counts allocation calls precisely and is
                     // immune to GC timing, so a Gen-0 collection mid-loop cannot
                     // erase the signal the way a live-heap delta could.
-                    AllocationProbe.SettleHeapForMeasurement();
-                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
-                    for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
-                    {
-                        emit();
-                    }
-                    long gcAllocations = window.Sample();
+                    // A warm editor can inject a one-window allocation spike unrelated to
+                    // this fixed batch. MeasureMin repeats these exact same 32 emissions and
+                    // selects the stable floor without changing the established budget.
+                    long gcAllocations = AllocationProbe.MeasureMin(
+                        AllocationMeasurementAttempts,
+                        prepare: null,
+                        operation: () =>
+                        {
+                            for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
+                            {
+                                emit();
+                            }
+                        }
+                    );
                     if (gcAllocations == AllocationProbe.Unmeasured)
                     {
                         Assert.Ignore(
