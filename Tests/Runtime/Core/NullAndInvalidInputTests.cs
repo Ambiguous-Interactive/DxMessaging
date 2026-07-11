@@ -130,8 +130,16 @@ namespace DxMessaging.Tests.Runtime.Core
 
             CollectionAssert.AllItemsAreUnique(
                 original,
-                "The control token must allocate a distinct handle for every registration."
+                "Every registration must receive a distinct handle."
             );
+            if (RegistrationSlotProperty != null)
+            {
+                CollectionAssert.AreEqual(
+                    new[] { 0, 1, 2, 3, 4, 5 },
+                    original.Select(GetRegistrationSlot),
+                    "The initial power-of-two arena growth must allocate consecutive slots."
+                );
+            }
 
             scope.Token.RemoveRegistration(original[0]);
             scope.Token.RemoveRegistration(original[2]);
@@ -152,13 +160,41 @@ namespace DxMessaging.Tests.Runtime.Core
 
             CollectionAssert.AllItemsAreUnique(
                 new[] { reuseTail, reuseMiddle, reuseHead },
-                "The control token has no physical slot arena, but replacement handles must remain unique."
+                "Replacement registrations must receive distinct handles."
             );
+            if (RegistrationSlotProperty != null)
+            {
+                CollectionAssert.AreEqual(
+                    new[] { 5, 2, 0 },
+                    new[]
+                    {
+                        GetRegistrationSlot(reuseTail),
+                        GetRegistrationSlot(reuseMiddle),
+                        GetRegistrationSlot(reuseHead),
+                    },
+                    "The free list must reuse removed tail, middle, and head slots in O(1) LIFO order."
+                );
+            }
             CollectionAssert.AreEqual(
                 new[] { original[1], original[3], original[4], reuseTail, reuseMiddle, reuseHead },
                 scope.Token._metadata.Select(entry => entry.Key),
                 "Metadata enumeration must follow live registration order, not physical slot order."
             );
+        }
+
+        private static readonly System.Reflection.PropertyInfo RegistrationSlotProperty =
+            typeof(MessageRegistrationHandle).GetProperty(
+                "Slot",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+            );
+
+        private static int GetRegistrationSlot(MessageRegistrationHandle handle)
+        {
+            Assert.IsNotNull(
+                RegistrationSlotProperty,
+                "The registration-slot accessor is required when the slot arena is present."
+            );
+            return (int)RegistrationSlotProperty.GetValue(handle, null);
         }
 
         [Test]
