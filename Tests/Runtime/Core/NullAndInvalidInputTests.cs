@@ -175,11 +175,34 @@ namespace DxMessaging.Tests.Runtime.Core
                     "The free list must reuse removed tail, middle, and head slots in O(1) LIFO order."
                 );
             }
-            CollectionAssert.AreEqual(
-                new[] { original[1], original[3], original[4], reuseTail, reuseMiddle, reuseHead },
-                scope.Token._metadata.Select(entry => entry.Key),
-                "Metadata enumeration must follow live registration order, not physical slot order."
+            MessageRegistrationHandle[] expectedLiveHandles =
+            {
+                original[1],
+                original[3],
+                original[4],
+                reuseTail,
+                reuseMiddle,
+                reuseHead,
+            };
+            IEnumerable<MessageRegistrationHandle> actualLiveHandles = scope.Token._metadata.Select(
+                entry => entry.Key
             );
+            if (RegistrationSlotProperty != null)
+            {
+                CollectionAssert.AreEqual(
+                    expectedLiveHandles,
+                    actualLiveHandles,
+                    "Arena metadata enumeration must follow live registration order, not physical slot order."
+                );
+            }
+            else
+            {
+                CollectionAssert.AreEquivalent(
+                    expectedLiveHandles,
+                    actualLiveHandles,
+                    "Legacy dictionary metadata must contain exactly the surviving and replacement handles."
+                );
+            }
         }
 
         private static readonly System.Reflection.PropertyInfo RegistrationSlotProperty =
