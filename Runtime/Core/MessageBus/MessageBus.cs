@@ -925,6 +925,7 @@ namespace DxMessaging.Core.MessageBus
 
 #if UNITY_2021_3_OR_NEWER
         private static List<WeakReference<MessageBus>> IdleSweepBuses = new();
+        private static IdleSweepRegistryBenchmarkScope ActiveIdleSweepRegistryBenchmarkScope;
         private static bool RuntimeSettingsSubscribed;
 
         private static void RegisterForIdleSweeps(MessageBus bus)
@@ -1000,24 +1001,69 @@ namespace DxMessaging.Core.MessageBus
 
         internal static IDisposable IsolateIdleSweepRegistryForBenchmark()
         {
-            return new IdleSweepRegistryBenchmarkScope(IdleSweepBuses);
+            return new IdleSweepRegistryBenchmarkScope();
         }
 
         internal static int IdleSweepRegistryCountForBenchmark => IdleSweepBuses.Count;
 
+        internal static object IdleSweepRegistryIdentityForBenchmark => IdleSweepBuses;
+
         private sealed class IdleSweepRegistryBenchmarkScope : IDisposable
         {
             private readonly List<WeakReference<MessageBus>> _saved;
+            private readonly IdleSweepRegistryBenchmarkScope _parent;
+            private readonly int _ownerThreadId;
+            private bool _disposed;
 
-            internal IdleSweepRegistryBenchmarkScope(List<WeakReference<MessageBus>> saved)
+            internal IdleSweepRegistryBenchmarkScope()
             {
-                _saved = saved;
-                IdleSweepBuses = new List<WeakReference<MessageBus>>();
+                _ownerThreadId = Environment.CurrentManagedThreadId;
+                lock (typeof(IdleSweepRegistryBenchmarkScope))
+                {
+                    if (
+                        ActiveIdleSweepRegistryBenchmarkScope != null
+                        && ActiveIdleSweepRegistryBenchmarkScope._ownerThreadId != _ownerThreadId
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            "Nested idle-sweep benchmark scopes must share one owning thread."
+                        );
+                    }
+
+                    _parent = ActiveIdleSweepRegistryBenchmarkScope;
+                    _saved = IdleSweepBuses;
+                    ActiveIdleSweepRegistryBenchmarkScope = this;
+                    IdleSweepBuses = new List<WeakReference<MessageBus>>();
+                }
             }
 
             public void Dispose()
             {
-                IdleSweepBuses = _saved;
+                lock (typeof(IdleSweepRegistryBenchmarkScope))
+                {
+                    if (_disposed)
+                    {
+                        return;
+                    }
+                    if (Environment.CurrentManagedThreadId != _ownerThreadId)
+                    {
+                        throw new InvalidOperationException(
+                            "Idle-sweep benchmark scopes must be disposed on their owning thread."
+                        );
+                    }
+
+                    _disposed = true;
+                    while (
+                        ActiveIdleSweepRegistryBenchmarkScope != null
+                        && ActiveIdleSweepRegistryBenchmarkScope._disposed
+                    )
+                    {
+                        IdleSweepRegistryBenchmarkScope completed =
+                            ActiveIdleSweepRegistryBenchmarkScope;
+                        IdleSweepBuses = completed._saved;
+                        ActiveIdleSweepRegistryBenchmarkScope = completed._parent;
+                    }
+                }
             }
         }
 

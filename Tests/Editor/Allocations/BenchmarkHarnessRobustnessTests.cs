@@ -810,6 +810,116 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        [Test]
+        public void IdleSweepBenchmarkScopesRestoreAfterArbitraryDisposalOrder()
+        {
+            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            IDisposable outer = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            object outerIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            IDisposable inner = null;
+            try
+            {
+                _ = new MessageBus();
+                Assert.AreEqual(1, MessageBus.IdleSweepRegistryCountForBenchmark);
+
+                inner = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                object innerIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+                Assert.AreEqual(0, MessageBus.IdleSweepRegistryCountForBenchmark);
+                Assert.AreNotSame(outerIdentity, innerIdentity);
+
+                outer.Dispose();
+                Assert.AreSame(innerIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+
+                inner.Dispose();
+                inner = null;
+                Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+                Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+                outer.Dispose();
+            }
+            finally
+            {
+                try
+                {
+                    inner?.Dispose();
+                }
+                finally
+                {
+                    outer.Dispose();
+                }
+            }
+        }
+
+        [Test]
+        public void IdleSweepBenchmarkScopeRejectsWrongThreadDisposeWithoutLosingOwnership()
+        {
+            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            IDisposable scope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            Exception workerException = null;
+            try
+            {
+                System.Threading.Thread worker = new(() =>
+                {
+                    try
+                    {
+                        scope.Dispose();
+                    }
+                    catch (Exception exception)
+                    {
+                        workerException = exception;
+                    }
+                });
+                worker.Start();
+                worker.Join();
+
+                Assert.IsInstanceOf<InvalidOperationException>(workerException);
+                Assert.AreNotSame(
+                    originalIdentity,
+                    MessageBus.IdleSweepRegistryIdentityForBenchmark
+                );
+            }
+            finally
+            {
+                scope.Dispose();
+            }
+
+            Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+            Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+        }
+
+        [Test]
+        public void IdleSweepBenchmarkScopeRejectsNestedCreationFromAnotherThread()
+        {
+            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            using IDisposable scope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            object isolatedIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            Exception workerException = null;
+
+            System.Threading.Thread worker = new(() =>
+            {
+                try
+                {
+                    using IDisposable nested = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                }
+                catch (Exception exception)
+                {
+                    workerException = exception;
+                }
+            });
+            worker.Start();
+            worker.Join();
+
+            Assert.IsInstanceOf<InvalidOperationException>(workerException);
+            Assert.AreSame(isolatedIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+            Assert.AreEqual(0, MessageBus.IdleSweepRegistryCountForBenchmark);
+
+            scope.Dispose();
+            Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+            Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+        }
+
         // Direction sanity: the warm-JIT registration flood pre-pays the Mono JIT bill on a
         // throwaway bus, so its timed pass must not exceed the cold flood (which times JIT +
         // registration together). Under IL2CPP/AOT the generics are precompiled so the two
