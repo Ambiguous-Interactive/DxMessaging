@@ -103,9 +103,7 @@ namespace DxMessaging.Core.Helper
             }
             else
             {
-                index = MessageHelperIndexer.TotalMessages++;
-                MessageHelperIndexer<TMessage>.SequentialId = index;
-                EnsureIndex(index);
+                index = AssignIndex<TMessage>();
                 value = new TValue();
                 _values[index] = value;
             }
@@ -130,9 +128,7 @@ namespace DxMessaging.Core.Helper
                 return;
             }
 
-            index = MessageHelperIndexer.TotalMessages++;
-            MessageHelperIndexer<TMessage>.SequentialId = index;
-            EnsureIndex(index);
+            index = AssignIndex<TMessage>();
             _values[index] = value;
         }
 
@@ -231,25 +227,47 @@ namespace DxMessaging.Core.Helper
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int AssignIndex<TMessage>()
+            where TMessage : IMessage
+        {
+            int index = MessageHelperIndexer.TotalMessages;
+            EnsureIndex(index);
+            MessageHelperIndexer<TMessage>.SequentialId = index;
+            MessageHelperIndexer.TotalMessages = index + 1;
+            return index;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void EnsureIndex(int index)
         {
-            if (_count <= index)
+            if (index < 0)
             {
-                _count = index + 1;
+                throw new InvalidOperationException("Message type indices cannot be negative.");
             }
 
             if (index < _values.Length)
             {
+                if (_count <= index)
+                {
+                    _count = index + 1;
+                }
                 return;
             }
 
             int capacity = _values.Length == 0 ? 4 : _values.Length;
             while (capacity <= index)
             {
+                if (capacity > int.MaxValue >> 1)
+                {
+                    throw new InvalidOperationException(
+                        "The message type index exceeds the cache's supported capacity."
+                    );
+                }
                 capacity <<= 1;
             }
 
             Array.Resize(ref _values, capacity);
+            _count = index + 1;
         }
     }
 }

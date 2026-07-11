@@ -88,6 +88,75 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.That(enumerator.MoveNext(), Is.False);
         }
 
+        [Test]
+        public void SparseStorageRejectsAnIndexThatWouldOverflowCapacityGrowth()
+        {
+            MessageCache<Box> cache = new MessageCache<Box>();
+            int previousIndex = MessageHelperIndexer<OverflowMessage>.SequentialId;
+            try
+            {
+                MessageHelperIndexer<OverflowMessage>.SequentialId = int.MaxValue;
+
+                InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+                    cache.Set<OverflowMessage>(new Box("overflow"))
+                );
+
+                StringAssert.Contains("supported capacity", exception.Message);
+                Assert.That(cache, Is.Empty, "A rejected index must not change cache enumeration.");
+                Assert.That(
+                    cache.TryGetValue<OverflowMessage>(out _),
+                    Is.False,
+                    "A rejected index must not leave a partial cache entry."
+                );
+            }
+            finally
+            {
+                MessageHelperIndexer<OverflowMessage>.SequentialId = previousIndex;
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void NewTypeAssignmentRemainsUnpublishedWhenCapacityGrowthIsRejected(
+            bool useGetOrAdd
+        )
+        {
+            const int FirstUnsupportedIndex = 1 << 30;
+            MessageCache<Box> cache = new MessageCache<Box>();
+            int previousIndex = MessageHelperIndexer<UnassignedOverflowMessage>.SequentialId;
+            int previousTotal = MessageHelperIndexer.TotalMessages;
+            try
+            {
+                MessageHelperIndexer<UnassignedOverflowMessage>.SequentialId = -1;
+                MessageHelperIndexer.TotalMessages = FirstUnsupportedIndex;
+
+                Assert.Throws<InvalidOperationException>(() =>
+                {
+                    if (useGetOrAdd)
+                    {
+                        cache.GetOrAdd<UnassignedOverflowMessage>();
+                    }
+                    else
+                    {
+                        cache.Set<UnassignedOverflowMessage>(new Box("overflow"));
+                    }
+                });
+
+                Assert.That(MessageHelperIndexer.TotalMessages, Is.EqualTo(FirstUnsupportedIndex));
+                Assert.That(
+                    MessageHelperIndexer<UnassignedOverflowMessage>.SequentialId,
+                    Is.EqualTo(-1)
+                );
+                Assert.That(cache, Is.Empty, "A rejected assignment must leave the cache empty.");
+                Assert.That(cache.TryGetValue<UnassignedOverflowMessage>(out _), Is.False);
+            }
+            finally
+            {
+                MessageHelperIndexer<UnassignedOverflowMessage>.SequentialId = previousIndex;
+                MessageHelperIndexer.TotalMessages = previousTotal;
+            }
+        }
+
         private sealed class Box
         {
             public Box() { }
@@ -109,6 +178,10 @@ namespace DxMessaging.Tests.Editor.Contract
         private readonly struct EnumerationFirstMessage : IUntargetedMessage { }
 
         private readonly struct EnumerationLaterMessage : IUntargetedMessage { }
+
+        private readonly struct OverflowMessage : IUntargetedMessage { }
+
+        private readonly struct UnassignedOverflowMessage : IUntargetedMessage { }
     }
 }
 #endif
