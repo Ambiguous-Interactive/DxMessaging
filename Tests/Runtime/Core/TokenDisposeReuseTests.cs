@@ -283,7 +283,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     if (addedPriority == 40)
                     {
                         bus.OnRegistrationWithPriority = null;
-                        MessageRegistrationHandle addedHandle = token._metadata.Last().Key;
+                        MessageRegistrationHandle addedHandle = token
+                            ._metadata.Single(entry => entry.Value.priority == addedPriority)
+                            .Key;
                         token.RemoveRegistration(addedHandle);
                     }
                 };
