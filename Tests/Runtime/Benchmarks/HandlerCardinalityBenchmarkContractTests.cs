@@ -1,7 +1,9 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Benchmarks
 {
+    using System;
     using System.Collections.Generic;
+    using DxMessaging.Core;
     using NUnit.Framework;
 
     public sealed class HandlerCardinalityBenchmarkContractTests
@@ -9,7 +11,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test]
         public void MatrixCoversEveryOperationAtRequiredCardinalities()
         {
-            int[] cardinalities = { 1, 4, 16, 64 };
+            int[] cardinalities = { 1, 2, 3, 4, 5, 8, 9, 16, 64 };
             HandlerCardinalityOperation[] operations =
             {
                 HandlerCardinalityOperation.PriorityDispatch,
@@ -53,6 +55,130 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Assert.AreEqual(sameHandler ? 1 : benchmarkCase.Cardinality, observation.DispatchCalls);
             Assert.AreEqual(benchmarkCase.Cardinality, observation.LiveRegistrations);
             Assert.AreEqual(1, observation.OccupiedTypeSlots);
+            bool distinctPriority =
+                benchmarkCase.Operation == HandlerCardinalityOperation.PriorityDispatch
+                || benchmarkCase.Operation == HandlerCardinalityOperation.PriorityChurn;
+            int expectedHandlerEntries =
+                sameHandler || distinctPriority ? 1 : benchmarkCase.Cardinality;
+            int expectedPriorityEntries = distinctPriority ? benchmarkCase.Cardinality : 1;
+            MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
+            Assert.AreEqual(expectedPriorityEntries, storage.PriorityEntries);
+            Assert.AreEqual(expectedHandlerEntries, storage.HandlerEntries);
+            AssertStorageCoherent(
+                storage.PriorityEntries,
+                storage.PriorityInlineCapacity,
+                storage.PriorityMapCapacity,
+                storage.PriorityOrderCapacity,
+                storage.PriorityUsesSpillStorage,
+                "priority"
+            );
+            AssertStorageCoherent(
+                storage.HandlerEntries,
+                storage.HandlerInlineCapacity,
+                storage.HandlerMapCapacity,
+                storage.HandlerOrderCapacity,
+                storage.HandlerUsesSpillStorage,
+                "handler"
+            );
+        }
+
+        [Test]
+        public void ResultSchemaKeepsCsvAndStructuredLogTopologyAligned()
+        {
+            HandlerCardinalityBenchmarkResult result = new(
+                new HandlerCardinalityBenchmarkCase(HandlerCardinalityOperation.HandlerDispatch, 4),
+                1d,
+                -1,
+                -1,
+                2d,
+                3,
+                4,
+                5,
+                6,
+                7,
+                0,
+                7,
+                8,
+                true,
+                9,
+                0,
+                9,
+                10,
+                true
+            );
+
+            string[] header = HandlerCardinalityBenchmarkResult.CsvHeader.Split(',');
+            string[] row = result.ToCsvRow().Split(',');
+            Assert.AreEqual(header.Length, row.Length);
+            Assert.AreEqual("-1", row[2], "Unmeasured operation allocations must stay explicit.");
+
+            string structured = result.ToStructuredLog();
+            foreach (string key in header)
+            {
+                StringAssert.Contains(key + "=", structured, $"Missing structured key {key}.");
+            }
+        }
+
+        [Test]
+        public void ConstructionMatrixAndResultSchemaCoverBothStorageOwners()
+        {
+            CollectionAssert.AreEquivalent(
+                new[]
+                {
+                    HandlerStorageConstructionKind.HandlerCache,
+                    HandlerStorageConstructionKind.PrioritySlot,
+                },
+                (HandlerStorageConstructionKind[])
+                    Enum.GetValues(typeof(HandlerStorageConstructionKind))
+            );
+
+            HandlerStorageConstructionBenchmarkResult result = new(
+                HandlerStorageConstructionKind.HandlerCache,
+                1d,
+                -1,
+                -1,
+                2d,
+                1_000
+            );
+            string[] header = HandlerStorageConstructionBenchmarkResult.CsvHeader.Split(',');
+            string[] row = result.ToCsvRow().Split(',');
+            Assert.AreEqual(header.Length, row.Length);
+            Assert.AreEqual("-1", row[2], "Unmeasured construction allocations stay explicit.");
+
+            string structured = result.ToStructuredLog();
+            foreach (string key in header)
+            {
+                StringAssert.Contains(key + "=", structured, $"Missing structured key {key}.");
+            }
+        }
+
+        private static void AssertStorageCoherent(
+            int entries,
+            int inlineCapacity,
+            int mapCapacity,
+            int orderCapacity,
+            bool usesSpillStorage,
+            string label
+        )
+        {
+            if (usesSpillStorage)
+            {
+                Assert.GreaterOrEqual(mapCapacity, entries, $"{label} map capacity is too small.");
+                Assert.GreaterOrEqual(
+                    orderCapacity,
+                    entries,
+                    $"{label} order capacity is too small."
+                );
+                return;
+            }
+
+            Assert.Zero(mapCapacity, $"Inline {label} storage must not own a spill map.");
+            Assert.Zero(orderCapacity, $"Inline {label} storage must not own a spill order list.");
+            Assert.GreaterOrEqual(
+                inlineCapacity,
+                entries,
+                $"Inline {label} capacity is too small."
+            );
         }
 
         private static IEnumerable<TestCaseData> Cases()

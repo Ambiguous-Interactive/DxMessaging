@@ -28,13 +28,9 @@ namespace DxMessaging.Core.Internal
     /// surface picks up no new members from the interface retrofit.
     /// </para>
     /// <para>
-    /// Deliberately a thin, marker-style surface: only the five members that
-    /// staged dispatch (<see cref="Version"/>, <see cref="LastSeenVersion"/>,
-    /// <see cref="LastSeenEmissionId"/>) and eviction
-    /// (<see cref="IsEmpty"/>, <see cref="Reset"/>) require. The
-    /// <c>entries</c> dictionary and <c>cache</c> list are NOT exposed
-    /// because their generic shape is the very thing this interface erases;
-    /// dispatchers that need the typed cache down-cast at the call site.
+    /// Deliberately a thin erased lifecycle surface for staged dispatch and eviction.
+    /// Generic keys, values, snapshot lists, and representation diagnostics are not
+    /// exposed; dispatchers that need typed entries down-cast at the call site.
     /// </para>
     /// </remarks>
     internal interface IHandlerActionCache
