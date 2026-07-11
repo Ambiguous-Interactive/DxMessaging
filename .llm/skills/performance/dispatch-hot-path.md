@@ -2,9 +2,9 @@
 title: "DxMessaging Dispatch Hot Path"
 id: "dispatch-hot-path"
 category: "performance"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-05-05"
-updated: "2026-06-18"
+updated: "2026-07-11"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -72,6 +72,7 @@ related:
   - "aggressive-inlining"
   - "array-pooling"
   - "mono-vs-il2cpp-optimization-split"
+  - "runtime-performance-campaign-decisions"
 
 status: "stable"
 ---
@@ -294,3 +295,4 @@ mirrors that policy for the comparison bridges. The
 - [DxMessaging Memory Reclamation](./memory-reclamation.md)
 - [Aggressive Inlining](./aggressive-inlining.md)
 - [Allocation Coverage Required for Dispatch](../testing/allocation-coverage-required-for-dispatch.md)
+- [Runtime Performance Campaign Decisions](./runtime-performance-campaign-decisions.md)
