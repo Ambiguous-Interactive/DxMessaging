@@ -760,6 +760,14 @@ namespace DxMessaging.Tests.Editor.Allocations
             ).SetName("WallClock_BroadcastFirstDispatchCold");
         }
 
+        [Test]
+        public void MarginalRegistrationLatencyUsesRepeatedFloorTrials()
+        {
+            Assert.AreEqual(1000, DispatchThroughputBenchmarks.RegistrationMarginalCount);
+            Assert.AreEqual(7, DispatchThroughputBenchmarks.RegistrationMarginalTimingTrials);
+            Assert.AreEqual(8, DispatchThroughputBenchmarks.RegistrationMarginalAllocationAttempts);
+        }
+
         // Result-shape lock: every cold/warm-JIT latency scenario reports zero throughput
         // (the time lives in WallClockMs) and is flagged as a wall-clock scenario. The
         // emitsPerSecond=0 property is exactly what auto-excludes these rows from the JS
@@ -771,10 +779,20 @@ namespace DxMessaging.Tests.Editor.Allocations
             DispatchBenchmarkScenario scenario
         )
         {
+            int idleRegistryCount = MessageBus.IdleSweepRegistryCountForBenchmark;
             DispatchBenchmarkResult result = DispatchThroughputBenchmarks.RunScenario(
                 scenario,
                 logResult: false
             );
+
+            if (
+                scenario == DispatchBenchmarkScenario.UntargetedRegistrationMarginal
+                || scenario == DispatchBenchmarkScenario.TargetedRegistrationMarginal
+                || scenario == DispatchBenchmarkScenario.BroadcastRegistrationMarginal
+            )
+            {
+                Assert.AreEqual(idleRegistryCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+            }
 
             Assert.AreEqual(
                 0d,

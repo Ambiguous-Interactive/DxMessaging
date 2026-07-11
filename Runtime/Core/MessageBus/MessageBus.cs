@@ -924,7 +924,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
 #if UNITY_2021_3_OR_NEWER
-        private static readonly List<WeakReference<MessageBus>> IdleSweepBuses = new();
+        private static List<WeakReference<MessageBus>> IdleSweepBuses = new();
         private static bool RuntimeSettingsSubscribed;
 
         private static void RegisterForIdleSweeps(MessageBus bus)
@@ -996,6 +996,29 @@ namespace DxMessaging.Core.MessageBus
             IdleSweepBuses.Clear();
             RuntimeSettingsSubscribed = false;
             ResetStaticPools();
+        }
+
+        internal static IDisposable IsolateIdleSweepRegistryForBenchmark()
+        {
+            return new IdleSweepRegistryBenchmarkScope(IdleSweepBuses);
+        }
+
+        internal static int IdleSweepRegistryCountForBenchmark => IdleSweepBuses.Count;
+
+        private sealed class IdleSweepRegistryBenchmarkScope : IDisposable
+        {
+            private readonly List<WeakReference<MessageBus>> _saved;
+
+            internal IdleSweepRegistryBenchmarkScope(List<WeakReference<MessageBus>> saved)
+            {
+                _saved = saved;
+                IdleSweepBuses = new List<WeakReference<MessageBus>>();
+            }
+
+            public void Dispose()
+            {
+                IdleSweepBuses = _saved;
+            }
         }
 
         private void ApplyRuntimeSettings(DxMessagingRuntimeSettings settings)

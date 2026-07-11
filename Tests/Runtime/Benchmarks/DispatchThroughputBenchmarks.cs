@@ -62,12 +62,20 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // batch keeps the per-operation allocation floor well above warm-editor ambient
         // GC.Alloc noise, mirroring the "total over a window" benchmark methodology the
         // flood scenarios use.
-        private const int RegistrationMarginalCount = 1000;
+        internal const int RegistrationMarginalCount = 1000;
 
-        // Untimed warm-up registrations (registered then removed) that pay the one-time
-        // per-type dispatch-structure build + DxPools warm-up BEFORE the measured region,
-        // so the window captures only the MARGINAL cost of an additional same-type
-        // registration.
+        // A single marginal-registration batch completes in less than a millisecond on
+        // IL2CPP and is too short to distinguish scheduler noise from a runtime change. Run
+        // several fresh trials after one heap settle and report their minimum.
+        internal const int RegistrationMarginalTimingTrials = 7;
+
+        // Profiler-bearing Mono runs use repeated fresh allocation populations. Stripped
+        // IL2CPP reports Unmeasured and skips this allocation-only pass.
+        internal const int RegistrationMarginalAllocationAttempts = 8;
+
+        // Untimed warm-up registrations remain live until the whole warm-up set has been
+        // registered, then are removed together. This grows each revision's token and handler
+        // storage before the measured region.
         private const int RegistrationMarginalWarmup = 16;
 
         // Repeated trials for the WARM (JIT pre-warmed) flood scenarios. A single one-shot
@@ -422,51 +430,205 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             where T : DxMessaging.Core.IMessage
         {
             int total = RegistrationMarginalWarmup + RegistrationMarginalCount;
+            using IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
 
-            // Pre-build distinct handler delegates OUTSIDE the measured window. Each captures
-            // its index so the C# compiler cannot collapse them into a single cached static
-            // delegate, guaranteeing every registration is a genuine new one.
             MessageHandler.FastHandler<T>[] handlers = new MessageHandler.FastHandler<T>[total];
             for (int index = 0; index < total; index++)
             {
                 int captured = index;
                 handlers[index] = (ref T message) =>
                 {
-                    // Reference the captured index so each delegate is a distinct closure
-                    // instance (the compiler cannot fold them to one cached static delegate),
-                    // guaranteeing every registration is genuinely new rather than a
-                    // same-delegate refcount bump. The message is intentionally ignored.
                     _ = captured;
                 };
             }
 
-            using BenchmarkRegistrationScope scope = new();
-            MessageRegistrationToken token = scope.PrimaryToken;
-
-            // Warm the type's dispatch structure + the global DxPools (register then remove)
-            // so the timed region measures only the marginal cost.
-            for (int index = 0; index < RegistrationMarginalWarmup; index++)
+            using (BenchmarkRegistrationScope warmupScope = new())
             {
-                MessageRegistrationHandle warm = register(token, handlers[index]);
-                token.RemoveRegistration(warm);
+                WarmRegistrationMarginalScope(warmupScope, handlers, register);
+                RegisterMarginalBatch(warmupScope.PrimaryToken, handlers, register);
             }
 
-            using AllocationProbe.Window window = AllocationProbe.BeginWindow();
-            long startTimestamp = Stopwatch.GetTimestamp();
-            for (int index = RegistrationMarginalWarmup; index < total; index++)
+            double milliseconds = double.MaxValue;
+            int completedTimingTrials = 0;
+            QuiesceGarbageCollector();
+            for (int trial = 0; trial < RegistrationMarginalTimingTrials; trial++)
             {
-                _ = register(token, handlers[index]);
+                using BenchmarkRegistrationScope timingScope = new();
+                WarmRegistrationMarginalScope(timingScope, handlers, register);
+                long startTimestamp = Stopwatch.GetTimestamp();
+                RegisterMarginalBatch(timingScope.PrimaryToken, handlers, register);
+                long endTimestamp = Stopwatch.GetTimestamp();
+                AssertRegistrationMarginalPopulation(
+                    ObserveRegistrationMarginalPopulation(timingScope)
+                );
+                completedTimingTrials++;
+                double trialMilliseconds =
+                    TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d;
+                if (trialMilliseconds < milliseconds)
+                {
+                    milliseconds = trialMilliseconds;
+                }
             }
-            long endTimestamp = Stopwatch.GetTimestamp();
-            AllocationProbe.AllocationSample sample = window.SampleBoth();
+            Assert.AreEqual(RegistrationMarginalTimingTrials, completedTimingTrials);
+
+            AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation> sample =
+                MeasureRegistrationMarginalAllocation(handlers, register);
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(scenario),
                 runIndex: -1,
-                sample.Allocations,
-                sample.Bytes,
-                TimestampDeltaToSeconds(startTimestamp, endTimestamp) * 1000d
+                sample.GcAllocations,
+                sample.GcAllocatedBytes,
+                milliseconds
             );
+        }
+
+        private static void WarmRegistrationMarginalScope<T>(
+            BenchmarkRegistrationScope scope,
+            MessageHandler.FastHandler<T>[] handlers,
+            Func<
+                MessageRegistrationToken,
+                MessageHandler.FastHandler<T>,
+                MessageRegistrationHandle
+            > register
+        )
+            where T : DxMessaging.Core.IMessage
+        {
+            MessageRegistrationHandle[] handles = new MessageRegistrationHandle[
+                RegistrationMarginalWarmup
+            ];
+            for (int index = 0; index < handles.Length; index++)
+            {
+                handles[index] = register(scope.PrimaryToken, handlers[index]);
+            }
+            for (int index = handles.Length - 1; index >= 0; index--)
+            {
+                scope.PrimaryToken.RemoveRegistration(handles[index]);
+            }
+        }
+
+        private static void RegisterMarginalBatch<T>(
+            MessageRegistrationToken token,
+            MessageHandler.FastHandler<T>[] handlers,
+            Func<
+                MessageRegistrationToken,
+                MessageHandler.FastHandler<T>,
+                MessageRegistrationHandle
+            > register
+        )
+            where T : DxMessaging.Core.IMessage
+        {
+            int end = RegistrationMarginalWarmup + RegistrationMarginalCount;
+            for (int index = RegistrationMarginalWarmup; index < end; index++)
+            {
+                _ = register(token, handlers[index]);
+            }
+        }
+
+        private static AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation> MeasureRegistrationMarginalAllocation<T>(
+            MessageHandler.FastHandler<T>[] handlers,
+            Func<
+                MessageRegistrationToken,
+                MessageHandler.FastHandler<T>,
+                MessageRegistrationHandle
+            > register
+        )
+            where T : DxMessaging.Core.IMessage
+        {
+            AllocationProbe.SettleHeapForMeasurement();
+            if (!AllocationProbe.IsFunctional)
+            {
+                return new AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation>(
+                    AllocationProbe.Unmeasured,
+                    AllocationProbe.Unmeasured,
+                    -1,
+                    default
+                );
+            }
+
+            long minimumCount = long.MaxValue;
+            long minimumBytes = AllocationProbe.Unmeasured;
+            int minimumAttempt = -1;
+            int completedAttempts = 0;
+            RegistrationMarginalPopulation minimumPopulation = default;
+            try
+            {
+                for (int attempt = 0; attempt < RegistrationMarginalAllocationAttempts; attempt++)
+                {
+                    using BenchmarkRegistrationScope scope = new();
+                    WarmRegistrationMarginalScope(scope, handlers, register);
+                    AllocationProbe.AllocationSample allocation;
+                    using (AllocationProbe.Window window = AllocationProbe.BeginWindow())
+                    {
+                        RegisterMarginalBatch(scope.PrimaryToken, handlers, register);
+                        allocation = window.SampleBoth();
+                    }
+                    RegistrationMarginalPopulation population =
+                        ObserveRegistrationMarginalPopulation(scope);
+                    AssertRegistrationMarginalPopulation(population);
+                    completedAttempts++;
+                    if (
+                        AllocationProbe.ShouldReplaceMinimumAttempt(
+                            allocation.Allocations,
+                            allocation.Bytes,
+                            minimumCount,
+                            minimumBytes
+                        )
+                    )
+                    {
+                        minimumCount = allocation.Allocations;
+                        minimumBytes = allocation.Bytes;
+                        minimumAttempt = attempt;
+                        minimumPopulation = population;
+                    }
+                }
+            }
+            finally
+            {
+                AllocationProbe.SettleHeapForMeasurement();
+            }
+
+            Assert.AreEqual(RegistrationMarginalAllocationAttempts, completedAttempts);
+            AssertRegistrationMarginalPopulation(minimumPopulation);
+            return new AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation>(
+                minimumCount,
+                minimumBytes,
+                minimumAttempt,
+                minimumPopulation
+            );
+        }
+
+        private static RegistrationMarginalPopulation ObserveRegistrationMarginalPopulation(
+            BenchmarkRegistrationScope scope
+        )
+        {
+            return new RegistrationMarginalPopulation(
+                scope.PrimaryToken._metadata.Count,
+                scope.Bus.RegisteredUntargeted
+                    + scope.Bus.RegisteredTargeted
+                    + scope.Bus.RegisteredBroadcast
+            );
+        }
+
+        private static void AssertRegistrationMarginalPopulation(
+            RegistrationMarginalPopulation population
+        )
+        {
+            Assert.AreEqual(RegistrationMarginalCount, population.TokenRegistrations);
+            Assert.AreEqual(1, population.BusHandlerEntries);
+        }
+
+        private readonly struct RegistrationMarginalPopulation
+        {
+            internal RegistrationMarginalPopulation(int tokenRegistrations, int busHandlerEntries)
+            {
+                TokenRegistrations = tokenRegistrations;
+                BusHandlerEntries = busHandlerEntries;
+            }
+
+            internal int TokenRegistrations { get; }
+
+            internal int BusHandlerEntries { get; }
         }
 
         // The cold deregistration flood: the JIT-inclusive first-touch cost of DISMANTLING
