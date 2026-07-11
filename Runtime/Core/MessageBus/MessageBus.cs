@@ -174,18 +174,25 @@ namespace DxMessaging.Core.MessageBus
 
         private static CollectionPool<
             Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-        > ContextHandlerByTargetDicts => ContextHandlerByTargetDictPoolHolder.Instance;
+        > ContextHandlerByTargetDicts = ContextHandlerByTargetDictPoolHolder.Instance;
+
+        private static CollectionPool<
+            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
+        > CreateContextHandlerByTargetPool(int maxRetained, bool useLru)
+        {
+            return new CollectionPool<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>>(
+                maxRetained,
+                useLru,
+                factory: static () => new Dictionary<InstanceId, HandlerCache<int, HandlerCache>>(),
+                onRecycled: static dict => dict.Clear()
+            );
+        }
 
         private static class ContextHandlerByTargetDictPoolHolder
         {
             public static readonly CollectionPool<
                 Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-            > Instance = new(
-                maxRetained: 512,
-                useLru: true,
-                factory: static () => new Dictionary<InstanceId, HandlerCache<int, HandlerCache>>(),
-                onRecycled: static dict => dict.Clear()
-            );
+            > Instance = CreateContextHandlerByTargetPool(maxRetained: 512, useLru: true);
         }
 
         internal static int ResetStaticPools()
@@ -841,6 +848,62 @@ namespace DxMessaging.Core.MessageBus
         private readonly MessageCache<DispatchPlan> _targetedDispatchPlans = new();
         private readonly MessageCache<DispatchPlan> _broadcastDispatchPlans = new();
 
+        internal readonly struct FlatSnapshotStorageObservation
+        {
+            internal FlatSnapshotStorageObservation(
+                int entryCount,
+                int arrayCapacity,
+                int emptyHolderPoolCount
+            )
+            {
+                EntryCount = entryCount;
+                ArrayCapacity = arrayCapacity;
+                EmptyHolderPoolCount = emptyHolderPoolCount;
+            }
+
+            internal int EntryCount { get; }
+
+            internal int ArrayCapacity { get; }
+
+            /// <summary>
+            /// Released holder objects currently pooled with empty entry arrays. This does not
+            /// measure arrays or retained bytes; ArrayPool memory retention requires an external
+            /// memory measurement.
+            /// </summary>
+            internal int EmptyHolderPoolCount { get; }
+        }
+
+        /// <summary>
+        /// Read-only benchmark telemetry for the active untargeted flat snapshot of
+        /// <typeparamref name="TMessage"/>. This method does not acquire, build, or mutate a
+        /// snapshot, so observing storage cannot alter the path being measured.
+        /// </summary>
+        internal bool TryObserveUntargetedFlatSnapshotStorageForBenchmark<TMessage>(
+            out FlatSnapshotStorageObservation observation
+        )
+            where TMessage : IUntargetedMessage
+        {
+            if (
+                !_scalarSinks[BusSinkIndex.UntargetedHandleDefault]
+                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handlers)
+                || handlers.dispatchState == null
+                || !handlers.dispatchState.active.IsInitialized
+                || handlers.dispatchState.active.flat == null
+            )
+            {
+                observation = default;
+                return false;
+            }
+
+            FlatDispatchArray flat = handlers.dispatchState.active.flat;
+            observation = new FlatSnapshotStorageObservation(
+                flat.Count,
+                flat.Capacity,
+                flat.EmptyHolderPoolCount
+            );
+            return true;
+        }
+
         // Bumped by every mutation that can change what a DispatchPlan
         // caches or decides. Plans compare their stamp against this value at
         // every emission; the emit shells also re-compare mid-emission to
@@ -1014,6 +1077,28 @@ namespace DxMessaging.Core.MessageBus
             return new IdleSweepRegistryBenchmarkScope(IdleSweepBuses);
         }
 
+        internal static IDisposable IsolateContextMapPoolForBenchmark()
+        {
+            return new ContextMapPoolBenchmarkScope();
+        }
+
+        internal static ContextMapPoolBenchmarkObservation ObserveContextMapPoolForBenchmark()
+        {
+            CollectionPool<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> current =
+                ContextHandlerByTargetDicts;
+            return new ContextMapPoolBenchmarkObservation(
+                current,
+                current.UseLru,
+                current.MaxRetained
+            );
+        }
+
+        internal static void ConfigureContextMapPoolForBenchmark(bool useLru, int maxRetained)
+        {
+            ContextHandlerByTargetDicts.UseLru = useLru;
+            ContextHandlerByTargetDicts.MaxRetained = maxRetained;
+        }
+
         private sealed class IdleSweepRegistryBenchmarkScope : IDisposable
         {
             private readonly List<WeakReference<MessageBus>> _saved;
@@ -1028,6 +1113,86 @@ namespace DxMessaging.Core.MessageBus
             {
                 IdleSweepBuses = _saved;
             }
+        }
+
+        private sealed class ContextMapPoolBenchmarkScope : IDisposable
+        {
+            private readonly CollectionPool<
+                Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
+            > _savedPool;
+            private readonly CollectionPool<
+                Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
+            > _isolated;
+            private readonly int _ownerThreadId;
+            private readonly bool _initialUseLru;
+            private readonly int _initialMaxRetained;
+            private bool _disposed;
+
+            internal ContextMapPoolBenchmarkScope()
+            {
+                _savedPool = ContextHandlerByTargetDicts;
+                _ownerThreadId = Environment.CurrentManagedThreadId;
+                _initialUseLru = _savedPool.UseLru;
+                _initialMaxRetained = _savedPool.MaxRetained;
+                _isolated = CreateContextHandlerByTargetPool(_initialMaxRetained, _initialUseLru);
+                ContextHandlerByTargetDicts = _isolated;
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                if (Environment.CurrentManagedThreadId != _ownerThreadId)
+                {
+                    throw new InvalidOperationException(
+                        "Context-map benchmark scopes must be disposed on their owning thread."
+                    );
+                }
+                if (!ReferenceEquals(ContextHandlerByTargetDicts, _isolated))
+                {
+                    throw new InvalidOperationException(
+                        "Context-map benchmark scopes must be disposed in strict LIFO order."
+                    );
+                }
+
+                bool effectiveUseLru = _isolated.UseLru;
+                int effectiveMaxRetained = _isolated.MaxRetained;
+                if (effectiveUseLru != _initialUseLru)
+                {
+                    _savedPool.UseLru = effectiveUseLru;
+                }
+                if (effectiveMaxRetained != _initialMaxRetained)
+                {
+                    _savedPool.MaxRetained = effectiveMaxRetained;
+                }
+
+                _disposed = true;
+                _ = _isolated.Trim(0);
+                ContextHandlerByTargetDicts = _savedPool;
+            }
+        }
+
+        internal readonly struct ContextMapPoolBenchmarkObservation
+        {
+            internal ContextMapPoolBenchmarkObservation(
+                object identity,
+                bool useLru,
+                int maxRetained
+            )
+            {
+                Identity = identity;
+                UseLru = useLru;
+                MaxRetained = maxRetained;
+            }
+
+            internal object Identity { get; }
+
+            internal bool UseLru { get; }
+
+            internal int MaxRetained { get; }
         }
 
         private void ApplyRuntimeSettings(DxMessagingRuntimeSettings settings)
@@ -2058,6 +2223,30 @@ namespace DxMessaging.Core.MessageBus
             // collections. Returning and immediately renting them would make this row measure
             // shared pools in addition to the target map. ResetState returns them at teardown.
             return evicted;
+        }
+
+        internal bool TryObserveTargetedHandleMapStorageForBenchmark<TMessage>(
+            out int entries,
+            out int capacity
+        )
+            where TMessage : IMessage
+        {
+            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink =
+                _contextSinks[BusContextIndex.TargetedHandleDefault];
+            if (
+                !sink.TryGetValue<TMessage>(
+                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
+                )
+            )
+            {
+                entries = 0;
+                capacity = 0;
+                return false;
+            }
+
+            entries = handlersByTarget.Count;
+            capacity = handlersByTarget.EnsureCapacity(0);
+            return true;
         }
 
         private Dictionary<InstanceId, HandlerCache<int, HandlerCache>> GetOrRentContextMap<T>(

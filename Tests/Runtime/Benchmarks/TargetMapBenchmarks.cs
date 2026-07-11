@@ -64,6 +64,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 state.PhysicalTargetSlots,
                 $"Target-map scenario '{benchmarkCase.Key}' changed physical map cardinality."
             );
+            state.ObserveStorage(out int targetMapEntries, out int targetMapCapacity);
+            Assert.AreEqual(
+                benchmarkCase.KeyCount,
+                targetMapEntries,
+                $"Target-map scenario '{benchmarkCase.Key}' changed its exact map cardinality."
+            );
 
             return new TargetMapBenchmarkResult(
                 benchmarkCase,
@@ -72,6 +78,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 measurement.ElapsedSeconds * 1000d,
                 measurement.GcAllocations,
                 measurement.GcAllocatedBytes,
+                targetMapEntries,
+                targetMapCapacity,
                 state.Invocations
             );
         }
@@ -92,13 +100,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             state.ResetInvocations();
             state.Emit(state.FirstTarget);
             long currentTargetInvocations = state.Invocations;
+            state.ObserveStorage(out int targetMapEntries, out int targetMapCapacity);
 
             return new TargetMapContractObservation(
                 operationInvocations,
                 originalTargetInvocations,
                 currentTargetInvocations,
                 state.RegisteredTargets,
-                state.PhysicalTargetSlots
+                state.PhysicalTargetSlots,
+                targetMapEntries,
+                targetMapCapacity
             );
         }
 
@@ -115,6 +126,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             private const int TargetIdBase = 0x4D00_0000;
             private const int AlternateTargetIdBase = 0x4D10_0000;
             private const int MissingTargetIdBase = 0x4D20_0000;
+            private readonly IDisposable _contextMapPoolScope;
             private readonly IDisposable _registryScope;
             private readonly MessageRegistrationToken _token;
             private readonly MessageHandler.FastHandler<TargetMapMessage> _handler;
@@ -124,6 +136,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             internal TargetMapState(int keyCount)
             {
+                _contextMapPoolScope = MessageBus.IsolateContextMapPoolForBenchmark();
                 _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
                 try
                 {
@@ -152,6 +165,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 catch
                 {
                     _registryScope.Dispose();
+                    _contextMapPoolScope.Dispose();
                     throw;
                 }
             }
@@ -165,6 +179,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             internal int RegisteredTargets => MessageBus.RegisteredTargeted;
 
             internal int PhysicalTargetSlots => MessageBus.OccupiedTargetSlots;
+
+            internal void ObserveStorage(out int entries, out int capacity)
+            {
+                if (
+                    !MessageBus.TryObserveTargetedHandleMapStorageForBenchmark<TargetMapMessage>(
+                        out entries,
+                        out capacity
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The target-map benchmark must materialize its targeted handle map."
+                    );
+                }
+            }
 
             internal void RunMany(TargetMapBenchmarkOperation operation, int count)
             {
@@ -218,7 +247,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     }
                     finally
                     {
-                        _registryScope.Dispose();
+                        try
+                        {
+                            _registryScope.Dispose();
+                        }
+                        finally
+                        {
+                            _contextMapPoolScope.Dispose();
+                        }
                     }
                 }
             }
@@ -341,7 +377,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     public readonly struct TargetMapBenchmarkResult
     {
         public const string CsvHeader =
-            "scenario,keyCount,operation,totalOperations,operationsPerSecond,wallClockMs,gcAllocations,gcAllocatedBytes,observedInvocations";
+            "scenario,keyCount,operation,totalOperations,operationsPerSecond,wallClockMs,gcAllocations,gcAllocatedBytes,targetMapEntries,targetMapCapacity,observedInvocations";
 
         internal TargetMapBenchmarkResult(
             TargetMapBenchmarkCase benchmarkCase,
@@ -350,6 +386,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             double wallClockMs,
             long gcAllocations,
             long gcAllocatedBytes,
+            int targetMapEntries,
+            int targetMapCapacity,
             long observedInvocations
         )
         {
@@ -359,6 +397,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             WallClockMs = wallClockMs;
             GcAllocations = gcAllocations;
             GcAllocatedBytes = gcAllocatedBytes;
+            TargetMapEntries = targetMapEntries;
+            TargetMapCapacity = targetMapCapacity;
             ObservedInvocations = observedInvocations;
         }
 
@@ -374,6 +414,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public long GcAllocatedBytes { get; }
 
+        public int TargetMapEntries { get; }
+
+        public int TargetMapCapacity { get; }
+
         public long ObservedInvocations { get; }
 
         public string ToStructuredLog()
@@ -382,7 +426,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 CultureInfo.InvariantCulture,
                 "DXM_TARGET_MAP_BENCHMARK scenario={0} keyCount={1} operation={2} "
                     + "totalOperations={3} operationsPerSecond={4:F3} wallClockMs={5:F3} "
-                    + "gcAllocations={6} gcAllocatedBytes={7} observedInvocations={8}",
+                    + "gcAllocations={6} gcAllocatedBytes={7} targetMapEntries={8} "
+                    + "targetMapCapacity={9} observedInvocations={10}",
                 BenchmarkCase.Key,
                 BenchmarkCase.KeyCount,
                 BenchmarkCase.Operation,
@@ -391,6 +436,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 WallClockMs,
                 GcAllocations,
                 GcAllocatedBytes,
+                TargetMapEntries,
+                TargetMapCapacity,
                 ObservedInvocations
             );
         }
@@ -407,6 +454,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 WallClockMs.ToString("F3", CultureInfo.InvariantCulture),
                 FormatAllocation(GcAllocations),
                 FormatAllocation(GcAllocatedBytes),
+                TargetMapEntries.ToString(CultureInfo.InvariantCulture),
+                TargetMapCapacity.ToString(CultureInfo.InvariantCulture),
                 ObservedInvocations.ToString(CultureInfo.InvariantCulture)
             );
         }
@@ -426,7 +475,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long originalTargetInvocations,
             long currentTargetInvocations,
             int registeredTargets,
-            int physicalTargetSlots
+            int physicalTargetSlots,
+            int targetMapEntries,
+            int targetMapCapacity
         )
         {
             OperationInvocations = operationInvocations;
@@ -434,6 +485,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             CurrentTargetInvocations = currentTargetInvocations;
             RegisteredTargets = registeredTargets;
             PhysicalTargetSlots = physicalTargetSlots;
+            TargetMapEntries = targetMapEntries;
+            TargetMapCapacity = targetMapCapacity;
         }
 
         internal long OperationInvocations { get; }
@@ -445,6 +498,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal int RegisteredTargets { get; }
 
         internal int PhysicalTargetSlots { get; }
+
+        internal int TargetMapEntries { get; }
+
+        internal int TargetMapCapacity { get; }
     }
 
     public sealed class TargetMapBenchmarkContractTests
@@ -497,6 +554,182 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Assert.AreEqual(expectedCurrentTargetInvocations, observation.CurrentTargetInvocations);
             Assert.AreEqual(benchmarkCase.KeyCount, observation.RegisteredTargets);
             Assert.AreEqual(benchmarkCase.KeyCount, observation.PhysicalTargetSlots);
+            Assert.AreEqual(benchmarkCase.KeyCount, observation.TargetMapEntries);
+            Assert.GreaterOrEqual(observation.TargetMapCapacity, observation.TargetMapEntries);
+        }
+
+        [TestCase(1)]
+        [TestCase(4)]
+        [TestCase(16)]
+        [TestCase(256)]
+        [TestCase(4096)]
+        public void StorageContractReportsExactCountAndSufficientCapacity(int keyCount)
+        {
+            TargetMapContractObservation observation = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(keyCount, TargetMapBenchmarkOperation.Hit)
+            );
+
+            Assert.AreEqual(keyCount, observation.TargetMapEntries);
+            Assert.GreaterOrEqual(observation.TargetMapCapacity, keyCount);
+        }
+
+        [Test]
+        public void SmallMapCapacityIsRepeatableAfterLargeMapScenario()
+        {
+            TargetMapContractObservation before = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(1, TargetMapBenchmarkOperation.Hit)
+            );
+            TargetMapContractObservation large = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(4096, TargetMapBenchmarkOperation.Hit)
+            );
+            TargetMapContractObservation after = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(1, TargetMapBenchmarkOperation.Hit)
+            );
+
+            Assert.AreEqual(before.TargetMapCapacity, after.TargetMapCapacity);
+            Assert.Greater(large.TargetMapCapacity, after.TargetMapCapacity);
+        }
+
+        [Test]
+        public void ContextMapPoolScopesRestoreNestedIdentityAndCapacity()
+        {
+            MessageBus.ContextMapPoolBenchmarkObservation baseline =
+                MessageBus.ObserveContextMapPoolForBenchmark();
+            using (MessageBus.IsolateContextMapPoolForBenchmark())
+            {
+                MessageBus.ContextMapPoolBenchmarkObservation outer =
+                    MessageBus.ObserveContextMapPoolForBenchmark();
+                Assert.AreNotSame(baseline.Identity, outer.Identity);
+                Assert.AreEqual(baseline.MaxRetained, outer.MaxRetained);
+
+                using (MessageBus.IsolateContextMapPoolForBenchmark())
+                {
+                    MessageBus.ContextMapPoolBenchmarkObservation inner =
+                        MessageBus.ObserveContextMapPoolForBenchmark();
+                    Assert.AreNotSame(outer.Identity, inner.Identity);
+                    Assert.AreEqual(outer.MaxRetained, inner.MaxRetained);
+                }
+
+                Assert.AreSame(
+                    outer.Identity,
+                    MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                );
+            }
+
+            MessageBus.ContextMapPoolBenchmarkObservation restored =
+                MessageBus.ObserveContextMapPoolForBenchmark();
+            Assert.AreSame(baseline.Identity, restored.Identity);
+            Assert.AreEqual(baseline.MaxRetained, restored.MaxRetained);
+            Assert.AreEqual(baseline.UseLru, restored.UseLru);
+        }
+
+        [Test]
+        public void ContextMapPoolScopeDisposalIsIdempotent()
+        {
+            object baselineIdentity = MessageBus.ObserveContextMapPoolForBenchmark().Identity;
+            IDisposable scope = MessageBus.IsolateContextMapPoolForBenchmark();
+
+            scope.Dispose();
+            scope.Dispose();
+
+            Assert.AreSame(
+                baselineIdentity,
+                MessageBus.ObserveContextMapPoolForBenchmark().Identity
+            );
+        }
+
+        [Test]
+        public void ContextMapPoolScopeRejectsOutOfOrderDisposalWithoutPoisoningRetry()
+        {
+            object baselineIdentity = MessageBus.ObserveContextMapPoolForBenchmark().Identity;
+            IDisposable outer = MessageBus.IsolateContextMapPoolForBenchmark();
+            object outerIdentity = MessageBus.ObserveContextMapPoolForBenchmark().Identity;
+            IDisposable inner = MessageBus.IsolateContextMapPoolForBenchmark();
+            object innerIdentity = MessageBus.ObserveContextMapPoolForBenchmark().Identity;
+
+            try
+            {
+                Assert.Throws<InvalidOperationException>(() => outer.Dispose());
+                Assert.AreSame(
+                    innerIdentity,
+                    MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                );
+
+                inner.Dispose();
+                Assert.AreSame(
+                    outerIdentity,
+                    MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                );
+                outer.Dispose();
+                Assert.AreSame(
+                    baselineIdentity,
+                    MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                );
+            }
+            finally
+            {
+                inner.Dispose();
+                outer.Dispose();
+            }
+        }
+
+        [Test]
+        public void ContextMapPoolConfigurationPropagatesThroughNestedScopes()
+        {
+            MessageBus.ContextMapPoolBenchmarkObservation baseline =
+                MessageBus.ObserveContextMapPoolForBenchmark();
+            using (MessageBus.IsolateContextMapPoolForBenchmark())
+            {
+                using (MessageBus.IsolateContextMapPoolForBenchmark())
+                {
+                    MessageBus.ConfigureContextMapPoolForBenchmark(
+                        !baseline.UseLru,
+                        baseline.MaxRetained + 1
+                    );
+                }
+
+                MessageBus.ContextMapPoolBenchmarkObservation propagated =
+                    MessageBus.ObserveContextMapPoolForBenchmark();
+                Assert.AreEqual(!baseline.UseLru, propagated.UseLru);
+                Assert.AreEqual(baseline.MaxRetained + 1, propagated.MaxRetained);
+
+                MessageBus.ConfigureContextMapPoolForBenchmark(
+                    baseline.UseLru,
+                    baseline.MaxRetained
+                );
+            }
+
+            MessageBus.ContextMapPoolBenchmarkObservation restored =
+                MessageBus.ObserveContextMapPoolForBenchmark();
+            Assert.AreSame(baseline.Identity, restored.Identity);
+            Assert.AreEqual(baseline.UseLru, restored.UseLru);
+            Assert.AreEqual(baseline.MaxRetained, restored.MaxRetained);
+        }
+
+        [Test]
+        public void ResultSchemaKeepsTopologyInCsvAndStructuredLog()
+        {
+            TargetMapBenchmarkResult result = new(
+                new TargetMapBenchmarkCase(4, TargetMapBenchmarkOperation.Hit),
+                1,
+                2d,
+                3d,
+                -1,
+                -1,
+                4,
+                7,
+                8
+            );
+
+            string[] header = TargetMapBenchmarkResult.CsvHeader.Split(',');
+            string[] row = result.ToCsvRow().Split(',');
+            Assert.AreEqual(header.Length, row.Length);
+            Assert.AreEqual("4", row[8]);
+            Assert.AreEqual("7", row[9]);
+
+            string structured = result.ToStructuredLog();
+            StringAssert.Contains("targetMapEntries=4", structured);
+            StringAssert.Contains("targetMapCapacity=7", structured);
         }
     }
 }
