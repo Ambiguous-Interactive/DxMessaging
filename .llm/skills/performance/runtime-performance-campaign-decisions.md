@@ -2,7 +2,7 @@
 title: "Runtime Performance Campaign Decisions"
 id: "runtime-performance-campaign-decisions"
 category: "performance"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-07-11"
 updated: "2026-07-11"
 
@@ -78,9 +78,10 @@ status: "stable"
 
 # Runtime Performance Campaign Decisions
 
-> **One-line summary**: Keep the measured physical-two handler-entry map;
-> the other small-container, dispatch-switch, and private-pool candidates
-> failed explicit timing or storage gates and were reverted.
+> **One-line summary**: Keep the measured physical-two handler-entry map and
+> holder-local flat-dispatch count read; the other small-container,
+> dispatch-switch, and private-pool candidates failed explicit timing or
+> storage gates and were reverted.
 
 ## Decision rule
 
@@ -101,6 +102,15 @@ separately.
 - Physical capacities four and eight were rejected. Four regressed four-entry
   dispatch by 3.44% and churn by up to 16.1%. Eight increased fresh-construction
   allocated bytes from 248,000 to 422,396 per 1,000 caches (+70.3%).
+- Keep reading the non-global dispatch count from the already-cast flat holder.
+  The first final-head screen read the copied `DispatchSnapshot.entryCount` and
+  found `Comparison_DxMessaging_KeyedToOne` down 4.02% at 4/5 IL2CPP observations.
+  A two-line, semantics-equivalent ablation restored the five-run keyed result to
+  +1.56% IL2CPP and +1.88% Mono versus control, both below the 3% claim threshold;
+  versus the prior candidate's IL2CPP median, it improved 3.65%. All other
+  representative DxMessaging dispatch rows cleared the regression gate. Keep
+  `DispatchSnapshot.entryCount` as lifecycle/topology telemetry, but do not route
+  the hot loop through the extra owner.
 
 ## Rejected runtime candidates
 
@@ -162,6 +172,21 @@ separately.
   one map's allocations, bytes, and topology from the same selected attempt.
 
 ## Backend and first-touch observations
+
+- The final exact-head campaign used five verified 408-test/70-row artifacts per
+  backend and side. Marginal registration latency improved 20.4-27.6% in the
+  published IL2CPP Release player and 9.7-12.5% under Mono. Every Mono marginal
+  row removed exactly 1,055 allocation calls and 486,800 allocated bytes. The
+  16-byte registration handle was unchanged. The final player measured
+  1,364,362,758 bytes versus 1,360,906,232 bytes for control: +3,456,526 bytes
+  (+0.254%), below the 1% gate.
+- Do not interpret `MessageBusConstruction_1000` or cold 1,000-type teardown as
+  dispatch-throughput regressions. They are short wall-time/first-touch rows, not
+  fixed-window throughput rows, and shifted by more than 5% between two candidate
+  heads whose only code difference was two reads inside a dispatch method that
+  neither row calls. Preserve and report the raw values, but require a freshly
+  bracketed, causally relevant experiment before using those rows to reject an
+  unrelated dispatch-only change.
 
 - Inspect the loaded Mono assembly rather than a possibly stale generated-project
   DLL. The campaign's loaded `DispatchFlatSnapshot<T>` compiled to 113 IL bytes,
