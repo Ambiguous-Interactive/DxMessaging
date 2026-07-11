@@ -2,7 +2,7 @@
 title: "Runtime Performance Campaign Decisions"
 id: "runtime-performance-campaign-decisions"
 category: "performance"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-07-11"
 updated: "2026-07-11"
 
@@ -115,6 +115,13 @@ separately.
   retained-byte telemetry, could allocate or throw during remove-time cleanup,
   grew from deleted rather than live load, incompletely cleared managed-reference
   keys, and had non-transactional migration/version behavior.
+- Stop the nested open-addressing experiments at that failed parent candidate.
+  The 4,096-key candidate row and byte-per-slot-control versus bit-packed-control
+  variants were not reached. Metadata packing cannot repair the independent
+  wrapper-allocation, managed-key-clearing, transactional-migration, or
+  remove-time correctness failures, so timing a second encoding would not alter
+  the retention decision. Revisit those variants only after a materially
+  different parent design passes the correctness, allocation, and storage gates.
 - Physical 2/4/8 inline bus context maps all failed spill storage. Capacity two's
   one-key construction used 128 allocated bytes and 2 physical slots, but four
   keys used 680 bytes/9 slots versus Dictionary's 600/7. Capacities four and eight
@@ -156,14 +163,28 @@ separately.
 
 ## Backend and first-touch observations
 
+- Inspect the loaded Mono assembly rather than a possibly stale generated-project
+  DLL. The campaign's loaded `DispatchFlatSnapshot<T>` compiled to 113 IL bytes,
+  six locals, and no exception regions. Its instructions form one indexed entry
+  loop with a live `MessageHandler.active` read, direct
+  `FastHandler<T>.Invoke(ref T)`, post-call reset-generation comparison, and
+  `HasAnyDispatchEntries` fallback. The context sibling was 114 bytes with the
+  same six-local/no-exception shape. This supports retaining the compact loop;
+  it does not justify further generic specialization or source generation.
 - Leave `RegistrationMethodAxes`' one-time `Enum.GetValues` initialization alone
   until a first-touch benchmark attributes material cost to it. It is outside
   steady-state dispatch, and existing coverage already pins exhaustiveness.
-- The published perf artifact retains results and player logs, not generated
-  IL2CPP C++. A read-only local editor-cache audit after the campaign found no
-  generated C++ candidates. Do not claim source-level C++ inspection from these
-  artifacts; arrange deliberate generated-source capture before a future
-  code-generation experiment.
+- The published perf artifacts retain results and player logs, not generated
+  IL2CPP C++. Three retained player artifacts and the active editor project's
+  Bee cache contained zero generated C++ candidates. Do not claim source-level
+  C++ inspection from these artifacts; arrange deliberate generated-source
+  capture before a future code-generation experiment.
+- No CPU-sampling or Intel Top-Down capture was available: the retained artifacts
+  contain no CPU profile, the workflows collect none, and VTune/perf tooling was
+  absent from the audit environment. Outcome-based timing, allocation, storage,
+  and player-size gates remain valid, but do not attribute a result to branch,
+  code-size, cache, or memory stalls without a matched profile. Provision capture
+  on the measured runner before a future experiment that needs such attribution.
 
 ## See also
 

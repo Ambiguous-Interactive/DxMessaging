@@ -122,7 +122,7 @@
 | [Readonly Struct with Cached Hash for Dictionary Keys](./performance/readonly-struct-cached-hash.md)               | [ok] 127    | [intermediate] | [stable] | [risk: high]     | performance, struct     |
 | [Readonly Struct with Cached Hash for Dictionary Keys Part 1](./performance/readonly-struct-cached-hash-part-1.md) | [ok] 170    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Readonly Struct with Cached Hash for Dictionary Keys Part 2](./performance/readonly-struct-cached-hash-part-2.md) | [draft] 106 | [intermediate] | [stable] | [risk: low]      | migration, split        |
-| [Runtime Performance Campaign Decisions](./performance/runtime-performance-campaign-decisions.md)                  | [ok] 172    | [advanced]     | [stable] | [risk: critical] | performance, benchmarks |
+| [Runtime Performance Campaign Decisions](./performance/runtime-performance-campaign-decisions.md)                  | [ok] 193    | [advanced]     | [stable] | [risk: critical] | performance, benchmarks |
 | [Runtime Singleton Pattern](./performance/singleton-runtime.md)                                                    | [ok] 187    | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
 | [RuntimeSingleton and ScriptableObject Singleton Patterns](./performance/singleton-patterns.md)                    | [ok] 165    | [intermediate] | [stable] | [risk: medium]   | unity, singleton        |
 | [ScriptableObject Singleton Pattern](./performance/singleton-scriptableobject.md)                                  | [ok] 177    | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
