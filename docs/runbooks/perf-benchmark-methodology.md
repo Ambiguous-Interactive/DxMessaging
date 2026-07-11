@@ -252,6 +252,16 @@ surface the registration allocation work reduced -- and are measurable only wher
 profiler is present (the in-editor PlayMode/Mono leg; the published Standalone IL2CPP
 leg strips it, so their allocation columns read `n/a` there):
 
+Each marginal latency row settles the heap once, then reports the minimum of seven
+independently prepared 1000-registration trials. A long retained-population window is
+unsuitable because registration allocation forces collections into that clock.
+On profiler-bearing Mono, allocation is measured over eight separate fresh populations
+after timing, keeping the minimum count and its same-attempt bytes, so the profiler hook
+is not part of latency and ambient editor spikes do not become the allocation headline.
+The stripped IL2CPP leg skips those allocation-only populations and reports `n/a`; its
+seven timing populations still execute. Repeated floor trials replace the former
+sub-millisecond single shot without changing the reported per-bus cardinality.
+
 | Scenario key                                  | What it measures                                                       |
 | --------------------------------------------- | ---------------------------------------------------------------------- |
 | `UntargetedFlood_OneHandler`                  | One untargeted handler on one message type.                            |

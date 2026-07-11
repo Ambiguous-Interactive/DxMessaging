@@ -14,7 +14,7 @@
 
 | Metric       | Value |
 | ------------ | ----- |
-| Total Skills | 158   |
+| Total Skills | 159   |
 | Categories   | 8     |
 
 ---
@@ -24,7 +24,7 @@
 - [Documentation](#documentation) (27)
 - [GitHub Actions](#github-actions) (8)
 - [Packaging](#packaging) (3)
-- [Performance](#performance) (46)
+- [Performance](#performance) (47)
 - [Scripting](#scripting) (9)
 - [Solid](#solid) (15)
 - [Testing](#testing) (39)
@@ -98,7 +98,7 @@
 | [Array Pooling with ArrayPool and Custom Pools Part 1](./performance/array-pooling-part-1.md)                      | [ok] 204    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Array Pooling with ArrayPool and Custom Pools Part 2](./performance/array-pooling-part-2.md)                      | [draft] 56  | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Auto-Load Singleton Attribute](./performance/singleton-autoload.md)                                               | [draft] 111 | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
-| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [warn] 425  | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
+| [Benchmark Methodology: Total Over One Window](./performance/benchmark-methodology-total-over-window.md)           | [warn] 442  | [intermediate] | [stable] | [risk: high]     | performance, benchmarks |
 | [Cache Builder Configuration](./performance/cache-eviction-builder.md)                                             | [ok] 203    | [intermediate] | [stable] | [risk: high]     | caching, builder        |
 | [Cache Eviction Implementation](./performance/cache-eviction-implementation.md)                                    | [draft] 90  | [advanced]     | [stable] | [risk: high]     | caching, eviction       |
 | [Cache Eviction Implementation Part 1](./performance/cache-eviction-implementation-part-1.md)                      | [ok] 244    | [intermediate] | [stable] | [risk: low]      | migration, split        |
@@ -106,7 +106,7 @@
 | [Collection Pooling with RAII Pattern](./performance/collection-pooling.md)                                        | [draft] 118 | [intermediate] | [stable] | [risk: high]     | memory, allocation      |
 | [Collection Pooling with RAII Pattern Part 1](./performance/collection-pooling-part-1.md)                          | [ok] 205    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Collection Pooling with RAII Pattern Part 2](./performance/collection-pooling-part-2.md)                          | [draft] 56  | [intermediate] | [stable] | [risk: low]      | migration, split        |
-| [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [warn] 296  | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path      |
+| [DxMessaging Dispatch Hot Path](./performance/dispatch-hot-path.md)                                                | [warn] 298  | [advanced]     | [stable] | [risk: critical] | dispatch, hot-path      |
 | [DxMessaging Memory Reclamation](./performance/memory-reclamation.md)                                              | [ok] 202    | [advanced]     | [stable] | [risk: critical] | memory, reclamation     |
 | [DxMessaging Sweep Gate Must Be Cheap](./performance/sweep-gate-must-be-cheap.md)                                  | [ok] 198    | [advanced]     | [stable] | [risk: critical] | sweep, eviction         |
 | [High-Performance Cache with Eviction Policies](./performance/cache-eviction-policies.md)                          | [ok] 176    | [advanced]     | [stable] | [risk: high]     | caching, memory         |
@@ -122,6 +122,7 @@
 | [Readonly Struct with Cached Hash for Dictionary Keys](./performance/readonly-struct-cached-hash.md)               | [ok] 127    | [intermediate] | [stable] | [risk: high]     | performance, struct     |
 | [Readonly Struct with Cached Hash for Dictionary Keys Part 1](./performance/readonly-struct-cached-hash-part-1.md) | [ok] 170    | [intermediate] | [stable] | [risk: low]      | migration, split        |
 | [Readonly Struct with Cached Hash for Dictionary Keys Part 2](./performance/readonly-struct-cached-hash-part-2.md) | [draft] 106 | [intermediate] | [stable] | [risk: low]      | migration, split        |
+| [Runtime Performance Campaign Decisions](./performance/runtime-performance-campaign-decisions.md)                  | [ok] 218    | [advanced]     | [stable] | [risk: critical] | performance, benchmarks |
 | [Runtime Singleton Pattern](./performance/singleton-runtime.md)                                                    | [ok] 187    | [intermediate] | [stable] | [risk: low]      | unity, singleton        |
 | [RuntimeSingleton and ScriptableObject Singleton Patterns](./performance/singleton-patterns.md)                    | [ok] 165    | [intermediate] | [stable] | [risk: medium]   | unity, singleton        |
 | [ScriptableObject Singleton Pattern](./performance/singleton-scriptableobject.md)                                  | [ok] 177    | [intermediate] | [stable] | [risk: low]      | unity, singleton        |

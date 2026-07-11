@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
@@ -39,6 +40,271 @@ namespace DxMessaging.Tests.Runtime.Core
         public void ResetAfterTest()
         {
             DxMessagingStaticState.Reset();
+        }
+
+        [Test]
+        public void ReplayRemovalAndSlotReuseRetainsOrphanTeardownUntilDisable()
+        {
+            BusType innerBus = new();
+            ReentrantReplayRemovalBus bus = new(innerBus);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            int oldCalls = 0;
+            int replacementCalls = 0;
+            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                (ref SimpleUntargetedMessage _) => ++oldCalls
+            );
+            bus.OnRegistration = () =>
+            {
+                bus.OnRegistration = null;
+                token.RemoveRegistration(oldHandle);
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => ++replacementCalls
+                );
+            };
+
+            token.Enable();
+            SimpleUntargetedMessage message = new();
+            innerBus.UntargetedBroadcast(ref message);
+            Assert.AreEqual(1, oldCalls, "The snapshotted registration completed on the bus.");
+            Assert.AreEqual(0, replacementCalls, "The replacement was not in the replay snapshot.");
+
+            token.Disable();
+            innerBus.UntargetedBroadcast(ref message);
+            Assert.AreEqual(1, oldCalls, "Disable must consume the retained orphan teardown.");
+
+            token.Enable();
+            innerBus.UntargetedBroadcast(ref message);
+            Assert.AreEqual(1, replacementCalls, "The reused slot must retain its replacement.");
+            token.Dispose();
+        }
+
+        [Test]
+        public void ThrowingOrphanTeardownRemainsRetryableAfterReplaySlotReuse()
+        {
+            BusType innerBus = new();
+            ReentrantReplayRemovalBus bus = new(innerBus) { ThrowOnDeregistration = true };
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                (ref SimpleUntargetedMessage _) => { }
+            );
+            bus.OnRegistration = () =>
+            {
+                bus.OnRegistration = null;
+                token.RemoveRegistration(oldHandle);
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+            };
+
+            token.Enable();
+            Assert.Throws<InvalidOperationException>(token.Disable);
+            Assert.IsTrue(token.Enabled, "A failed orphan teardown must keep the token retryable.");
+            Assert.AreEqual(1, bus.DeregistrationAttempts);
+
+            bus.ThrowOnDeregistration = false;
+            Assert.DoesNotThrow(token.Disable);
+            Assert.AreEqual(2, bus.DeregistrationAttempts);
+            Assert.IsFalse(token.Enabled);
+            token.Dispose();
+        }
+
+        [Test]
+        public void RetargetReplaySlotReuseKeepsNewBusOrphanTeardownScopedToOriginalHandle()
+        {
+            BusType oldBus = new();
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), oldBus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, oldBus);
+            int oldCalls = 0;
+            int replacementCalls = 0;
+            MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                (ref SimpleUntargetedMessage _) => ++oldCalls
+            );
+            token.Enable();
+
+            BusType newInnerBus = new();
+            ReentrantReplayRemovalBus newBus = new(newInnerBus);
+            newBus.OnRegistration = () =>
+            {
+                newBus.OnRegistration = null;
+                token.RemoveRegistration(oldHandle);
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => ++replacementCalls
+                );
+            };
+
+            token.RetargetMessageBus(newBus, MessageBusRebindMode.RebindActive);
+            SimpleUntargetedMessage message = new();
+            oldBus.UntargetedBroadcast(ref message);
+            Assert.AreEqual(0, oldCalls, "Retarget must drain the old bus.");
+            newInnerBus.UntargetedBroadcast(ref message);
+            Assert.AreEqual(1, oldCalls, "The retarget snapshot completed on the new bus.");
+            Assert.AreEqual(0, replacementCalls);
+
+            token.Disable();
+            newInnerBus.UntargetedBroadcast(ref message);
+            Assert.AreEqual(1, oldCalls, "Disable must drain the retarget orphan.");
+            token.Enable();
+            newInnerBus.UntargetedBroadcast(ref message);
+            Assert.AreEqual(1, replacementCalls, "The replacement must replay on the new bus.");
+            token.Dispose();
+        }
+
+        [TestCase(0)]
+        [TestCase(1)]
+        public void UnifiedTeardownSnapshotPreservesOrderWithFirstOrMiddleOrphan(int orphanIndex)
+        {
+            BusType innerBus = new();
+            ReentrantReplayRemovalBus bus = new(innerBus);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            int[] priorities = { 10, 20, 30 };
+            MessageRegistrationHandle[] handles = new MessageRegistrationHandle[priorities.Length];
+            for (int i = 0; i < priorities.Length; ++i)
+            {
+                handles[i] = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { },
+                    priorities[i]
+                );
+            }
+
+            bus.OnRegistrationWithPriority = priority =>
+            {
+                if (priority != priorities[orphanIndex])
+                {
+                    return;
+                }
+
+                bus.OnRegistrationWithPriority = null;
+                token.RemoveRegistration(handles[orphanIndex]);
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { },
+                    priority: 40
+                );
+            };
+
+            token.Enable();
+            bus.DeregistrationOrder.Clear();
+            token.Disable();
+            CollectionAssert.AreEqual(
+                priorities,
+                bus.DeregistrationOrder,
+                "Live slots and orphan teardowns must share original registration order."
+            );
+            token.Dispose();
+        }
+
+        [TestCase(0)]
+        [TestCase(1)]
+        public void MultipleTeardownFailuresReportFirstRegistrationOrderExceptionWithOrphan(
+            int orphanIndex
+        )
+        {
+            BusType innerBus = new();
+            ReentrantReplayRemovalBus bus = new(innerBus);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            int[] priorities = { 10, 20, 30 };
+            MessageRegistrationHandle[] handles = new MessageRegistrationHandle[priorities.Length];
+            for (int i = 0; i < priorities.Length; ++i)
+            {
+                handles[i] = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { },
+                    priorities[i]
+                );
+            }
+
+            bus.OnRegistrationWithPriority = priority =>
+            {
+                if (priority != priorities[orphanIndex])
+                {
+                    return;
+                }
+
+                bus.OnRegistrationWithPriority = null;
+                token.RemoveRegistration(handles[orphanIndex]);
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { },
+                    priority: 40
+                );
+            };
+            token.Enable();
+            foreach (int priority in priorities)
+            {
+                bus.ThrowPriorities.Add(priority);
+            }
+
+            bus.DeregistrationOrder.Clear();
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                token.Disable
+            );
+            Assert.That(exception.Message, Does.Contain("10"));
+            CollectionAssert.AreEqual(priorities, bus.DeregistrationOrder);
+
+            bus.ThrowPriorities.Clear();
+            bus.DeregistrationOrder.Clear();
+            Assert.DoesNotThrow(token.Disable);
+            CollectionAssert.AreEqual(
+                priorities,
+                bus.DeregistrationOrder,
+                "Every failed teardown must remain retryable in original order."
+            );
+            token.Dispose();
+        }
+
+        [Test]
+        public void OrphanIdentityAddedDuringTeardownIsDeferredToNextPass()
+        {
+            BusType innerBus = new();
+            ReentrantReplayRemovalBus bus = new(innerBus);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                (ref SimpleUntargetedMessage _) => { },
+                priority: 10
+            );
+            _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                (ref SimpleUntargetedMessage _) => { },
+                priority: 20
+            );
+            token.Enable();
+
+            bus.OnDeregistration = priority =>
+            {
+                if (priority != 10)
+                {
+                    return;
+                }
+
+                bus.OnDeregistration = null;
+                bus.OnRegistrationWithPriority = addedPriority =>
+                {
+                    if (addedPriority == 40)
+                    {
+                        bus.OnRegistrationWithPriority = null;
+                        MessageRegistrationHandle addedHandle = token
+                            ._metadata.Single(entry => entry.Value.priority == addedPriority)
+                            .Key;
+                        token.RemoveRegistration(addedHandle);
+                    }
+                };
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { },
+                    priority: 40
+                );
+            };
+
+            bus.DeregistrationOrder.Clear();
+            token.Disable();
+            CollectionAssert.AreEqual(new[] { 10, 20 }, bus.DeregistrationOrder);
+            Assert.IsTrue(token.Enabled, "The deferred orphan keeps a retryable teardown pending.");
+
+            bus.DeregistrationOrder.Clear();
+            token.Disable();
+            CollectionAssert.AreEqual(new[] { 40 }, bus.DeregistrationOrder);
+            Assert.IsFalse(token.Enabled);
+            token.Dispose();
         }
 
         [Test]
@@ -460,6 +726,112 @@ namespace DxMessaging.Tests.Runtime.Core
                 scope.Token.Disable();
                 scope.Token.Dispose();
                 debug.AssertNoOverDeregistration();
+            }
+        }
+
+        [Test]
+        public void GlobalAcceptAllDuplicateRefcountSurvivesRemoveDisableAndReenable(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            using TokenScope scope = TokenScope.Create();
+            using LeakWatcher watcher = new(
+                scope.Bus,
+                label: nameof(GlobalAcceptAllDuplicateRefcountSurvivesRemoveDisableAndReenable)
+                    + "_"
+                    + scenario.DisplayName
+            );
+            int calls = 0;
+            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (
+                ref IUntargetedMessage _
+            ) => ++calls;
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted = (
+                ref InstanceId _,
+                ref ITargetedMessage __
+            ) => ++calls;
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast = (
+                ref InstanceId _,
+                ref IBroadcastMessage __
+            ) => ++calls;
+
+            MessageRegistrationHandle first = scope.Token.RegisterGlobalAcceptAll(
+                untargeted,
+                targeted,
+                broadcast
+            );
+            MessageRegistrationHandle second = scope.Token.RegisterGlobalAcceptAll(
+                untargeted,
+                targeted,
+                broadcast
+            );
+
+            InstanceId context = new(ContextInstanceId);
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(1, calls);
+
+            scope.Token.RemoveRegistration(first);
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(2, calls);
+
+            scope.Token.Disable();
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(2, calls);
+
+            scope.Token.Enable();
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(3, calls);
+
+            scope.Token.RemoveRegistration(second);
+            Emit(scenario, context, scope.Bus);
+            Assert.AreEqual(3, calls);
+        }
+
+        [Test]
+        public void GlobalAcceptAllFailedBusTeardownRemainsRetryable()
+        {
+            BusType innerBus = new();
+            FailingGlobalDeregistrationBus bus = new(innerBus);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+
+            try
+            {
+                using LeakWatcher watcher = new(
+                    bus,
+                    label: nameof(GlobalAcceptAllFailedBusTeardownRemainsRetryable)
+                );
+                _ = token.RegisterGlobalAcceptAll(
+                    (ref IUntargetedMessage _) => { },
+                    (ref InstanceId _, ref ITargetedMessage __) => { },
+                    (ref InstanceId _, ref IBroadcastMessage __) => { }
+                );
+                token.Enable();
+
+                Assert.Throws<InvalidOperationException>(token.Disable);
+                Assert.IsTrue(token.Enabled, "A failed global teardown must remain retryable.");
+                Assert.AreEqual(1, innerBus.RegisteredGlobalAcceptAll);
+
+                bus.AllowDeregistrations();
+                Assert.DoesNotThrow(token.Disable);
+                Assert.IsFalse(token.Enabled);
+                Assert.AreEqual(0, innerBus.RegisteredGlobalAcceptAll);
+
+                token.Enable();
+                Assert.AreEqual(1, innerBus.RegisteredGlobalAcceptAll);
+                token.Disable();
+                Assert.AreEqual(0, innerBus.RegisteredGlobalAcceptAll);
+                Assert.AreEqual(
+                    3,
+                    handler.ResetEmptyTypedSlotsForSweep(bus),
+                    "The successful retry and final disable must drain all three embedded "
+                        + "global typed-slot teardown states, not only the bus registration."
+                );
+            }
+            finally
+            {
+                token.Dispose();
+                handler.active = false;
             }
         }
 
@@ -1476,6 +1848,95 @@ namespace DxMessaging.Tests.Runtime.Core
                 _disposed = true;
                 MessagingDebug.enabled = _previousEnabled;
                 MessagingDebug.LogFunction = _previousLogFunction;
+            }
+        }
+
+        private sealed class ReentrantReplayRemovalBus : DelegatingMessageBus
+        {
+            private readonly Dictionary<MessageBusRegistration, int> _priorities = new();
+
+            internal Action OnRegistration { get; set; }
+
+            internal Action<int> OnRegistrationWithPriority { get; set; }
+
+            internal Action<int> OnDeregistration { get; set; }
+
+            internal bool ThrowOnDeregistration { get; set; }
+
+            internal int DeregistrationAttempts { get; private set; }
+
+            internal List<int> DeregistrationOrder { get; } = new();
+
+            internal HashSet<int> ThrowPriorities { get; } = new();
+
+            internal ReentrantReplayRemovalBus(IMessageBus inner)
+                : base(inner) { }
+
+            public override MessageBusRegistration RegisterUntargeted<T>(
+                MessageHandler messageHandler,
+                int priority = 0
+            )
+            {
+                MessageBusRegistration registration = base.RegisterUntargeted<T>(
+                    messageHandler,
+                    priority
+                );
+                if (typeof(T) == typeof(SimpleUntargetedMessage))
+                {
+                    _priorities[registration] = priority;
+                    OnRegistration?.Invoke();
+                    OnRegistrationWithPriority?.Invoke(priority);
+                }
+
+                return registration;
+            }
+
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                if (typeof(T) == typeof(SimpleUntargetedMessage))
+                {
+                    ++DeregistrationAttempts;
+                    int priority = _priorities[registration];
+                    DeregistrationOrder.Add(priority);
+                    OnDeregistration?.Invoke(priority);
+                    if (ThrowOnDeregistration)
+                    {
+                        throw new InvalidOperationException("Orphan deregistration failure.");
+                    }
+
+                    if (ThrowPriorities.Contains(priority))
+                    {
+                        throw new InvalidOperationException(
+                            $"Deregistration failure at priority {priority}."
+                        );
+                    }
+                }
+
+                base.Deregister<T>(in registration);
+                _priorities.Remove(registration);
+            }
+        }
+
+        private sealed class FailingGlobalDeregistrationBus : DelegatingMessageBus
+        {
+            private bool _throwOnDeregistration = true;
+
+            internal FailingGlobalDeregistrationBus(IMessageBus inner)
+                : base(inner) { }
+
+            internal void AllowDeregistrations()
+            {
+                _throwOnDeregistration = false;
+            }
+
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                if (_throwOnDeregistration && typeof(T) == typeof(IMessage))
+                {
+                    throw new InvalidOperationException("Global deregistration failure.");
+                }
+
+                base.Deregister<T>(in registration);
             }
         }
 

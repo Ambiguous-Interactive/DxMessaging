@@ -957,7 +957,7 @@ DxMessaging publishes machine-readable context for AI agents through [llms.txt](
 
 - **[llms.txt](llms.txt)** -- Complete project overview, API reference, and context in a single file
 - **[Repository Guidelines](.llm/context.md)** -- Coding standards and development workflows
-- **[AI Agent Skills](.llm/skills/)** -- 158+ specialized skill documents covering documentation, testing, GitHub Actions, and more
+- **[AI Agent Skills](.llm/skills/)** -- 159+ specialized skill documents covering documentation, testing, GitHub Actions, and more
 
 The `llms.txt` file is automatically updated via CI/CD to stay current with project changes. It includes:
 

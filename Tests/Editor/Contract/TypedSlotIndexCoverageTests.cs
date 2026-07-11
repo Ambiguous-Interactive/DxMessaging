@@ -337,19 +337,16 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageBus bus = new MessageBus();
             Action<ProbeMessage> original = _ => { };
             Action<ProbeMessage> augmented = _ => { };
-            Action firstDeregistration = (Action)
-                (MessageHandler.HandlerDeregistration)
-                    addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus });
-            Action secondDeregistration = (Action)
-                (MessageHandler.HandlerDeregistration)
-                    addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus });
+            Action firstDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus })
+            );
+            Action secondDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(handler, new object[] { original, augmented, null, 17, bus })
+            );
             Action<ProbeMessage> otherOriginal = _ => { };
-            Action distinctDeregistration = (Action)
-                (MessageHandler.HandlerDeregistration)
-                    addMethod.Invoke(
-                        handler,
-                        new object[] { otherOriginal, augmented, null, 19, bus }
-                    );
+            Action distinctDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(handler, new object[] { otherOriginal, augmented, null, 19, bus })
+            );
 
             Array slots = ReadArrayField(handler, "_slots");
             object populated = slots.GetValue(TypedSlotIndex.UntargetedHandleDefault);
@@ -505,12 +502,10 @@ namespace DxMessaging.Tests.Editor.Contract
             InstanceId target = new InstanceId(0x5033_0001);
             Action<ProbeMessage> original = _ => { };
             Action<ProbeMessage> augmented = _ => { };
-            _ = (Action)
-                (MessageHandler.HandlerDeregistration)
-                    addMethod.Invoke(
-                        handler,
-                        new object[] { target, original, augmented, null, 17, bus }
-                    );
+            _ = addMethod.Invoke(
+                handler,
+                new object[] { target, original, augmented, null, 17, bus }
+            );
 
             Array slots = ReadArrayField(handler, "_slots");
             TypedSlot<ProbeMessage> slot =
@@ -603,12 +598,12 @@ namespace DxMessaging.Tests.Editor.Contract
             Action<ProbeMessage> augmented = _ => { };
 
             object oldHandler = MakeFreshTypedHandler();
-            Action oldDeregistration = (Action)
-                (MessageHandler.HandlerDeregistration)
-                    addMethod.Invoke(
-                        oldHandler,
-                        new object[] { target, original, augmented, null, 17, bus }
-                    );
+            Action oldDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(
+                    oldHandler,
+                    new object[] { target, original, augmented, null, 17, bus }
+                )
+            );
             TypedSlot<ProbeMessage> oldSlot =
                 (TypedSlot<ProbeMessage>)
                     ReadArrayField(oldHandler, "_slots")
@@ -616,12 +611,12 @@ namespace DxMessaging.Tests.Editor.Contract
             oldSlot.Reset();
 
             object newHandler = MakeFreshTypedHandler();
-            Action newDeregistration = (Action)
-                (MessageHandler.HandlerDeregistration)
-                    addMethod.Invoke(
-                        newHandler,
-                        new object[] { target, original, augmented, null, 17, bus }
-                    );
+            Action newDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(
+                    newHandler,
+                    new object[] { target, original, augmented, null, 17, bus }
+                )
+            );
             TypedSlot<ProbeMessage> newSlot =
                 (TypedSlot<ProbeMessage>)
                     ReadArrayField(newHandler, "_slots")
@@ -654,7 +649,6 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     typeof(Action<IUntargetedMessage>),
                     typeof(Action<IUntargetedMessage>),
-                    typeof(Action),
                     typeof(IMessageBus),
                 },
                 modifiers: null
@@ -667,8 +661,9 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageBus bus = new MessageBus();
             Action<IUntargetedMessage> original = _ => { };
             Action<IUntargetedMessage> augmented = _ => { };
-            Action deregistration = (Action)
-                addMethod.Invoke(handler, new object[] { original, augmented, null, bus });
+            Action deregistration = ToDeregistrationAction(
+                addMethod.Invoke(handler, new object[] { original, augmented, bus })
+            );
 
             Array globalSlots = ReadArrayField(handler, "_globalSlots");
             object populated = globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
@@ -743,7 +738,6 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     typeof(Action<IUntargetedMessage>),
                     typeof(Action<IUntargetedMessage>),
-                    typeof(Action),
                     typeof(IMessageBus),
                 },
                 modifiers: null
@@ -755,8 +749,9 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageBus bus = new MessageBus();
             Action<IUntargetedMessage> original = _ => { };
             Action<IUntargetedMessage> augmented = _ => { };
-            Action staleDeregistration = (Action)
-                addMethod.Invoke(typedHandler, new object[] { original, augmented, null, bus });
+            Action staleDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(typedHandler, new object[] { original, augmented, bus })
+            );
             Array globalSlots = ReadArrayField(typedHandler, "_globalSlots");
 
             staleDeregistration();
@@ -764,8 +759,9 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(1, resetCount);
             Assert.IsNull(globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault));
 
-            Action newDeregistration = (Action)
-                addMethod.Invoke(typedHandler, new object[] { original, augmented, null, bus });
+            Action newDeregistration = ToDeregistrationAction(
+                addMethod.Invoke(typedHandler, new object[] { original, augmented, bus })
+            );
             TypedGlobalSlot newUntargetedSlot = (TypedGlobalSlot)
                 globalSlots.GetValue(TypedGlobalSlotIndex.UntargetedDefault);
             Assert.AreEqual(1, newUntargetedSlot.liveCount);
@@ -820,6 +816,16 @@ namespace DxMessaging.Tests.Editor.Contract
             );
             Assert.IsNotNull(addMethod, "AddTargetedHandler(Action<T>) must exist.");
             return addMethod;
+        }
+
+        private static Action ToDeregistrationAction(object state)
+        {
+            Assert.IsNotNull(state, "Registration must return teardown state.");
+            MethodInfo deregister = state
+                .GetType()
+                .GetMethod("Deregister", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(deregister, "Teardown state must expose Deregister internally.");
+            return () => deregister.Invoke(state, null);
         }
 
         private static Array ReadArrayField(object handler, string name)

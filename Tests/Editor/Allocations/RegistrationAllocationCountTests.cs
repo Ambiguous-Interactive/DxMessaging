@@ -5,8 +5,10 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
     using DxMessaging.Core.Pooling;
     using DxMessaging.Tests.Editor.Benchmarks;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -62,6 +64,20 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// <c>RegistrationStorageStructuralGuardTests.RegistrationsStoreUnifiedRegistrationObjectNotFuncOrAction</c>
     /// (deterministic, backend-independent -- in the per-PR EditMode correctness leg).
     /// </description></item>
+    /// <item><description>
+    /// Enabled token registration dropped one further managed-allocation call when the
+    /// existing per-handle Registration object began owning reusable typed/interceptor
+    /// teardown state. Allocation-backed wrappers remain only for direct handler callers
+    /// and overlapping retry spills. Guarded structurally by
+    /// <c>RegistrationStorageStructuralGuardTests.RegistrationObjectsOwnReusableTeardownState</c>.
+    /// </description></item>
+    /// <item><description>
+    /// Global accept-all registration dropped its allocation-backed composite teardown and
+    /// three sub-handler teardown delegates when those states moved into the existing
+    /// registration object by value. Measured by
+    /// <see cref="GlobalAcceptAllMarginalAllocationMaterialityIsMeasured"/> and guarded by the same
+    /// structural teardown-state test.
+    /// </description></item>
     /// </list>
     /// <para>
     /// The counting rows use <see cref="AllocationProbe"/> (the <c>GC.Alloc</c> profiler
@@ -93,7 +109,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         // the minimum over several attempts (see AllocationProbe.MeasureMin).
         private const int MinAttempts = 8;
 
-        // ~14 measured per registration post-change (224 over 16). The window also pays
+        // ~13 measured per registration post-change (208 over 16). The window also pays
         // bus-side flat-array growth whose warm-domain count varies, so this is a
         // gross-regression tripwire (20/registration), not a 1-call-precise bound -- the
         // structural test pins the exact metadata-closure removal. 20 (not 16) leaves
@@ -125,6 +141,18 @@ namespace DxMessaging.Tests.Editor.Allocations
         private static void NoOpTargetedPostProcessor(ref SimpleTargetedMessage message) { }
 
         private static void NoOpTargetedActionPostProcessor(SimpleTargetedMessage message) { }
+
+        private static void NoOpGlobalUntargeted(ref IUntargetedMessage message) { }
+
+        private static void NoOpGlobalTargeted(
+            ref InstanceId target,
+            ref ITargetedMessage message
+        ) { }
+
+        private static void NoOpGlobalBroadcast(
+            ref InstanceId source,
+            ref IBroadcastMessage message
+        ) { }
 
         private static MessageBus NewBus()
         {
@@ -380,6 +408,117 @@ namespace DxMessaging.Tests.Editor.Allocations
                     + "RegistrationStorageStructuralGuardTests."
                     + "InternalRegisterPassesMetadataByValueNotFactory (per-PR EditMode leg)."
             );
+        }
+
+        [Test]
+        [Category("Allocation")]
+        public void GlobalAcceptAllMarginalAllocationMaterialityIsMeasured()
+        {
+            MessageHandler.FastHandler<SimpleUntargetedMessage> typedHandlerDelegate = NoOp;
+            MessageHandler.FastHandler<IUntargetedMessage> globalUntargeted = NoOpGlobalUntargeted;
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> globalTargeted =
+                NoOpGlobalTargeted;
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> globalBroadcast =
+                NoOpGlobalBroadcast;
+
+            MessageBus typedBus = NewBus();
+            MessageHandler typedHandler = new MessageHandler(Owner, typedBus) { active = true };
+            using LeakWatcher typedLeaks = new(typedBus, label: "typed materiality baseline");
+            using MessageRegistrationToken typedToken = MessageRegistrationToken.Create(
+                typedHandler,
+                typedBus
+            );
+            typedToken.Enable();
+
+            MessageBus globalBus = NewBus();
+            MessageHandler globalHandler = new MessageHandler(Owner, globalBus) { active = true };
+            using LeakWatcher globalLeaks = new(globalBus, label: "global materiality baseline");
+            using MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
+                globalHandler,
+                globalBus
+            );
+            globalToken.Enable();
+
+            for (int i = 0; i < WarmupRegistrations + SettleRegistrations; ++i)
+            {
+                _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
+                _ = globalToken.RegisterGlobalAcceptAll(
+                    globalUntargeted,
+                    globalTargeted,
+                    globalBroadcast
+                );
+            }
+
+            int typedRegistrationCountBeforeAttempt = 0;
+            AllocationProbe.MinimumMeasurement<int> typedMeasurement =
+                AllocationProbe.MeasureMinWithDiagnostics(
+                    MinAttempts,
+                    prepare: () => typedRegistrationCountBeforeAttempt = typedToken._metadata.Count,
+                    operation: () =>
+                    {
+                        for (int i = 0; i < MeasuredRegistrations; ++i)
+                        {
+                            _ = typedToken.RegisterUntargeted(typedHandlerDelegate);
+                        }
+
+                        return typedToken._metadata.Count - typedRegistrationCountBeforeAttempt;
+                    }
+                );
+            int globalRegistrationCountBeforeAttempt = 0;
+            AllocationProbe.MinimumMeasurement<int> globalMeasurement =
+                AllocationProbe.MeasureMinWithDiagnostics(
+                    MinAttempts,
+                    prepare: () =>
+                        globalRegistrationCountBeforeAttempt = globalToken._metadata.Count,
+                    operation: () =>
+                    {
+                        for (int i = 0; i < MeasuredRegistrations; ++i)
+                        {
+                            _ = globalToken.RegisterGlobalAcceptAll(
+                                globalUntargeted,
+                                globalTargeted,
+                                globalBroadcast
+                            );
+                        }
+
+                        return globalToken._metadata.Count - globalRegistrationCountBeforeAttempt;
+                    }
+                );
+
+            long typedCount = typedMeasurement.GcAllocations;
+            long globalCount = globalMeasurement.GcAllocations;
+
+            if (
+                typedCount == AllocationProbe.Unmeasured
+                || globalCount == AllocationProbe.Unmeasured
+            )
+            {
+                Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
+            }
+
+            Assert.AreEqual(MeasuredRegistrations, typedMeasurement.Diagnostics);
+            Assert.AreEqual(MeasuredRegistrations, globalMeasurement.Diagnostics);
+            int expectedRegistrationCount =
+                WarmupRegistrations + SettleRegistrations + MinAttempts * MeasuredRegistrations;
+            Assert.AreEqual(expectedRegistrationCount, typedToken._metadata.Count);
+            Assert.AreEqual(expectedRegistrationCount, globalToken._metadata.Count);
+            Assert.AreEqual(1, typedBus.RegisteredUntargeted);
+            Assert.AreEqual(1, globalBus.RegisteredGlobalAcceptAll);
+            long delta = globalCount - typedCount;
+            string measurement =
+                $"global-accept-all-materiality,typed={typedCount},global={globalCount},delta={delta},"
+                + $"typedBytes={FormatProbeValue(typedMeasurement.GcAllocatedBytes)},"
+                + $"globalBytes={FormatProbeValue(globalMeasurement.GcAllocatedBytes)},"
+                + $"registrations={MeasuredRegistrations}";
+            TestContext.Out.WriteLine(measurement);
+            UnityEngine.Debug.Log(measurement);
+            Assert.GreaterOrEqual(typedCount, 0);
+            Assert.GreaterOrEqual(globalCount, 0);
+        }
+
+        private static string FormatProbeValue(long value)
+        {
+            return value == AllocationProbe.Unmeasured ? "n/a" : value.ToString();
         }
     }
 }

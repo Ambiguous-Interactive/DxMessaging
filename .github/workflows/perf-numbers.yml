@@ -497,6 +497,34 @@ jobs:
         env:
           BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
 
+      - name: Capture exact standalone player size
+        if: ${{ matrix.test-mode == 'standalone' && steps.run_tests.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $playerDir = '.artifacts/unity/projects/${{ matrix.unity-version }}-standalone/Build/DxmTestPlayer'
+          $playerExe = Join-Path $playerDir 'DxmTestPlayer.exe'
+          if (-not (Test-Path -LiteralPath $playerExe -PathType Leaf)) {
+            throw "Validated standalone player was not found at $playerExe"
+          }
+          $files = @(Get-ChildItem -LiteralPath $playerDir -File -Recurse -Force)
+          [long]$totalBytes = ($files | Measure-Object -Property Length -Sum).Sum
+          $manifest = [ordered]@{
+            commit = '${{ github.event.pull_request.head.sha || github.sha }}'
+            unityVersion = '${{ matrix.unity-version }}'
+            scriptingBackend = 'IL2CPP'
+            codeOptimization = 'Release'
+            il2CppConfiguration = 'Release'
+            apiCompatibility = '.NET Standard 2.1'
+            totalBytes = $totalBytes
+            executableBytes = (Get-Item -LiteralPath $playerExe).Length
+            fileCount = $files.Count
+          }
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone'
+          $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactsPath 'player-size.json') -Encoding utf8
+          "totalBytes=$totalBytes executableBytes=$($manifest.executableBytes) fileCount=$($files.Count)" |
+            Set-Content -LiteralPath (Join-Path $artifactsPath 'player-size.txt') -Encoding utf8
+          Write-Host "Exact standalone player size: $totalBytes bytes across $($files.Count) files."
+
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}
         uses: ./.github/actions/dump-unity-log-tail

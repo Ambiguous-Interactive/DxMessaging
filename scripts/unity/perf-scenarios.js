@@ -6,10 +6,16 @@ const COMPARISON_SCENARIO_PREFIX = "Comparison_";
 // DispatchBenchmarkScenario keys; the order groups cold first-dispatch rows next
 // to their warm dispatch counterparts for readability.
 const SCENARIO_ORDER = [
+  "EmptyBus_Dispatch",
   "UntargetedFlood_OneHandler",
+  "UntargetedFlood_TwoHandlers_OnePriority",
+  "UntargetedFlood_ThreeHandlers_OnePriority",
   "UntargetedFlood_FourHandlers_OnePriority",
   "UntargetedFlood_FourHandlers_FourPriorities",
+  "UntargetedFlood_SixteenHandlers_OnePriority",
+  "UntargetedFlood_OneInactiveHandler",
   "UntargetedFirstDispatch_Cold",
+  "TargetedFlood_NoMatchingTarget",
   "TargetedFlood_OneListener",
   "TargetedFlood_SixteenListeners",
   "TargetedFirstDispatch_Cold",
@@ -17,6 +23,8 @@ const SCENARIO_ORDER = [
   "BroadcastFirstDispatch_Cold",
   "InterceptorHeavy_FourInterceptors",
   "PostProcessingHeavy_FourPostProcessors",
+  "MessageBusConstruction_1000",
+  "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
   "RegistrationFlood_1000Types_FromColdBus",
   "RegistrationFlood_1000Types_WarmJit",
   "UntargetedRegistration_Marginal",
@@ -28,13 +36,34 @@ const SCENARIO_ORDER = [
 
 const SCENARIOS = new Set(SCENARIO_ORDER);
 
+const WALL_CLOCK_SCENARIOS = new Set([
+  "MessageBusConstruction_1000",
+  "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+  "RegistrationFlood_1000Types_FromColdBus",
+  "RegistrationFlood_1000Types_WarmJit",
+  "UntargetedRegistration_Marginal",
+  "TargetedRegistration_Marginal",
+  "BroadcastRegistration_Marginal",
+  "DeregistrationFlood_1000Types_Cold",
+  "DeregistrationFlood_1000Types_WarmJit",
+  "UntargetedFirstDispatch_Cold",
+  "TargetedFirstDispatch_Cold",
+  "BroadcastFirstDispatch_Cold"
+]);
+
 // Human-readable dispatch scenario labels shown in the Scenario column. These
 // mirror DispatchBenchmarkScenarios.DisplayName in BenchmarkProtocol.cs.
 const DISPATCH_DISPLAY_NAMES = {
+  EmptyBus_Dispatch: "Empty Bus Dispatch",
   UntargetedFlood_OneHandler: "Untargeted Flood (One Handler)",
+  UntargetedFlood_TwoHandlers_OnePriority: "Untargeted Flood (Two Handlers, One Priority)",
+  UntargetedFlood_ThreeHandlers_OnePriority: "Untargeted Flood (Three Handlers, One Priority)",
   UntargetedFlood_FourHandlers_OnePriority: "Untargeted Flood (Four Handlers, One Priority)",
   UntargetedFlood_FourHandlers_FourPriorities: "Untargeted Flood (Four Handlers, Four Priorities)",
+  UntargetedFlood_SixteenHandlers_OnePriority: "Untargeted Flood (Sixteen Handlers, One Priority)",
+  UntargetedFlood_OneInactiveHandler: "Untargeted Flood (One Inactive Handler)",
   UntargetedFirstDispatch_Cold: "Untargeted First Dispatch (Cold, Distinct Types)",
+  TargetedFlood_NoMatchingTarget: "Targeted Flood (No Matching Target)",
   TargetedFlood_OneListener: "Targeted Flood (One Listener)",
   TargetedFlood_SixteenListeners: "Targeted Flood (Sixteen Listeners)",
   TargetedFirstDispatch_Cold: "Targeted First Dispatch (Cold, Distinct Types)",
@@ -42,6 +71,9 @@ const DISPATCH_DISPLAY_NAMES = {
   BroadcastFirstDispatch_Cold: "Broadcast First Dispatch (Cold, Distinct Types)",
   InterceptorHeavy_FourInterceptors: "Interceptor Heavy (Four Interceptors)",
   PostProcessingHeavy_FourPostProcessors: "Post-Processing Heavy (Four Post-Processors)",
+  MessageBusConstruction_1000: "Message Bus Construction (1000)",
+  MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus:
+    "Registration Token Construction (1000, Prebuilt Handler + Bus)",
   RegistrationFlood_1000Types_FromColdBus: "Registration Flood (1000 Types, Cold Bus)",
   RegistrationFlood_1000Types_WarmJit: "Registration Flood (1000 Types, Warm JIT)",
   UntargetedRegistration_Marginal: "Untargeted Registration (Marginal, 1000 Same-Type)",
@@ -171,6 +203,7 @@ function deriveScope(platform) {
 module.exports = {
   SCENARIO_ORDER,
   SCENARIOS,
+  WALL_CLOCK_SCENARIOS,
   DISPATCH_DISPLAY_NAMES,
   COMPARISON_SCENARIO_ORDER,
   COMPARISON_SCENARIO_LABELS,

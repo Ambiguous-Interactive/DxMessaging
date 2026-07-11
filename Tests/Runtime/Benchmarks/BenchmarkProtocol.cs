@@ -498,6 +498,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             switch (scenario)
             {
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus:
+                case DispatchBenchmarkScenario.MessageBusConstruction1000:
+                case DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000:
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit:
                 case DispatchBenchmarkScenario.UntargetedRegistrationMarginal:
                 case DispatchBenchmarkScenario.TargetedRegistrationMarginal:
@@ -517,11 +519,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             return scenario switch
             {
+                DispatchBenchmarkScenario.EmptyBusDispatch => "EmptyBus_Dispatch",
                 DispatchBenchmarkScenario.UntargetedFloodOneHandler => "UntargetedFlood_OneHandler",
+                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority =>
+                    "UntargetedFlood_TwoHandlers_OnePriority",
+                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority =>
+                    "UntargetedFlood_ThreeHandlers_OnePriority",
                 DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority =>
                     "UntargetedFlood_FourHandlers_OnePriority",
                 DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities =>
                     "UntargetedFlood_FourHandlers_FourPriorities",
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority =>
+                    "UntargetedFlood_SixteenHandlers_OnePriority",
+                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler =>
+                    "UntargetedFlood_OneInactiveHandler",
+                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget =>
+                    "TargetedFlood_NoMatchingTarget",
                 DispatchBenchmarkScenario.TargetedFloodOneListener => "TargetedFlood_OneListener",
                 DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
                     "TargetedFlood_SixteenListeners",
@@ -530,6 +543,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "InterceptorHeavy_FourInterceptors",
                 DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>
                     "PostProcessingHeavy_FourPostProcessors",
+                DispatchBenchmarkScenario.MessageBusConstruction1000 =>
+                    "MessageBusConstruction_1000",
+                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000 =>
+                    "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
                     "RegistrationFlood_1000Types_FromColdBus",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>
@@ -557,12 +574,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             return scenario switch
             {
+                DispatchBenchmarkScenario.EmptyBusDispatch => "Empty Bus Dispatch",
                 DispatchBenchmarkScenario.UntargetedFloodOneHandler =>
                     "Untargeted Flood (One Handler)",
+                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority =>
+                    "Untargeted Flood (Two Handlers, One Priority)",
+                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority =>
+                    "Untargeted Flood (Three Handlers, One Priority)",
                 DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority =>
                     "Untargeted Flood (Four Handlers, One Priority)",
                 DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities =>
                     "Untargeted Flood (Four Handlers, Four Priorities)",
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority =>
+                    "Untargeted Flood (Sixteen Handlers, One Priority)",
+                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler =>
+                    "Untargeted Flood (One Inactive Handler)",
+                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget =>
+                    "Targeted Flood (No Matching Target)",
                 DispatchBenchmarkScenario.TargetedFloodOneListener =>
                     "Targeted Flood (One Listener)",
                 DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
@@ -573,6 +601,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "Interceptor Heavy (Four Interceptors)",
                 DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>
                     "Post-Processing Heavy (Four Post-Processors)",
+                DispatchBenchmarkScenario.MessageBusConstruction1000 =>
+                    "Message Bus Construction (1000)",
+                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000 =>
+                    "Registration Token Construction (1000, Prebuilt Handler + Bus)",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus =>
                     "Registration Flood (1000 Types, Cold Bus)",
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit =>

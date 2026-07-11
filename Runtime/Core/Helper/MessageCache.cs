@@ -1,5 +1,6 @@
 namespace DxMessaging.Core.Helper
 {
+    using System;
     using System.Collections;
     using System.Collections.Generic;
     using System.Runtime.CompilerServices;
@@ -8,7 +9,7 @@ namespace DxMessaging.Core.Helper
     /// Sparse, type-indexed cache keyed by message type for fast lookups without dictionaries.
     /// </summary>
     /// <remarks>
-    /// Internally maintains a list indexed by a compact, per-message-type integer (assigned via
+    /// Internally maintains a sparse array indexed by a compact, per-message-type integer (assigned via
     /// <see cref="MessageHelperIndexer{TMessage}"/>). Used heavily by the bus to store handlers and interceptors
     /// with minimal overhead.
     /// </remarks>
@@ -39,8 +40,8 @@ namespace DxMessaging.Core.Helper
             /// <returns><c>true</c> if another non-null value exists; otherwise <c>false</c>.</returns>
             public bool MoveNext()
             {
-                List<TValue> values = _cache._values;
-                int count = values.Count;
+                TValue[] values = _cache._values;
+                int count = _cache._count;
                 while (++_index < count)
                 {
                     _current = values[_index];
@@ -74,7 +75,8 @@ namespace DxMessaging.Core.Helper
             public void Dispose() { }
         }
 
-        private readonly List<TValue> _values = new();
+        private TValue[] _values = Array.Empty<TValue>();
+        private int _count;
 
         /// <summary>
         /// Retrieves the value associated with <typeparamref name="TMessage"/>, creating one if needed.
@@ -89,7 +91,7 @@ namespace DxMessaging.Core.Helper
             int index = MessageHelperIndexer<TMessage>.SequentialId;
             if (0 <= index)
             {
-                FillToIndex(index);
+                EnsureIndex(index);
                 value = _values[index];
                 if (value != null)
                 {
@@ -101,11 +103,9 @@ namespace DxMessaging.Core.Helper
             }
             else
             {
-                index = MessageHelperIndexer.TotalMessages++;
-                MessageHelperIndexer<TMessage>.SequentialId = index;
-                FillToIndex(index - 1);
+                index = AssignIndex<TMessage>();
                 value = new TValue();
-                _values.Add(value);
+                _values[index] = value;
             }
 
             return value;
@@ -123,15 +123,13 @@ namespace DxMessaging.Core.Helper
             int index = MessageHelperIndexer<TMessage>.SequentialId;
             if (0 <= index)
             {
-                FillToIndex(index);
+                EnsureIndex(index);
                 _values[index] = value;
                 return;
             }
 
-            index = MessageHelperIndexer.TotalMessages++;
-            MessageHelperIndexer<TMessage>.SequentialId = index;
-            FillToIndex(index - 1);
-            _values.Add(value);
+            index = AssignIndex<TMessage>();
+            _values[index] = value;
         }
 
         /// <summary>
@@ -145,7 +143,7 @@ namespace DxMessaging.Core.Helper
             where TMessage : IMessage
         {
             int index = MessageHelperIndexer<TMessage>.SequentialId;
-            if (0 <= index && index < _values.Count)
+            if (0 <= index && index < _values.Length)
             {
                 value = _values[index];
                 return value != null;
@@ -164,7 +162,7 @@ namespace DxMessaging.Core.Helper
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryGetValueAtIndex(int index, out TValue value)
         {
-            if (0 <= index && index < _values.Count)
+            if (0 <= index && index < _values.Length)
             {
                 value = _values[index];
                 return value != null;
@@ -183,7 +181,7 @@ namespace DxMessaging.Core.Helper
             where TMessage : IMessage
         {
             int index = MessageHelperIndexer<TMessage>.SequentialId;
-            if (0 <= index && index < _values.Count)
+            if (0 <= index && index < _values.Length)
             {
                 _values[index] = null;
             }
@@ -196,7 +194,7 @@ namespace DxMessaging.Core.Helper
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void RemoveAtIndex(int index)
         {
-            if (0 <= index && index < _values.Count)
+            if (0 <= index && index < _values.Length)
             {
                 _values[index] = null;
             }
@@ -224,17 +222,52 @@ namespace DxMessaging.Core.Helper
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Clear()
         {
-            _values.Clear();
+            _values = Array.Empty<TValue>();
+            _count = 0;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void FillToIndex(int index)
+        private int AssignIndex<TMessage>()
+            where TMessage : IMessage
         {
-            int count = _values.Count;
-            for (int i = count; i <= index; ++i)
+            int index = MessageHelperIndexer.TotalMessages;
+            EnsureIndex(index);
+            MessageHelperIndexer<TMessage>.SequentialId = index;
+            MessageHelperIndexer.TotalMessages = index + 1;
+            return index;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void EnsureIndex(int index)
+        {
+            if (index < 0)
             {
-                _values.Add(null);
+                throw new InvalidOperationException("Message type indices cannot be negative.");
             }
+
+            if (index < _values.Length)
+            {
+                if (_count <= index)
+                {
+                    _count = index + 1;
+                }
+                return;
+            }
+
+            int capacity = _values.Length == 0 ? 4 : _values.Length;
+            while (capacity <= index)
+            {
+                if (capacity > int.MaxValue >> 1)
+                {
+                    throw new InvalidOperationException(
+                        "The message type index exceeds the cache's supported capacity."
+                    );
+                }
+                capacity <<= 1;
+            }
+
+            Array.Resize(ref _values, capacity);
+            _count = index + 1;
         }
     }
 }

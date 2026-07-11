@@ -16,9 +16,8 @@ namespace DxMessaging.Tests.Editor
     /// backend-independent and never flake in a warm editor.
     /// <list type="bullet">
     /// <item><description>
-    /// <see cref="InternalRegisterPassesMetadataByValueNotFactory"/> pins the by-value
-    /// metadata change: a revert to a <c>Func&lt;MessageRegistrationMetadata&gt;</c> factory
-    /// re-introduces one delegate allocation per registration.
+    /// <see cref="InternalRegisterDerivesMetadataFromRegistration"/> pins metadata ownership
+    /// on the unified registration object, without a second dictionary or call-site descriptor.
     /// </description></item>
     /// <item><description>
     /// <see cref="RegistrationsStoreUnifiedRegistrationObjectNotFuncOrAction"/> pins the
@@ -26,6 +25,11 @@ namespace DxMessaging.Tests.Editor
     /// <c>Func&lt;handle, HandlerDeregistration&gt;</c> (or a parameterless
     /// <see cref="Action"/> wrapper) re-introduces the staging delegate plus its display
     /// class AND the nested AugmentedHandler local-function delegate per registration.
+    /// </description></item>
+    /// <item><description>
+    /// <see cref="RegistrationObjectsOwnReusableTeardownState"/> pins the common teardown
+    /// state as value-type fields on the existing registration objects. Allocation-backed
+    /// wrappers remain only for direct handler compatibility and overlapping retry spills.
     /// </description></item>
     /// </list>
     /// <para>
@@ -44,16 +48,12 @@ namespace DxMessaging.Tests.Editor
     public sealed class RegistrationStorageStructuralGuardTests
     {
         /// <summary>
-        /// Pins the by-value metadata change structurally: <c>InternalRegister</c>'s
-        /// metadata parameter must be the <see cref="MessageRegistrationMetadata"/> struct,
-        /// never a <c>Func&lt;MessageRegistrationMetadata&gt;</c>. The factory was invoked
-        /// immediately (so it provided no laziness), and a revert to it re-introduces one
-        /// delegate allocation per registration. This assertion is deterministic and
-        /// backend-independent, so it catches that revert even where the allocation probe is
-        /// unavailable.
+        /// Pins metadata derivation structurally: <c>InternalRegister</c> accepts only the
+        /// unified registration object, whose <c>Metadata</c> property derives the diagnostic
+        /// descriptor from its existing kind, context, message type, and priority fields.
         /// </summary>
         [Test]
-        public void InternalRegisterPassesMetadataByValueNotFactory()
+        public void InternalRegisterDerivesMetadataFromRegistration()
         {
             MethodInfo internalRegister = typeof(MessageRegistrationToken).GetMethod(
                 "InternalRegister",
@@ -65,32 +65,21 @@ namespace DxMessaging.Tests.Editor
                 "MessageRegistrationToken.InternalRegister was renamed; update this guard."
             );
 
-            ParameterInfo[] parameters = internalRegister.GetParameters();
-            bool hasByValueMetadata = false;
-            bool hasMetadataFactory = false;
-            foreach (ParameterInfo parameter in parameters)
-            {
-                if (parameter.ParameterType == typeof(MessageRegistrationMetadata))
-                {
-                    hasByValueMetadata = true;
-                }
-                if (parameter.ParameterType == typeof(Func<MessageRegistrationMetadata>))
-                {
-                    hasMetadataFactory = true;
-                }
-            }
-
             Assert.That(
-                hasByValueMetadata,
-                Is.True,
-                "InternalRegister must accept MessageRegistrationMetadata by value so no "
-                    + "per-registration metadata closure is allocated."
+                internalRegister.GetParameters(),
+                Has.Length.EqualTo(1),
+                "InternalRegister must not receive a duplicate metadata descriptor."
             );
+            Type registrationType = internalRegister.GetParameters()[0].ParameterType;
             Assert.That(
-                hasMetadataFactory,
-                Is.False,
-                "InternalRegister must not accept a Func<MessageRegistrationMetadata>; the "
-                    + "factory was invoked immediately, so it only added a closure allocation."
+                registrationType
+                    .GetProperty(
+                        "Metadata",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                    )
+                    ?.PropertyType,
+                Is.EqualTo(typeof(MessageRegistrationMetadata)),
+                "The unified Registration object must derive its own diagnostic metadata."
             );
         }
 
@@ -113,47 +102,27 @@ namespace DxMessaging.Tests.Editor
         /// unavailable.
         /// </summary>
         [Test]
-        public void RegistrationsStoreUnifiedRegistrationObjectNotFuncOrAction()
+        public void RegistrationArenaStoresUnifiedRegistrationObjectAndOrderLinks()
         {
-            FieldInfo registrations = typeof(MessageRegistrationToken).GetField(
-                "_registrations",
+            FieldInfo slots = typeof(MessageRegistrationToken).GetField(
+                "_slots",
                 BindingFlags.Instance | BindingFlags.NonPublic
             );
             Assert.That(
-                registrations,
+                slots,
                 Is.Not.Null,
-                "MessageRegistrationToken._registrations was renamed; update this guard."
+                "MessageRegistrationToken._slots was renamed; update this guard."
             );
 
-            Type registrationMapType = registrations.FieldType;
-            Assert.That(
-                registrationMapType.IsGenericType,
-                Is.True,
-                "MessageRegistrationToken._registrations must remain a generic map from "
-                    + "MessageRegistrationHandle to the unified per-handle registration object."
+            Assert.That(slots.FieldType.IsArray, Is.True);
+            Type slotType = slots.FieldType.GetElementType();
+            Assert.That(slotType, Is.Not.Null);
+            FieldInfo registration = slotType.GetField(
+                "Registration",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
             );
-            Assert.That(
-                registrationMapType.GetGenericTypeDefinition(),
-                Is.EqualTo(typeof(Dictionary<,>)),
-                "MessageRegistrationToken._registrations must remain a Dictionary<,> so "
-                    + "registration replay preserves the same storage and allocation contract."
-            );
-
-            Type[] registrationMapArguments = registrationMapType.GetGenericArguments();
-            Assert.That(
-                registrationMapArguments,
-                Has.Length.EqualTo(2),
-                "MessageRegistrationToken._registrations must have key and value generic "
-                    + "arguments."
-            );
-            Assert.That(
-                registrationMapArguments[0],
-                Is.EqualTo(typeof(MessageRegistrationHandle)),
-                "MessageRegistrationToken._registrations must be keyed by "
-                    + "MessageRegistrationHandle."
-            );
-
-            Type valueType = registrationMapArguments[1];
+            Assert.That(registration, Is.Not.Null);
+            Type valueType = registration.FieldType;
 
             // The value must be the unified per-handle registration OBJECT, not a
             // delegate. A revert to either the staging Func or a parameterless Action
@@ -162,7 +131,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 typeof(Delegate).IsAssignableFrom(valueType),
                 Is.False,
-                "MessageRegistrationToken._registrations must store a per-handle registration "
+                "MessageRegistrationToken.RegistrationSlot must store a per-handle registration "
                     + "OBJECT, not a delegate. A Func<MessageRegistrationHandle, "
                     + "MessageHandler.HandlerDeregistration> (or a parameterless Action wrapper) "
                     + "re-introduces the staging display class plus the staging delegate AND the "
@@ -173,12 +142,12 @@ namespace DxMessaging.Tests.Editor
                 Is.Not.EqualTo(
                     typeof(Func<MessageRegistrationHandle, MessageHandler.HandlerDeregistration>)
                 ),
-                "MessageRegistrationToken._registrations must NOT store the staging Func."
+                "MessageRegistrationToken.RegistrationSlot must NOT store the staging Func."
             );
             Assert.That(
                 valueType.IsClass && valueType.IsAbstract,
                 Is.True,
-                "MessageRegistrationToken._registrations must store the abstract per-handle "
+                "MessageRegistrationToken.RegistrationSlot must store the abstract per-handle "
                     + "Registration base reference type (the unified staging object), so every "
                     + "registration kind shares the single collapsed object shape."
             );
@@ -193,6 +162,18 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(typeof(MessageRegistrationToken)),
                 "The Registration object must remain nested in MessageRegistrationToken."
             );
+
+            foreach (string linkName in new[] { "Previous", "Next", "NextFree" })
+            {
+                Assert.That(
+                    slotType.GetField(
+                        linkName,
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                    ),
+                    Is.Not.Null,
+                    $"RegistrationSlot must retain its O(1) {linkName} link."
+                );
+            }
         }
 
         /// <summary>
@@ -209,39 +190,159 @@ namespace DxMessaging.Tests.Editor
         /// unavailable.
         /// </summary>
         [Test]
-        public void DeregistrationsStoreInlineActionNotPerHandleHolder()
+        public void RegistrationArenaStoresInlineDeregistrationNotPerHandleMap()
         {
-            FieldInfo deregistrations = typeof(MessageRegistrationToken).GetField(
-                "_deregistrations",
+            FieldInfo slots = typeof(MessageRegistrationToken).GetField(
+                "_slots",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(slots, Is.Not.Null);
+            Type slotType = slots.FieldType.GetElementType();
+            FieldInfo deregistration = slotType.GetField(
+                "Deregistration",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+            );
+            Assert.That(
+                deregistration,
+                Is.Not.Null,
+                "RegistrationSlot must own its live teardown state."
+            );
+            Assert.That(
+                deregistration.FieldType,
+                Is.EqualTo(typeof(object)),
+                "RegistrationSlot.Deregistration must store its value as object so the "
+                    + "single common-case de-registration Action is stored INLINE (no per-handle "
+                    + "PendingDeregistration holder)."
+            );
+            Assert.That(
+                typeof(MessageRegistrationToken).GetField(
+                    "_deregistrations",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                ),
+                Is.Null,
+                "A parallel deregistration dictionary duplicates arena state."
+            );
+        }
+
+        [Test]
+        public void RegistrationObjectsOwnReusableTeardownState()
+        {
+            Type registration = typeof(MessageRegistrationToken).GetNestedType(
+                "Registration",
+                BindingFlags.NonPublic
+            );
+            Type typedRegistration = typeof(MessageRegistrationToken).GetNestedType(
+                "Registration`1",
+                BindingFlags.NonPublic
+            );
+            Type interceptorRegistration = typeof(MessageRegistrationToken).GetNestedType(
+                "InterceptorRegistration`1",
+                BindingFlags.NonPublic
+            );
+            Type globalRegistration = typeof(MessageRegistrationToken).GetNestedType(
+                "GlobalAcceptAllRegistration",
+                BindingFlags.NonPublic
+            );
+
+            Assert.That(registration, Is.Not.Null);
+            Assert.That(
+                typeof(MessageHandler.HandlerDeregistration).IsAssignableFrom(registration),
+                Is.True,
+                "The existing Registration object must execute its own common-case teardown."
+            );
+
+            FieldInfo typedState = typedRegistration?.GetField(
+                "_typedDeregistration",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            FieldInfo interceptorState = interceptorRegistration?.GetField(
+                "_deregistration",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            FieldInfo globalState = globalRegistration?.GetField(
+                "_deregistration",
                 BindingFlags.Instance | BindingFlags.NonPublic
             );
             Assert.That(
-                deregistrations,
-                Is.Not.Null,
-                "MessageRegistrationToken._deregistrations was renamed; update this guard."
-            );
-
-            Type deregistrationMapType = deregistrations.FieldType;
-            Assert.That(
-                deregistrationMapType.IsGenericType
-                    && deregistrationMapType.GetGenericTypeDefinition() == typeof(Dictionary<,>),
+                typedState?.FieldType.IsValueType,
                 Is.True,
-                "MessageRegistrationToken._deregistrations must remain a Dictionary<,>."
+                "Typed registrations must embed reusable teardown state rather than a second object."
+            );
+            Assert.That(
+                interceptorState?.FieldType.IsValueType,
+                Is.True,
+                "Interceptor registrations must embed reusable teardown state rather than a second object."
+            );
+            Assert.That(
+                globalState?.FieldType.IsValueType,
+                Is.True,
+                "Global accept-all registrations must embed their composite teardown state rather than a second object."
+            );
+            Assert.That(
+                typedRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
+                Has.None.Matches<FieldInfo>(field =>
+                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
+                ),
+                "The typed common path must not retain an allocation-backed teardown wrapper."
+            );
+            Assert.That(
+                interceptorRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
+                Has.None.Matches<FieldInfo>(field =>
+                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
+                ),
+                "The interceptor common path must not retain an allocation-backed teardown wrapper."
+            );
+            Assert.That(
+                globalRegistration.GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
+                Has.None.Matches<FieldInfo>(field =>
+                    field.FieldType == typeof(MessageHandler.HandlerDeregistration)
+                ),
+                "The global accept-all common path must not retain an allocation-backed teardown wrapper."
             );
 
-            Type[] arguments = deregistrationMapType.GetGenericArguments();
-            Assert.That(
-                arguments[0],
-                Is.EqualTo(typeof(MessageRegistrationHandle)),
-                "MessageRegistrationToken._deregistrations must be keyed by MessageRegistrationHandle."
+            Type globalStateType = globalState.FieldType;
+            FieldInfo[] componentStates = globalStateType.GetFields(
+                BindingFlags.Instance | BindingFlags.NonPublic
             );
             Assert.That(
-                arguments[1],
-                Is.EqualTo(typeof(object)),
-                "MessageRegistrationToken._deregistrations must store its value as object so the "
-                    + "single common-case de-registration Action is stored INLINE (no per-handle "
-                    + "PendingDeregistration holder). A Dictionary<..., PendingDeregistration> value "
-                    + "type re-introduces one holder allocation per registration."
+                componentStates,
+                Has.Exactly(3)
+                    .Matches<FieldInfo>(field =>
+                        field.FieldType == typeof(MessageHandler.GlobalHandlerDeregistrationState)
+                    ),
+                "The composite global teardown must store three value sub-handler states, not Action wrappers."
+            );
+            Assert.That(
+                componentStates,
+                Has.None.Matches<FieldInfo>(field =>
+                    typeof(Delegate).IsAssignableFrom(field.FieldType)
+                ),
+                "The composite global teardown must not retain delegate-backed teardown wrappers."
+            );
+        }
+
+        [Test]
+        public void RegistrationHandleStoresIdAndArenaSlotWithoutCachedHash()
+        {
+            FieldInfo id = typeof(MessageRegistrationHandle).GetField(
+                "_id",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            FieldInfo slot = typeof(MessageRegistrationHandle).GetField(
+                "_slot",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            FieldInfo cachedHash = typeof(MessageRegistrationHandle).GetField(
+                "_hashCode",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+
+            Assert.That(id?.FieldType, Is.EqualTo(typeof(long)));
+            Assert.That(slot?.FieldType, Is.EqualTo(typeof(int)));
+            Assert.That(
+                cachedHash,
+                Is.Null,
+                "The handle hash must be computed from id instead of duplicating the slot field."
             );
         }
 

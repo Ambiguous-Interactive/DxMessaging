@@ -55,6 +55,144 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
+        public void BusHandlerCachesDoNotRetainLegacySnapshotListsOrEmissionStamps()
+        {
+            Type[] nestedTypes = typeof(MessageBus).GetNestedTypes(BindingFlags.NonPublic);
+            Type keyedCache = nestedTypes.Single(type => type.Name == "HandlerCache`2");
+            Type leafCache = nestedTypes.Single(type => type.Name == "HandlerCache");
+            Type interceptorCache = nestedTypes.Single(type => type.Name == "InterceptorCache`1");
+
+            foreach (Type cacheType in new[] { keyedCache, leafCache })
+            {
+                Assert.That(
+                    cacheType.GetField("cache", DeclaredInstanceFields),
+                    Is.Null,
+                    $"{cacheType.Name} must not eagerly allocate the legacy snapshot list."
+                );
+                Assert.That(
+                    cacheType.GetField("lastSeenVersion", DeclaredInstanceFields),
+                    Is.Null,
+                    $"{cacheType.Name} must not retain unused legacy version stamps."
+                );
+                Assert.That(
+                    cacheType.GetField("lastSeenEmissionId", DeclaredInstanceFields),
+                    Is.Null,
+                    $"{cacheType.Name} must not retain unused legacy emission stamps."
+                );
+            }
+
+            Assert.That(
+                interceptorCache.GetField("lastSeenEmissionId", DeclaredInstanceFields),
+                Is.Null,
+                "InterceptorCache<T> must not retain an unused legacy emission stamp."
+            );
+        }
+
+        [Test]
+        public void DispatchSnapshotCarriesDirectEntryCountAlongsideGlobalBuckets()
+        {
+            Type snapshotType = typeof(MessageBus)
+                .GetNestedTypes(BindingFlags.NonPublic)
+                .Single(type => type.Name == "DispatchSnapshot");
+
+            Assert.That(
+                snapshotType.GetField("entryCount", DeclaredInstanceFields),
+                Is.Not.Null,
+                "Non-global snapshots must carry their flat entry count directly."
+            );
+            Assert.That(
+                snapshotType.GetField("buckets", DeclaredInstanceFields),
+                Is.Not.Null,
+                "Global accept-all snapshots still require priority bucket storage."
+            );
+
+            Type flatType = typeof(MessageBus)
+                .Assembly.GetType("DxMessaging.Core.Internal.FlatDispatch`1", throwOnError: true)
+                .MakeGenericType(typeof(UntargetedDispatchProbeMessage));
+            MethodInfo rent = flatType.BaseType.GetMethod(
+                "Rent",
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy
+            );
+            object flat = rent.Invoke(null, new object[] { 0 });
+            ConstructorInfo flatSnapshotConstructor = snapshotType
+                .GetConstructors(BindingFlags.Instance | BindingFlags.Public)
+                .Single(constructor => constructor.GetParameters().Length == 2);
+            object snapshot = flatSnapshotConstructor.Invoke(new[] { flat, (object)true });
+
+            Assert.That(
+                snapshotType.GetField("bucketCount", DeclaredInstanceFields).GetValue(snapshot),
+                Is.EqualTo(0),
+                "A non-global flat snapshot must not rent count-only priority buckets."
+            );
+            Assert.That(
+                snapshotType.GetField("entryCount", DeclaredInstanceFields).GetValue(snapshot),
+                Is.EqualTo(0),
+                "The zero-entry ownership case must remain representable without buckets."
+            );
+            Assert.That(
+                snapshotType.GetProperty("IsInitialized").GetValue(snapshot),
+                Is.True,
+                "An owned zero-entry flat snapshot must not be confused with the empty singleton."
+            );
+
+            snapshotType.GetMethod("Release").Invoke(snapshot, null);
+            Assert.That(
+                snapshotType.GetField("flat", DeclaredInstanceFields).GetValue(snapshot),
+                Is.Null,
+                "Releasing a zero-entry flat snapshot must return its owned holder."
+            );
+        }
+
+        [Test]
+        public void BusToHandlerCallbacksAreNotPublicApi()
+        {
+            string[] removedTypedCallbacks =
+            {
+                "HandleUntargetedMessage",
+                "HandleUntargetedPostProcessing",
+                "HandleTargeted",
+                "HandleTargetedWithoutTargeting",
+                "HandleTargetedPostProcessing",
+                "HandleTargetedWithoutTargetingPostProcessing",
+                "HandleSourcedBroadcast",
+                "HandleSourcedBroadcastWithoutSource",
+                "HandleSourcedBroadcastPostProcessing",
+                "HandleSourcedBroadcastWithoutSourcePostProcessing",
+            };
+            string[] internalGlobalCallbacks =
+            {
+                "HandleGlobalUntargetedMessage",
+                "HandleGlobalTargetedMessage",
+                "HandleGlobalSourcedBroadcastMessage",
+            };
+
+            MethodInfo[] declaredMethods = typeof(MessageHandler).GetMethods(
+                BindingFlags.Instance
+                    | BindingFlags.Public
+                    | BindingFlags.NonPublic
+                    | BindingFlags.DeclaredOnly
+            );
+            foreach (string callbackName in removedTypedCallbacks)
+            {
+                Assert.That(
+                    declaredMethods.Any(method => method.Name == callbackName),
+                    Is.False,
+                    $"{callbackName} is dead legacy typed-dispatch plumbing and must be removed."
+                );
+            }
+
+            foreach (string callbackName in internalGlobalCallbacks)
+            {
+                MethodInfo callback = declaredMethods.Single(method => method.Name == callbackName);
+                Assert.That(
+                    callback.IsPublic,
+                    Is.False,
+                    $"{callbackName} is MessageBus plumbing and must remain internal."
+                );
+            }
+        }
+
+        [Test]
         public void EveryMessageCacheFieldHasSweepableRegistryEntry()
         {
             string[] fieldNames = GetMessageCacheStorageFields()

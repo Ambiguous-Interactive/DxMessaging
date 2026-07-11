@@ -17,7 +17,11 @@ namespace DxMessaging.Core
         private static long StaticIdCount;
 
         private readonly long _id;
-        private readonly int _hashCode;
+        private readonly int _slot;
+
+        internal long Id => _id;
+
+        internal int Slot => _slot;
 
         internal static long GetCurrentIdSeed()
         {
@@ -34,13 +38,23 @@ namespace DxMessaging.Core
         /// </summary>
         public static MessageRegistrationHandle CreateMessageRegistrationHandle()
         {
-            return new MessageRegistrationHandle(Interlocked.Increment(ref StaticIdCount));
+            return new MessageRegistrationHandle(Interlocked.Increment(ref StaticIdCount), -1);
         }
 
-        private MessageRegistrationHandle(long id)
+        internal static MessageRegistrationHandle CreateMessageRegistrationHandle(int slot)
+        {
+            return new MessageRegistrationHandle(Interlocked.Increment(ref StaticIdCount), slot);
+        }
+
+        internal static MessageRegistrationHandle FromIdentity(long id, int slot)
+        {
+            return new MessageRegistrationHandle(id, slot);
+        }
+
+        private MessageRegistrationHandle(long id, int slot)
         {
             _id = id;
-            _hashCode = _id.GetHashCode();
+            _slot = slot;
         }
 
         public static bool operator ==(
@@ -158,7 +172,7 @@ namespace DxMessaging.Core
         /// <returns>Hash code derived from the internal identifier.</returns>
         public override int GetHashCode()
         {
-            return _hashCode;
+            return _id.GetHashCode();
         }
 
         /// <summary>

@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -75,6 +76,148 @@ namespace DxMessaging.Tests.Runtime.Core
         )
         {
             Assert.DoesNotThrow(() => testCase.Action());
+        }
+
+        [Test]
+        public void StaleAndForeignHandlesCannotRemoveReusedArenaSlot()
+        {
+            using TokenScope scope = TokenScope.Create();
+            MessageRegistrationHandle stale =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+            scope.Token.RemoveRegistration(stale);
+
+            int invocationCount = 0;
+            MessageRegistrationHandle current =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => ++invocationCount
+                );
+            using TokenScope foreignScope = TokenScope.Create();
+            MessageRegistrationHandle foreign =
+                foreignScope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+
+            Assert.DoesNotThrow(() => scope.Token.RemoveRegistration(stale));
+            Assert.DoesNotThrow(() => scope.Token.RemoveRegistration(foreign));
+
+            SimpleUntargetedMessage message = new();
+            scope.Bus.EmitUntargeted(ref message);
+            Assert.AreEqual(
+                1,
+                invocationCount,
+                "Slot reuse must validate both the slot index and globally unique handle id."
+            );
+
+            scope.Token.RemoveRegistration(current);
+        }
+
+        [Test]
+        public void ArenaGrowthHeadMiddleTailRemovalAndFreeReusePreserveMetadataOrder()
+        {
+            using TokenScope scope = TokenScope.Create();
+            List<MessageRegistrationHandle> original = new();
+            for (int i = 0; i < 6; ++i)
+            {
+                int capture = i;
+                original.Add(
+                    scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                        (ref SimpleUntargetedMessage _) => GC.KeepAlive(capture)
+                    )
+                );
+            }
+
+            CollectionAssert.AllItemsAreUnique(
+                original,
+                "Every registration must receive a distinct handle."
+            );
+            if (RegistrationSlotProperty != null)
+            {
+                CollectionAssert.AreEqual(
+                    new[] { 0, 1, 2, 3, 4, 5 },
+                    original.Select(GetRegistrationSlot),
+                    "The initial power-of-two arena growth must allocate consecutive slots."
+                );
+            }
+
+            scope.Token.RemoveRegistration(original[0]);
+            scope.Token.RemoveRegistration(original[2]);
+            scope.Token.RemoveRegistration(original[5]);
+
+            MessageRegistrationHandle reuseTail =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+            MessageRegistrationHandle reuseMiddle =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+            MessageRegistrationHandle reuseHead =
+                scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { }
+                );
+
+            CollectionAssert.AllItemsAreUnique(
+                new[] { reuseTail, reuseMiddle, reuseHead },
+                "Replacement registrations must receive distinct handles."
+            );
+            if (RegistrationSlotProperty != null)
+            {
+                CollectionAssert.AreEqual(
+                    new[] { 5, 2, 0 },
+                    new[]
+                    {
+                        GetRegistrationSlot(reuseTail),
+                        GetRegistrationSlot(reuseMiddle),
+                        GetRegistrationSlot(reuseHead),
+                    },
+                    "The free list must reuse removed tail, middle, and head slots in O(1) LIFO order."
+                );
+            }
+            MessageRegistrationHandle[] expectedLiveHandles =
+            {
+                original[1],
+                original[3],
+                original[4],
+                reuseTail,
+                reuseMiddle,
+                reuseHead,
+            };
+            IEnumerable<MessageRegistrationHandle> actualLiveHandles = scope.Token._metadata.Select(
+                entry => entry.Key
+            );
+            if (RegistrationSlotProperty != null)
+            {
+                CollectionAssert.AreEqual(
+                    expectedLiveHandles,
+                    actualLiveHandles,
+                    "Arena metadata enumeration must follow live registration order, not physical slot order."
+                );
+            }
+            else
+            {
+                CollectionAssert.AreEquivalent(
+                    expectedLiveHandles,
+                    actualLiveHandles,
+                    "Legacy dictionary metadata must contain exactly the surviving and replacement handles."
+                );
+            }
+        }
+
+        private static readonly System.Reflection.PropertyInfo RegistrationSlotProperty =
+            typeof(MessageRegistrationHandle).GetProperty(
+                "Slot",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+            );
+
+        private static int GetRegistrationSlot(MessageRegistrationHandle handle)
+        {
+            Assert.IsNotNull(
+                RegistrationSlotProperty,
+                "The registration-slot accessor is required when the slot arena is present."
+            );
+            return (int)RegistrationSlotProperty.GetValue(handle, null);
         }
 
         [Test]

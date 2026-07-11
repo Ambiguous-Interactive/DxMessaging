@@ -410,6 +410,79 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        private static IEnumerable<TestCaseData> DispatchBaselineSetupCases()
+        {
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.EmptyBusDispatch,
+                0,
+                0,
+                0
+            ).SetName("DispatchBaselineSetup_EmptyBus");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget,
+                0,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_TargetedNoMatchingTarget");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority,
+                2,
+                2,
+                1
+            ).SetName("DispatchBaselineSetup_UntargetedTwoFlatEntries");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority,
+                3,
+                3,
+                1
+            ).SetName("DispatchBaselineSetup_UntargetedThreeFlatEntries");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority,
+                16,
+                16,
+                1
+            ).SetName("DispatchBaselineSetup_UntargetedSixteenFlatEntries");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodOneInactiveHandler,
+                0,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_InactiveHandler");
+        }
+
+        [Test]
+        [TestCaseSource(nameof(DispatchBaselineSetupCases))]
+        public void DispatchBaselineScenarioSetupAndSingleEmitMatchDeclaredFanOut(
+            DispatchBenchmarkScenario scenario,
+            int expectedFanOut,
+            int expectedControlFanOut,
+            int expectedRegistrationBuckets
+        )
+        {
+            Assert.AreEqual(
+                expectedFanOut,
+                DispatchThroughputBenchmarks.ExpectedHandlerInvocationsPerEmit(scenario),
+                $"Scenario '{scenario}' must declare the requested exact fan-out."
+            );
+            DispatchThroughputBenchmarks.DispatchScenarioContractObservation observation =
+                DispatchThroughputBenchmarks.ConfigureAndEmitOnceForContract(scenario);
+            Assert.AreEqual(
+                expectedFanOut,
+                observation.ScenarioFanOut,
+                $"Scenario '{scenario}' setup and routing must produce its declared fan-out for one emit."
+            );
+            Assert.AreEqual(
+                expectedControlFanOut,
+                observation.ControlFanOut,
+                $"Scenario '{scenario}' control emit must prove the configured topology is live."
+            );
+            Assert.AreEqual(
+                expectedRegistrationBuckets,
+                observation.RegistrationBuckets,
+                $"Scenario '{scenario}' must configure the expected public bus registration buckets."
+            );
+        }
+
         [Test]
         public void BenchmarkMethodologyConstantsAreLocked()
         {
@@ -514,6 +587,20 @@ namespace DxMessaging.Tests.Editor.Allocations
                     DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
                 ),
                 "The cold-bus registration flood must perform no warm-up flood so it measures first-touch registration cost."
+            );
+            Assert.AreEqual(
+                0,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.MessageBusConstruction1000
+                ),
+                "MessageBus construction must not run an emit warm-up."
+            );
+            Assert.AreEqual(
+                0,
+                DispatchBenchmarkScenarios.WarmupEmits(
+                    DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000
+                ),
+                "Registration-token construction must not run an emit warm-up."
             );
             Assert.AreEqual(
                 BenchmarkProtocol.WarmupEmits,
@@ -722,12 +809,17 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Data-driven over the ten wall-clock scenarios (the registration/deregistration
-        // floods, the three per-kind marginal registration scenarios, and the three cold
-        // first-dispatch scenarios). Each is a wall-clock (latency) row, so its result must
-        // report zero throughput and IsWallClockScenario.
+        // Data-driven over every wall-clock scenario: construction, registration /
+        // deregistration floods, marginal registration, and cold first dispatch. Each result
+        // reports latency rather than throughput.
         private static IEnumerable<TestCaseData> WallClockScenarioCases()
         {
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.MessageBusConstruction1000
+            ).SetName("WallClock_MessageBusConstruction1000");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000
+            ).SetName("WallClock_MessageRegistrationTokenConstruction1000");
             yield return new TestCaseData(
                 DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus
             ).SetName("WallClock_RegistrationFloodColdBus");
@@ -760,6 +852,160 @@ namespace DxMessaging.Tests.Editor.Allocations
             ).SetName("WallClock_BroadcastFirstDispatchCold");
         }
 
+        [Test]
+        public void ConstructionScenariosKeepStableBatchKeysAndHonestLabels()
+        {
+            Assert.AreEqual(1000, DispatchThroughputBenchmarks.ConstructionBatchSize);
+            Assert.AreEqual(
+                "MessageBusConstruction_1000",
+                DispatchBenchmarkScenarios.Key(DispatchBenchmarkScenario.MessageBusConstruction1000)
+            );
+            Assert.AreEqual(
+                "Message Bus Construction (1000)",
+                DispatchBenchmarkScenarios.DisplayName(
+                    DispatchBenchmarkScenario.MessageBusConstruction1000
+                )
+            );
+            Assert.AreEqual(
+                "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+                DispatchBenchmarkScenarios.Key(
+                    DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000
+                )
+            );
+            Assert.AreEqual(
+                "Registration Token Construction (1000, Prebuilt Handler + Bus)",
+                DispatchBenchmarkScenarios.DisplayName(
+                    DispatchBenchmarkScenario.MessageRegistrationTokenConstruction1000
+                )
+            );
+        }
+
+        [Test]
+        public void MarginalRegistrationLatencyUsesRepeatedFloorTrials()
+        {
+            Assert.AreEqual(1000, DispatchThroughputBenchmarks.RegistrationMarginalCount);
+            Assert.AreEqual(
+                7,
+                DispatchThroughputBenchmarks.RegistrationMarginalTimingTrials,
+                "Marginal registration latency must retain the documented seven-trial floor."
+            );
+            Assert.AreEqual(
+                8,
+                DispatchThroughputBenchmarks.RegistrationMarginalAllocationAttempts,
+                "Marginal allocation must retain the documented eight-attempt floor."
+            );
+        }
+
+        [Test]
+        public void IdleSweepBenchmarkScopesRestoreAfterArbitraryDisposalOrder()
+        {
+            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            IDisposable outer = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            object outerIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            IDisposable inner = null;
+            try
+            {
+                _ = new MessageBus();
+                Assert.AreEqual(1, MessageBus.IdleSweepRegistryCountForBenchmark);
+
+                inner = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                object innerIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+                Assert.AreEqual(0, MessageBus.IdleSweepRegistryCountForBenchmark);
+                Assert.AreNotSame(outerIdentity, innerIdentity);
+
+                outer.Dispose();
+                Assert.AreSame(innerIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+
+                inner.Dispose();
+                inner = null;
+                Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+                Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+                outer.Dispose();
+            }
+            finally
+            {
+                try
+                {
+                    inner?.Dispose();
+                }
+                finally
+                {
+                    outer.Dispose();
+                }
+            }
+        }
+
+        [Test]
+        public void IdleSweepBenchmarkScopeRejectsWrongThreadDisposeWithoutLosingOwnership()
+        {
+            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            IDisposable scope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            Exception workerException = null;
+            try
+            {
+                System.Threading.Thread worker = new(() =>
+                {
+                    try
+                    {
+                        scope.Dispose();
+                    }
+                    catch (Exception exception)
+                    {
+                        workerException = exception;
+                    }
+                });
+                worker.Start();
+                worker.Join();
+
+                Assert.IsInstanceOf<InvalidOperationException>(workerException);
+                Assert.AreNotSame(
+                    originalIdentity,
+                    MessageBus.IdleSweepRegistryIdentityForBenchmark
+                );
+            }
+            finally
+            {
+                scope.Dispose();
+            }
+
+            Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+            Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+        }
+
+        [Test]
+        public void IdleSweepBenchmarkScopeRejectsNestedCreationFromAnotherThread()
+        {
+            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            using IDisposable scope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            object isolatedIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            Exception workerException = null;
+
+            System.Threading.Thread worker = new(() =>
+            {
+                try
+                {
+                    using IDisposable nested = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                }
+                catch (Exception exception)
+                {
+                    workerException = exception;
+                }
+            });
+            worker.Start();
+            worker.Join();
+
+            Assert.IsInstanceOf<InvalidOperationException>(workerException);
+            Assert.AreSame(isolatedIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+            Assert.AreEqual(0, MessageBus.IdleSweepRegistryCountForBenchmark);
+
+            scope.Dispose();
+            Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+            Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+        }
+
         // Result-shape lock: every cold/warm-JIT latency scenario reports zero throughput
         // (the time lives in WallClockMs) and is flagged as a wall-clock scenario. The
         // emitsPerSecond=0 property is exactly what auto-excludes these rows from the JS
@@ -771,10 +1017,24 @@ namespace DxMessaging.Tests.Editor.Allocations
             DispatchBenchmarkScenario scenario
         )
         {
+            int idleRegistryCount = MessageBus.IdleSweepRegistryCountForBenchmark;
             DispatchBenchmarkResult result = DispatchThroughputBenchmarks.RunScenario(
                 scenario,
                 logResult: false
             );
+
+            if (
+                scenario == DispatchBenchmarkScenario.UntargetedRegistrationMarginal
+                || scenario == DispatchBenchmarkScenario.TargetedRegistrationMarginal
+                || scenario == DispatchBenchmarkScenario.BroadcastRegistrationMarginal
+            )
+            {
+                Assert.AreEqual(
+                    idleRegistryCount,
+                    MessageBus.IdleSweepRegistryCountForBenchmark,
+                    $"Marginal scenario '{scenario}' must restore the process idle-sweep registry."
+                );
+            }
 
             Assert.AreEqual(
                 0d,

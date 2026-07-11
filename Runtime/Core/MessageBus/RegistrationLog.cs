@@ -14,9 +14,10 @@ namespace DxMessaging.Core.MessageBus
     /// </remarks>
     public sealed class RegistrationLog
     {
-        public IReadOnlyList<MessagingRegistration> Registrations => _finalizedRegistrations;
+        public IReadOnlyList<MessagingRegistration> Registrations =>
+            _finalizedRegistrations ??= new List<MessagingRegistration>();
 
-        private readonly List<MessagingRegistration> _finalizedRegistrations;
+        private List<MessagingRegistration> _finalizedRegistrations;
 
         public bool Enabled
         {
@@ -35,7 +36,6 @@ namespace DxMessaging.Core.MessageBus
         public RegistrationLog(bool enabled = false)
         {
             _enabled = enabled;
-            _finalizedRegistrations = new List<MessagingRegistration>();
         }
 
         /// <summary>
@@ -48,7 +48,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 return;
             }
-            _finalizedRegistrations.Add(registration);
+            (_finalizedRegistrations ??= new List<MessagingRegistration>()).Add(registration);
         }
 
         /// <summary>
@@ -58,9 +58,15 @@ namespace DxMessaging.Core.MessageBus
         /// <returns>All registrations for the provided InstanceId.</returns>
         public IEnumerable<MessagingRegistration> GetRegistrations(InstanceId instanceId)
         {
-            for (int i = 0; i < _finalizedRegistrations.Count; ++i)
+            List<MessagingRegistration> registrations = _finalizedRegistrations;
+            if (registrations == null)
             {
-                MessagingRegistration registration = _finalizedRegistrations[i];
+                yield break;
+            }
+
+            for (int i = 0; i < registrations.Count; ++i)
+            {
+                MessagingRegistration registration = registrations[i];
                 if (registration.id == instanceId)
                 {
                     yield return registration;
@@ -75,7 +81,8 @@ namespace DxMessaging.Core.MessageBus
         /// <returns>The string representing all logged MessagingRegistrations.</returns>
         public string ToString(Func<MessagingRegistration, string> serializer)
         {
-            if (_finalizedRegistrations.Count == 0)
+            List<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;
+            if (finalizedRegistrations == null || finalizedRegistrations.Count == 0)
             {
                 return "[]";
             }
@@ -84,13 +91,13 @@ namespace DxMessaging.Core.MessageBus
 
             StringBuilder registrations = new();
             _ = registrations.Append('[');
-            for (int i = 0; i < _finalizedRegistrations.Count; ++i)
+            for (int i = 0; i < finalizedRegistrations.Count; ++i)
             {
                 if (0 < i)
                 {
                     _ = registrations.Append(", ");
                 }
-                MessagingRegistration finalizedRegistration = _finalizedRegistrations[i];
+                MessagingRegistration finalizedRegistration = finalizedRegistrations[i];
                 string prettyFinalizedRegistration = serializer(finalizedRegistration);
                 _ = registrations.Append(prettyFinalizedRegistration);
             }
@@ -114,14 +121,20 @@ namespace DxMessaging.Core.MessageBus
         /// <returns>Number of MessagingRegistrations removed.</returns>
         public int Clear(Predicate<MessagingRegistration> shouldRemove = null)
         {
+            List<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;
+            if (finalizedRegistrations == null)
+            {
+                return 0;
+            }
+
             if (shouldRemove == null)
             {
-                int currentCount = _finalizedRegistrations.Count;
-                _finalizedRegistrations.Clear();
+                int currentCount = finalizedRegistrations.Count;
+                finalizedRegistrations.Clear();
                 return currentCount;
             }
 
-            return _finalizedRegistrations.RemoveAll(shouldRemove);
+            return finalizedRegistrations.RemoveAll(shouldRemove);
         }
     }
 }
