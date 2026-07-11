@@ -1524,7 +1524,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public BenchmarkRegistrationScope()
             {
-                Bus = new MessageBus();
+                Bus = new MessageBus { DiagnosticsMode = false };
                 PrimaryToken = CreateToken();
             }
 
@@ -1536,6 +1536,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = true };
                 MessageRegistrationToken token = MessageRegistrationToken.Create(handler, Bus);
+                token.DiagnosticMode = false;
                 token.Enable();
                 _tokens.Add(token);
                 return token;
