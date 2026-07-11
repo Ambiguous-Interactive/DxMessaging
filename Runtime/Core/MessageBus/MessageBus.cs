@@ -1187,6 +1187,8 @@ namespace DxMessaging.Core.MessageBus
             return new IdleSweepRegistryBenchmarkScope(IdleSweepBuses);
         }
 
+        internal static int IdleSweepRegistryCountForBenchmark => IdleSweepBuses.Count;
+
         internal static IDisposable IsolateContextMapPoolForBenchmark()
         {
             return new ContextMapPoolBenchmarkScope();

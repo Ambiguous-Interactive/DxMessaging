@@ -2,7 +2,7 @@
 title: "Runtime Performance Campaign Decisions"
 id: "runtime-performance-campaign-decisions"
 category: "performance"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-07-11"
 updated: "2026-07-11"
 
@@ -134,6 +134,16 @@ separately.
 
 ## Rejected measurement methods
 
+- The original marginal-registration rows timed one sub-millisecond
+  1000-registration pass while the Mono allocation recorder was active. Five
+  candidate launches compared against that single historical master row are not a
+  valid five-run A/B verdict. A 16-population continuous-window prototype was also
+  rejected: its roughly 10 MB of live registration allocation forced collections
+  into the clock and raised Mono samples from roughly 1 ms to 2.6-4.1 ms. The
+  retained harness settles once, uses seven fresh floor trials, measures the Mono
+  allocation floor separately over eight fresh populations (stripped IL2CPP skips
+  that allocation-only pass and reports unmeasured), and requires fresh
+  control/candidate runs before accepting or rejecting a runtime change.
 - Do not measure whole-fixture construction when the hypothesis targets one
   storage owner. Global pool state produced non-monotonic handler samples of
   190/1,276/349 allocations at 1/2/3 entries. A separate fresh end-to-end

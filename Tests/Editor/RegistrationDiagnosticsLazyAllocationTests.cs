@@ -54,14 +54,11 @@ namespace DxMessaging.Tests.Editor
     /// on EVERY PR -- not only in the dedicated, perf-gated Allocation scope.
     /// </para>
     /// <para>
-    /// SCOPE (honest): this pins the DIAGNOSTICS-specific lazy win only. The remaining seven
-    /// allocations in a correct <c>Create</c> (the token object plus the eagerly-initialized
-    /// <c>_metadata</c>/<c>_registrations</c>/<c>_registrationOrder</c>/<c>_deregistrations</c>/
-    /// <c>_registrationReplayQueue</c>/<c>_handleQueue</c> collections) are deliberately NOT
-    /// budgeted here, because the absolute-count test that did so was unenforceable in a warm
-    /// editor (its floor exceeded any meaningful budget). Those six are structural and visible
-    /// at their <c>= new()</c> field sites, and a non-diagnostics Create regression still
-    /// surfaces on the cold CI benchmark legs (fresh domain, no ambient noise).
+    /// SCOPE (honest): this pins the DIAGNOSTICS-specific lazy win only. It deliberately does
+    /// not set an absolute allocation budget for the token object, its initial slot arena, or
+    /// other non-diagnostics construction state because warm-editor ambient allocation makes
+    /// that floor unenforceable. Non-diagnostics construction remains covered by the cold CI
+    /// benchmark legs in a fresh process.
     /// </para>
     /// </summary>
     [TestFixture]

@@ -2,9 +2,9 @@
 title: "Benchmark Methodology: Total Over One Window"
 id: "benchmark-methodology-total-over-window"
 category: "performance"
-version: "1.8.0"
+version: "1.9.0"
 created: "2026-06-07"
-updated: "2026-06-28"
+updated: "2026-07-11"
 
 source:
   repository: "Ambiguous-Interactive/DxMessaging"
@@ -221,6 +221,23 @@ pre-built handler delegates so the measured window captures only the registratio
 machinery (not the handler delegate, and not a same-handler refcount bump); their
 allocation count/bytes (the published per-kind registration cost) populate on the
 profiler-bearing in-editor leg and read `n/a` on the stripped Standalone leg.
+
+Marginal registration is fast enough that one 1000-registration pass completes in
+less than a millisecond on IL2CPP. It is also allocation-heavy, so retaining enough
+populations to form one long window forces collections into the clock. This latency
+therefore follows the warm-flood exception: after one heap settle, seven fresh trials
+report their minimum repeatable floor. Every trial is warmed to 16 simultaneous live
+registrations and then returned to zero live registrations before the clock. This
+crosses the inline handler spill boundary and grows the token arena without timing
+setup. On a profiler-bearing Mono run, allocation measurement uses eight fresh, identically
+warmed attempts after latency timing and keeps the minimum exact count plus bytes from
+that same attempt. A stripped IL2CPP player skips these allocation-only attempts and
+reports `Unmeasured`; its seven timing populations still execute and validate. This
+keeps Mono's `GC.Alloc` profiler hook out of wall time and rejects additive warm-editor
+noise. Do not reduce timing to one short pass, combine live populations into a
+GC-heavy long window, or put the allocation recorder around the latency clock. Do not
+force a full warm-editor collection before every timing trial; a collection that lands
+in one timed trial is already rejected as a slow outlier by the floor estimator.
 
 ## The Byte Companion: gcAllocatedBytes
 
