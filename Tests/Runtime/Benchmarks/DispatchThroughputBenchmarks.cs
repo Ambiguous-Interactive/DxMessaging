@@ -7,6 +7,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System.Globalization;
     using System.IO;
     using System.Reflection;
+    using System.Runtime.InteropServices;
     using System.Text;
     using System.Text.RegularExpressions;
     using DxMessaging.Core;
@@ -55,6 +56,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public sealed class DispatchThroughputBenchmarks
     {
+        [Test, Performance, Category("PerfBench")]
+        public void MessageRegistrationHandlePhysicalSize()
+        {
+            int sizeBytes = Marshal.SizeOf(typeof(MessageRegistrationHandle));
+            Assert.AreEqual(
+                16,
+                sizeBytes,
+                "The { long id; int slot/hash } handle layout must remain 16 bytes after alignment."
+            );
+            Debug.Log($"DX_STRUCTURE_SIZE type=MessageRegistrationHandle bytes={sizeBytes}");
+            TestContext.Out.WriteLine($"message-registration-handle-size,{sizeBytes}");
+        }
+
         private const string BaselineOutputEnvVar = "DX_PERF_BASELINE";
         private const string BaselineModeEnvVar = "DX_PERF_BASELINE_MODE";
         private const string PackageName = "com.wallstop-studios.dxmessaging";
@@ -668,13 +682,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     _ = captured;
                 };
             }
+            MessageRegistrationHandle[] warmupHandles = new MessageRegistrationHandle[
+                RegistrationMarginalWarmup
+            ];
 
             // Pre-warm the complete registration path, including token-arena growth and the
             // handler-map spill path. This throwaway population is outside both measurement
             // windows; only compiled code and reusable global pool state survive disposal.
             using (BenchmarkRegistrationScope warmupScope = new())
             {
-                WarmRegistrationMarginalScope(warmupScope, handlers, register);
+                WarmRegistrationMarginalScope(warmupScope, handlers, warmupHandles, register);
                 RegisterMarginalBatch(warmupScope.PrimaryToken, handlers, register);
             }
 
@@ -689,7 +706,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             for (int trial = 0; trial < RegistrationMarginalTimingTrials; trial++)
             {
                 using BenchmarkRegistrationScope timingScope = new();
-                WarmRegistrationMarginalScope(timingScope, handlers, register);
+                WarmRegistrationMarginalScope(timingScope, handlers, warmupHandles, register);
                 long startTimestamp = Stopwatch.GetTimestamp();
                 RegisterMarginalBatch(timingScope.PrimaryToken, handlers, register);
                 long endTimestamp = Stopwatch.GetTimestamp();
@@ -718,7 +735,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // has no functional allocation recorder and honestly skips this allocation-only
             // pass while retaining the validated seven-trial latency result.
             AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation> sample =
-                MeasureRegistrationMarginalAllocation(handlers, register);
+                MeasureRegistrationMarginalAllocation(handlers, warmupHandles, register);
 
             return DispatchBenchmarkResult.ForRegistrationScenario(
                 GetScenarioName(scenario),
@@ -732,6 +749,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static void WarmRegistrationMarginalScope<T>(
             BenchmarkRegistrationScope scope,
             MessageHandler.FastHandler<T>[] handlers,
+            MessageRegistrationHandle[] handles,
             Func<
                 MessageRegistrationToken,
                 MessageHandler.FastHandler<T>,
@@ -740,9 +758,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         )
             where T : DxMessaging.Core.IMessage
         {
-            MessageRegistrationHandle[] handles = new MessageRegistrationHandle[
-                RegistrationMarginalWarmup
-            ];
             for (int index = 0; index < handles.Length; index++)
             {
                 handles[index] = register(scope.PrimaryToken, handlers[index]);
@@ -773,6 +788,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static AllocationProbe.MinimumMeasurement<RegistrationMarginalPopulation> MeasureRegistrationMarginalAllocation<T>(
             MessageHandler.FastHandler<T>[] handlers,
+            MessageRegistrationHandle[] warmupHandles,
             Func<
                 MessageRegistrationToken,
                 MessageHandler.FastHandler<T>,
@@ -804,7 +820,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 for (int attempt = 0; attempt < RegistrationMarginalAllocationAttempts; attempt++)
                 {
                     using BenchmarkRegistrationScope scope = new();
-                    WarmRegistrationMarginalScope(scope, handlers, register);
+                    WarmRegistrationMarginalScope(scope, handlers, warmupHandles, register);
                     RegistrationMarginalPopulation population;
                     AllocationProbe.AllocationSample allocation;
                     using (AllocationProbe.Window window = AllocationProbe.BeginWindow())

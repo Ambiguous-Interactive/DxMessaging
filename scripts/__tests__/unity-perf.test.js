@@ -495,6 +495,20 @@ test("comparison-enabled Unity workflows run comparison contracts", () => {
   assert.deepEqual(offenders, []);
 });
 
+test("performance workflow publishes an exact IL2CPP player-size manifest", () => {
+  const workflow = fs.readFileSync(
+    path.join(REPO_ROOT, ".github", "workflows", "perf-numbers.yml"),
+    "utf8"
+  );
+
+  assert.match(workflow, /name: Capture exact standalone player size/);
+  assert.match(workflow, /matrix\.test-mode == 'standalone'/);
+  assert.match(workflow, /Get-ChildItem -LiteralPath \$playerDir -File -Recurse -Force/);
+  assert.match(workflow, /totalBytes = \$totalBytes/);
+  assert.match(workflow, /executableBytes = \(Get-Item -LiteralPath \$playerExe\)\.Length/);
+  assert.match(workflow, /player-size\.json/);
+});
+
 test("buildComparisonSections bolds per-scenario throughput winners only", () => {
   const sections = buildComparisonSections(
     standaloneRows([
