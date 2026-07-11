@@ -174,7 +174,12 @@ namespace DxMessaging.Core.MessageBus
 
         private static CollectionPool<
             Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-        > ContextHandlerByTargetDicts = ContextHandlerByTargetDictPoolHolder.Instance;
+        > ContextHandlerByTargetDictsOverride;
+
+        private static CollectionPool<
+            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
+        > ContextHandlerByTargetDicts =>
+            ContextHandlerByTargetDictsOverride ?? ContextHandlerByTargetDictPoolHolder.Instance;
 
         private static CollectionPool<
             Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
@@ -1098,6 +1103,7 @@ namespace DxMessaging.Core.MessageBus
 #if UNITY_2021_3_OR_NEWER
         private static List<WeakReference<MessageBus>> IdleSweepBuses = new();
         private static IdleSweepRegistryBenchmarkScope ActiveIdleSweepRegistryBenchmarkScope;
+        private static ContextMapPoolBenchmarkScope ActiveContextMapPoolBenchmarkScope;
         private static bool RuntimeSettingsSubscribed;
 
         private static void RegisterForIdleSweeps(MessageBus bus)
@@ -1185,6 +1191,9 @@ namespace DxMessaging.Core.MessageBus
             return new ContextMapPoolBenchmarkScope();
         }
 
+        internal static bool ContextMapPoolOverrideActiveForBenchmark =>
+            ContextHandlerByTargetDictsOverride != null;
+
         internal static ContextMapPoolBenchmarkObservation ObserveContextMapPoolForBenchmark()
         {
             CollectionPool<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> current =
@@ -1265,10 +1274,14 @@ namespace DxMessaging.Core.MessageBus
         {
             private readonly CollectionPool<
                 Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
+            > _savedOverride;
+            private readonly CollectionPool<
+                Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
             > _savedPool;
             private readonly CollectionPool<
                 Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
             > _isolated;
+            private readonly ContextMapPoolBenchmarkScope _parent;
             private readonly int _ownerThreadId;
             private readonly bool _initialUseLru;
             private readonly int _initialMaxRetained;
@@ -1276,48 +1289,71 @@ namespace DxMessaging.Core.MessageBus
 
             internal ContextMapPoolBenchmarkScope()
             {
-                _savedPool = ContextHandlerByTargetDicts;
                 _ownerThreadId = Environment.CurrentManagedThreadId;
-                _initialUseLru = _savedPool.UseLru;
-                _initialMaxRetained = _savedPool.MaxRetained;
-                _isolated = CreateContextHandlerByTargetPool(_initialMaxRetained, _initialUseLru);
-                ContextHandlerByTargetDicts = _isolated;
+                lock (typeof(ContextMapPoolBenchmarkScope))
+                {
+                    if (
+                        ActiveContextMapPoolBenchmarkScope != null
+                        && ActiveContextMapPoolBenchmarkScope._ownerThreadId != _ownerThreadId
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            "Nested context-map benchmark scopes must share one owning thread."
+                        );
+                    }
+
+                    _parent = ActiveContextMapPoolBenchmarkScope;
+                    _savedOverride = ContextHandlerByTargetDictsOverride;
+                    _savedPool = ContextHandlerByTargetDicts;
+                    _initialUseLru = _savedPool.UseLru;
+                    _initialMaxRetained = _savedPool.MaxRetained;
+                    _isolated = CreateContextHandlerByTargetPool(
+                        _initialMaxRetained,
+                        _initialUseLru
+                    );
+                    ActiveContextMapPoolBenchmarkScope = this;
+                    ContextHandlerByTargetDictsOverride = _isolated;
+                }
             }
 
             public void Dispose()
             {
-                if (_disposed)
+                lock (typeof(ContextMapPoolBenchmarkScope))
                 {
-                    return;
-                }
+                    if (_disposed)
+                    {
+                        return;
+                    }
 
-                if (Environment.CurrentManagedThreadId != _ownerThreadId)
-                {
-                    throw new InvalidOperationException(
-                        "Context-map benchmark scopes must be disposed on their owning thread."
-                    );
-                }
-                if (!ReferenceEquals(ContextHandlerByTargetDicts, _isolated))
-                {
-                    throw new InvalidOperationException(
-                        "Context-map benchmark scopes must be disposed in strict LIFO order."
-                    );
-                }
+                    if (Environment.CurrentManagedThreadId != _ownerThreadId)
+                    {
+                        throw new InvalidOperationException(
+                            "Context-map benchmark scopes must be disposed on their owning thread."
+                        );
+                    }
+                    if (!ReferenceEquals(ActiveContextMapPoolBenchmarkScope, this))
+                    {
+                        throw new InvalidOperationException(
+                            "Context-map benchmark scopes must be disposed in strict LIFO order."
+                        );
+                    }
 
-                bool effectiveUseLru = _isolated.UseLru;
-                int effectiveMaxRetained = _isolated.MaxRetained;
-                if (effectiveUseLru != _initialUseLru)
-                {
-                    _savedPool.UseLru = effectiveUseLru;
-                }
-                if (effectiveMaxRetained != _initialMaxRetained)
-                {
-                    _savedPool.MaxRetained = effectiveMaxRetained;
-                }
+                    bool effectiveUseLru = _isolated.UseLru;
+                    int effectiveMaxRetained = _isolated.MaxRetained;
+                    if (effectiveUseLru != _initialUseLru)
+                    {
+                        _savedPool.UseLru = effectiveUseLru;
+                    }
+                    if (effectiveMaxRetained != _initialMaxRetained)
+                    {
+                        _savedPool.MaxRetained = effectiveMaxRetained;
+                    }
 
-                _disposed = true;
-                _ = _isolated.Trim(0);
-                ContextHandlerByTargetDicts = _savedPool;
+                    _disposed = true;
+                    _ = _isolated.Trim(0);
+                    ContextHandlerByTargetDictsOverride = _savedOverride;
+                    ActiveContextMapPoolBenchmarkScope = _parent;
+                }
             }
         }
 

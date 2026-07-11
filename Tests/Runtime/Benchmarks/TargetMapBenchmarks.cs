@@ -787,6 +787,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         [Test]
+        public void ContextMapPoolScopeRestoresAbsentOverride()
+        {
+            Assert.IsFalse(MessageBus.ContextMapPoolOverrideActiveForBenchmark);
+
+            using (MessageBus.IsolateContextMapPoolForBenchmark())
+            {
+                Assert.IsTrue(MessageBus.ContextMapPoolOverrideActiveForBenchmark);
+            }
+
+            Assert.IsFalse(MessageBus.ContextMapPoolOverrideActiveForBenchmark);
+        }
+
+        [Test]
         public void ContextMapPoolScopesRestoreNestedIdentityAndCapacity()
         {
             MessageBus.ContextMapPoolBenchmarkObservation baseline =
