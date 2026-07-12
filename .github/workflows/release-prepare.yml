@@ -34,6 +34,14 @@ on:
         description: "Print the prepared diff without pushing a branch or opening a PR"
         type: boolean
         default: false
+      maintenance-pr:
+        description: "Operator-only PR number to exact-head squash merge with the auto-commit App"
+        type: string
+        required: false
+      maintenance-head:
+        description: "Required 40-character head SHA for maintenance-pr"
+        type: string
+        required: false
 
 concurrency:
   group: release-prepare
@@ -43,8 +51,55 @@ permissions:
   contents: read
 
 jobs:
+  maintenance-merge:
+    name: Exact-head maintenance merge
+    if: ${{ inputs.maintenance-pr != '' || inputs.maintenance-head != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Generate the auto-commit GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Validate and squash merge the exact PR head
+        uses: actions/github-script@v9
+        env:
+          MAINTENANCE_PR: ${{ inputs.maintenance-pr }}
+          MAINTENANCE_HEAD: ${{ inputs.maintenance-head }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const prText = process.env.MAINTENANCE_PR;
+            const expectedHead = process.env.MAINTENANCE_HEAD;
+            if (!/^[1-9][0-9]*$/.test(prText) || !/^[0-9a-f]{40}$/.test(expectedHead)) {
+              core.setFailed('maintenance-pr and a lowercase 40-character maintenance-head are both required.');
+              return;
+            }
+            const pull_number = Number(prText);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number });
+            if (pr.state !== 'open' || pr.mergeable !== true || pr.mergeable_state !== 'clean' ||
+                pr.base.ref !== context.payload.repository.default_branch ||
+                pr.head.repo.full_name !== context.repo.owner + '/' + context.repo.repo ||
+                pr.head.sha !== expectedHead) {
+              core.setFailed('PR was not clean and mergeable, or its repository, base branch, or exact head did not match.');
+              return;
+            }
+            const { data: result } = await github.rest.pulls.merge({
+              ...context.repo,
+              pull_number,
+              sha: expectedHead,
+              merge_method: 'squash',
+            });
+            if (!result.merged) core.setFailed(`Merge refused: ${result.message}`);
+
   prepare:
     name: Prepare release PR
+    if: ${{ inputs.maintenance-pr == '' && inputs.maintenance-head == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
