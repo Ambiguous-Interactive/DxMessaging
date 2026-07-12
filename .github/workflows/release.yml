@@ -334,9 +334,11 @@ jobs:
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
+          runner-id: ${{ runner.name }}
           timeout-minutes: "300"
         env:
-          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Run Unity Test Runner
         id: run_tests
@@ -371,8 +373,10 @@ jobs:
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
+          runner-id: ${{ runner.name }}
         env:
-          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       # CANCELLATION + TIMEOUT DIAGNOSTIC: when Unity 2022 hangs in csc the
       # runner step times out (or the operator cancels), and the verify
@@ -503,9 +507,11 @@ jobs:
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
+          runner-id: ${{ runner.name }}
           timeout-minutes: "300"
         env:
-          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Export the .unitypackage
         timeout-minutes: 120
@@ -537,8 +543,10 @@ jobs:
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
+          runner-id: ${{ runner.name }}
         env:
-          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}

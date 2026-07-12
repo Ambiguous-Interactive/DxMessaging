@@ -104,6 +104,10 @@ organization lock.
     uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
     with:
       lock-name: wallstop-organization-builds
+      runner-id: ${{ runner.name }}
+    env:
+      BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+      BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
   ```
 
   The matching release step uses `release-build-lock@v1` with `if:
@@ -181,6 +185,8 @@ tracked file or generated artifact.
 - [ ] Confirm Unity workflows can read the three required secret names:
       `UNITY_SERIAL`, `UNITY_EMAIL`, and `UNITY_PASSWORD` (the classic-serial
       activation path; the single CI activation path).
+- [ ] Confirm licensed Unity workflows can read `BUILD_LOCK_APP_ID` and
+      `BUILD_LOCK_APP_PRIVATE_KEY` for the central organization lock.
 - [ ] Confirm the retired `UNITY_LICENSING_SERVER` secret is removed from the
       workflows. The `validate-unity-license` action fails the run if it is still
       set. No local Unity license is needed: local verification runs on the host

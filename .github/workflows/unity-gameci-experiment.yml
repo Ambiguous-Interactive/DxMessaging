@@ -172,9 +172,11 @@ jobs:
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: game-ci-experiment
+          runner-id: ${{ runner.name }}
           timeout-minutes: "300"
         env:
-          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Run GameCI normal project mode
         id: game_ci
@@ -222,8 +224,10 @@ jobs:
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: game-ci-experiment
+          runner-id: ${{ runner.name }}
         env:
-          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}
