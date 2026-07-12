@@ -72,10 +72,10 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function getJobBlock(source, jobId) {
+function getJobBlock(source, jobId, sourceName = "ci.yml") {
   const header = new RegExp(`^  ${escapeRegExp(jobId)}:\n`, "m");
   const match = header.exec(source);
-  assert.ok(match, `ci.yml must define a ${jobId} job`);
+  assert.ok(match, `${sourceName}:${jobId} job must exist`);
 
   const start = match.index;
   const rest = source.slice(start + match[0].length);
@@ -304,7 +304,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   for (const [file, jobId, licensedWorkName] of UNITY_LOCK_WINDOWS) {
     const label = `${file}:${jobId}`;
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
-    const job = getJobBlock(source, jobId);
+    const job = getJobBlock(source, jobId, file);
     assert.equal(job.split(acquire).length - 1, 1, `${label} acquire count`);
     assert.equal(job.split(release).length - 1, 1, `${label} release count`);
     const positions = ["Acquire organization Unity lock", licensedWorkName, "Return Unity license", "Release organization Unity lock"].map((name) => job.indexOf(`      - name: ${name}`));
