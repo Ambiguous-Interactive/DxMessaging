@@ -206,13 +206,14 @@ jobs:
       # and run-ci-tests.ps1 ran above only with -GenerateOnly (it exits before
       # exporting UNITY_EDITOR_PATH), so this composite has no editor path to
       # resolve and intentionally NO-OPS here (it logs a notice and exits 0).
-      # The serial seat game-ci activated is reclaimed by: (1) game-ci's own
-      # return-license (best-effort; Linux-only/flaky on Windows self-hosted),
-      # and definitively by (2) the next REQUIRED Unity run's return-at-start,
-      # which is account-wide and version-agnostic (Layer 4). This is acceptable
-      # because the experiment is workflow_dispatch-only and continue-on-error.
+      # GameCI still attempts its own best-effort return-license. Because this
+      # composite cannot independently prove that return, it reports false and
+      # the lifecycle-aware lock quarantines the runner's slot. A later job on
+      # the same runner can reclaim it and perform the required return-at-start.
       - name: Return Unity license
+        id: return_unity_license
         if: always()
+        timeout-minutes: 5
         uses: ./.github/actions/return-unity-license
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -225,6 +226,7 @@ jobs:
           lock-name: wallstop-organization-builds
           holder-id-suffix: game-ci-experiment
           runner-id: ${{ runner.name }}
+          resource-safe: ${{ steps.return_unity_license.outputs.resource-safe }}
         env:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
