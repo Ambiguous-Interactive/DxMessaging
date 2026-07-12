@@ -305,6 +305,7 @@ jobs:
         id: return_unity_license
         if: always()
         timeout-minutes: 5
+        continue-on-error: true
         uses: ./.github/actions/return-unity-license
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
