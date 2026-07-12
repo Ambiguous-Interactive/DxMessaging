@@ -200,16 +200,11 @@ jobs:
           checkName: GameCI experiment ${{ inputs.unity-version }} ${{ inputs.test-mode }}
           githubToken: ${{ secrets.GITHUB_TOKEN }}
 
-      # Kept for uniformity with the required workflows and to satisfy the
-      # leak-safety guard (every Unity-native job must carry this if:always()
-      # step). HONEST CAVEAT: this experiment uses game-ci's own editor install,
-      # and run-ci-tests.ps1 ran above only with -GenerateOnly (it exits before
-      # exporting UNITY_EDITOR_PATH), so this composite has no editor path to
-      # resolve and intentionally NO-OPS here (it logs a notice and exits 0).
-      # GameCI still attempts its own best-effort return-license. Because this
-      # composite cannot independently prove that return, it reports false and
-      # the lifecycle-aware lock quarantines the runner's slot. A later job on
-      # the same runner can reclaim it and perform the required return-at-start.
+      # GameCI attempts its own best-effort return-license. This independent
+      # backstop uses the editor path exported by Provision Unity Editor above,
+      # so it reports safe only when that local return succeeds (or proves the
+      # activation already absent); otherwise lifecycle release quarantines the
+      # runner's slot for same-runner recovery.
       - name: Return Unity license
         id: return_unity_license
         if: always()
