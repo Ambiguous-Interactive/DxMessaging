@@ -40,6 +40,10 @@ then acquire the central lock immediately before the licensed Unity section:
   uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
   with:
     lock-name: wallstop-organization-builds
+    runner-id: ${{ runner.name }}
+  env:
+    BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+    BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 ```
 
 The matching release step uses `release-build-lock@v1` with `if:
@@ -222,6 +226,8 @@ Set secret names without documenting values:
 - `UNITY_SERIAL`
 - `UNITY_EMAIL`
 - `UNITY_PASSWORD`
+- `BUILD_LOCK_APP_ID`
+- `BUILD_LOCK_APP_PRIVATE_KEY`
 
 CI activates Unity with a classic serial: `UNITY_SERIAL` plus the account
 `UNITY_EMAIL` and `UNITY_PASSWORD` are the single CI activation path. A serial
