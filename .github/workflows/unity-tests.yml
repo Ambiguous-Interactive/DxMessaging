@@ -122,7 +122,7 @@ jobs:
             echo "test-modes=${modes}"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Check for required Unity license secrets
+      - name: Check for required Unity CI secrets
         id: check-secrets
         env:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}

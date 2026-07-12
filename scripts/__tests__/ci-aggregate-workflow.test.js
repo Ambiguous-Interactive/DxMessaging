@@ -253,6 +253,38 @@ test("standalone static-check workflows are not reintroduced", () => {
   }
 });
 
+test("copyable build-lock documentation follows the runner and App credential contract", () => {
+  for (const relativePath of [
+    "docs/ops/ci-and-github-settings.md",
+    "docs/ops/ambiguous-release-migration.md"
+  ]) {
+    const source = fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
+    const acquireExample =
+      /uses: Ambiguous-Interactive\/ambiguous-organization-build-lock\/\.github\/actions\/acquire-build-lock@v1[\s\S]*?```/.exec(
+        source
+      );
+
+    assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
+    assert.match(acquireExample[0], /runner-id: \$\{\{ runner\.name \}\}/, relativePath);
+    assert.match(
+      acquireExample[0],
+      /BUILD_LOCK_APP_ID: \$\{\{ secrets\.BUILD_LOCK_APP_ID \}\}/,
+      relativePath
+    );
+    assert.match(
+      acquireExample[0],
+      /BUILD_LOCK_APP_PRIVATE_KEY: \$\{\{ secrets\.BUILD_LOCK_APP_PRIVATE_KEY \}\}/,
+      relativePath
+    );
+    assert.match(source, /`BUILD_LOCK_APP_ID`/, `${relativePath} must list the App ID secret`);
+    assert.match(
+      source,
+      /`BUILD_LOCK_APP_PRIVATE_KEY`/,
+      `${relativePath} must list the App key secret`
+    );
+  }
+});
+
 test("release workflows pin App write scopes and denied-push diagnostics", () => {
   const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
   const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");

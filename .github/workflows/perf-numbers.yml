@@ -217,7 +217,7 @@ jobs:
             printf 'unity-versions=%s\n' "$(jq -c '[.all[-1]]' "${file}")"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Check for required Unity license secrets
+      - name: Check for required licensed workflow secrets
         id: check-secrets
         env:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
