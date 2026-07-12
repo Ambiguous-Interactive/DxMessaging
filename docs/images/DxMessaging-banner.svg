@@ -46,7 +46,7 @@
     <text x="125" y="18" text-anchor="middle" fill="#c9d1d9">MIT</text>
     <!-- Version text must contain vX.Y.Z for version sync. -->
     <rect x="166" y="0" width="76" height="28" rx="8" fill="#0c1016" stroke="#232c38" stroke-width="1"/>
-    <text data-sync="version" x="204" y="18" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="11" font-weight="800" fill="#e9eef4">v3.2.0</text>
+    <text data-sync="version" x="204" y="18" text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', monospace" font-size="11" font-weight="800" fill="#e9eef4">v3.2.1</text>
   </g>
 
   <g transform="translate(536 40)" filter="url(#dxBannerSoftShadow)">
