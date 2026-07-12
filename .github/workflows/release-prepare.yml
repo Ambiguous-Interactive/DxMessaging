@@ -42,6 +42,10 @@ on:
         description: "Required 40-character head SHA for maintenance-pr"
         type: string
         required: false
+      reviewed-workflow-head:
+        description: "Required reviewed commit SHA of this temporary workflow branch"
+        type: string
+        required: false
 
 concurrency:
   group: release-prepare
@@ -53,10 +57,26 @@ permissions:
 jobs:
   maintenance-merge:
     name: Exact-head maintenance merge
-    if: ${{ inputs.maintenance-pr != '' || inputs.maintenance-head != '' }}
+    if: ${{ inputs.maintenance-pr != '' || inputs.maintenance-head != '' || inputs.reviewed-workflow-head != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Bind this dispatch to the reviewed workflow and intended PR
+        env:
+          MAINTENANCE_PR: ${{ inputs.maintenance-pr }}
+          MAINTENANCE_HEAD: ${{ inputs.maintenance-head }}
+          REVIEWED_WORKFLOW_HEAD: ${{ inputs.reviewed-workflow-head }}
+          TARGET_PR: "268"
+          TARGET_HEAD: b75a585af63015b71473c4d952a6d3afdcb5b4a9
+        run: |
+          set -euo pipefail
+          if [[ "${REVIEWED_WORKFLOW_HEAD}" != "${GITHUB_SHA}" || \
+                "${MAINTENANCE_PR}" != "${TARGET_PR}" || \
+                "${MAINTENANCE_HEAD}" != "${TARGET_HEAD}" ]]; then
+            echo "::error::Dispatch does not match the reviewed workflow commit and hard-bound PR head."
+            exit 1
+          fi
+
       - name: Generate the auto-commit GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -76,8 +96,8 @@ jobs:
           script: |
             const prText = process.env.MAINTENANCE_PR;
             const expectedHead = process.env.MAINTENANCE_HEAD;
-            if (!/^[1-9][0-9]*$/.test(prText) || !/^[0-9a-f]{40}$/.test(expectedHead)) {
-              core.setFailed('maintenance-pr and a lowercase 40-character maintenance-head are both required.');
+            if (prText !== '268' || expectedHead !== 'b75a585af63015b71473c4d952a6d3afdcb5b4a9') {
+              core.setFailed('The requested PR and head do not match this one-shot maintenance bridge.');
               return;
             }
             const pull_number = Number(prText);
@@ -99,7 +119,7 @@ jobs:
 
   prepare:
     name: Prepare release PR
-    if: ${{ inputs.maintenance-pr == '' && inputs.maintenance-head == '' }}
+    if: ${{ inputs.maintenance-pr == '' && inputs.maintenance-head == '' && inputs.reviewed-workflow-head == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
