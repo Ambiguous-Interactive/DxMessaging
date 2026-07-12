@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.1]
+
 ### Changed
 
 - Removed the dead typed `MessageHandler.Handle*` callback methods and internalized the
