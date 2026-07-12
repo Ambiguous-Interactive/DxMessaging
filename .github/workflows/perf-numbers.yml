@@ -223,13 +223,15 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          ORG_BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           if [ -n "${UNITY_SERIAL:-}" ] && \
              [ -n "${UNITY_EMAIL:-}" ] && \
              [ -n "${UNITY_PASSWORD:-}" ] && \
-             [ -n "${ORG_BUILD_LOCK_TOKEN:-}" ]; then
+             [ -n "${BUILD_LOCK_APP_ID:-}" ] && \
+             [ -n "${BUILD_LOCK_APP_PRIVATE_KEY:-}" ]; then
             echo "has-secrets=true" >> "${GITHUB_OUTPUT}"
           else
             echo "has-secrets=false" >> "${GITHUB_OUTPUT}"
@@ -437,9 +439,11 @@ jobs:
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          runner-id: ${{ runner.name }}
           timeout-minutes: "300"
         env:
-          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Run Unity Test Runner
         id: run_tests
@@ -494,8 +498,10 @@ jobs:
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          runner-id: ${{ runner.name }}
         env:
-          BUILD_LOCK_TOKEN: ${{ secrets.ORG_BUILD_LOCK_TOKEN }}
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Capture exact standalone player size
         if: ${{ matrix.test-mode == 'standalone' && steps.run_tests.outcome == 'success' }}
