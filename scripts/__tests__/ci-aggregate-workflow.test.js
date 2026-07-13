@@ -8,6 +8,15 @@ const path = require("node:path");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
 
+const UNITY_LOCK_WINDOWS = [
+  ["unity-tests.yml", "unity-tests", "Run Unity Test Runner"],
+  ["unity-gameci-experiment.yml", "game-ci-experiment", "Run GameCI normal project mode"],
+  ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner"],
+  ["release.yml", "unity-checks", "Run Unity Test Runner"],
+  ["release.yml", "unitypackage", "Export the .unitypackage"],
+  ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner"]
+];
+
 const CONSOLIDATED_WORKFLOWS = [
   "actionlint.yml",
   "csharpier-check.yml",
@@ -63,10 +72,10 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function getJobBlock(source, jobId) {
+function getJobBlock(source, jobId, sourceName = "ci.yml") {
   const header = new RegExp(`^  ${escapeRegExp(jobId)}:\n`, "m");
   const match = header.exec(source);
-  assert.ok(match, `ci.yml must define a ${jobId} job`);
+  assert.ok(match, `${sourceName}:${jobId} job must exist`);
 
   const start = match.index;
   const rest = source.slice(start + match[0].length);
@@ -285,9 +294,49 @@ test("copyable build-lock documentation follows the runner and App credential co
   }
 });
 
+// prettier-ignore
+test("every Unity lock window releases with explicit cleanup proof", () => {
+  const acquire = "uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1";
+  const release = "uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1";
+  const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"));
+  assert.equal(workflowSources.reduce((count, source) => count + source.split(acquire).length - 1, 0), UNITY_LOCK_WINDOWS.length);
+  assert.equal(workflowSources.reduce((count, source) => count + source.split(release).length - 1, 0), UNITY_LOCK_WINDOWS.length);
+  for (const [file, jobId, licensedWorkName] of UNITY_LOCK_WINDOWS) {
+    const label = `${file}:${jobId}`;
+    const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+    const job = getJobBlock(source, jobId, file);
+    assert.equal(job.split(acquire).length - 1, 1, `${label} acquire count`);
+    assert.equal(job.split(release).length - 1, 1, `${label} release count`);
+    const positions = ["Acquire organization Unity lock", licensedWorkName, "Return Unity license", "Release organization Unity lock"].map((name) => job.indexOf(`      - name: ${name}`));
+    assert.ok(positions.every((position) => position >= 0), `${label} lifecycle steps must all exist`);
+    assert.deepEqual(positions, [...positions].sort((a, b) => a - b), `${label} lifecycle order`);
+    const orderedContract = [escapeRegExp(acquire), "holder-id-suffix: (.+)\\n          runner-id: (.+)\\n", `- name: ${escapeRegExp(licensedWorkName)}`, "- name: Return Unity license\\n        id: return_unity_license\\n        if: always\\(\\)\\n        timeout-minutes: 5\\n        continue-on-error: true\\n        uses: \\.\\/\\.github\\/actions\\/return-unity-license", `- name: Release organization Unity lock\\n        if: always\\(\\)\\n        ${escapeRegExp(release)}`, "holder-id-suffix: \\1\\n          runner-id: \\2\\n          resource-safe: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-safe \\}\\}"].join("[\\s\\S]*?");
+    assert.match(job, new RegExp(orderedContract), label);
+  }
+});
+
+// prettier-ignore
+test("Unity return proof classifications remain fail closed and non-masking", () => {
+  const source = fs.readFileSync(path.join(REPO_ROOT, ".github", "actions", "return-unity-license", "action.yml"), "utf8");
+  const classifications = [
+    ["missing path", /No Unity editor path resolved; nothing to return\."[\s\S]*?exit 0[\s\S]*?Resolved Unity editor path does not exist; nothing to return\."[\s\S]*?exit 0/],
+    ["missing credentials", /UNITY_EMAIL\/UNITY_PASSWORD are not both set; cannot return[\s\S]*?exit 0/],
+    ["exit zero", /} else \{\n            Write-Host "::notice::Returned the Unity license seat\."\n            "resource-safe=true"/],
+    ["unrecognized nonzero", /if \(\$returnedEntitlement -and \$legacyFileUnavailable\)[\s\S]*?} else \{\n              Write-Host "::warning::Unity license return exited with code \$exitCode/],
+    ["allowlisted dual marker", /\$returnedEntitlement -and \$legacyFileUnavailable\)[\s\S]*?treating the seat return as successful\."\n              "resource-safe=true"/],
+    ["launch error", /} catch \{\n          Write-Host "::warning::Unity license return step hit an unexpected error:/],
+    ["non-masking", /# Defense-in-depth: this step must never fail the build\.\n        exit 0/]
+  ];
+  for (const [classification, pattern] of classifications) assert.match(source, pattern, classification);
+  assert.ok(source.indexOf("resource-safe=false") < source.indexOf("$editorPath ="));
+  assert.equal(source.split("resource-safe=false").length - 1, 1);
+  assert.equal(source.split("resource-safe=true").length - 1, 2);
+});
+
 test("release workflows pin App write scopes and denied-push diagnostics", () => {
   const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
   const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
+  // prettier-ignore
   for (const [name, source, pattern] of [
     ["prepare App scopes", getStepBlock(getJobBlock(prepare, "prepare"), "Generate the auto-commit GitHub App token"), /permission-contents: write[\s\S]*permission-pull-requests: write/],
     ["prepare fatal formatting", getStepBlock(getJobBlock(prepare, "prepare"), "Validate the prepared tree"), /^(?![\s\S]*\n        continue-on-error:)(?:(?!\n          set \+e\n)[\s\S])*\n          set -euo pipefail\n(?:(?!\n          set \+e\n)[\s\S])*\n          npm run format:check\n/],
