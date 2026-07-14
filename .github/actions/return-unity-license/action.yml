@@ -129,6 +129,9 @@ runs:
         EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
         HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
       run: |
+        Set-StrictMode -Version Latest
+        $PSNativeCommandUseErrorActionPreference = $false
+
         $healthyReason = if ([string]::IsNullOrWhiteSpace($env:HEALTHY_REASON)) {
           'return-missing-positive-evidence'
         } else {
