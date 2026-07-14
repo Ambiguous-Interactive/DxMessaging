@@ -128,4 +128,43 @@ runs:
       env:
         EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
         HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
-      run: python3 "${{ github.action_path }}/classify_unity_account_health.py"
+      run: |
+        Set-StrictMode -Version Latest
+        $PSNativeCommandUseErrorActionPreference = $false
+
+        $healthyReason = if ([string]::IsNullOrWhiteSpace($env:HEALTHY_REASON)) {
+          'return-missing-positive-evidence'
+        } else {
+          $env:HEALTHY_REASON
+        }
+        "resource-health=healthy" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "resource-reason=$healthyReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+        function Resolve-PythonApplication {
+          param([Parameter(Mandatory)][string]$Name)
+          foreach ($candidate in @(Get-Command $Name -CommandType Application -All -ErrorAction SilentlyContinue)) {
+            if ([string]::IsNullOrWhiteSpace($candidate.Source) -or -not (Test-Path -LiteralPath $candidate.Source -PathType Leaf)) {
+              continue
+            }
+            try {
+              & $candidate.Source --version *> $null
+              if ($LASTEXITCODE -eq 0) {
+                return $candidate
+              }
+            } catch {
+              continue
+            }
+          }
+          return $null
+        }
+
+        $python = Resolve-PythonApplication -Name python3
+        if ($null -eq $python) {
+          $python = Resolve-PythonApplication -Name python
+        }
+        if ($null -eq $python) {
+          Write-Host "::error::A usable python3 or python executable is required to classify sanitized Unity account-health evidence."
+          exit 1
+        }
+        & $python.Source "${{ github.action_path }}/classify_unity_account_health.py"
+        exit $LASTEXITCODE
