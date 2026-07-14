@@ -129,13 +129,27 @@ runs:
         EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
         HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
       run: |
-        $python = Get-Command python3 -CommandType Application -ErrorAction SilentlyContinue |
-          Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) -and (Test-Path -LiteralPath $_.Source -PathType Leaf) } |
-          Select-Object -First 1
+        function Resolve-PythonApplication {
+          param([Parameter(Mandatory)][string]$Name)
+          foreach ($candidate in @(Get-Command $Name -CommandType Application -All -ErrorAction SilentlyContinue)) {
+            if ([string]::IsNullOrWhiteSpace($candidate.Source) -or -not (Test-Path -LiteralPath $candidate.Source -PathType Leaf)) {
+              continue
+            }
+            try {
+              & $candidate.Source --version *> $null
+              if ($LASTEXITCODE -eq 0) {
+                return $candidate
+              }
+            } catch {
+              continue
+            }
+          }
+          return $null
+        }
+
+        $python = Resolve-PythonApplication -Name python3
         if ($null -eq $python) {
-          $python = Get-Command python -CommandType Application -ErrorAction SilentlyContinue |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) -and (Test-Path -LiteralPath $_.Source -PathType Leaf) } |
-            Select-Object -First 1
+          $python = Resolve-PythonApplication -Name python
         }
         if ($null -eq $python) {
           Write-Host "::error::A usable python3 or python executable is required to classify sanitized Unity account-health evidence."
