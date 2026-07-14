@@ -37,7 +37,7 @@ then acquire the central lock immediately before the licensed Unity section:
   uses: ./.github/actions/validate-unity-license
 
 - name: Acquire organization Unity lock
-  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
+  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
   with:
     lock-name: wallstop-organization-builds
     runner-id: ${{ runner.name }}
@@ -210,11 +210,12 @@ or manual dispatch only.
 
 Licensed Unity jobs intentionally skip:
 
-- pull requests from forks
+- all pull requests, including same-repository branches
 - pushes to unprotected branches
 
-This is expected. Fork PRs should still run GitHub-hosted checks that do not
-need Unity licenses or self-hosted runners.
+This is expected. Pull requests still run GitHub-hosted checks that do not need
+Unity credentials or self-hosted licensed execution. Licensed coverage runs
+after merge on the protected default branch or through controlled dispatch.
 
 The workflows must not use `pull_request_target` to check out untrusted fork
 code.
@@ -244,6 +245,14 @@ verification runs on the host editor through the MCP loop
 or log the serial or password; license logs go to `RUNNER_TEMP`, never to
 uploaded artifacts.
 
+The return adapter reports exact cleanup evidence to the organization lock.
+Exit zero or `Serial number unavailable` alone is not cleanup proof. Exact
+numeric `20111` activation evidence reports the account-blocked reason
+`unity-account-limit-20111`; `20113`, `400006`, termination, timeout, and
+missing positive return evidence remain runner-local uncertainty. Diagnostics
+contain only stable reason codes and SHA-256 evidence digests, never log text or
+credential values.
+
 Do not record secret existence, rotation status, the serial, or account
 credential state in tracked files or the local ignored runbook. Keep that
 security status in GitHub environment settings or the approved organization
@@ -251,10 +260,12 @@ password manager.
 
 ## GitHub Environments
 
-Use environments if the organization wants release approvals. The current
-workflow can run without an environment, but npm Trusted Publishing may be
-configured with one. If an environment is used, configure npm with the exact
-environment name.
+Every licensed Unity job uses the protected `unity-license` environment. Store
+the five Unity/build-lock secrets listed above in that environment rather than
+repository-wide scope. Configure required reviewers and protected-branch
+deployment policy before enabling licensed jobs. This repository permits the
+`master` branch and `v*` release tags. npm Trusted Publishing may use a separate
+environment configured with its exact environment name.
 
 For each environment, verify:
 

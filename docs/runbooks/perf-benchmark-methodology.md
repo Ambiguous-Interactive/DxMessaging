@@ -60,8 +60,8 @@ either (its profiler is stripped), so the renderer omits the all-unmeasured memo
 columns/matrices entirely and sources the count and byte metrics from the first scope
 that measured each (the PlayMode Mono leg), rather than reusing the count scope for
 bytes or publishing a vacuous wall of `n/a`. Bytes are
-INFORMATIONAL: the perf-delta PR comment renders byte deltas goodness-signed (`N fewer
-bytes` / `N more bytes`), but the regression gate stays on the allocation COUNT.
+INFORMATIONAL: rendered byte deltas are goodness-signed (`N fewer bytes` /
+`N more bytes`), but the regression gate stays on the allocation COUNT.
 There is **no median-of-runs**: the older approach
 of measuring several short sub-windows and comparing their median has been
 replaced by this single long window. The shared protocol is the single source of
@@ -378,20 +378,15 @@ stable machine keys
 (`DispatchBenchmarkScenarios.Key`, `ComparisonScenarios.Key`, and each bridge's
 `TechKey`), never on display names.
 
-The doc and PR comment carry a privacy-safe provenance line describing the
-runner HARDWARE -- CPU, physical/logical cores, clock, RAM size/speed/type, GPU,
-and OS -- collected by
+The generated doc carries a privacy-safe provenance line describing the runner
+HARDWARE -- CPU, physical/logical cores, clock, RAM size/speed/type, GPU, and OS
+-- collected by
 [`scripts/unity/collect-machine-specs.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/collect-machine-specs.ps1)
 and embedded by `render-perf-doc.js --machine-specs`. The script deliberately
 emits NO hostname or runner name; when the probe yields nothing the renderer
 falls back to a neutral description.
 
-On a pull request the refreshed numbers post as a non-blocking sticky comment
-(marker `<!-- dxm-perf-autonumbers -->`); the workflow never pushes to the
-contributor branch. A second sticky comment (marker `<!-- dxm-perf-deltas -->`)
-posts the DxMessaging-only deltas against the committed master baseline when a
-metric moves beyond tolerance or the regression gate will fail -- see
-[Permanent regression gate](#permanent-regression-gate). After the pull request
+Licensed benchmarks do not run on pull-request code. After the pull request
 merges, the push run re-renders and, if the doc OR the baseline moved, commits
 both `docs/architecture/performance.md` and the regenerated
 `docs/architecture/perf-baseline.csv` directly to the default branch. The
