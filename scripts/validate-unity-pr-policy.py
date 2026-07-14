@@ -39,12 +39,27 @@ def run_script(step: str) -> str:
     marker = "        run: |\n"
     start = step.find(marker)
     require(start >= 0, "aggregate step must contain a multiline run script")
-    lines = step[start + len(marker) :].splitlines()
-    require(all(not line or line.startswith("          ") for line in lines), "invalid run indentation")
-    return "\n".join(line[10:] if line else "" for line in lines)
+    lines = []
+    for line in step[start + len(marker) :].splitlines():
+        if line and not line.startswith("          "):
+            break
+        lines.append(line[10:] if line else "")
+    require(bool(lines), "aggregate run script must not be empty")
+    return "\n".join(lines)
 
 
 def validate() -> None:
+    parser_fixture = """      - name: Fixture
+        run: |
+          echo first
+          echo second
+        shell: bash
+"""
+    require(
+        run_script(parser_fixture) == "echo first\necho second",
+        "run parser must stop at the next step key",
+    )
+
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = job_block(source, "unity-tests")
     normalized = " ".join(licensed.split())
@@ -82,13 +97,16 @@ def validate() -> None:
     )
     if os.name != "nt":
         for name, matrix, preflight, unity, fork, docs_only, expected in cases:
-            environment = os.environ | {
-                "MATRIX_CONFIG_RESULT": matrix,
-                "RUNNER_PREFLIGHT_RESULT": preflight,
-                "UNITY_TESTS_RESULT": unity,
-                "FORK_PR": fork,
-                "DOCS_ONLY": docs_only,
-            }
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "MATRIX_CONFIG_RESULT": matrix,
+                    "RUNNER_PREFLIGHT_RESULT": preflight,
+                    "UNITY_TESTS_RESULT": unity,
+                    "FORK_PR": fork,
+                    "DOCS_ONLY": docs_only,
+                }
+            )
             result = subprocess.run(
                 ["bash", "-c", script],
                 env=environment,
