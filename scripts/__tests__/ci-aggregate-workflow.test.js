@@ -332,8 +332,8 @@ test("Unity return proof classifications remain fail closed and non-masking", ()
   for (const [classification, pattern] of classifications) assert.match(source, pattern, classification); assert.doesNotMatch(fs.readFileSync(path.join(REPO_ROOT, ".github", "workflows", "unity-benchmarks.yml"), "utf8"), /prior-command-succeeded/); assert.equal((source.match(/unity-return-preflight-/g) || []).length, 2); assert.equal((source.match(/Remove-Item -LiteralPath \$returnLogPath -Force/g) || []).length, 2);
   assert.ok(source.indexOf("resource-safe=false") < source.indexOf("$editorPath ="));
   assert.match(source, /resource-health[\s\S]*resource-reason/);
-  assert.match(actionSource, /Get-Command python3/);
-  assert.match(actionSource, /Get-Command python/);
+  assert.match(actionSource, /Get-Command python3[^\n]*(?:\n\s*)?\|\s*Select-Object -First 1/);
+  assert.match(actionSource, /Get-Command python[^\n]*(?:\n\s*)?\|\s*Select-Object -First 1/);
   assert.doesNotMatch(actionSource, /run:\s+python3\s+/);
 });
 // prettier-ignore

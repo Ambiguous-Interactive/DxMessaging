@@ -129,9 +129,11 @@ runs:
         EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
         HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
       run: |
-        $python = Get-Command python3 -CommandType Application -ErrorAction SilentlyContinue
+        $python = Get-Command python3 -CommandType Application -ErrorAction SilentlyContinue |
+          Select-Object -First 1
         if ($null -eq $python) {
-          $python = Get-Command python -CommandType Application -ErrorAction SilentlyContinue
+          $python = Get-Command python -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
         }
         if ($null -eq $python) {
           Write-Host "::error::Python is required to classify sanitized Unity account-health evidence."
