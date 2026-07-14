@@ -130,13 +130,15 @@ runs:
         HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
       run: |
         $python = Get-Command python3 -CommandType Application -ErrorAction SilentlyContinue |
+          Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) -and (Test-Path -LiteralPath $_.Source -PathType Leaf) } |
           Select-Object -First 1
         if ($null -eq $python) {
           $python = Get-Command python -CommandType Application -ErrorAction SilentlyContinue |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) -and (Test-Path -LiteralPath $_.Source -PathType Leaf) } |
             Select-Object -First 1
         }
         if ($null -eq $python) {
-          Write-Host "::error::Python is required to classify sanitized Unity account-health evidence."
+          Write-Host "::error::A usable python3 or python executable is required to classify sanitized Unity account-health evidence."
           exit 1
         }
         & $python.Source "${{ github.action_path }}/classify_unity_account_health.py"

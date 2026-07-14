@@ -329,7 +329,7 @@ test("Unity return proof classifications remain fail closed and non-masking", ()
   ];
   for (const [classification, pattern] of classifications) assert.match(source, pattern, classification); assert.doesNotMatch(fs.readFileSync(path.join(REPO_ROOT, ".github", "workflows", "unity-benchmarks.yml"), "utf8"), /prior-command-succeeded/); assert.equal((source.match(/unity-return-preflight-/g) || []).length, 2); assert.equal((source.match(/Remove-Item -LiteralPath \$returnLogPath -Force/g) || []).length, 2);
   assert.ok(source.indexOf("resource-safe=false") < source.indexOf("$editorPath ="));
-  assert.match(source, /resource-health[\s\S]*resource-reason/); assert.match(actionSource, /Get-Command python3[^\n]*(?:\n\s*)?\|\s*Select-Object -First 1/); assert.match(actionSource, /Get-Command python[^\n]*(?:\n\s*)?\|\s*Select-Object -First 1/); assert.doesNotMatch(actionSource, /run:\s+python3\s+/);
+  assert.match(source, /resource-health[\s\S]*resource-reason/); assert.match(actionSource, /Get-Command python3\b[\s\S]{0,400}?Test-Path[\s\S]{0,200}?Select-Object -First 1/); assert.match(actionSource, /Get-Command python\b[\s\S]{0,400}?Test-Path[\s\S]{0,200}?Select-Object -First 1/); assert.doesNotMatch(actionSource, /run:\s*python3(?:\s|$)|run:\s*\|[^\n]*\n\s*python3(?:\s|$)/m);
 });
 // prettier-ignore
 test("licensed workflows pin external actions and reject pull-request licensing", () => {
