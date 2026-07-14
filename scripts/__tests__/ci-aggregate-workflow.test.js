@@ -318,16 +318,16 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
 
 // prettier-ignore
 test("Unity return proof classifications remain fail closed and non-masking", () => {
-  const source = fs.readFileSync(path.join(REPO_ROOT, ".github", "actions", "return-unity-license", "action.yml"), "utf8");
+  const source = [path.join(".github", "actions", "return-unity-license", "action.yml"), path.join("scripts", "unity", "run-ci-tests.ps1"), path.join("scripts", "unity", "export-unitypackage.ps1")].map((file) => fs.readFileSync(path.join(REPO_ROOT, file), "utf8")).join("\n");
   const classifications = [
     ["prior evidence is classified independently of command outcome", /function Test-PriorReturnEvidence[\s\S]*?Test-UnityLicenseReturnResourceSafe -ExitCode 0 -LogPath \$env:PRIOR_RETURN_LOG_PATH/],
     ["exact classifier", /Test-UnityLicenseReturnResourceSafe/],
     ["unknown default", /resource-cleanup-status=unknown/],
     ["confirmed helper", /function Set-ConfirmedCleanupOutput[\s\S]*?resource-cleanup-status=confirmed/],
-    ["launch error", /} catch \{\n          Write-Host "::warning::Unity license return hit an unexpected error/],
-    ["non-masking", /Cleanup remains unknown and this runner will be quarantined\."\n        }\n        exit 0/]
+    ["launch error falls back to exact prior evidence", /} catch \{[\s\S]*?Test-PriorReturnEvidence[\s\S]*?Set-ConfirmedCleanupOutput[\s\S]*?Unity license return hit an unexpected error/],
+    ["non-masking", /Cleanup remains unknown and this runner will be quarantined\."[\s\S]*?exit 0/]
   ];
-  for (const [classification, pattern] of classifications) assert.match(source, pattern, classification); assert.doesNotMatch(fs.readFileSync(path.join(REPO_ROOT, ".github", "workflows", "unity-benchmarks.yml"), "utf8"), /prior-command-succeeded/);
+  for (const [classification, pattern] of classifications) assert.match(source, pattern, classification); assert.doesNotMatch(fs.readFileSync(path.join(REPO_ROOT, ".github", "workflows", "unity-benchmarks.yml"), "utf8"), /prior-command-succeeded/); assert.equal((source.match(/unity-return-preflight-/g) || []).length, 2); assert.equal((source.match(/Remove-Item -LiteralPath \$returnLogPath -Force/g) || []).length, 2);
   assert.ok(source.indexOf("resource-safe=false") < source.indexOf("$editorPath ="));
   assert.match(source, /resource-health[\s\S]*resource-reason/);
 });

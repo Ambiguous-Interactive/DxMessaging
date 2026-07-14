@@ -2817,7 +2817,15 @@ $playerLogPath = Join-Path $ArtifactsPath 'player.log'
 # the credentials would leak). Write them to a NON-uploaded temp dir instead.
 $licenseLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
 $activateLogPath = Join-Path $licenseLogDir "unity-activate-$UnityVersion-$TestMode.log"
+$preflightReturnLogPath = Join-Path $licenseLogDir "unity-return-preflight-$UnityVersion-$TestMode.log"
 $returnLogPath = Join-Path $licenseLogDir "unity-return-$UnityVersion-$TestMode.log"
+
+# The workflow may treat only this run's post-activation return as cleanup proof.
+# Delete any prior-run evidence before activation, and keep return-at-start output
+# in a separate file so it can never confirm cleanup for the activation below.
+if (Test-Path -LiteralPath $returnLogPath) {
+    Remove-Item -LiteralPath $returnLogPath -Force
+}
 
 # Return-at-start (defense-in-depth): reclaim a seat that a PRIOR force-killed run
 # on this persistent self-hosted runner may have leaked before its own finally /
@@ -2825,7 +2833,7 @@ $returnLogPath = Join-Path $licenseLogDir "unity-return-$UnityVersion-$TestMode.
 # seat is held this is a harmless no-op. Done BEFORE the activate so we start each
 # run from a clean licensing state.
 if ($hasLicenseCreds) {
-    Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $returnLogPath
+    Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $preflightReturnLogPath
 }
 
 try {

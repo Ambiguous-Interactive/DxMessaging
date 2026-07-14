@@ -787,11 +787,19 @@ $hasLicenseCreds = -not [string]::IsNullOrWhiteSpace($env:UNITY_SERIAL) -and
 # (which is uploaded); RUNNER_TEMP / system temp is never uploaded.
 $licenseLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
 $activateLogPath = Join-Path $licenseLogDir "unity-activate-$UnityVersion-unitypackage.log"
+$preflightReturnLogPath = Join-Path $licenseLogDir "unity-return-preflight-$UnityVersion-unitypackage.log"
 $returnLogPath = Join-Path $licenseLogDir "unity-return-$UnityVersion-unitypackage.log"
+
+# The workflow may treat only this run's post-activation return as cleanup proof.
+# Delete any prior-run evidence before activation, and keep return-at-start output
+# in a separate file so it can never confirm cleanup for the activation below.
+if (Test-Path -LiteralPath $returnLogPath) {
+    Remove-Item -LiteralPath $returnLogPath -Force
+}
 
 # Return-at-start: reclaim a seat a prior force-killed run may have leaked.
 if ($hasLicenseCreds) {
-    Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $returnLogPath
+    Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $preflightReturnLogPath
 }
 
 try {

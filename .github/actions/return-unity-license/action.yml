@@ -107,7 +107,18 @@ runs:
             Write-Host "::warning::Unity returned without exact positive evidence; cleanup remains unknown."
           }
         } catch {
-          Write-Host "::warning::Unity license return hit an unexpected error. Cleanup remains unknown and this runner will be quarantined."
+          $priorReturnConfirmed = $false
+          try {
+            $priorReturnConfirmed = Test-PriorReturnEvidence
+          } catch {
+            Write-Host "::warning::Exact prior return evidence could not be inspected."
+          }
+          if ($priorReturnConfirmed) {
+            Set-ConfirmedCleanupOutput
+            Write-Host "::notice::The dedicated post-activation return log contains exact positive cleanup evidence."
+          } else {
+            Write-Host "::warning::Unity license return hit an unexpected error. Cleanup remains unknown and this runner will be quarantined."
+          }
         }
         exit 0
 
