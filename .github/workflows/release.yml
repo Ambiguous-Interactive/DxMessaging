@@ -22,7 +22,7 @@ jobs:
       tag: ${{ steps.verify.outputs.tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -69,20 +69,20 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.18.0"
 
       - name: Setup .NET
         # validate:all runs check:analyzers, which builds the source
         # generators against the SDK pinned in SourceGenerators/global.json.
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           global-json-file: SourceGenerators/global.json
 
@@ -141,7 +141,7 @@ jobs:
           node scripts/validate-npm-meta.js --tarball ".artifacts/release/${PACKAGE_FILE}"
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-package
           path: .artifacts/release/
@@ -151,7 +151,7 @@ jobs:
           overwrite: true
 
       - name: Attest release package
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-path: .artifacts/release/*.tgz
 
@@ -245,6 +245,7 @@ jobs:
       - verify-tag
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB]
+    environment: unity-license
     # Workflow-level permissions are `contents: read` (no checks: write), so
     # this job needs its own checks: write or game-ci's check-run creation
     # 403s and the release Unity gate silently stops failing on red tests.
@@ -260,7 +261,7 @@ jobs:
         run: git config --global core.longpaths true
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
@@ -277,7 +278,7 @@ jobs:
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.18.0"
 
@@ -321,7 +322,7 @@ jobs:
 
       - name: Upload Unity provisioning diagnostics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-release-provisioning-editmode
           path: .artifacts/unity/release-editmode/provisioning
@@ -330,7 +331,7 @@ jobs:
 
       - name: Acquire organization Unity lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
@@ -366,18 +367,26 @@ jobs:
         timeout-minutes: 5
         continue-on-error: true
         uses: ./.github/actions/return-unity-license
+        with:
+          prior-return-log-path: ${{ runner.temp }}/unity-return-2022.3.45f1-editmode.log
+          prior-command-succeeded: ${{ steps.run_tests.outcome == 'success' }}
+          evidence-paths: |
+            ${{ runner.temp }}/unity-activate-2022.3.45f1-editmode.log
+            .artifacts/unity/release-editmode
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
           runner-id: ${{ runner.name }}
-          resource-safe: ${{ steps.return_unity_license.outputs.resource-safe }}
+          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
+          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
         env:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
@@ -417,7 +426,7 @@ jobs:
 
       - name: Upload release Unity artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-release-editmode
           path: .artifacts/unity/release-editmode
@@ -436,6 +445,7 @@ jobs:
       - runner-preflight
       - unity-checks
     runs-on: [self-hosted, Windows, RAM-64GB]
+    environment: unity-license
     permissions:
       contents: read
     timeout-minutes: 660
@@ -447,7 +457,7 @@ jobs:
         run: git config --global core.longpaths true
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
@@ -462,7 +472,7 @@ jobs:
       - name: Setup Node.js
         # export-unitypackage.ps1 stages the payload with `npm pack`, so the
         # shipped bytes are identical to the npm/UPM artifact.
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.18.0"
 
@@ -495,7 +505,7 @@ jobs:
 
       - name: Upload Unity provisioning diagnostics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-release-provisioning-unitypackage
           path: .artifacts/unity/release-unitypackage/provisioning
@@ -507,7 +517,7 @@ jobs:
           overwrite: true
 
       - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
@@ -518,6 +528,7 @@ jobs:
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Export the .unitypackage
+        id: export_unitypackage
         timeout-minutes: 120
         shell: pwsh
         env:
@@ -540,18 +551,26 @@ jobs:
         timeout-minutes: 5
         continue-on-error: true
         uses: ./.github/actions/return-unity-license
+        with:
+          prior-return-log-path: ${{ runner.temp }}/unity-return-2022.3.45f1-unitypackage.log
+          prior-command-succeeded: ${{ steps.export_unitypackage.outcome == 'success' }}
+          evidence-paths: |
+            ${{ runner.temp }}/unity-activate-2022.3.45f1-unitypackage.log
+            .artifacts/unity/release-unitypackage
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
           runner-id: ${{ runner.name }}
-          resource-safe: ${{ steps.return_unity_license.outputs.resource-safe }}
+          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
+          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
         env:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
@@ -564,7 +583,7 @@ jobs:
           label: Unity release unitypackage export
 
       - name: Upload the .unitypackage artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-unitypackage
           path: .artifacts/unity/release-unitypackage-dist/
@@ -574,7 +593,7 @@ jobs:
 
       - name: Upload export diagnostics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-release-unitypackage
           path: .artifacts/unity/release-unitypackage
@@ -604,18 +623,18 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.18.0"
           registry-url: "https://registry.npmjs.org"
 
       - name: Download release package
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-package
           path: .artifacts/release
@@ -623,7 +642,7 @@ jobs:
       - name: Download the .unitypackage artifact
         # Guaranteed present: publish only runs when the unitypackage job
         # succeeded (job-level needs), so this never blocks the npm publish.
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-unitypackage
           path: .artifacts/unitypackage
@@ -770,7 +789,7 @@ jobs:
           echo "::notice::Release ${tag} has all ${#expected[@]} expected assets."
 
       - name: Upload the Asset Store submission staging artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: asset-store-submission
           path: .artifacts/asset-store-submission/

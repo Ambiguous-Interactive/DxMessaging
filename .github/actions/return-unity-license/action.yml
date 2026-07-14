@@ -1,78 +1,93 @@
 name: Return Unity license
 description: >-
-  Defense-in-depth: explicitly return the per-run Unity license seat via
-  `Unity.exe -returnlicense` (classic serial activation). Runs as an if:always()
-  backstop for a killed/crashed/timed-out editor that could not return its own
-  seat. NEVER fails the build (a missing editor path or creds, or any error, is
-  non-fatal -- the next run's return-at-start is a further backstop).
+  Return the runner's Unity activation, classify exact cleanup evidence, and
+  report sanitized account-health evidence to the organization lock.
 inputs:
   unity-editor-path:
-    description: "Path to the resolved Unity editor exe (exported to GITHUB_ENV by run-ci-tests.ps1). When empty there is nothing to return."
+    description: "Path to the resolved Unity editor executable."
+    required: false
+  prior-return-log-path:
+    description: "Non-uploaded return log produced by the licensed command."
+    required: false
+  prior-command-succeeded:
+    description: "True only when the command producing prior-return-log-path succeeded."
+    required: false
+    default: "false"
+  evidence-paths:
+    description: "Newline-separated current-run files or directories to inspect for exact 20111 evidence."
     required: false
 outputs:
   resource-safe:
-    description: "Whether Unity confirmed that this runner's license activation was returned or already absent."
-    value: ${{ steps.return_license.outputs.resource-safe }}
+    description: "Compatibility cleanup result; false for blocked account health."
+    value: ${{ steps.health.outputs.resource-health == 'blocked' && 'false' || steps.return_license.outputs.resource-safe }}
+  resource-cleanup-status:
+    description: "confirmed only for exact positive cleanup evidence; otherwise unknown."
+    value: ${{ steps.health.outputs.resource-health == 'blocked' && 'unknown' || steps.return_license.outputs.resource-cleanup-status }}
+  resource-health:
+    description: "healthy or blocked account classification."
+    value: ${{ steps.health.outputs.resource-health }}
+  resource-reason:
+    description: "Stable sanitized evidence reason code."
+    value: ${{ steps.health.outputs.resource-reason }}
 runs:
   using: composite
   steps:
     - name: Return Unity license
       id: return_license
       shell: pwsh
+      env:
+        PRIOR_RETURN_LOG_PATH: ${{ inputs.prior-return-log-path }}
+        PRIOR_COMMAND_SUCCEEDED: ${{ inputs.prior-command-succeeded }}
       run: |
         Set-StrictMode -Version Latest
-        # Pin $PSNativeCommandUseErrorActionPreference = $false (mirrors the
-        # rationale in scripts/unity/run-ci-tests.ps1:32-42). PowerShell 7.4+
-        # can ENABLE the native-error behavior so that `& <native>` THROWS on a
-        # non-zero exit. If that fired here, `& $editorPath @returnArgs` would
-        # throw BEFORE `$exitCode = $LASTEXITCODE` runs, jumping straight to the
-        # catch and making the best-effort return's exit-code-classified warning
-        # unreliable across hosts. Pinning it $false keeps the LASTEXITCODE-based
-        # classification authoritative and identical on every runner. (Pre-7.4
-        # builds lack the variable; assigning it is harmless and StrictMode-safe.)
+        . (Join-Path '${{ github.action_path }}' 'Classify-UnityLicenseReturn.ps1')
         $PSNativeCommandUseErrorActionPreference = $false
 
-        # Best-effort, never-fails seat return. Top-level try/catch + a final
-        # `exit 0` guarantee this step can never fail the build: a leaked seat is
-        # also reclaimed by the NEXT run's return-at-start even if every branch
-        # below is skipped.
+        function Set-ConfirmedCleanupOutput {
+          "resource-safe=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "resource-cleanup-status=confirmed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "resource-reason=cleanup-confirmed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        }
+
+        function Test-PriorReturnEvidence {
+          if ($env:PRIOR_COMMAND_SUCCEEDED -ne 'true' -or [string]::IsNullOrWhiteSpace($env:PRIOR_RETURN_LOG_PATH)) {
+            return $false
+          }
+          return Test-UnityLicenseReturnResourceSafe -ExitCode 0 -LogPath $env:PRIOR_RETURN_LOG_PATH
+        }
+
         try {
-          # Fail closed. Every early return and unexpected error keeps this false;
-          # only a proven return below may overwrite it with true.
-          "resource-safe=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "resource-safe=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "resource-cleanup-status=unknown" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "resource-reason=return-missing-positive-evidence" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
           $editorPath = '${{ inputs.unity-editor-path }}'
           if ([string]::IsNullOrWhiteSpace($editorPath)) {
             $editorPath = $env:UNITY_EDITOR_PATH
           }
 
-          # Nothing to return when the editor path was never resolved (the Unity
-          # run never reached the point of exporting UNITY_EDITOR_PATH).
-          if ([string]::IsNullOrWhiteSpace($editorPath)) {
-            Write-Host "::notice::No Unity editor path resolved; nothing to return."
-            exit 0
-          }
-          if (-not (Test-Path -LiteralPath $editorPath -PathType Leaf)) {
-            Write-Host "::notice::Resolved Unity editor path does not exist; nothing to return."
+          if ([string]::IsNullOrWhiteSpace($editorPath) -or -not (Test-Path -LiteralPath $editorPath -PathType Leaf)) {
+            if (Test-PriorReturnEvidence) {
+              Set-ConfirmedCleanupOutput
+              Write-Host "::notice::Licensed work already produced exact positive Unity return evidence."
+            } else {
+              Write-Host "::notice::No usable Unity editor path or exact prior return evidence; cleanup remains unknown."
+            }
             exit 0
           }
 
-          # Serial activation returns by account, so both creds are required. If
-          # either is empty we cannot return -- warn (never echo the values) and
-          # exit 0 (the next run's return-at-start is the backstop).
           if ([string]::IsNullOrWhiteSpace($env:UNITY_EMAIL) -or [string]::IsNullOrWhiteSpace($env:UNITY_PASSWORD)) {
-            Write-Host "::warning::UNITY_EMAIL/UNITY_PASSWORD are not both set; cannot return the Unity license here. The next run's return-at-start is the backstop."
+            if (Test-PriorReturnEvidence) {
+              Set-ConfirmedCleanupOutput
+              Write-Host "::notice::Licensed work already produced exact positive Unity return evidence."
+            } else {
+              Write-Host "::warning::Unity credentials are unavailable and no exact prior return evidence exists; cleanup remains unknown."
+            }
             exit 0
           }
 
-          # SECURITY: email/password ride in the argument array, and Unity may echo
-          # account fragments into its log, so write the return log to a NON-uploaded
-          # temp dir (RUNNER_TEMP, fallback the system temp path), NOT under the
-          # uploaded artifacts. Never echo the args/secrets.
           $licenseLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
           $returnLog = Join-Path $licenseLogDir 'unity-return-license.log'
-
-          # SECURITY: do NOT echo this array (it carries the creds).
           $returnArgs = @(
             '-quit',
             '-batchmode',
@@ -84,51 +99,27 @@ runs:
           )
 
           Write-Host "::group::Return Unity license"
-          # Unity.exe is a Windows GUI-subsystem binary: PowerShell's `&` does NOT
-          # wait for it or set $LASTEXITCODE unless its stdout is consumed via the
-          # pipeline. `-logFile -` puts the log on stdout and `| Tee-Object` forces
-          # the wait and sets $LASTEXITCODE. Tee-Object DOES persist the log to
-          # $returnLog, but that target lives under the NON-uploaded temp dir
-          # ($licenseLogDir above), so it stays out of any UPLOADED ARTIFACT and the
-          # account fragments Unity may print cannot leak into uploads. Same proven
-          # idiom as run-ci-tests.ps1.
           & $editorPath @returnArgs 2>&1 | Tee-Object -FilePath $returnLog
           $exitCode = $LASTEXITCODE
           Write-Host "::endgroup::"
 
-          if ($exitCode -ne 0) {
-            $returnedEntitlement = $false
-            $legacyFileUnavailable = $false
-            try {
-              if (Test-Path -LiteralPath $returnLog -PathType Leaf) {
-                $returnedEntitlement = Select-String `
-                  -LiteralPath $returnLog `
-                  -Pattern 'Successfully returned the entitlement license' `
-                  -SimpleMatch `
-                  -Quiet
-                $legacyFileUnavailable = Select-String `
-                  -LiteralPath $returnLog `
-                  -Pattern 'Serial number unavailable for ULF return' `
-                  -SimpleMatch `
-                  -Quiet
-              }
-            } catch {
-              $returnedEntitlement = $false
-              $legacyFileUnavailable = $false
-            }
-
-            if ($returnedEntitlement -and $legacyFileUnavailable) {
-              Write-Host "::notice::Unity returned the entitlement license, then exited with code $exitCode while skipping legacy ULF return; treating the seat return as successful."
-              "resource-safe=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            } else {
-              Write-Host "::warning::Unity license return exited with code $exitCode; the next run's return-at-start is the backstop for the leaked seat."
-            }
+          $currentReturnConfirmed = Test-UnityLicenseReturnResourceSafe -ExitCode $exitCode -LogPath $returnLog
+          $priorReturnConfirmed = -not $currentReturnConfirmed -and (Test-PriorReturnEvidence)
+          if ($currentReturnConfirmed -or $priorReturnConfirmed) {
+            Set-ConfirmedCleanupOutput
+            Write-Host "::notice::Unity cleanup has exact positive return evidence."
           } else {
-            Write-Host "::notice::Returned the Unity license seat."
-            "resource-safe=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "::warning::Unity returned without exact positive evidence; cleanup remains unknown."
           }
         } catch {
-          Write-Host "::warning::Unity license return step hit an unexpected error: $($_.Exception.Message). The next run's return-at-start is the backstop."
+          Write-Host "::warning::Unity license return hit an unexpected error. Cleanup remains unknown and this runner will be quarantined."
         }
-        # Defense-in-depth: this step must never fail the build.
         exit 0
+
+    - name: Classify Unity account health
+      id: health
+      shell: pwsh
+      env:
+        EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
+        HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
+      run: python3 "${{ github.action_path }}/classify_unity_account_health.py"

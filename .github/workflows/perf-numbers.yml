@@ -126,11 +126,10 @@ jobs:
     outputs:
       latest-version: ${{ steps.versions.outputs.latest-version }}
       unity-versions: ${{ steps.versions.outputs.unity-versions }}
-      has-required-secrets: ${{ steps.check-secrets.outputs.has-secrets }}
       has-autocommit-app: ${{ steps.check-autocommit-app.outputs.has-app }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -217,26 +216,6 @@ jobs:
             printf 'unity-versions=%s\n' "$(jq -c '[.all[-1]]' "${file}")"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Check for required licensed workflow secrets
-        id: check-secrets
-        env:
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -n "${UNITY_SERIAL:-}" ] && \
-             [ -n "${UNITY_EMAIL:-}" ] && \
-             [ -n "${UNITY_PASSWORD:-}" ] && \
-             [ -n "${BUILD_LOCK_APP_ID:-}" ] && \
-             [ -n "${BUILD_LOCK_APP_PRIVATE_KEY:-}" ]; then
-            echo "has-secrets=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "has-secrets=false" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: Check for the auto-commit GitHub App credentials
         id: check-autocommit-app
         # Gates the post-merge commit job so a repo that has not yet provisioned
@@ -262,13 +241,11 @@ jobs:
     name: Perf benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
     needs:
       - runner-preflight
-    # Same-repo gate (forks cannot run licensed Unity or be pushed to) AND the
-    # licensed-secret gate. Mirrors unity-tests.yml's same-repo expression.
+    # Licensed Unity runs only after protected code lands or through a controlled
+    # dispatch. Pull requests retain their nonlicensed workflow signal.
     if: >-
       ${{
-        (github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository) &&
-        needs.runner-preflight.outputs.has-required-secrets == 'true'
+        github.event_name != 'pull_request'
       }}
     # NON-BLOCKING PlayMode leg. The Standalone leg is the throughput HEADLINE +
     # baseline source and MUST gate publishing; the PlayMode leg only supplies the
@@ -283,6 +260,7 @@ jobs:
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
     # runner carrying it). Keep in sync with the preflight REQUIRED_LABELS.
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
+    environment: unity-license
     timeout-minutes: 660
     strategy:
       fail-fast: false
@@ -314,7 +292,7 @@ jobs:
         run: git config --global core.longpaths true
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
@@ -335,7 +313,7 @@ jobs:
           requested-labels: "self-hosted, Windows, RAM-64GB, fast"
 
       - name: Cache Unity Library and package caches
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         env:
           PACKAGE_HASH: >-
             ${{ hashFiles(
@@ -355,7 +333,7 @@ jobs:
           key: Library-perf-${{ runner.os }}-${{ runner.arch }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ env.PACKAGE_HASH }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.18.0"
 
@@ -426,7 +404,7 @@ jobs:
 
       - name: Upload Unity provisioning diagnostics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: perf-provisioning-${{ matrix.unity-version }}-${{ matrix.test-mode }}
           path: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}/provisioning
@@ -435,7 +413,7 @@ jobs:
 
       - name: Acquire organization Unity lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -491,18 +469,26 @@ jobs:
         timeout-minutes: 5
         continue-on-error: true
         uses: ./.github/actions/return-unity-license
+        with:
+          prior-return-log-path: ${{ runner.temp }}/unity-return-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
+          prior-command-succeeded: ${{ steps.run_tests.outcome == 'success' }}
+          evidence-paths: |
+            ${{ runner.temp }}/unity-activate-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
+            .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
           runner-id: ${{ runner.name }}
-          resource-safe: ${{ steps.return_unity_license.outputs.resource-safe }}
+          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
+          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
         env:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
@@ -557,7 +543,7 @@ jobs:
 
       - name: Upload perf benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
           path: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -594,7 +580,7 @@ jobs:
       PERF_DOC: docs/architecture/performance.md
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           # Render against the PR's code (head.sha), not the merge commit, so the
           # "changed vs committed" comparison reflects this branch.
@@ -602,7 +588,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.18.0"
           cache: npm
@@ -619,7 +605,7 @@ jobs:
           fi
 
       - name: Download perf benchmark artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: perf-${{ env.LATEST_VERSION }}-*
           path: .artifacts/perf-download
@@ -680,7 +666,7 @@ jobs:
           fi
 
       - name: Upsert the perf-numbers PR comment
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           PERF_TABLE_FILE: ${{ steps.render.outputs.table-file }}
           PERF_CHANGED: ${{ steps.render.outputs.changed }}
@@ -840,7 +826,7 @@ jobs:
             steps.deltas.outputs.changed == 'true' ||
             steps.deltas.outputs.regressed == 'true'
           }}
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           PERF_DELTAS_FILE: ${{ steps.deltas.outputs.deltas-file }}
           PERF_CHANGED: ${{ steps.deltas.outputs.changed }}
@@ -988,13 +974,13 @@ jobs:
         # master/main branch protection. The job `if` above already proved both
         # secrets are present. The action's v3 metadata requires app-id; keep
         # this name aligned with actionlint instead of using legacy aliases.
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
           private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
 
       - name: Checkout default branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
@@ -1022,7 +1008,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.default-branch.outputs.fresh == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.18.0"
           cache: npm
@@ -1039,7 +1025,7 @@ jobs:
 
       - name: Download perf benchmark artifacts
         if: steps.default-branch.outputs.fresh == 'true'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: perf-${{ env.LATEST_VERSION }}-*
           path: .artifacts/perf-download

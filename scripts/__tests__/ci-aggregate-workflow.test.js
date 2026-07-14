@@ -7,7 +7,9 @@ const path = require("node:path");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
-
+const LOCK_ACTION_SHA = "cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af";
+const LOCK_ACTION_PREFIX =
+  "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 const UNITY_LOCK_WINDOWS = [
   ["unity-tests.yml", "unity-tests", "Run Unity Test Runner"],
   ["unity-gameci-experiment.yml", "game-ci-experiment", "Run GameCI normal project mode"],
@@ -268,10 +270,9 @@ test("copyable build-lock documentation follows the runner and App credential co
     "docs/ops/ambiguous-release-migration.md"
   ]) {
     const source = fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
-    const acquireExample =
-      /uses: Ambiguous-Interactive\/ambiguous-organization-build-lock\/\.github\/actions\/acquire-build-lock@v1[\s\S]*?```/.exec(
-        source
-      );
+    const acquireExample = new RegExp(
+      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${LOCK_ACTION_SHA}[\\s\\S]*?\`\`\``
+    ).exec(source);
 
     assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
     assert.match(acquireExample[0], /runner-id: \$\{\{ runner\.name \}\}/, relativePath);
@@ -296,8 +297,8 @@ test("copyable build-lock documentation follows the runner and App credential co
 
 // prettier-ignore
 test("every Unity lock window releases with explicit cleanup proof", () => {
-  const acquire = "uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1";
-  const release = "uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1";
+  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${LOCK_ACTION_SHA}`;
+  const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${LOCK_ACTION_SHA}`;
   const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"));
   assert.equal(workflowSources.reduce((count, source) => count + source.split(acquire).length - 1, 0), UNITY_LOCK_WINDOWS.length);
   assert.equal(workflowSources.reduce((count, source) => count + source.split(release).length - 1, 0), UNITY_LOCK_WINDOWS.length);
@@ -310,8 +311,9 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const positions = ["Acquire organization Unity lock", licensedWorkName, "Return Unity license", "Release organization Unity lock"].map((name) => job.indexOf(`      - name: ${name}`));
     assert.ok(positions.every((position) => position >= 0), `${label} lifecycle steps must all exist`);
     assert.deepEqual(positions, [...positions].sort((a, b) => a - b), `${label} lifecycle order`);
-    const orderedContract = [escapeRegExp(acquire), "holder-id-suffix: (.+)\\n          runner-id: (.+)\\n", `- name: ${escapeRegExp(licensedWorkName)}`, "- name: Return Unity license\\n        id: return_unity_license\\n        if: always\\(\\)\\n        timeout-minutes: 5\\n        continue-on-error: true\\n        uses: \\.\\/\\.github\\/actions\\/return-unity-license", `- name: Release organization Unity lock\\n        if: always\\(\\)\\n        ${escapeRegExp(release)}`, "holder-id-suffix: \\1\\n          runner-id: \\2\\n          resource-safe: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-safe \\}\\}"].join("[\\s\\S]*?");
+    const orderedContract = [escapeRegExp(acquire), "holder-id-suffix: (.+)\\n          runner-id: (.+)\\n", `- name: ${escapeRegExp(licensedWorkName)}`, "- name: Return Unity license\\n        id: return_unity_license\\n        if: always\\(\\)\\n        timeout-minutes: 5\\n        continue-on-error: true\\n        uses: \\.\\/\\.github\\/actions\\/return-unity-license", `- name: Release organization Unity lock\\n        if: always\\(\\)\\n        ${escapeRegExp(release)}`, "holder-id-suffix: \\1\\n          runner-id: \\2\\n          resource-cleanup-status: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-cleanup-status \\}\\}\\n          resource-health: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-health \\}\\}\\n          resource-reason: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-reason \\}\\}"].join("[\\s\\S]*?");
     assert.match(job, new RegExp(orderedContract), label);
+    assert.match(job, /\n    environment: unity-license\n/, `${label} protected environment`);
   }
 });
 
@@ -319,18 +321,36 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
 test("Unity return proof classifications remain fail closed and non-masking", () => {
   const source = fs.readFileSync(path.join(REPO_ROOT, ".github", "actions", "return-unity-license", "action.yml"), "utf8");
   const classifications = [
-    ["missing path", /No Unity editor path resolved; nothing to return\."[\s\S]*?exit 0[\s\S]*?Resolved Unity editor path does not exist; nothing to return\."[\s\S]*?exit 0/],
-    ["missing credentials", /UNITY_EMAIL\/UNITY_PASSWORD are not both set; cannot return[\s\S]*?exit 0/],
-    ["exit zero", /} else \{\n            Write-Host "::notice::Returned the Unity license seat\."\n            "resource-safe=true"/],
-    ["unrecognized nonzero", /if \(\$returnedEntitlement -and \$legacyFileUnavailable\)[\s\S]*?} else \{\n              Write-Host "::warning::Unity license return exited with code \$exitCode/],
-    ["allowlisted dual marker", /\$returnedEntitlement -and \$legacyFileUnavailable\)[\s\S]*?treating the seat return as successful\."\n              "resource-safe=true"/],
-    ["launch error", /} catch \{\n          Write-Host "::warning::Unity license return step hit an unexpected error:/],
-    ["non-masking", /# Defense-in-depth: this step must never fail the build\.\n        exit 0/]
+    ["prior evidence requires command success", /PRIOR_COMMAND_SUCCEEDED -ne 'true'[\s\S]*?return \$false/],
+    ["exact classifier", /Test-UnityLicenseReturnResourceSafe/],
+    ["unknown default", /resource-cleanup-status=unknown/],
+    ["confirmed helper", /function Set-ConfirmedCleanupOutput[\s\S]*?resource-cleanup-status=confirmed/],
+    ["launch error", /} catch \{\n          Write-Host "::warning::Unity license return hit an unexpected error/],
+    ["non-masking", /Cleanup remains unknown and this runner will be quarantined\."\n        }\n        exit 0/]
   ];
   for (const [classification, pattern] of classifications) assert.match(source, pattern, classification);
   assert.ok(source.indexOf("resource-safe=false") < source.indexOf("$editorPath ="));
-  assert.equal(source.split("resource-safe=false").length - 1, 1);
-  assert.equal(source.split("resource-safe=true").length - 1, 2);
+  assert.match(source, /resource-health[\s\S]*resource-reason/);
+});
+// prettier-ignore
+test("licensed workflows pin external actions and reject pull-request licensing", () => {
+  const files = [...new Set(UNITY_LOCK_WINDOWS.map(([file]) => file))];
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+    for (const line of source.split(/\r?\n/)) {
+      const match = /^\s*uses:\s+([^\s]+)(?:\s+#.*)?$/.exec(line);
+      if (match && !match[1].startsWith("./")) assert.match(match[1], /@[0-9a-f]{40}$/, `${file}: ${match[1]} must be immutable`);
+    }
+    const credentialPattern = /secrets\.(?:UNITY_(?:SERIAL|EMAIL|PASSWORD)|BUILD_LOCK_APP_(?:ID|PRIVATE_KEY))/g;
+    const sourceCredentialCount = [...source.matchAll(credentialPattern)].length;
+    const jobs = UNITY_LOCK_WINDOWS.filter(([candidate]) => candidate === file).map(([, jobId]) => getJobBlock(source, jobId, file));
+    const licensedCredentialCount = jobs.reduce((count, job) => count + [...job.matchAll(credentialPattern)].length, 0);
+    assert.equal(sourceCredentialCount, licensedCredentialCount, `${file}: credentials must be scoped to protected licensed jobs`);
+  }
+  for (const [file, jobId] of UNITY_LOCK_WINDOWS.filter(([file]) => ["perf-numbers.yml", "unity-tests.yml"].includes(file))) {
+    const job = getJobBlock(fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"), jobId, file);
+    assert.match(job, /github\.event_name != 'pull_request'/, `${file}:${jobId}`);
+  }
 });
 
 test("release workflows pin App write scopes and denied-push diagnostics", () => {

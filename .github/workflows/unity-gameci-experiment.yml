@@ -75,6 +75,7 @@ jobs:
     name: GameCI ${{ inputs.unity-version }} ${{ inputs.test-mode }}
     needs: runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB]
+    environment: unity-license
     timeout-minutes: 660
     continue-on-error: true
     steps:
@@ -85,7 +86,7 @@ jobs:
         run: git config --global core.longpaths true
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
@@ -98,7 +99,7 @@ jobs:
           matrix-note: "GameCI compatibility experiment (non-required)"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.18.0"
 
@@ -138,7 +139,7 @@ jobs:
 
       - name: Upload Unity provisioning diagnostics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-game-ci-provisioning-${{ inputs.unity-version }}-${{ inputs.test-mode }}
           path: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}/provisioning
@@ -168,7 +169,7 @@ jobs:
 
       - name: Acquire organization Unity lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@v1
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: game-ci-experiment
@@ -189,7 +190,7 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        uses: game-ci/unity-test-runner@v4
+        uses: game-ci/unity-test-runner@0ff419b913a3630032cbe0de48a0099b5a9f0ed9 # v4
         with:
           packageMode: false
           projectPath: .artifacts/unity/game-ci-projects/${{ inputs.unity-version }}-${{ inputs.test-mode }}
@@ -211,18 +212,22 @@ jobs:
         timeout-minutes: 5
         continue-on-error: true
         uses: ./.github/actions/return-unity-license
+        with:
+          evidence-paths: .artifacts/unity/game-ci/${{ inputs.unity-version }}-${{ inputs.test-mode }}
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@v1
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: game-ci-experiment
           runner-id: ${{ runner.name }}
-          resource-safe: ${{ steps.return_unity_license.outputs.resource-safe }}
+          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
+          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
         env:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
@@ -249,7 +254,7 @@ jobs:
 
       - name: Upload GameCI experiment artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-game-ci-experiment-${{ inputs.unity-version }}-${{ inputs.test-mode }}
           path: |
