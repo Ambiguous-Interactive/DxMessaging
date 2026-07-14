@@ -294,7 +294,6 @@ test("copyable build-lock documentation follows the runner and App credential co
     );
   }
 });
-
 // prettier-ignore
 test("every Unity lock window releases with explicit cleanup proof", () => {
   const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${LOCK_ACTION_SHA}`;
@@ -321,7 +320,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
 test("Unity return proof classifications remain fail closed and non-masking", () => {
   const source = fs.readFileSync(path.join(REPO_ROOT, ".github", "actions", "return-unity-license", "action.yml"), "utf8");
   const classifications = [
-    ["prior evidence requires command success", /PRIOR_COMMAND_SUCCEEDED -ne 'true'[\s\S]*?return \$false/],
+    ["prior evidence is classified independently of command outcome", /function Test-PriorReturnEvidence[\s\S]*?Test-UnityLicenseReturnResourceSafe -ExitCode 0 -LogPath \$env:PRIOR_RETURN_LOG_PATH/],
     ["exact classifier", /Test-UnityLicenseReturnResourceSafe/],
     ["unknown default", /resource-cleanup-status=unknown/],
     ["confirmed helper", /function Set-ConfirmedCleanupOutput[\s\S]*?resource-cleanup-status=confirmed/],
@@ -348,8 +347,9 @@ test("licensed workflows pin external actions and reject pull-request licensing"
     assert.equal(sourceCredentialCount, licensedCredentialCount, `${file}: credentials must be scoped to protected licensed jobs`);
   }
   for (const [file, jobId] of UNITY_LOCK_WINDOWS.filter(([file]) => ["perf-numbers.yml", "unity-tests.yml"].includes(file))) {
-    const job = getJobBlock(fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"), jobId, file);
-    assert.match(job, /github\.event_name != 'pull_request'/, `${file}:${jobId}`);
+    const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+    if (file === "perf-numbers.yml") assert.doesNotMatch(source, /\n  pull_request:|comment-perf-doc/, file);
+    else assert.match(getJobBlock(source, jobId, file), /github\.event_name != 'pull_request'/, `${file}:${jobId}`);
   }
 });
 

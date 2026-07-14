@@ -411,7 +411,6 @@ jobs:
         uses: ./.github/actions/return-unity-license
         with:
           prior-return-log-path: ${{ runner.temp }}/unity-return-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
-          prior-command-succeeded: ${{ steps.run_tests.outcome == 'success' }}
           evidence-paths: |
             ${{ runner.temp }}/unity-activate-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
             .artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}

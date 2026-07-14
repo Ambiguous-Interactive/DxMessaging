@@ -369,7 +369,6 @@ jobs:
         uses: ./.github/actions/return-unity-license
         with:
           prior-return-log-path: ${{ runner.temp }}/unity-return-2022.3.45f1-editmode.log
-          prior-command-succeeded: ${{ steps.run_tests.outcome == 'success' }}
           evidence-paths: |
             ${{ runner.temp }}/unity-activate-2022.3.45f1-editmode.log
             .artifacts/unity/release-editmode
@@ -553,7 +552,6 @@ jobs:
         uses: ./.github/actions/return-unity-license
         with:
           prior-return-log-path: ${{ runner.temp }}/unity-return-2022.3.45f1-unitypackage.log
-          prior-command-succeeded: ${{ steps.export_unitypackage.outcome == 'success' }}
           evidence-paths: |
             ${{ runner.temp }}/unity-activate-2022.3.45f1-unitypackage.log
             .artifacts/unity/release-unitypackage

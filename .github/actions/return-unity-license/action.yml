@@ -9,10 +9,6 @@ inputs:
   prior-return-log-path:
     description: "Non-uploaded return log produced by the licensed command."
     required: false
-  prior-command-succeeded:
-    description: "True only when the command producing prior-return-log-path succeeded."
-    required: false
-    default: "false"
   evidence-paths:
     description: "Newline-separated current-run files or directories to inspect for exact 20111 evidence."
     required: false
@@ -37,7 +33,6 @@ runs:
       shell: pwsh
       env:
         PRIOR_RETURN_LOG_PATH: ${{ inputs.prior-return-log-path }}
-        PRIOR_COMMAND_SUCCEEDED: ${{ inputs.prior-command-succeeded }}
       run: |
         Set-StrictMode -Version Latest
         . (Join-Path '${{ github.action_path }}' 'Classify-UnityLicenseReturn.ps1')
@@ -50,7 +45,7 @@ runs:
         }
 
         function Test-PriorReturnEvidence {
-          if ($env:PRIOR_COMMAND_SUCCEEDED -ne 'true' -or [string]::IsNullOrWhiteSpace($env:PRIOR_RETURN_LOG_PATH)) {
+          if ([string]::IsNullOrWhiteSpace($env:PRIOR_RETURN_LOG_PATH)) {
             return $false
           }
           return Test-UnityLicenseReturnResourceSafe -ExitCode 0 -LogPath $env:PRIOR_RETURN_LOG_PATH

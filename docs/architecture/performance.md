@@ -74,9 +74,9 @@ whichever leg could measure them and omitted when none could. A scope that canno
 measure a metric (the profiler-stripped Standalone leg) omits that column rather
 than filling it with `n/a`. The block also carries a privacy-safe provenance
 line describing the runner hardware (CPU, cores, clock, RAM, GPU, OS), never a
-hostname or runner name. On a pull request the refreshed numbers are posted as a
-non-blocking sticky comment; after the pull request merges, the same workflow
-commits the refreshed tables -- and the sibling baseline
+hostname or runner name. Licensed benchmarks do not run on pull-request code.
+After a pull request merges, the workflow commits the refreshed tables -- and
+the sibling baseline
 `perf-baseline.csv` that the regression gate compares against -- directly to the
 default branch when the auto-commit App is provisioned and the branch has not
 advanced past the measured commit. Do not edit it by hand. See the
