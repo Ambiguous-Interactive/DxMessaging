@@ -79,11 +79,12 @@
     "fix:csharp-underscores": "node scripts/fix-csharp-underscore-methods.js",
     "validate:asmdef-references": "node scripts/validate-asmdef-references.js",
     "validate:unity-versions": "node scripts/validate-unity-versions.js",
+    "validate:unity-pr-policy": "python3 scripts/validate-unity-pr-policy.py",
     "validate:js-loc-budget": "node scripts/validate-js-loc-budget.js",
     "validate:unity-license-classifiers": "python3 .github/actions/return-unity-license/classify_unity_account_health.py --self-test && pwsh -NoProfile -File .github/actions/return-unity-license/Classify-UnityLicenseReturn.ps1 -SelfTest",
     "validate:npm-meta": "node scripts/validate-npm-meta.js",
     "validate:docs:strict": "python3 -m venv .artifacts/docs-venv && .artifacts/docs-venv/bin/python -m pip install -r requirements-docs.txt && .artifacts/docs-venv/bin/mkdocs build --strict --site-dir _site",
-    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:js-loc-budget && npm run validate:unity-license-classifiers && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run check:skills-index && npm run check:issue-template-versions"
+    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run validate:unity-license-classifiers && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run check:skills-index && npm run check:issue-template-versions"
   },
   "devDependencies": {
     "cspell": "10.0.1",
