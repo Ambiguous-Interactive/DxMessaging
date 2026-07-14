@@ -318,9 +318,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
 
 // prettier-ignore
 test("Unity return proof classifications remain fail closed and non-masking", () => {
-  const actionSource = fs.readFileSync(path.join(REPO_ROOT, ".github", "actions", "return-unity-license", "action.yml"), "utf8");
-  const supportSources = [path.join("scripts", "unity", "run-ci-tests.ps1"), path.join("scripts", "unity", "export-unitypackage.ps1")].map((file) => fs.readFileSync(path.join(REPO_ROOT, file), "utf8"));
-  const source = [actionSource, ...supportSources].join("\n");
+  const actionSource = fs.readFileSync(path.join(REPO_ROOT, ".github", "actions", "return-unity-license", "action.yml"), "utf8"); const source = [actionSource, ...[path.join("scripts", "unity", "run-ci-tests.ps1"), path.join("scripts", "unity", "export-unitypackage.ps1")].map((file) => fs.readFileSync(path.join(REPO_ROOT, file), "utf8"))].join("\n");
   const classifications = [
     ["prior evidence is classified independently of command outcome", /function Test-PriorReturnEvidence[\s\S]*?Test-UnityLicenseReturnResourceSafe -ExitCode 0 -LogPath \$env:PRIOR_RETURN_LOG_PATH/],
     ["exact classifier", /Test-UnityLicenseReturnResourceSafe/],
@@ -331,10 +329,7 @@ test("Unity return proof classifications remain fail closed and non-masking", ()
   ];
   for (const [classification, pattern] of classifications) assert.match(source, pattern, classification); assert.doesNotMatch(fs.readFileSync(path.join(REPO_ROOT, ".github", "workflows", "unity-benchmarks.yml"), "utf8"), /prior-command-succeeded/); assert.equal((source.match(/unity-return-preflight-/g) || []).length, 2); assert.equal((source.match(/Remove-Item -LiteralPath \$returnLogPath -Force/g) || []).length, 2);
   assert.ok(source.indexOf("resource-safe=false") < source.indexOf("$editorPath ="));
-  assert.match(source, /resource-health[\s\S]*resource-reason/);
-  assert.match(actionSource, /Get-Command python3[^\n]*(?:\n\s*)?\|\s*Select-Object -First 1/);
-  assert.match(actionSource, /Get-Command python[^\n]*(?:\n\s*)?\|\s*Select-Object -First 1/);
-  assert.doesNotMatch(actionSource, /run:\s+python3\s+/);
+  assert.match(source, /resource-health[\s\S]*resource-reason/); assert.match(actionSource, /Get-Command python3[^\n]*(?:\n\s*)?\|\s*Select-Object -First 1/); assert.match(actionSource, /Get-Command python[^\n]*(?:\n\s*)?\|\s*Select-Object -First 1/); assert.doesNotMatch(actionSource, /run:\s+python3\s+/);
 });
 // prettier-ignore
 test("licensed workflows pin external actions and reject pull-request licensing", () => {
