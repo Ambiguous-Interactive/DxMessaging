@@ -2,6 +2,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -93,6 +94,18 @@ function getStepBlock(jobBlock, stepName) {
 
   const next = jobBlock.indexOf("\n      - name:", start + marker.length);
   return jobBlock.slice(start, next === -1 ? jobBlock.length : next);
+}
+
+function getRunScript(stepBlock) {
+  const marker = "        run: |\n";
+  const start = stepBlock.indexOf(marker);
+  assert.notEqual(start, -1, "step must include a multiline run script");
+  return stepBlock
+    .slice(start + marker.length)
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("          ") || line.length === 0)
+    .map((line) => line.slice(10))
+    .join("\n");
 }
 
 function extractShellPatternVariable(source, variableName) {
@@ -332,7 +345,7 @@ test("Unity return proof classifications remain fail closed and non-masking", ()
   assert.match(source, /resource-health[\s\S]*resource-reason/); assert.match(actionSource, /resource-health=healthy[\s\S]*?resource-reason=\$healthyReason[\s\S]*?function Resolve-PythonApplication/); assert.match(actionSource, /function Resolve-PythonApplication[\s\S]*?Get-Command \$Name[^\n]*-All[\s\S]*?Test-Path[\s\S]*?--version[\s\S]*?LASTEXITCODE -eq 0/); assert.match(actionSource, /Resolve-PythonApplication -Name python3\b/); assert.match(actionSource, /Resolve-PythonApplication -Name python\b/); assert.doesNotMatch(actionSource, /run:\s*python3(?:\s|$)|run:\s*\|[^\n]*\n\s*python3(?:\s|$)/m);
 });
 // prettier-ignore
-test("licensed workflows pin external actions and reject pull-request licensing", () => {
+test("licensed workflows pin external actions and guard pull-request licensing", () => {
   const files = [...new Set(UNITY_LOCK_WINDOWS.map(([file]) => file))];
   for (const file of files) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
@@ -349,8 +362,85 @@ test("licensed workflows pin external actions and reject pull-request licensing"
   for (const [file, jobId] of UNITY_LOCK_WINDOWS.filter(([file]) => ["perf-numbers.yml", "unity-tests.yml"].includes(file))) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
     if (file === "perf-numbers.yml") assert.doesNotMatch(source, /\n  pull_request:|comment-perf-doc/, file);
-    else assert.match(getJobBlock(source, jobId, file), /github\.event_name != 'pull_request'/, `${file}:${jobId}`);
+    else {
+      const job = getJobBlock(source, jobId, file);
+      assert.match(
+        job,
+        /github\.event_name != 'pull_request' \|\|\s*github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+        `${file}:${jobId} must admit same-repository PRs and reject forks`
+      );
+      assert.doesNotMatch(
+        job,
+        /github\.event_name != 'pull_request' &&/,
+        `${file}:${jobId} must not reject every pull request`
+      );
+    }
   }
+});
+
+test("Unity CI aggregate fails closed for unexpected licensed-job skips", () => {
+  const source = fs.readFileSync(path.join(WORKFLOW_DIR, "unity-tests.yml"), "utf8");
+  const gate = getJobBlock(source, "unity-ci-success", "unity-tests.yml");
+
+  assert.match(gate, /\n    if: \$\{\{ always\(\) \}\}\n/);
+  assert.doesNotMatch(gate, /re-actors\/alls-green|allowed-skips/);
+  for (const variable of [
+    "MATRIX_CONFIG_RESULT",
+    "RUNNER_PREFLIGHT_RESULT",
+    "UNITY_TESTS_RESULT",
+    "FORK_PR",
+    "DOCS_ONLY"
+  ]) {
+    assert.match(gate, new RegExp(`\\n          ${variable}:`), `${variable} must be explicit`);
+  }
+  assert.match(gate, /if \[ "\$\{MATRIX_CONFIG_RESULT\}" != "success" \]; then/);
+  assert.match(
+    gate,
+    /if \[ "\$\{FORK_PR\}" = "true" \]; then[\s\S]*assert_result RUNNER_PREFLIGHT_RESULT skipped[\s\S]*assert_result UNITY_TESTS_RESULT skipped/
+  );
+  assert.match(
+    gate,
+    /elif \[ "\$\{DOCS_ONLY\}" = "true" \]; then[\s\S]*assert_result RUNNER_PREFLIGHT_RESULT success[\s\S]*assert_result UNITY_TESTS_RESULT skipped/
+  );
+  assert.match(
+    gate,
+    /else[\s\S]*assert_result RUNNER_PREFLIGHT_RESULT success[\s\S]*assert_result UNITY_TESTS_RESULT success/
+  );
+
+  // The repository's Linux CI executes the production Bash truth table. The
+  // legacy Windows bash.exe launcher depends on WSL service availability and
+  // is not a reliable local test runtime.
+  if (process.platform === "win32") return;
+
+  const script = getRunScript(getStepBlock(gate, "Verify Unity CI result shape"));
+  const cases = [
+    ["same-repository PR", "success", "success", "success", "false", "false", 0],
+    ["fork PR", "success", "skipped", "skipped", "true", "false", 0],
+    ["CI-owned docs-only PR", "success", "success", "skipped", "false", "true", 0],
+    ["same-repository PR skipped Unity", "success", "success", "skipped", "false", "false", 1],
+    ["fork unexpectedly ran Unity", "success", "skipped", "success", "true", "false", 1],
+    ["matrix config failed", "failure", "success", "success", "false", "false", 1]
+  ];
+  const invocation = ["set +e"];
+  const actualRef = "$" + "{actual}";
+  for (const [name, matrix, preflight, unity, fork, docsOnly, expectedExit] of cases) {
+    invocation.push(
+      "(",
+      `export MATRIX_CONFIG_RESULT=${matrix}`,
+      `export RUNNER_PREFLIGHT_RESULT=${preflight}`,
+      `export UNITY_TESTS_RESULT=${unity}`,
+      `export FORK_PR=${fork}`,
+      `export DOCS_ONLY=${docsOnly}`,
+      script,
+      ")",
+      "actual=$?",
+      `if [ "${actualRef}" -ne ${expectedExit} ]; then echo '${name}: expected ${expectedExit}, got '"${actualRef}" >&2; exit 99; fi`
+    );
+  }
+  invocation.push("exit 0");
+  const combined = invocation.join("\n");
+  const result = childProcess.spawnSync("bash", ["-c", combined], { encoding: "utf8" });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 });
 
 test("release workflows pin App write scopes and denied-push diagnostics", () => {
