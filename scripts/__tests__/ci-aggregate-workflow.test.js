@@ -327,7 +327,7 @@ test("Unity return proof classifications remain fail closed and non-masking", ()
     ["launch error", /} catch \{\n          Write-Host "::warning::Unity license return hit an unexpected error/],
     ["non-masking", /Cleanup remains unknown and this runner will be quarantined\."\n        }\n        exit 0/]
   ];
-  for (const [classification, pattern] of classifications) assert.match(source, pattern, classification);
+  for (const [classification, pattern] of classifications) assert.match(source, pattern, classification); assert.doesNotMatch(fs.readFileSync(path.join(REPO_ROOT, ".github", "workflows", "unity-benchmarks.yml"), "utf8"), /prior-command-succeeded/);
   assert.ok(source.indexOf("resource-safe=false") < source.indexOf("$editorPath ="));
   assert.match(source, /resource-health[\s\S]*resource-reason/);
 });
