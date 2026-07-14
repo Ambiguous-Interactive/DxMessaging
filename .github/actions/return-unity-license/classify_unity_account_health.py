@@ -6,6 +6,8 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import sys
+import tempfile
 from pathlib import Path
 
 
@@ -76,5 +78,29 @@ def main() -> None:
         print("::error title=Unity account blocked::Observed unity-account-limit-20111; central admission will stop when schema 5 is active.")
 
 
+def self_test() -> None:
+    fixtures = [
+        ("Licensing failed with error code 20111\n", "blocked", "unity-account-limit-20111"),
+        ("[Licensing] Error [20111]: activation limit reached\n", "blocked", "unity-account-limit-20111"),
+        ("Licensing failed with error code 20113\n", "healthy", "return-missing-positive-evidence"),
+        ("Licensing failed with error code 400006\n", "healthy", "return-missing-positive-evidence"),
+        ("Diagnostic identifier 1201119\n", "healthy", "return-missing-positive-evidence"),
+    ]
+    os.environ["HEALTHY_REASON"] = "return-missing-positive-evidence"
+    with tempfile.TemporaryDirectory(prefix="dxm-unity-health-") as temp_root:
+        evidence = Path(temp_root) / "unity.log"
+        for log_text, expected_health, expected_reason in fixtures:
+            evidence.write_text(log_text, encoding="utf-8")
+            health, reason, evidence_digest = classify([evidence])
+            if health != expected_health or reason != expected_reason or len(evidence_digest) != 64:
+                raise AssertionError(f"Unexpected classification: {health}/{reason}/{evidence_digest}")
+    print("Unity account-health classifier self-test passed.")
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--self-test"]:
+        self_test()
+    elif sys.argv[1:]:
+        raise SystemExit("Usage: classify_unity_account_health.py [--self-test]")
+    else:
+        main()

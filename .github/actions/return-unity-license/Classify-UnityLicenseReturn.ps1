@@ -1,3 +1,5 @@
+param([switch]$SelfTest)
+
 Set-StrictMode -Version Latest
 
 function Test-UnityLicenseReturnResourceSafe {
@@ -38,4 +40,30 @@ function Test-UnityLicenseReturnResourceSafe {
     } catch {
         return $false
     }
+}
+
+if ($SelfTest) {
+    $exact = "Successfully returned the entitlement license`nSerial number unavailable for ULF return`n"
+    $explicit = "[Licensing::Module] Successfully returned the entitlement license`n[Licensing::Client] Successfully returned ULF license with serial number: REDACTED`n"
+    $fixtures = @(
+        @{ Name = 'entitlement and legacy absence'; ExitCode = 0; Log = $exact; Expected = $true }
+        @{ Name = 'entitlement and explicit ULF return'; ExitCode = 0; Log = $explicit; Expected = $true }
+        @{ Name = 'exit zero alone'; ExitCode = 0; Log = "Exiting batchmode successfully now!`n"; Expected = $false }
+        @{ Name = 'serial unavailable alone'; ExitCode = 0; Log = "Serial number unavailable for ULF return`n"; Expected = $false }
+        @{ Name = 'entitlement alone'; ExitCode = 0; Log = "Successfully returned the entitlement license`n"; Expected = $false }
+        @{ Name = 'terminated process'; ExitCode = 143; Log = $exact; Expected = $false }
+    )
+    $logPath = [System.IO.Path]::GetTempFileName()
+    try {
+        foreach ($fixture in $fixtures) {
+            [System.IO.File]::WriteAllText($logPath, $fixture.Log)
+            $actual = Test-UnityLicenseReturnResourceSafe -ExitCode $fixture.ExitCode -LogPath $logPath
+            if ($actual -ne $fixture.Expected) {
+                throw "Unexpected cleanup classification for $($fixture.Name): $actual"
+            }
+        }
+    } finally {
+        Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host 'Unity cleanup classifier self-test passed.'
 }
