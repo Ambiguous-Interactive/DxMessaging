@@ -10,6 +10,13 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
+SAME_REPOSITORY_PR_GUARD = re.compile(
+    r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*"
+    r"github\.event\.pull_request\.head\.repo\.full_name\s*==\s*github\.repository"
+)
+BLANKET_PR_REJECTION = re.compile(
+    r"github\.event_name\s*!=\s*'pull_request'\s*&&"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -59,17 +66,27 @@ def validate() -> None:
         run_script(parser_fixture) == "echo first\necho second",
         "run parser must stop at the next step key",
     )
+    require(
+        SAME_REPOSITORY_PR_GUARD.search(
+            "github.event_name!='pull_request'||"
+            "github.event.pull_request.head.repo.full_name==github.repository"
+        )
+        is not None,
+        "same-repository guard parser must accept compact operators",
+    )
+    require(
+        BLANKET_PR_REJECTION.search("github.event_name!='pull_request'&&(") is not None,
+        "blanket rejection parser must detect compact operators",
+    )
 
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = job_block(source, "unity-tests")
-    normalized = " ".join(licensed.split())
-    guard = (
-        "github.event_name != 'pull_request' || "
-        "github.event.pull_request.head.repo.full_name == github.repository"
-    )
-    require(guard in normalized, "Unity job must admit same-repository PRs and reject forks")
     require(
-        "github.event_name != 'pull_request' &&" not in normalized,
+        SAME_REPOSITORY_PR_GUARD.search(licensed) is not None,
+        "Unity job must admit same-repository PRs and reject forks",
+    )
+    require(
+        BLANKET_PR_REJECTION.search(licensed) is None,
         "Unity job must not reject every pull request",
     )
     require("environment: unity-license" in licensed, "Unity job must use the protected environment")
