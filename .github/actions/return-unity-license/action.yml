@@ -128,4 +128,14 @@ runs:
       env:
         EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
         HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
-      run: python3 "${{ github.action_path }}/classify_unity_account_health.py"
+      run: |
+        $python = Get-Command python3 -CommandType Application -ErrorAction SilentlyContinue
+        if ($null -eq $python) {
+          $python = Get-Command python -CommandType Application -ErrorAction SilentlyContinue
+        }
+        if ($null -eq $python) {
+          Write-Host "::error::Python is required to classify sanitized Unity account-health evidence."
+          exit 1
+        }
+        & $python.Source "${{ github.action_path }}/classify_unity_account_health.py"
+        exit $LASTEXITCODE
