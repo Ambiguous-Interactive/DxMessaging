@@ -129,6 +129,14 @@ runs:
         EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
         HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
       run: |
+        $healthyReason = if ([string]::IsNullOrWhiteSpace($env:HEALTHY_REASON)) {
+          'return-missing-positive-evidence'
+        } else {
+          $env:HEALTHY_REASON
+        }
+        "resource-health=healthy" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "resource-reason=$healthyReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
         function Resolve-PythonApplication {
           param([Parameter(Mandatory)][string]$Name)
           foreach ($candidate in @(Get-Command $Name -CommandType Application -All -ErrorAction SilentlyContinue)) {
