@@ -89,7 +89,7 @@ jobs:
         # Request only the release-prepare scopes this workflow needs. If the App
         # installation no longer grants them, fail here before spending time
         # preparing a release tree that cannot be published.
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
           private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
@@ -97,20 +97,20 @@ jobs:
           permission-pull-requests: write
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           token: ${{ steps.app-token.outputs.token || github.token }}
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22.18.0"
 
       - name: Setup .NET
         # validate:all runs check:analyzers, which builds the source
         # generators against the SDK pinned in SourceGenerators/global.json.
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           global-json-file: SourceGenerators/global.json
 
@@ -295,7 +295,7 @@ jobs:
 
       - name: Upload failed release preparation patch
         if: ${{ failure() && !inputs.dry-run }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-prepare-recovery-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/release-prepare/

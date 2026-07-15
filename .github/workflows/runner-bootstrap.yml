@@ -236,7 +236,7 @@ jobs:
       - name: Checkout
         # Shallow checkout: bootstrap only needs scripts/unity/* and a
         # composite action; no history depth required.
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
@@ -335,7 +335,7 @@ jobs:
 
           # F6: drop the GITHUB_ACTION_PATH `../../../` ascent. We are inside
           # a workflow (not a composite), so $GITHUB_WORKSPACE is reliably
-          # the repo root post-checkout (actions/checkout@v7 above guarantees
+          # the repo root post-checkout (actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7 above guarantees
           # the script is present at this path).
           $script = [System.IO.Path]::Combine($env:GITHUB_WORKSPACE, 'scripts', 'unity', 'maintain-windows-runner.ps1')
           if (-not (Test-Path -LiteralPath $script)) {
@@ -379,13 +379,13 @@ jobs:
           }
           if ($code -ne 0) { exit $code }
 
-      # F1: actions/upload-artifact@v7 -- matches the repo-wide pinned
+      # F1: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 -- matches the repo-wide pinned
       # version used by release.yml/unity-tests.yml/unity-benchmarks.yml.
       # F19: if-no-files-found is `error` (not `warn`) so a missing transcript
       # is a HARD failure rather than a silent empty artifact upload.
       - name: Upload bootstrap transcript
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: runner-bootstrap-${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/runner-bootstrap/**

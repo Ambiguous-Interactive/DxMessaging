@@ -325,10 +325,10 @@ check_devcontainer_test_workflow() {
         check_fail "devcontainer-test workflow missing packages:write permission"
     fi
 
-    if grep -q "docker/login-action@v4" "$workflow_file"; then
-        check_pass "devcontainer-test workflow has current GHCR login step"
+    if grep -Eq '^[[:space:]]*uses:[[:space:]]+docker/login-action@[0-9a-f]{40}[[:space:]]+# v4[[:space:]]*$' "$workflow_file"; then
+        check_pass "devcontainer-test workflow has pinned current GHCR login step"
     else
-        check_fail "devcontainer-test workflow missing current GHCR login step"
+        check_fail "devcontainer-test workflow missing pinned current GHCR login step"
     fi
 
     if grep -q "eventFilterForPush: \"\"" "$workflow_file"; then
@@ -360,10 +360,10 @@ check_devcontainer_prebuild_workflow() {
         check_fail "devcontainer-prebuild workflow missing packages:write permission"
     fi
 
-    if grep -q "docker/login-action@v4" "$workflow_file"; then
-        check_pass "devcontainer-prebuild workflow has current GHCR login step"
+    if grep -Eq '^[[:space:]]*uses:[[:space:]]+docker/login-action@[0-9a-f]{40}[[:space:]]+# v4[[:space:]]*$' "$workflow_file"; then
+        check_pass "devcontainer-prebuild workflow has pinned current GHCR login step"
     else
-        check_fail "devcontainer-prebuild workflow missing current GHCR login step"
+        check_fail "devcontainer-prebuild workflow missing pinned current GHCR login step"
     fi
 
     if grep -q "push: never" "$workflow_file" && grep -q 'docker push "${IMAGE}"' "$workflow_file"; then

@@ -23,21 +23,20 @@ default runner group.
 - Speed marker applied only to `ELI-MACHINE`:
   - `fast`
 
-The Unity serial allows only a small activation-seat pool (typically ~2
-concurrent seats) and has no server-side reclaim, so the organization lock
-serializes Unity jobs to one-at-a-time as a safety margin against seat
-exhaustion. GitHub native `concurrency` is repository-scoped and serializes
-whole jobs, so it is not the organization-level lock. All
-Unity-credential-using jobs (`unity-tests`, `benchmarks`, and the
-`unity-checks` job in `release.yml`) validate Unity license secret shape,
-then acquire the central lock immediately before the licensed Unity section:
+The Unity serial allows two concurrent activations and has no server-side
+reclaim. The organization lock admits at most two distinct runners, accounts
+for cooldowns and quarantines, and blocks all new admission during an account
+incident. GitHub native `concurrency` is repository-scoped and serializes whole
+jobs, so it is not the organization-level lock. Every
+Unity-credential-using job validates Unity license secret shape, then acquires
+the central lock immediately before the licensed Unity section:
 
 ```yaml
 - name: Validate Unity license secrets
   uses: ./.github/actions/validate-unity-license
 
 - name: Acquire organization Unity lock
-  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
+  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
   with:
     lock-name: wallstop-organization-builds
     runner-id: ${{ runner.name }}
@@ -46,15 +45,14 @@ then acquire the central lock immediately before the licensed Unity section:
     BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 ```
 
-The matching release step uses `release-build-lock@v1` with `if:
-always()`. This lets checkout, cache, Node setup, and assembly discovery
-split across eligible runners while preventing two repositories from
-using the Unity seat at the same time.
+The matching release step uses the same immutable lock commit with `if:
+always()`. This lets checkout, cache, Node setup, and assembly discovery split
+across eligible runners while the organization lock enforces the two-seat
+account boundary.
 
-Before these workflows can run, publish the scaffold in
-`.ambiguous-organization-build-lock/` to
-`Ambiguous-Interactive/ambiguous-organization-build-lock`, push a `v1` tag, and
-enable private action access for this repository if the lock repo is private.
+Before these workflows can run, enable private action access for this
+repository if the lock repository is private and expose the organization Unity
+and writer App secrets to this repository.
 
 Do not declare native `concurrency.group: wallstop-organization-builds`;
 that name is reserved for the central lock action input, not GitHub's
@@ -208,14 +206,10 @@ or manual dispatch only.
 
 ## Licensed Job Guardrails
 
-Licensed Unity jobs intentionally skip:
-
-- all pull requests, including same-repository branches
-- pushes to unprotected branches
-
-This is expected. Pull requests still run GitHub-hosted checks that do not need
-Unity credentials or self-hosted licensed execution. Licensed coverage runs
-after merge on the protected default branch or through controlled dispatch.
+Licensed Unity jobs admit same-repository pull requests, protected branch
+pushes, and controlled dispatches. They reject fork pull requests and pushes to
+unprotected branches. This gives trusted PRs Unity validation without exposing
+organization secrets to fork code.
 
 The workflows must not use `pull_request_target` to check out untrusted fork
 code.
@@ -255,25 +249,20 @@ credential values.
 
 Do not record secret existence, rotation status, the serial, or account
 credential state in tracked files or the local ignored runbook. Keep that
-security status in GitHub environment settings or the approved organization
+security status in GitHub organization settings or the approved organization
 password manager.
 
-## GitHub Environments
+## Organization Secrets and GitHub Environments
 
-Every licensed Unity job uses the protected `unity-license` environment. Store
-the five Unity/build-lock secrets listed above in that environment rather than
-repository-wide scope. Configure required reviewers and protected-branch
-deployment policy before enabling licensed jobs. This repository permits the
-`master` branch and `v*` release tags. npm Trusted Publishing may use a separate
-environment configured with its exact environment name.
+Store the five Unity/build-lock secrets as organization secrets available to
+the intended organization-owned repositories. Licensed jobs do not declare a
+`unity-license` environment, so eligible PR checks start without a deployment
+approval. Keep Unity and App credentials scoped to the exact validation,
+licensed work, cleanup, acquire, and release steps.
 
-For each environment, verify:
-
-1. Required reviewers.
-1. Wait timers.
-1. Deployment branch rules.
-1. Environment secret access through GitHub settings.
-1. Whether the release workflow can request the environment from tag builds.
+Other deployment workflows may still use purpose-specific environments such as
+`github-pages`. Configure reviewers, wait timers, and deployment branch rules
+only for those deployment environments; they must not gate Unity PR validation.
 
 ## Branch and Tag Protection
 

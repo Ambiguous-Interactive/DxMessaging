@@ -81,9 +81,9 @@ Reference: [GitHub repository transfer documentation](https://docs.github.com/ar
 
 Unity workflows target self-hosted Windows runners by labels only. No
 dedicated runner group is provisioned; runners may live in the organization's
-default runner group. The Unity serial has only a small activation-seat pool
-(typically ~2 seats) with no server-side reclaim, so cross-repository
-serialization to one-Unity-at-a-time is provided by the central
+default runner group. The Unity serial has two activation seats and no
+server-side reclaim, so cross-repository admission, cooldowns, quarantines, and
+account incidents are managed by the central
 `Ambiguous-Interactive/ambiguous-organization-build-lock` actions. Native
 GitHub `concurrency` is repository-scoped and must not be used as the
 organization lock.
@@ -101,7 +101,7 @@ organization lock.
     uses: ./.github/actions/validate-unity-license
 
   - name: Acquire organization Unity lock
-    uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
+    uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
     with:
       lock-name: wallstop-organization-builds
       runner-id: ${{ runner.name }}
@@ -110,7 +110,7 @@ organization lock.
       BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
   ```
 
-  The matching release step uses `release-build-lock@v1` with `if:
+  The matching release step uses the same immutable lock commit with `if:
 always()`. Never use `wallstop-organization-builds` as a native GitHub
   `concurrency.group`; the native primitive is repository-scoped and would
   silently fail to serialize across repositories.
@@ -120,10 +120,9 @@ always()`. Never use `wallstop-organization-builds` as a native GitHub
   so missing GitHub secrets fail before blocking the shared Unity seat. IL2CPP
   is the `standalone` entry in the `unity-tests` `test-mode` matrix, not a
   separate job.
-- Publish `.ambiguous-organization-build-lock/` to
-  `Ambiguous-Interactive/ambiguous-organization-build-lock`, create the `v1`
-  tag, and enable private action access for this repository before the Unity
-  workflows are expected to pass.
+- Confirm the lock repository allows organization-owned consumers and the
+  shared writer App credentials are available through organization secrets
+  before the Unity workflows are expected to pass.
 - All Unity jobs declare the uniform `runs-on: [self-hosted, Windows,
 RAM-64GB]` so either Windows machine can pick up any Unity job. The
   `fast` label is no longer requested by any job.
@@ -133,9 +132,11 @@ RAM-64GB]` so either Windows machine can pick up any Unity job. The
 - [ ] Confirm at least one online self-hosted Windows runner has the labels
       `self-hosted`, `Windows`, and `RAM-64GB`.
 - [ ] Confirm `ELI-MACHINE` retains its `fast` label for future opt-in use.
-- [ ] Confirm each of `.github/workflows/unity-tests.yml`,
-      `.github/workflows/unity-benchmarks.yml`, and the `unity-checks`
-      job in `.github/workflows/release.yml` acquires
+- [ ] Confirm every licensed job in `.github/workflows/unity-tests.yml`,
+      `.github/workflows/unity-benchmarks.yml`,
+      `.github/workflows/unity-gameci-experiment.yml`,
+      `.github/workflows/perf-numbers.yml`, and `.github/workflows/release.yml`
+      acquires
       `wallstop-organization-builds`, validates Unity license secrets, runs
       `scripts/unity/run-ci-tests.ps1`, and releases the lock with
       `if: always()`.
@@ -181,6 +182,10 @@ Reference: [GitHub self-hosted runners documentation](https://docs.github.com/en
 
 The tracked workflows expose only secret names. Never write the values into a
 tracked file or generated artifact.
+
+- [ ] Store the Unity and build-lock credentials as organization secrets for
+      the intended organization-owned repositories. Do not add a
+      `unity-license` environment gate to licensed jobs.
 
 - [ ] Confirm Unity workflows can read the three required secret names:
       `UNITY_SERIAL`, `UNITY_EMAIL`, and `UNITY_PASSWORD` (the classic-serial

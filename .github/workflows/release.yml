@@ -75,7 +75,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22.18.0"
 
@@ -245,7 +245,6 @@ jobs:
       - verify-tag
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB]
-    environment: unity-license
     # Workflow-level permissions are `contents: read` (no checks: write), so
     # this job needs its own checks: write or game-ci's check-run creation
     # 403s and the release Unity gate silently stops failing on red tests.
@@ -278,7 +277,7 @@ jobs:
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22.18.0"
 
@@ -331,7 +330,7 @@ jobs:
 
       - name: Acquire organization Unity lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
@@ -378,7 +377,7 @@ jobs:
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
@@ -444,7 +443,6 @@ jobs:
       - runner-preflight
       - unity-checks
     runs-on: [self-hosted, Windows, RAM-64GB]
-    environment: unity-license
     permissions:
       contents: read
     timeout-minutes: 660
@@ -471,7 +469,7 @@ jobs:
       - name: Setup Node.js
         # export-unitypackage.ps1 stages the payload with `npm pack`, so the
         # shipped bytes are identical to the npm/UPM artifact.
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22.18.0"
 
@@ -516,7 +514,7 @@ jobs:
           overwrite: true
 
       - name: Acquire organization Unity lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
@@ -561,7 +559,7 @@ jobs:
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
@@ -626,7 +624,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22.18.0"
           registry-url: "https://registry.npmjs.org"
