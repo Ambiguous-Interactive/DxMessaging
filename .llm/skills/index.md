@@ -225,7 +225,7 @@
 | [Unity Editor CLI Bootstrap](./unity/unity-editor-cli-bootstrap.md)         | [ok] 219   | [intermediate] | [stable] | [risk: none] | unity, cli           |
 | [Unity Editor Design System](./unity/editor-design-system.md)               | [ok] 145   | [basic]        | [stable] | [risk: low]  | unity, editor        |
 | [Unity License Bootstrap](./unity/unity-license-bootstrap.md)               | [ok] 194   | [basic]        | [stable] | [risk: none] | unity, license       |
-| [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 273 | [intermediate] | [stable] | [risk: none] | unity, serial        |
+| [Unity License Return Guarantee](./unity/unity-license-return-guarantee.md) | [warn] 271 | [intermediate] | [stable] | [risk: none] | unity, serial        |
 | [Unity MCP Test Loop](./unity/mcp-test-loop.md)                             | [ok] 207   | [intermediate] | [stable] | [risk: none] | unity, mcp           |
 | [Unity Perf Test Isolation](./unity/unity-perf-test-isolation.md)           | [ok] 208   | [intermediate] | [stable] | [risk: high] | unity, performance   |
 | [Unity Runner Host Prerequisites](./unity/unity-runner-host-prereqs.md)     | [ok] 251   | [intermediate] | [stable] | [risk: none] | unity, windows       |

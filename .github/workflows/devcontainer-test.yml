@@ -22,7 +22,7 @@
 #   - Manual dispatch
 #
 # Critical: eventFilterForPush
-#   devcontainers/ci@v0.3 defaults `eventFilterForPush` to "push", which
+#   devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3 defaults `eventFilterForPush` to "push", which
 #   silently SKIPS pushing the image on `schedule` / `workflow_dispatch`
 #   events. Setting it to "" makes the `push` knob the single source of
 #   truth (combined with `refFilterForPush: refs/heads/master`). This gotcha
@@ -101,7 +101,7 @@ jobs:
           exit 1
 
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           lfs: true
           persist-credentials: false
@@ -120,14 +120,14 @@ jobs:
           echo "repository_lowercase=${repo_lower}" >> "${GITHUB_OUTPUT}"
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pre-build devcontainer image
-        uses: devcontainers/ci@v0.3
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3
         env:
           BUILDKIT_PROGRESS: plain
         with:
@@ -142,7 +142,7 @@ jobs:
           eventFilterForPush: ""
 
       - name: Run devcontainer smoke tests
-        uses: devcontainers/ci@v0.3
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3
         with:
           imageName: ghcr.io/${{ steps.repo.outputs.repository_lowercase }}/devcontainer
           cacheFrom: ghcr.io/${{ steps.repo.outputs.repository_lowercase }}/devcontainer

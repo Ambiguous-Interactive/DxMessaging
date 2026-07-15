@@ -333,23 +333,10 @@ test("Unity return proof classifications remain fail closed and non-masking", ()
 });
 // prettier-ignore
 test("active workflows pin external actions and scope licensed credentials", () => {
-  const actionFiles = [WORKFLOW_DIR, path.join(REPO_ROOT, ".github", "actions")].flatMap(
-    (root) => walkFiles(root, { match: (file) => /\.ya?ml$/.test(file) })
-  );
-  for (const filePath of actionFiles) {
+  for (const filePath of [WORKFLOW_DIR, path.join(REPO_ROOT, ".github", "actions")].flatMap((root) => walkFiles(root, { match: (file) => /\.ya?ml$/.test(file) }))) {
     const source = fs.readFileSync(filePath, "utf8");
-    for (const line of source.split(/\r?\n/)) {
-      const match = /^\s*uses:\s+([^\s]+)(?:\s+#.*)?$/.exec(line);
-      if (match && !match[1].startsWith("./") && !match[1].startsWith("docker://")) {
-        assert.match(
-          match[1],
-          /@[0-9a-f]{40}$/,
-          `${path.relative(REPO_ROOT, filePath)}: ${match[1]} must be immutable`
-        );
-      }
-    }
+    for (const match of source.matchAll(/^\s*uses:\s+([^\s#]+)(?:\s+#.*)?$/gm)) { const action = match[1]; if (!action.startsWith("./") && !action.startsWith("docker://")) assert.match(action, /@[0-9a-f]{40}$/, `${path.relative(REPO_ROOT, filePath)}: ${action} must be immutable`); }
   }
-
   const files = [...new Set(UNITY_LOCK_WINDOWS.map(([file]) => file))];
   for (const file of files) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");

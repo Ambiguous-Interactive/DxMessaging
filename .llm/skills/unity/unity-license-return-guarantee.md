@@ -95,12 +95,12 @@ two concurrent activation seats. There is no floating licensing server to expire
 a stale lease: once a run activates a seat and fails to return it, that seat
 stays consumed until something explicitly runs `-returnlicense`. The runners are
 persistent self-hosted Windows machines, so a force-killed run leaves its
-activation behind on that machine across runs. The org build lock
-(`wallstop-organization-builds`, `max-parallel: 1`) serializes every Unity job
-org-wide, so only one seat is needed at a time -- but the small seat pool means a
-single un-returned activation, plus one held by a concurrent machine, can
-exhaust the pool. The always-return guarantee below exists so no failure mode
-leaves an activation behind for longer than the next job's return-at-start.
+activation behind on that machine across runs. The schema-5 organization lock
+admits at most two distinct runners and reduces effective capacity for
+quarantines or an account incident. A single un-returned activation plus one
+clean concurrent activation can still exhaust the portal seats. The
+always-return guarantee below exists so no failure mode leaves an activation
+behind for longer than the next job's return-at-start.
 
 ## The Activation and Return Contract
 
@@ -177,12 +177,10 @@ This is the accepted cost of leaving the floating licensing server behind:
   return-at-start (layer 1) reclaims any seat the previous run on that machine
   leaked. So in normal operation a leaked seat is freed by the next job that
   lands on the same runner -- the seat is not lost forever.
-- **Accepted residual risk.** The one scenario the four layers do NOT fully cover
-  is BOTH machines leaking a seat simultaneously with zero seats free and no next
-  run able to activate to reach its own return-at-start. The maintainer
-  considered and DECLINED a scheduled reaper for this. The sanctioned mitigation
-  is operational: ask Unity to raise the activation seat count so a transient
-  double-leak cannot exhaust the pool.
+- **Accepted residual risk.** The scheduled lock reaper can quarantine a stale
+  holder and stop new admissions, but it cannot return an activation in Unity's
+  portal. If both machines leak, operators must reconcile the portal and perform
+  exact-incident recovery before capacity is restored.
 
 Do not oversell the guarantee: the four layers make a permanent leak very
 unlikely on persistent runners, but the small seat pool is a real constraint, not
@@ -205,18 +203,18 @@ Each failure mode is covered by at least one of the four return layers. With no
 server-side reclaim, the return-at-start of the next run is the final backstop on
 a persistent runner.
 
-| Failure mode                 | What happens                                     | Covered by                                                          |
-| ---------------------------- | ------------------------------------------------ | ------------------------------------------------------------------- |
-| Clean exit                   | Editor exits 0; script reaches `finally`.        | `try`/`finally` `Invoke-UnityLicenseReturn`.                        |
-| Editor throws / non-zero     | Editor exits non-zero; script reaches `finally`. | `try`/`finally` `Invoke-UnityLicenseReturn`.                        |
-| Step timeout / killed script | Script process is killed; no `finally` runs.     | `if: always()` `return-unity-license` step in the org-lock window.  |
-| Whole runner process killed  | No `finally` and no `if: always()` step run.     | Return-at-start of the NEXT run on the same persistent runner.      |
-| Prior run leaked a seat      | A seat is still activated from a previous run.   | Return-at-start (defensive `-returnlicense` before activating).     |
-| Both machines leak at once   | Zero seats free; a new run cannot activate.      | NOT fully covered -- raise the seat count (accepted residual risk). |
+| Failure mode                 | What happens                                     | Covered by                                                                            |
+| ---------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Clean exit                   | Editor exits 0; script reaches `finally`.        | `try`/`finally` `Invoke-UnityLicenseReturn`.                                          |
+| Editor throws / non-zero     | Editor exits non-zero; script reaches `finally`. | `try`/`finally` `Invoke-UnityLicenseReturn`.                                          |
+| Step timeout / killed script | Script process is killed; no `finally` runs.     | `if: always()` `return-unity-license` step in the org-lock window.                    |
+| Whole runner process killed  | No `finally` and no `if: always()` step run.     | Return-at-start of the NEXT run on the same persistent runner.                        |
+| Prior run leaked a seat      | A seat is still activated from a previous run.   | Return-at-start (defensive `-returnlicense` before activating).                       |
+| Both machines leak at once   | Zero seats free; a new run cannot activate.      | Schema 5 blocks admission; operators clean the portal and recover the exact incident. |
 
 ## Contract Invariants (review these on every change)
 
-There is no automated validator for these anymore; keep them honest in review:
+Automated workflow contract tests cover these invariants; keep them honest in review too:
 
 1. `run-ci-tests.ps1` brackets activation with `Invoke-UnityLicenseActivate` /
    `Invoke-UnityLicenseReturn` (the return lives in a `finally`), and runs a

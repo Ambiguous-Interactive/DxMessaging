@@ -237,8 +237,8 @@ jobs:
     needs:
       - matrix-config
       - runner-preflight
-    # Same-repository pull requests run licensed validation behind approval from
-    # the protected unity-license environment. Fork pull requests remain static-only.
+    # Same-repository pull requests run licensed validation with organization
+    # secrets and no environment approval. Fork pull requests remain static-only.
     if: >-
       ${{
         (github.event_name != 'pull_request' ||
@@ -247,7 +247,6 @@ jobs:
         needs.matrix-config.outputs.ci-owned-docs-only != 'true'
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
-    environment: unity-license
     timeout-minutes: 660
     strategy:
       fail-fast: false
@@ -301,7 +300,7 @@ jobs:
           key: Library-${{ runner.os }}-${{ runner.arch }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ env.PACKAGE_HASH }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22.18.0"
 
@@ -364,7 +363,7 @@ jobs:
 
       - name: Acquire organization Unity lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -420,7 +419,7 @@ jobs:
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}

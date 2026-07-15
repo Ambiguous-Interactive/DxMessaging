@@ -115,16 +115,16 @@ and returns the license on every exit path through four redundant layers
 inside the org-lock window, and the next run's return-at-start) -- see
 [unity-license-return-guarantee](./unity-license-return-guarantee.md).
 
-## Serialization + Timeout Invariant
+## Capacity + Timeout Invariant
 
-The Unity serial has only a small activation-seat pool (typically ~2 seats) shared across the whole org and no server-side reclaim, so Unity-licensed jobs are serialized to one-at-a-time in TWO complementary layers. Neither layer alone is sufficient.
+The Unity serial has two activation seats shared across the organization and no server-side reclaim. Two complementary controls keep that capacity safe and fair.
 
-**Two-layer serialization.** `strategy.max-parallel: 1` serializes the matrix cells WITHIN a single run, and the external `ambiguous-organization-build-lock` action serializes ACROSS runs, workflows, and repositories.
+**Matrix serialization and organization admission.** `strategy.max-parallel: 1` serializes matrix cells WITHIN a single run. The external `ambiguous-organization-build-lock` action admits at most two distinct runners ACROSS runs, workflows, and repositories while accounting for cooldowns, quarantines, and account incidents.
 
 - `max-parallel: 1` only: cannot prevent two separate runs (two pushes, `unity-tests` plus `unity-benchmarks`, or another org repo) from racing for the seat.
-- The lock only: leaves all 9 cells spawning at once, so 8 idle cells burn their job-timeout clocks waiting, race for the seat, and clutter logs. Since the lock already forces one-Unity-at-a-time, that parallelism buys ZERO throughput.
+- The lock only: leaves all 9 cells spawning at once, so idle cells burn their job-timeout clocks, one repository can occupy both seats, and logs become noisy without useful per-run throughput.
 
-With both layers, the within-run lock wait collapses to near-zero, so the cross-run lock poll budget can stay generous. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows only (`unity-tests.yml`, `unity-benchmarks.yml`); single-job workflows (`release.unity-checks`, the GameCI experiment) have no matrix and rely solely on the lock for across-run serialization.
+With both controls, a run consumes at most one seat while another repository can use the second. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows only (`unity-tests.yml`, `unity-benchmarks.yml`); single-job workflows (`release.unity-checks`, the GameCI experiment) rely on the lock for cross-run admission.
 
 **Timeout invariant.** GitHub counts the lock-wait against the job clock, so a job at the back of the serialized queue is killed before its lock wait can finish unless:
 
