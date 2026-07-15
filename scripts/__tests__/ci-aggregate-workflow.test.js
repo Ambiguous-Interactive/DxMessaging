@@ -4,10 +4,11 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { walkFiles } = require("../lib/repo-files.js");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
-const LOCK_ACTION_SHA = "cfdcf6e67d7720824d21c37aa6a8b9e70dbdd2af";
+const LOCK_ACTION_SHA = "f39ee38533b20592aa0fdf72b3e18d07c46325f3";
 const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 const UNITY_LOCK_WINDOWS = [
@@ -132,8 +133,7 @@ test("static CI checks stay consolidated behind CI Success", () => {
   const ciSuccess = getJobBlock(source, "ci-success");
   assert.match(ciSuccess, /\n    name: CI Success\n/);
   assert.match(ciSuccess, /\n    if: \$\{\{ always\(\) \}\}\n/);
-  // Pin the fail-closed aggregator action to a versioned tag, not @main/@master.
-  assert.match(ciSuccess, /uses: re-actors\/alls-green@[\w./-]*v\d/);
+  assert.match(ciSuccess, /uses: re-actors\/alls-green@[0-9a-f]{40}/);
   assert.match(ciSuccess, /allowed-skips: ""/);
   assert.match(ciSuccess, /allowed-failures: ""/);
 
@@ -312,7 +312,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     assert.deepEqual(positions, [...positions].sort((a, b) => a - b), `${label} lifecycle order`);
     const orderedContract = [escapeRegExp(acquire), "holder-id-suffix: (.+)\\n          runner-id: (.+)\\n", `- name: ${escapeRegExp(licensedWorkName)}`, "- name: Return Unity license\\n        id: return_unity_license\\n        if: always\\(\\)\\n        timeout-minutes: 5\\n        continue-on-error: true\\n        uses: \\.\\/\\.github\\/actions\\/return-unity-license", `- name: Release organization Unity lock\\n        if: always\\(\\)\\n        ${escapeRegExp(release)}`, "holder-id-suffix: \\1\\n          runner-id: \\2\\n          resource-cleanup-status: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-cleanup-status \\}\\}\\n          resource-health: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-health \\}\\}\\n          resource-reason: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-reason \\}\\}"].join("[\\s\\S]*?");
     assert.match(job, new RegExp(orderedContract), label);
-    assert.match(job, /\n    environment: unity-license\n/, `${label} protected environment`);
+    assert.doesNotMatch(job, /\n    environment:/, `${label} must not require environment approval`);
   }
 });
 
@@ -332,14 +332,27 @@ test("Unity return proof classifications remain fail closed and non-masking", ()
   assert.match(source, /resource-health[\s\S]*resource-reason/); assert.match(actionSource, /resource-health=healthy[\s\S]*?resource-reason=\$healthyReason[\s\S]*?function Resolve-PythonApplication/); assert.match(actionSource, /function Resolve-PythonApplication[\s\S]*?Get-Command \$Name[^\n]*-All[\s\S]*?Test-Path[\s\S]*?--version[\s\S]*?LASTEXITCODE -eq 0/); assert.match(actionSource, /Resolve-PythonApplication -Name python3\b/); assert.match(actionSource, /Resolve-PythonApplication -Name python\b/); assert.doesNotMatch(actionSource, /run:\s*python3(?:\s|$)|run:\s*\|[^\n]*\n\s*python3(?:\s|$)/m);
 });
 // prettier-ignore
-test("licensed workflows pin external actions and reject pull-request licensing", () => {
+test("active workflows pin external actions and scope licensed credentials", () => {
+  const actionFiles = [WORKFLOW_DIR, path.join(REPO_ROOT, ".github", "actions")].flatMap(
+    (root) => walkFiles(root, { match: (file) => /\.ya?ml$/.test(file) })
+  );
+  for (const filePath of actionFiles) {
+    const source = fs.readFileSync(filePath, "utf8");
+    for (const line of source.split(/\r?\n/)) {
+      const match = /^\s*uses:\s+([^\s]+)(?:\s+#.*)?$/.exec(line);
+      if (match && !match[1].startsWith("./") && !match[1].startsWith("docker://")) {
+        assert.match(
+          match[1],
+          /@[0-9a-f]{40}$/,
+          `${path.relative(REPO_ROOT, filePath)}: ${match[1]} must be immutable`
+        );
+      }
+    }
+  }
+
   const files = [...new Set(UNITY_LOCK_WINDOWS.map(([file]) => file))];
   for (const file of files) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
-    for (const line of source.split(/\r?\n/)) {
-      const match = /^\s*uses:\s+([^\s]+)(?:\s+#.*)?$/.exec(line);
-      if (match && !match[1].startsWith("./")) assert.match(match[1], /@[0-9a-f]{40}$/, `${file}: ${match[1]} must be immutable`);
-    }
     const credentialPattern = /secrets\.(?:UNITY_(?:SERIAL|EMAIL|PASSWORD)|BUILD_LOCK_APP_(?:ID|PRIVATE_KEY))/g;
     const sourceCredentialCount = [...source.matchAll(credentialPattern)].length;
     const jobs = UNITY_LOCK_WINDOWS.filter(([candidate]) => candidate === file).map(([, jobId]) => getJobBlock(source, jobId, file));

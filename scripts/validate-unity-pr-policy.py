@@ -89,7 +89,10 @@ def validate() -> None:
         BLANKET_PR_REJECTION.search(licensed) is None,
         "Unity job must not reject every pull request",
     )
-    require("environment: unity-license" in licensed, "Unity job must use the protected environment")
+    require(
+        "environment:" not in licensed,
+        "Unity job must use organization secrets without an environment approval gate",
+    )
 
     gate = job_block(source, "unity-ci-success")
     require("if: ${{ always() }}" in gate, "aggregate must always report")
