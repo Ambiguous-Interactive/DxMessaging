@@ -9,7 +9,6 @@ const { walkFiles } = require("../lib/repo-files.js");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
 const LOCK_ACTION_SHA = "092fb0ddfc1ff13c684ac0e3c76d9b48ec3ee315";
-const LOCK_ACTION_VERSION = "v1.7.1";
 const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 const UNITY_LOCK_WINDOWS = [
@@ -272,7 +271,7 @@ test("copyable build-lock documentation follows the runner and App credential co
   ]) {
     const source = fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
     const acquireExample = new RegExp(
-      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${LOCK_ACTION_SHA} # ${LOCK_ACTION_VERSION}[\\s\\S]*?\`\`\``
+      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${LOCK_ACTION_SHA} # v1.7.1[\\s\\S]*?\`\`\``
     ).exec(source);
 
     assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
@@ -297,8 +296,8 @@ test("copyable build-lock documentation follows the runner and App credential co
 });
 // prettier-ignore
 test("every Unity lock window releases with explicit cleanup proof", () => {
-  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${LOCK_ACTION_SHA} # ${LOCK_ACTION_VERSION}`;
-  const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${LOCK_ACTION_SHA} # ${LOCK_ACTION_VERSION}`;
+  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${LOCK_ACTION_SHA} # v1.7.1`;
+  const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${LOCK_ACTION_SHA} # v1.7.1`;
   const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"));
   assert.equal(workflowSources.reduce((count, source) => count + source.split(acquire).length - 1, 0), UNITY_LOCK_WINDOWS.length);
   assert.equal(workflowSources.reduce((count, source) => count + source.split(release).length - 1, 0), UNITY_LOCK_WINDOWS.length);
