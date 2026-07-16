@@ -101,7 +101,7 @@ organization lock.
     uses: ./.github/actions/validate-unity-license
 
   - name: Acquire organization Unity lock
-    uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@f39ee38533b20592aa0fdf72b3e18d07c46325f3
+    uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@092fb0ddfc1ff13c684ac0e3c76d9b48ec3ee315 # v1.7.1
     with:
       lock-name: wallstop-organization-builds
       runner-id: ${{ runner.name }}
