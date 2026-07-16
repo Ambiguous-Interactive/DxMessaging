@@ -74,25 +74,21 @@ After applying the chosen resolution, re-run the queued workflow from the Action
 
 ## Preflight diagnostic in this repository
 
-Unity workflows in this repository run a `runner-preflight` job on `ubuntu-latest` before the self-hosted matrix. That preflight queries `gh api orgs/${OWNER}/actions/runners` first and, on 403/404 (the default `secrets.GITHUB_TOKEN` cannot list org-scoped runners under most org policies), falls back to `gh api repos/${GITHUB_REPOSITORY}/actions/runners`. If both endpoints fail (typically a 403 from each because the token is unscoped for runner administration), the preflight emits a `::warning::` and exits 0 (soft pass). The preflight must NEVER be more strict than the no-preflight baseline; its only job is to surface a fast, clear failure when it can prove the runner inventory is wrong.
+Unity workflows in this repository run a `runner-preflight` job on
+`ubuntu-latest` before the self-hosted matrix. The immutable central
+`check-unity-runner-availability` action uses the organization-scoped
+`BUILD_LOCK_READER_APP_ID` and `BUILD_LOCK_READER_APP_PRIVATE_KEY` secrets. Its
+reader App has Metadata, Actions, and organization self-hosted runner read
+permission. It filters runner groups through the repository-visible API and
+requires an online runner with the exact labels requested by the downstream
+job.
 
-### Upgrading the soft pass to a hard pass
-
-The default `secrets.GITHUB_TOKEN` cannot list runners under a repo-level scope strict enough to reflect the runner-group ACL, so the preflight falls back to a soft pass on most installations. To upgrade the soft-pass path to a hard-pass:
-
-1. Mint a fine-grained personal access token (or a GitHub App installation token) holding the repository-level "Administration: read" permission, scoped to `Ambiguous-Interactive/DxMessaging` only. Do NOT use a classic PAT with `admin:org`, and do NOT use the fine-grained "Organization administration: read" permission: both grant org-wide visibility, which causes `gh api orgs/<org>/actions/runners` to return the entire org runner inventory regardless of any individual repository's runner-group ACL. That would let the preflight see runners as online and silently pass even when the post-transfer ACL is broken, which is exactly the pitfall this runbook addresses.
-1. Add the token as a repository secret named `RUNNER_AUDIT_PAT`.
-1. Wire the workflow to prefer `RUNNER_AUDIT_PAT` over `GITHUB_TOKEN` when set, and to query the repo-scoped endpoint `repos/<owner>/<repo>/actions/runners`. That endpoint enforces the runner-group ACL: if the repository does not have access to a runner via its group, the runner is invisible there, which is the live ACL state we want the preflight to detect. The preflight retains the same soft-pass behavior if the secret is absent, so this is opt-in.
-
-The rationale is deliberate: we want the upgrade token to FAIL when the ACL is misconfigured, not paper over it; that is why we use the repo-scoped "Administration: read" permission rather than any org admin scope. Without that property the hard-pass mode would be worse than the soft-pass mode it replaces.
-
-This is intentionally documented but NOT enabled by default: the soft pass is the correct conservative behavior given the threat model. Operators see a `::warning::` annotation rather than a green check, and the existing watchdog + manual unstick workflows continue to recover any actually-stuck job.
-
-Because `administration` is not a valid `permissions:` key for the workflow-scoped `GITHUB_TOKEN`, the only way to grant the preflight read access to the runner inventory under a repo-level scope is to provision an external token (PAT or app installation token) via `RUNNER_AUDIT_PAT` (see above). Without that, the preflight falls back to the soft-pass path, which is the design intent.
-
-### Follow-up: composite action factoring
-
-The preflight shell currently lives inline in three workflows (`unity-tests.yml`, `unity-benchmarks.yml`, `release.yml`). A composite action under `.github/actions/runner-access-preflight/` would deduplicate the block. Out of scope for the current change; track here so the next maintainer can find it.
+The preflight is fail closed. Missing reader credentials, an unreadable
+inventory, a runner-group ACL that excludes this repository, or no matching
+online runner makes the workflow red before any self-hosted job is queued. Do
+not restore the retired `RUNNER_AUDIT_PAT` soft-pass path. Organization secrets
+avoid per-repository environment provisioning or manual approvals while the
+reader App remains the least-privilege inventory boundary.
 
 If the preflight passes but the matrix job still stays queued, the cause is more likely the dispatcher bug (see [GitHub Community Discussion #186811](https://github.com/orgs/community/discussions/186811)) than the access list. Use the recovery workflows in this repository: [unstick-run.yml](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unstick-run.yml) for manual recovery and [stuck-job-watchdog.yml](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/stuck-job-watchdog.yml) for the automated path.
 
