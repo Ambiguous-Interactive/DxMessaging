@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate trusted-PR Unity admission and the aggregate skip truth table."""
+"""Validate trusted-PR Unity admission, staleness guards, and skip policy."""
 
 from __future__ import annotations
 
@@ -10,6 +10,10 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
+CURRENT_PR_HEAD_GUARD = (
+    "Ambiguous-Interactive/ambiguous-organization-build-lock/"
+    ".github/actions/require-current-pr-head@eef57b9d2dd467c3d7e0cc11d31e350dda038b26"
+)
 SAME_REPOSITORY_PR_GUARD = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*"
     r"github\.event\.pull_request\.head\.repo\.full_name\s*==\s*github\.repository"
@@ -80,6 +84,39 @@ def validate() -> None:
     )
 
     source = WORKFLOW.read_text(encoding="utf-8")
+    push = re.search(
+        r"^  push:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    require(push is not None, "missing push trigger")
+    assert push is not None
+    paths_ignore = re.search(
+        r"^    paths-ignore:\n(?P<body>.*?)(?=^    [A-Za-z0-9_-]+:|\Z)",
+        push.group("body"),
+        re.MULTILINE | re.DOTALL,
+    )
+    require(paths_ignore is not None, "push trigger must use paths-ignore")
+    assert paths_ignore is not None
+    require(
+        paths_ignore.group("body")
+        == '      - "docs/architecture/performance.md"\n'
+        '      - "docs/architecture/perf-baseline.csv"\n',
+        "Unity push trigger must ignore only the two CI-generated performance files",
+    )
+    pull_request = re.search(
+        r"^  pull_request:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    require(pull_request is not None, "missing pull_request trigger")
+    assert pull_request is not None
+    require(
+        re.search(r"^    paths(?:-ignore)?:", pull_request.group("body"), re.MULTILINE)
+        is None,
+        "pull_request trigger must remain unfiltered by paths",
+    )
+
     licensed = job_block(source, "unity-tests")
     require(
         SAME_REPOSITORY_PR_GUARD.search(licensed) is not None,
@@ -93,6 +130,30 @@ def validate() -> None:
         "environment:" not in licensed,
         "Unity job must use organization secrets without an environment approval gate",
     )
+    setup_guard = licensed.find("      - name: Require current PR head before setup\n")
+    lock_guard = licensed.find("      - name: Require current PR head before lock acquisition\n")
+    acquire = licensed.find("      - name: Acquire organization Unity lock\n")
+    require(
+        setup_guard >= 0 and setup_guard == licensed.find("      - name:"),
+        "head guard must be first",
+    )
+    require(lock_guard >= 0 and acquire >= 0, "licensed job must guard lock acquisition")
+    require(
+        licensed.find("      - name:", lock_guard + 1) == acquire,
+        "head guard must run immediately before lock acquisition",
+    )
+    for guard_name in (
+        "Require current PR head before setup",
+        "Require current PR head before lock acquisition",
+    ):
+        guard = step_block(licensed, guard_name)
+        require(f"uses: {CURRENT_PR_HEAD_GUARD}" in guard, f"{guard_name}: guard pin drifted")
+        for expected_input in (
+            "github-token: ${{ github.token }}",
+            "pull-request-number: ${{ github.event.pull_request.number }}",
+            "expected-head-sha: ${{ github.event.pull_request.head.sha }}",
+        ):
+            require(expected_input in guard, f"{guard_name}: missing {expected_input}")
 
     gate = job_block(source, "unity-ci-success")
     require("if: ${{ always() }}" in gate, "aggregate must always report")

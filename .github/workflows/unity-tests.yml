@@ -9,6 +9,9 @@ on:
     branches:
       - master
       - main
+    paths-ignore:
+      - "docs/architecture/performance.md"
+      - "docs/architecture/perf-baseline.csv"
   schedule:
     - cron: "17 8 * * 1"
   workflow_dispatch:
@@ -32,6 +35,7 @@ on:
 permissions:
   contents: read
   checks: write
+  pull-requests: read
 
 jobs:
   matrix-config:
@@ -167,6 +171,13 @@ jobs:
         unity-version: ${{ fromJSON(needs.matrix-config.outputs.unity-versions) }}
         test-mode: ${{ fromJSON(needs.matrix-config.outputs.test-modes) }}
     steps:
+      - name: Require current PR head before setup
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@eef57b9d2dd467c3d7e0cc11d31e350dda038b26
+        with:
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ github.event.pull_request.head.sha }}
+
       - name: Enable Git long paths
         shell: pwsh
         env:
@@ -272,6 +283,14 @@ jobs:
           path: .artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}/provisioning
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Require current PR head before lock acquisition
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@eef57b9d2dd467c3d7e0cc11d31e350dda038b26
+        with:
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ github.event.pull_request.head.sha }}
 
       - name: Acquire organization Unity lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
