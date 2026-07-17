@@ -12,7 +12,7 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
 CURRENT_PR_HEAD_GUARD = (
     "Ambiguous-Interactive/ambiguous-organization-build-lock/"
-    ".github/actions/require-current-pr-head@eef57b9d2dd467c3d7e0cc11d31e350dda038b26"
+    ".github/actions/require-current-pr-head@8e1cf892f5ee710908fc14f09b3c8033edcb74f9"
 )
 SAME_REPOSITORY_PR_GUARD = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*"
