@@ -9,6 +9,8 @@ const { walkFiles } = require("../lib/repo-files.js");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
 const LOCK_ACTION_SHA = "59a2fa98224569e5a697f271a3ac4b866c53ac2c";
+const ACQUIRE_ACTION_SHA = "6b2147a1d158c770f213d216f4eea0c313be370a";
+const ACQUIRE_ACTION_COMMENT = "issue #52 reviewed acquire";
 const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 const UNITY_LOCK_WINDOWS = [
@@ -271,11 +273,14 @@ test("copyable build-lock documentation follows the runner and App credential co
   ]) {
     const source = fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
     const acquireExample = new RegExp(
-      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${LOCK_ACTION_SHA} # v1.8.3[\\s\\S]*?\`\`\``
+      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${ACQUIRE_ACTION_SHA} # ${escapeRegExp(ACQUIRE_ACTION_COMMENT)}[\\s\\S]*?\`\`\``
     ).exec(source);
 
     assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
     assert.match(acquireExample[0], /runner-id: \$\{\{ runner\.name \}\}/, relativePath);
+    assert.match(acquireExample[0], /github-token: \$\{\{ github\.token \}\}/, relativePath);
+    assert.match(acquireExample[0], /pull-request-number: \$\{\{ github\.event\.pull_request\.number \}\}/, relativePath);
+    assert.match(acquireExample[0], /expected-head-sha: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/, relativePath);
     assert.match(
       acquireExample[0],
       /BUILD_LOCK_APP_ID: \$\{\{ secrets\.BUILD_LOCK_APP_ID \}\}/,
@@ -296,7 +301,7 @@ test("copyable build-lock documentation follows the runner and App credential co
 });
 // prettier-ignore
 test("every Unity lock window releases with explicit cleanup proof", () => {
-  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${LOCK_ACTION_SHA} # v1.8.3`;
+  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${ACQUIRE_ACTION_SHA} # ${ACQUIRE_ACTION_COMMENT}`;
   const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${LOCK_ACTION_SHA} # v1.8.3`;
   const runnerLabels = new Map([["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'], ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-gameci-experiment.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']]); const preflightAction = `${LOCK_ACTION_PREFIX}check-unity-runner-availability@${LOCK_ACTION_SHA} # v1.8.3`; const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8")); for (const [file, labels] of runnerLabels) { const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"); const preflight = getJobBlock(source, "runner-preflight", file); assert.match(preflight, /\n    runs-on: ubuntu-latest\n/, file); assert.match(preflight, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), file); assert.match(preflight, /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, file); assert.match(preflight, /reader-app-private-key: \$\{\{ secrets\.BUILD_LOCK_READER_APP_PRIVATE_KEY \}\}/, file); assert.match(preflight, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`), file); assert.doesNotMatch(preflight, /RUNNER_AUDIT_PAT|Soft pass|soft-pass/i, file); }
   assert.equal(workflowSources.reduce((count, source) => count + source.split(acquire).length - 1, 0), UNITY_LOCK_WINDOWS.length);
