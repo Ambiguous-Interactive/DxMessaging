@@ -724,6 +724,11 @@ jobs:
         shell: bash
         run: node --test scripts/
 
+      - name: Test Unity license activation retry
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        shell: pwsh
+        run: ./scripts/__tests__/test-unity-license-activation-retry.ps1 -VerboseOutput
+
       - name: Run validators
         if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}
         shell: bash
