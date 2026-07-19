@@ -30,6 +30,7 @@ function Test-UnityLicenseReturnResourceSafe {
             }
             if (
                 $normalized -ceq 'Serial number unavailable for ULF return' -or
+                $normalized -ceq '[Licensing::Module] Error: Serial number unavailable for ULF return; skipping operation' -or
                 $normalized -cmatch '^\[Licensing::Client\] Successfully returned ULF license with serial number\s*:\s*\S+$'
             ) {
                 $ulfReturned = $true
@@ -43,15 +44,21 @@ function Test-UnityLicenseReturnResourceSafe {
 }
 
 if ($SelfTest) {
-    $exact = "Successfully returned the entitlement license`nSerial number unavailable for ULF return`n"
+    $exact = "[Licensing::Module] Successfully returned the entitlement license`n[Licensing::Module] Error: Serial number unavailable for ULF return; skipping operation`n"
+    $legacy = "Successfully returned the entitlement license`nSerial number unavailable for ULF return`n"
     $explicit = "[Licensing::Module] Successfully returned the entitlement license`n[Licensing::Client] Successfully returned ULF license with serial number: REDACTED`n"
     $fixtures = @(
-        @{ Name = 'entitlement and legacy absence'; ExitCode = 0; Log = $exact; Expected = $true }
+        @{ Name = 'canonical module-prefixed absence'; ExitCode = 0; Log = $exact; Expected = $true }
+        @{ Name = 'legacy bare absence'; ExitCode = 0; Log = $legacy; Expected = $true }
         @{ Name = 'entitlement and explicit ULF return'; ExitCode = 0; Log = $explicit; Expected = $true }
+        @{ Name = 'near-miss legacy absence'; ExitCode = 0; Log = "[Licensing::Module] Error: Serial number unavailable for ULF return`nSuccessfully returned the entitlement license`n"; Expected = $false }
         @{ Name = 'exit zero alone'; ExitCode = 0; Log = "Exiting batchmode successfully now!`n"; Expected = $false }
         @{ Name = 'serial unavailable alone'; ExitCode = 0; Log = "Serial number unavailable for ULF return`n"; Expected = $false }
         @{ Name = 'entitlement alone'; ExitCode = 0; Log = "Successfully returned the entitlement license`n"; Expected = $false }
-        @{ Name = 'terminated process'; ExitCode = 143; Log = $exact; Expected = $false }
+        @{ Name = 'terminated process 137'; ExitCode = 137; Log = $exact; Expected = $false }
+        @{ Name = 'terminated process 143'; ExitCode = 143; Log = $exact; Expected = $false }
+        @{ Name = 'terminated Windows control-c'; ExitCode = -1073741510; Log = $exact; Expected = $false }
+        @{ Name = 'terminated Windows stack buffer overrun'; ExitCode = -1073740791; Log = $exact; Expected = $false }
     )
     $logPath = [System.IO.Path]::GetTempFileName()
     try {

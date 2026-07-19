@@ -15,10 +15,18 @@ inputs:
 outputs:
   resource-safe:
     description: "Compatibility cleanup result; false for blocked account health."
-    value: ${{ steps.health.outputs.resource-health == 'blocked' && 'false' || steps.return_license.outputs.resource-safe }}
+    value: >-
+      ${{ steps.health.outcome == 'success' &&
+      steps.health.outputs.resource-health == 'healthy' &&
+      steps.return_license.outputs.resource-safe == 'true' &&
+      'true' || 'false' }}
   resource-cleanup-status:
     description: "confirmed only for exact positive cleanup evidence; otherwise unknown."
-    value: ${{ steps.health.outputs.resource-health == 'blocked' && 'unknown' || steps.return_license.outputs.resource-cleanup-status }}
+    value: >-
+      ${{ steps.health.outcome == 'success' &&
+      steps.health.outputs.resource-health == 'healthy' &&
+      steps.return_license.outputs.resource-cleanup-status == 'confirmed' &&
+      'confirmed' || 'unknown' }}
   resource-health:
     description: "healthy or blocked account classification."
     value: ${{ steps.health.outputs.resource-health }}
@@ -129,42 +137,4 @@ runs:
         EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
         HEALTHY_REASON: ${{ steps.return_license.outputs.resource-reason }}
       run: |
-        Set-StrictMode -Version Latest
-        $PSNativeCommandUseErrorActionPreference = $false
-
-        $healthyReason = if ([string]::IsNullOrWhiteSpace($env:HEALTHY_REASON)) {
-          'return-missing-positive-evidence'
-        } else {
-          $env:HEALTHY_REASON
-        }
-        "resource-health=healthy" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        "resource-reason=$healthyReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
-        function Resolve-PythonApplication {
-          param([Parameter(Mandatory)][string]$Name)
-          foreach ($candidate in @(Get-Command $Name -CommandType Application -All -ErrorAction SilentlyContinue)) {
-            if ([string]::IsNullOrWhiteSpace($candidate.Source) -or -not (Test-Path -LiteralPath $candidate.Source -PathType Leaf)) {
-              continue
-            }
-            try {
-              & $candidate.Source --version *> $null
-              if ($LASTEXITCODE -eq 0) {
-                return $candidate
-              }
-            } catch {
-              continue
-            }
-          }
-          return $null
-        }
-
-        $python = Resolve-PythonApplication -Name python3
-        if ($null -eq $python) {
-          $python = Resolve-PythonApplication -Name python
-        }
-        if ($null -eq $python) {
-          Write-Host "::error::A usable python3 or python executable is required to classify sanitized Unity account-health evidence."
-          exit 1
-        }
-        & $python.Source "${{ github.action_path }}/classify_unity_account_health.py"
-        exit $LASTEXITCODE
+        & (Join-Path '${{ github.action_path }}' 'Classify-UnityAccountHealth.ps1')
