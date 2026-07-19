@@ -6,10 +6,25 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
+REGISTERED_UNITY_AUTOMATION = {
+    ".github/actions/return-unity-license/action.yml",
+    ".github/actions/validate-unity-license/action.yml",
+    ".github/workflows/perf-numbers.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/unity-benchmarks.yml",
+    ".github/workflows/unity-gameci-experiment.yml",
+    ".github/workflows/unity-tests.yml",
+}
+UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(
+    r"\bUNITY_(?:SERIAL|EMAIL|PASSWORD|LICENSE|LICENSING_SERVER)\b|"
+    r"game-ci/unity-(?:test-runner|builder|activate)@",
+    re.IGNORECASE,
+)
 SAME_REPOSITORY_PR_GUARD = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*"
     r"github\.event\.pull_request\.head\.repo\.full_name\s*==\s*github\.repository"
@@ -55,6 +70,23 @@ def run_script(step: str) -> str:
     return "\n".join(lines)
 
 
+def find_unregistered_unity_automation(files: dict[str, str]) -> list[str]:
+    return sorted(
+        path
+        for path, source in files.items()
+        if UNITY_CREDENTIAL_OR_ACTIVATION.search(source)
+        and path not in REGISTERED_UNITY_AUTOMATION
+    )
+
+
+def repository_unity_automation(github: Path = Path(".github")) -> dict[str, str]:
+    return {
+        path.as_posix(): path.read_text(encoding="utf-8")
+        for path in github.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".yml", ".yaml"}
+    }
+
+
 def validate() -> None:
     parser_fixture = """      - name: Fixture
         run: |
@@ -77,6 +109,73 @@ def validate() -> None:
     require(
         BLANKET_PR_REJECTION.search("github.event_name!='pull_request'&&(") is not None,
         "blanket rejection parser must detect compact operators",
+    )
+    marker_cases = (
+        ("serial credential", "env: { UNITY_SERIAL: secret }"),
+        ("email credential", "env: { UNITY_EMAIL: secret }"),
+        ("password credential", "env: { UNITY_PASSWORD: secret }"),
+        ("retired license payload", "env: { UNITY_LICENSE: secret }"),
+        ("retired licensing server", "env: { UNITY_LICENSING_SERVER: secret }"),
+        ("GameCI test runner", "uses: game-ci/unity-test-runner@v4"),
+        ("GameCI builder", "uses: game-ci/unity-builder@v4"),
+        ("GameCI activation action", "uses: game-ci/unity-activate@v2"),
+    )
+    for name, marker in marker_cases:
+        path = f".github/workflows/{name.replace(' ', '-')}.yml"
+        require(
+            find_unregistered_unity_automation({path: marker}) == [path],
+            f"{name}: Unity automation marker was not detected",
+        )
+
+    registration_cases = (
+        (
+            "registered active workflow",
+            {".github/workflows/unity-tests.yml": "env: { UNITY_SERIAL: secret }"},
+            [],
+        ),
+        (
+            "registered cleanup action",
+            {".github/actions/return-unity-license/action.yml": "env: { UNITY_EMAIL: secret }"},
+            [],
+        ),
+        (
+            "unregistered disabled workflow",
+            {".github/workflows-disabled/unity-tests.yml": "env: { UNITY_PASSWORD: secret }"},
+            [".github/workflows-disabled/unity-tests.yml"],
+        ),
+        (
+            "unrelated workflow",
+            {".github/workflows/docs.yml": "run: npm run docs"},
+            [],
+        ),
+    )
+    for name, files, expected in registration_cases:
+        require(
+            find_unregistered_unity_automation(files) == expected,
+            f"{name}: unexpected Unity automation classification",
+        )
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        github = Path(temporary_directory) / ".github"
+        workflows = github / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "mixed.YmL").write_text("name: mixed", encoding="utf-8")
+        (workflows / "upper.YAML").write_text("name: upper", encoding="utf-8")
+        (workflows / "ignored.txt").write_text("name: ignored", encoding="utf-8")
+        discovered = repository_unity_automation(github)
+        require(
+            set(discovered) == {
+                (workflows / "mixed.YmL").as_posix(),
+                (workflows / "upper.YAML").as_posix(),
+            },
+            "Unity automation discovery must treat YAML extensions case-insensitively",
+        )
+
+    unregistered = find_unregistered_unity_automation(repository_unity_automation())
+    require(
+        not unregistered,
+        "unregistered credential-bearing or activation-capable Unity automation: "
+        + ", ".join(unregistered),
     )
 
     source = WORKFLOW.read_text(encoding="utf-8")
