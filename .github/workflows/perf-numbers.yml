@@ -304,6 +304,7 @@ jobs:
           retention-days: 14
 
       - name: Acquire organization Unity lock
+        id: acquire_lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@59a2fa98224569e5a697f271a3ac4b866c53ac2c # v1.8.3
         with:
@@ -315,9 +316,14 @@ jobs:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
+      - name: Require acquired Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired != 'true' }}
+        shell: pwsh
+        run: exit 1
+
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         # 180 (not 120): the Standalone leg builds a COLD IL2CPP player, which is
         # far slower than a Mono build. The PlayMode leg runs IN-EDITOR (Mono) with
         # no player build and is faster, so 180 is generous for it too. Stays

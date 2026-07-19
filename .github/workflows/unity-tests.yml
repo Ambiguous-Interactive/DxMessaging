@@ -274,6 +274,7 @@ jobs:
           retention-days: 14
 
       - name: Acquire organization Unity lock
+        id: acquire_lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@59a2fa98224569e5a697f271a3ac4b866c53ac2c # v1.8.3
         with:
@@ -285,9 +286,14 @@ jobs:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
+      - name: Require acquired Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired != 'true' }}
+        shell: pwsh
+        run: exit 1
+
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         # 150 (was 120): the standalone leg builds a NON-development IL2CPP
         # player with the Release C++ configuration. Measured PR runs showed the
         # Debug C++ configuration reduces native compile time but makes the
