@@ -13,7 +13,11 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
 CURRENT_PR_HEAD_GUARD = (
     "Ambiguous-Interactive/ambiguous-organization-build-lock/"
-    ".github/actions/require-current-pr-head@8e1cf892f5ee710908fc14f09b3c8033edcb74f9"
+    ".github/actions/require-current-pr-head@a00614ace745152a659c5c2654f7cefb68a5a628"
+)
+ACQUIRE_BUILD_LOCK = (
+    "Ambiguous-Interactive/ambiguous-organization-build-lock/"
+    ".github/actions/acquire-build-lock@a00614ace745152a659c5c2654f7cefb68a5a628"
 )
 REGISTERED_UNITY_AUTOMATION = {
     ".github/actions/return-unity-license/action.yml",
@@ -59,6 +63,61 @@ def step_block(job: str, name: str) -> str:
     require(start >= 0, f"missing step: {name}")
     following = job.find("\n      - name:", start + len(marker))
     return job[start : following if following >= 0 else len(job)]
+
+
+def validate_licensed_workflow_policy(source: str) -> str:
+    concurrency = re.search(
+        r"^concurrency:\n(?P<body>(?:^  .+\n)+)",
+        source,
+        re.MULTILINE,
+    )
+    require(concurrency is not None, "Unity workflow must declare top-level concurrency")
+    assert concurrency is not None
+    require(
+        re.findall(r"^  cancel-in-progress: false[ \t]*$", concurrency.group("body"), re.MULTILINE)
+        == ["  cancel-in-progress: false"],
+        "Unity workflow concurrency must use one literal cancel-in-progress: false",
+    )
+
+    licensed = job_block(source, "unity-tests")
+    require(
+        re.findall(r"^      fail-fast: false[ \t]*$", licensed, re.MULTILINE)
+        == ["      fail-fast: false"],
+        "Unity matrix strategy must use one literal fail-fast: false",
+    )
+
+    acquire = step_block(licensed, "Acquire organization Unity lock")
+    require(
+        re.findall(
+            rf"^        uses: {re.escape(ACQUIRE_BUILD_LOCK)} # v1\.9\.1[ \t]*$",
+            acquire,
+            re.MULTILINE,
+        )
+        == [f"        uses: {ACQUIRE_BUILD_LOCK} # v1.9.1"],
+        "Unity acquire step must use the exact immutable v1.9.1 action pin",
+    )
+    for key, value in (
+        ("github-token", "${{ github.token }}"),
+        ("pull-request-number", "${{ github.event.pull_request.number }}"),
+        ("expected-head-sha", "${{ github.event.pull_request.head.sha }}"),
+    ):
+        require(
+            re.findall(rf"^          {re.escape(key)}:.*$", acquire, re.MULTILINE)
+            == [f"          {key}: {value}"],
+            f"Unity acquire step must bind exact {key} PR identity input",
+        )
+
+    return licensed
+
+
+def require_policy_mutation_rejected(source: str, before: str, after: str, name: str) -> None:
+    require(source.count(before) >= 1, f"{name}: mutation target missing")
+    mutated = source.replace(before, after, 1)
+    try:
+        validate_licensed_workflow_policy(mutated)
+    except AssertionError:
+        return
+    raise AssertionError(f"{name}: unsafe workflow mutation was accepted")
 
 
 def run_script(step: str) -> str:
@@ -183,6 +242,44 @@ def validate() -> None:
     )
 
     source = WORKFLOW.read_text(encoding="utf-8")
+    licensed = validate_licensed_workflow_policy(source)
+    require_policy_mutation_rejected(
+        source,
+        "  cancel-in-progress: false\n",
+        "  cancel-in-progress: true\n",
+        "top-level cancellation policy",
+    )
+    require_policy_mutation_rejected(
+        source,
+        "      fail-fast: false\n",
+        "      fail-fast: true\n",
+        "matrix fail-fast policy",
+    )
+    require_policy_mutation_rejected(
+        source,
+        f"        uses: {ACQUIRE_BUILD_LOCK} # v1.9.1\n",
+        f"        uses: {ACQUIRE_BUILD_LOCK[:-1]}0 # v1.9.1\n",
+        "acquire action pin",
+    )
+    acquire_step = step_block(licensed, "Acquire organization Unity lock")
+    for key, value in (
+        ("github-token", "${{ github.token }}"),
+        ("pull-request-number", "${{ github.event.pull_request.number }}"),
+        ("expected-head-sha", "${{ github.event.pull_request.head.sha }}"),
+    ):
+        expected_line = f"          {key}: {value}\n"
+        mutated_acquire = acquire_step.replace(expected_line, "", 1)
+        require(
+            mutated_acquire != acquire_step,
+            f"{key}: acquire mutation target missing",
+        )
+        require_policy_mutation_rejected(
+            source,
+            acquire_step,
+            mutated_acquire,
+            f"acquire {key} binding",
+        )
+
     push = re.search(
         r"^  push:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",
         source,
@@ -216,7 +313,6 @@ def validate() -> None:
         "pull_request trigger must remain unfiltered by paths",
     )
 
-    licensed = job_block(source, "unity-tests")
     require(
         SAME_REPOSITORY_PR_GUARD.search(licensed) is not None,
         "Unity job must admit same-repository PRs and reject forks",
