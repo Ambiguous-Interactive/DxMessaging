@@ -197,6 +197,7 @@ jobs:
           retention-days: 90
 
       - name: Acquire organization Unity lock
+        id: acquire_lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@6b2147a1d158c770f213d216f4eea0c313be370a # issue #52 reviewed acquire
         with:
@@ -208,9 +209,14 @@ jobs:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
+      - name: Require acquired Unity lock
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired != 'true' }}
+        shell: pwsh
+        run: exit 1
+
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 120
         shell: pwsh
         env:

@@ -93,7 +93,7 @@ test("editor-window screenshot automation does not use blocked capture primitive
     }
 
     const absolutePath = path.join(REPO_ROOT, relativePath);
-    if (!fs.statSync(absolutePath).isFile()) {
+    if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
       continue;
     }
 

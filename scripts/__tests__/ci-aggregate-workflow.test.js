@@ -13,12 +13,12 @@ const ACQUIRE_ACTION_SHA = "6b2147a1d158c770f213d216f4eea0c313be370a";
 const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 const UNITY_LOCK_WINDOWS = [
-  ["unity-tests.yml", "unity-tests", "Run Unity Test Runner"],
-  ["unity-gameci-experiment.yml", "game-ci-experiment", "Run GameCI normal project mode"],
-  ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner"],
-  ["release.yml", "unity-checks", "Run Unity Test Runner"],
-  ["release.yml", "unitypackage", "Export the .unitypackage"],
-  ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner"]
+  ["unity-tests.yml", "unity-tests", "Run Unity Test Runner", true],
+  ["unity-gameci-experiment.yml", "game-ci-experiment", "Run GameCI normal project mode", true],
+  ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner", true],
+  ["release.yml", "unity-checks", "Run Unity Test Runner", true],
+  ["release.yml", "unitypackage", "Export the .unitypackage", false],
+  ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true]
 ];
 
 const CONSOLIDATED_WORKFLOWS = [
@@ -301,16 +301,16 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   const runnerLabels = new Map([["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'], ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-gameci-experiment.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']]); const preflightAction = `${LOCK_ACTION_PREFIX}check-unity-runner-availability@${LOCK_ACTION_SHA} # v1.8.3`; const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8")); for (const [file, labels] of runnerLabels) { const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"); const preflight = getJobBlock(source, "runner-preflight", file); assert.match(preflight, /\n    runs-on: ubuntu-latest\n/, file); assert.match(preflight, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), file); assert.match(preflight, /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, file); assert.match(preflight, /reader-app-private-key: \$\{\{ secrets\.BUILD_LOCK_READER_APP_PRIVATE_KEY \}\}/, file); assert.match(preflight, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`), file); assert.doesNotMatch(preflight, /RUNNER_AUDIT_PAT|Soft pass|soft-pass/i, file); }
   assert.equal(workflowSources.reduce((count, source) => count + source.split(acquire).length - 1, 0), UNITY_LOCK_WINDOWS.length);
   assert.equal(workflowSources.reduce((count, source) => count + source.split(release).length - 1, 0), UNITY_LOCK_WINDOWS.length);
-  for (const [file, jobId, licensedWorkName] of UNITY_LOCK_WINDOWS) {
-    const label = `${file}:${jobId}`;
+  for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
+    const label = `${file}:${jobId}`; const blockedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired != 'true'`; const licensedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
     const job = getJobBlock(source, jobId, file);
     assert.equal(job.split(acquire).length - 1, 1, `${label} acquire count`);
     assert.equal(job.split(release).length - 1, 1, `${label} release count`);
-    const positions = ["Acquire organization Unity lock", licensedWorkName, "Return Unity license", "Release organization Unity lock"].map((name) => job.indexOf(`      - name: ${name}`));
+    const positions = ["Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Release organization Unity lock"].map((name) => job.indexOf(`      - name: ${name}`));
     assert.ok(positions.every((position) => position >= 0), `${label} lifecycle steps must all exist`);
     assert.deepEqual(positions, [...positions].sort((a, b) => a - b), `${label} lifecycle order`);
-    const orderedContract = [escapeRegExp(acquire), "holder-id-suffix: (.+)\\n          runner-id: (.+)\\n", `- name: ${escapeRegExp(licensedWorkName)}`, "- name: Return Unity license\\n        id: return_unity_license\\n        if: always\\(\\)\\n        timeout-minutes: 5\\n        continue-on-error: true\\n        uses: \\.\\/\\.github\\/actions\\/return-unity-license", `- name: Release organization Unity lock\\n        if: always\\(\\)\\n        ${escapeRegExp(release)}`, "holder-id-suffix: \\1\\n          runner-id: \\2\\n          resource-cleanup-status: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-cleanup-status \\}\\}\\n          resource-health: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-health \\}\\}\\n          resource-reason: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-reason \\}\\}"].join("[\\s\\S]*?");
+    const orderedContract = ["- name: Acquire organization Unity lock\\n        id: acquire_lock", escapeRegExp(acquire), "holder-id-suffix: (.+)\\n          runner-id: (.+)\\n", `- name: Require acquired Unity lock\\n        if: \\$\\{\\{ ${blockedCondition} \\}\\}\\n        shell: pwsh\\n        run: exit 1`, `- name: ${escapeRegExp(licensedWorkName)}[\\s\\S]*?if: \\$\\{\\{ ${licensedCondition} \\}\\}`, "- name: Return Unity license\\n        id: return_unity_license\\n        if: always\\(\\)\\n        timeout-minutes: 5\\n        continue-on-error: true\\n        uses: \\.\\/\\.github\\/actions\\/return-unity-license", `- name: Release organization Unity lock\\n        if: always\\(\\)\\n        ${escapeRegExp(release)}`, "holder-id-suffix: \\1\\n          runner-id: \\2\\n          resource-cleanup-status: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-cleanup-status \\}\\}\\n          resource-health: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-health \\}\\}\\n          resource-reason: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-reason \\}\\}"].join("[\\s\\S]*?");
     assert.match(job, new RegExp(orderedContract), label);
     assert.doesNotMatch(job, /\n    environment:/, `${label} must not require environment approval`);
   }
@@ -329,7 +329,7 @@ test("Unity return proof classifications remain fail closed and non-masking", ()
   ];
   for (const [classification, pattern] of classifications) assert.match(source, pattern, classification); assert.doesNotMatch(fs.readFileSync(path.join(REPO_ROOT, ".github", "workflows", "unity-benchmarks.yml"), "utf8"), /prior-command-succeeded/); assert.equal((source.match(/unity-return-preflight-/g) || []).length, 2); assert.equal((source.match(/Remove-Item -LiteralPath \$returnLogPath -Force/g) || []).length, 2);
   assert.ok(source.indexOf("resource-safe=false") < source.indexOf("$editorPath ="));
-  assert.match(source, /resource-health[\s\S]*resource-reason/); assert.match(actionSource, /resource-health=healthy[\s\S]*?resource-reason=\$healthyReason[\s\S]*?function Resolve-PythonApplication/); assert.match(actionSource, /function Resolve-PythonApplication[\s\S]*?Get-Command \$Name[^\n]*-All[\s\S]*?Test-Path[\s\S]*?--version[\s\S]*?LASTEXITCODE -eq 0/); assert.match(actionSource, /Resolve-PythonApplication -Name python3\b/); assert.match(actionSource, /Resolve-PythonApplication -Name python\b/); assert.doesNotMatch(actionSource, /run:\s*python3(?:\s|$)|run:\s*\|[^\n]*\n\s*python3(?:\s|$)/m);
+  assert.match(source, /resource-health[\s\S]*resource-reason/); assert.match(actionSource, /Classify-UnityAccountHealth\.ps1/); assert.doesNotMatch(actionSource, /Resolve-PythonApplication|python3?/i); assert.match(actionSource, /resource-safe:[\s\S]*?steps\.health\.outcome == 'success'\s+&&\s+steps\.health\.outputs\.resource-health == 'healthy'\s+&&\s+steps\.return_license\.outputs\.resource-safe == 'true'[\s\S]*?'true' \|\| 'false'/); assert.match(actionSource, /resource-cleanup-status:[\s\S]*?steps\.health\.outcome == 'success'\s+&&\s+steps\.health\.outputs\.resource-health == 'healthy'\s+&&\s+steps\.return_license\.outputs\.resource-cleanup-status == 'confirmed'[\s\S]*?'confirmed' \|\| 'unknown'/);
 });
 // prettier-ignore
 test("active workflows pin external actions and scope licensed credentials", () => {
