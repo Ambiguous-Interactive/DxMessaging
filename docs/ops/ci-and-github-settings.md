@@ -36,10 +36,13 @@ the central lock immediately before the licensed Unity section:
   uses: ./.github/actions/validate-unity-license
 
 - name: Acquire organization Unity lock
-  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@59a2fa98224569e5a697f271a3ac4b866c53ac2c # v1.8.3
+  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@a00614ace745152a659c5c2654f7cefb68a5a628 # v1.9.1
   with:
     lock-name: wallstop-organization-builds
     runner-id: ${{ runner.name }}
+    github-token: ${{ github.token }}
+    pull-request-number: ${{ github.event.pull_request.number }}
+    expected-head-sha: ${{ github.event.pull_request.head.sha }}
   env:
     BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
     BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}

@@ -165,7 +165,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Require an online Unity runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@59a2fa98224569e5a697f271a3ac4b866c53ac2c # v1.8.3
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@a00614ace745152a659c5c2654f7cefb68a5a628 # v1.9.1
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
@@ -263,7 +263,7 @@ jobs:
       - name: Acquire organization Unity lock
         id: acquire_lock
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@59a2fa98224569e5a697f271a3ac4b866c53ac2c # v1.8.3
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@a00614ace745152a659c5c2654f7cefb68a5a628 # v1.9.1
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
@@ -315,7 +315,7 @@ jobs:
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@59a2fa98224569e5a697f271a3ac4b866c53ac2c # v1.8.3
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@a00614ace745152a659c5c2654f7cefb68a5a628 # v1.9.1
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
@@ -453,7 +453,7 @@ jobs:
 
       - name: Acquire organization Unity lock
         id: acquire_lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@59a2fa98224569e5a697f271a3ac4b866c53ac2c # v1.8.3
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@a00614ace745152a659c5c2654f7cefb68a5a628 # v1.9.1
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
@@ -504,7 +504,7 @@ jobs:
 
       - name: Release organization Unity lock
         if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@59a2fa98224569e5a697f271a3ac4b866c53ac2c # v1.8.3
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@a00614ace745152a659c5c2654f7cefb68a5a628 # v1.9.1
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
