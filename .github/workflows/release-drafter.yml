@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -29,7 +29,7 @@ jobs:
       - name: Setup Node.js
         # The shared changelog extractor (scripts/release/release-notes.js) runs
         # under Node; pin it instead of the runner's ambient version.
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
 
@@ -79,7 +79,7 @@ jobs:
       # continue-on-error, so a second failure fails the job. continue-on-error on the first attempt
       # keeps its real result observable via steps.<id>.outcome while letting the retry proceed.
       - name: Run Release Drafter
-        uses: release-drafter/release-drafter@4d75298e00d9e34c483e5ff8c68d0ea1c1940c1e # v7
+        uses: release-drafter/release-drafter@eada3c96a64734dd381cfbda23511034e328ddb0 # v7
         id: release_drafter
         continue-on-error: true
         with:
@@ -93,7 +93,7 @@ jobs:
 
       - name: Run Release Drafter (retry)
         if: steps.release_drafter.outcome == 'failure'
-        uses: release-drafter/release-drafter@4d75298e00d9e34c483e5ff8c68d0ea1c1940c1e # v7
+        uses: release-drafter/release-drafter@eada3c96a64734dd381cfbda23511034e328ddb0 # v7
         id: release_drafter_retry
         with:
           config-name: release-drafter.yml
