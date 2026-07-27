@@ -427,8 +427,11 @@ function Invoke-UnityLicenseReturn {
             '-logFile', '-'
         )
         Write-Host "::group::Return Unity license (serial)"
-        & $EditorPath @returnArgs 2>&1 | Tee-Object -FilePath $LogPath | Out-Host
+        # Return output may contain account or serial fragments. Keep it only in
+        # the private evidence log consumed by central classification.
+        & $EditorPath @returnArgs 2>&1 | Out-File -FilePath $LogPath -Encoding utf8
         $exitCode = $LASTEXITCODE
+        Add-Content -LiteralPath $LogPath -Value "exit_return_rc=$exitCode" -Encoding utf8
         Write-Host "::endgroup::"
         if ($exitCode -ne 0) {
             Write-Host "::warning::Unity license return exited with code $exitCode; the workflow if:always() return step and the next run's return-at-start are the backstops for the leaked seat."
