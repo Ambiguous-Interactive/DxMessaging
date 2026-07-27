@@ -87,9 +87,9 @@ runs:
                 }
               }
             }
-            if (-not $ready) {
-              $supplementalPaths.Add($file.FullName)
-            }
+            # Retain the prior file for fallback health classification and
+            # deletion even when its exact-return metadata was attested.
+            $supplementalPaths.Add($file.FullName)
           }
         } catch {
           Write-Host '::warning::Prior Unity return metadata could not be attested; the redundant return remains authoritative.'
