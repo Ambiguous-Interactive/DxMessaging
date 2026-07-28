@@ -46,7 +46,7 @@ jobs:
       yaml: ${{ steps.filter.outputs.yaml }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -204,7 +204,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
@@ -218,7 +218,7 @@ jobs:
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
 
@@ -246,13 +246,13 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.markdown != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.markdown != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
           cache: "npm"
@@ -291,7 +291,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.csharpier != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
@@ -303,7 +303,7 @@ jobs:
 
       - name: Setup .NET
         if: ${{ needs.changes.outputs.csharpier != 'false' }}
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "8.0.x"
 
@@ -335,19 +335,19 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Setup .NET
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: SourceGenerators/global.json
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
 
@@ -463,13 +463,13 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.json != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.json != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
           cache: "npm"
@@ -508,13 +508,13 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.spellcheck != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.spellcheck != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
           cache: "npm"
@@ -544,13 +544,13 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.banner != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.banner != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
 
@@ -578,14 +578,14 @@ jobs:
 
       - name: Checkout repository
         if: ${{ needs.changes.outputs.llms != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.llms != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
           cache: "npm"
@@ -624,13 +624,13 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.yaml != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.yaml != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
           cache: "npm"
@@ -690,14 +690,14 @@ jobs:
 
       - name: Checkout repository
         if: ${{ needs.changes.outputs.scripts != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.scripts != 'false' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
           cache: "npm"
@@ -705,7 +705,7 @@ jobs:
 
       - name: Setup .NET
         if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: SourceGenerators/global.json
 
@@ -754,7 +754,7 @@ jobs:
 
       - name: Checkout repository
         if: ${{ needs.changes.outputs.docs != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -788,7 +788,7 @@ jobs:
 
       - name: Setup Python
         if: ${{ needs.changes.outputs.docs != 'false' }}
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: "pip"
@@ -890,7 +890,7 @@ jobs:
 
       - name: Checkout
         if: ${{ needs.changes.outputs.docs_links != 'false' }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
