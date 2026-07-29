@@ -5,7 +5,8 @@
  * mkdocs.yml font.text) / JetBrains Mono (code, via font.code).
  * ============================================================ */
 
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap");
+/* Space Grotesk is linked from mkdocs.yml extra_css, not @import-ed here: an @import
+ * cannot begin downloading until this sheet is fetched and parsed. */
 
 :root {
   --dxm-amber: #f4a836;

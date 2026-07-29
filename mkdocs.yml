@@ -149,12 +149,16 @@ extra:
       name: Wallstop Studios on GitHub
   generator: false
 
+# Space Grotesk (display face) is fetched as a sibling stylesheet rather than through an
+# @import inside extra.css: an @import cannot start downloading until the importing sheet
+# has been fetched and parsed, which serializes two render-blocking requests.
+#
+# Diagrams are rendered by Material's own mermaid integration, which the superfences
+# custom_fence above feeds. It loads mermaid only on pages that contain a diagram and
+# themes it from the --md-mermaid-* custom properties, so no extra_javascript is needed.
 extra_css:
+  - https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap
   - stylesheets/extra.css
-
-extra_javascript:
-  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
-  - javascripts/mermaid-config.js
 
 # Internal maintainer documentation (release/CI operations and runbooks) is kept in
 # the repository for contributors but excluded from the published, customer-facing

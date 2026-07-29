@@ -23,7 +23,7 @@ Continuation material extracted from `markdown-compatibility.md` to keep .llm fi
 
 > 🔗 **See [Mermaid Theming](./mermaid-theming.md)** for complete guidance on Mermaid diagram theming in MkDocs Material.
 
-**Key rule**: Do not use `%%{init: {'theme': '...'}}%%` directives in `docs/` files. The global `mermaid-config.js` handles theme-aware rendering automatically.
+**Key rule**: Do not use `%%{init: {'theme': '...'}}%%` directives in `docs/` files. Material's built-in mermaid integration themes diagrams from the site palette automatically.
 
 ---
 

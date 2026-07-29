@@ -222,7 +222,7 @@
         "category": "documentation",
         "tags": "documentation, markdown, compatibility, mkdocs, portability"
       },
-      "lineCount": 106,
+      "lineCount": 107,
       "references": [
         ".llm/skills/markdown-authoring/references/external-url-fragment-validation.md",
         ".llm/skills/markdown-authoring/references/link-quality-guidelines-part-1.md",
@@ -231,7 +231,6 @@
         ".llm/skills/markdown-authoring/references/markdown-compatibility-part-1.md",
         ".llm/skills/markdown-authoring/references/markdown-compatibility-part-2.md",
         ".llm/skills/markdown-authoring/references/markdown-compatibility.md",
-        ".llm/skills/markdown-authoring/references/mermaid-theming-part-1.md",
         ".llm/skills/markdown-authoring/references/mermaid-theming.md",
         ".llm/skills/markdown-authoring/references/mkdocs-navigation-part-1.md",
         ".llm/skills/markdown-authoring/references/mkdocs-navigation.md"
