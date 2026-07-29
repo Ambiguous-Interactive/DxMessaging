@@ -11,63 +11,35 @@ const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
 const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 
-// Build-lock pins are bumped by Dependabot. Hardcoding the SHA here made every
-// dependency bump fail this suite (and, through the devcontainer smoke job that
-// runs `npm test`, a second required check) for a reason unrelated to the change
-// under review. The invariant that actually matters is not a literal value: each
-// action group must stay immutably pinned and internally consistent across every
-// file that references it, so a bump either lands everywhere or fails loudly.
-// `.github/actions/**` is included because the cleanup-policy group reaches into
-// composite actions there; see .github/dependabot.yml for how those get bumped.
-const ACTION_HOST_FILES = [
-  WORKFLOW_DIR,
-  path.join(REPO_ROOT, ".github", "actions")
-].flatMap((root) => walkFiles(root, { match: (file) => /\.ya?ml$/.test(file) }));
-
+// Build-lock pins are bumped by Dependabot, so they are derived here rather than
+// written as literals: a hardcoded SHA failed this suite (and the devcontainer
+// smoke job that runs `npm test`) on every dependency bump, for a reason
+// unrelated to the change under review. What must hold is that each action group
+// stays immutably pinned and identical in every file that references it, so a
+// bump either lands everywhere or fails loudly. `.github/actions/**` counts too:
+// the cleanup-policy group reaches into a composite action there, which is why
+// .github/dependabot.yml lists that directory.
+// prettier-ignore
 function resolveLockActionPin(actionNames) {
-  const shas = new Map();
-  const comments = new Set();
-  for (const filePath of ACTION_HOST_FILES) {
+  const shas = new Map(); const comments = new Set(); const label = actionNames.join(", ");
+  for (const filePath of [WORKFLOW_DIR, path.join(REPO_ROOT, ".github", "actions")].flatMap((root) => walkFiles(root, { match: (file) => /\.ya?ml$/.test(file) }))) {
     const source = fs.readFileSync(filePath, "utf8");
     for (const name of actionNames) {
-      const pattern = new RegExp(
-        `${escapeRegExp(LOCK_ACTION_PREFIX + name)}@([0-9a-f]{40})([^\\S\\n]+#[^\\n]*)?`,
-        "g"
-      );
-      for (const match of source.matchAll(pattern)) {
-        const where = `${path.relative(REPO_ROOT, filePath)}:${name}`;
-        shas.set(match[1], [...(shas.get(match[1]) || []), where]);
-        const comment = (match[2] || "").trimEnd();
-        if (comment !== "") {
-          comments.add(comment);
-        }
+      for (const match of source.matchAll(new RegExp(`${escapeRegExp(LOCK_ACTION_PREFIX + name)}@([0-9a-f]{40})([^\\S\\n]+#[^\\n]*)?`, "g"))) {
+        shas.set(match[1], [...(shas.get(match[1]) || []), `${path.relative(REPO_ROOT, filePath)}:${name}`]);
+        if ((match[2] || "").trim() !== "") comments.add(match[2].trimEnd());
       }
     }
   }
-  assert.ok(shas.size > 0, `${actionNames.join(", ")} must be referenced somewhere under .github`);
-  assert.equal(
-    shas.size,
-    1,
-    `${actionNames.join(", ")} must share one SHA; found ${JSON.stringify([...shas])}`
-  );
-  // A version comment is optional, but the group must not disagree about it.
-  assert.ok(comments.size <= 1, `${actionNames.join(", ")} version comments disagree`);
+  assert.equal(shas.size, 1, `${label} must share one SHA; found ${JSON.stringify([...shas])}`);
+  assert.ok(comments.size <= 1, `${label} version comments disagree: ${[...comments]}`);
   return { sha: [...shas.keys()][0], comment: [...comments][0] || "" };
 }
 
-// Acquire, preflight, and the PR-head guard ship together in the build-lock
-// release; release/require-confirmed/classify carry the centralized Unity
-// cleanup policy and are pinned as their own group.
-const LOCK_ACTION_PIN = resolveLockActionPin([
-  "check-unity-runner-availability",
-  "acquire-build-lock",
-  "require-current-pr-head"
-]);
-const CLEANUP_POLICY_PIN = resolveLockActionPin([
-  "release-build-lock",
-  "require-confirmed-unity-cleanup",
-  "classify-unity-cleanup-evidence"
-]);
+// Acquire, preflight, and the PR-head guard ship in the build-lock release;
+// release/require-confirmed/classify carry the centralized Unity cleanup policy.
+// prettier-ignore
+const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "require-current-pr-head"], ["release-build-lock", "require-confirmed-unity-cleanup", "classify-unity-cleanup-evidence"]].map((group) => resolveLockActionPin(group));
 const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
@@ -224,7 +196,10 @@ test("script-test path detector covers .llm harness inputs and its generated ind
   const scriptsPattern = new RegExp(extractShellPatternVariable(source, "scripts_pattern"));
 
   assert.match(".llm/index.md", scriptsPattern);
-  assert.match(".llm/skills/github-workflow-consistency/references/workflow-consistency.md", scriptsPattern);
+  assert.match(
+    ".llm/skills/github-workflow-consistency/references/workflow-consistency.md",
+    scriptsPattern
+  );
   assert.match("scripts/llm/harness.js", scriptsPattern);
 });
 
@@ -235,7 +210,10 @@ test("script-test path detector covers package-script contract reference surface
   assert.match(".github/ISSUE_TEMPLATE/bug_report.yml", scriptsPattern);
   assert.match("docs/ops/release-operations.md", scriptsPattern);
   assert.match(".llm/context.md", scriptsPattern);
-  assert.match(".llm/skills/package-publishing/references/unity-analyzer-shipping.md", scriptsPattern);
+  assert.match(
+    ".llm/skills/package-publishing/references/unity-analyzer-shipping.md",
+    scriptsPattern
+  );
 });
 
 test("static child jobs always report and fail closed on bad change detection", () => {
