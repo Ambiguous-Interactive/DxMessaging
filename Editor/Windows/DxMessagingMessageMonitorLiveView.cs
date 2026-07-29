@@ -182,6 +182,9 @@ namespace DxMessaging.Editor.Windows
         internal const string FooterName = "dxmessaging-monitor-live-footer";
         internal const string EmptyBodyName = "dxmessaging-monitor-live-empty";
         internal const string EmptyTitleName = "dxmessaging-monitor-live-empty-title";
+        internal const string GapNoticeName = "dxmessaging-monitor-live-gap";
+        internal const string GapNoticeTitleName = "dxmessaging-monitor-live-gap-title";
+        internal const string GapNoticeBodyName = "dxmessaging-monitor-live-gap-body";
 
         internal const string Title = "Message Monitor (Live)";
 
@@ -372,7 +375,24 @@ namespace DxMessaging.Editor.Windows
             }
 
             state.FooterSlot.Clear();
+            if (recorder.MissedCount > 0)
+            {
+                state.FooterSlot.Add(CreateGapNotice(recorder.MissedCount));
+            }
             state.FooterSlot.Add(CreateFooter(recorder, rows.Count));
+        }
+
+        /// <summary>
+        /// The body of the notice shown when the bus overwrote emissions before the recorder drained
+        /// them. Both causes are named because the fix differs: pausing is the reader's own doing, a
+        /// buffer too small for the emission rate is a setting.
+        /// </summary>
+        internal static string CreateGapNoticeBodyText(long missedCount)
+        {
+            string emissions = missedCount == 1 ? "1 emission" : $"{missedCount} emissions";
+            return $"The bus overwrote {emissions} before this recorder drained them, so rows are "
+                + "missing. Either recording was paused long enough for the bus buffer to wrap, or "
+                + "that buffer is too small for the emission rate.";
         }
 
         /// <summary>
@@ -624,6 +644,11 @@ namespace DxMessaging.Editor.Windows
             );
             toolbar.Add(record);
 
+            // The toolbar runs four unrelated groups together -- what is being recorded, what is
+            // shown, what is searched, and what the window does next. The design system's rule
+            // separates them so the row reads as groups rather than one run of controls.
+            toolbar.Add(CreateSeparator());
+
             Toggle untargeted = CreateChip(
                 UntargetedChipName,
                 "U",
@@ -670,7 +695,9 @@ namespace DxMessaging.Editor.Windows
             toolbar.Add(untargeted);
             toolbar.Add(targeted);
             toolbar.Add(broadcast);
+            toolbar.Add(CreateSeparator());
             toolbar.Add(filter);
+            toolbar.Add(CreateSeparator());
 
             // Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
             // same as the rest of this package's editor UI: it is the event a real click produces
@@ -960,6 +987,37 @@ namespace DxMessaging.Editor.Windows
             valueLabel.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
             pair.Add(valueLabel);
             return pair;
+        }
+
+        /// <summary>
+        /// The danger-severity notice for a lossy log. A hole in the log is not a caution: every
+        /// count and every gap the reader is looking at is wrong until they know about it, which is
+        /// why this reads louder than the warning admonitions elsewhere in the package.
+        /// </summary>
+        private static VisualElement CreateGapNotice(long missedCount)
+        {
+            VisualElement notice = new() { name = GapNoticeName };
+            notice.AddToClassList(DxMessagingEditorTheme.AdmonitionClassName);
+            notice.AddToClassList(DxMessagingEditorTheme.DangerClassName);
+            DxMessagingEditorTheme.ApplyCompleteBorder(notice, DxMessagingEditorPalette.Targeted);
+
+            Label title = new("The log has gaps") { name = GapNoticeTitleName };
+            title.AddToClassList(DxMessagingEditorTheme.AdmonitionTitleClassName);
+            notice.Add(title);
+
+            Label body = new(CreateGapNoticeBodyText(missedCount)) { name = GapNoticeBodyName };
+            body.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
+            body.style.whiteSpace = WhiteSpace.Normal;
+            notice.Add(body);
+
+            return notice;
+        }
+
+        private static VisualElement CreateSeparator()
+        {
+            VisualElement separator = new();
+            separator.AddToClassList(DxMessagingEditorTheme.SeparatorClassName);
+            return separator;
         }
 
         private static VisualElement CreateFooter(

@@ -236,8 +236,6 @@
 .dx-admonition__title { -unity-font-style: bold; font-size: 12px; margin-bottom: 5px; }
 .dx-note    { background-color: rgba(127, 166, 216, 0.06); border-color: rgba(127, 166, 216, 0.35); }
 .dx-note .dx-admonition__title { color: var(--dx-untargeted); }
-.dx-tip     { background-color: rgba(127, 184, 138, 0.06); border-color: rgba(127, 184, 138, 0.35); }
-.dx-tip .dx-admonition__title { color: var(--dx-broadcast); }
 .dx-warning { background-color: rgba(244, 168, 54, 0.07); border-color: rgba(244, 168, 54, 0.40); }
 .dx-warning .dx-admonition__title { color: var(--dx-accent); }
 .dx-danger  { background-color: rgba(236, 70, 97, 0.07); border-color: rgba(236, 70, 97, 0.40); }

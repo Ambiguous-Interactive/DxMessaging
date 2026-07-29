@@ -3,6 +3,7 @@ namespace DxMessaging.Editor.CustomEditors
 #if UNITY_EDITOR
     using System;
     using System.Collections.Generic;
+    using System.Globalization;
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Editor;
@@ -26,6 +27,7 @@ namespace DxMessaging.Editor.CustomEditors
         internal const string MetaLabelName = "dxmessaging-inspector-subscriptions-meta";
         internal const string RowsName = "dxmessaging-inspector-subscriptions-rows";
         internal const string EmptyBodyName = "dxmessaging-inspector-subscriptions-empty-body";
+        internal const string RowPriorityLabelName = "dxmessaging-inspector-subscriptions-priority";
 
         internal const string RootClassName = "dx-inspector";
         internal const string HeadClassName = "dx-inspector__head";
@@ -36,6 +38,7 @@ namespace DxMessaging.Editor.CustomEditors
         internal const string RowMetaClassName = "dx-sub__meta";
         internal const string RowLiveClassName = "dx-sub__live";
         internal const string RowIdleClassName = "dx-sub__idle";
+        internal const string PriorityClassName = "dx-prio";
 
         internal const string Title = "Message subscriptions";
 
@@ -47,6 +50,13 @@ namespace DxMessaging.Editor.CustomEditors
         internal const int HeadHorizontalPadding = 11;
 
         internal const int BodyVerticalPadding = 5;
+
+        /// <summary>
+        /// Gap between the priority badge and the meta text that follows it. <c>.dx-prio</c> carries
+        /// its own padding but no outer margin, so without this the badge and the registration type
+        /// touch.
+        /// </summary>
+        internal const int PriorityBadgeMarginRight = 6;
 
         internal static VisualElement Create(MessageAwareComponentSubscriptionsState state)
         {
@@ -128,7 +138,17 @@ namespace DxMessaging.Editor.CustomEditors
                 row.CallCount == MessageAwareComponentSubscriptionRow.UnknownCallCount ? "calls n/a"
                 : row.CallCount == 1 ? "1 call"
                 : $"{row.CallCount} calls";
-            return $"{row.RegistrationTypeName} | priority {row.Priority} | {calls}";
+            return $"{row.RegistrationTypeName} | {calls}";
+        }
+
+        /// <summary>
+        /// The priority badge's text. Priority decides dispatch order within a message type, so it is
+        /// the one number on the row worth finding without reading a sentence; the <c>P</c> is what
+        /// keeps a bare integer from reading as a count.
+        /// </summary>
+        internal static string CreatePriorityText(MessageAwareComponentSubscriptionRow row)
+        {
+            return "P" + row.Priority.ToString(CultureInfo.InvariantCulture);
         }
 
         private static VisualElement CreateRow(MessageAwareComponentSubscriptionRow row)
@@ -139,6 +159,12 @@ namespace DxMessaging.Editor.CustomEditors
             Label name = new(row.MessageTypeName);
             name.AddToClassList(RowNameClassName);
             element.Add(name);
+
+            Label priority = new(CreatePriorityText(row)) { name = RowPriorityLabelName };
+            priority.AddToClassList(PriorityClassName);
+            priority.tooltip = "Registration priority; lower runs earlier.";
+            priority.style.marginRight = PriorityBadgeMarginRight;
+            element.Add(priority);
 
             Label meta = new(CreateRowMetaText(row));
             meta.AddToClassList(RowMetaClassName);

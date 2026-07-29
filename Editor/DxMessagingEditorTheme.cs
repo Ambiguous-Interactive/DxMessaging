@@ -30,9 +30,13 @@ namespace DxMessaging.Editor
         internal const string EmptyBodyClassName = "dx-empty__body";
         internal const string ButtonAccentClassName = "dx-btn-accent";
         internal const string ButtonGhostClassName = "dx-btn-ghost";
+        internal const string SeparatorClassName = "dx-sep";
         internal const string AdmonitionClassName = "dx-admonition";
+        internal const string AdmonitionTitleClassName = "dx-admonition__title";
         internal const string NoteClassName = "dx-note";
         internal const string WarningClassName = "dx-warning";
+        internal const string DangerClassName = "dx-danger";
+        internal const string PriorityClassName = "dx-prio";
         internal const string TypeBadgeClassName = "dx-typebadge";
         internal const string TypeBadgeUntargetedClassName = "dx-typebadge--u";
         internal const string TypeBadgeTargetedClassName = "dx-typebadge--t";

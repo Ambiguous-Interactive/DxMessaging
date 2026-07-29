@@ -591,6 +591,66 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void TheToolbarSeparatesItsControlGroups()
+        {
+            VisualElement root = CreateView(Recorder(Entry(1, "A")));
+
+            Assert.AreEqual(
+                3,
+                root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.ToolbarName)
+                    .Query<VisualElement>(className: DxMessagingEditorTheme.SeparatorClassName)
+                    .ToList()
+                    .Count,
+                "Recording, taxonomy, search and mode are four groups, so three rules divide them."
+            );
+        }
+
+        [Test]
+        public void ALossyLogSaysSoInsteadOfLeavingItToTheMissedStat()
+        {
+            MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "A"));
+            VisualElement root = CreateView(recorder);
+
+            Assert.IsNull(
+                root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.GapNoticeName),
+                "A complete log says nothing."
+            );
+
+            // Skipping a dispatch id is exactly what the bus overwriting records looks like to the
+            // recorder, and it is the one condition that makes every count on screen wrong.
+            recorder.Ingest(new[] { Entry(9, "B") });
+            RenderBody(root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName), recorder);
+
+            VisualElement notice = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.GapNoticeName
+            );
+            Assert.IsNotNull(notice);
+            Assert.IsTrue(
+                notice.ClassListContains(DxMessagingEditorTheme.DangerClassName),
+                "A hole in the log is a danger, not a caution."
+            );
+            Assert.IsTrue(
+                root.Q<Label>(DxMessagingMessageMonitorLiveView.GapNoticeTitleName)
+                    .ClassListContains(DxMessagingEditorTheme.AdmonitionTitleClassName)
+            );
+            Assert.AreEqual(7, recorder.MissedCount);
+            Assert.IsTrue(
+                Text(notice, DxMessagingMessageMonitorLiveView.GapNoticeBodyName).Contains("7"),
+                "The notice names how many emissions were lost."
+            );
+        }
+
+        [TestCase(1L, "1 emission before")]
+        [TestCase(2L, "2 emissions before")]
+        public void TheGapNoticeCountsInWholeEmissions(long missedCount, string expected)
+        {
+            Assert.That(
+                DxMessagingMessageMonitorLiveView.CreateGapNoticeBodyText(missedCount),
+                Does.Contain(expected)
+            );
+        }
+
+        [Test]
         public void APollThatAddsRowsRefreshesTheListInsteadOfRebuildingIt()
         {
             MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "First"));
