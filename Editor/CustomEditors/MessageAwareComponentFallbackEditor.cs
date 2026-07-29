@@ -198,6 +198,22 @@ namespace DxMessaging.Editor.CustomEditors
             host.schedule.Execute(Refresh).Every(SubscriptionsPollMilliseconds);
         }
 
+        internal static void RefreshInspectorWarning(VisualElement root)
+        {
+            if (root == null)
+            {
+                throw new ArgumentNullException(nameof(root));
+            }
+            if (root.userData is not InspectorWarningBinding binding)
+            {
+                throw new InvalidOperationException(
+                    "Fallback inspector root is missing its warning binding."
+                );
+            }
+
+            binding.Refresh();
+        }
+
         private sealed class InspectorWarningBinding
         {
             private readonly VisualElement _warningHost;
