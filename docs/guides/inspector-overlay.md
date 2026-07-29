@@ -157,6 +157,38 @@ genuinely intentional (for example, a deliberate adapter that should not
 participate in messaging) and document the reason somewhere your team can find
 it.
 
+## Message Subscriptions
+
+Below the serialized fields, every `MessageAwareComponent` inspector shows a
+**Message subscriptions** section listing the registrations that component's
+`MessageRegistrationToken` currently holds. It reads the live token, so it
+answers "is this component actually listening, and to what?" without adding a
+log statement.
+
+Each row shows:
+
+- The message type name.
+- The registration kind (`Untargeted`, `Targeted`, `Broadcast`, a post-processor
+  or interceptor variant) and the registration priority.
+- The observed call count, or `calls n/a` when diagnostics are not recording.
+- A dot on the right: green while the registration is subscribed on the bus,
+  grey while the token is disabled.
+
+The header summarizes the same thing: `Listening | 3 registrations` when the
+token is enabled, `Disabled | 3 registrations` when it is not. A disabled token
+is the usual explanation for a handler that stopped firing, because
+`MessageAwareComponent.OnDisable` disables the token by default. See
+[`MessageRegistrationTiedToEnableStatus`](unity-integration.md) for how to change
+that.
+
+Registrations are created in `Awake`, so an inspector in Edit mode shows an empty
+state instead of rows. Call counts require diagnostics; turn them on through
+**Diagnostics Targets** below, or per token through
+`MessageRegistrationToken.DiagnosticMode`. The section samples the token while it
+is on screen and redraws only when the registrations, the token state, or the
+call counts change. It is hidden while several objects are selected together,
+because the rows describe one component.
+
 ## Project Settings Panel
 
 The package registers a UI Toolkit Project Settings page under
