@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every `MessageAwareComponent` inspector now shows a **Message subscriptions**
+  section listing the registrations its `MessageRegistrationToken` holds: the
+  message type, the registration kind and priority, the observed call count, and
+  a dot showing whether the registration is currently subscribed on the bus.
+  Call counts read as `calls n/a` while diagnostics are off rather than as zero.
+  See [Inspector Overlay](docs/guides/inspector-overlay.md#message-subscriptions).
+
 ## [3.2.1]
 
 ### Changed

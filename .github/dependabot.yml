@@ -1,8 +1,17 @@
 version: 2
 updates:
-  # GitHub Actions workflow updates
+  # GitHub Actions workflow updates.
+  #
+  # A bare "/" makes Dependabot scan .github/workflows plus a repository-root
+  # action.yml, and nothing else. The build-lock pin inside
+  # .github/actions/return-unity-license/action.yml therefore sat outside every
+  # bump, so a bump split the centralized Unity cleanup policy across two SHAs.
+  # Listing that directory keeps the whole group on one pin; the split now fails
+  # scripts/__tests__/ci-aggregate-workflow.test.js closed.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/return-unity-license"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 2

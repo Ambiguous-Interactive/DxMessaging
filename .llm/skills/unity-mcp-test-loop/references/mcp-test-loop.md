@@ -31,6 +31,31 @@ the host editor; the container only edits files and drives the editor over MCP.
 1. **Edit** files in the container as usual.
 1. **Compile**: trigger `AssetDatabase.Refresh()` via `Unity_RunCommand`. Wait for the
    recompile to settle before running tests.
+1. **Prove the assembly is fresh before you trust a green run.** When a package
+   assembly fails to compile, Unity keeps the last good DLL loaded and
+   `DxMcpTestRunner` happily runs it, so an edit that does not compile reports the
+   previous run's passing numbers. `Unity_ReadConsole` can come back empty in that
+   state, and the host editor may have Auto Refresh disabled
+   (`EditorPrefs.GetInt("kAutoRefreshMode") == 0`), which makes it permanent. Assert a
+   symbol you just added actually resolves, and compare
+   `System.IO.File.GetLastWriteTimeUtc(type.Assembly.Location)` against the source
+   file's write time:
+
+   ```csharp
+   System.Type fixture = null;
+   foreach (System.Reflection.Assembly assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+   {
+       fixture = assembly.GetType("DxMessaging.Tests.Editor.MyNewTests");
+       if (fixture != null) { break; }
+   }
+   result.Log("fresh={0} asmUtc={1}",
+       fixture != null && fixture.GetMethod("MyNewTestMethod") != null,
+       System.IO.File.GetLastWriteTimeUtc(fixture.Assembly.Location).ToString("O"));
+   ```
+
+   A stale timestamp means the compile failed. Read the CI job log or Unity's
+   `Editor.log` for the `CS####` rather than re-running the suite.
+
 1. **Run**: invoke the host bridge `DxMcpTestRunner.Run(testMode, assemblyNames,
 testNames, categoryNames, resultPath)` via `Unity_RunCommand`. Locate the type by
    scanning `AppDomain` assemblies. Arguments are semicolon-separated lists; `null`

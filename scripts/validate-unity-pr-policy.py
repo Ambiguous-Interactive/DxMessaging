@@ -11,14 +11,7 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
-CURRENT_PR_HEAD_GUARD = (
-    "Ambiguous-Interactive/ambiguous-organization-build-lock/"
-    ".github/actions/require-current-pr-head@a00614ace745152a659c5c2654f7cefb68a5a628"
-)
-ACQUIRE_BUILD_LOCK = (
-    "Ambiguous-Interactive/ambiguous-organization-build-lock/"
-    ".github/actions/acquire-build-lock@a00614ace745152a659c5c2654f7cefb68a5a628"
-)
+LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
 REGISTERED_UNITY_AUTOMATION = {
     ".github/actions/return-unity-license/action.yml",
     ".github/actions/validate-unity-license/action.yml",
@@ -34,8 +27,14 @@ UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(
     re.IGNORECASE,
 )
 SAME_REPOSITORY_PR_GUARD = re.compile(
-    r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*"
+    r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*\(?\s*"
     r"github\.event\.pull_request\.head\.repo\.full_name\s*==\s*github\.repository"
+)
+# Dependabot jobs read from the separate Dependabot secret store, so the
+# organization Unity serial and build-lock App secrets resolve empty there. The
+# licensed jobs must exclude Dependabot the same way they exclude forks.
+DEPENDABOT_PR_GUARD = re.compile(
+    r"github\.event\.pull_request\.user\.login\s*!=\s*'dependabot\[bot\]'"
 )
 BLANKET_PR_REJECTION = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*&&"
@@ -45,6 +44,44 @@ BLANKET_PR_REJECTION = re.compile(
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def resolve_action_use(action: str) -> str:
+    """Return the one `<action>@<sha> # <version>` reference the workflow uses.
+
+    The SHA is derived from the pristine workflow rather than written here.
+    Dependabot bumps these pins, and a literal turned every dependency update
+    into a policy failure unrelated to the change under review. What the policy
+    needs is that the pin is immutable and identical at every call site, which
+    is what this resolves and asserts.
+    """
+    source = WORKFLOW.read_text(encoding="utf-8")
+    uses = {
+        match.group(1).rstrip()
+        for match in re.finditer(
+            rf"uses: ({re.escape(LOCK_ACTION_PREFIX + action)}@[0-9a-f]{{40}}(?:[ \t]+#[^\n]*)?)",
+            source,
+        )
+    }
+    require(
+        len(uses) == 1,
+        f"{action}: pin must be immutable and identical everywhere; found {sorted(uses)}",
+    )
+    return uses.pop()
+
+
+def mutate_pin_sha(use: str) -> str:
+    """Flip one SHA character so a pinned reference stops matching the policy."""
+    match = re.search(r"@([0-9a-f]{40})", use)
+    require(match is not None, "pinned reference must carry a 40-character SHA")
+    assert match is not None
+    sha = match.group(1)
+    flipped = sha[:-1] + ("0" if sha[-1] != "0" else "1")
+    return use[: match.start(1)] + flipped + use[match.end(1) :]
+
+
+CURRENT_PR_HEAD_GUARD = resolve_action_use("require-current-pr-head")
+ACQUIRE_BUILD_LOCK = resolve_action_use("acquire-build-lock")
 
 
 def job_block(source: str, job_id: str) -> str:
@@ -89,12 +126,12 @@ def validate_licensed_workflow_policy(source: str) -> str:
     acquire = step_block(licensed, "Acquire organization Unity lock")
     require(
         re.findall(
-            rf"^        uses: {re.escape(ACQUIRE_BUILD_LOCK)} # v1\.9\.1[ \t]*$",
+            rf"^        uses: {re.escape(ACQUIRE_BUILD_LOCK)}[ \t]*$",
             acquire,
             re.MULTILINE,
         )
-        == [f"        uses: {ACQUIRE_BUILD_LOCK} # v1.9.1"],
-        "Unity acquire step must use the exact immutable v1.9.1 action pin",
+        == [f"        uses: {ACQUIRE_BUILD_LOCK}"],
+        "Unity acquire step must use the exact immutable action pin",
     )
     for key, value in (
         ("github-token", "${{ github.token }}"),
@@ -257,8 +294,8 @@ def validate() -> None:
     )
     require_policy_mutation_rejected(
         source,
-        f"        uses: {ACQUIRE_BUILD_LOCK} # v1.9.1\n",
-        f"        uses: {ACQUIRE_BUILD_LOCK[:-1]}0 # v1.9.1\n",
+        f"        uses: {ACQUIRE_BUILD_LOCK}\n",
+        f"        uses: {mutate_pin_sha(ACQUIRE_BUILD_LOCK)}\n",
         "acquire action pin",
     )
     acquire_step = step_block(licensed, "Acquire organization Unity lock")
@@ -318,6 +355,14 @@ def validate() -> None:
         "Unity job must admit same-repository PRs and reject forks",
     )
     require(
+        DEPENDABOT_PR_GUARD.search(licensed) is not None,
+        "Unity job must exclude Dependabot PRs, which cannot read the licensed secrets",
+    )
+    require(
+        DEPENDABOT_PR_GUARD.search(job_block(source, "runner-preflight")) is not None,
+        "runner preflight must exclude Dependabot PRs, which cannot read the reader App secrets",
+    )
+    require(
         BLANKET_PR_REJECTION.search(licensed) is None,
         "Unity job must not reject every pull request",
     )
@@ -358,21 +403,26 @@ def validate() -> None:
         "RUNNER_PREFLIGHT_RESULT",
         "UNITY_TESTS_RESULT",
         "FORK_PR",
+        "DEPENDABOT_PR",
         "DOCS_ONLY",
     ):
         require(re.search(rf"^          {variable}:", gate, re.MULTILINE) is not None, f"missing {variable}")
 
     script = run_script(step_block(gate, "Verify Unity CI result shape"))
+    # name, matrix-config, preflight, unity, FORK_PR, DEPENDABOT_PR, DOCS_ONLY, exit code
     cases = (
-        ("same-repository PR", "success", "success", "success", "false", "false", 0),
-        ("fork PR", "success", "skipped", "skipped", "true", "false", 0),
-        ("CI-owned docs-only PR", "success", "success", "skipped", "false", "true", 0),
-        ("same-repository PR skipped Unity", "success", "success", "skipped", "false", "false", 1),
-        ("fork unexpectedly ran Unity", "success", "skipped", "success", "true", "false", 1),
-        ("matrix config failed", "failure", "success", "success", "false", "false", 1),
+        ("same-repository PR", "success", "success", "success", "false", "false", "false", 0),
+        ("fork PR", "success", "skipped", "skipped", "true", "false", "false", 0),
+        ("Dependabot PR", "success", "skipped", "skipped", "false", "true", "false", 0),
+        ("CI-owned docs-only PR", "success", "success", "skipped", "false", "false", "true", 0),
+        ("same-repository PR skipped Unity", "success", "success", "skipped", "false", "false", "false", 1),
+        ("fork unexpectedly ran Unity", "success", "skipped", "success", "true", "false", "false", 1),
+        ("Dependabot unexpectedly ran Unity", "success", "skipped", "success", "false", "true", "false", 1),
+        ("Dependabot unexpectedly ran preflight", "success", "success", "skipped", "false", "true", "false", 1),
+        ("matrix config failed", "failure", "success", "success", "false", "false", "false", 1),
     )
     if os.name != "nt":
-        for name, matrix, preflight, unity, fork, docs_only, expected in cases:
+        for name, matrix, preflight, unity, fork, dependabot, docs_only, expected in cases:
             environment = os.environ.copy()
             environment.update(
                 {
@@ -380,6 +430,7 @@ def validate() -> None:
                     "RUNNER_PREFLIGHT_RESULT": preflight,
                     "UNITY_TESTS_RESULT": unity,
                     "FORK_PR": fork,
+                    "DEPENDABOT_PR": dependabot,
                     "DOCS_ONLY": docs_only,
                 }
             )
