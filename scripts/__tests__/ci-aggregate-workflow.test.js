@@ -161,7 +161,7 @@ test("change detector considers current and previous paths", () => {
   );
 });
 
-test("script-test path detector covers skills index inputs", () => {
+test("script-test path detector covers .llm harness inputs and its generated index", () => {
   const source = readCiWorkflow();
   const scriptsPattern = new RegExp(extractShellPatternVariable(source, "scripts_pattern"));
 

@@ -169,7 +169,7 @@
         "category": "documentation",
         "tags": "documentation, style, writing, clarity"
       },
-      "lineCount": 107,
+      "lineCount": 109,
       "references": [
         ".llm/skills/documentation-style/references/ascii-only-docs.md",
         ".llm/skills/documentation-style/references/documentation-style-guide.md",

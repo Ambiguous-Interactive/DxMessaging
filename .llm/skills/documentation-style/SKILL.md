@@ -54,9 +54,11 @@ and every `///` XML doc comment in `Runtime/`, `Editor/`, and `SourceGenerators/
 - Banned vague quantifiers: `a wide variety of`, `a wide array of`, `a plethora of`, `myriad`,
   `numerous`. Banned soft fluff: `provides you with`, `helps you to`, `enables you to`,
   `allows you to easily`, `gives you the best`.
-- Exemptions: files under `.llm/skills/documentation/`, the word `comprehensive` in
-  `CHANGELOG.md`, the generated `llms.txt`, and YAML frontmatter blocks. Legacy
-  `<!-- prose-allow -->` HTML comments are dead markers; do not add new ones.
+- Exemptions: the three skills that state the policy (`documentation-style`, `markdown-authoring`,
+  `documentation-code-samples`) plus their generated mirrors under `.claude/skills/` and
+  `.agents/skills/`, the word `comprehensive` in `CHANGELOG.md`, the generated `llms.txt`, and
+  YAML frontmatter blocks. Legacy `<!-- prose-allow -->` HTML comments are dead markers; do not
+  add new ones.
 - Enforcement is Vale (`.vale.ini` plus `.vale/styles/DxMessaging/`). Run
   `vale docs/ README.md` locally. There is no grandfather list: fix banned phrases in any file
   you touch by rewriting the sentence with a concrete claim.

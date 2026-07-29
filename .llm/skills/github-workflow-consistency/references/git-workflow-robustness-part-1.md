@@ -159,10 +159,10 @@ Before merging code with git commands or parsers:
 
 ## See Also
 
-- [Test Coverage Requirements](../testing/comprehensive-test-coverage.md) - Detailed testing
+- [Test Coverage Requirements](../../test-coverage-design/references/comprehensive-test-coverage.md) - Detailed testing
   strategies
-- [Documentation Updates](../documentation/documentation-updates.md) - Keeping docs in sync
-- [Script and Automation Conventions](../../context.md#script-and-automation-conventions) - Main context file patterns
+- [Documentation Updates](../../documentation-style/references/documentation-updates.md) - Keeping docs in sync
+- [Script and Automation Conventions](../../../context.md#script-and-automation-conventions) - Main context file patterns
 
 ## Related Links
 

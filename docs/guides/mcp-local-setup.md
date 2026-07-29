@@ -25,7 +25,8 @@ npm run unity:mcp:bridge -- --project 'D:\Path\To\HostUnityProject'
 ```
 
 The bridge finds the relay under `~/.unity/relay/`, generates a bearer token into `.env.local` if one
-is not already set, and serves streamable HTTP on port `9020`.
+is not already set, and serves streamable HTTP on port `9020`. `GET /healthz` answers `200 ok`
+without a token, so an orchestrator can use it as a liveness probe.
 
 ## 2. Configure and verify from the devcontainer
 
@@ -51,13 +52,23 @@ UNITY_MCP_BRIDGE_PORT=9020
 UNITY_MCP_BEARER_TOKEN=<64 hex characters>
 ```
 
-An explicitly configured host or port is always probed first, so it takes precedence over discovery.
+An explicitly configured host or port replaces the fallback list on that axis instead of being tried
+ahead of it, so discovery never reaches past a deliberate setting. `--host X` probes only `X`, and
+`--host X --port Y` probes exactly one endpoint.
+
+Windows paths need no special quoting, and a quoted one may end in a backslash
+(`UNITY_PROJECT_PATH="D:\Program Files\Proj\"`). A line these commands cannot parse is warned about
+and skipped, so unrelated entries in a shared `.env.local` cannot break them.
 
 ## Notes
 
 - The host and the container must present the same `UNITY_MCP_BEARER_TOKEN`. When they do not share
   `.env.local`, copy the value across or pass `--token`.
 - A probe that reports `unauthorized` means a bridge is running but the token does not match, which
-  is a different fix from `unreachable`.
+  is a different fix from `unreachable`. `configure` refuses to write anything in that case, because
+  a fresh generated token would be guaranteed wrong; copy the host's token or pass `--token` first.
+- `configure` owns the whole `unity-mcp` entry in each file, including the entire
+  `[mcp_servers.unity-mcp]` table in `.codex/config.toml`. Keys added inside that table are dropped
+  on the next run.
 - See [scripts/mcp/README.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/mcp/README.md)
   for the full command reference.
