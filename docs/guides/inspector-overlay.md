@@ -159,11 +159,13 @@ it.
 
 ## Message Subscriptions
 
-Below the serialized fields, every `MessageAwareComponent` inspector shows a
-**Message subscriptions** section listing the registrations that component's
+Below the serialized fields, the package's `MessageAwareComponent` inspector shows
+a **Message subscriptions** section listing the registrations that component's
 `MessageRegistrationToken` currently holds. It reads the live token, so it
 answers "is this component actually listening, and to what?" without adding a
-log statement.
+log statement. A subclass with its own `[CustomEditor]` draws that editor instead,
+so the section does not appear there; the base-call warning above still does,
+through the header hook.
 
 Each row shows:
 

@@ -105,10 +105,6 @@ namespace DxMessaging.Tests.Editor
                 "Rows must be ordered by message type name so the section does not reshuffle between polls."
             );
             Assert.That(
-                state.Rows.Select(row => row.RouteKind).ToArray(),
-                Is.EqualTo(new[] { "Untargeted", "Targeted" })
-            );
-            Assert.That(
                 state.Rows.Select(row => row.RegistrationTypeName).ToArray(),
                 Is.EqualTo(
                     new[]
@@ -172,7 +168,12 @@ namespace DxMessaging.Tests.Editor
             MessageAwareComponentSubscriptionsState quiet =
                 MessageAwareComponentSubscriptionsState.Capture(component);
             Assert.That(quiet.DiagnosticsEnabled, Is.False);
-            Assert.That(quiet.Rows.All(row => row.CallCount < 0), Is.True);
+            Assert.That(
+                quiet.Rows.All(row =>
+                    row.CallCount == MessageAwareComponentSubscriptionRow.UnknownCallCount
+                ),
+                Is.True
+            );
             Assert.That(
                 MessageAwareComponentSubscriptionsView.CreateRowMetaText(quiet.Rows[0]),
                 Does.Contain("calls n/a"),
@@ -261,6 +262,14 @@ namespace DxMessaging.Tests.Editor
                 root.ClassListContains(MessageAwareComponentSubscriptionsView.RootClassName),
                 Is.True
             );
+
+            Label title = root.Q<Label>(MessageAwareComponentSubscriptionsView.TitleLabelName);
+            Assert.That(title, Is.Not.Null);
+            Assert.That(title.text, Is.EqualTo(MessageAwareComponentSubscriptionsView.Title));
+            Label meta = root.Q<Label>(MessageAwareComponentSubscriptionsView.MetaLabelName);
+            Assert.That(meta, Is.Not.Null);
+            Assert.That(meta.text, Is.EqualTo("Disabled | 2 registrations"));
+
             foreach (
                 string className in new[]
                 {

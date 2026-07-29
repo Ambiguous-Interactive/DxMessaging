@@ -108,7 +108,7 @@ namespace DxMessaging.Editor.CustomEditors
         internal static string CreateRowMetaText(MessageAwareComponentSubscriptionRow row)
         {
             string calls =
-                row.CallCount < 0 ? "calls n/a"
+                row.CallCount == MessageAwareComponentSubscriptionRow.UnknownCallCount ? "calls n/a"
                 : row.CallCount == 1 ? "1 call"
                 : $"{row.CallCount} calls";
             return $"{row.RegistrationTypeName} | priority {row.Priority} | {calls}";
@@ -140,9 +140,14 @@ namespace DxMessaging.Editor.CustomEditors
     /// </summary>
     internal readonly struct MessageAwareComponentSubscriptionRow
     {
+        /// <summary>
+        /// <see cref="CallCount"/> when diagnostics are not recording. Distinct from zero, which
+        /// asserts that the handler genuinely never ran.
+        /// </summary>
+        internal const int UnknownCallCount = -1;
+
         internal MessageAwareComponentSubscriptionRow(
             string messageTypeName,
-            string routeKind,
             string registrationTypeName,
             int priority,
             int callCount,
@@ -150,7 +155,6 @@ namespace DxMessaging.Editor.CustomEditors
         )
         {
             MessageTypeName = messageTypeName;
-            RouteKind = routeKind;
             RegistrationTypeName = registrationTypeName;
             Priority = priority;
             CallCount = callCount;
@@ -159,14 +163,19 @@ namespace DxMessaging.Editor.CustomEditors
 
         internal string MessageTypeName { get; }
 
-        /// <summary>Untargeted, Targeted, Broadcast, or empty when the kind does not map.</summary>
-        internal string RouteKind { get; }
-
+        /// <summary>
+        /// The exact <see cref="MessageRegistrationType"/> name, which is finer-grained than the
+        /// Untargeted/Targeted/Broadcast route kind: it distinguishes handlers from post-processors
+        /// and interceptors, which is the distinction a reader of this section needs.
+        /// </summary>
         internal string RegistrationTypeName { get; }
 
         internal int Priority { get; }
 
-        /// <summary>Observed invocations, or -1 when diagnostics are not recording them.</summary>
+        /// <summary>
+        /// Observed invocations, or <see cref="UnknownCallCount"/> when diagnostics are not
+        /// recording them.
+        /// </summary>
         internal int CallCount { get; }
 
         /// <summary>True while the registration is subscribed on the bus.</summary>
@@ -243,6 +252,16 @@ namespace DxMessaging.Editor.CustomEditors
             // when the token is actually recording. With diagnostics off the count is unknown
             // rather than zero, and the row says so instead of implying nothing ever fired.
             bool diagnosticsEnabled = token.DiagnosticMode;
+            int ResolveCallCount(MessageRegistrationHandle handle)
+            {
+                if (!diagnosticsEnabled)
+                {
+                    return UnknownCallCount;
+                }
+
+                return token._callCounts.TryGetValue(handle, out int callCount) ? callCount : 0;
+            }
+
             List<MessageAwareComponentSubscriptionRow> rows = new();
             foreach (
                 KeyValuePair<
@@ -252,18 +271,12 @@ namespace DxMessaging.Editor.CustomEditors
             )
             {
                 MessageRegistrationMetadata metadata = entry.Value;
-                string registrationTypeName = metadata.registrationType.ToString();
                 rows.Add(
                     new MessageAwareComponentSubscriptionRow(
                         metadata.type == null ? "<unknown>" : metadata.type.Name,
-                        DxMessagingEditorPalette.NormalizeRouteKind(registrationTypeName),
-                        registrationTypeName,
+                        metadata.registrationType.ToString(),
                         metadata.priority,
-                        diagnosticsEnabled
-                            && token._callCounts.TryGetValue(entry.Key, out int callCount)
-                                ? callCount
-                            : diagnosticsEnabled ? 0
-                            : -1,
+                        ResolveCallCount(entry.Key),
                         token.Enabled
                     )
                 );

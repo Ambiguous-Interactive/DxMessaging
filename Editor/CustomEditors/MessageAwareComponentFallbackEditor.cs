@@ -169,7 +169,7 @@ namespace DxMessaging.Editor.CustomEditors
                 return;
             }
 
-            VisualElement host = new() { name = SubscriptionsHostName, userData = component };
+            VisualElement host = new() { name = SubscriptionsHostName };
             host.AddToClassList(SubscriptionsHostClassName);
             root.Add(host);
 
@@ -196,49 +196,6 @@ namespace DxMessaging.Editor.CustomEditors
 
             Refresh();
             host.schedule.Execute(Refresh).Every(SubscriptionsPollMilliseconds);
-        }
-
-        /// <summary>
-        /// Rebuilds the subscriptions section of a built inspector root immediately, so tests do
-        /// not have to wait for the poll interval.
-        /// </summary>
-        internal static void RefreshSubscriptions(VisualElement root)
-        {
-            if (root == null)
-            {
-                throw new ArgumentNullException(nameof(root));
-            }
-
-            VisualElement host = root.Q<VisualElement>(SubscriptionsHostName);
-            if (host == null)
-            {
-                return;
-            }
-
-            host.Clear();
-            host.Add(
-                MessageAwareComponentSubscriptionsView.Create(
-                    MessageAwareComponentSubscriptionsState.Capture(
-                        host.userData as MessageAwareComponent
-                    )
-                )
-            );
-        }
-
-        internal static void RefreshInspectorWarning(VisualElement root)
-        {
-            if (root == null)
-            {
-                throw new ArgumentNullException(nameof(root));
-            }
-            if (root.userData is not InspectorWarningBinding binding)
-            {
-                throw new InvalidOperationException(
-                    "Fallback inspector root is missing its warning binding."
-                );
-            }
-
-            binding.Refresh();
         }
 
         private sealed class InspectorWarningBinding
