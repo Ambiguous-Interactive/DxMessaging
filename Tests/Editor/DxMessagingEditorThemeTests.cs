@@ -2,6 +2,9 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections.Generic;
+    using System.Text;
+    using System.Text.RegularExpressions;
     using DxMessaging.Editor;
     using NUnit.Framework;
     using UnityEditor;
@@ -78,6 +81,78 @@ namespace DxMessaging.Tests.Editor
             AssertColor(DxMessagingEditorPalette.Trace, ReadTokenColor("--dx-untargeted"));
             AssertColor(DxMessagingEditorPalette.TraceMessage, ReadTokenColor("--dx-broadcast"));
             AssertColor(DxMessagingEditorPalette.TraceTarget, ReadTokenColor("--dx-accent-soft"));
+
+            // The IMGUI component inspector cannot read the stylesheet, so it reads these two pairs
+            // from the palette instead. Both skins are pinned, because a light-skin value that drifts
+            // is exactly the unreadable label this replaced.
+            AssertColor(
+                DxMessagingEditorPalette.BroadcastText,
+                ReadTokenColor("--dx-broadcast-text")
+            );
+            AssertColor(
+                DxMessagingEditorPalette.BroadcastTextOnLight,
+                ReadTokenColor("--dx-broadcast-text", lightSkin: true)
+            );
+            AssertColor(
+                DxMessagingEditorPalette.AmberOnLight,
+                ReadTokenColor("--dx-accent", lightSkin: true)
+            );
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ForSkinPicksTheValueBelongingToTheSkinInUse(bool proSkin)
+        {
+            Assert.That(
+                DxMessagingEditorPalette.ForSkin(Color.red, Color.blue, proSkin),
+                Is.EqualTo(proSkin ? Color.red : Color.blue)
+            );
+        }
+
+        /// <summary>
+        /// Every <c>.dx-*</c> class the stylesheets declare has to be referenced by the editor
+        /// sources.
+        /// </summary>
+        /// <remarks>
+        /// The theme was migrated from its design-system spec wholesale, so it described a larger
+        /// surface than the windows rendered, and the leftovers were only ever found by hand-auditing
+        /// -- which is why the audit that closed the last of them (issue #304) still missed
+        /// <c>.dx-sep</c>. Asserting the invariant instead of the leftovers is what stops that
+        /// recurring: a class added to the sheet but never rendered fails here, and so does a
+        /// rendered class whose last C# reference was deleted. A class with genuinely no home belongs
+        /// out of the sheet, not on an allowlist here.
+        /// </remarks>
+        [Test]
+        public void EveryStylesheetClassIsRenderedByAnEditorSurface()
+        {
+            SortedSet<string> declared = new(StringComparer.Ordinal);
+            CollectStylesheetClassNames(DxMessagingEditorTheme.TokensUssPath, declared);
+            CollectStylesheetClassNames(DxMessagingEditorTheme.ThemeUssPath, declared);
+            Assert.That(
+                declared,
+                Is.Not.Empty,
+                "The stylesheet scan found no classes at all, so it is not reading the sheets."
+            );
+
+            string sources = ReadEditorSourceText();
+            List<string> dead = new();
+            foreach (string className in declared)
+            {
+                // The quoted form only: a class named in an XML doc comment is documentation, not a
+                // surface that renders it.
+                if (!sources.Contains("\"" + className + "\"", StringComparison.Ordinal))
+                {
+                    dead.Add(className);
+                }
+            }
+
+            Assert.That(
+                dead,
+                Is.Empty,
+                "These stylesheet classes are dead style. Render each one on a real surface or "
+                    + "remove it from the sheet: "
+                    + string.Join(", ", dead)
+            );
         }
 
         [Test]
@@ -201,15 +276,91 @@ namespace DxMessaging.Tests.Editor
             Assert.That(actual.a, Is.EqualTo(expected.a).Within(0.0001f), message);
         }
 
-        private static Color ReadTokenColor(string tokenName)
+        /// <summary>
+        /// Adds every <c>.dx-*</c> class selector the sheet declares. Comments are stripped first:
+        /// the brand-font rules are commented out until the TTFs are imported, and a commented rule
+        /// styles nothing.
+        /// </summary>
+        private static void CollectStylesheetClassNames(string ussPath, ISet<string> classNames)
+        {
+            string uss = StripBlockComments(System.IO.File.ReadAllText(ussPath));
+            foreach (Match match in Regex.Matches(uss, @"\.(dx-[a-z0-9_-]+)"))
+            {
+                classNames.Add(match.Groups[1].Value);
+            }
+        }
+
+        private static string StripBlockComments(string text)
+        {
+            StringBuilder stripped = new(text.Length);
+            int index = 0;
+            while (index < text.Length)
+            {
+                int open = text.IndexOf("/*", index, StringComparison.Ordinal);
+                if (open < 0)
+                {
+                    stripped.Append(text, index, text.Length - index);
+                    break;
+                }
+
+                stripped.Append(text, index, open - index);
+                int close = text.IndexOf("*/", open + 2, StringComparison.Ordinal);
+                if (close < 0)
+                {
+                    break;
+                }
+
+                index = close + 2;
+            }
+
+            return stripped.ToString();
+        }
+
+        private static string ReadEditorSourceText()
+        {
+            string editorRoot = DxMessagingEditorTheme.PackageRoot + "/Editor";
+            string[] sourcePaths = System.IO.Directory.GetFiles(
+                editorRoot,
+                "*.cs",
+                System.IO.SearchOption.AllDirectories
+            );
+            Assert.That(
+                sourcePaths,
+                Is.Not.Empty,
+                $"Expected editor sources under '{editorRoot}'."
+            );
+
+            StringBuilder sources = new();
+            foreach (string sourcePath in sourcePaths)
+            {
+                sources.Append(System.IO.File.ReadAllText(sourcePath));
+            }
+
+            return sources.ToString();
+        }
+
+        /// <summary>
+        /// The value of a design token, from the default block or from the
+        /// <c>.dx-theme.dx-light</c> override block.
+        /// </summary>
+        private static Color ReadTokenColor(string tokenName, bool lightSkin = false)
         {
             string prefix = tokenName + ":";
+            bool inLightBlock = false;
             foreach (
                 string rawLine in System.IO.File.ReadAllLines(DxMessagingEditorTheme.TokensUssPath)
             )
             {
                 string line = rawLine.Trim();
-                if (!line.StartsWith(prefix, StringComparison.Ordinal))
+                if (line.StartsWith(".dx-theme", StringComparison.Ordinal))
+                {
+                    inLightBlock = line.Contains(
+                        DxMessagingEditorTheme.LightSkinClassName,
+                        StringComparison.Ordinal
+                    );
+                }
+
+                if (!line.StartsWith(prefix, StringComparison.Ordinal) || inLightBlock != lightSkin)
                 {
                     continue;
                 }
@@ -237,7 +388,9 @@ namespace DxMessaging.Tests.Editor
             }
 
             Assert.Fail(
-                $"Missing design token {tokenName} in {DxMessagingEditorTheme.TokensUssPath}."
+                $"Missing design token {tokenName} ({(lightSkin ? "light" : "default")} skin) in "
+                    + DxMessagingEditorTheme.TokensUssPath
+                    + "."
             );
             return Color.clear;
         }

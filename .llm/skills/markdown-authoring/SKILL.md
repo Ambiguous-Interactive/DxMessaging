@@ -56,9 +56,11 @@ grep -rn --include='*.md' ':[a-z_]+:' docs/ | grep -v 'https://'
 ### Mermaid
 
 - Never use `%%{init: {'theme': '...'}}%%` in ANY markdown file, including `README.md`. GitHub
-  and VS Code follow `prefers-color-scheme`; MkDocs Material is driven by
-  `docs/javascripts/mermaid-config.js`, which detects `data-md-color-scheme`, re-renders on
-  theme change, and strips stray init directives as a safety net.
+  and VS Code follow `prefers-color-scheme`; on the site, Material's own mermaid integration
+  renders `pre.mermaid` and themes it from the `--md-mermaid-*` custom properties, which already
+  resolve to this theme's palette in both schemes. There is no custom mermaid script to configure,
+  and no `extra_javascript` mermaid entry: that shape shipped a 3.5 MB bundle to every page and
+  double-rendered every diagram (issue #299).
 - Avoid inline `style ... fill:#hex` node directives. They cannot be stripped automatically and
   break contrast in the opposite theme. If unavoidable, verify contrast in both themes.
 - Verify with `grep -rn --include='*.md' "%%{init.*theme" .` (no output means clean).
@@ -100,7 +102,6 @@ grep -rn --include='*.md' ':[a-z_]+:' docs/ | grep -v 'https://'
 | [markdown-compatibility-part-1.md](./references/markdown-compatibility-part-1.md)       | Forbidden admonition, collapsible, tab, and button syntax with portable replacements                       |
 | [markdown-compatibility-part-2.md](./references/markdown-compatibility-part-2.md)       | Quick-reference substitution table, emoji shortcode ban, and grep validation commands                      |
 | [markdown-compatibility.md](./references/markdown-compatibility.md)                     | Why cross-renderer syntax matters, plus the nested-fence backtick rules                                    |
-| [mermaid-theming-part-1.md](./references/mermaid-theming-part-1.md)                     | Inline style directives, the mermaid-config.js palette, and the init-directive stripping regex             |
-| [mermaid-theming.md](./references/mermaid-theming.md)                                   | The no-hardcoded-theme rule and how global theme detection works                                           |
+| [mermaid-theming.md](./references/mermaid-theming.md)                                   | The no-hardcoded-theme rule, inline style directives, and how Material themes diagrams                     |
 | [mkdocs-navigation-part-1.md](./references/mkdocs-navigation-part-1.md)                 | Nav verification inside the doc workflow and local `mkdocs serve` testing                                  |
 | [mkdocs-navigation.md](./references/mkdocs-navigation.md)                               | Nav structure, clickable section indexes, ordering, and the orphan-page audit script                       |

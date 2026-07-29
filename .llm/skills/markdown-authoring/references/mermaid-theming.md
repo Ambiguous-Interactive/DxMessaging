@@ -1,94 +1,50 @@
 # Mermaid Diagram Theming
 
-> **One-line summary**: Never use `%%{init: {'theme': '...'}}%%` directives in any markdown file; let renderers (GitHub, VS Code, MkDocs) automatically detect user theme preferences.
+Never put a `%%{init: {'theme': '...'}}%%` directive in any markdown file, and never hardcode hex
+colors in an inline `style` line. Every renderer this project targets already picks a theme from the
+reader's preference, and a per-diagram directive overrides that for everyone.
 
-## Overview
+## Who renders diagrams
 
-This project uses Mermaid diagrams for visualizing architecture and message flows. Theming must be handled correctly to support both light and dark modes in MkDocs Material.
+| Location    | Renderer        | Theme source                                                 |
+| ----------- | --------------- | ------------------------------------------------------------ |
+| `docs/`     | MkDocs Material | The site palette, through Material's own mermaid integration |
+| `README.md` | GitHub, VS Code | `prefers-color-scheme`                                       |
+| Any `.md`   | Anything else   | Whatever that renderer decides                               |
 
-## Critical: Never Hardcode Dark Themes
+In `docs/`, the `pymdownx.superfences` custom fence in `mkdocs.yml` turns a ` ```mermaid ` block
+into `<pre class="mermaid">`, which is exactly the markup Material's built-in diagram support looks
+for. Material then:
 
-> **NEVER use `%%{init: {'theme': 'dark'}}%%` in ANY markdown file** - not in `docs/`, not in `README.md`, nowhere.
+1. Loads `mermaid.min.js` from unpkg only on pages that contain a diagram.
+1. Calls `mermaid.initialize` with a `themeCSS` built from 26 `--md-mermaid-*` CSS custom
+   properties.
+1. Re-renders on a palette toggle.
 
-### Why This Matters
+Those custom properties default to `--md-accent-fg-color`, `--md-code-fg-color`, and
+`--md-default-bg-color`, all of which `docs/stylesheets/extra.css` already redefines per scheme. So
+diagrams follow the DxMessaging palette in both light and dark with no diagram-specific CSS. To
+retint them, override a `--md-mermaid-*` property in `extra.css`; see
+[changing the colors](https://squidfunk.github.io/mkdocs-material/setup/changing-the-colors/).
 
-GitHub and VS Code now respect `prefers-color-scheme` automatically for Mermaid diagrams. Hardcoding `'theme': 'dark'` causes these problems:
+### There is no custom mermaid script
 
-1. **Breaks light-mode users**: Users with light theme preferences see dark-themed diagrams with poor contrast
-1. **Ignores user preferences**: Modern renderers detect system/browser theme automatically
-1. **Creates inconsistency**: Some diagrams follow user theme, others don't
-1. **Reduces accessibility**: Low contrast combinations harm users with visual impairments
+`docs/javascripts/mermaid-config.js` used to do this job and was deleted (issue #299). It loaded the
+mermaid bundle (3,565,102 bytes raw, 948 KB gzipped) through `extra_javascript`, which put it on 48
+of the site's 49 pages when only 6 render a diagram, and it rendered every diagram a second time
+because Material's integration was already handling the same elements. Do not reintroduce a
+`extra_javascript` mermaid entry.
 
-### The Solution
+## Why a per-diagram directive is wrong
 
-**Omit init directives entirely.** Let the renderer (GitHub, VS Code, MkDocs) choose the appropriate theme based on user preferences.
+A directive pins one theme for every reader:
 
-````markdown
-<!--  CORRECT: No init directive -->
+- A `dark` diagram on a light page is low-contrast text on a pale background.
+- It overrides Material's palette toggle, so one diagram stops matching the page the moment the
+  reader switches schemes.
+- It overrides `prefers-color-scheme` on GitHub, which is where most readers see `README.md`.
 
-```mermaid
-flowchart TD
-    A[Start] --> B[Process]
-    B --> C[End]
-```
-````
-
-````markdown
-<!--  FORBIDDEN: Hardcoded dark theme -->
-
-```mermaid
-%%{init: {'theme': 'dark'}}%%
-flowchart TD
-    A[Start] --> B[Process]
-```
-````
-
-## The Problem
-
-Mermaid supports per-diagram theme configuration via init directives:
-
-```mermaid
-%%{init: {'theme': 'dark'}}%%
-flowchart TD
-    A --> B
-```
-
-While this works for static rendering (GitHub, VS Code), it creates a critical issue in MkDocs Material:
-
-1. **MkDocs Material has dynamic theme switching** - Users can toggle between light and dark modes
-1. **Per-diagram directives override global configuration** - The `mermaid-config.js` script manages theme switching, but init directives bypass it completely
-1. **Result**: Diagrams with hardcoded `'theme': 'dark'` render incorrectly in light mode (poor contrast, unreadable text)
-
-## docs/ Files vs README.md
-
-The same rule applies to ALL markdown files: **omit init directives entirely**.
-
-| Location    | Viewer          | Theming Approach                                               |
-| ----------- | --------------- | -------------------------------------------------------------- |
-| `docs/`     | MkDocs Material | **No per-diagram directives** - use global `mermaid-config.js` |
-| `README.md` | GitHub/VS Code  | **No per-diagram directives** - rely on automatic theming      |
-| Any `.md`   | Any renderer    | **No per-diagram directives** - let renderer choose theme      |
-
-### Why automatic theming is preferred everywhere
-
-- **MkDocs Material** dynamically loads `mermaid-config.js` which detects theme changes and re-renders diagrams with appropriate colors. Per-diagram directives interfere with this.
-- **GitHub** automatically respects `prefers-color-scheme` and renders diagrams in the user's preferred theme. Hardcoded themes override this.
-- **VS Code** preview respects the editor's color theme. Hardcoded dark themes look poor in light-themed editors.
-
-## How Global Theming Works
-
-The `docs/javascripts/mermaid-config.js` script:
-
-1. Detects the current MkDocs Material theme (`data-md-color-scheme` attribute)
-1. Initializes Mermaid with semantic color variables for light or dark mode
-1. Observes theme changes and re-renders all diagrams
-1. **Strips any `%%{init:...}%%` directives** from diagram source before rendering (as a safety net)
-
-This ensures diagrams always match the user's preferred theme.
-
-## Solution
-
-### Correct: docs/ Files (MkDocs)
+Correct, in every file:
 
 ````markdown
 ```mermaid
@@ -98,21 +54,7 @@ flowchart TD
 ```
 ````
 
-No init directive needed. The global configuration handles theming automatically.
-
-### Correct: README.md (GitHub/VS Code)
-
-````markdown
-```mermaid
-flowchart TD
-    A[Start] --> B[Process]
-    B --> C[End]
-```
-````
-
-No init directive needed. GitHub and VS Code automatically detect user theme preferences.
-
-### Forbidden: Any File with Hardcoded Theme Directive
+Forbidden, in every file:
 
 ````markdown
 ```mermaid
@@ -122,8 +64,36 @@ flowchart TD
 ```
 ````
 
-This bypasses automatic theme detection and causes poor rendering for users with different theme preferences. Never use `'theme': 'dark'`, `'theme': 'forest'`, or any hardcoded theme value.
+`'theme': 'forest'` and every other value are equally forbidden. The rule is about pinning a theme,
+not about which one gets pinned.
+
+## Inline style directives
+
+Mermaid also accepts per-node styling:
+
+```mermaid
+flowchart TD
+    A[Start] --> B[Process]
+    style B fill:#1e3a5f,stroke:#90caf9,color:#e0e0e0
+```
+
+Those hex values are chosen against one background, so the node inverts badly in the other scheme.
+Prefer no inline styles at all. If a diagram genuinely needs to distinguish one node, check the
+result in both schemes before committing it.
+
+## Validation
+
+```bash
+grep -rn --include='*.md' "%%{init.*theme" .
+```
+
+No output means clean. Any hit is the exact line to delete.
 
 ## See Also
 
-- [mermaid theming part 1](./mermaid-theming-part-1.md)
+- [Markdown Compatibility Guidelines](./markdown-compatibility.md) - the rest of the forbidden
+  MkDocs-specific syntax.
+- [Documentation Style Guide](../../documentation-style/references/documentation-style-guide.md) -
+  prose and formatting rules.
+- [Mermaid theming reference](https://mermaid.js.org/config/theming.html) - upstream documentation
+  for the theme variables Material sets.

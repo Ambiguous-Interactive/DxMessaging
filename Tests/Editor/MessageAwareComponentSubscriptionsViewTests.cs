@@ -342,6 +342,52 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
+        /// <summary>
+        /// Priority decides dispatch order within a message type, so it is promoted out of the meta
+        /// sentence into the design system's accent badge. This is the surface that brings
+        /// <c>.dx-prio</c> into use (issue #304).
+        /// </summary>
+        [Test]
+        public void ViewBadgesEachRowsPriority()
+        {
+            SubscriptionsTestComponent component = CreateComponent(
+                out MessagingComponent messagingComponent
+            );
+            component.ConfigureForEditorTest(messagingComponent);
+            component.RegisterTestHandlers();
+
+            MessageAwareComponentSubscriptionsState state =
+                MessageAwareComponentSubscriptionsState.Capture(component);
+            VisualElement root = MessageAwareComponentSubscriptionsView.Create(state);
+
+            List<Label> badges = root.Query<Label>(
+                    MessageAwareComponentSubscriptionsView.RowPriorityLabelName
+                )
+                .ToList();
+            Assert.That(badges.Count, Is.EqualTo(state.Rows.Count));
+            foreach (Label badge in badges)
+            {
+                Assert.That(
+                    badge.ClassListContains(
+                        MessageAwareComponentSubscriptionsView.PriorityClassName
+                    ),
+                    Is.True
+                );
+                Assert.That(badge.tooltip, Is.Not.Empty, "A bare number needs the tooltip.");
+            }
+
+            Assert.That(
+                MessageAwareComponentSubscriptionsView.CreatePriorityText(state.Rows[0]),
+                Is.EqualTo("P" + state.Rows[0].Priority),
+                "The badge shows the real priority, prefixed so it does not read as a count."
+            );
+            Assert.That(
+                MessageAwareComponentSubscriptionsView.CreateRowMetaText(state.Rows[0]),
+                Does.Not.Contain("priority"),
+                "The badge replaces the meta sentence's priority segment rather than duplicating it."
+            );
+        }
+
         [Test]
         public void ViewInsetsRowsSoTheyClearTheRoundedBorder()
         {

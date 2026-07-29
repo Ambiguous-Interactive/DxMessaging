@@ -32,6 +32,13 @@ namespace DxMessaging.Editor.CustomEditors
         private GUIStyle _leftAlignedStyle;
         private GUIStyle _rightAlignedStyle;
 
+        /// <summary>
+        /// Which skin the two colored styles were built for. Switching the editor theme repaints
+        /// without reloading the domain, so a cached style has to be rebuilt or it keeps painting the
+        /// other skin's color.
+        /// </summary>
+        private bool _coloredStylesUseProSkin;
+
         private void OnEnable()
         {
             _listenerFoldouts.Clear();
@@ -44,16 +51,39 @@ namespace DxMessaging.Editor.CustomEditors
         {
             base.OnInspectorGUI();
 
-            _matchingStyle ??= new GUIStyle(EditorStyles.label)
+            // This inspector is the package's remaining IMGUI surface, so it cannot pick colors up
+            // from the stylesheet the way the UI Toolkit windows do. It reads them from the palette
+            // instead: `Color.green` and `Color.yellow` are outside the design system, and both are
+            // close to unreadable as label text on the light skin.
+            bool proSkin = EditorGUIUtility.isProSkin;
+            if (_matchingStyle == null || _coloredStylesUseProSkin != proSkin)
             {
-                normal = { textColor = Color.green },
-                fontStyle = FontStyle.Bold,
-            };
-            _potentialMatchStyle ??= new GUIStyle(EditorStyles.label)
-            {
-                normal = { textColor = Color.yellow },
-                fontStyle = FontStyle.Bold,
-            };
+                _coloredStylesUseProSkin = proSkin;
+                _matchingStyle = new GUIStyle(EditorStyles.label)
+                {
+                    normal =
+                    {
+                        textColor = DxMessagingEditorPalette.ForSkin(
+                            DxMessagingEditorPalette.BroadcastText,
+                            DxMessagingEditorPalette.BroadcastTextOnLight,
+                            proSkin
+                        ),
+                    },
+                    fontStyle = FontStyle.Bold,
+                };
+                _potentialMatchStyle = new GUIStyle(EditorStyles.label)
+                {
+                    normal =
+                    {
+                        textColor = DxMessagingEditorPalette.ForSkin(
+                            DxMessagingEditorPalette.Amber,
+                            DxMessagingEditorPalette.AmberOnLight,
+                            proSkin
+                        ),
+                    },
+                    fontStyle = FontStyle.Bold,
+                };
+            }
             _defaultStyle ??= new GUIStyle(EditorStyles.label);
             _leftAlignedStyle ??= new GUIStyle(EditorStyles.label)
             {

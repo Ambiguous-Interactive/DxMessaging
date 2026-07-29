@@ -182,6 +182,9 @@ namespace DxMessaging.Editor.Windows
         internal const string FooterName = "dxmessaging-monitor-live-footer";
         internal const string EmptyBodyName = "dxmessaging-monitor-live-empty";
         internal const string EmptyTitleName = "dxmessaging-monitor-live-empty-title";
+        internal const string GapNoticeName = "dxmessaging-monitor-live-gap";
+        internal const string GapNoticeTitleName = "dxmessaging-monitor-live-gap-title";
+        internal const string GapNoticeBodyName = "dxmessaging-monitor-live-gap-body";
 
         internal const string Title = "Message Monitor (Live)";
 
@@ -202,6 +205,96 @@ namespace DxMessaging.Editor.Windows
         private const int ChipLabelWidth = 0;
 
         private const int DetailStackTraceMaxHeight = 120;
+
+        // The body renders into four fixed slots so a poll can update each independently. Named
+        // only so the UI Toolkit debugger reads clearly; nothing queries them.
+        private const string ListSlotName = "dxmessaging-monitor-live-list-slot";
+        private const string DetailSlotName = "dxmessaging-monitor-live-detail-slot";
+        private const string FooterSlotName = "dxmessaging-monitor-live-footer-slot";
+
+        /// <summary>
+        /// What the body is currently showing, and the slots it shows it in.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This hangs off the body element's <see cref="VisualElement.userData"/> so
+        /// <see cref="RenderBody"/> stays a static entry point a polling host can call without
+        /// holding a view object, and so a re-render can update the list and the detail pane in place
+        /// instead of clearing the body (issue #303).
+        /// </para>
+        /// <para>
+        /// The row list is the identity the <see cref="ListView"/> is bound to for the life of that
+        /// list, and the view state and callbacks are what the row binding reads, so a refresh never
+        /// renders against a row set or reports to a host that has since been replaced.
+        /// </para>
+        /// </remarks>
+        private sealed class LiveBodyState
+        {
+            internal VisualElement ListSlot { get; set; }
+
+            internal VisualElement DetailSlot { get; set; }
+
+            internal VisualElement FooterSlot { get; set; }
+
+            /// <summary>The live list, or null while the log is showing an empty state.</summary>
+            internal ListView List { get; set; }
+
+            /// <summary>The list's item source, refilled in place on every render.</summary>
+            internal List<MessageMonitorLiveEntry> Rows { get; } = new();
+
+            /// <summary>
+            /// Position of the pinned row, or -1 before the first row set so the first render always
+            /// pushes a selection.
+            /// </summary>
+            internal int SelectedIndex { get; set; } = -1;
+
+            internal MessageMonitorLiveViewState ViewState { get; set; }
+
+            internal MessageMonitorLiveViewCallbacks Callbacks { get; set; }
+
+            private long _detailFirstTraceId;
+            private long _detailLastTraceId;
+            private int _detailCount;
+
+            /// <summary>
+            /// True when the detail pane already describes <paramref name="row"/>. The dispatch range
+            /// and the count are the whole of what the pane renders that can change while a row stays
+            /// pinned: a coalesced row keeps its first dispatch id and grows the other two.
+            /// </summary>
+            internal bool DetailShows(MessageMonitorLiveEntry row)
+            {
+                return _detailFirstTraceId == row.FirstTraceId
+                    && _detailLastTraceId == row.LastTraceId
+                    && _detailCount == row.Count;
+            }
+
+            internal void RememberDetail(MessageMonitorLiveEntry row)
+            {
+                _detailFirstTraceId = row.FirstTraceId;
+                _detailLastTraceId = row.LastTraceId;
+                _detailCount = row.Count;
+            }
+
+            /// <summary>
+            /// Empties the log slot. The list goes with it rather than being kept hidden, so
+            /// <c>Q&lt;ListView&gt;</c> stays an honest answer to "is the log showing rows".
+            /// </summary>
+            internal void DropList()
+            {
+                ListSlot.Clear();
+                List = null;
+                Rows.Clear();
+                SelectedIndex = -1;
+            }
+
+            internal void DropDetail()
+            {
+                DetailSlot.Clear();
+                _detailFirstTraceId = 0;
+                _detailLastTraceId = 0;
+                _detailCount = 0;
+            }
+        }
 
         /// <summary>
         /// Builds the whole live view: a persistent toolbar plus a body rendered by
@@ -235,9 +328,17 @@ namespace DxMessaging.Editor.Windows
 
         /// <summary>
         /// Fills the body container with the column header, the log list (or an empty state), the
-        /// detail pane for the selected row, and the footer stats. Safe to call repeatedly: it
-        /// clears the container first, and it never touches the toolbar.
+        /// detail pane for the selected row, and the footer stats. Safe to call repeatedly, and
+        /// cheap enough to call on every poll: it updates the four slots in place and never touches
+        /// the toolbar.
         /// </summary>
+        /// <remarks>
+        /// The list and the detail pane are updated rather than replaced, because both hold a scroll
+        /// position. A rebuilt <see cref="ListView"/> starts at the top, so before this a reader who
+        /// had scrolled into older rows was thrown back to the newest row on every poll -- up to four
+        /// times a second on a busy scene (issue #303). The header, the empty state and the footer
+        /// hold nothing a reader can lose, so they are rebuilt.
+        /// </remarks>
         internal static void RenderBody(
             VisualElement body,
             MessageMonitorLiveRecorder recorder,
@@ -255,23 +356,43 @@ namespace DxMessaging.Editor.Windows
                 throw new ArgumentNullException(nameof(recorder));
             }
 
-            callbacks ??= new MessageMonitorLiveViewCallbacks();
-            body.Clear();
-            body.Add(CreateListHeader());
+            LiveBodyState state = EnsureBodyState(body);
+            state.ViewState = viewState;
+            state.Callbacks = callbacks ?? new MessageMonitorLiveViewCallbacks();
 
             List<MessageMonitorLiveEntry> rows = FilterRows(recorder.Entries, viewState);
             if (rows.Count == 0)
             {
-                body.Add(CreateEmptyState(recorder, diagnosticsEnabled));
+                state.DropList();
+                state.ListSlot.Add(CreateEmptyState(recorder, diagnosticsEnabled));
+                state.DropDetail();
             }
             else
             {
                 int selectedIndex = ResolveSelectedIndex(rows, viewState.SelectedTraceId);
-                body.Add(CreateList(rows, selectedIndex, viewState, callbacks));
-                body.Add(CreateDetail(rows[selectedIndex]));
+                UpdateList(state, rows, selectedIndex);
+                UpdateDetail(state, rows[selectedIndex]);
             }
 
-            body.Add(CreateFooter(recorder, rows.Count));
+            state.FooterSlot.Clear();
+            if (recorder.MissedCount > 0)
+            {
+                state.FooterSlot.Add(CreateGapNotice(recorder.MissedCount));
+            }
+            state.FooterSlot.Add(CreateFooter(recorder, rows.Count));
+        }
+
+        /// <summary>
+        /// The body of the notice shown when the bus overwrote emissions before the recorder drained
+        /// them. Both causes are named because the fix differs: pausing is the reader's own doing, a
+        /// buffer too small for the emission rate is a setting.
+        /// </summary>
+        internal static string CreateGapNoticeBodyText(long missedCount)
+        {
+            string emissions = missedCount == 1 ? "1 emission" : $"{missedCount} emissions";
+            return $"The bus overwrote {emissions} before this recorder drained them, so rows are "
+                + "missing. Either recording was paused long enough for the bus buffer to wrap, or "
+                + "that buffer is too small for the emission rate.";
         }
 
         /// <summary>
@@ -523,6 +644,11 @@ namespace DxMessaging.Editor.Windows
             );
             toolbar.Add(record);
 
+            // The toolbar runs four unrelated groups together -- what is being recorded, what is
+            // shown, what is searched, and what the window does next. The design system's rule
+            // separates them so the row reads as groups rather than one run of controls.
+            toolbar.Add(CreateSeparator());
+
             Toggle untargeted = CreateChip(
                 UntargetedChipName,
                 "U",
@@ -569,7 +695,9 @@ namespace DxMessaging.Editor.Windows
             toolbar.Add(untargeted);
             toolbar.Add(targeted);
             toolbar.Add(broadcast);
+            toolbar.Add(CreateSeparator());
             toolbar.Add(filter);
+            toolbar.Add(CreateSeparator());
 
             // Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
             // same as the rest of this package's editor UI: it is the event a real click produces
@@ -649,17 +777,51 @@ namespace DxMessaging.Editor.Windows
             return column;
         }
 
-        private static VisualElement CreateList(
+        /// <summary>
+        /// Points the list at the current row set without replacing it, so the reader keeps their
+        /// place in the log. The list is built on the first non-empty render and after the log has
+        /// been empty, where there is no scroll position left to preserve anyway.
+        /// </summary>
+        private static void UpdateList(
+            LiveBodyState state,
             List<MessageMonitorLiveEntry> rows,
-            int selectedIndex,
-            MessageMonitorLiveViewState viewState,
-            MessageMonitorLiveViewCallbacks callbacks
+            int selectedIndex
         )
+        {
+            bool selectionChanged = state.SelectedIndex != selectedIndex;
+            state.SelectedIndex = selectedIndex;
+
+            // Refilling the list the view was built around, rather than assigning a new one, keeps
+            // this a data refresh: reassigning `itemsSource` is a collection reset.
+            state.Rows.Clear();
+            state.Rows.AddRange(rows);
+
+            if (state.List == null)
+            {
+                state.ListSlot.Clear();
+                state.List = CreateList(state);
+                state.ListSlot.Add(state.List);
+                selectionChanged = true;
+            }
+            else
+            {
+                state.List.RefreshItems();
+            }
+
+            // Only when it moved: the selection is also what the row factory reads to draw the
+            // selected wash, so an unchanged pin needs no work and no allocation per poll.
+            if (selectionChanged)
+            {
+                state.List.SetSelectionWithoutNotify(new[] { selectedIndex });
+            }
+        }
+
+        private static ListView CreateList(LiveBodyState state)
         {
             ListView list = new()
             {
                 name = ListName,
-                itemsSource = rows,
+                itemsSource = state.Rows,
                 fixedItemHeight = RowHeight,
                 virtualizationMethod = CollectionVirtualizationMethod.FixedHeight,
                 selectionType = SelectionType.Single,
@@ -669,21 +831,70 @@ namespace DxMessaging.Editor.Windows
             // Selection is raised from the row's own click rather than the list's selection event:
             // the event was renamed across the supported editor range (onSelectionChange ->
             // selectionChanged), and the row click carries the index directly.
+            //
+            // Everything the binding needs is read off the shared state at bind time rather than
+            // captured here, so a refreshed list renders the current rows and reports clicks to the
+            // host's current callbacks instead of the ones it was first built with.
             list.bindItem = (element, index) =>
             {
                 element.Clear();
-                MessageMonitorLiveEntry entry = rows[index];
-                VisualElement row = CreateRow(entry, index, index == selectedIndex);
+                MessageMonitorLiveEntry entry = state.Rows[index];
+                VisualElement row = CreateRow(entry, index, index == state.SelectedIndex);
                 row.RegisterCallback<ClickEvent>(_ =>
-                    callbacks.OnStateChanged?.Invoke(
-                        viewState.WithSelectedTraceId(entry.FirstTraceId)
+                    state.Callbacks.OnStateChanged?.Invoke(
+                        state.ViewState.WithSelectedTraceId(entry.FirstTraceId)
                     )
                 );
                 element.Add(row);
             };
             list.style.flexGrow = 1;
-            list.SetSelectionWithoutNotify(new[] { selectedIndex });
             return list;
+        }
+
+        /// <summary>
+        /// Rebuilds the detail pane only when it would show something different. The pane carries a
+        /// scrollable stack trace, so rebuilding it while the selected row is unchanged would scroll
+        /// a reader back to the top of that trace on every poll.
+        /// </summary>
+        private static void UpdateDetail(LiveBodyState state, MessageMonitorLiveEntry row)
+        {
+            if (state.DetailSlot.childCount > 0 && state.DetailShows(row))
+            {
+                return;
+            }
+
+            state.DetailSlot.Clear();
+            state.DetailSlot.Add(CreateDetail(row));
+            state.RememberDetail(row);
+        }
+
+        /// <summary>
+        /// Builds the body's four slots on first render and hands back the state they are tracked
+        /// in. A body that already carries state keeps every element it has.
+        /// </summary>
+        private static LiveBodyState EnsureBodyState(VisualElement body)
+        {
+            if (body.userData is LiveBodyState existing)
+            {
+                return existing;
+            }
+
+            body.Clear();
+            LiveBodyState state = new();
+            body.Add(CreateListHeader());
+
+            state.ListSlot = new VisualElement { name = ListSlotName };
+            state.ListSlot.style.flexGrow = 1;
+            body.Add(state.ListSlot);
+
+            state.DetailSlot = new VisualElement { name = DetailSlotName };
+            body.Add(state.DetailSlot);
+
+            state.FooterSlot = new VisualElement { name = FooterSlotName };
+            body.Add(state.FooterSlot);
+
+            body.userData = state;
+            return state;
         }
 
         private static VisualElement CreateEmptyState(
@@ -776,6 +987,40 @@ namespace DxMessaging.Editor.Windows
             valueLabel.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
             pair.Add(valueLabel);
             return pair;
+        }
+
+        /// <summary>
+        /// The danger-severity notice for a lossy log. A hole in the log is not a caution: every
+        /// count and every gap the reader is looking at is wrong until they know about it, which is
+        /// why this reads louder than the warning admonitions elsewhere in the package.
+        /// </summary>
+        private static VisualElement CreateGapNotice(long missedCount)
+        {
+            VisualElement notice = new() { name = GapNoticeName };
+            notice.AddToClassList(DxMessagingEditorTheme.AdmonitionClassName);
+            notice.AddToClassList(DxMessagingEditorTheme.DangerClassName);
+            DxMessagingEditorTheme.ApplyCompleteBorder(notice, DxMessagingEditorPalette.Targeted);
+
+            Label title = new("The log has gaps") { name = GapNoticeTitleName };
+            title.AddToClassList(DxMessagingEditorTheme.AdmonitionTitleClassName);
+            notice.Add(title);
+
+            // Deliberately carries no class, matching the package's other admonitions:
+            // `.dx-admonition` owns the padding and the body is plain copy. `.dx-empty__body` would
+            // have been the convenient class to reach for and is the wrong one -- it caps width at
+            // 260px and centers, which is right for an empty state and wrong for a full-width notice.
+            Label body = new(CreateGapNoticeBodyText(missedCount)) { name = GapNoticeBodyName };
+            body.style.whiteSpace = WhiteSpace.Normal;
+            notice.Add(body);
+
+            return notice;
+        }
+
+        private static VisualElement CreateSeparator()
+        {
+            VisualElement separator = new();
+            separator.AddToClassList(DxMessagingEditorTheme.SeparatorClassName);
+            return separator;
         }
 
         private static VisualElement CreateFooter(
