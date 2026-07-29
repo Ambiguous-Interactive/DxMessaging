@@ -443,7 +443,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))] and "
                     + "Targeted+Broadcast pairs via "
                     + "[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.KindsWithComponentTarget))]. "
-                    + "See .llm/skills/testing/tests-must-be-parameterized-by-message-kind.md. Offenders:\n"
+                    + "See .llm/skills/test-coverage-design/references/tests-must-be-parameterized-by-message-kind.md. Offenders:\n"
                     + string.Join("\n", offenders)
             );
         }
@@ -486,7 +486,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     + string.Join(", ", missing)
                     + ". Actual kinds: "
                     + string.Join(", ", covered)
-                    + ". See .llm/skills/testing/allocation-coverage-required-for-dispatch.md."
+                    + ". See .llm/skills/allocation-and-leak-coverage/references/allocation-coverage-required-for-dispatch.md."
             );
         }
 
@@ -940,7 +940,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Tests must wait on deterministic frame or condition progress, never real time. "
                     + "Replace the offending blocking-sleep / awaited-delay / real-seconds-yield / "
                     + "time-scale usage with a frame budget or a synchronous condition check "
-                    + "(see .llm/skills/testing/fast-unity-tests.md):\n  "
+                    + "(see .llm/skills/unity-test-execution/references/fast-unity-tests.md):\n  "
                     + string.Join("\n  ", offenders)
             );
         }
@@ -1067,7 +1067,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "reserve [UnityTest] for tests that actually yield. Convert each to [Test] (drop the "
                     + "IEnumerator return type and the trailing 'yield break;'), or - for a fixture still "
                     + "mid-migration - add its file to the pendingMigration allowlist with a justification. "
-                    + "See .llm/skills/testing/fast-unity-tests.md. Offenders:\n  "
+                    + "See .llm/skills/unity-test-execution/references/fast-unity-tests.md. Offenders:\n  "
                     + string.Join("\n  ", offenders)
             );
         }

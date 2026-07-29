@@ -13,7 +13,7 @@
  *   - release-prepare.yml : --version <new-version>
  *   - release-drafter.yml : --version Unreleased
  *
- * See .llm/skills/github-actions/release-asset-and-notes-invariants.md.
+ * See .llm/skills/github-workflow-consistency/references/release-asset-and-notes-invariants.md.
  *
  * Usage:
  *   node scripts/release/release-notes.js --version X.Y.Z [--footer] \

@@ -733,7 +733,7 @@ foreach ($relativeFolder in $folderMetaRelativePaths) {
 # scripts/unity/unity-builtin-modules.json. Do not copy newer editor default
 # manifests wholesale; every listed package must resolve in the pinned release
 # editor without network access. The package's own UPM dependencies merge on top.
-# See .llm/skills/github-actions/release-asset-and-notes-invariants.md.
+# See .llm/skills/github-workflow-consistency/references/release-asset-and-notes-invariants.md.
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'Packages') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $projectPath 'ProjectSettings') | Out-Null
 New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($projectPath, 'Assets', 'Editor')) | Out-Null

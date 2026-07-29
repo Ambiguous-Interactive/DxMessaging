@@ -9,7 +9,7 @@
  * by prepare-release.js and the release-notes.js CLI (which release.yml,
  * release-prepare.yml, and release-drafter.yml all call), so the three
  * workflows can never drift on extraction semantics. See
- * .llm/skills/github-actions/release-asset-and-notes-invariants.md.
+ * .llm/skills/github-workflow-consistency/references/release-asset-and-notes-invariants.md.
  */
 
 const { normalizeToLf } = require("../lib/line-endings.js");

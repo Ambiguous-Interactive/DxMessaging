@@ -22,8 +22,6 @@
 const fs = require("fs");
 const path = require("path");
 const { normalizeToLf } = require("./lib/line-endings");
-const { isPathOutsideDirectory } = require("./lib/path-classifier");
-const { walkFiles } = require("./lib/repo-files");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const LLMS_TXT_PATH = path.join(ROOT_DIR, "llms.txt");
@@ -33,17 +31,15 @@ const PACKAGE_JSON_PATH = path.join(ROOT_DIR, "package.json");
 // the CLI exit-code paths are testable against a temp fixture -- set them in the
 // child process's env for CLI tests; production runs always use the repo defaults.
 const LLM_SKILLS_DIR = process.env.DX_SKILLS_DIR || path.join(ROOT_DIR, ".llm", "skills");
-const NON_SKILL_FILES = new Set(["index.md", "specification.md"]);
-const NON_SKILL_DIRECTORIES = new Set(["templates"]);
 
-// The "N+ specialized skill documents" claim is duplicated across human-facing
+// The "N+ specialized skills" claim is duplicated across human-facing
 // docs (llms.txt, README.md). It is a floored "at least N" promise, so the only
 // way it can be wrong is to overstate; understating is conservatively true. We
 // therefore normalize the number out of structural comparison (like the date)
 // and separately assert no claim overstates the real count. That kills the
 // entire "forgot to bump the skill count" failure class while still catching
 // genuinely false claims. See validateSkillCountClaim.
-const SKILL_CLAIM_REGEX = /(\d+)\+ specialized skill documents/g;
+const SKILL_CLAIM_REGEX = /(\d+)\+ specialized skills/g;
 
 // Docs whose skill-count claim is guarded (missing files are skipped). Resolved
 // per run so the CLI exit-code paths stay testable against a temp fixture via the
@@ -54,47 +50,40 @@ function guardedClaimFiles() {
     { label: "README.md", filePath: process.env.DX_README || README_PATH }
   ];
 }
-
-function isCountedSkillPath(fullPath) {
-  const relativePath = path.relative(LLM_SKILLS_DIR, fullPath).split(path.sep).join("/");
-
-  // Cross-drive-safe containment (scripts/lib/path-classifier.js): a bare
-  // `relativePath.startsWith("../")` misses the absolute target that
-  // path.relative returns across Windows drives. `!relativePath` also rules out
-  // fullPath === LLM_SKILLS_DIR (the dir itself is never a counted skill file).
-  if (!relativePath || isPathOutsideDirectory(fullPath, LLM_SKILLS_DIR)) {
-    return false;
+/**
+ * A skill is a directory under .llm/skills containing SKILL.md, per the Agent Skills spec
+ * (https://agentskills.io/specification). Files under `references/` are supporting detail an agent
+ * loads on demand, not separately discoverable skills, so they are not counted.
+ */
+function listSkillNames() {
+  if (!fs.existsSync(LLM_SKILLS_DIR)) {
+    return [];
   }
 
-  const pathSegments = relativePath.split("/");
-  const fileName = pathSegments[pathSegments.length - 1];
-
-  if (!fileName.endsWith(".md")) {
-    return false;
+  let entries;
+  try {
+    entries = fs.readdirSync(LLM_SKILLS_DIR, { withFileTypes: true });
+  } catch (error) {
+    console.warn(`Warning: Unable to read directory ${LLM_SKILLS_DIR}: ${error.message}`);
+    return [];
   }
 
-  if (NON_SKILL_FILES.has(fileName)) {
-    return false;
-  }
-
-  return !pathSegments.some((segment) => NON_SKILL_DIRECTORIES.has(segment));
+  return entries
+    .filter(
+      (entry) =>
+        entry.isDirectory() && fs.existsSync(path.join(LLM_SKILLS_DIR, entry.name, "SKILL.md"))
+    )
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right, "en"));
 }
 
 function countSkillFiles() {
-  if (!fs.existsSync(LLM_SKILLS_DIR)) {
-    return 0;
-  }
-
-  return walkFiles(LLM_SKILLS_DIR, {
-    excludeDir: (fullPath, entry) => NON_SKILL_DIRECTORIES.has(entry.name),
-    match: (fullPath) => isCountedSkillPath(fullPath),
-    onError: (error, dir) =>
-      console.warn(`Warning: Unable to read directory ${dir}: ${error.message}`)
-  }).length;
+  return listSkillNames().length;
 }
 
+
 /**
- * Extract every "N+ specialized skill documents" claim from content as integers,
+ * Extract every "N+ specialized skills" claim from content as integers,
  * in document order.
  */
 function parseSkillCountClaims(content) {
@@ -118,7 +107,7 @@ function validateSkillCountClaim(content, actualCount, label) {
     return {
       ok: false,
       claimed: null,
-      reason: `${label}: expected exactly one "N+ specialized skill documents" claim, found ${claims.length}`
+      reason: `${label}: expected exactly one "N+ specialized skills" claim, found ${claims.length}`
     };
   }
 
@@ -131,7 +120,7 @@ function validateSkillCountClaim(content, actualCount, label) {
     return {
       ok: false,
       claimed,
-      reason: `${label}: claims ${claimed}+ specialized skill documents but only ${actualCount} exist (overstated). Run: node scripts/update-llms-txt.js`
+      reason: `${label}: claims ${claimed}+ specialized skills but only ${actualCount} exist (overstated). Run: node scripts/update-llms-txt.js`
     };
   }
 
@@ -139,7 +128,7 @@ function validateSkillCountClaim(content, actualCount, label) {
 }
 
 /**
- * Rewrite a file's single "N+ specialized skill documents" claim to the exact
+ * Rewrite a file's single "N+ specialized skills" claim to the exact
  * current count. No-op (returns false) when the file is absent, has no claim, or
  * already matches. Refuses to touch a file with multiple claims so an ambiguous
  * edit can never mangle prose.
@@ -158,7 +147,7 @@ function syncSkillCountClaim(filePath, actualCount) {
 
   const updated = original.replace(
     SKILL_CLAIM_REGEX,
-    `${actualCount}+ specialized skill documents`
+    `${actualCount}+ specialized skills`
   );
   if (updated === original) {
     return false;
@@ -210,28 +199,6 @@ function hasValidLastUpdatedLine(content) {
   const isoDatePattern = /^\*\*Last Updated:\*\*\s+\d{4}-\d{2}-\d{2}\s*$/;
   return isoDatePattern.test(line);
 }
-
-function getSkillCategories() {
-  const categories = [];
-
-  if (fs.existsSync(LLM_SKILLS_DIR)) {
-    let entries;
-    try {
-      entries = fs.readdirSync(LLM_SKILLS_DIR, { withFileTypes: true });
-    } catch (error) {
-      console.warn(`Warning: Unable to read directory ${LLM_SKILLS_DIR}: ${error.message}`);
-      return categories;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory() && !NON_SKILL_DIRECTORIES.has(entry.name)) {
-        categories.push(entry.name);
-      }
-    }
-  }
-
-  return categories.sort();
-}
-
 function getPackageInfo() {
   const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8"));
   return {
@@ -245,11 +212,10 @@ function getPackageInfo() {
 function generateLlmsTxt() {
   const pkg = getPackageInfo();
   const skillCount = countSkillFiles();
-  const skillCategories = getSkillCategories();
+  const skillNames = listSkillNames();
   const currentDate = new Date().toISOString().split("T")[0];
 
-  // Format skill categories for display
-  const skillCategoriesText = skillCategories.map((cat) => `  - **${cat}/**`).join("\n");
+  const skillNamesText = skillNames.map((name) => `  - **${name}**`).join("\n");
 
   return `# DxMessaging
 
@@ -467,8 +433,8 @@ npm run check:spelling
 This repository includes comprehensive AI agent guidance in the \`.llm/\` directory:
 
 - **[.llm/context.md](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/context.md)** - Repository guidelines, coding standards, testing policies
-- **[.llm/skills/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills)** - ${skillCount}+ specialized skill documents covering:
-${skillCategoriesText}
+- **[.llm/skills/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills)** - ${skillCount}+ specialized skills:
+${skillNamesText}
 
 ## Common Pitfalls & Solutions
 
@@ -573,7 +539,7 @@ function normalizeForComparison(str) {
       // Normalize the floored skill-count claim. The exact number is validated
       // separately (no-overstatement, see validateSkillCountClaim); keeping it out
       // of the structural diff means adding/removing a skill never trips --check.
-      .replace(SKILL_CLAIM_REGEX, "<COUNT>+ specialized skill documents")
+      .replace(SKILL_CLAIM_REGEX, "<COUNT>+ specialized skills")
       .trim()
   );
 }
@@ -653,7 +619,7 @@ function main() {
         errors.forEach((error) => console.error(`ERROR: ${error}`));
         process.exit(1);
       }
-      console.log(`[ok] llms.txt is up to date (${actualCount} skill documents)`);
+      console.log(`[ok] llms.txt is up to date (${actualCount} skills)`);
       return;
     }
 
@@ -704,7 +670,7 @@ if (require.main === module) {
 module.exports = {
   generateLlmsTxt,
   countSkillFiles,
-  getSkillCategories,
+  listSkillNames,
   hasValidLastUpdatedLine,
   normalizeForComparison,
   parseSkillCountClaims,

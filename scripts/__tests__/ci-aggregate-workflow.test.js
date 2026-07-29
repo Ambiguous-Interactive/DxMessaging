@@ -165,9 +165,9 @@ test("script-test path detector covers skills index inputs", () => {
   const source = readCiWorkflow();
   const scriptsPattern = new RegExp(extractShellPatternVariable(source, "scripts_pattern"));
 
-  assert.match(".llm/skills/index.md", scriptsPattern);
-  assert.match(".llm/skills/github-actions/workflow-consistency.md", scriptsPattern);
-  assert.match("scripts/generate-skills-index.js", scriptsPattern);
+  assert.match(".llm/index.md", scriptsPattern);
+  assert.match(".llm/skills/github-workflow-consistency/references/workflow-consistency.md", scriptsPattern);
+  assert.match("scripts/llm/harness.js", scriptsPattern);
 });
 
 test("script-test path detector covers package-script contract reference surfaces", () => {
@@ -177,7 +177,7 @@ test("script-test path detector covers package-script contract reference surface
   assert.match(".github/ISSUE_TEMPLATE/bug_report.yml", scriptsPattern);
   assert.match("docs/ops/release-operations.md", scriptsPattern);
   assert.match(".llm/context.md", scriptsPattern);
-  assert.match(".llm/skills/packaging/unity-analyzer-shipping.md", scriptsPattern);
+  assert.match(".llm/skills/package-publishing/references/unity-analyzer-shipping.md", scriptsPattern);
 });
 
 test("static child jobs always report and fail closed on bad change detection", () => {

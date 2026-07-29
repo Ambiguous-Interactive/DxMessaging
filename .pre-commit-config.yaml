@@ -101,6 +101,19 @@ repos:
         stages:
           - pre-commit
         description: Run "npm run update:llms-txt" when this fails.
+      - id: llm-harness
+        name: Verify .llm skill harness is current
+        entry: node scripts/llm/harness.js check
+        language: system
+        pass_filenames: false
+        # always_run for the same reason as update-llms-txt: pre-commit's
+        # changed-file list excludes deletions, so a files: pattern would miss
+        # a removed skill even though .llm/index.md, the context registry
+        # block, and both agent mirrors all enumerate the skills directory.
+        always_run: true
+        stages:
+          - pre-commit
+        description: Run "npm run llm:index" when this fails.
       - id: validate-asmdef-references
         name: Validate asmdef precompiled references
         entry: node scripts/validate-asmdef-references.js

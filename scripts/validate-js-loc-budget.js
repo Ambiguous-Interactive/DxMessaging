@@ -35,11 +35,15 @@ const path = require("path");
 // 072 design-system editor CI guards (untracked-dump + complete-border +
 //     blocked-capture-primitive checks, stable editor-window test-host teardown
 //     guard) for the cleaner-site design-system convergence: 13700.
-// 073 tested Unity MCP endpoint discovery, client auto-configuration, and the
-//     native streamable-HTTP bridge (scripts/mcp/unity-mcp.mjs + suite),
-//     replacing 404 lines of untested shell/PowerShell and the runtime
-//     supergateway dependency: 15600.
-const TOTAL_BUDGET = 15600;
+// 073 Unity MCP + Agent Skills harness, both tested, both replacing untested
+//     tooling. Added: unity-mcp.mjs (1242) + its suite (655) replacing 404
+//     lines of untested shell/PowerShell and the runtime supergateway
+//     dependency; llm/harness.js (515) + its suite (192) replacing
+//     generate-skills-index.js (311) + its suite (332). Net +1961 tested JS
+//     for -1047 lines retired, and the two remaining generators now cover
+//     spec validation, line limits, indexing, and agent mirrors that
+//     previously had no automated check at all: 15700.
+const TOTAL_BUDGET = 15700;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
