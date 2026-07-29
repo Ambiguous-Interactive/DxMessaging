@@ -591,6 +591,156 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void APollThatAddsRowsRefreshesTheListInsteadOfRebuildingIt()
+        {
+            MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "First"));
+            VisualElement root = CreateView(recorder);
+            VisualElement body = root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName);
+            ListView list = root.Q<ListView>(DxMessagingMessageMonitorLiveView.ListName);
+            Assert.IsNotNull(list);
+
+            recorder.Ingest(new[] { Entry(2, "Second") });
+            RenderBody(body, recorder);
+
+            // A rebuilt list starts scrolled to the top, so keeping the instance is what keeps a
+            // reader who had scrolled into older rows where they were (issue #303).
+            Assert.AreSame(
+                list,
+                root.Q<ListView>(DxMessagingMessageMonitorLiveView.ListName),
+                "A poll must refresh the list, not replace it."
+            );
+            Assert.AreEqual(2, list.itemsSource.Count, "The refreshed list shows the new row.");
+        }
+
+        [Test]
+        public void ARefreshedListBindsTheNewRowsAndReportsToTheCurrentHost()
+        {
+            MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "First"));
+            VisualElement root = CreateView(recorder);
+            VisualElement body = root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName);
+            MessageMonitorLiveViewState? observed = null;
+
+            recorder.Ingest(new[] { Entry(2, "Second") });
+            RenderBody(
+                body,
+                recorder,
+                callbacks: new MessageMonitorLiveViewCallbacks
+                {
+                    OnStateChanged = state => observed = state,
+                }
+            );
+
+            // The row binding is driven directly rather than waiting for the virtualized list to
+            // realize a row. What it must prove is that the kept list binds against the current row
+            // set and the current callbacks instead of the ones it was first built with.
+            ListView list = root.Q<ListView>(DxMessagingMessageMonitorLiveView.ListName);
+            VisualElement bound = new();
+            root.Add(bound);
+            list.bindItem(bound, 0);
+
+            Assert.AreEqual(
+                "Second",
+                Text(bound, DxMessagingMessageMonitorLiveView.RowMessageLabelName),
+                "The log is newest first, so index 0 is the row the last poll added."
+            );
+
+            SendClick(bound[0]);
+
+            Assert.IsTrue(observed.HasValue, "A row click reaches the host that rendered last.");
+            Assert.AreEqual(2, observed.Value.SelectedTraceId);
+        }
+
+        [Test]
+        public void APollThatDoesNotChangeTheSelectedRowKeepsTheDetailPane()
+        {
+            MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "PlayerSpawned"));
+            VisualElement root = CreateView(recorder);
+            VisualElement body = root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName);
+            VisualElement detail = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.DetailName
+            );
+            Assert.IsNotNull(detail);
+
+            RenderBody(body, recorder);
+
+            // The pane carries a scrollable stack trace, so rebuilding it for an unchanged row would
+            // scroll a reader back to the top of that trace on every poll.
+            Assert.AreSame(
+                detail,
+                root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.DetailName)
+            );
+
+            recorder.Ingest(new[] { Entry(2, "EnemyDied") });
+            RenderBody(body, recorder);
+
+            Assert.AreNotSame(
+                detail,
+                root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.DetailName),
+                "A different selected row is a different pane."
+            );
+            Assert.AreEqual(
+                "EnemyDied",
+                Text(
+                    root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.DetailName),
+                    DxMessagingMessageMonitorLiveView.DetailTitleLabelName
+                )
+            );
+        }
+
+        [Test]
+        public void CoalescingIntoThePinnedRowRefreshesItsDetailPane()
+        {
+            MessageMonitorEntry repeated = Entry(1, "Tick");
+            MessageMonitorLiveRecorder recorder = Recorder(repeated);
+            VisualElement root = CreateView(recorder);
+            VisualElement body = root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName);
+
+            // Folding does not add a row, so the pane's row identity is unchanged while the count it
+            // renders is not. Keying the reuse on the dispatch range and the count is what keeps the
+            // pane honest here.
+            recorder.Ingest(new[] { Entry(2, "Tick"), Entry(3, "Tick") });
+            RenderBody(body, recorder);
+
+            VisualElement detail = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.DetailName
+            );
+            Assert.AreEqual(
+                1,
+                root.Q<ListView>(DxMessagingMessageMonitorLiveView.ListName).itemsSource.Count
+            );
+            Assert.AreEqual(
+                "#1-#3",
+                Text(detail, DxMessagingMessageMonitorLiveView.DetailFrameLabelName)
+            );
+        }
+
+        [Test]
+        public void AnEmptyLogDropsTheListAndTheNextRowBringsItBack()
+        {
+            MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "First"));
+            VisualElement root = CreateView(recorder);
+            VisualElement body = root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName);
+
+            recorder.Clear();
+            RenderBody(body, recorder);
+
+            Assert.IsNull(
+                root.Q<ListView>(DxMessagingMessageMonitorLiveView.ListName),
+                "Nothing to show means no list, so an empty log cannot report stale rows."
+            );
+            Assert.IsNull(root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.DetailName));
+            Assert.IsNotNull(root.Q<Label>(DxMessagingMessageMonitorLiveView.EmptyTitleName));
+
+            recorder.Ingest(new[] { Entry(2, "Second") });
+            RenderBody(body, recorder);
+
+            ListView rebuilt = root.Q<ListView>(DxMessagingMessageMonitorLiveView.ListName);
+            Assert.IsNotNull(rebuilt);
+            Assert.AreEqual(1, rebuilt.itemsSource.Count);
+            Assert.IsNull(root.Q<Label>(DxMessagingMessageMonitorLiveView.EmptyTitleName));
+        }
+
+        [Test]
         public void ASelectionThatIsNoLongerInTheLogFallsBackToTheNewestRow()
         {
             VisualElement root = CreateView(
@@ -741,6 +891,27 @@ namespace DxMessaging.Tests.Editor
             );
             CreateTrackedEditorWindow().rootVisualElement.Add(view);
             return view;
+        }
+
+        /// <summary>
+        /// Re-renders an already-built body the way the window's poll does, so the tests exercise the
+        /// same incremental path rather than a fresh <see cref="DxMessagingMessageMonitorLiveView.Create"/>.
+        /// </summary>
+        private static void RenderBody(
+            VisualElement body,
+            MessageMonitorLiveRecorder recorder,
+            MessageMonitorLiveViewState viewState = default,
+            MessageMonitorLiveViewCallbacks callbacks = null
+        )
+        {
+            Assert.IsNotNull(body, "The view must expose a body to re-render.");
+            DxMessagingMessageMonitorLiveView.RenderBody(
+                body,
+                recorder,
+                viewState,
+                diagnosticsEnabled: true,
+                callbacks
+            );
         }
 
         private static MessageMonitorLiveRecorder Recorder(params MessageMonitorEntry[] entries)
