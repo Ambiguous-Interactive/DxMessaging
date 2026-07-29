@@ -74,6 +74,18 @@ namespace DxMessaging.Editor.CustomEditors
             "dxmessaging-fallback-inspector-default-body";
         internal const string DefaultInspectorBodyClassName =
             "dxmessaging-fallback-inspector-default-body";
+        internal const string SubscriptionsHostName =
+            "dxmessaging-fallback-inspector-subscriptions-host";
+        internal const string SubscriptionsHostClassName =
+            "dxmessaging-fallback-inspector-subscriptions-host";
+
+        /// <summary>
+        /// Poll interval for the subscriptions section. Registrations change from game code with
+        /// no editor event to hook, so the section samples the token while its inspector is on
+        /// screen and rebuilds only when <see cref="MessageAwareComponentSubscriptionsState.Revision"/>
+        /// moves.
+        /// </summary>
+        internal const long SubscriptionsPollMilliseconds = 500;
 
         public override VisualElement CreateInspectorGUI()
         {
@@ -128,10 +140,89 @@ namespace DxMessaging.Editor.CustomEditors
             InspectorElement.FillDefaultInspector(defaultBody, editor.serializedObject, editor);
             root.Add(defaultBody);
 
+            AddSubscriptionsSection(root, ResolveSingleComponent(editor));
+
             root.RegisterCallback<AttachToPanelEvent>(_ => binding.Connect());
             root.RegisterCallback<DetachFromPanelEvent>(_ => binding.Disconnect());
 
             return root;
+        }
+
+        /// <summary>
+        /// The subscriptions section describes one component's registrations, so it is omitted
+        /// while several objects are edited together rather than showing one target's rows as if
+        /// they belonged to all of them.
+        /// </summary>
+        private static MessageAwareComponent ResolveSingleComponent(Editor editor)
+        {
+            UnityEngine.Object[] targets = editor.targets;
+            return targets is { Length: 1 } ? targets[0] as MessageAwareComponent : null;
+        }
+
+        private static void AddSubscriptionsSection(
+            VisualElement root,
+            MessageAwareComponent component
+        )
+        {
+            if (component == null)
+            {
+                return;
+            }
+
+            VisualElement host = new() { name = SubscriptionsHostName, userData = component };
+            host.AddToClassList(SubscriptionsHostClassName);
+            root.Add(host);
+
+            long revision = long.MinValue;
+            void Refresh()
+            {
+                if (component == null)
+                {
+                    host.Clear();
+                    return;
+                }
+
+                MessageAwareComponentSubscriptionsState state =
+                    MessageAwareComponentSubscriptionsState.Capture(component);
+                if (host.childCount > 0 && state.Revision == revision)
+                {
+                    return;
+                }
+
+                revision = state.Revision;
+                host.Clear();
+                host.Add(MessageAwareComponentSubscriptionsView.Create(state));
+            }
+
+            Refresh();
+            host.schedule.Execute(Refresh).Every(SubscriptionsPollMilliseconds);
+        }
+
+        /// <summary>
+        /// Rebuilds the subscriptions section of a built inspector root immediately, so tests do
+        /// not have to wait for the poll interval.
+        /// </summary>
+        internal static void RefreshSubscriptions(VisualElement root)
+        {
+            if (root == null)
+            {
+                throw new ArgumentNullException(nameof(root));
+            }
+
+            VisualElement host = root.Q<VisualElement>(SubscriptionsHostName);
+            if (host == null)
+            {
+                return;
+            }
+
+            host.Clear();
+            host.Add(
+                MessageAwareComponentSubscriptionsView.Create(
+                    MessageAwareComponentSubscriptionsState.Capture(
+                        host.userData as MessageAwareComponent
+                    )
+                )
+            );
         }
 
         internal static void RefreshInspectorWarning(VisualElement root)
