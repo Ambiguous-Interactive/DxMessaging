@@ -39,6 +39,15 @@ namespace DxMessaging.Editor.CustomEditors
 
         internal const string Title = "Message subscriptions";
 
+        /// <summary>
+        /// Mirrors the horizontal inset of <c>.dx-inspector__head</c> in
+        /// <c>Editor/Theme/DxMessagingTheme.uss</c>. Kept here rather than added to <c>.dx-sub</c>
+        /// so the migrated stylesheet stays identical to the design-system spec.
+        /// </summary>
+        internal const int HeadHorizontalPadding = 11;
+
+        internal const int BodyVerticalPadding = 5;
+
         internal static VisualElement Create(MessageAwareComponentSubscriptionsState state)
         {
             if (state == null)
@@ -63,7 +72,15 @@ namespace DxMessaging.Editor.CustomEditors
             head.Add(meta);
             root.Add(head);
 
+            // `.dx-sub` pads vertically only, and `.dx-inspector` clips to a rounded corner, so the
+            // body needs its own horizontal inset: without it a row name sits flush against the
+            // border and the trailing status dot clips on the corner radius. Matches the
+            // `.dx-inspector__head` inset so the head and the rows line up.
             VisualElement rows = new() { name = RowsName };
+            rows.style.paddingLeft = HeadHorizontalPadding;
+            rows.style.paddingRight = HeadHorizontalPadding;
+            rows.style.paddingTop = BodyVerticalPadding;
+            rows.style.paddingBottom = BodyVerticalPadding;
             root.Add(rows);
 
             if (state.Rows.Count == 0)

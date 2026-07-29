@@ -343,6 +343,21 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void ViewInsetsRowsSoTheyClearTheRoundedBorder()
+        {
+            VisualElement rows = MessageAwareComponentSubscriptionsView
+                .Create(MessageAwareComponentSubscriptionsState.None)
+                .Q<VisualElement>(MessageAwareComponentSubscriptionsView.RowsName);
+
+            Assert.That(
+                rows.style.paddingLeft.value.value,
+                Is.GreaterThan(0),
+                "Rows must clear the .dx-inspector corner radius; .dx-sub pads vertically only."
+            );
+            Assert.That(rows.style.paddingRight.value.value, Is.GreaterThan(0));
+        }
+
+        [Test]
         public void ViewBordersEveryEdgeOfTheSection()
         {
             VisualElement root = MessageAwareComponentSubscriptionsView.Create(
