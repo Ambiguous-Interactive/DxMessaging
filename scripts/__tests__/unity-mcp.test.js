@@ -627,6 +627,20 @@ for (const [label, raw, expected] of [
   });
 }
 
+test("stripJsonComments stays linear in the number of closing brackets", () => {
+  // Re-scanning the accumulated output on every `}` or `]` (or indexing into it) flattens the rope
+  // V8 builds from repeated concatenation, making the pass quadratic: this input took 150 seconds
+  // before, and a few hundred KB of real `.mcp.json` was enough to make `configure` look hung.
+  // The bound is deliberately loose; only a return to quadratic can breach it.
+  const document = `[${Array.from({ length: 64_000 }, () => "{}").join(",")}]`;
+  const started = process.hrtime.bigint();
+  const stripped = stripJsonComments(document);
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+  assert.equal(stripped, document, "comment-free JSON must round-trip unchanged");
+  assert.ok(elapsedMs < 2_000, `took ${elapsedMs.toFixed(0)}ms; expected well under 2000ms`);
+});
+
 test("prepareJsonServer merges into a JSONC document", () => {
   const filePath = path.join(temporaryDirectory(), "mcp.json");
   fs.writeFileSync(

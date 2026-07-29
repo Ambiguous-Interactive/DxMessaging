@@ -32,8 +32,17 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
  * rules, not a defect to collapse. Publishing to a single root (for example `.github/skills/`)
  * would de-duplicate Copilot at the cost of breaking Claude Code and Codex.
  */
+let announcedOverride = false;
+
 function layout() {
-  const root = process.env.DX_LLM_ROOT ? path.resolve(process.env.DX_LLM_ROOT) : REPO_ROOT;
+  const override = process.env.DX_LLM_ROOT;
+  if (override && !announcedOverride) {
+    announcedOverride = true;
+    console.warn(
+      `.llm harness: DX_LLM_ROOT override active, operating on ${path.resolve(override)}`
+    );
+  }
+  const root = override ? path.resolve(override) : REPO_ROOT;
   const llmDir = path.join(root, ".llm");
   return {
     root,
@@ -42,7 +51,7 @@ function layout() {
     contextFile: path.join(llmDir, "context.md"),
     indexMd: path.join(llmDir, "index.md"),
     indexJson: path.join(llmDir, "index.json"),
-    mirrorRoots: [path.join(root, ".claude", "skills"), path.join(root, ".agents", "skills")],
+    mirrorRoots: [path.join(root, ".claude", "skills"), path.join(root, ".agents", "skills")]
   };
 }
 
@@ -63,7 +72,7 @@ const LIMITS = {
   skillFail: 200,
   referenceFail: 500,
   contextFail: 300,
-  lineLength: 2000,
+  lineLength: 2000
 };
 
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -79,12 +88,17 @@ const CLIENT_EXTENSION_KEYS = [
   "disallowed-tools",
   "context",
   "agent",
-  "model",
+  "model"
 ];
 const ALLOWED_KEYS = new Set([...SPEC_KEYS, ...CLIENT_EXTENSION_KEYS]);
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, "utf8");
+}
+
+/** Compare generated content ignoring line-ending style, so `index` and `check` cannot disagree. */
+function sameContent(left, right) {
+  return left.replace(/\r\n/g, "\n") === right.replace(/\r\n/g, "\n");
 }
 
 function countLines(text) {
@@ -169,7 +183,7 @@ function buildManifest() {
       lineCount: 0,
       references: [],
       resources: [],
-      errors: [],
+      errors: []
     };
     if (!record.exists) {
       record.errors.push("missing SKILL.md");
@@ -192,11 +206,13 @@ function buildManifest() {
     record.references = walk(path.join(directory, "references"))
       .map((file) => ({
         path: toPosix(path.relative(root, file)),
-        lineCount: countLines(readUtf8(file)),
+        lineCount: countLines(readUtf8(file))
       }))
       .sort((left, right) => left.path.localeCompare(right.path, "en"));
     record.resources = RESOURCE_DIRECTORIES.flatMap((resourceDirectory) =>
-      walk(path.join(directory, resourceDirectory)).map((file) => toPosix(path.relative(root, file)))
+      walk(path.join(directory, resourceDirectory)).map((file) =>
+        toPosix(path.relative(root, file))
+      )
     ).sort((left, right) => left.localeCompare(right, "en"));
     skills.push(record);
   }
@@ -254,13 +270,19 @@ function validateFrontmatter(skill, issues, warnings) {
     add("allowed-tools must be a space-separated string");
   }
   if (data.metadata !== undefined) {
-    if (typeof data.metadata !== "object" || data.metadata === null || Array.isArray(data.metadata)) {
+    if (
+      typeof data.metadata !== "object" ||
+      data.metadata === null ||
+      Array.isArray(data.metadata)
+    ) {
       add("metadata must be a mapping");
     } else {
       // The spec types metadata as a map of string keys to string values.
       for (const [key, value] of Object.entries(data.metadata)) {
         if (typeof value !== "string") {
-          add(`metadata.${key} must be a string, not ${Array.isArray(value) ? "array" : typeof value}`);
+          add(
+            `metadata.${key} must be a string, not ${Array.isArray(value) ? "array" : typeof value}`
+          );
         }
       }
     }
@@ -271,7 +293,7 @@ function validateFrontmatter(skill, issues, warnings) {
       // still moving, so a newly documented field must not block every PR in the repository.
       warnings.push({
         path: skill.path,
-        message: `unknown frontmatter key "${key}"; repository-specific fields belong under metadata`,
+        message: `unknown frontmatter key "${key}"; repository-specific fields belong under metadata`
       });
     }
   }
@@ -283,19 +305,19 @@ function validateLineLimits(issues, warnings) {
     if (skill.lineCount > LIMITS.skillFail) {
       issues.push({
         path: skill.path,
-        message: `${skill.lineCount} lines (max ${LIMITS.skillFail}); move detail into references/`,
+        message: `${skill.lineCount} lines (max ${LIMITS.skillFail}); move detail into references/`
       });
     } else if (skill.lineCount > LIMITS.skillWarn) {
       warnings.push({
         path: skill.path,
-        message: `${skill.lineCount} lines (target ${LIMITS.skillWarn})`,
+        message: `${skill.lineCount} lines (target ${LIMITS.skillWarn})`
       });
     }
     for (const reference of skill.references) {
       if (reference.lineCount > LIMITS.referenceFail) {
         issues.push({
           path: reference.path,
-          message: `${reference.lineCount} lines (max ${LIMITS.referenceFail})`,
+          message: `${reference.lineCount} lines (max ${LIMITS.referenceFail})`
         });
       }
     }
@@ -306,14 +328,20 @@ function validateLineLimits(issues, warnings) {
     const relative = toPosix(path.relative(root, file));
     const longest = longestLine(text);
     if (longest > LIMITS.lineLength) {
-      issues.push({ path: relative, message: `longest line is ${longest} characters (max ${LIMITS.lineLength})` });
+      issues.push({
+        path: relative,
+        message: `longest line is ${longest} characters (max ${LIMITS.lineLength})`
+      });
     }
   }
 
   if (fs.existsSync(contextFile)) {
     const contextLines = countLines(readUtf8(contextFile));
     if (contextLines > LIMITS.contextFail) {
-      issues.push({ path: ".llm/context.md", message: `${contextLines} lines (max ${LIMITS.contextFail})` });
+      issues.push({
+        path: ".llm/context.md",
+        message: `${contextLines} lines (max ${LIMITS.contextFail})`
+      });
     }
   } else {
     issues.push({ path: ".llm/context.md", message: "missing" });
@@ -344,7 +372,7 @@ function validate() {
     if (descriptions.has(key)) {
       issues.push({
         path: skill.path,
-        message: `description is identical to ${descriptions.get(key)}; agents match on description alone`,
+        message: `description is identical to ${descriptions.get(key)}; agents match on description alone`
       });
     }
     descriptions.set(key, skill.name);
@@ -365,7 +393,7 @@ function renderIndexJson(manifest) {
     description: skill.description,
     metadata: skill.metadata,
     lineCount: skill.lineCount,
-    references: skill.references.map((reference) => reference.path),
+    references: skill.references.map((reference) => reference.path)
   }));
   return `${JSON.stringify({ skillCount: skills.length, skills }, null, 2)}\n`;
 }
@@ -380,11 +408,13 @@ function renderIndexMarkdown(manifest) {
     "directory: `SKILL.md` holds the instructions, `references/` holds supporting detail loaded on demand.",
     "",
     "| Skill | References | Description |",
-    "| --- | --- | --- |",
+    "| --- | --- | --- |"
   ];
   for (const skill of manifest.skills) {
     const description = skill.description.replace(/\|/g, "\\|");
-    lines.push(`| [${skill.name}](./skills/${skill.name}/SKILL.md) | ${skill.references.length} | ${description} |`);
+    lines.push(
+      `| [${skill.name}](./skills/${skill.name}/SKILL.md) | ${skill.references.length} | ${description} |`
+    );
   }
   // No trailing blank entry: the single newline below is the file's only line terminator, which is
   // what markdownlint MD012 expects at end of file.
@@ -401,7 +431,7 @@ function renderRegistryBlock(manifest) {
     "",
     manifest.skills.map((skill) => `\`${skill.name}\``).join(", "),
     "",
-    BLOCK_END,
+    BLOCK_END
   ].join("\n");
 }
 
@@ -441,7 +471,7 @@ function mirrorContent(skill) {
     `Canonical instructions: [\`.llm/skills/${skill.name}/SKILL.md\`](../../../.llm/skills/${skill.name}/SKILL.md)`,
     "",
     "Read that file and follow it. Supporting detail is in the sibling `references/` directory.",
-    "",
+    ""
   ].join("\n");
 }
 
@@ -450,7 +480,10 @@ function expectedArtifacts(manifest) {
   const artifacts = new Map();
   artifacts.set(indexJson, renderIndexJson(manifest));
   artifacts.set(indexMd, renderIndexMarkdown(manifest));
-  artifacts.set(contextFile, replaceRegistryBlock(readUtf8(contextFile), renderRegistryBlock(manifest)));
+  artifacts.set(
+    contextFile,
+    replaceRegistryBlock(readUtf8(contextFile), renderRegistryBlock(manifest))
+  );
   for (const root of mirrorRoots) {
     for (const skill of manifest.skills) {
       artifacts.set(path.join(root, skill.name, "SKILL.md"), mirrorContent(skill));
@@ -479,21 +512,20 @@ function staleMirrors(expected) {
   return stale;
 }
 
-/** Remove directories left empty under the mirror roots, bottom-up, after a rename or removal. */
-function pruneEmptyDirectories(directory) {
-  if (!fs.existsSync(directory)) {
-    return true;
-  }
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      pruneEmptyDirectories(path.join(directory, entry.name));
+/**
+ * Walk up from `directory` removing empty directories, stopping at (and never removing) a mirror
+ * root. Bounded to `mirrorRoots` so a path outside them can never be touched.
+ */
+function pruneEmptyDirectories(directory, mirrorRoots) {
+  let current = path.resolve(directory);
+  const roots = mirrorRoots.map((root) => path.resolve(root));
+  while (roots.some((root) => current.startsWith(root + path.sep))) {
+    if (!fs.existsSync(current) || fs.readdirSync(current).length > 0) {
+      return;
     }
+    fs.rmdirSync(current);
+    current = path.dirname(current);
   }
-  if (fs.readdirSync(directory).length > 0) {
-    return false;
-  }
-  fs.rmdirSync(directory);
-  return true;
 }
 
 function writeArtifacts(manifest) {
@@ -502,7 +534,7 @@ function writeArtifacts(manifest) {
   const changed = [];
   for (const [filePath, content] of expected) {
     const current = fs.existsSync(filePath) ? readUtf8(filePath) : undefined;
-    if (current === content) {
+    if (current !== undefined && sameContent(current, content)) {
       continue;
     }
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -512,16 +544,10 @@ function writeArtifacts(manifest) {
   for (const filePath of staleMirrors(expected)) {
     fs.rmSync(filePath, { force: true });
     changed.push(`removed ${toPosix(path.relative(repoRoot, filePath))}`);
-  }
-  for (const root of mirrorRoots) {
-    if (!fs.existsSync(root)) {
-      continue;
-    }
-    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        pruneEmptyDirectories(path.join(root, entry.name));
-      }
-    }
+    // Prune only what this removal emptied. Sweeping both mirror roots would delete a contributor's
+    // freshly scaffolded `.claude/skills/<name>/references/` before they write SKILL.md, which is
+    // exactly the hand-authored content `staleMirrors` is marker-scoped to protect.
+    pruneEmptyDirectories(path.dirname(filePath), mirrorRoots);
   }
   return changed;
 }
@@ -534,12 +560,15 @@ function artifactDrifts(manifest) {
     const relative = toPosix(path.relative(root, filePath));
     if (!fs.existsSync(filePath)) {
       drifts.push({ path: relative, message: "missing generated file" });
-    } else if (readUtf8(filePath).replace(/\r\n/g, "\n") !== content.replace(/\r\n/g, "\n")) {
+    } else if (!sameContent(readUtf8(filePath), content)) {
       drifts.push({ path: relative, message: "generated file is stale" });
     }
   }
   for (const filePath of staleMirrors(expected)) {
-    drifts.push({ path: toPosix(path.relative(root, filePath)), message: "mirror has no matching skill" });
+    drifts.push({
+      path: toPosix(path.relative(root, filePath)),
+      message: "mirror has no matching skill"
+    });
   }
   return drifts;
 }
@@ -628,5 +657,5 @@ module.exports = {
   replaceRegistryBlock,
   staleMirrors,
   validate,
-  writeArtifacts,
+  writeArtifacts
 };

@@ -69,7 +69,15 @@ const path = require("path");
 //     bridge subcommand is the largest severable piece: if the host is expected
 //     to run an external Unity MCP bridge, deleting it and its tests reclaims
 //     roughly 1200 lines. Prefer that to another raise.
-const TOTAL_BUDGET = 17300;
+// 076 Regressions the fix rounds introduced, caught by a verification pass:
+//     stripJsonComments re-scanned its accumulated output on every closing
+//     bracket, which flattened V8's rope and made the pass quadratic (a 188 KB
+//     config took 150 s; it now takes 6 ms), and pruneEmptyDirectories swept
+//     both mirror roots instead of only what a reap emptied, deleting the
+//     hand-authored scaffolding that the sibling marker-scoping fix exists to
+//     protect. +37 source and +112 test lines, including a loose timing guard
+//     that only a return to quadratic can breach: 17500.
+const TOTAL_BUDGET = 17500;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

@@ -20,7 +20,7 @@ const {
   renderIndexMarkdown,
   replaceRegistryBlock,
   validate,
-  writeArtifacts,
+  writeArtifacts
 } = require("../llm/harness");
 const { CodeBlockTracker } = require("../wiki/transform-docs-to-wiki.js");
 
@@ -36,16 +36,30 @@ for (const [label, input, expected] of [
   ["a trailing newline", "one\n", 1],
   ["multiple lines", "one\ntwo\nthree\n", 3],
   ["CRLF endings", "one\r\ntwo\r\n", 2],
-  ["a blank final line", "one\n\n", 2],
+  ["a blank final line", "one\n\n", 2]
 ]) {
   test(`countLines handles ${label}`, () => assert.equal(countLines(input), expected));
 }
 
-for (const name of ["object-pooling", "a", "unity-mcp-test-loop", "il2cpp-build-configuration", "a1-b2"]) {
+for (const name of [
+  "object-pooling",
+  "a",
+  "unity-mcp-test-loop",
+  "il2cpp-build-configuration",
+  "a1-b2"
+]) {
   test(`NAME_PATTERN accepts ${name}`, () => assert.ok(NAME_PATTERN.test(name)));
 }
 
-for (const name of ["Object-Pooling", "-leading", "trailing-", "double--hyphen", "has_underscore", "has space", ""]) {
+for (const name of [
+  "Object-Pooling",
+  "-leading",
+  "trailing-",
+  "double--hyphen",
+  "has_underscore",
+  "has space",
+  ""
+]) {
   test(`NAME_PATTERN rejects ${JSON.stringify(name)}`, () => assert.ok(!NAME_PATTERN.test(name)));
 }
 
@@ -91,7 +105,7 @@ test("mirrorContent propagates license, compatibility, and allowed-tools when de
     description: "Does x.",
     license: "MIT",
     compatibility: "Requires Unity 2022.3 or newer.",
-    allowedTools: "Read Grep Bash",
+    allowedTools: "Read Grep Bash"
   });
   const { data, error } = parseFrontmatter(content);
   assert.equal(error, undefined);
@@ -122,7 +136,7 @@ const CONTEXT_FIXTURE = [
   "<!-- BEGIN GENERATED SKILL REGISTRY -->",
   "",
   "<!-- END GENERATED SKILL REGISTRY -->",
-  "",
+  ""
 ].join("\n");
 
 const NAME_RULE =
@@ -189,7 +203,7 @@ function validateFixture(t, skills) {
   return {
     root,
     warnings: warnings.map((warning) => `${warning.path}: ${warning.message}`),
-    messages: issues.map((issue) => `${issue.path}: ${issue.message}`),
+    messages: issues.map((issue) => `${issue.path}: ${issue.message}`)
   };
 }
 
@@ -222,37 +236,37 @@ const RULE_FIXTURES = [
   {
     label: "rejects an uppercase name",
     skills: { Alpha: validSkill("Alpha") },
-    expected: [`.llm/skills/Alpha/SKILL.md: name "Alpha" ${NAME_RULE}`],
+    expected: [`.llm/skills/Alpha/SKILL.md: name "Alpha" ${NAME_RULE}`]
   },
   {
     label: "rejects a leading hyphen in name",
     skills: { "-alpha": validSkill("-alpha") },
-    expected: [`.llm/skills/-alpha/SKILL.md: name "-alpha" ${NAME_RULE}`],
+    expected: [`.llm/skills/-alpha/SKILL.md: name "-alpha" ${NAME_RULE}`]
   },
   {
     label: "rejects a trailing hyphen in name",
     skills: { "alpha-": validSkill("alpha-") },
-    expected: [`.llm/skills/alpha-/SKILL.md: name "alpha-" ${NAME_RULE}`],
+    expected: [`.llm/skills/alpha-/SKILL.md: name "alpha-" ${NAME_RULE}`]
   },
   {
     label: "rejects consecutive hyphens in name",
     skills: { "alpha--beta": validSkill("alpha--beta") },
-    expected: [`.llm/skills/alpha--beta/SKILL.md: name "alpha--beta" ${NAME_RULE}`],
+    expected: [`.llm/skills/alpha--beta/SKILL.md: name "alpha--beta" ${NAME_RULE}`]
   },
   {
     label: "rejects a name longer than 64 characters",
     skills: { [LONG_NAME]: validSkill(LONG_NAME) },
-    expected: [`.llm/skills/${LONG_NAME}/SKILL.md: name "${LONG_NAME}" ${NAME_RULE}`],
+    expected: [`.llm/skills/${LONG_NAME}/SKILL.md: name "${LONG_NAME}" ${NAME_RULE}`]
   },
   {
     label: "rejects a name that does not match its directory",
     skills: { alpha: validSkill("beta") },
-    expected: ['.llm/skills/alpha/SKILL.md: name "beta" must match the directory name "alpha"'],
+    expected: ['.llm/skills/alpha/SKILL.md: name "beta" must match the directory name "alpha"']
   },
   {
     label: "rejects a missing name",
     skills: { alpha: frontmatter(["description: Covers alpha. Use when working on alpha."]) },
-    expected: [".llm/skills/alpha/SKILL.md: missing required frontmatter field: name"],
+    expected: [".llm/skills/alpha/SKILL.md: missing required frontmatter field: name"]
   },
   {
     label: "rejects a blank name",
@@ -260,59 +274,86 @@ const RULE_FIXTURES = [
     expected: [
       ".llm/skills/alpha/SKILL.md: missing required frontmatter field: name",
       `.llm/skills/alpha/SKILL.md: name "" ${NAME_RULE}`,
-      '.llm/skills/alpha/SKILL.md: name "" must match the directory name "alpha"',
-    ],
+      '.llm/skills/alpha/SKILL.md: name "" must match the directory name "alpha"'
+    ]
   },
   {
     label: "rejects a missing description",
     skills: { alpha: frontmatter(["name: alpha"]) },
-    expected: [".llm/skills/alpha/SKILL.md: missing required frontmatter field: description"],
+    expected: [".llm/skills/alpha/SKILL.md: missing required frontmatter field: description"]
   },
   {
     label: "rejects a description over 1024 characters",
     skills: { alpha: frontmatter(["name: alpha", `description: ${"d".repeat(1025)}`]) },
-    expected: [".llm/skills/alpha/SKILL.md: description is 1025 characters (max 1024)"],
+    expected: [".llm/skills/alpha/SKILL.md: description is 1025 characters (max 1024)"]
   },
   {
     label: "rejects a newline inside description",
     skills: { alpha: frontmatter(["name: alpha", 'description: "one\\ntwo"']) },
-    expected: [".llm/skills/alpha/SKILL.md: description must be a single line; it contains a newline"],
+    expected: [
+      ".llm/skills/alpha/SKILL.md: description must be a single line; it contains a newline"
+    ]
   },
   {
     label: "rejects compatibility over 500 characters",
     skills: {
-      alpha: frontmatter(["name: alpha", "description: Covers alpha.", `compatibility: ${"c".repeat(501)}`]),
+      alpha: frontmatter([
+        "name: alpha",
+        "description: Covers alpha.",
+        `compatibility: ${"c".repeat(501)}`
+      ])
     },
-    expected: [".llm/skills/alpha/SKILL.md: compatibility is 501 characters (must be 1-500)"],
+    expected: [".llm/skills/alpha/SKILL.md: compatibility is 501 characters (must be 1-500)"]
   },
   {
     label: "rejects an empty compatibility",
-    skills: { alpha: frontmatter(["name: alpha", "description: Covers alpha.", 'compatibility: ""']) },
-    expected: [".llm/skills/alpha/SKILL.md: compatibility is 0 characters (must be 1-500)"],
+    skills: {
+      alpha: frontmatter(["name: alpha", "description: Covers alpha.", 'compatibility: ""'])
+    },
+    expected: [".llm/skills/alpha/SKILL.md: compatibility is 0 characters (must be 1-500)"]
   },
   {
     label: "rejects a non-scalar compatibility",
     skills: {
-      alpha: frontmatter(["name: alpha", "description: Covers alpha.", "compatibility:", "  unity: 2022"]),
+      alpha: frontmatter([
+        "name: alpha",
+        "description: Covers alpha.",
+        "compatibility:",
+        "  unity: 2022"
+      ])
     },
-    expected: [".llm/skills/alpha/SKILL.md: compatibility must be a string"],
+    expected: [".llm/skills/alpha/SKILL.md: compatibility must be a string"]
   },
   {
     label: "rejects a non-string license",
     skills: { alpha: frontmatter(["name: alpha", "description: Covers alpha.", "license: 2"]) },
-    expected: [".llm/skills/alpha/SKILL.md: license must be a string"],
+    expected: [".llm/skills/alpha/SKILL.md: license must be a string"]
   },
   {
     label: "rejects allowed-tools declared as a YAML list",
     skills: {
-      alpha: frontmatter(["name: alpha", "description: Covers alpha.", "allowed-tools:", "  - Read", "  - Bash"]),
+      alpha: frontmatter([
+        "name: alpha",
+        "description: Covers alpha.",
+        "allowed-tools:",
+        "  - Read",
+        "  - Bash"
+      ])
     },
-    expected: [".llm/skills/alpha/SKILL.md: allowed-tools must be a space-separated string"],
+    expected: [".llm/skills/alpha/SKILL.md: allowed-tools must be a space-separated string"]
   },
   {
     label: "rejects metadata that is not a mapping",
-    skills: { alpha: frontmatter(["name: alpha", "description: Covers alpha.", "metadata:", "  - one", "  - two"]) },
-    expected: [".llm/skills/alpha/SKILL.md: metadata must be a mapping"],
+    skills: {
+      alpha: frontmatter([
+        "name: alpha",
+        "description: Covers alpha.",
+        "metadata:",
+        "  - one",
+        "  - two"
+      ])
+    },
+    expected: [".llm/skills/alpha/SKILL.md: metadata must be a mapping"]
   },
   {
     label: "rejects non-string metadata values",
@@ -323,60 +364,64 @@ const RULE_FIXTURES = [
         "metadata:",
         "  version: 1.5",
         "  tags: [a, b]",
-        "  nested: { deep: true }",
-      ]),
+        "  nested: { deep: true }"
+      ])
     },
     expected: [
       ".llm/skills/alpha/SKILL.md: metadata.version must be a string, not number",
       ".llm/skills/alpha/SKILL.md: metadata.tags must be a string, not array",
-      ".llm/skills/alpha/SKILL.md: metadata.nested must be a string, not object",
-    ],
+      ".llm/skills/alpha/SKILL.md: metadata.nested must be a string, not object"
+    ]
   },
   {
     label: "rejects a skill directory with no SKILL.md",
     skills: { alpha: { skill: null } },
-    expected: [".llm/skills/alpha/SKILL.md: missing SKILL.md"],
+    expected: [".llm/skills/alpha/SKILL.md: missing SKILL.md"]
   },
   {
     label: "rejects a SKILL.md with no frontmatter",
     skills: { alpha: "# Alpha\n" },
-    expected: [".llm/skills/alpha/SKILL.md: missing YAML frontmatter"],
+    expected: [".llm/skills/alpha/SKILL.md: missing YAML frontmatter"]
   },
   {
     label: "rejects malformed YAML frontmatter",
     skills: { alpha: "---\n: :\n---\n" },
-    pattern: /^\.llm\/skills\/alpha\/SKILL\.md: invalid YAML frontmatter: /,
+    pattern: /^\.llm\/skills\/alpha\/SKILL\.md: invalid YAML frontmatter: /
   },
   {
     label: "rejects a SKILL.md over the 200-line cap",
     skills: { alpha: validSkill("alpha") + repeatLines(195) },
-    expected: [".llm/skills/alpha/SKILL.md: 201 lines (max 200); move detail into references/"],
+    expected: [".llm/skills/alpha/SKILL.md: 201 lines (max 200); move detail into references/"]
   },
   {
     label: "rejects a reference over the 500-line cap",
-    skills: { alpha: { skill: validSkill("alpha"), files: { "references/big.md": repeatLines(501) } } },
-    expected: [".llm/skills/alpha/references/big.md: 501 lines (max 500)"],
+    skills: {
+      alpha: { skill: validSkill("alpha"), files: { "references/big.md": repeatLines(501) } }
+    },
+    expected: [".llm/skills/alpha/references/big.md: 501 lines (max 500)"]
   },
   {
     label: "rejects duplicate descriptions across skills",
     skills: {
       "alpha-one": validSkill("alpha-one", "Shared summary."),
-      "alpha-two": validSkill("alpha-two", "Shared summary."),
+      "alpha-two": validSkill("alpha-two", "Shared summary.")
     },
     expected: [
-      ".llm/skills/alpha-two/SKILL.md: description is identical to alpha-one; agents match on description alone",
-    ],
+      ".llm/skills/alpha-two/SKILL.md: description is identical to alpha-one; agents match on description alone"
+    ]
   },
   {
     label: "rejects an empty skills directory",
     skills: {},
-    expected: [".llm/skills: no skills found"],
+    expected: [".llm/skills: no skills found"]
   },
   {
     label: "accepts a conformant skill",
-    skills: { alpha: { skill: validSkill("alpha"), files: { "references/detail.md": "# Detail\n" } } },
-    expected: [],
-  },
+    skills: {
+      alpha: { skill: validSkill("alpha"), files: { "references/detail.md": "# Detail\n" } }
+    },
+    expected: []
+  }
 ];
 
 for (const fixture of RULE_FIXTURES) {
@@ -392,7 +437,11 @@ for (const fixture of RULE_FIXTURES) {
 }
 
 test("validate reports an unknown frontmatter key as a warning, not an issue", (t) => {
-  const skill = frontmatter(["name: alpha", "description: Covers alpha.", "future-client-field: yes"]);
+  const skill = frontmatter([
+    "name: alpha",
+    "description: Covers alpha.",
+    "future-client-field: yes"
+  ]);
   const { messages, warnings } = validateFixture(t, { alpha: skill });
   assert.deepEqual(messages, []);
   assert.ok(
@@ -410,9 +459,9 @@ test("validate exempts bundled scripts/ and assets/ from the reference line cap"
       skill: validSkill("alpha"),
       files: {
         "scripts/extract.py": repeatLines(600, "print('x')"),
-        "assets/blob.bin": Buffer.from([0x00, 0xff, 0xfe, 0x80, 0x0a]),
-      },
-    },
+        "assets/blob.bin": Buffer.from([0x00, 0xff, 0xfe, 0x80, 0x0a])
+      }
+    }
   };
   const { root, messages } = validateFixture(t, skills);
   assert.deepEqual(messages, []);
@@ -420,7 +469,7 @@ test("validate exempts bundled scripts/ and assets/ from the reference line cap"
   assert.deepEqual(skill.references, []);
   assert.deepEqual(skill.resources, [
     ".llm/skills/alpha/assets/blob.bin",
-    ".llm/skills/alpha/scripts/extract.py",
+    ".llm/skills/alpha/scripts/extract.py"
   ]);
 });
 
@@ -432,7 +481,7 @@ test("validate accepts spec-shaped optional frontmatter fields", (t) => {
     "compatibility: Requires Unity 2022.3 or newer.",
     "allowed-tools: Read Grep Bash",
     "metadata:",
-    "  owner: tooling",
+    "  owner: tooling"
   ]);
   const { messages } = validateFixture(t, { alpha: skill });
   assert.deepEqual(messages, []);
@@ -456,7 +505,7 @@ test("writeArtifacts generates every artifact and artifactDrifts then reports no
       ".claude/skills/beta/SKILL.md",
       ".llm/context.md",
       ".llm/index.json",
-      ".llm/index.md",
+      ".llm/index.md"
     ].sort()
   );
 
@@ -470,11 +519,20 @@ test("writeArtifacts generates every artifact and artifactDrifts then reports no
   assert.match(indexMarkdown, /\.\/skills\/alpha\/SKILL\.md/);
   assert.match(fs.readFileSync(path.join(root, ".llm", "context.md"), "utf8"), /`alpha`, `beta`/);
   for (const mirror of MIRROR_ROOTS) {
-    assert.ok(fs.existsSync(path.join(root, mirror, "alpha", "SKILL.md")), `${mirror}/alpha is missing`);
+    assert.ok(
+      fs.existsSync(path.join(root, mirror, "alpha", "SKILL.md")),
+      `${mirror}/alpha is missing`
+    );
   }
 
-  assert.deepEqual(atRoot(root, () => artifactDrifts(buildManifest())), []);
-  assert.deepEqual(atRoot(root, () => writeArtifacts(buildManifest())), []);
+  assert.deepEqual(
+    atRoot(root, () => artifactDrifts(buildManifest())),
+    []
+  );
+  assert.deepEqual(
+    atRoot(root, () => writeArtifacts(buildManifest())),
+    []
+  );
 });
 
 test("artifactDrifts reports an edited artifact and a missing one", (t) => {
@@ -486,11 +544,17 @@ test("artifactDrifts reports an edited artifact and a missing one", (t) => {
   const drifts = atRoot(root, () => artifactDrifts(buildManifest()));
   assert.deepEqual(
     drifts.map((drift) => `${drift.path}: ${drift.message}`).sort(),
-    [".claude/skills/alpha/SKILL.md: missing generated file", ".llm/index.md: generated file is stale"].sort()
+    [
+      ".claude/skills/alpha/SKILL.md: missing generated file",
+      ".llm/index.md: generated file is stale"
+    ].sort()
   );
 
   atRoot(root, () => writeArtifacts(buildManifest()));
-  assert.deepEqual(atRoot(root, () => artifactDrifts(buildManifest())), []);
+  assert.deepEqual(
+    atRoot(root, () => artifactDrifts(buildManifest())),
+    []
+  );
 });
 
 test("a renamed skill leaves no mirror file and no empty mirror directory", (t) => {
@@ -499,21 +563,39 @@ test("a renamed skill leaves no mirror file and no empty mirror directory", (t) 
 
   fs.rmSync(path.join(root, ".llm", "skills", "alpha"), { recursive: true });
   fs.mkdirSync(path.join(root, ".llm", "skills", "gamma"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".llm", "skills", "gamma", "SKILL.md"), validSkill("gamma"), "utf8");
+  fs.writeFileSync(
+    path.join(root, ".llm", "skills", "gamma", "SKILL.md"),
+    validSkill("gamma"),
+    "utf8"
+  );
 
   const drifts = atRoot(root, () => artifactDrifts(buildManifest()));
   assert.ok(
-    drifts.some((drift) => drift.path === ".claude/skills/alpha/SKILL.md" && drift.message === "mirror has no matching skill"),
+    drifts.some(
+      (drift) =>
+        drift.path === ".claude/skills/alpha/SKILL.md" &&
+        drift.message === "mirror has no matching skill"
+    ),
     `drifts were ${JSON.stringify(drifts)}`
   );
 
   const changed = atRoot(root, () => writeArtifacts(buildManifest()));
-  assert.ok(changed.includes("removed .claude/skills/alpha/SKILL.md"), `changed was ${JSON.stringify(changed)}`);
+  assert.ok(
+    changed.includes("removed .claude/skills/alpha/SKILL.md"),
+    `changed was ${JSON.stringify(changed)}`
+  );
   for (const mirror of MIRROR_ROOTS) {
-    assert.equal(fs.existsSync(path.join(root, mirror, "alpha")), false, `${mirror}/alpha directory survived`);
+    assert.equal(
+      fs.existsSync(path.join(root, mirror, "alpha")),
+      false,
+      `${mirror}/alpha directory survived`
+    );
     assert.ok(fs.existsSync(path.join(root, mirror, "gamma", "SKILL.md")));
   }
-  assert.deepEqual(atRoot(root, () => artifactDrifts(buildManifest())), []);
+  assert.deepEqual(
+    atRoot(root, () => artifactDrifts(buildManifest())),
+    []
+  );
 });
 
 test("a hand-authored .claude/skills entry survives index and check", (t) => {
@@ -536,6 +618,22 @@ test("a hand-authored .claude/skills entry survives index and check", (t) => {
   assert.equal(fs.readFileSync(path.join(handAuthored, "SKILL.md"), "utf8"), content);
 });
 
+test("hand-authored empty directories in a mirror survive index", (t) => {
+  // Marker-scoped reaping protects hand-authored FILES; pruning empty directories has to be scoped
+  // the same way, or `mkdir -p .claude/skills/new-skill/references` followed by any hook that runs
+  // `llm:index` silently deletes the scaffolding before SKILL.md is written.
+  const root = createFixture(t, { alpha: validSkill("alpha") });
+  const scaffold = path.join(root, ".claude", "skills", "wip-skill", "references");
+  const bare = path.join(root, ".agents", "skills", "empty-dir");
+  fs.mkdirSync(scaffold, { recursive: true });
+  fs.mkdirSync(bare, { recursive: true });
+
+  assert.equal(runMain(root, "index").exitCode, 0);
+  assert.ok(fs.existsSync(scaffold), "a scaffolded references/ directory must survive");
+  assert.ok(fs.existsSync(path.dirname(scaffold)), "its parent skill directory must survive");
+  assert.ok(fs.existsSync(bare), "an unrelated empty mirror directory must survive");
+});
+
 test("a generated mirror with no matching skill is still reaped", (t) => {
   const root = createFixture(t, { alpha: validSkill("alpha") });
   atRoot(root, () => writeArtifacts(buildManifest()));
@@ -549,6 +647,11 @@ test("a generated mirror with no matching skill is still reaped", (t) => {
 
   assert.equal(runMain(root, "index").exitCode, 0);
   assert.equal(fs.existsSync(orphan), false);
+  assert.equal(
+    fs.existsSync(path.dirname(orphan)),
+    false,
+    "the directory the reaped mirror emptied is pruned"
+  );
   assert.equal(runMain(root, "check").exitCode, 0);
 });
 
@@ -587,7 +690,11 @@ test("skill descriptions are distinct, since agents match on description alone",
   const seen = new Map();
   for (const skill of buildManifest().skills) {
     const key = skill.description.toLowerCase();
-    assert.equal(seen.has(key), false, `${skill.name} duplicates the description of ${seen.get(key)}`);
+    assert.equal(
+      seen.has(key),
+      false,
+      `${skill.name} duplicates the description of ${seen.get(key)}`
+    );
     seen.set(key, skill.name);
   }
 });
@@ -599,7 +706,10 @@ test("every reference file is linked from its SKILL.md", () => {
     const body = fs.readFileSync(path.join(ROOT, skill.path), "utf8");
     for (const reference of skill.references) {
       const base = path.basename(reference.path);
-      assert.ok(body.includes(`./references/${base}`), `${skill.name}/SKILL.md does not link references/${base}`);
+      assert.ok(
+        body.includes(`./references/${base}`),
+        `${skill.name}/SKILL.md does not link references/${base}`
+      );
     }
   }
 });
@@ -623,9 +733,14 @@ function prose(markdown) {
 }
 
 test("prose strips a variable-length fence that encloses a shorter one", () => {
-  const markdown = ["````markdown", "```", "[example](./nowhere.md)", "```", "````", "[real](./somewhere.md)"].join(
-    "\n"
-  );
+  const markdown = [
+    "````markdown",
+    "```",
+    "[example](./nowhere.md)",
+    "```",
+    "````",
+    "[real](./somewhere.md)"
+  ].join("\n");
   const stripped = prose(markdown);
   assert.doesNotMatch(stripped, /nowhere/);
   assert.match(stripped, /somewhere/);
@@ -659,7 +774,10 @@ test("every relative link in a SKILL.md or reference resolves on disk", () => {
     }
   }
   assert.deepEqual(unresolved, []);
-  assert.ok(checked > 100, `expected the reference corpus to be covered, checked only ${checked} files`);
+  assert.ok(
+    checked > 100,
+    `expected the reference corpus to be covered, checked only ${checked} files`
+  );
 });
 
 test("generated index artifacts are deterministic and cover every skill", () => {
@@ -683,7 +801,11 @@ test("both agent mirrors exist for every skill and stay in sync with the source"
     for (const skill of manifest.skills) {
       const mirror = path.join(ROOT, root, skill.name, "SKILL.md");
       assert.ok(fs.existsSync(mirror), `${root}/${skill.name}/SKILL.md is missing`);
-      assert.equal(fs.readFileSync(mirror, "utf8"), mirrorContent(skill), `${root}/${skill.name} is stale`);
+      assert.equal(
+        fs.readFileSync(mirror, "utf8"),
+        mirrorContent(skill),
+        `${root}/${skill.name} is stale`
+      );
     }
     // A hand-authored skill may also live here, so only generated entries must match a source skill.
     for (const entry of fs.readdirSync(path.join(ROOT, root))) {

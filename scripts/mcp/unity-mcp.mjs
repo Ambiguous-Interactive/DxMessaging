@@ -691,10 +691,24 @@ export function stripJsonComments(raw) {
   let out = "";
   let inString = false;
   let escaped = false;
+  // Index of the last non-whitespace character already in `out`. Re-scanning `out` with a regex on
+  // every closing bracket flattens the rope V8 builds from `out += char`, which makes the pass
+  // quadratic in the number of closing brackets: a 364 KB config took 9 s, a 1.5 MB one took 150 s.
+  let lastNonSpace = -1;
+  // The character at `lastNonSpace`, carried separately: `out[lastNonSpace]` would flatten the same
+  // rope the regex did, which is most of the remaining cost.
+  let lastNonSpaceChar = "";
+  const append = (text) => {
+    if (text.trim() !== "") {
+      lastNonSpace = out.length + text.length - 1;
+      lastNonSpaceChar = text[text.length - 1];
+    }
+    out += text;
+  };
   for (let index = 0; index < raw.length; index += 1) {
     const char = raw[index];
     if (inString) {
-      out += char;
+      append(char);
       if (escaped) {
         escaped = false;
       } else if (char === "\\") {
@@ -714,11 +728,12 @@ export function stripJsonComments(raw) {
       const end = raw.indexOf("*/", index + 2);
       index = end === -1 ? raw.length : end + 1;
       continue;
-    } else if (char === "}" || char === "]") {
-      const trimmed = out.replace(/\s+$/, "");
-      out = trimmed.endsWith(",") ? trimmed.slice(0, -1) : out;
+    } else if ((char === "}" || char === "]") && lastNonSpaceChar === ",") {
+      // Drop a trailing comma in place. Valid JSON never takes this branch. `append` below restores
+      // `lastNonSpace` to the closing bracket, so a nested `[1,],}` still sees its own comma.
+      out = out.slice(0, lastNonSpace) + out.slice(lastNonSpace + 1);
     }
-    out += char;
+    append(char);
   }
   return out;
 }
