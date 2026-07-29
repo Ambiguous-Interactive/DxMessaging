@@ -220,9 +220,15 @@ namespace DxMessaging.Editor.CustomEditors
         internal IReadOnlyList<MessageAwareComponentSubscriptionRow> Rows { get; }
 
         /// <summary>
-        /// Cheap change signal, so a polling inspector only rebuilds the row list when the
-        /// registrations, the token state, or the observed call totals actually moved.
+        /// Cheap change signal, so a polling inspector only rebuilds the row list when something
+        /// it renders actually moved.
         /// </summary>
+        /// <remarks>
+        /// Every rendered field folds in, including each row's identity. Folding only the row count
+        /// and the call counts would miss a registration swapped for a different one: with
+        /// diagnostics off every count is <see cref="MessageAwareComponentSubscriptionRow.UnknownCallCount"/>,
+        /// so a same-size replacement would leave the poller showing stale rows.
+        /// </remarks>
         internal long Revision
         {
             get
@@ -233,6 +239,13 @@ namespace DxMessaging.Editor.CustomEditors
                 foreach (MessageAwareComponentSubscriptionRow row in Rows)
                 {
                     revision = (revision * 31) + row.CallCount;
+                    revision = (revision * 31) + row.Priority;
+                    revision = (revision * 31) + (row.IsLive ? 1 : 0);
+                    revision =
+                        (revision * 31) + StringComparer.Ordinal.GetHashCode(row.MessageTypeName);
+                    revision =
+                        (revision * 31)
+                        + StringComparer.Ordinal.GetHashCode(row.RegistrationTypeName);
                 }
                 return revision;
             }

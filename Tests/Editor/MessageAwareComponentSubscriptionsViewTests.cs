@@ -245,6 +245,35 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void RevisionMovesWhenOneRegistrationIsSwappedForAnother()
+        {
+            SubscriptionsTestComponent component = CreateComponent(
+                out MessagingComponent messagingComponent
+            );
+            component.ConfigureForEditorTest(messagingComponent);
+            component.TestToken.DiagnosticMode = false;
+            MessageRegistrationHandle alpha = component.RegisterAlpha();
+
+            long before = MessageAwareComponentSubscriptionsState.Capture(component).Revision;
+
+            component.TestToken.RemoveRegistration(alpha);
+            _ = component.RegisterBeta();
+
+            MessageAwareComponentSubscriptionsState after =
+                MessageAwareComponentSubscriptionsState.Capture(component);
+            Assert.That(
+                after.Rows.Select(row => row.MessageTypeName).ToArray(),
+                Is.EqualTo(new[] { nameof(SubscriptionsBetaMessage) })
+            );
+            Assert.That(
+                after.Revision,
+                Is.Not.EqualTo(before),
+                "A same-size swap must still redraw: with diagnostics off every call count is unknown, "
+                    + "so row identity is the only thing that changed."
+            );
+        }
+
+        [Test]
         public void ViewCarriesTheDesignSystemSubscriptionClasses()
         {
             SubscriptionsTestComponent component = CreateComponent(
@@ -370,8 +399,18 @@ namespace DxMessaging.Tests.Editor
 
         internal void RegisterTestHandlers()
         {
-            _ = _messageRegistrationToken.RegisterUntargeted<SubscriptionsAlphaMessage>(OnAlpha);
-            _ = _messageRegistrationToken.RegisterComponentTargeted<SubscriptionsBetaMessage>(
+            _ = RegisterAlpha();
+            _ = RegisterBeta();
+        }
+
+        internal MessageRegistrationHandle RegisterAlpha()
+        {
+            return _messageRegistrationToken.RegisterUntargeted<SubscriptionsAlphaMessage>(OnAlpha);
+        }
+
+        internal MessageRegistrationHandle RegisterBeta()
+        {
+            return _messageRegistrationToken.RegisterComponentTargeted<SubscriptionsBetaMessage>(
                 this,
                 OnBeta
             );
