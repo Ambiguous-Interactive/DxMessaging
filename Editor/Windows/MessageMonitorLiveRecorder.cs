@@ -196,6 +196,10 @@ namespace DxMessaging.Editor.Windows
             // recorder on every play-mode transition, which is when the bus is actually reset.
             if (highestTraceId < Cursor)
             {
+                // The retained rows belong to the previous run of the counter, and their "#N"
+                // dispatch labels would now collide with the new run's. Dropping them keeps the log
+                // unambiguous instead of interleaving two runs that both start at #1.
+                _entries.Clear();
                 Cursor = 0;
                 _started = false;
             }
@@ -228,18 +232,17 @@ namespace DxMessaging.Editor.Windows
         }
 
         /// <summary>
-        /// Empties the log and its statistics, and rebases the cursor so the next drain adopts the
-        /// bus's current position instead of reporting everything before it as missed.
+        /// Empties the log and its statistics, so the log restarts from the next emission.
         /// </summary>
+        /// <remarks>
+        /// The cursor is deliberately <em>kept</em>. Rewinding it to 0 would make the very next
+        /// drain re-ingest everything the bus still has buffered, so clearing would visibly refill
+        /// itself within one poll. Only the loss baseline is dropped, so the emissions this call
+        /// discarded are not then reported as missed.
+        /// </remarks>
         internal void Clear()
         {
-            if (
-                _entries.Count == 0
-                && ObservedCount == 0
-                && MissedCount == 0
-                && Cursor == 0
-                && !_started
-            )
+            if (_entries.Count == 0 && ObservedCount == 0 && MissedCount == 0 && !_started)
             {
                 return;
             }
@@ -247,7 +250,6 @@ namespace DxMessaging.Editor.Windows
             _entries.Clear();
             ObservedCount = 0;
             MissedCount = 0;
-            Cursor = 0;
             _started = false;
             Revision++;
         }

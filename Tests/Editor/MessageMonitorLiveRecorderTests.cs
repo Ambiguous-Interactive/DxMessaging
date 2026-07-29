@@ -171,8 +171,35 @@ namespace DxMessaging.Tests.Editor
             Assert.AreEqual(0, recorder.Entries.Count);
             Assert.AreEqual(0, recorder.ObservedCount);
             Assert.AreEqual(0, recorder.MissedCount);
-            Assert.AreEqual(0, recorder.Cursor);
+            Assert.AreEqual(
+                9,
+                recorder.Cursor,
+                "The cursor survives, or the next drain would re-ingest what was just cleared."
+            );
             Assert.Greater(recorder.Revision, revision);
+        }
+
+        [Test]
+        public void ClearingDoesNotRefillFromWhatTheBusStillHasBuffered()
+        {
+            // The bus keeps its own ring, and a poll re-reads all of it. Rewinding the cursor on
+            // Clear would make the log visibly refill itself within one poll.
+            MessageMonitorLiveRecorder recorder = CreateRecorder();
+            IReadOnlyList<MessageMonitorEntry> busBuffer = Bus(
+                Entry(1, "A"),
+                Entry(2, "B"),
+                Entry(3, "C")
+            );
+            recorder.Ingest(busBuffer);
+
+            recorder.Clear();
+
+            Assert.IsFalse(
+                recorder.Ingest(busBuffer),
+                "Re-reading the same bus buffer after a clear must find nothing new."
+            );
+            Assert.AreEqual(0, recorder.Entries.Count);
+            Assert.AreEqual(0, recorder.ObservedCount);
         }
 
         [Test]
@@ -187,7 +214,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void ABusResetRebasesTheCursorInsteadOfDiscardingTheNewRun()
+        public void ABusResetRebasesTheCursorAndDropsThePreviousRun()
         {
             MessageMonitorLiveRecorder recorder = CreateRecorder();
             recorder.Ingest(Bus(Entry(40, "A"), Entry(41, "B")));
@@ -198,7 +225,11 @@ namespace DxMessaging.Tests.Editor
 
             Assert.AreEqual(2, recorder.Cursor);
             Assert.AreEqual(0, recorder.MissedCount, "A reset is not dropped data.");
-            CollectionAssert.AreEqual(new[] { "A", "B", "C", "D" }, MessageTypeNames(recorder));
+            CollectionAssert.AreEqual(
+                new[] { "C", "D" },
+                MessageTypeNames(recorder),
+                "Rows from the old run are dropped: their #N labels would collide with the new run."
+            );
         }
 
         [Test]

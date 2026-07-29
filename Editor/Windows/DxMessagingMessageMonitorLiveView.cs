@@ -32,15 +32,21 @@ namespace DxMessaging.Editor.Windows
             bool showUntargeted = true,
             bool showTargeted = true,
             bool showBroadcast = true,
-            int selectedIndex = 0
+            long selectedTraceId = FollowNewest
         )
         {
             _filterText = filterText;
             _hideUntargeted = !showUntargeted;
             _hideTargeted = !showTargeted;
             _hideBroadcast = !showBroadcast;
-            SelectedIndex = selectedIndex;
+            SelectedTraceId = selectedTraceId;
         }
+
+        /// <summary>
+        /// <see cref="SelectedTraceId"/> value meaning "no row is pinned", so the detail pane
+        /// follows whatever is newest. Also what a row that has aged out of the log falls back to.
+        /// </summary>
+        internal const long FollowNewest = 0;
 
         /// <summary>Never null, including on <c>default</c>, so it can be bound straight to a field.</summary>
         internal string FilterText => _filterText ?? string.Empty;
@@ -51,17 +57,25 @@ namespace DxMessaging.Editor.Windows
 
         internal bool ShowBroadcast => !_hideBroadcast;
 
-        /// <summary>Index into the filtered rows, newest first.</summary>
-        internal int SelectedIndex { get; }
+        /// <summary>
+        /// <see cref="MessageMonitorLiveEntry.FirstTraceId"/> of the pinned row, or
+        /// <see cref="FollowNewest"/>.
+        /// </summary>
+        /// <remarks>
+        /// The selection is keyed by dispatch id rather than by list position because the log is
+        /// newest-first: every poll that appends a row shifts every index down, so an index would
+        /// quietly repoint the detail pane at a different emission while recording continues.
+        /// </remarks>
+        internal long SelectedTraceId { get; }
 
-        internal MessageMonitorLiveViewState WithSelectedIndex(int selectedIndex)
+        internal MessageMonitorLiveViewState WithSelectedTraceId(long selectedTraceId)
         {
             return new MessageMonitorLiveViewState(
                 FilterText,
                 ShowUntargeted,
                 ShowTargeted,
                 ShowBroadcast,
-                selectedIndex
+                selectedTraceId
             );
         }
 
@@ -252,7 +266,7 @@ namespace DxMessaging.Editor.Windows
             }
             else
             {
-                int selectedIndex = ClampSelectedIndex(viewState.SelectedIndex, rows.Count);
+                int selectedIndex = ResolveSelectedIndex(rows, viewState.SelectedTraceId);
                 body.Add(CreateList(rows, selectedIndex, viewState, callbacks));
                 body.Add(CreateDetail(rows[selectedIndex]));
             }
@@ -291,14 +305,34 @@ namespace DxMessaging.Editor.Windows
             return rows;
         }
 
-        internal static int ClampSelectedIndex(int selectedIndex, int rowCount)
+        /// <summary>
+        /// Position of the pinned row in the current filtered list, or 0 (the newest row) when
+        /// nothing is pinned or the pinned row has been filtered out or aged out of the log.
+        /// </summary>
+        internal static int ResolveSelectedIndex(
+            IReadOnlyList<MessageMonitorLiveEntry> rows,
+            long selectedTraceId
+        )
         {
-            if (rowCount <= 0 || selectedIndex <= 0)
+            if (rows == null)
+            {
+                throw new ArgumentNullException(nameof(rows));
+            }
+
+            if (selectedTraceId == MessageMonitorLiveViewState.FollowNewest || rows.Count == 0)
             {
                 return 0;
             }
 
-            return selectedIndex >= rowCount ? rowCount - 1 : selectedIndex;
+            for (int index = 0; index < rows.Count; index++)
+            {
+                if (rows[index].FirstTraceId == selectedTraceId)
+                {
+                    return index;
+                }
+            }
+
+            return 0;
         }
 
         /// <summary>
@@ -638,9 +672,12 @@ namespace DxMessaging.Editor.Windows
             list.bindItem = (element, index) =>
             {
                 element.Clear();
-                VisualElement row = CreateRow(rows[index], index, index == selectedIndex);
+                MessageMonitorLiveEntry entry = rows[index];
+                VisualElement row = CreateRow(entry, index, index == selectedIndex);
                 row.RegisterCallback<ClickEvent>(_ =>
-                    callbacks.OnStateChanged?.Invoke(viewState.WithSelectedIndex(index))
+                    callbacks.OnStateChanged?.Invoke(
+                        viewState.WithSelectedTraceId(entry.FirstTraceId)
+                    )
                 );
                 element.Add(row);
             };

@@ -161,7 +161,9 @@ namespace DxMessaging.Editor.Windows
             LiveRecorder.Clear();
             if (_liveMode)
             {
-                _liveViewState = _liveViewState.WithSelectedIndex(0);
+                _liveViewState = _liveViewState.WithSelectedTraceId(
+                    MessageMonitorLiveViewState.FollowNewest
+                );
                 Refresh();
             }
         }
@@ -204,7 +206,9 @@ namespace DxMessaging.Editor.Windows
         private void EnterLiveMode()
         {
             _liveMode = true;
-            _liveViewState = _liveViewState.WithSelectedIndex(0);
+            _liveViewState = _liveViewState.WithSelectedTraceId(
+                MessageMonitorLiveViewState.FollowNewest
+            );
             Refresh();
         }
 
@@ -236,7 +240,9 @@ namespace DxMessaging.Editor.Windows
                         OnClear = () =>
                         {
                             LiveRecorder.Clear();
-                            _liveViewState = _liveViewState.WithSelectedIndex(0);
+                            _liveViewState = _liveViewState.WithSelectedTraceId(
+                                MessageMonitorLiveViewState.FollowNewest
+                            );
                             RenderLiveBody();
                         },
                         OnStateChanged = state =>
@@ -324,11 +330,13 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
-            // Capturing a snapshot rebuilds an entry for every record in the bus buffer, so an idle
-            // scene should not pay for it four times a second. The bus's dispatch counter matching
-            // the cursor exactly means nothing has been emitted since the last drain; a lower
-            // counter is a bus reset, which still needs a capture to rebase onto.
-            if (messageBus.EmissionId == LiveRecorder.Cursor)
+            // Capturing a snapshot rebuilds an entry for every record in the bus buffer, so neither
+            // an idle scene nor a paused recorder should pay for it four times a second. A paused
+            // recorder discards the whole capture, and its cursor stops advancing, so it has to be
+            // checked separately from the idle case. The bus's dispatch counter matching the cursor
+            // exactly means nothing has been emitted since the last drain; a lower counter is a bus
+            // reset, which still needs a capture to rebase onto.
+            if (!LiveRecorder.Recording || messageBus.EmissionId == LiveRecorder.Cursor)
             {
                 return;
             }

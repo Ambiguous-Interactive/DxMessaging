@@ -294,7 +294,7 @@ namespace DxMessaging.Tests.Editor
                     Entry(1, "PlayerSpawned", "Context: Player"),
                     Entry(2, "EnemyKilled", "Context: HUD")
                 ),
-                new MessageMonitorLiveViewState(selectedIndex: 1)
+                new MessageMonitorLiveViewState(selectedTraceId: 1)
             );
 
             VisualElement detail = root.Q<VisualElement>(
@@ -471,7 +471,7 @@ namespace DxMessaging.Tests.Editor
             MessageMonitorLiveViewState? next = null;
             VisualElement root = CreateView(
                 Recorder(Entry(1, "A"), Entry(2, "B")),
-                new MessageMonitorLiveViewState(selectedIndex: 1),
+                new MessageMonitorLiveViewState(selectedTraceId: 1),
                 new MessageMonitorLiveViewCallbacks { OnStateChanged = state => next = state }
             );
 
@@ -480,9 +480,71 @@ namespace DxMessaging.Tests.Editor
             Assert.IsTrue(next.HasValue);
             Assert.AreEqual("B", next.Value.FilterText);
             Assert.AreEqual(
+                MessageMonitorLiveViewState.FollowNewest,
+                next.Value.SelectedTraceId,
+                "A new filter is a new row set, so the pin is dropped."
+            );
+        }
+
+        [Test]
+        public void APinnedRowKeepsItsDetailPaneAsNewerRowsArrive()
+        {
+            // The log is newest-first, so every appended row shifts every position. A selection
+            // stored as a position would silently repoint the detail pane at a different emission
+            // while recording continues.
+            MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "Pinned"), Entry(2, "Other"));
+            MessageMonitorLiveViewState pinned = new(selectedTraceId: 1);
+
+            Assert.AreEqual(
+                1,
+                DxMessagingMessageMonitorLiveView.ResolveSelectedIndex(
+                    DxMessagingMessageMonitorLiveView.FilterRows(recorder.Entries, pinned),
+                    pinned.SelectedTraceId
+                )
+            );
+
+            recorder.Ingest(new[] { Entry(3, "Newer"), Entry(4, "Newest") });
+
+            List<MessageMonitorLiveEntry> rows = DxMessagingMessageMonitorLiveView.FilterRows(
+                recorder.Entries,
+                pinned
+            );
+            int index = DxMessagingMessageMonitorLiveView.ResolveSelectedIndex(
+                rows,
+                pinned.SelectedTraceId
+            );
+
+            Assert.AreEqual(3, index, "The pinned row moved down as newer rows arrived.");
+            Assert.AreEqual("Pinned", rows[index].Entry.MessageTypeName);
+        }
+
+        [Test]
+        public void APinnedRowThatIsFilteredAwayFallsBackWithoutLosingThePin()
+        {
+            MessageMonitorLiveRecorder recorder = Recorder(
+                Entry(1, "PlayerSpawned"),
+                Entry(2, "EnemyKilled")
+            );
+            MessageMonitorLiveViewState pinned = new("EnemyKilled", selectedTraceId: 1);
+
+            List<MessageMonitorLiveEntry> rows = DxMessagingMessageMonitorLiveView.FilterRows(
+                recorder.Entries,
+                pinned
+            );
+
+            Assert.AreEqual(1, rows.Count);
+            Assert.AreEqual(
                 0,
-                next.Value.SelectedIndex,
-                "The old index pointed into a different row set."
+                DxMessagingMessageMonitorLiveView.ResolveSelectedIndex(
+                    rows,
+                    pinned.SelectedTraceId
+                ),
+                "The pinned row is filtered out, so the detail pane shows the newest match."
+            );
+            Assert.AreEqual(
+                1,
+                pinned.SelectedTraceId,
+                "The pin itself is untouched, so clearing the filter restores it."
             );
         }
 
@@ -529,17 +591,17 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void SelectingAnOutOfRangeRowClampsToTheLastRow()
+        public void ASelectionThatIsNoLongerInTheLogFallsBackToTheNewestRow()
         {
             VisualElement root = CreateView(
                 Recorder(Entry(1, "Older"), Entry(2, "Newer")),
-                new MessageMonitorLiveViewState(selectedIndex: 99)
+                new MessageMonitorLiveViewState(selectedTraceId: 999)
             );
 
-            // Same clamp as the snapshot Monitor: the last valid index, which in a newest-first log
-            // is the oldest retained row.
+            // A pinned row can age out of the bounded log or be filtered away. Falling back to the
+            // newest row keeps the detail pane on something real.
             Assert.AreEqual(
-                "Older",
+                "Newer",
                 Text(
                     root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.DetailName),
                     DxMessagingMessageMonitorLiveView.DetailTitleLabelName
