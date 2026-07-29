@@ -203,7 +203,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void RebasingOntoAResetBusTakesTheWholeNewRun()
+        public void ResettingForANewBusRunTakesEverythingTheNewRunHasAlreadyBuffered()
         {
             // The case sequence inference cannot catch: the previous run left the cursor at 40, the
             // bus resets, and the new run emits past 40 before the next poll. Against the old cursor
@@ -211,7 +211,7 @@ namespace DxMessaging.Tests.Editor
             MessageMonitorLiveRecorder recorder = CreateRecorder();
             recorder.Ingest(Bus(Entry(39, "Old"), Entry(40, "Older")));
 
-            recorder.RebaseTo(0);
+            recorder.ResetForNewBusRun();
             recorder.Ingest(Bus(Entry(1, "A"), Entry(2, "B"), Entry(41, "C")));
 
             CollectionAssert.AreEqual(new[] { "A", "B", "C" }, MessageTypeNames(recorder));
@@ -220,19 +220,25 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void RebasingOntoALiveBusSkipsEverythingBeforeIt()
+        public void ANewSessionOnARunningBusKeepsTheBoundaryAndTakesWhatFollowsIt()
         {
-            // The bus did not reset -- a play-mode transition with the domain reload disabled leaves
-            // the same counter running -- so the rebase must not re-ingest the backlog.
+            // A play-mode transition with the domain reload disabled leaves the same counter
+            // running, so the cursor already marks the boundary between the two sessions. Clearing
+            // must drop the old session without stepping over the new session's opening emissions,
+            // which are already buffered by the time the transition callback runs.
             MessageMonitorLiveRecorder recorder = CreateRecorder();
-            recorder.Ingest(Bus(Entry(1, "A")));
+            recorder.Ingest(Bus(Entry(1, "EditMode")));
 
-            recorder.RebaseTo(40);
+            recorder.Clear();
 
-            Assert.IsFalse(recorder.Ingest(Bus(Entry(1, "A"), Entry(40, "B"))));
-            Assert.AreEqual(0, recorder.Entries.Count);
-            Assert.IsTrue(recorder.Ingest(Bus(Entry(41, "C"))));
-            CollectionAssert.AreEqual(new[] { "C" }, MessageTypeNames(recorder));
+            Assert.IsTrue(
+                recorder.Ingest(Bus(Entry(1, "EditMode"), Entry(2, "Awake"), Entry(3, "Start")))
+            );
+            CollectionAssert.AreEqual(
+                new[] { "Awake", "Start" },
+                MessageTypeNames(recorder),
+                "The startup traffic is what the live log exists to show."
+            );
             Assert.AreEqual(0, recorder.MissedCount);
         }
 
@@ -252,16 +258,6 @@ namespace DxMessaging.Tests.Editor
             Assert.AreEqual(0, recorder.MissedCount);
             Assert.AreEqual(1, recorder.Cursor);
             CollectionAssert.AreEqual(new[] { "C" }, MessageTypeNames(recorder));
-        }
-
-        [Test]
-        public void ANegativeRebaseTargetIsTreatedAsTheStartOfARun()
-        {
-            MessageMonitorLiveRecorder recorder = CreateRecorder();
-
-            recorder.RebaseTo(-5);
-
-            Assert.AreEqual(0, recorder.Cursor);
         }
 
         [Test]

@@ -144,14 +144,24 @@ namespace DxMessaging.Editor.Windows
         }
 
         /// <summary>
-        /// A play-mode transition may restart the bus's dispatch sequence, which the recorder cannot
-        /// always infer from the sequence alone. Rebasing onto whatever counter the bus holds once
-        /// the transition has completed states it outright, and works whether or not the bus reset.
+        /// A play-mode transition starts a new session, so the previous session's rows go. Whether
+        /// the cursor goes with them depends on whether the bus restarted its dispatch counter,
+        /// which the recorder cannot always infer from the sequence alone.
         /// </summary>
         /// <remarks>
-        /// This deliberately handles the <c>Entered*</c> transitions, not the <c>Exiting*</c> ones.
-        /// On <c>Exiting*</c> the old run is still live and still filling the bus buffer, so a
-        /// rebase there would be against a counter that is about to be replaced.
+        /// <para>
+        /// If the bus reset, every record it now holds belongs to the new run and the cursor has to
+        /// rewind so all of them are drained. If it did not reset (the counter simply kept running),
+        /// the cursor already sits exactly on the boundary between the two sessions, so keeping it
+        /// drops the old session and keeps everything after it.
+        /// </para>
+        /// <para>
+        /// Either way the cursor must not jump forward to the bus's current counter: <c>Entered*</c>
+        /// fires after <c>Awake</c>, <c>OnEnable</c> and <c>Start</c> have already emitted, so
+        /// stepping over what is buffered would permanently lose the startup traffic. That is also
+        /// why this handles <c>Entered*</c> rather than <c>Exiting*</c>: on <c>Exiting*</c> the old
+        /// session is still live and still filling the buffer.
+        /// </para>
         /// </remarks>
         private void HandlePlayModeStateChanged(PlayModeStateChange change)
         {
@@ -163,9 +173,17 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
-            LiveRecorder.RebaseTo(
-                MessageHandler.MessageBus is MessageBus messageBus ? messageBus.EmissionId : 0
-            );
+            if (
+                MessageHandler.MessageBus is MessageBus messageBus
+                && messageBus.EmissionId < LiveRecorder.Cursor
+            )
+            {
+                LiveRecorder.ResetForNewBusRun();
+            }
+            else
+            {
+                LiveRecorder.Clear();
+            }
             if (_liveMode)
             {
                 _liveViewState = _liveViewState.WithSelectedTraceId(
@@ -350,8 +368,10 @@ namespace DxMessaging.Editor.Windows
                 // The bus restarted its dispatch counter. Rebasing here rather than leaving it to
                 // Ingest matters because Ingest can only see a restart through the records in the
                 // buffer, and a reset empties that buffer: the log would keep showing the previous
-                // run until the new one happened to emit something.
-                LiveRecorder.RebaseTo(busCursor);
+                // run until the new one happened to emit something. The rewind goes to the start of
+                // the run, not to busCursor, so anything the new run has already buffered is drained
+                // rather than stepped over.
+                LiveRecorder.ResetForNewBusRun();
             }
             else if (busCursor == LiveRecorder.Cursor)
             {

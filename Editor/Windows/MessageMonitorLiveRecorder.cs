@@ -193,7 +193,8 @@ namespace DxMessaging.Editor.Windows
             // record of the new run looks already-drained. This inference is a best-effort net for a
             // reset the caller did not announce: a run that emits past the old cursor before the
             // next poll is indistinguishable from ordinary progress. A caller that knows the bus
-            // restarted should say so through <see cref="RebaseTo"/> instead of relying on this.
+            // restarted should say so through <see cref="ResetForNewBusRun"/> rather than rely on
+            // this.
             if (highestTraceId < Cursor)
             {
                 // Exactly what an announced rebase does, so the inferred and announced paths cannot
@@ -241,41 +242,43 @@ namespace DxMessaging.Editor.Windows
         /// </remarks>
         internal void Clear()
         {
-            RebaseTo(Cursor);
+            if (_entries.Count == 0 && ObservedCount == 0 && MissedCount == 0 && !_started)
+            {
+                return;
+            }
+
+            ResetLog(Cursor);
+            Revision++;
         }
 
         /// <summary>
-        /// Empties the log and moves the cursor to the bus's current dispatch counter, so the next
-        /// drain takes exactly what the bus emits from here on.
+        /// Empties the log and rewinds the cursor to the start of a run, so the next drain takes
+        /// every record the bus currently holds.
         /// </summary>
         /// <remarks>
-        /// This is how a caller that <em>knows</em> the bus restarted says so, and it exists because
-        /// the sequence alone cannot always tell. <see cref="Ingest"/> can only infer a restart
-        /// while the new run is still numbered below the cursor; a run that emits past the old
-        /// cursor before the next poll is indistinguishable from ordinary progress, and its opening
-        /// emissions would be dropped as already-drained. Rebasing onto the live counter at the
-        /// moment of the restart removes the guess: pass the counter of the bus that is about to
-        /// produce the next emissions, whether or not it reset.
+        /// This is how a caller that <em>knows</em> the bus restarted its dispatch counter says so,
+        /// and it exists because the sequence alone cannot always tell: <see cref="Ingest"/> can
+        /// only infer a restart while the new run is still numbered below the cursor, and a run that
+        /// emits past the old cursor before the next poll is indistinguishable from ordinary
+        /// progress. It deliberately rewinds to the start rather than to the bus's current counter.
+        /// The counter names the most recent emission <em>already buffered</em>, so adopting it
+        /// would step over every record the new run has produced so far -- which, at a play-mode
+        /// transition, is precisely the startup traffic worth watching.
         /// </remarks>
-        /// <param name="busCursor">
-        /// The bus's dispatch counter (<see cref="Core.MessageBus.MessageBus.EmissionId"/>), or 0
-        /// when the bus has been reset and should be drained from its first emission.
-        /// </param>
-        internal void RebaseTo(long busCursor)
+        internal void ResetForNewBusRun()
         {
-            long normalizedBusCursor = Math.Max(0, busCursor);
             if (
                 _entries.Count == 0
                 && ObservedCount == 0
                 && MissedCount == 0
                 && !_started
-                && Cursor == normalizedBusCursor
+                && Cursor == 0
             )
             {
                 return;
             }
 
-            ResetLog(normalizedBusCursor);
+            ResetLog(0);
             Revision++;
         }
 
