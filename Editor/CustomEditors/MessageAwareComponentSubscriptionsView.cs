@@ -269,7 +269,7 @@ namespace DxMessaging.Editor.CustomEditors
             {
                 if (!diagnosticsEnabled)
                 {
-                    return UnknownCallCount;
+                    return MessageAwareComponentSubscriptionRow.UnknownCallCount;
                 }
 
                 return token._callCounts.TryGetValue(handle, out int callCount) ? callCount : 0;
