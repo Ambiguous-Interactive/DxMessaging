@@ -196,12 +196,11 @@ namespace DxMessaging.Editor.Windows
             // restarted should say so through <see cref="RebaseTo"/> instead of relying on this.
             if (highestTraceId < Cursor)
             {
-                // The retained rows belong to the previous run of the counter, and their "#N"
-                // dispatch labels would now collide with the new run's. Dropping them keeps the log
-                // unambiguous instead of interleaving two runs that both start at #1.
-                _entries.Clear();
-                Cursor = 0;
-                _started = false;
+                // Exactly what an announced rebase does, so the inferred and announced paths cannot
+                // disagree: the retained rows belong to the previous run and their "#N" dispatch
+                // labels would collide with the new run's, and the recorded/missed totals describe
+                // a run that is over.
+                ResetLog(0);
             }
 
             List<MessageMonitorEntry> pending = CollectNewerThanCursor(busEntries);
@@ -276,12 +275,24 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
+            ResetLog(normalizedBusCursor);
+            Revision++;
+        }
+
+        /// <summary>
+        /// Drops everything that describes the current run and points the cursor at
+        /// <paramref name="cursor"/>. Shared by the announced rebase and by the reset
+        /// <see cref="Ingest"/> infers, so the two can never diverge. Does not bump
+        /// <see cref="Revision"/>; the caller owns that, because <see cref="Ingest"/> bumps it once
+        /// for the whole drain.
+        /// </summary>
+        private void ResetLog(long cursor)
+        {
             _entries.Clear();
             ObservedCount = 0;
             MissedCount = 0;
-            Cursor = normalizedBusCursor;
+            Cursor = cursor;
             _started = false;
-            Revision++;
         }
 
         private static long HighestTraceId(IReadOnlyList<MessageMonitorEntry> busEntries)

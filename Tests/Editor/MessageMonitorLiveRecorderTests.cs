@@ -237,6 +237,24 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void AnInferredResetClearsTheSameStateAnAnnouncedOneDoes()
+        {
+            // The two paths describe the same event, so a footer read after either must not still
+            // be totalling a run that is over.
+            MessageMonitorLiveRecorder recorder = CreateRecorder();
+            recorder.Ingest(Bus(Entry(1, "A")));
+            recorder.Ingest(Bus(Entry(9, "B")));
+            Assert.AreEqual(7, recorder.MissedCount);
+
+            recorder.Ingest(Bus(Entry(1, "C")));
+
+            Assert.AreEqual(1, recorder.ObservedCount);
+            Assert.AreEqual(0, recorder.MissedCount);
+            Assert.AreEqual(1, recorder.Cursor);
+            CollectionAssert.AreEqual(new[] { "C" }, MessageTypeNames(recorder));
+        }
+
+        [Test]
         public void ANegativeRebaseTargetIsTreatedAsTheStartOfARun()
         {
             MessageMonitorLiveRecorder recorder = CreateRecorder();

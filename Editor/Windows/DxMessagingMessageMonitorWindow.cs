@@ -337,14 +337,27 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
-            // Capturing a snapshot rebuilds an entry for every record in the bus buffer, so neither
-            // an idle scene nor a paused recorder should pay for it four times a second. A paused
-            // recorder discards the whole capture, and its cursor stops advancing, so it has to be
-            // checked separately from the idle case. The bus's dispatch counter matching the cursor
-            // exactly means nothing has been emitted since the last drain; a lower counter is a bus
-            // reset, which still needs a capture to rebase onto.
-            if (!LiveRecorder.Recording || messageBus.EmissionId == LiveRecorder.Cursor)
+            // A paused recorder discards the whole capture, and its cursor stops advancing, so it
+            // has to be checked before the idle comparison rather than through it.
+            if (!LiveRecorder.Recording)
             {
+                return;
+            }
+
+            long busCursor = messageBus.EmissionId;
+            if (busCursor < LiveRecorder.Cursor)
+            {
+                // The bus restarted its dispatch counter. Rebasing here rather than leaving it to
+                // Ingest matters because Ingest can only see a restart through the records in the
+                // buffer, and a reset empties that buffer: the log would keep showing the previous
+                // run until the new one happened to emit something.
+                LiveRecorder.RebaseTo(busCursor);
+            }
+            else if (busCursor == LiveRecorder.Cursor)
+            {
+                // Capturing a snapshot rebuilds an entry for every record in the bus buffer, so an
+                // idle scene should not pay for it four times a second. An exact match means
+                // nothing has been emitted since the last drain.
                 return;
             }
 
