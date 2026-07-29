@@ -144,21 +144,28 @@ namespace DxMessaging.Editor.Windows
         }
 
         /// <summary>
-        /// Entering or leaving play mode resets the bus, which restarts its dispatch sequence. The
-        /// recorder detects that from the sequence alone only while it is polling, so the log is
-        /// dropped here rather than left to interleave two runs.
+        /// A play-mode transition may restart the bus's dispatch sequence, which the recorder cannot
+        /// always infer from the sequence alone. Rebasing onto whatever counter the bus holds once
+        /// the transition has completed states it outright, and works whether or not the bus reset.
         /// </summary>
+        /// <remarks>
+        /// This deliberately handles the <c>Entered*</c> transitions, not the <c>Exiting*</c> ones.
+        /// On <c>Exiting*</c> the old run is still live and still filling the bus buffer, so a
+        /// rebase there would be against a counter that is about to be replaced.
+        /// </remarks>
         private void HandlePlayModeStateChanged(PlayModeStateChange change)
         {
             if (
-                change != PlayModeStateChange.ExitingEditMode
-                && change != PlayModeStateChange.ExitingPlayMode
+                change != PlayModeStateChange.EnteredEditMode
+                && change != PlayModeStateChange.EnteredPlayMode
             )
             {
                 return;
             }
 
-            LiveRecorder.Clear();
+            LiveRecorder.RebaseTo(
+                MessageHandler.MessageBus is MessageBus messageBus ? messageBus.EmissionId : 0
+            );
             if (_liveMode)
             {
                 _liveViewState = _liveViewState.WithSelectedTraceId(

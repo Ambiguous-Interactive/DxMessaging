@@ -203,6 +203,50 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void RebasingOntoAResetBusTakesTheWholeNewRun()
+        {
+            // The case sequence inference cannot catch: the previous run left the cursor at 40, the
+            // bus resets, and the new run emits past 40 before the next poll. Against the old cursor
+            // its opening emissions look already-drained, so they would be dropped silently.
+            MessageMonitorLiveRecorder recorder = CreateRecorder();
+            recorder.Ingest(Bus(Entry(39, "Old"), Entry(40, "Older")));
+
+            recorder.RebaseTo(0);
+            recorder.Ingest(Bus(Entry(1, "A"), Entry(2, "B"), Entry(41, "C")));
+
+            CollectionAssert.AreEqual(new[] { "A", "B", "C" }, MessageTypeNames(recorder));
+            Assert.AreEqual(41, recorder.Cursor);
+            Assert.AreEqual(0, recorder.MissedCount, "A rebase is a fresh baseline, not loss.");
+        }
+
+        [Test]
+        public void RebasingOntoALiveBusSkipsEverythingBeforeIt()
+        {
+            // The bus did not reset -- a play-mode transition with the domain reload disabled leaves
+            // the same counter running -- so the rebase must not re-ingest the backlog.
+            MessageMonitorLiveRecorder recorder = CreateRecorder();
+            recorder.Ingest(Bus(Entry(1, "A")));
+
+            recorder.RebaseTo(40);
+
+            Assert.IsFalse(recorder.Ingest(Bus(Entry(1, "A"), Entry(40, "B"))));
+            Assert.AreEqual(0, recorder.Entries.Count);
+            Assert.IsTrue(recorder.Ingest(Bus(Entry(41, "C"))));
+            CollectionAssert.AreEqual(new[] { "C" }, MessageTypeNames(recorder));
+            Assert.AreEqual(0, recorder.MissedCount);
+        }
+
+        [Test]
+        public void ANegativeRebaseTargetIsTreatedAsTheStartOfARun()
+        {
+            MessageMonitorLiveRecorder recorder = CreateRecorder();
+
+            recorder.RebaseTo(-5);
+
+            Assert.AreEqual(0, recorder.Cursor);
+        }
+
+        [Test]
         public void ClearOnAnAlreadyEmptyRecorderDoesNotBumpTheRevision()
         {
             MessageMonitorLiveRecorder recorder = CreateRecorder();

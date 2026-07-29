@@ -190,10 +190,10 @@ namespace DxMessaging.Editor.Windows
             // A bus reset restarts the dispatch sequence at 0, so a snapshot whose highest sequence
             // number sits below the cursor is a different run of the counter, not stale data. This
             // has to be settled before anything is collected, because against the old cursor every
-            // record of the new run looks already-drained. A reset that is not polled until the new
-            // run has passed the old cursor is indistinguishable from stale data and would leave the
-            // pre-cursor part of that run out of the log; the window closes that gap by clearing the
-            // recorder on every play-mode transition, which is when the bus is actually reset.
+            // record of the new run looks already-drained. This inference is a best-effort net for a
+            // reset the caller did not announce: a run that emits past the old cursor before the
+            // next poll is indistinguishable from ordinary progress. A caller that knows the bus
+            // restarted should say so through <see cref="RebaseTo"/> instead of relying on this.
             if (highestTraceId < Cursor)
             {
                 // The retained rows belong to the previous run of the counter, and their "#N"
@@ -242,7 +242,36 @@ namespace DxMessaging.Editor.Windows
         /// </remarks>
         internal void Clear()
         {
-            if (_entries.Count == 0 && ObservedCount == 0 && MissedCount == 0 && !_started)
+            RebaseTo(Cursor);
+        }
+
+        /// <summary>
+        /// Empties the log and moves the cursor to the bus's current dispatch counter, so the next
+        /// drain takes exactly what the bus emits from here on.
+        /// </summary>
+        /// <remarks>
+        /// This is how a caller that <em>knows</em> the bus restarted says so, and it exists because
+        /// the sequence alone cannot always tell. <see cref="Ingest"/> can only infer a restart
+        /// while the new run is still numbered below the cursor; a run that emits past the old
+        /// cursor before the next poll is indistinguishable from ordinary progress, and its opening
+        /// emissions would be dropped as already-drained. Rebasing onto the live counter at the
+        /// moment of the restart removes the guess: pass the counter of the bus that is about to
+        /// produce the next emissions, whether or not it reset.
+        /// </remarks>
+        /// <param name="busCursor">
+        /// The bus's dispatch counter (<see cref="Core.MessageBus.MessageBus.EmissionId"/>), or 0
+        /// when the bus has been reset and should be drained from its first emission.
+        /// </param>
+        internal void RebaseTo(long busCursor)
+        {
+            long normalizedBusCursor = Math.Max(0, busCursor);
+            if (
+                _entries.Count == 0
+                && ObservedCount == 0
+                && MissedCount == 0
+                && !_started
+                && Cursor == normalizedBusCursor
+            )
             {
                 return;
             }
@@ -250,6 +279,7 @@ namespace DxMessaging.Editor.Windows
             _entries.Clear();
             ObservedCount = 0;
             MissedCount = 0;
+            Cursor = normalizedBusCursor;
             _started = false;
             Revision++;
         }
