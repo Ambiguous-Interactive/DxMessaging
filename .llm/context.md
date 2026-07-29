@@ -154,6 +154,16 @@ The agent runs from inside the slim devcontainer (.NET 9/10 base + Node + docs t
 - Tests that drive `scripts/unity/ensure-editor.ps1` against a fake `Unity.exe` stub MUST set `DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE=1` in the spawn env; Windows `CreateProcess()` rejects shebang `.exe` files. See [Cross-Platform Script Compatibility](./skills/shell-and-powershell/references/cross-platform-compatibility.md#stub-executables-on-windows-pe-binary-requirement).
 - For validators that depend on `git` metadata, treat `ENOENT`/missing-git failures as hard errors; never silently default to permissive behavior.
 
+## GitHub Access
+
+Reach GitHub in this order, and stop at the first one that works:
+
+1. **The VS Code GitHub connector.** The devcontainer configures `credential.helper` to proxy to the host's VS Code session, and `github.vscode-pull-request-github` is installed. `printf 'protocol=https\nhost=github.com\n\n' | git credential fill` yields a live token (`gist, repo, workflow`) with no interactive login. Use that token against `https://api.github.com` for anything the git CLI cannot do: opening PRs, requesting reviewers, reading review comments and check runs.
+1. **`git` itself** for everything it already covers: branch, commit, push, fetch, `git ls-remote`. The `origin` remote is SSH, so pushes work even when API credentials do not.
+1. **`gh` only as a last resort.** Its token lives in `~/.config/gh/hosts.yml`, expires independently of the VS Code session, and has gone invalid mid-session while both paths above kept working. `gh auth status` failing is not a reason to stop; fall back to path 1.
+
+Never echo a token into command output, a log, or a file. Read it into a shell variable in the same command that uses it.
+
 ## Line Ending Policy
 
 - Mixed policy is required.
