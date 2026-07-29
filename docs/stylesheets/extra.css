@@ -382,7 +382,6 @@
 .md-footer-meta__inner {
   align-items: center;
   gap: 0.4rem 1rem;
-  row-gap: 0.4rem;
 }
 
 .md-footer-meta .md-copyright {

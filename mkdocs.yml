@@ -166,6 +166,7 @@ extra_css:
 exclude_docs: |
   ops/
   runbooks/
+  overrides/
 
 # Navigation structure
 
