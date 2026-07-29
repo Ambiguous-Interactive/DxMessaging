@@ -369,6 +369,44 @@
   border-radius: 8px;
 }
 
+/* ============= FOOTER META BAR =============
+   The theme gives .md-copyright width: 100% so its "Made with Material for MkDocs"
+   line can sit under the copyright. This site sets generator: false, so that width
+   only served to push .md-social onto a second line, left-aligned, with the rest of
+   the row empty. Sizing the copyright to its content lets space-between do its job:
+   copyright at one end, links and social at the other, wrapping on narrow screens. */
+.md-footer-meta {
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-footer-meta__inner {
+  align-items: center;
+  gap: 0.4rem 1rem;
+  row-gap: 0.4rem;
+}
+
+.md-footer-meta .md-copyright {
+  width: auto;
+}
+
+.dxm-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  margin: auto 0.6rem;
+  padding: 0.4rem 0;
+  font-size: 0.64rem;
+}
+
+.dxm-footer-links a {
+  color: var(--md-footer-fg-color--light);
+}
+
+.dxm-footer-links a:hover,
+.dxm-footer-links a:focus {
+  color: var(--dxm-amber);
+}
+
 /* ============= TAXONOMY BADGES (use in markdown via attr_list) =============
    Example: `[Untargeted]{ .dxm-badge .dxm-untargeted }` */
 .dxm-badge {
