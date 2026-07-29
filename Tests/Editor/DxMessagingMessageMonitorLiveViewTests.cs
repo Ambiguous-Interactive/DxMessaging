@@ -27,6 +27,12 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
+            // Every interaction test here holds its host window open until teardown, and closing a
+            // shown window in -nographics CI logs a benign "No graphic device is available" error.
+            // Unity resets LogAssert tolerance per phase, so ShowWindow's tolerance does not reach
+            // this one; re-assert it for the teardown phase (headless only, so runs with a real GPU
+            // keep full strictness).
+            EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
             EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
         }
 
