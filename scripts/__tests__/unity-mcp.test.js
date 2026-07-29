@@ -1353,6 +1353,38 @@ test("runProbe reports the endpoint it handshook with", async (t) => {
   );
 });
 
+// Deliberately no injected `candidates`: passing one masks the narrowing --no-discover performs,
+// which is how `probe --no-discover` shipped always-failing with an empty attempts list. The
+// endpoint has to come from options.host/options.port.
+test("--no-discover probes the configured endpoint rather than skipping the handshake", async (t) => {
+  const runtime = { fetchImpl: async () => initializeResponse(OK_PAYLOAD) };
+  captureConsole(t, "log");
+  captureConsole(t, "warn");
+
+  const live = { discover: false, host: "127.0.0.1", port: await listeningPort(t) };
+  assert.equal(
+    (await runProbe(commandOptions(temporaryDirectory(), live), runtime)).port,
+    live.port
+  );
+
+  const repoRoot = temporaryDirectory();
+  const dead = { discover: false, host: "127.0.0.1", port: await closedPort() };
+  // The regression was an EMPTY attempts list, so naming the endpoint is the assertion.
+  await assert.rejects(
+    () => runProbe(commandOptions(repoRoot, dead), runtime),
+    (error) => {
+      assert.match(error.message, new RegExp(`127\\.0\\.0\\.1:${dead.port}`));
+      return true;
+    }
+  );
+
+  // configure still writes the endpoint the caller named when the probe finds nothing there.
+  const url = await runConfigure(commandOptions(repoRoot, dead), runtime);
+  assert.equal(url, `http://127.0.0.1:${dead.port}/mcp`);
+  const written = JSON.parse(fs.readFileSync(clientConfigPaths(repoRoot).claudeCode, "utf8"));
+  assert.equal(written.mcpServers["unity-mcp"].url, url);
+});
+
 // `unauthorized` means a bridge IS running there; only the token is wrong. Falling back to the
 // default endpoint and minting a fresh token guarantees a 401 and persists the bogus token.
 test("runConfigure refuses to write when a bridge rejects the token", async (t) => {
