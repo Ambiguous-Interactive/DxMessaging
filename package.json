@@ -77,6 +77,9 @@
     "refresh:analyzers": "node scripts/analyzers/verify-analyzer-payload.js --write",
     "check:analyzers": "node scripts/analyzers/verify-analyzer-payload.js --check",
     "fix:csharp-underscores": "node scripts/fix-csharp-underscore-methods.js",
+    "unity:mcp:probe": "node scripts/mcp/unity-mcp.mjs probe",
+    "unity:mcp:configure": "node scripts/mcp/unity-mcp.mjs configure",
+    "unity:mcp:bridge": "node scripts/mcp/unity-mcp.mjs bridge",
     "validate:asmdef-references": "node scripts/validate-asmdef-references.js",
     "validate:unity-versions": "node scripts/validate-unity-versions.js",
     "validate:unity-pr-policy": "python3 scripts/validate-unity-pr-policy.py",
@@ -86,9 +89,11 @@
     "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run check:skills-index && npm run check:issue-template-versions"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "cspell": "10.0.1",
     "markdownlint-cli2": "0.23.2",
-    "prettier": "3.9.6"
+    "prettier": "3.9.6",
+    "smol-toml": "1.7.1"
   },
   "samples": [
     {

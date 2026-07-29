@@ -35,7 +35,11 @@ const path = require("path");
 // 072 design-system editor CI guards (untracked-dump + complete-border +
 //     blocked-capture-primitive checks, stable editor-window test-host teardown
 //     guard) for the cleaner-site design-system convergence: 13700.
-const TOTAL_BUDGET = 13700;
+// 073 tested Unity MCP endpoint discovery, client auto-configuration, and the
+//     native streamable-HTTP bridge (scripts/mcp/unity-mcp.mjs + suite),
+//     replacing 404 lines of untested shell/PowerShell and the runtime
+//     supergateway dependency: 15600.
+const TOTAL_BUDGET = 15600;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

@@ -1,91 +1,85 @@
 # Unity MCP in a Linux devcontainer with a Windows host
 
-When Unity runs on Windows and your agents run inside a Linux devcontainer, the
-Windows relay binary cannot run inside the container. The working pattern is:
+Unity and its relay binary run on the Windows host; agents run inside the Linux devcontainer. The
+relay speaks stdio, which a container cannot reach, so the host publishes it over authenticated
+streamable HTTP and container clients point at that endpoint.
 
-1. Start the Unity relay on Windows (stdio).
-1. Bridge stdio to HTTP on Windows.
-1. Point container MCP clients at that HTTP endpoint.
+`scripts/mcp/unity-mcp.mjs` is the single entry point for all three steps.
 
-This repository uses `supergateway` for step 2.
+| Command                       | Runs on | Purpose                                                   |
+| ----------------------------- | ------- | --------------------------------------------------------- |
+| `npm run unity:mcp:bridge`    | Host    | Spawn the relay and serve it over HTTP                    |
+| `npm run unity:mcp:probe`     | Agent   | Discover a live endpoint and complete an MCP handshake    |
+| `npm run unity:mcp:configure` | Agent   | Discover, then write every MCP client config in this repo |
 
-The generated MCP client config files are machine-local and gitignored:
-
-- `.vscode/mcp.json`
-- `.mcp.json`
-- `.cursor/mcp.json`
-- `.codex/config.toml`
-
-Set your local endpoint in `.env.local` at repo root:
-
-```bash
-export UNITY_MCP_BRIDGE_HOST=YOUR_WINDOWS_HOST_IP
-export UNITY_MCP_BRIDGE_PORT=9003
-export UNITY_MCP_BRIDGE_PATH=/mcp
-```
-
-## Start the bridge on Windows
-
-From the repository root on the Windows host:
+## Start the bridge on the Windows host
 
 ```powershell
-$env:UNITY_MCP_RELAY_COMMAND = '<relay command from Unity MCP docs>'
-pwsh -File scripts/mcp/start-unity-mcp-bridge.ps1 -Port 9003
+npm run unity:mcp:bridge -- --project 'D:\Path\To\HostUnityProject'
 ```
 
-The relay command is installation-specific. Use the exact relay invocation shown
-in your Unity MCP integration docs for your machine.
+The relay executable is discovered under `~/.unity/relay/`. Override it with `--relay <path>` or
+`UNITY_MCP_RELAY_PATH` when it lives elsewhere. `--project` is required for this command only: the
+relay opens that Unity project, and the path names a host filesystem location.
 
-Optional flags:
+The bridge requires a bearer token. If none is configured it generates one and appends it to
+`.env.local` at the repository root. Both sides must present the same token, so when the host and
+the container do not share `.env.local`, copy `UNITY_MCP_BEARER_TOKEN` across or pass `--token`.
 
-- `-McpPath /mcp` (default `/mcp`)
-- `-Stateful` if your MCP client requires stateful streamable HTTP sessions
-- `-LogLevel info|debug|none`
+Add a Windows firewall rule for the chosen port if the container cannot reach it.
 
-If needed, add a Windows firewall rule for the selected port.
-
-## Validate from the Linux devcontainer
+## Configure and verify from the devcontainer
 
 ```bash
-bash scripts/mcp/probe-unity-mcp-endpoint.sh YOUR_WINDOWS_HOST_IP 9003
+npm run unity:mcp:configure
+npm run unity:mcp:probe
 ```
 
-Use your actual Windows host LAN IP and bridge port.
+Both commands probe before acting. Discovery walks every combination of candidate host and port
+until one completes an MCP `initialize` handshake:
 
-## Sync all workspace client configs
+- **Hosts** - any explicitly configured host first, then `host.docker.internal`, `127.0.0.1`, the
+  `nameserver` entries in `/etc/resolv.conf` (the Windows host under WSL2), and the default-route
+  gateways in `/proc/net/route`.
+- **Ports** - any explicitly configured port first, then `9020`, then `9003`.
 
-Run this inside the Linux devcontainer whenever host/port/path changes:
+An explicit `--host` or `--port` is always tried first, so discovery can never override a deliberate
+setting. Pass `--no-discover` to skip probing entirely and use the configured values as-is.
+
+Failed attempts are reported with a classification, because the fixes differ:
+
+| Status         | Meaning                                                        |
+| -------------- | -------------------------------------------------------------- |
+| `unreachable`  | Nothing accepted a TCP connection                              |
+| `unauthorized` | A bridge is running but rejected the bearer token              |
+| `http-error`   | Something answered that is not an MCP streamable-HTTP endpoint |
+| `malformed`    | The endpoint answered but not with a valid `initialize` result |
+
+## Generated client configs
+
+`configure` writes all four in one transaction. Every file is staged before any is committed and a
+mid-write failure rolls back, so no agent is ever left pointing at a stale endpoint:
+
+| Client            | File                 | Schema key    |
+| ----------------- | -------------------- | ------------- |
+| Claude Code       | `.mcp.json`          | `mcpServers`  |
+| Cursor            | `.cursor/mcp.json`   | `mcpServers`  |
+| VS Code / Copilot | `.vscode/mcp.json`   | `servers`     |
+| Codex             | `.codex/config.toml` | `mcp_servers` |
+
+All four are machine-local and gitignored. Existing entries for other servers are preserved; only
+the `unity-mcp` entry is rewritten.
+
+## Local overrides
+
+Set any of these in `.env.local` at the repository root, or pass the matching flag:
 
 ```bash
-UNITY_MCP_BRIDGE_HOST=YOUR_WINDOWS_HOST_IP UNITY_MCP_BRIDGE_PORT=9003 \
-  bash scripts/mcp/configure-unity-mcp-endpoint.sh
+UNITY_MCP_BRIDGE_HOST=192.168.1.33
+UNITY_MCP_BRIDGE_PORT=9020
+UNITY_MCP_BRIDGE_PATH=/mcp
+UNITY_MCP_BEARER_TOKEN=<64 hex characters>
+UNITY_PROJECT_PATH=D:\Path\To\HostUnityProject
 ```
 
-This updates all local client config files to the same endpoint:
-
-- `.vscode/mcp.json`
-- `.mcp.json`
-- `.cursor/mcp.json`
-- `.codex/config.toml`
-
-## Client configs in this repository
-
-- VS Code/Copilot: `.vscode/mcp.json`
-- Claude Code: `.mcp.json`
-- Cursor: `.cursor/mcp.json`
-- Codex: `.codex/config.toml`
-
-All are configured to target a host bridge endpoint similar to
-`http://<host>:<port>/mcp`.
-
-## Claude Desktop helper
-
-To install/update Claude Desktop config on Linux:
-
-```bash
-UNITY_MCP_BRIDGE_HOST=YOUR_WINDOWS_HOST_IP UNITY_MCP_BRIDGE_PORT=9003 \
-  bash scripts/mcp/install-claude-desktop-config.sh
-```
-
-The installer merges into the existing JSON instead of replacing the full file.
-This helper targets Linux paths by default.
+Run `node scripts/mcp/unity-mcp.mjs --help` for the full flag list.
