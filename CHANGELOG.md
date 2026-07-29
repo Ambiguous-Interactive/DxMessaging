@@ -15,15 +15,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filter query as snapshot mode (`type:`, `message:`, `context:`, `stack:`), a
   detail pane for the selected row, and a footer reporting shown, buffered,
   recorded and missed counts. Repeated identical emissions coalesce into one
-  counted row, and emissions the bus overwrote before the log could drain them
-  are reported as missed rather than silently lost. Live mode is editor-only and
-  reads data the bus already records, so it adds no runtime cost.
+  counted row. The log updates in place as it drains, so scrolling into older rows
+  is not undone by the next poll, and emissions the bus overwrote before the log
+  could drain them raise a notice saying the log has gaps instead of leaving that
+  to a number in the footer. Live mode is editor-only and reads data the bus
+  already records, so it adds no runtime cost.
 - Every `MessageAwareComponent` inspector now shows a **Message subscriptions**
   section listing the registrations its `MessageRegistrationToken` holds: the
-  message type, the registration kind and priority, the observed call count, and
-  a dot showing whether the registration is currently subscribed on the bus.
+  message type, the registration kind, a priority badge, the observed call count,
+  and a dot showing whether the registration is currently subscribed on the bus.
   Call counts read as `calls n/a` while diagnostics are off rather than as zero.
   See [Inspector Overlay](docs/guides/inspector-overlay.md#message-subscriptions).
+
+### Changed
+
+- The `MessagingComponent` inspector's matched and potential-match emission labels
+  now use the design system's colors instead of raw green and yellow, so they stay
+  readable on the light editor skin.
+
+### Fixed
+
+- Documentation-site pages load faster. Every page was downloading the Mermaid
+  renderer (about 950 KB compressed) whether or not it had a diagram, and pages
+  that did have one rendered it twice. Diagrams now go through the site theme's own
+  Mermaid integration, which loads it only where a diagram exists and colors it
+  from the site palette in both light and dark. The display font is also linked
+  rather than `@import`-ed, so it no longer waits on the stylesheet that requested
+  it.
+- The documentation-site footer no longer wraps its social icon onto its own
+  left-aligned line, and it carries links to the repository, releases, changelog,
+  issue reporting and license.
 
 ## [3.2.1]
 

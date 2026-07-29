@@ -1005,8 +1005,11 @@ namespace DxMessaging.Editor.Windows
             title.AddToClassList(DxMessagingEditorTheme.AdmonitionTitleClassName);
             notice.Add(title);
 
+            // Deliberately unclassed, matching the package's other admonitions: `.dx-admonition`
+            // owns the padding and the body is plain copy. `.dx-empty__body` would have been the
+            // convenient class to reach for and is the wrong one -- it caps width at 260px and
+            // centers, which is right for an empty state and wrong for a full-width notice.
             Label body = new(CreateGapNoticeBodyText(missedCount)) { name = GapNoticeBodyName };
-            body.AddToClassList(DxMessagingEditorTheme.EmptyBodyClassName);
             body.style.whiteSpace = WhiteSpace.Normal;
             notice.Add(body);
 

@@ -634,10 +634,17 @@ namespace DxMessaging.Tests.Editor
                     .ClassListContains(DxMessagingEditorTheme.AdmonitionTitleClassName)
             );
             Assert.AreEqual(7, recorder.MissedCount);
+
+            Label body = notice.Q<Label>(DxMessagingMessageMonitorLiveView.GapNoticeBodyName);
             Assert.IsTrue(
-                Text(notice, DxMessagingMessageMonitorLiveView.GapNoticeBodyName).Contains("7"),
+                body.text.Contains("7"),
                 "The notice names how many emissions were lost."
             );
+            Assert.IsFalse(
+                body.ClassListContains(DxMessagingEditorTheme.EmptyBodyClassName),
+                "The empty-state body caps width at 260px and centers; a full-width notice wraps."
+            );
+            Assert.AreEqual(WhiteSpace.Normal, body.style.whiteSpace.value);
         }
 
         [TestCase(1L, "1 emission before")]
