@@ -8,11 +8,69 @@ const { walkFiles } = require("../lib/repo-files.js");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
-const LOCK_ACTION_SHA = "a00614ace745152a659c5c2654f7cefb68a5a628";
-const ACQUIRE_ACTION_SHA = "a00614ace745152a659c5c2654f7cefb68a5a628";
-const CLEANUP_POLICY_SHA = "673eb65e7d863a1a8a8a70882bd980e189d41754";
 const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
+
+// Build-lock pins are bumped by Dependabot. Hardcoding the SHA here made every
+// dependency bump fail this suite (and, through the devcontainer smoke job that
+// runs `npm test`, a second required check) for a reason unrelated to the change
+// under review. The invariant that actually matters is not a literal value: each
+// action group must stay immutably pinned and internally consistent across every
+// file that references it, so a bump either lands everywhere or fails loudly.
+// `.github/actions/**` is included because the cleanup-policy group reaches into
+// composite actions there; see .github/dependabot.yml for how those get bumped.
+const ACTION_HOST_FILES = [
+  WORKFLOW_DIR,
+  path.join(REPO_ROOT, ".github", "actions")
+].flatMap((root) => walkFiles(root, { match: (file) => /\.ya?ml$/.test(file) }));
+
+function resolveLockActionPin(actionNames) {
+  const shas = new Map();
+  const comments = new Set();
+  for (const filePath of ACTION_HOST_FILES) {
+    const source = fs.readFileSync(filePath, "utf8");
+    for (const name of actionNames) {
+      const pattern = new RegExp(
+        `${escapeRegExp(LOCK_ACTION_PREFIX + name)}@([0-9a-f]{40})([^\\S\\n]+#[^\\n]*)?`,
+        "g"
+      );
+      for (const match of source.matchAll(pattern)) {
+        const where = `${path.relative(REPO_ROOT, filePath)}:${name}`;
+        shas.set(match[1], [...(shas.get(match[1]) || []), where]);
+        const comment = (match[2] || "").trimEnd();
+        if (comment !== "") {
+          comments.add(comment);
+        }
+      }
+    }
+  }
+  assert.ok(shas.size > 0, `${actionNames.join(", ")} must be referenced somewhere under .github`);
+  assert.equal(
+    shas.size,
+    1,
+    `${actionNames.join(", ")} must share one SHA; found ${JSON.stringify([...shas])}`
+  );
+  // A version comment is optional, but the group must not disagree about it.
+  assert.ok(comments.size <= 1, `${actionNames.join(", ")} version comments disagree`);
+  return { sha: [...shas.keys()][0], comment: [...comments][0] || "" };
+}
+
+// Acquire, preflight, and the PR-head guard ship together in the build-lock
+// release; release/require-confirmed/classify carry the centralized Unity
+// cleanup policy and are pinned as their own group.
+const LOCK_ACTION_PIN = resolveLockActionPin([
+  "check-unity-runner-availability",
+  "acquire-build-lock",
+  "require-current-pr-head"
+]);
+const CLEANUP_POLICY_PIN = resolveLockActionPin([
+  "release-build-lock",
+  "require-confirmed-unity-cleanup",
+  "classify-unity-cleanup-evidence"
+]);
+const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
+const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
+const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
 const UNITY_LOCK_WINDOWS = [
   ["unity-tests.yml", "unity-tests", "Run Unity Test Runner", true],
   ["unity-gameci-experiment.yml", "game-ci-experiment", "Run GameCI normal project mode", true],
@@ -273,7 +331,7 @@ test("copyable build-lock documentation follows the runner and App credential co
   ]) {
     const source = fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
     const acquireExample = new RegExp(
-      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${ACQUIRE_ACTION_SHA} # v1.9.1[\\s\\S]*?\`\`\``
+      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${ACQUIRE_ACTION_SHA}${escapeRegExp(LOCK_ACTION_PIN.comment)}[\\s\\S]*?\`\`\``
     ).exec(source);
 
     assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
@@ -297,10 +355,10 @@ test("copyable build-lock documentation follows the runner and App credential co
 });
 // prettier-ignore
 test("every Unity lock window releases with explicit cleanup proof", () => {
-  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${ACQUIRE_ACTION_SHA} # v1.9.1`;
+  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${ACQUIRE_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
   const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${CLEANUP_POLICY_SHA}`;
   const gate = `uses: ${LOCK_ACTION_PREFIX}require-confirmed-unity-cleanup@${CLEANUP_POLICY_SHA}`;
-  const runnerLabels = new Map([["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'], ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-gameci-experiment.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']]); const preflightAction = `${LOCK_ACTION_PREFIX}check-unity-runner-availability@${LOCK_ACTION_SHA} # v1.9.1`; const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8")); for (const [file, labels] of runnerLabels) { const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"); const preflight = getJobBlock(source, "runner-preflight", file); assert.match(preflight, /\n    runs-on: ubuntu-latest\n/, file); assert.match(preflight, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), file); assert.match(preflight, /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, file); assert.match(preflight, /reader-app-private-key: \$\{\{ secrets\.BUILD_LOCK_READER_APP_PRIVATE_KEY \}\}/, file); assert.match(preflight, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`), file); assert.doesNotMatch(preflight, /RUNNER_AUDIT_PAT|Soft pass|soft-pass/i, file); }
+  const runnerLabels = new Map([["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'], ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-gameci-experiment.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']]); const preflightAction = `${LOCK_ACTION_PREFIX}check-unity-runner-availability@${LOCK_ACTION_SHA}${LOCK_ACTION_PIN.comment}`; const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8")); for (const [file, labels] of runnerLabels) { const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"); const preflight = getJobBlock(source, "runner-preflight", file); assert.match(preflight, /\n    runs-on: ubuntu-latest\n/, file); assert.match(preflight, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), file); assert.match(preflight, /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, file); assert.match(preflight, /reader-app-private-key: \$\{\{ secrets\.BUILD_LOCK_READER_APP_PRIVATE_KEY \}\}/, file); assert.match(preflight, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`), file); assert.doesNotMatch(preflight, /RUNNER_AUDIT_PAT|Soft pass|soft-pass/i, file); }
   assert.equal(workflowSources.reduce((count, source) => count + source.split(acquire).length - 1, 0), UNITY_LOCK_WINDOWS.length);
   assert.equal(workflowSources.reduce((count, source) => count + source.split(release).length - 1, 0), UNITY_LOCK_WINDOWS.length);
   for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
