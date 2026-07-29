@@ -37,6 +37,39 @@ namespace DxMessaging.Editor
         internal const string TypeBadgeUntargetedClassName = "dx-typebadge--u";
         internal const string TypeBadgeTargetedClassName = "dx-typebadge--t";
         internal const string TypeBadgeBroadcastClassName = "dx-typebadge--b";
+        internal const string DotClassName = "dx-dot";
+        internal const string DotUntargetedClassName = "dx-dot--u";
+        internal const string DotTargetedClassName = "dx-dot--t";
+        internal const string DotBroadcastClassName = "dx-dot--b";
+        internal const string ChipClassName = "dx-chip";
+        internal const string ChipUntargetedClassName = "dx-chip--u";
+        internal const string ChipTargetedClassName = "dx-chip--t";
+        internal const string ChipBroadcastClassName = "dx-chip--b";
+        internal const string FilterClassName = "dx-filter";
+        internal const string RecordClassName = "dx-record";
+        internal const string ListHeaderClassName = "dx-list-header";
+        internal const string ColumnTimeClassName = "dx-col-time";
+        internal const string ColumnTypeClassName = "dx-col-type";
+        internal const string ColumnMessageClassName = "dx-col-msg";
+        internal const string ColumnRouteClassName = "dx-col-route";
+        internal const string ColumnCountClassName = "dx-col-count";
+        internal const string RowClassName = "dx-row";
+        internal const string RowAlternateClassName = "dx-row--alt";
+        internal const string RowTimeClassName = "dx-row__time";
+        internal const string RowTypeClassName = "dx-row__type";
+        internal const string RowMessageClassName = "dx-row__msg";
+        internal const string RowRouteClassName = "dx-row__route";
+        internal const string RowCountClassName = "dx-row__count";
+        internal const string DetailClassName = "dx-detail";
+        internal const string DetailHeadClassName = "dx-detail__head";
+        internal const string DetailTitleClassName = "dx-detail__title";
+        internal const string DetailFrameClassName = "dx-detail__frame";
+        internal const string KeyValueClassName = "dx-kv";
+        internal const string KeyValueKeyClassName = "dx-kv__k";
+        internal const string KeyValueValueClassName = "dx-kv__v";
+        internal const string FooterClassName = "dx-footer";
+        internal const string FooterStatClassName = "dx-footer__stat";
+        internal const string FooterNumberClassName = "dx-footer__num";
         internal const int CompleteBorderWidth = 1;
 
         internal static void Apply(VisualElement root)
@@ -98,24 +131,76 @@ namespace DxMessaging.Editor
 
         internal static void AddRouteKindTypeBadgeClasses(VisualElement element, string routeKind)
         {
+            AddRouteKindClasses(
+                element,
+                routeKind,
+                TypeBadgeClassName,
+                TypeBadgeUntargetedClassName,
+                TypeBadgeTargetedClassName,
+                TypeBadgeBroadcastClassName
+            );
+        }
+
+        private static void AddRouteKindClasses(
+            VisualElement element,
+            string routeKind,
+            string baseClassName,
+            string untargetedClassName,
+            string targetedClassName,
+            string broadcastClassName
+        )
+        {
             if (element == null)
             {
                 return;
             }
 
-            element.AddToClassList(TypeBadgeClassName);
+            element.AddToClassList(baseClassName);
             switch (DxMessagingEditorPalette.NormalizeRouteKind(routeKind))
             {
                 case DxMessagingEditorPalette.UntargetedKind:
-                    element.AddToClassList(TypeBadgeUntargetedClassName);
+                    element.AddToClassList(untargetedClassName);
                     break;
                 case DxMessagingEditorPalette.TargetedKind:
-                    element.AddToClassList(TypeBadgeTargetedClassName);
+                    element.AddToClassList(targetedClassName);
                     break;
                 case DxMessagingEditorPalette.BroadcastKind:
-                    element.AddToClassList(TypeBadgeBroadcastClassName);
+                    element.AddToClassList(broadcastClassName);
                     break;
             }
+        }
+
+        /// <summary>
+        /// Adds the <c>.dx-dot</c> taxonomy dot classes for a route kind. The dot is the compact
+        /// form of <see cref="AddRouteKindTypeBadgeClasses"/>, for fixed-height rows where a full
+        /// badge does not fit.
+        /// </summary>
+        internal static void AddRouteKindDotClasses(VisualElement element, string routeKind)
+        {
+            AddRouteKindClasses(
+                element,
+                routeKind,
+                DotClassName,
+                DotUntargetedClassName,
+                DotTargetedClassName,
+                DotBroadcastClassName
+            );
+        }
+
+        /// <summary>
+        /// Adds the <c>.dx-chip</c> taxonomy chip classes for a route kind, used by the route-kind
+        /// filter chips.
+        /// </summary>
+        internal static void AddRouteKindChipClasses(VisualElement element, string routeKind)
+        {
+            AddRouteKindClasses(
+                element,
+                routeKind,
+                ChipClassName,
+                ChipUntargetedClassName,
+                ChipTargetedClassName,
+                ChipBroadcastClassName
+            );
         }
 
         /// <summary>
