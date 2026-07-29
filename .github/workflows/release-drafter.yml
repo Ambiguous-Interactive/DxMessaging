@@ -79,7 +79,7 @@ jobs:
       # continue-on-error, so a second failure fails the job. continue-on-error on the first attempt
       # keeps its real result observable via steps.<id>.outcome while letting the retry proceed.
       - name: Run Release Drafter
-        uses: release-drafter/release-drafter@eada3c96a64734dd381cfbda23511034e328ddb0 # v7
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7
         id: release_drafter
         continue-on-error: true
         with:
@@ -93,7 +93,7 @@ jobs:
 
       - name: Run Release Drafter (retry)
         if: steps.release_drafter.outcome == 'failure'
-        uses: release-drafter/release-drafter@eada3c96a64734dd381cfbda23511034e328ddb0 # v7
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7
         id: release_drafter_retry
         with:
           config-name: release-drafter.yml
