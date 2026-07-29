@@ -1,0 +1,803 @@
+#if UNITY_EDITOR
+namespace DxMessaging.Editor.Windows
+{
+    using System;
+    using System.Collections.Generic;
+    using System.Globalization;
+    using DxMessaging.Editor;
+    using UnityEngine;
+    using UnityEngine.UIElements;
+
+    /// <summary>
+    /// Which route kinds the live log is showing, alongside the free-text filter and the selected
+    /// row. Kept free of any GUI type so the filtering and formatting rules stay unit-testable.
+    /// </summary>
+    /// <remarks>
+    /// The chip state is stored as what is <em>hidden</em> so that <c>default</c> is an unfiltered
+    /// log. A struct's default value is reachable without going through its constructor -- an
+    /// uninitialized field, an array element, an omitted optional parameter -- and a default that
+    /// hid every route kind would silently render an empty log at each of those.
+    /// </remarks>
+    internal readonly struct MessageMonitorLiveViewState
+    {
+        internal static MessageMonitorLiveViewState Default { get; } = new();
+
+        private readonly string _filterText;
+        private readonly bool _hideUntargeted;
+        private readonly bool _hideTargeted;
+        private readonly bool _hideBroadcast;
+
+        internal MessageMonitorLiveViewState(
+            string filterText = "",
+            bool showUntargeted = true,
+            bool showTargeted = true,
+            bool showBroadcast = true,
+            long selectedTraceId = FollowNewest
+        )
+        {
+            _filterText = filterText;
+            _hideUntargeted = !showUntargeted;
+            _hideTargeted = !showTargeted;
+            _hideBroadcast = !showBroadcast;
+            SelectedTraceId = selectedTraceId;
+        }
+
+        /// <summary>
+        /// <see cref="SelectedTraceId"/> value meaning "no row is pinned", so the detail pane
+        /// follows whatever is newest. Also what a row that has aged out of the log falls back to.
+        /// </summary>
+        internal const long FollowNewest = 0;
+
+        /// <summary>Never null, including on <c>default</c>, so it can be bound straight to a field.</summary>
+        internal string FilterText => _filterText ?? string.Empty;
+
+        internal bool ShowUntargeted => !_hideUntargeted;
+
+        internal bool ShowTargeted => !_hideTargeted;
+
+        internal bool ShowBroadcast => !_hideBroadcast;
+
+        /// <summary>
+        /// <see cref="MessageMonitorLiveEntry.FirstTraceId"/> of the pinned row, or
+        /// <see cref="FollowNewest"/>.
+        /// </summary>
+        /// <remarks>
+        /// The selection is keyed by dispatch id rather than by list position because the log is
+        /// newest-first: every poll that appends a row shifts every index down, so an index would
+        /// quietly repoint the detail pane at a different emission while recording continues.
+        /// </remarks>
+        internal long SelectedTraceId { get; }
+
+        internal MessageMonitorLiveViewState WithSelectedTraceId(long selectedTraceId)
+        {
+            return new MessageMonitorLiveViewState(
+                FilterText,
+                ShowUntargeted,
+                ShowTargeted,
+                ShowBroadcast,
+                selectedTraceId
+            );
+        }
+
+        /// <summary>
+        /// True when this row's route kind is switched on. A row whose route kind is neither
+        /// untargeted, targeted nor broadcast (unrecognized or missing) is never hidden by the
+        /// chips, so the chips can only ever hide rows they can also bring back.
+        /// </summary>
+        internal bool ShowsRouteKind(string routeKind)
+        {
+            switch (DxMessagingEditorPalette.NormalizeRouteKind(routeKind))
+            {
+                case DxMessagingEditorPalette.UntargetedKind:
+                    return ShowUntargeted;
+                case DxMessagingEditorPalette.TargetedKind:
+                    return ShowTargeted;
+                case DxMessagingEditorPalette.BroadcastKind:
+                    return ShowBroadcast;
+                default:
+                    return true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// One live-log footer statistic: a number and the noun it counts.
+    /// </summary>
+    internal readonly struct MessageMonitorLiveFooterStat
+    {
+        internal MessageMonitorLiveFooterStat(string number, string label)
+        {
+            Number = number;
+            Label = label;
+        }
+
+        /// <summary>Rendered as the highlighted <c>.dx-footer__num</c>.</summary>
+        internal string Number { get; }
+
+        internal string Label { get; }
+    }
+
+    /// <summary>
+    /// Callbacks the live Monitor view raises. Every one is optional so the view can be built and
+    /// asserted on without a hosting window.
+    /// </summary>
+    internal sealed class MessageMonitorLiveViewCallbacks
+    {
+        /// <summary>Raised by the record toggle with the requested recording state.</summary>
+        internal Action<bool> OnRecordingChanged { get; set; }
+
+        /// <summary>Raised by the Clear button.</summary>
+        internal Action OnClear { get; set; }
+
+        /// <summary>
+        /// Raised whenever the filter text, a taxonomy chip or the row selection changes, with the
+        /// complete next state. The host is expected to store it and re-render the body.
+        /// </summary>
+        internal Action<MessageMonitorLiveViewState> OnStateChanged { get; set; }
+
+        /// <summary>Raised by the Snapshot button to leave live mode.</summary>
+        internal Action OnExitLiveMode { get; set; }
+    }
+
+    /// <summary>
+    /// Renders the live Message Monitor: a columnar, continuously drained log of bus emissions.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the design system's recorder surface -- the <c>.dx-record</c> toggle, the taxonomy
+    /// <c>.dx-chip</c> filters, the <c>.dx-list-header</c> / <c>.dx-col-*</c> / <c>.dx-row__*</c>
+    /// columns, the <c>.dx-detail</c> / <c>.dx-kv</c> detail pane and the <c>.dx-footer</c> stats --
+    /// rendered over the real <see cref="MessageMonitorLiveRecorder"/> log. It is additive: the
+    /// snapshot Monitor keeps its card and lane layout, and the two modes swap in the same window.
+    /// </para>
+    /// <para>
+    /// The toolbar is built once and the body re-rendered on its own, so typing in the filter does
+    /// not rebuild (and unfocus) the field the user is typing into.
+    /// </para>
+    /// </remarks>
+    internal static class DxMessagingMessageMonitorLiveView
+    {
+        internal const string RootName = "dxmessaging-monitor-live";
+        internal const string ToolbarName = "dxmessaging-monitor-live-toolbar";
+        internal const string BodyName = "dxmessaging-monitor-live-body";
+        internal const string RecordToggleName = "dxmessaging-monitor-live-record";
+        internal const string ClearButtonName = "dxmessaging-monitor-live-clear";
+        internal const string SnapshotButtonName = "dxmessaging-monitor-live-snapshot";
+        internal const string FilterFieldName = "dxmessaging-monitor-live-filter";
+        internal const string UntargetedChipName = "dxmessaging-monitor-live-chip-untargeted";
+        internal const string TargetedChipName = "dxmessaging-monitor-live-chip-targeted";
+        internal const string BroadcastChipName = "dxmessaging-monitor-live-chip-broadcast";
+        internal const string ListHeaderName = "dxmessaging-monitor-live-header";
+        internal const string ListName = "dxmessaging-monitor-live-list";
+        internal const string RowClassName = "dxmessaging-monitor-live-row";
+        internal const string RowTimeLabelName = "dxmessaging-monitor-live-row-time";
+        internal const string RowRouteLabelName = "dxmessaging-monitor-live-row-route";
+        internal const string RowMessageLabelName = "dxmessaging-monitor-live-row-message";
+        internal const string RowContextLabelName = "dxmessaging-monitor-live-row-context";
+        internal const string RowCountLabelName = "dxmessaging-monitor-live-row-count";
+        internal const string DetailName = "dxmessaging-monitor-live-detail";
+        internal const string DetailTitleLabelName = "dxmessaging-monitor-live-detail-title";
+        internal const string DetailFrameLabelName = "dxmessaging-monitor-live-detail-frame";
+        internal const string DetailStackLabelName = "dxmessaging-monitor-live-detail-stack";
+        internal const string FooterName = "dxmessaging-monitor-live-footer";
+        internal const string EmptyBodyName = "dxmessaging-monitor-live-empty";
+        internal const string EmptyTitleName = "dxmessaging-monitor-live-empty-title";
+
+        internal const string Title = "Message Monitor (Live)";
+
+        /// <summary>
+        /// Row height for the virtualized list, matching the <c>.dx-row</c> height in
+        /// <c>Editor/Theme/DxMessagingTheme.uss</c>. <see cref="ListView"/> needs the height as a
+        /// number to size its viewport before any row is laid out, so it cannot read it from USS.
+        /// </summary>
+        internal const int RowHeight = 28;
+
+        /// <summary>
+        /// Horizontal size of a taxonomy chip's letter box, mirroring <c>.dx-chip</c>. The chip is
+        /// a <see cref="Toggle"/> so it can carry the <c>:checked</c> state the stylesheet keys its
+        /// on/off opacity off, and a Toggle reserves a field-label column that would push the
+        /// letter out of that box; these two inline rules reclaim it without editing the stylesheet
+        /// away from its design-system source.
+        /// </summary>
+        private const int ChipLabelWidth = 0;
+
+        private const int DetailStackTraceMaxHeight = 120;
+
+        /// <summary>
+        /// Builds the whole live view: a persistent toolbar plus a body rendered by
+        /// <see cref="RenderBody"/>.
+        /// </summary>
+        internal static VisualElement Create(
+            MessageMonitorLiveRecorder recorder,
+            MessageMonitorLiveViewState viewState,
+            bool diagnosticsEnabled,
+            MessageMonitorLiveViewCallbacks callbacks = null
+        )
+        {
+            if (recorder == null)
+            {
+                throw new ArgumentNullException(nameof(recorder));
+            }
+
+            callbacks ??= new MessageMonitorLiveViewCallbacks();
+
+            VisualElement root = new() { name = RootName };
+            DxMessagingEditorTheme.ApplyWindow(root);
+            root.style.flexGrow = 1;
+            root.Add(CreateToolbar(recorder, viewState, callbacks));
+
+            VisualElement body = new() { name = BodyName };
+            body.style.flexGrow = 1;
+            root.Add(body);
+            RenderBody(body, recorder, viewState, diagnosticsEnabled, callbacks);
+            return root;
+        }
+
+        /// <summary>
+        /// Fills the body container with the column header, the log list (or an empty state), the
+        /// detail pane for the selected row, and the footer stats. Safe to call repeatedly: it
+        /// clears the container first, and it never touches the toolbar.
+        /// </summary>
+        internal static void RenderBody(
+            VisualElement body,
+            MessageMonitorLiveRecorder recorder,
+            MessageMonitorLiveViewState viewState,
+            bool diagnosticsEnabled,
+            MessageMonitorLiveViewCallbacks callbacks = null
+        )
+        {
+            if (body == null)
+            {
+                throw new ArgumentNullException(nameof(body));
+            }
+            if (recorder == null)
+            {
+                throw new ArgumentNullException(nameof(recorder));
+            }
+
+            callbacks ??= new MessageMonitorLiveViewCallbacks();
+            body.Clear();
+            body.Add(CreateListHeader());
+
+            List<MessageMonitorLiveEntry> rows = FilterRows(recorder.Entries, viewState);
+            if (rows.Count == 0)
+            {
+                body.Add(CreateEmptyState(recorder, diagnosticsEnabled));
+            }
+            else
+            {
+                int selectedIndex = ResolveSelectedIndex(rows, viewState.SelectedTraceId);
+                body.Add(CreateList(rows, selectedIndex, viewState, callbacks));
+                body.Add(CreateDetail(rows[selectedIndex]));
+            }
+
+            body.Add(CreateFooter(recorder, rows.Count));
+        }
+
+        /// <summary>
+        /// Rows matching both the taxonomy chips and the free-text filter, newest first. The text
+        /// filter is the snapshot Monitor's own typed query, so <c>type:</c>, <c>message:</c>,
+        /// <c>context:</c> and <c>stack:</c> behave identically in both modes.
+        /// </summary>
+        internal static List<MessageMonitorLiveEntry> FilterRows(
+            IReadOnlyList<MessageMonitorLiveEntry> entries,
+            MessageMonitorLiveViewState viewState
+        )
+        {
+            if (entries == null)
+            {
+                throw new ArgumentNullException(nameof(entries));
+            }
+
+            List<MessageMonitorLiveEntry> rows = new(entries.Count);
+            for (int index = entries.Count - 1; index >= 0; index--)
+            {
+                MessageMonitorLiveEntry row = entries[index];
+                if (
+                    viewState.ShowsRouteKind(row.Entry.RouteKind)
+                    && row.Entry.Matches(viewState.FilterText)
+                )
+                {
+                    rows.Add(row);
+                }
+            }
+
+            return rows;
+        }
+
+        /// <summary>
+        /// Position of the pinned row in the current filtered list, or 0 (the newest row) when
+        /// nothing is pinned or the pinned row has been filtered out or aged out of the log.
+        /// </summary>
+        internal static int ResolveSelectedIndex(
+            IReadOnlyList<MessageMonitorLiveEntry> rows,
+            long selectedTraceId
+        )
+        {
+            if (rows == null)
+            {
+                throw new ArgumentNullException(nameof(rows));
+            }
+
+            if (selectedTraceId == MessageMonitorLiveViewState.FollowNewest || rows.Count == 0)
+            {
+                return 0;
+            }
+
+            for (int index = 0; index < rows.Count; index++)
+            {
+                if (rows[index].FirstTraceId == selectedTraceId)
+                {
+                    return index;
+                }
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Formats a recorder observation time as <c>m:ss.fff</c> since the recorder started, short
+        /// enough for the fixed-width time column and precise enough to read a burst.
+        /// </summary>
+        internal static string FormatObservedSeconds(double observedSeconds)
+        {
+            double clamped = observedSeconds < 0 ? 0 : observedSeconds;
+            int minutes = (int)(clamped / 60);
+            double seconds = clamped - (minutes * 60);
+            return string.Format(CultureInfo.InvariantCulture, "{0}:{1:00.000}", minutes, seconds);
+        }
+
+        /// <summary>
+        /// The count column text. A row that stands for a single emission shows nothing, so the
+        /// column only draws attention when emissions actually coalesced.
+        /// </summary>
+        internal static string FormatCount(int count)
+        {
+            return count <= 1 ? string.Empty : count.ToString(CultureInfo.InvariantCulture);
+        }
+
+        internal static string CreateTraceRangeText(MessageMonitorLiveEntry row)
+        {
+            string first = row.FirstTraceId.ToString(CultureInfo.InvariantCulture);
+            return row.FirstTraceId == row.LastTraceId
+                ? $"#{first}"
+                : $"#{first}-#{row.LastTraceId.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        internal static string CreateEmptyTitleText(
+            MessageMonitorLiveRecorder recorder,
+            bool diagnosticsEnabled
+        )
+        {
+            if (recorder == null)
+            {
+                throw new ArgumentNullException(nameof(recorder));
+            }
+
+            if (!diagnosticsEnabled)
+            {
+                return "Diagnostics are Off";
+            }
+
+            if (recorder.Entries.Count > 0)
+            {
+                return "No matches";
+            }
+
+            return recorder.Recording ? "Waiting for messages" : "Recording is paused";
+        }
+
+        internal static string CreateEmptyBodyText(
+            MessageMonitorLiveRecorder recorder,
+            bool diagnosticsEnabled
+        )
+        {
+            if (recorder == null)
+            {
+                throw new ArgumentNullException(nameof(recorder));
+            }
+
+            if (!diagnosticsEnabled)
+            {
+                return "The live log drains the bus emission buffer, which only fills while diagnostics are on.";
+            }
+
+            if (recorder.Entries.Count > 0)
+            {
+                return "No recorded messages match the current filter.";
+            }
+
+            return recorder.Recording
+                ? "Emit a message and it appears here within a poll."
+                : "Recording is paused, so nothing is being drained. The bus keeps buffering meanwhile.";
+        }
+
+        /// <summary>
+        /// The footer stats in display order: how many rows the current filter shows, how much of
+        /// the retained window is used, how many emissions have been drained, and how many the bus
+        /// overwrote before they could be.
+        /// </summary>
+        internal static IReadOnlyList<MessageMonitorLiveFooterStat> CreateFooterStats(
+            MessageMonitorLiveRecorder recorder,
+            int shownCount
+        )
+        {
+            if (recorder == null)
+            {
+                throw new ArgumentNullException(nameof(recorder));
+            }
+
+            return new[]
+            {
+                new MessageMonitorLiveFooterStat(
+                    shownCount.ToString(CultureInfo.InvariantCulture),
+                    "shown"
+                ),
+                new MessageMonitorLiveFooterStat(
+                    $"{recorder.Entries.Count.ToString(CultureInfo.InvariantCulture)}/{recorder.Capacity.ToString(CultureInfo.InvariantCulture)}",
+                    "buffered"
+                ),
+                new MessageMonitorLiveFooterStat(
+                    recorder.ObservedCount.ToString(CultureInfo.InvariantCulture),
+                    "recorded"
+                ),
+                new MessageMonitorLiveFooterStat(
+                    recorder.MissedCount.ToString(CultureInfo.InvariantCulture),
+                    "missed"
+                ),
+            };
+        }
+
+        /// <summary>
+        /// Builds one log row. Exposed so tests exercise the same factory the list binds, without
+        /// depending on when the virtualized list realizes a row.
+        /// </summary>
+        internal static VisualElement CreateRow(
+            MessageMonitorLiveEntry row,
+            int rowIndex,
+            bool selected
+        )
+        {
+            VisualElement element = new();
+            element.AddToClassList(RowClassName);
+            element.AddToClassList(DxMessagingEditorTheme.RowClassName);
+            if (rowIndex % 2 == 1)
+            {
+                element.AddToClassList(DxMessagingEditorTheme.RowAlternateClassName);
+            }
+            if (selected)
+            {
+                element.style.backgroundColor = DxMessagingEditorPalette.SelectedWash;
+            }
+
+            Label time = new(FormatObservedSeconds(row.FirstObservedSeconds))
+            {
+                name = RowTimeLabelName,
+            };
+            time.AddToClassList(DxMessagingEditorTheme.RowTimeClassName);
+            element.Add(time);
+
+            string routeKind = DxMessagingEditorPalette.NormalizeRouteKind(row.Entry.RouteKind);
+            string routeKindText = string.IsNullOrEmpty(routeKind) ? "Other" : routeKind;
+            VisualElement route = new();
+            route.AddToClassList(DxMessagingEditorTheme.RowTypeClassName);
+            VisualElement dot = new();
+            DxMessagingEditorTheme.AddRouteKindDotClasses(dot, routeKind);
+            route.Add(dot);
+            route.Add(new Label(routeKindText) { name = RowRouteLabelName });
+            element.Add(route);
+
+            Label message = new(row.Entry.MessageTypeName) { name = RowMessageLabelName };
+            message.AddToClassList(DxMessagingEditorTheme.RowMessageClassName);
+            element.Add(message);
+
+            Label context = new(row.Entry.ContextText) { name = RowContextLabelName };
+            context.AddToClassList(DxMessagingEditorTheme.RowRouteClassName);
+            element.Add(context);
+
+            Label count = new(FormatCount(row.Count)) { name = RowCountLabelName };
+            count.AddToClassList(DxMessagingEditorTheme.RowCountClassName);
+            element.Add(count);
+
+            return element;
+        }
+
+        private static VisualElement CreateToolbar(
+            MessageMonitorLiveRecorder recorder,
+            MessageMonitorLiveViewState viewState,
+            MessageMonitorLiveViewCallbacks callbacks
+        )
+        {
+            VisualElement toolbar = new() { name = ToolbarName };
+            toolbar.AddToClassList(DxMessagingEditorTheme.ToolbarClassName);
+            toolbar.style.flexDirection = FlexDirection.Row;
+            toolbar.style.alignItems = Align.Center;
+            toolbar.style.flexWrap = Wrap.Wrap;
+
+            Toggle record = new("Record") { name = RecordToggleName, value = recorder.Recording };
+            record.AddToClassList(DxMessagingEditorTheme.RecordClassName);
+            record.tooltip =
+                "Drain new emissions into the log. The bus keeps buffering while this is off.";
+            record.RegisterValueChangedCallback(changed =>
+                callbacks.OnRecordingChanged?.Invoke(changed.newValue)
+            );
+            toolbar.Add(record);
+
+            Toggle untargeted = CreateChip(
+                UntargetedChipName,
+                "U",
+                DxMessagingEditorPalette.UntargetedKind,
+                viewState.ShowUntargeted
+            );
+            Toggle targeted = CreateChip(
+                TargetedChipName,
+                "T",
+                DxMessagingEditorPalette.TargetedKind,
+                viewState.ShowTargeted
+            );
+            Toggle broadcast = CreateChip(
+                BroadcastChipName,
+                "B",
+                DxMessagingEditorPalette.BroadcastKind,
+                viewState.ShowBroadcast
+            );
+            TextField filter = new() { name = FilterFieldName, value = viewState.FilterText };
+            filter.AddToClassList(DxMessagingEditorTheme.SearchClassName);
+            filter.tooltip =
+                "Filter the log. Supports type:, message:, context: and stack: prefixes.";
+
+            // Every control reads the live value of every other control, so a change to one never
+            // writes back a stale copy of the others. Changing a filter also drops the selection
+            // back to the newest row, because the old index pointed into a different row set.
+            void RaiseStateChanged()
+            {
+                callbacks.OnStateChanged?.Invoke(
+                    new MessageMonitorLiveViewState(
+                        filter.value,
+                        untargeted.value,
+                        targeted.value,
+                        broadcast.value
+                    )
+                );
+            }
+
+            untargeted.RegisterValueChangedCallback(_ => RaiseStateChanged());
+            targeted.RegisterValueChangedCallback(_ => RaiseStateChanged());
+            broadcast.RegisterValueChangedCallback(_ => RaiseStateChanged());
+            filter.RegisterValueChangedCallback(_ => RaiseStateChanged());
+
+            toolbar.Add(untargeted);
+            toolbar.Add(targeted);
+            toolbar.Add(broadcast);
+            toolbar.Add(filter);
+
+            // Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
+            // same as the rest of this package's editor UI: it is the event a real click produces
+            // and the one a test can synthesize.
+            Button clear = new()
+            {
+                name = ClearButtonName,
+                text = "Clear",
+                tooltip = "Empty the log and reset its statistics.",
+            };
+            clear.RegisterCallback<ClickEvent>(_ => callbacks.OnClear?.Invoke());
+            clear.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
+            toolbar.Add(clear);
+
+            Button snapshot = new()
+            {
+                name = SnapshotButtonName,
+                text = "Snapshot",
+                tooltip = "Switch back to the snapshot Monitor.",
+            };
+            snapshot.RegisterCallback<ClickEvent>(_ => callbacks.OnExitLiveMode?.Invoke());
+            snapshot.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
+            toolbar.Add(snapshot);
+
+            return toolbar;
+        }
+
+        private static Toggle CreateChip(string name, string text, string routeKind, bool value)
+        {
+            Toggle chip = new()
+            {
+                name = name,
+                text = text,
+                value = value,
+            };
+            DxMessagingEditorTheme.AddRouteKindChipClasses(chip, routeKind);
+            chip.AddToClassList(DxMessagingEditorTheme.FilterClassName);
+            chip.tooltip = $"Show {routeKind} messages";
+
+            // `.dx-record` hides its checkmark from the stylesheet; `.dx-chip` carries no such rule
+            // in the migrated sheet, and the chip's own letter is its state, so the checkmark and
+            // the empty field-label column are collapsed here instead.
+            VisualElement checkmark = chip.Q(className: "unity-toggle__checkmark");
+            if (checkmark != null)
+            {
+                checkmark.style.display = DisplayStyle.None;
+            }
+
+            VisualElement label = chip.Q(className: "unity-base-field__label");
+            if (label != null)
+            {
+                label.style.minWidth = ChipLabelWidth;
+                label.style.width = ChipLabelWidth;
+            }
+
+            return chip;
+        }
+
+        private static VisualElement CreateListHeader()
+        {
+            VisualElement header = new() { name = ListHeaderName };
+            header.AddToClassList(DxMessagingEditorTheme.ListHeaderClassName);
+            header.Add(CreateHeaderColumn("TIME", DxMessagingEditorTheme.ColumnTimeClassName));
+            header.Add(CreateHeaderColumn("ROUTE", DxMessagingEditorTheme.ColumnTypeClassName));
+            header.Add(
+                CreateHeaderColumn("MESSAGE", DxMessagingEditorTheme.ColumnMessageClassName)
+            );
+            header.Add(CreateHeaderColumn("CONTEXT", DxMessagingEditorTheme.ColumnRouteClassName));
+            header.Add(CreateHeaderColumn("N", DxMessagingEditorTheme.ColumnCountClassName));
+            return header;
+        }
+
+        private static Label CreateHeaderColumn(string text, string columnClassName)
+        {
+            Label column = new(text);
+            column.AddToClassList(columnClassName);
+            return column;
+        }
+
+        private static VisualElement CreateList(
+            List<MessageMonitorLiveEntry> rows,
+            int selectedIndex,
+            MessageMonitorLiveViewState viewState,
+            MessageMonitorLiveViewCallbacks callbacks
+        )
+        {
+            ListView list = new()
+            {
+                name = ListName,
+                itemsSource = rows,
+                fixedItemHeight = RowHeight,
+                virtualizationMethod = CollectionVirtualizationMethod.FixedHeight,
+                selectionType = SelectionType.Single,
+                makeItem = static () => new VisualElement(),
+            };
+
+            // Selection is raised from the row's own click rather than the list's selection event:
+            // the event was renamed across the supported editor range (onSelectionChange ->
+            // selectionChanged), and the row click carries the index directly.
+            list.bindItem = (element, index) =>
+            {
+                element.Clear();
+                MessageMonitorLiveEntry entry = rows[index];
+                VisualElement row = CreateRow(entry, index, index == selectedIndex);
+                row.RegisterCallback<ClickEvent>(_ =>
+                    callbacks.OnStateChanged?.Invoke(
+                        viewState.WithSelectedTraceId(entry.FirstTraceId)
+                    )
+                );
+                element.Add(row);
+            };
+            list.style.flexGrow = 1;
+            list.SetSelectionWithoutNotify(new[] { selectedIndex });
+            return list;
+        }
+
+        private static VisualElement CreateEmptyState(
+            MessageMonitorLiveRecorder recorder,
+            bool diagnosticsEnabled
+        )
+        {
+            VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                CreateEmptyTitleText(recorder, diagnosticsEnabled),
+                CreateEmptyBodyText(recorder, diagnosticsEnabled),
+                bodyName: EmptyBodyName,
+                titleName: EmptyTitleName
+            );
+            empty.style.flexGrow = 1;
+            return empty;
+        }
+
+        private static VisualElement CreateDetail(MessageMonitorLiveEntry row)
+        {
+            VisualElement detail = new() { name = DetailName };
+            detail.AddToClassList(DxMessagingEditorTheme.DetailClassName);
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                detail,
+                DxMessagingEditorPalette.BorderPanel
+            );
+
+            VisualElement head = new();
+            head.AddToClassList(DxMessagingEditorTheme.DetailHeadClassName);
+            string routeKind = DxMessagingEditorPalette.NormalizeRouteKind(row.Entry.RouteKind);
+            Label badge = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind);
+            DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(badge, routeKind);
+            head.Add(badge);
+            Label title = new(row.Entry.MessageTypeName) { name = DetailTitleLabelName };
+            title.AddToClassList(DxMessagingEditorTheme.DetailTitleClassName);
+            head.Add(title);
+            Label frame = new(CreateTraceRangeText(row)) { name = DetailFrameLabelName };
+            frame.AddToClassList(DxMessagingEditorTheme.DetailFrameClassName);
+            frame.style.flexGrow = 1;
+            frame.style.unityTextAlign = TextAnchor.MiddleRight;
+            head.Add(frame);
+            detail.Add(head);
+
+            VisualElement card = new();
+            card.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            Label cardLabel = new("EMISSION");
+            cardLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
+            card.Add(cardLabel);
+            card.Add(CreateKeyValue("Type", row.Entry.MessageTypeDisplayPath));
+            card.Add(CreateKeyValue("Context", row.Entry.ContextText));
+            card.Add(CreateKeyValue("Count", row.Count.ToString(CultureInfo.InvariantCulture)));
+            card.Add(CreateKeyValue("Dispatch", CreateTraceRangeText(row)));
+            card.Add(CreateKeyValue("Observed", CreateObservedRangeText(row)));
+            detail.Add(card);
+
+            ScrollView stackScroll = new(ScrollViewMode.Vertical);
+            stackScroll.style.maxHeight = DetailStackTraceMaxHeight;
+            Label stack = new(
+                string.IsNullOrWhiteSpace(row.Entry.StackTrace)
+                    ? "Stack trace: not captured"
+                    : row.Entry.StackTrace
+            )
+            {
+                name = DetailStackLabelName,
+            };
+            stack.style.whiteSpace = WhiteSpace.Normal;
+            stackScroll.Add(stack);
+            detail.Add(stackScroll);
+
+            return detail;
+        }
+
+        private static string CreateObservedRangeText(MessageMonitorLiveEntry row)
+        {
+            string first = FormatObservedSeconds(row.FirstObservedSeconds);
+            // ReSharper disable once CompareOfFloatsByEqualityOperator -- both readings come from
+            // the same clock, and a coalesced row copies the earlier reading verbatim.
+            return row.FirstObservedSeconds == row.LastObservedSeconds
+                ? first
+                : $"{first} - {FormatObservedSeconds(row.LastObservedSeconds)}";
+        }
+
+        private static VisualElement CreateKeyValue(string key, string value)
+        {
+            VisualElement pair = new();
+            pair.AddToClassList(DxMessagingEditorTheme.KeyValueClassName);
+            Label keyLabel = new(key);
+            keyLabel.AddToClassList(DxMessagingEditorTheme.KeyValueKeyClassName);
+            pair.Add(keyLabel);
+            Label valueLabel = new(value);
+            valueLabel.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
+            pair.Add(valueLabel);
+            return pair;
+        }
+
+        private static VisualElement CreateFooter(
+            MessageMonitorLiveRecorder recorder,
+            int shownCount
+        )
+        {
+            VisualElement footer = new() { name = FooterName };
+            footer.AddToClassList(DxMessagingEditorTheme.FooterClassName);
+            foreach (MessageMonitorLiveFooterStat stat in CreateFooterStats(recorder, shownCount))
+            {
+                VisualElement statElement = new();
+                statElement.AddToClassList(DxMessagingEditorTheme.FooterStatClassName);
+                Label number = new(stat.Number);
+                number.AddToClassList(DxMessagingEditorTheme.FooterNumberClassName);
+                statElement.Add(number);
+                statElement.Add(new Label(stat.Label));
+                footer.Add(statElement);
+            }
+
+            return footer;
+        }
+    }
+}
+#endif

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The Message Monitor now has a **Live** mode alongside the existing snapshot
+  view. It drains the bus emission buffer on a timer into a columnar log with a
+  record/pause toggle, Untargeted/Targeted/Broadcast filter chips, the same typed
+  filter query as snapshot mode (`type:`, `message:`, `context:`, `stack:`), a
+  detail pane for the selected row, and a footer reporting shown, buffered,
+  recorded and missed counts. Repeated identical emissions coalesce into one
+  counted row, and emissions the bus overwrote before the log could drain them
+  are reported as missed rather than silently lost. Live mode is editor-only and
+  reads data the bus already records, so it adds no runtime cost.
 - Every `MessageAwareComponent` inspector now shows a **Message subscriptions**
   section listing the registrations its `MessageRegistrationToken` holds: the
   message type, the registration kind and priority, the observed call count, and

@@ -35,6 +35,7 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-monitor-active-filter-clear";
         internal const string RefreshButtonName = "dxmessaging-monitor-refresh";
         internal const string ExportButtonName = "dxmessaging-monitor-export";
+        internal const string LiveButtonName = "dxmessaging-monitor-live-mode";
         internal const string ContentContainerName = "dxmessaging-monitor-content";
         internal const string MessageSectionName = "dxmessaging-monitor-message-section";
         internal const string EmptyStateLabelName = "dxmessaging-monitor-empty";
@@ -89,6 +90,15 @@ namespace DxMessaging.Editor.Windows
 
         private const string Title = "Message Monitor";
 
+        /// <summary>
+        /// How often live mode drains the bus emission buffer. Fast enough that the log reads as
+        /// live, slow enough that a busy scene batches many emissions into one rebuild.
+        /// </summary>
+        private const long LivePollIntervalMilliseconds = 250;
+
+        [SerializeField]
+        private bool _liveMode;
+
         private string _filterText = string.Empty;
         private int _selectedEntryIndex;
         private MessageMonitorSnapshot _currentSnapshot = MessageMonitorSnapshot.Unavailable(
@@ -96,6 +106,16 @@ namespace DxMessaging.Editor.Windows
         );
         private IReadOnlyList<ComponentMonitorEntry> _currentComponents =
             Array.Empty<ComponentMonitorEntry>();
+        private MessageMonitorLiveRecorder _liveRecorder;
+        private MessageMonitorLiveViewState _liveViewState = MessageMonitorLiveViewState.Default;
+        private IVisualElementScheduledItem _livePump;
+        private long _renderedLiveRevision = -1;
+
+        private MessageMonitorLiveRecorder LiveRecorder =>
+            // The recorder is deliberately not serialized: a domain reload wipes the bus emission
+            // buffer's contents from under it, so carrying a stale log across one would show rows
+            // that no longer correspond to anything the bus still knows about.
+            _liveRecorder ??= new MessageMonitorLiveRecorder();
 
         [MenuItem("Tools/Wallstop Studios/DxMessaging/Message Monitor")]
         public static void Open()
@@ -112,7 +132,80 @@ namespace DxMessaging.Editor.Windows
             Refresh();
         }
 
+        private void OnEnable()
+        {
+            EditorApplication.playModeStateChanged += HandlePlayModeStateChanged;
+        }
+
+        private void OnDisable()
+        {
+            EditorApplication.playModeStateChanged -= HandlePlayModeStateChanged;
+            StopLivePump();
+        }
+
+        /// <summary>
+        /// A play-mode transition starts a new session, so the previous session's rows go. Whether
+        /// the cursor goes with them depends on whether the bus restarted its dispatch counter,
+        /// which the recorder cannot always infer from the sequence alone.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// If the bus reset, every record it now holds belongs to the new run and the cursor has to
+        /// rewind so all of them are drained. If it did not reset (the counter simply kept running),
+        /// the cursor already sits exactly on the boundary between the two sessions, so keeping it
+        /// drops the old session and keeps everything after it.
+        /// </para>
+        /// <para>
+        /// Either way the cursor must not jump forward to the bus's current counter: <c>Entered*</c>
+        /// fires after <c>Awake</c>, <c>OnEnable</c> and <c>Start</c> have already emitted, so
+        /// stepping over what is buffered would permanently lose the startup traffic. That is also
+        /// why this handles <c>Entered*</c> rather than <c>Exiting*</c>: on <c>Exiting*</c> the old
+        /// session is still live and still filling the buffer.
+        /// </para>
+        /// </remarks>
+        private void HandlePlayModeStateChanged(PlayModeStateChange change)
+        {
+            if (
+                change != PlayModeStateChange.EnteredEditMode
+                && change != PlayModeStateChange.EnteredPlayMode
+            )
+            {
+                return;
+            }
+
+            if (
+                MessageHandler.MessageBus is MessageBus messageBus
+                && messageBus.EmissionId < LiveRecorder.Cursor
+            )
+            {
+                LiveRecorder.ResetForNewBusRun();
+            }
+            else
+            {
+                LiveRecorder.Clear();
+            }
+            if (_liveMode)
+            {
+                _liveViewState = _liveViewState.WithSelectedTraceId(
+                    MessageMonitorLiveViewState.FollowNewest
+                );
+                Refresh();
+            }
+        }
+
         private void Refresh()
+        {
+            if (_liveMode)
+            {
+                RefreshLive();
+                return;
+            }
+
+            StopLivePump();
+            RefreshSnapshot();
+        }
+
+        private void RefreshSnapshot()
         {
             MessageMonitorSnapshot snapshot = MessageHandler.MessageBus is MessageBus messageBus
                 ? CaptureSnapshot(messageBus)
@@ -130,8 +223,170 @@ namespace DxMessaging.Editor.Windows
                 HandleSelectedEntryChanged,
                 Refresh,
                 exportText => EditorGUIUtility.systemCopyBuffer = exportText,
-                components
+                components,
+                EnterLiveMode
             );
+        }
+
+        private void EnterLiveMode()
+        {
+            _liveMode = true;
+            _liveViewState = _liveViewState.WithSelectedTraceId(
+                MessageMonitorLiveViewState.FollowNewest
+            );
+            Refresh();
+        }
+
+        private void ExitLiveMode()
+        {
+            _liveMode = false;
+            Refresh();
+        }
+
+        private void RefreshLive()
+        {
+            // Drain before the first render so switching into live mode shows whatever the bus is
+            // already holding instead of an empty log that fills a poll later.
+            DrainLiveRecorder();
+            _renderedLiveRevision = LiveRecorder.Revision;
+            rootVisualElement.Clear();
+            rootVisualElement.Add(
+                DxMessagingMessageMonitorLiveView.Create(
+                    LiveRecorder,
+                    _liveViewState,
+                    IsBusDiagnosticsEnabled(),
+                    new MessageMonitorLiveViewCallbacks
+                    {
+                        OnRecordingChanged = recording =>
+                        {
+                            LiveRecorder.Recording = recording;
+                            RenderLiveBody();
+                        },
+                        OnClear = () =>
+                        {
+                            LiveRecorder.Clear();
+                            _liveViewState = _liveViewState.WithSelectedTraceId(
+                                MessageMonitorLiveViewState.FollowNewest
+                            );
+                            RenderLiveBody();
+                        },
+                        OnStateChanged = state =>
+                        {
+                            _liveViewState = state;
+                            RenderLiveBody();
+                        },
+                        OnExitLiveMode = ExitLiveMode,
+                    }
+                )
+            );
+            StartLivePump();
+        }
+
+        /// <summary>
+        /// Re-renders only the live body, leaving the toolbar (and the focus and caret of the
+        /// filter field the user may be typing into) alone.
+        /// </summary>
+        private void RenderLiveBody()
+        {
+            VisualElement body = rootVisualElement.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.BodyName
+            );
+            if (body == null)
+            {
+                Refresh();
+                return;
+            }
+
+            _renderedLiveRevision = LiveRecorder.Revision;
+            DxMessagingMessageMonitorLiveView.RenderBody(
+                body,
+                LiveRecorder,
+                _liveViewState,
+                IsBusDiagnosticsEnabled(),
+                new MessageMonitorLiveViewCallbacks
+                {
+                    OnStateChanged = state =>
+                    {
+                        _liveViewState = state;
+                        RenderLiveBody();
+                    },
+                }
+            );
+        }
+
+        private void StartLivePump()
+        {
+            _livePump ??= rootVisualElement
+                .schedule.Execute(PumpLive)
+                .Every(LivePollIntervalMilliseconds);
+            _livePump.Resume();
+        }
+
+        private void StopLivePump()
+        {
+            _livePump?.Pause();
+        }
+
+        /// <summary>
+        /// One poll: drain whatever the bus has added, and rebuild the body only if that actually
+        /// changed the log, so an idle scene costs one buffer scan per interval and no layout.
+        /// </summary>
+        private void PumpLive()
+        {
+            if (!_liveMode)
+            {
+                StopLivePump();
+                return;
+            }
+
+            DrainLiveRecorder();
+            if (_renderedLiveRevision == LiveRecorder.Revision)
+            {
+                return;
+            }
+
+            RenderLiveBody();
+        }
+
+        private void DrainLiveRecorder()
+        {
+            if (MessageHandler.MessageBus is not MessageBus messageBus)
+            {
+                return;
+            }
+
+            // A paused recorder discards the whole capture, and its cursor stops advancing, so it
+            // has to be checked before the idle comparison rather than through it.
+            if (!LiveRecorder.Recording)
+            {
+                return;
+            }
+
+            long busCursor = messageBus.EmissionId;
+            if (busCursor < LiveRecorder.Cursor)
+            {
+                // The bus restarted its dispatch counter. Rebasing here rather than leaving it to
+                // Ingest matters because Ingest can only see a restart through the records in the
+                // buffer, and a reset empties that buffer: the log would keep showing the previous
+                // run until the new one happened to emit something. The rewind goes to the start of
+                // the run, not to busCursor, so anything the new run has already buffered is drained
+                // rather than stepped over.
+                LiveRecorder.ResetForNewBusRun();
+            }
+            else if (busCursor == LiveRecorder.Cursor)
+            {
+                // Capturing a snapshot rebuilds an entry for every record in the bus buffer, so an
+                // idle scene should not pay for it four times a second. An exact match means
+                // nothing has been emitted since the last drain.
+                return;
+            }
+
+            LiveRecorder.Ingest(CaptureSnapshot(messageBus).Entries);
+        }
+
+        private static bool IsBusDiagnosticsEnabled()
+        {
+            return MessageHandler.MessageBus is MessageBus messageBus && messageBus.DiagnosticsMode;
         }
 
         private void HandleFilterChanged(string filterText)
@@ -243,7 +498,8 @@ namespace DxMessaging.Editor.Windows
             Action<int> onSelectedEntryChanged = null,
             Action onRefresh = null,
             Action<string> onCopyExport = null,
-            IReadOnlyList<ComponentMonitorEntry> componentEntries = null
+            IReadOnlyList<ComponentMonitorEntry> componentEntries = null,
+            Action onEnterLiveMode = null
         )
         {
             if (root == null)
@@ -329,6 +585,7 @@ namespace DxMessaging.Editor.Windows
                     onRefresh,
                     onCopyExport,
                     onFilterChanged == null ? RefreshLocalContent : null,
+                    onEnterLiveMode,
                     out applyFilterText
                 )
             );
@@ -1017,6 +1274,7 @@ namespace DxMessaging.Editor.Windows
             Action onRefresh,
             Action<string> onCopyExport,
             Action<string> onLocalFilterChanged,
+            Action onEnterLiveMode,
             out Action<string> applyFilterText
         )
         {
@@ -1094,6 +1352,18 @@ namespace DxMessaging.Editor.Windows
             export.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             SetExportButtonEnabled(export, snapshot, viewState.FilterText, onCopyExport);
             filterRow.Add(export);
+
+            Button live = new()
+            {
+                name = LiveButtonName,
+                text = "Live",
+                tooltip = "Switch to the live log, which drains new emissions as they happen.",
+            };
+            live.RegisterCallback<ClickEvent>(_ => onEnterLiveMode?.Invoke());
+            live.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
+            live.SetEnabled(onEnterLiveMode != null);
+            live.style.marginLeft = 6;
+            filterRow.Add(live);
 
             activeFilter = CreateActiveFilterSummary(
                 viewState.FilterText,
@@ -1827,7 +2097,8 @@ namespace DxMessaging.Editor.Windows
             string stackTrace,
             string messageTypeIdentity = null,
             string messageTypeDisplayPath = null,
-            string routeKind = null
+            string routeKind = null,
+            long traceId = 0
         )
         {
             MessageTypeName = messageTypeName;
@@ -1840,6 +2111,7 @@ namespace DxMessaging.Editor.Windows
             ContextText = contextText;
             StackTrace = stackTrace;
             RouteKind = routeKind ?? string.Empty;
+            TraceId = traceId;
         }
 
         internal string MessageTypeName { get; }
@@ -1854,6 +2126,15 @@ namespace DxMessaging.Editor.Windows
 
         internal string RouteKind { get; }
 
+        /// <summary>
+        /// The bus-assigned dispatch sequence number this entry came from, or 0 when the emission
+        /// carried no trace (records built by the public <see cref="MessageEmissionData"/>
+        /// constructor). Bus-side records start at 1 and increase monotonically, which is what
+        /// <see cref="MessageMonitorLiveRecorder"/> uses to poll for new emissions without
+        /// re-ingesting ones it already holds.
+        /// </summary>
+        internal long TraceId { get; }
+
         internal static MessageMonitorEntry FromEmission(MessageEmissionData emission)
         {
             Type messageType = emission.message?.MessageType;
@@ -1867,7 +2148,8 @@ namespace DxMessaging.Editor.Windows
                 emission.stackTrace ?? string.Empty,
                 typeIdentity,
                 typeDisplayPath,
-                CreateRouteKind(messageType)
+                CreateRouteKind(messageType),
+                emission.traceId
             );
         }
 
