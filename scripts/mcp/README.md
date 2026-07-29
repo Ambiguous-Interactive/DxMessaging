@@ -69,8 +69,9 @@ until one completes an MCP `initialize` handshake:
 
 An explicit `--host` or `--port` replaces the fallback list on that axis rather than being prepended
 to it, so discovery can never override a deliberate setting: `--host X` probes only `X` (against the
-fallback ports), and `--host X --port Y` yields exactly one candidate. Pass `--no-discover` to skip
-probing entirely and use the configured values as-is.
+fallback ports), and `--host X --port Y` yields exactly one candidate. Pass `--no-discover` to probe only
+the configured host and port without walking the fallbacks. It narrows the candidate list; it does
+not skip the handshake, so `probe --no-discover` still tells you whether that endpoint answers.
 
 Failed attempts are reported with a classification, because the fixes differ:
 

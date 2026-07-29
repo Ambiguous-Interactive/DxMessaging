@@ -1353,6 +1353,53 @@ test("runProbe reports the endpoint it handshook with", async (t) => {
   );
 });
 
+// These deliberately do NOT inject `candidates`: passing one masks the narrowing that --no-discover
+// is supposed to do, which is how `probe --no-discover` shipped always-failing with an empty
+// attempts list. The endpoint has to come from options.host/options.port.
+test("probe --no-discover handshakes with the configured endpoint", async (t) => {
+  const port = await listeningPort(t);
+  const logged = captureConsole(t, "log");
+  const found = await runProbe(
+    commandOptions(temporaryDirectory(), { discover: false, host: "127.0.0.1", port }),
+    { fetchImpl: async () => initializeResponse(OK_PAYLOAD) }
+  );
+  assert.equal(found.port, port);
+  assert.match(logged.join("\n"), /Unity MCP is reachable at/);
+});
+
+test("probe --no-discover names the endpoint it tried when nothing answers", async () => {
+  const port = await closedPort();
+  await assert.rejects(
+    () =>
+      runProbe(commandOptions(temporaryDirectory(), { discover: false, host: "127.0.0.1", port }), {
+        fetchImpl: async () => initializeResponse(OK_PAYLOAD)
+      }),
+    (error) => {
+      assert.match(error.message, /No Unity MCP endpoint responded/);
+      assert.match(error.message, new RegExp(`127\\.0\\.0\\.1:${port}`), "must report the attempt");
+      return true;
+    }
+  );
+});
+
+test("configure --no-discover writes the configured endpoint when nothing answers", async (t) => {
+  const repoRoot = temporaryDirectory();
+  const port = await closedPort();
+  captureConsole(t, "log");
+  captureConsole(t, "warn");
+  const url = await runConfigure(
+    commandOptions(repoRoot, { discover: false, host: "127.0.0.1", port }),
+    { fetchImpl: async () => initializeResponse(OK_PAYLOAD) }
+  );
+  assert.equal(url, `http://127.0.0.1:${port}/mcp`);
+  assert.equal(
+    JSON.parse(fs.readFileSync(clientConfigPaths(repoRoot).claudeCode, "utf8")).mcpServers[
+      "unity-mcp"
+    ].url,
+    url
+  );
+});
+
 // `unauthorized` means a bridge IS running there; only the token is wrong. Falling back to the
 // default endpoint and minting a fresh token guarantees a 401 and persists the bogus token.
 test("runConfigure refuses to write when a bridge rejects the token", async (t) => {

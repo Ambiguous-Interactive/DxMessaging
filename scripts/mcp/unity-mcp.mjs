@@ -1332,14 +1332,22 @@ export async function startBridge(inputOptions, runtime = {}) {
 // Commands
 // ---------------------------------------------------------------------------
 
-async function resolveEndpoint(options, runtime) {
-  if (!options.discover) {
-    return {
-      endpoint: { host: options.host, port: options.port, endpointPath: options.endpointPath },
-      attempts: []
-    };
-  }
-  const { found, attempts } = await discoverEndpoint(options, runtime);
+/**
+ * `--no-discover` narrows the candidate list to the configured endpoint; it does not skip the
+ * handshake. Returning early without probing left `runProbe` with no `found` and an empty attempts
+ * list, so `probe --no-discover` always failed and said nothing about why.
+ */
+async function resolveEndpoint(options, runtime = {}) {
+  const configured = {
+    host: options.host,
+    port: options.port,
+    endpointPath: options.endpointPath
+  };
+  const narrowed = options.discover
+    ? runtime
+    : { ...runtime, candidates: runtime.candidates ?? [configured] };
+
+  const { found, attempts } = await discoverEndpoint(options, narrowed);
   if (found) {
     return {
       endpoint: { host: found.host, port: found.port, endpointPath: found.endpointPath },
@@ -1347,7 +1355,9 @@ async function resolveEndpoint(options, runtime) {
       found
     };
   }
-  return { endpoint: undefined, attempts };
+  // With discovery off the caller named the endpoint, so keep it: `configure` still writes it, and
+  // `probe` reports the attempt that failed rather than an empty list.
+  return { endpoint: options.discover ? undefined : configured, attempts };
 }
 
 export async function runProbe(options, runtime = {}) {
@@ -1378,9 +1388,9 @@ export async function runConfigure(options, runtime = {}) {
     port: options.port,
     endpointPath: options.endpointPath
   };
-  if (!found && options.discover) {
+  if (!found) {
     console.warn(
-      `No Unity MCP endpoint responded; configuring the default ${endpointUrl(target)} anyway. Attempts:\n${describeAttempts(attempts)}`
+      `No Unity MCP endpoint responded; configuring ${endpointUrl(target)} anyway. Attempts:\n${describeAttempts(attempts)}`
     );
   }
   const { url, written } = configure(options, target);
@@ -1419,7 +1429,7 @@ function usage() {
     "  --host HOST                 Endpoint host; the only host discovery probes",
     "  --port PORT                 Endpoint port; the only port discovery probes",
     "  --path PATH                 Streamable HTTP path (default: /mcp)",
-    "  --no-discover               Use the configured host/port without probing",
+    "  --no-discover               Probe only the configured host/port, not the fallbacks",
     "  --bind HOST                 Bridge bind interface (default: 0.0.0.0)",
     "  --project PATH              Unity project directory (bridge only)",
     "  --relay PATH                Unity relay executable override",
