@@ -165,6 +165,10 @@ namespace DxMessaging.Tests.Editor
             component.ConfigureForEditorTest(messagingComponent);
             component.RegisterTestHandlers();
 
+            // A token inherits IMessageBus.GlobalDiagnosticsMode, which the host project's
+            // DxMessaging settings can leave on. Pin both halves of the behavior here rather
+            // than reading whatever the ambient project default happens to be.
+            component.TestToken.DiagnosticMode = false;
             MessageAwareComponentSubscriptionsState quiet =
                 MessageAwareComponentSubscriptionsState.Capture(component);
             Assert.That(quiet.DiagnosticsEnabled, Is.False);
