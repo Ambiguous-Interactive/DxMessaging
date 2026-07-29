@@ -148,7 +148,7 @@ jobs:
           set_output json \
             "$json_pattern"
           set_output llms \
-            "(^package\.json$|^\.llm/skills/|^scripts/update-llms-txt\.js$|^llms\.txt$|$ci_workflow)"
+            "(^package\.json$|^\.llm/|^scripts/update-llms-txt\.js$|^scripts/llm/|^llms\.txt$|$ci_workflow)"
           set_output markdown \
             "(\.md$|\.markdown$|^\.markdownlint\.json$|^\.markdownlint\.jsonc$|^\.markdownlint-cli2\.jsonc$|^\.markdownlintignore$|^package\.json$|$ci_workflow)"
 
@@ -160,6 +160,7 @@ jobs:
           scripts_pattern="$scripts_pattern"'|^CHANGELOG\.md$|^CHANGELOG\.md\.meta$'
           scripts_pattern="$scripts_pattern"'|^docs/.*\.(md|markdown|ya?ml|js|json)$'
           scripts_pattern="$scripts_pattern"'|^\.llm/.*\.(md|markdown|ya?ml|js|json)$'
+          scripts_pattern="$scripts_pattern"'|^\.(claude|agents)/skills/'
           scripts_pattern="$scripts_pattern"'|^LICENSE\.md$|^LICENSE\.md\.meta$'
           scripts_pattern="$scripts_pattern"'|^README\.md$|^README\.md\.meta$'
           scripts_pattern="$scripts_pattern"'|^Third Party Notices\.md$'

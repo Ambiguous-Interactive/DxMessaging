@@ -26,7 +26,7 @@
 #   silently SKIPS pushing the image on `schedule` / `workflow_dispatch`
 #   events. Setting it to "" makes the `push` knob the single source of
 #   truth (combined with `refFilterForPush: refs/heads/master`). This gotcha
-#   is documented in .llm/skills/github-actions/cicd-devcontainer-workflows.md.
+#   is documented in .llm/skills/github-workflow-consistency/references/cicd-devcontainer-workflows.md.
 # =============================================================================
 
 name: Test Devcontainer

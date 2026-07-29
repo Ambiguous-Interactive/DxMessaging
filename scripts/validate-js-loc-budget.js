@@ -35,7 +35,49 @@ const path = require("path");
 // 072 design-system editor CI guards (untracked-dump + complete-border +
 //     blocked-capture-primitive checks, stable editor-window test-host teardown
 //     guard) for the cleaner-site design-system convergence: 13700.
-const TOTAL_BUDGET = 13700;
+// 073 Unity MCP + Agent Skills harness, both tested, both replacing untested
+//     tooling. Added: unity-mcp.mjs (1242) + its suite (655) replacing 404
+//     lines of untested shell/PowerShell and the runtime supergateway
+//     dependency; llm/harness.js (515) + its suite (192) replacing
+//     generate-skills-index.js (311) + its suite (332). Net +1961 tested JS
+//     for -1047 lines retired, and the two remaining generators now cover
+//     spec validation, line limits, indexing, and agent mirrors that
+//     previously had no automated check at all: 15700.
+// 074 unity-mcp adversarial-review fixes. The bridge server, both CLI entry
+//     points, and the JSONC/dotenv/rollback edge cases were all unreachable
+//     from the suite (64% line coverage), so a fake-relay harness now boots the
+//     bridge on an ephemeral port and asserts auth, session reuse, DELETE
+//     teardown, relay reaping, the session cap, and the 400/408/413 client-error
+//     responses. +207 source lines (failure-safe rollback, JSONC parsing, body
+//     timeout and limits, session cap, debug logging) and +767 test lines take
+//     unity-mcp.mjs coverage from 64% to 93%. The suite is now larger than the
+//     script it covers, which is the intended ratio for a network-facing server
+//     that ships no other verification: 16700.
+// 075 .llm harness adversarial-review fixes. Mutation testing showed the
+//     harness suite was inert: 10 of 11 mutations (gutting validateFrontmatter,
+//     dropping the name/directory match, making artifactDrifts or staleMirrors
+//     return nothing) left it green, so every rule the harness advertised was
+//     unenforced. +117 source lines (marker-scoped mirror reaping so a
+//     hand-authored .claude/skills entry is never deleted, a DX_LLM_ROOT
+//     fixture seam, the four missed spec rules, references/ split from
+//     scripts/+assets/) and +504 test lines of temp-directory rule fixtures
+//     now catch 18 of 18 mutations: 17300.
+//
+//     NOTE for whoever touches this number next: at 17300 this repository's JS
+//     is no longer the "thin CI/docs support" the header above describes, and
+//     unity-mcp.mjs plus its suite (2886 lines) are 17% of the total. The
+//     bridge subcommand is the largest severable piece: if the host is expected
+//     to run an external Unity MCP bridge, deleting it and its tests reclaims
+//     roughly 1200 lines. Prefer that to another raise.
+// 076 Regressions the fix rounds introduced, caught by a verification pass:
+//     stripJsonComments re-scanned its accumulated output on every closing
+//     bracket, which flattened V8's rope and made the pass quadratic (a 188 KB
+//     config took 150 s; it now takes 6 ms), and pruneEmptyDirectories swept
+//     both mirror roots instead of only what a reap emptied, deleting the
+//     hand-authored scaffolding that the sibling marker-scoping fix exists to
+//     protect. +37 source and +112 test lines, including a loose timing guard
+//     that only a return to quadratic can breach: 17500.
+const TOTAL_BUDGET = 17500;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

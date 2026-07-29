@@ -10,7 +10,7 @@ const path = require("node:path");
 const {
   generateLlmsTxt,
   countSkillFiles,
-  getSkillCategories,
+  listSkillNames,
   hasValidLastUpdatedLine,
   normalizeForComparison,
   parseSkillCountClaims,
@@ -23,7 +23,7 @@ const { normalizeToLf } = require("../lib/line-endings.js");
 
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
 const SCRIPT = path.join(__dirname, "..", "update-llms-txt.js");
-const SKILL_CLAIM = (n) => `- ${n}+ specialized skill documents covering:`;
+const SKILL_CLAIM = (n) => `- ${n}+ specialized skills:`;
 
 test("hasValidLastUpdatedLine accepts exactly one ISO-dated line", () => {
   assert.equal(hasValidLastUpdatedLine("intro\n**Last Updated:** 2026-06-10\n"), true);
@@ -61,14 +61,14 @@ test("generateLlmsTxt embeds package metadata and a valid Last Updated line", ()
   assert.equal(hasValidLastUpdatedLine(content), true);
 });
 
-test("generateLlmsTxt reflects skill counts and categories", () => {
+test("generateLlmsTxt reflects the skill count and lists every skill", () => {
   const content = generateLlmsTxt();
-  const skillCount = countSkillFiles();
-  const categories = getSkillCategories();
-  assert.ok(Number.isInteger(skillCount) && skillCount >= 0);
-  assert.ok(content.includes(`${skillCount}+ specialized skill documents`));
-  for (const category of categories) {
-    assert.ok(content.includes(`- **${category}/**`), `missing category ${category}`);
+  const skillNames = listSkillNames();
+  assert.equal(countSkillFiles(), skillNames.length);
+  assert.ok(skillNames.length > 0, "the repository has skills to list");
+  assert.ok(content.includes(`${skillNames.length}+ specialized skills`));
+  for (const name of skillNames) {
+    assert.ok(content.includes(`- **${name}**`), `missing skill ${name}`);
   }
 });
 
@@ -153,7 +153,7 @@ test("syncSkillCountClaim rewrites exactly one claim and is otherwise a no-op", 
 
     const stale = writeTmp("stale.md", `intro\n${SKILL_CLAIM(140)}\noutro\n`);
     assert.equal(syncSkillCountClaim(stale, 155), true);
-    assert.match(fs.readFileSync(stale, "utf8"), /155\+ specialized skill documents/);
+    assert.match(fs.readFileSync(stale, "utf8"), /155\+ specialized skills/);
 
     assert.equal(syncSkillCountClaim(stale, 155), false);
 
@@ -211,17 +211,20 @@ test("CLI update mode fixes a stale single claim, then --check passes (update/ch
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llms-cli-conv-"));
   try {
     const skills = path.join(dir, "skills");
-    for (const rel of ["documentation/a.md", "testing/b.md", "testing/c.md"]) {
-      fs.mkdirSync(path.join(skills, path.dirname(rel)), { recursive: true });
-      fs.writeFileSync(path.join(skills, rel), "# skill\n");
+    for (const name of ["alpha", "beta", "gamma"]) {
+      fs.mkdirSync(path.join(skills, name, "references"), { recursive: true });
+      fs.writeFileSync(path.join(skills, name, "SKILL.md"), "---\nname: x\n---\n");
+      // References must not inflate the count: only the directory itself is a skill.
+      fs.writeFileSync(path.join(skills, name, "references", "detail.md"), "# detail\n");
     }
+    fs.mkdirSync(path.join(skills, "not-a-skill"), { recursive: true });
     const llmsTxt = path.join(dir, "llms.txt");
     const readme = path.join(dir, "README.md");
     fs.writeFileSync(readme, `intro\n${SKILL_CLAIM(1)}\noutro\n`);
     const env = { ...process.env, DX_SKILLS_DIR: skills, DX_LLMS_TXT: llmsTxt, DX_README: readme };
 
     execFileSync("node", [SCRIPT], { env, stdio: "pipe" }); // update -> exit 0
-    assert.match(fs.readFileSync(readme, "utf8"), /\b3\+ specialized skill documents\b/);
+    assert.match(fs.readFileSync(readme, "utf8"), /\b3\+ specialized skills\b/);
     assert.ok(fs.existsSync(llmsTxt), "update wrote the env-pointed llms.txt");
 
     execFileSync("node", [SCRIPT, "--check"], { env, stdio: "pipe" }); // converged -> exit 0

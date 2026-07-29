@@ -412,4 +412,4 @@ After applying the ruleset:
 
 - [CI and GitHub Settings](../ops/ci-and-github-settings.md)
 - [Perf-Numbers Auto-Commit](perf-numbers-auto-commit.md)
-- [Unity Version Single Source of Truth](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/github-actions/unity-version-single-source.md)
+- [Unity Version Single Source of Truth](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-editor-ci/references/unity-version-single-source.md)

@@ -39,6 +39,14 @@
     "cspell-output.txt"
   ],
   "words": [
+    "resolv",
+    "smol",
+    "ndots",
+    "IRTT",
+    "unreachability",
+    "onsessioninitialized",
+    "healthz",
+    "agentskills",
     "quiesce",
     "quiesces",
     "DxMessaging",
@@ -245,6 +253,7 @@
     "EBUSY",
     "EACCES",
     "ENOTDIR",
+    "ECONNRESET",
     "conv",
     "Hspec",
     "Pspec",

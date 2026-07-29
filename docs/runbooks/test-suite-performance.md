@@ -2,7 +2,7 @@
 
 This runbook is the developer/ops reference for keeping the Unity test legs fast
 without dropping coverage. The agent-facing companion with the code patterns is
-the [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/testing/fast-unity-tests.md)
+the [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-test-execution/references/fast-unity-tests.md)
 skill; this
 runbook covers the budgets, the CI shape, the measurement protocol, and the
 drift-guards.
@@ -36,7 +36,7 @@ correctness number.
 
 ## The levers
 
-See the [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/testing/fast-unity-tests.md) skill for
+See the [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-test-execution/references/fast-unity-tests.md) skill for
 the code. In short:
 
 - **Disable enter-play-mode reload.** `EnterPlayModeOptions: 3`
@@ -111,7 +111,7 @@ exactly-keyed cache.
 
 ## Local measurement protocol (MCP loop)
 
-Measure via the [Unity MCP Test Loop](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity/mcp-test-loop.md):
+Measure via the [Unity MCP Test Loop](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md):
 `DxMcpTestRunner.Run(testMode, assemblies, null, null, resultPath)` writes
 `durationSeconds` + pass/fail/skip counts. Baseline, change ONE lever, re-run the
 SAME call, diff. Keep a change only if pass counts hold and no flake appears across
@@ -167,6 +167,6 @@ Open follow-ups (tracked in the remaining-work plan):
 
 ## See Also
 
-- [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/testing/fast-unity-tests.md)
-- [Unity MCP Test Loop](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity/mcp-test-loop.md)
+- [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-test-execution/references/fast-unity-tests.md)
+- [Unity MCP Test Loop](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md)
 - [Perf Benchmark Methodology](perf-benchmark-methodology.md)

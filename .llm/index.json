@@ -1,0 +1,524 @@
+{
+  "skillCount": 30,
+  "skills": [
+    {
+      "name": "allocation-and-leak-coverage",
+      "path": ".llm/skills/allocation-and-leak-coverage/SKILL.md",
+      "description": "Protecting the DxMessaging zero-GC dispatch contract and detecting registration leaks in tests: AllocationMatrixTests rows, AllocationProbe.MeasureMin GC.Alloc call counting (never GC.GetTotalAllocatedBytes), differential and structural guards, when a STATE or RESULT assertion beats a count budget, and LeakWatcher usage over the six IMessageBus registration counters. Use when adding an Emit* method or dispatch path, adding a MessageKind, chasing an allocation regression or a flaky allocation budget, or asserting that a register/deregister cycle leaks nothing.",
+      "metadata": {
+        "category": "testing",
+        "tags": "testing, allocation, performance, messaging, zero-gc, benchmark, unity"
+      },
+      "lineCount": 58,
+      "references": [
+        ".llm/skills/allocation-and-leak-coverage/references/allocation-coverage-required-for-dispatch.md",
+        ".llm/skills/allocation-and-leak-coverage/references/leak-watcher-usage.md"
+      ]
+    },
+    {
+      "name": "api-design-patterns",
+      "path": ".llm/skills/api-design-patterns/SKILL.md",
+      "description": "Allocation-conscious C# API shapes used across DxMessaging and its helper libraries: struct-based fluent builders that copy-on-With and validate in Build(), Try-pattern APIs that return bool with an out parameter instead of throwing on expected failure, and collection extension methods with documented complexity, concrete-type fast paths, and Fisher-Yates shuffle. Use when designing a builder, a TryGet/TryParse/GetOrDefault API, or a collection extension, when a constructor has grown too many parameters, or when replacing exceptions or LINQ on a hot path.",
+      "metadata": {
+        "category": "solid",
+        "tags": "solid, patterns, builder, fluent-api, zero-alloc"
+      },
+      "lineCount": 90,
+      "references": [
+        ".llm/skills/api-design-patterns/references/collection-extensions-accessors.md",
+        ".llm/skills/api-design-patterns/references/collection-extensions-shuffle.md",
+        ".llm/skills/api-design-patterns/references/collection-extensions-type-specialization.md",
+        ".llm/skills/api-design-patterns/references/collection-extensions.md",
+        ".llm/skills/api-design-patterns/references/fluent-builder-pattern-part-1.md",
+        ".llm/skills/api-design-patterns/references/fluent-builder-pattern-part-2.md",
+        ".llm/skills/api-design-patterns/references/fluent-builder-pattern-templates.md",
+        ".llm/skills/api-design-patterns/references/fluent-builder-pattern-usage-examples.md",
+        ".llm/skills/api-design-patterns/references/fluent-builder-pattern.md",
+        ".llm/skills/api-design-patterns/references/try-pattern-apis-usage.md",
+        ".llm/skills/api-design-patterns/references/try-pattern-apis-variants.md",
+        ".llm/skills/api-design-patterns/references/try-pattern-apis.md"
+      ]
+    },
+    {
+      "name": "benchmark-methodology",
+      "path": ".llm/skills/benchmark-methodology/SKILL.md",
+      "description": "How DxMessaging measures throughput and allocation - one warmed 5-second window through BenchmarkProtocol.Measure, a separate untimed GC.Alloc probe batch, Standalone as the only published scope, and perf asmdef isolation. Use when writing or editing a benchmark, adding a comparison bridge or perf asmdef, interpreting emits/sec or n/a allocation cells, or proposing a performance change that needs an A/B verdict.",
+      "metadata": {
+        "category": "performance",
+        "tags": "performance, benchmarks, methodology, throughput, measurement, gc"
+      },
+      "lineCount": 146,
+      "references": [
+        ".llm/skills/benchmark-methodology/references/benchmark-methodology-total-over-window.md",
+        ".llm/skills/benchmark-methodology/references/benchmarks-run-in-highest-fidelity-scope.md",
+        ".llm/skills/benchmark-methodology/references/runtime-performance-campaign-decisions.md",
+        ".llm/skills/benchmark-methodology/references/unity-perf-test-isolation.md"
+      ]
+    },
+    {
+      "name": "cache-eviction",
+      "path": ".llm/skills/cache-eviction/SKILL.md",
+      "description": "Build a bounded cache with LRU, LFU, SLRU, FIFO, or Random eviction, write/access TTL, and hit-rate statistics via the struct-based CacheBuilder. Use when a Dictionary is being used as a cache, when memoizing an expensive query or computation, when memory grows without bound, or when picking an eviction policy for an access pattern.",
+      "metadata": {
+        "category": "performance",
+        "tags": "caching, memory, performance, lru, lfu, eviction, data-structures"
+      },
+      "lineCount": 77,
+      "references": [
+        ".llm/skills/cache-eviction/references/cache-eviction-builder.md",
+        ".llm/skills/cache-eviction/references/cache-eviction-implementation-part-1.md",
+        ".llm/skills/cache-eviction/references/cache-eviction-implementation-part-2.md",
+        ".llm/skills/cache-eviction/references/cache-eviction-implementation.md",
+        ".llm/skills/cache-eviction/references/cache-eviction-policies.md"
+      ]
+    },
+    {
+      "name": "changelog-management",
+      "path": ".llm/skills/changelog-management/SKILL.md",
+      "description": "How to write and maintain CHANGELOG.md for DxMessaging using Keep a Changelog format: which changes earn an entry and under which category (Added/Changed/Deprecated/Removed/Fixed/Security), how to phrase user-facing entries, how semantic versioning maps to change type, and how to cut a release by converting [Unreleased] and updating the compare links. Use when adding a changelog entry, flagging a BREAKING change with migration notes, preparing a release, or reviewing a vague entry like 'Fixed bugs'.",
+      "metadata": {
+        "category": "documentation",
+        "tags": "changelog, documentation, versioning, semantic-versioning, release-notes, keep-a-changelog, user-communication"
+      },
+      "lineCount": 91,
+      "references": [
+        ".llm/skills/changelog-management/references/changelog-entry-writing-part-1.md",
+        ".llm/skills/changelog-management/references/changelog-entry-writing.md",
+        ".llm/skills/changelog-management/references/changelog-management.md",
+        ".llm/skills/changelog-management/references/changelog-release-workflow.md"
+      ]
+    },
+    {
+      "name": "collection-pooling",
+      "path": ".llm/skills/collection-pooling/SKILL.md",
+      "description": "Rent Lists, HashSets, Stacks, Queues, arrays, StringBuilders, and Unity yield instructions from pools with using-scoped leases so per-frame code allocates nothing. Use when writing an Update/FixedUpdate helper, a temporary buffer, a string builder, a network or serialization buffer, or a coroutine that yields WaitForSeconds.",
+      "metadata": {
+        "category": "performance",
+        "tags": "memory, allocation, pooling, zero-alloc, collections, raii, disposable"
+      },
+      "lineCount": 91,
+      "references": [
+        ".llm/skills/collection-pooling/references/array-pooling-part-1.md",
+        ".llm/skills/collection-pooling/references/array-pooling-part-2.md",
+        ".llm/skills/collection-pooling/references/array-pooling-usage-examples.md",
+        ".llm/skills/collection-pooling/references/array-pooling.md",
+        ".llm/skills/collection-pooling/references/collection-pooling-part-1.md",
+        ".llm/skills/collection-pooling/references/collection-pooling-part-2.md",
+        ".llm/skills/collection-pooling/references/collection-pooling.md",
+        ".llm/skills/collection-pooling/references/stringbuilder-pooling-part-1.md",
+        ".llm/skills/collection-pooling/references/stringbuilder-pooling.md",
+        ".llm/skills/collection-pooling/references/yield-instruction-pooling-part-1.md",
+        ".llm/skills/collection-pooling/references/yield-instruction-pooling-part-2.md",
+        ".llm/skills/collection-pooling/references/yield-instruction-pooling.md"
+      ]
+    },
+    {
+      "name": "data-driven-tests",
+      "path": ".llm/skills/data-driven-tests/SKILL.md",
+      "description": "NUnit parameterized test mechanics: choosing between [TestCase], [TestCaseSource], and [ValueSource]; building TestCaseData sources as static methods, static properties, or shared external data classes; naming cases with SetName; stacking multiple sources on one method; and writing failure messages that print every parameter. Use when several test methods differ only by input data, when adding cases to an existing parameterized test, or when a data-driven failure does not say which case broke.",
+      "metadata": {
+        "category": "testing",
+        "tags": "testing, parameterized, data-driven, nunit, test-cases"
+      },
+      "lineCount": 47,
+      "references": [
+        ".llm/skills/data-driven-tests/references/data-driven-tests-sources.md",
+        ".llm/skills/data-driven-tests/references/data-driven-tests-usage.md",
+        ".llm/skills/data-driven-tests/references/data-driven-tests.md"
+      ]
+    },
+    {
+      "name": "dispatch-hot-path",
+      "path": ".llm/skills/dispatch-hot-path/SKILL.md",
+      "description": "The zero-allocation, nanosecond-budgeted rules for the DxMessaging emission path through MessageBus, FlatDispatch, and MessageHandler, including the prohibited per-emit operations and the sweep-gate cadence. Use when editing MessageBus.cs, FlatDispatch.cs, MessageHandler.cs, or Runtime/Core/Pooling, when adding anything to the per-emit prologue, when dispatch throughput moves in perf-numbers.yml, or when deciding where to put AggressiveInlining.",
+      "metadata": {
+        "category": "performance",
+        "tags": "dispatch, hot-path, throughput, messaging, il2cpp, mono"
+      },
+      "lineCount": 134,
+      "references": [
+        ".llm/skills/dispatch-hot-path/references/aggressive-inlining-part-1.md",
+        ".llm/skills/dispatch-hot-path/references/aggressive-inlining-part-2.md",
+        ".llm/skills/dispatch-hot-path/references/aggressive-inlining-performance-notes.md",
+        ".llm/skills/dispatch-hot-path/references/aggressive-inlining.md",
+        ".llm/skills/dispatch-hot-path/references/dispatch-hot-path.md",
+        ".llm/skills/dispatch-hot-path/references/sweep-gate-must-be-cheap.md"
+      ]
+    },
+    {
+      "name": "documentation-code-samples",
+      "path": ".llm/skills/documentation-code-samples/SKILL.md",
+      "description": "Every C# sample in DxMessaging docs must compile: fenced csharp blocks, inline backtick spans in table cells, samples in docs/overrides/*.html, and XML doc <code> blocks are all extracted and compiled by DocsSnippetCompilationTests in .docs-tests/. Covers the struct-rvalue-Emit bug class (new X().Emit() does not compile because Emit* extensions take this ref TMessage), the text-pattern guard that catches it, XML doc requirements, and version annotations. Use when writing or fixing a code sample, adding XML docs to a public API, or triaging a docs-tests failure such as CS1510, CS1612, or DocumentationDoesNotEmitStructMessagesFromTemporaries.",
+      "metadata": {
+        "category": "documentation",
+        "tags": "documentation, code-samples, compilation, linting, anti-patterns, tooling"
+      },
+      "lineCount": 102,
+      "references": [
+        ".llm/skills/documentation-code-samples/references/code-samples-must-compile.md",
+        ".llm/skills/documentation-code-samples/references/documentation-code-samples-part-1.md",
+        ".llm/skills/documentation-code-samples/references/documentation-code-samples.md",
+        ".llm/skills/documentation-code-samples/references/documentation-xml-docs.md"
+      ]
+    },
+    {
+      "name": "documentation-style",
+      "path": ".llm/skills/documentation-style/SKILL.md",
+      "description": "Prose rules for DxMessaging documentation: ASCII-only Markdown and /// XML comments, the banned marketing/LLM-filler phrase list backed by Vale, action-first active-voice writing, brand capitalization, the same-PR doc update checklist, and the split between the user perf page and the dev perf runbook. Use when writing or editing README.md, docs/, or XML doc comments, when a review flags em-dashes, curly quotes, arrows, or words like 'robust', 'comprehensive', or 'delve into', or when deciding whether perf content belongs in docs/architecture/performance.md or docs/runbooks/perf-benchmark-methodology.md.",
+      "metadata": {
+        "category": "documentation",
+        "tags": "documentation, style, writing, clarity"
+      },
+      "lineCount": 109,
+      "references": [
+        ".llm/skills/documentation-style/references/ascii-only-docs.md",
+        ".llm/skills/documentation-style/references/documentation-style-guide.md",
+        ".llm/skills/documentation-style/references/documentation-update-workflow.md",
+        ".llm/skills/documentation-style/references/documentation-updates.md",
+        ".llm/skills/documentation-style/references/human-prose-policy.md",
+        ".llm/skills/documentation-style/references/user-vs-dev-perf-doc-separation.md"
+      ]
+    },
+    {
+      "name": "github-workflow-consistency",
+      "path": ".llm/skills/github-workflow-consistency/SKILL.md",
+      "description": "Structural and safety rules for .github/workflows: property order (name, on, concurrency, permissions, jobs), a concurrency group with cancel-in-progress, explicit minimal permissions, timeout-minutes on every job, persist-credentials: false on checkout, path filters that include .github/workflows/**, required gates that fail closed when the changes detector fails, the CI Success aggregate, per-extension git add --renormalize loops, .lychee.toml accept/exclude policy with the pinned install-pinned-lychee action, devcontainers/ci push and eventFilterForPush gotchas, and the release.yml notes/unitypackage invariants. Use when adding or editing a workflow, wiring a required check, debugging a GHCR push or a lychee failure, or touching the release pipeline.",
+      "metadata": {
+        "category": "github-actions",
+        "tags": "github-actions, ci-cd, workflow, security, consistency, yaml"
+      },
+      "lineCount": 150,
+      "references": [
+        ".llm/skills/github-workflow-consistency/references/cicd-devcontainer-workflows.md",
+        ".llm/skills/github-workflow-consistency/references/git-renormalize-patterns.md",
+        ".llm/skills/github-workflow-consistency/references/git-workflow-robustness-part-1.md",
+        ".llm/skills/github-workflow-consistency/references/git-workflow-robustness.md",
+        ".llm/skills/github-workflow-consistency/references/lychee-configuration-part-1.md",
+        ".llm/skills/github-workflow-consistency/references/lychee-configuration.md",
+        ".llm/skills/github-workflow-consistency/references/release-asset-and-notes-invariants.md",
+        ".llm/skills/github-workflow-consistency/references/workflow-consistency-part-1.md",
+        ".llm/skills/github-workflow-consistency/references/workflow-consistency.md"
+      ]
+    },
+    {
+      "name": "il2cpp-build-configuration",
+      "path": ".llm/skills/il2cpp-build-configuration/SKILL.md",
+      "description": "The pinned build profile behind published DxMessaging performance numbers - one Standalone IL2CPP Release player on .NET Standard 2.1 - and which optimization levers work on IL2CPP (AOT) versus Mono (JIT). Use when editing run-ci-tests.ps1 or perf-numbers.yml, when a published row reads x64 Debug or a standalone run executes zero tests, when reaching for Il2CppSetOption, AggressiveOptimization, or Unsafe/Span, or when local Mono numbers disagree with the published headline.",
+      "metadata": {
+        "category": "performance",
+        "tags": "performance, benchmarks, il2cpp, release, ci, standalone"
+      },
+      "lineCount": 116,
+      "references": [
+        ".llm/skills/il2cpp-build-configuration/references/mono-vs-il2cpp-optimization-split.md",
+        ".llm/skills/il2cpp-build-configuration/references/perf-config-il2cpp-release-netstandard21.md"
+      ]
+    },
+    {
+      "name": "markdown-authoring",
+      "path": ".llm/skills/markdown-authoring/SKILL.md",
+      "description": "Markdown that renders the same in GitHub, VS Code, and MkDocs Material: no admonitions (!!!), collapsibles (???), tabs (===), md-button attributes, emoji shortcodes, keys, or critic markup; no per-diagram Mermaid %%{init theme}%% directives; nested fences sized by backtick count; mkdocs.yml nav kept in sync with docs/; descriptive link text; and the lychee link gates. Use when adding or editing a Markdown page, a Mermaid diagram, a docs/ nav entry, or any internal or external link, or when a lychee link check fails.",
+      "metadata": {
+        "category": "documentation",
+        "tags": "documentation, markdown, compatibility, mkdocs, portability"
+      },
+      "lineCount": 106,
+      "references": [
+        ".llm/skills/markdown-authoring/references/external-url-fragment-validation.md",
+        ".llm/skills/markdown-authoring/references/link-quality-guidelines-part-1.md",
+        ".llm/skills/markdown-authoring/references/link-quality-guidelines-part-2.md",
+        ".llm/skills/markdown-authoring/references/link-quality-guidelines.md",
+        ".llm/skills/markdown-authoring/references/markdown-compatibility-part-1.md",
+        ".llm/skills/markdown-authoring/references/markdown-compatibility-part-2.md",
+        ".llm/skills/markdown-authoring/references/markdown-compatibility.md",
+        ".llm/skills/markdown-authoring/references/mermaid-theming-part-1.md",
+        ".llm/skills/markdown-authoring/references/mermaid-theming.md",
+        ".llm/skills/markdown-authoring/references/mkdocs-navigation-part-1.md",
+        ".llm/skills/markdown-authoring/references/mkdocs-navigation.md"
+      ]
+    },
+    {
+      "name": "memory-reclamation",
+      "path": ".llm/skills/memory-reclamation/SKILL.md",
+      "description": "How DxMessaging reclaims empty per-type and per-InstanceId slots through counter-based idle sweeps, IMessageBus.Trim, and DxPools caps, plus the test and documentation duties for any new memory holder. Use when adding a MessageCache field, a dictionary or pool keyed by message type or InstanceId, when slot counts or memory grow over a long session, or when changing DxMessagingRuntimeSettings eviction and buffer settings.",
+      "metadata": {
+        "category": "performance",
+        "tags": "memory, reclamation, eviction, pooling, messaging"
+      },
+      "lineCount": 116,
+      "references": [
+        ".llm/skills/memory-reclamation/references/memory-reclaim-coverage.md",
+        ".llm/skills/memory-reclamation/references/memory-reclamation-docs.md",
+        ".llm/skills/memory-reclamation/references/memory-reclamation.md"
+      ]
+    },
+    {
+      "name": "object-pooling",
+      "path": ".llm/skills/object-pooling/SKILL.md",
+      "description": "Reuse pooled message objects through Rent/Return instead of allocating a new instance per emit, so dispatch stays allocation-free. Use when adding a message type, seeing GC spikes or a rising allocation rate in the Unity profiler, writing an allocation test, or choosing between a pooled class message and a readonly struct message.",
+      "metadata": {
+        "category": "performance",
+        "tags": "memory, allocation, garbage-collection, pooling, zero-alloc, hot-path"
+      },
+      "lineCount": 81,
+      "references": [
+        ".llm/skills/object-pooling/references/object-pooling-anti-patterns.md",
+        ".llm/skills/object-pooling/references/object-pooling-part-1.md",
+        ".llm/skills/object-pooling/references/object-pooling-part-2.md",
+        ".llm/skills/object-pooling/references/object-pooling-usage-examples.md",
+        ".llm/skills/object-pooling/references/object-pooling-variations.md",
+        ".llm/skills/object-pooling/references/object-pooling.md"
+      ]
+    },
+    {
+      "name": "package-publishing",
+      "path": ".llm/skills/package-publishing/SKILL.md",
+      "description": "Controlling what ships in the com.wallstop-studios.dxmessaging npm/UPM package: the package.json files allowlist versus .npmignore exclusions, Unity .meta pairing rules for every shipped file and directory, the issue #204 tarball invariants verified against npm pack --json --dry-run, and where RoslynAnalyzer-labeled DLLs must live (Runtime/Analyzers/, never an editor-only asmdef) so the source generator reaches Assembly-CSharp. Use when adding or excluding files from the package, adding a new output directory, seeing CS0315/CS0452 on consumer [Dx*Message] types, or building and verifying the analyzer payload.",
+      "metadata": {
+        "category": "packaging",
+        "tags": "npm, packaging, configuration, files, npmignore, unity"
+      },
+      "lineCount": 108,
+      "references": [
+        ".llm/skills/package-publishing/references/npm-package-configuration-part-1.md",
+        ".llm/skills/package-publishing/references/npm-package-configuration.md",
+        ".llm/skills/package-publishing/references/unity-analyzer-shipping.md"
+      ]
+    },
+    {
+      "name": "serializable-dictionary",
+      "path": ".llm/skills/serializable-dictionary/SKILL.md",
+      "description": "Back a runtime Dictionary with parallel SerializeField lists through ISerializationCallbackReceiver so key/value config is editable in the Unity Inspector and persists in scenes, prefabs, and ScriptableObjects. Use when a SerializeField Dictionary silently stays empty, when parallel key/value lists are drifting out of sync, or when a designer needs to edit a lookup table in the Inspector.",
+      "metadata": {
+        "category": "performance",
+        "tags": "unity, serialization, dictionary, inspector, data-structures"
+      },
+      "lineCount": 71,
+      "references": [
+        ".llm/skills/serializable-dictionary/references/serializable-dictionary-part-1.md",
+        ".llm/skills/serializable-dictionary/references/serializable-dictionary-property-drawer.md",
+        ".llm/skills/serializable-dictionary/references/serializable-dictionary-usage-examples.md",
+        ".llm/skills/serializable-dictionary/references/serializable-dictionary.md"
+      ]
+    },
+    {
+      "name": "shell-and-powershell",
+      "path": ".llm/skills/shell-and-powershell/SKILL.md",
+      "description": "Writing bash and PowerShell that survives CI: set -e error handling for grep/diff/rm, quoting, filename case sensitivity on Linux runners, the PowerShell StrictMode 0/1/many gotcha that requires @()-wrapping every captured result before reading .Count or indexing, here-string quoting, WriteAllText encoding, regex non-greedy versus character-class exclusion, accurate regex comments for the g/i/m/s/u flags, Windows PE-binary stub requirements, cross-drive path containment, and tar archive operands. Use when adding or editing a .sh, .ps1, or Node script, or when a script passes locally and fails on a Linux or Windows runner.",
+      "metadata": {
+        "category": "scripting",
+        "tags": "cross-platform, case-sensitivity, testing, powershell, javascript, ci-cd, linux, windows, macos"
+      },
+      "lineCount": 124,
+      "references": [
+        ".llm/skills/shell-and-powershell/references/cross-platform-compatibility.md",
+        ".llm/skills/shell-and-powershell/references/powershell-best-practices-part-1.md",
+        ".llm/skills/shell-and-powershell/references/powershell-best-practices-part-2.md",
+        ".llm/skills/shell-and-powershell/references/powershell-best-practices.md",
+        ".llm/skills/shell-and-powershell/references/regex-documentation-part-1.md",
+        ".llm/skills/shell-and-powershell/references/regex-documentation-part-2.md",
+        ".llm/skills/shell-and-powershell/references/regex-documentation.md",
+        ".llm/skills/shell-and-powershell/references/shell-best-practices-part-1.md",
+        ".llm/skills/shell-and-powershell/references/shell-best-practices.md"
+      ]
+    },
+    {
+      "name": "singleton-patterns",
+      "path": ".llm/skills/singleton-patterns/SKILL.md",
+      "description": "Implement Unity global managers with RuntimeSingleton<T> for MonoBehaviours that survive scene loads and ScriptableObjectSingleton<T> for Resources-backed config assets, including duplicate handling and quit-time safety. Use when writing a GameManager or AudioManager, when a static Instance field is null after a scene change or on quit, when two copies of a manager exist, or when bootstrapping a manager before the first scene.",
+      "metadata": {
+        "category": "performance",
+        "tags": "unity, singleton, patterns, scriptable-object, architecture"
+      },
+      "lineCount": 92,
+      "references": [
+        ".llm/skills/singleton-patterns/references/singleton-autoload.md",
+        ".llm/skills/singleton-patterns/references/singleton-patterns.md",
+        ".llm/skills/singleton-patterns/references/singleton-runtime.md",
+        ".llm/skills/singleton-patterns/references/singleton-scriptableobject.md",
+        ".llm/skills/singleton-patterns/references/singleton-usage-examples.md"
+      ]
+    },
+    {
+      "name": "test-code-quality",
+      "path": ".llm/skills/test-code-quality/SKILL.md",
+      "description": "Keeping tests honest: importing production code instead of re-implementing it in the test file, bidirectional SYNC notes where duplication is unavoidable (PowerShell script plus JS test, browser-only code), accurate describe-block and header categorization (missing vs wrong type vs empty), eslint-disable-next-line placement, user-facing message wording matching real output, cross-library comparison-benchmark parity with honest N/A cells and .github/comparison-packages.json as the single source of pins, and the three MessageAwareComponent inspector-overlay invariants. Use when a test defines its own copy of production logic, when adding a SYNC note or a comparison bridge, or when touching the custom editor overlay.",
+      "metadata": {
+        "category": "testing",
+        "tags": "testing, documentation, linting, code-quality, javascript"
+      },
+      "lineCount": 68,
+      "references": [
+        ".llm/skills/test-code-quality/references/comparison-parity-and-package-single-source.md",
+        ".llm/skills/test-code-quality/references/inspector-overlay-invariants.md",
+        ".llm/skills/test-code-quality/references/test-code-quality.md",
+        ".llm/skills/test-code-quality/references/test-production-code-part-1.md",
+        ".llm/skills/test-code-quality/references/test-production-code-part-2.md",
+        ".llm/skills/test-code-quality/references/test-production-code.md"
+      ]
+    },
+    {
+      "name": "test-coverage-design",
+      "path": ".llm/skills/test-coverage-design/SKILL.md",
+      "description": "What a change must be covered by before it lands: happy-path, negative, edge, unexpected, and defensive scenario categories; the canonical DxMessaging lifecycle edge-case set (scene unload mid-dispatch, DontDestroyOnLoad, prefab pooling churn, token disable/re-enable, post-Reset emit, OnApplicationQuit, cross-kind reentrancy); the MessageScenario parameterization rule that bans Untargeted/Targeted/Broadcast test triplets; and Unity test naming, assertion, and anti-pattern rules. Use when writing tests for a new feature or bug fix, when touching the bus dispatch path, or when a reviewer asks whether coverage is sufficient.",
+      "metadata": {
+        "category": "testing",
+        "tags": "testing, coverage, edge-cases, data-driven, unity, nunit, best-practices, quality"
+      },
+      "lineCount": 77,
+      "references": [
+        ".llm/skills/test-coverage-design/references/comprehensive-test-coverage.md",
+        ".llm/skills/test-coverage-design/references/lifecycle-edge-coverage.md",
+        ".llm/skills/test-coverage-design/references/test-coverage-data-driven.md",
+        ".llm/skills/test-coverage-design/references/test-coverage-organization-assertions.md",
+        ".llm/skills/test-coverage-design/references/test-coverage-scenario-categories.md",
+        ".llm/skills/test-coverage-design/references/test-coverage-unity-anti-patterns.md",
+        ".llm/skills/test-coverage-design/references/tests-must-be-parameterized-by-message-kind.md"
+      ]
+    },
+    {
+      "name": "test-diagnostics",
+      "path": ".llm/skills/test-diagnostics/SKILL.md",
+      "description": "Making an opaque test failure explain itself: diagnostic collector classes that record an execution trace and render a BuildReport on failure, an EditorDiagnostics static with an Enabled flag plus NameFilter for zero-overhead-when-off logging, enabling and restoring diagnostics per fixture in SetUp/TearDown, and UNH-SUPPRESS markers for intentional edge cases. Use when an assertion only reports expected-vs-actual counts, when debugging spatial queries, state machines, or other multi-step algorithms, or when adding temporary logging to a test.",
+      "metadata": {
+        "category": "testing",
+        "tags": "testing, diagnostics, debugging, logging, investigation"
+      },
+      "lineCount": 47,
+      "references": [
+        ".llm/skills/test-diagnostics/references/test-diagnostics-patterns.md",
+        ".llm/skills/test-diagnostics/references/test-diagnostics-usage.md",
+        ".llm/skills/test-diagnostics/references/test-diagnostics.md"
+      ]
+    },
+    {
+      "name": "test-failure-investigation",
+      "path": ".llm/skills/test-failure-investigation/SKILL.md",
+      "description": "The zero-flaky policy and the eight-step procedure for a failing or intermittent test: reproduce it in a loop, state the expected behavior, capture actual state, read the production code path, categorize the root cause (production bug, test bug, setup bug, order dependency, timing, environment), fix the cause, re-run repeatedly, and document the finding. Includes the banned fixes - Thread.Sleep, WaitForSeconds, [Ignore], retry loops, swallowed try/catch, raised timeouts, deleting the test. Use when a test fails, is flaky, passes locally but fails in CI, or passes alone but fails with the suite.",
+      "metadata": {
+        "category": "testing",
+        "tags": "testing, investigation, debugging, quality, zero-flaky, root-cause-analysis"
+      },
+      "lineCount": 63,
+      "references": [
+        ".llm/skills/test-failure-investigation/references/test-failure-investigation-procedure.md",
+        ".llm/skills/test-failure-investigation/references/test-failure-investigation-root-causes.md",
+        ".llm/skills/test-failure-investigation/references/test-failure-investigation.md"
+      ]
+    },
+    {
+      "name": "test-fixtures-and-cleanup",
+      "path": ".llm/skills/test-fixtures-and-cleanup/SKILL.md",
+      "description": "Test fixture lifecycle for Unity tests: a CommonTestBase that tracks GameObjects, disposables, and scenes for automatic destruction; the Track/TrackDisposable/CreateGameObject/CreateTestScene helpers; DeferAssetCleanupToOneTimeTearDown for expensive shared assets; and reference-counted static fixtures with paired Acquire/Release in OneTimeSetUp/OneTimeTearDown. Use when a test leaks GameObjects or textures, when tests pollute each other, when a fixture is expensive enough to share across test classes, or when writing a new test base class.",
+      "metadata": {
+        "category": "testing",
+        "tags": "testing, fixtures, performance, shared-state, reference-counting"
+      },
+      "lineCount": 56,
+      "references": [
+        ".llm/skills/test-fixtures-and-cleanup/references/shared-test-fixtures-generic-base.md",
+        ".llm/skills/test-fixtures-and-cleanup/references/shared-test-fixtures-reference-counting.md",
+        ".llm/skills/test-fixtures-and-cleanup/references/shared-test-fixtures.md",
+        ".llm/skills/test-fixtures-and-cleanup/references/test-base-class-cleanup-part-1.md",
+        ".llm/skills/test-fixtures-and-cleanup/references/test-base-class-cleanup-usage.md",
+        ".llm/skills/test-fixtures-and-cleanup/references/test-base-class-cleanup.md"
+      ]
+    },
+    {
+      "name": "unity-editor-ci",
+      "path": ".llm/skills/unity-editor-ci/SKILL.md",
+      "description": "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, the canonical version list in .github/unity-versions.json enforced by npm run validate:unity-versions, the organization build-lock and timeout invariants that protect the two-seat Unity serial, the ensure-editor.ps1 standalone-CLI bootstrap with its PATH refresh and module quarantine/reinstall repair, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only or license or editor-provisioning failure, or editing a Unity workflow.",
+      "metadata": {
+        "category": "unity",
+        "tags": "unity, ci, matrix, il2cpp, lts, game-ci"
+      },
+      "lineCount": 122,
+      "references": [
+        ".llm/skills/unity-editor-ci/references/github-actions-version-consistency.md",
+        ".llm/skills/unity-editor-ci/references/unity-ci-matrix.md",
+        ".llm/skills/unity-editor-ci/references/unity-editor-cli-bootstrap.md",
+        ".llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md",
+        ".llm/skills/unity-editor-ci/references/unity-version-single-source.md"
+      ]
+    },
+    {
+      "name": "unity-editor-conventions",
+      "path": ".llm/skills/unity-editor-conventions/SKILL.md",
+      "description": "Three Unity-side contracts for DxMessaging: the MessageAwareComponent base-call contract (Awake, OnEnable, OnDisable, OnDestroy, RegisterMessageHandlers must chain base.<method>(), enforced by DXMSG006-DXMSG010 plus an IL scanner, inspector overlay, runtime breadcrumb, and meta-test); the package-owned editor design system built on DxMessagingEditorTheme, UI Toolkit, and EditorWindowTestUtility; and the devcontainer named-volume cache contract in .devcontainer/cache-contract.sh. Use when subclassing MessageAwareComponent, adding a guarded lifecycle method, styling or testing an editor window or inspector, or adding/diagnosing a devcontainer cache mount.",
+      "metadata": {
+        "category": "unity",
+        "tags": "unity, analyzer, lifecycle, diagnostics, messageawarecomponent, base-call, dxmsg006"
+      },
+      "lineCount": 125,
+      "references": [
+        ".llm/skills/unity-editor-conventions/references/base-call-contract.md",
+        ".llm/skills/unity-editor-conventions/references/devcontainer-cache-contract.md",
+        ".llm/skills/unity-editor-conventions/references/editor-design-system.md"
+      ]
+    },
+    {
+      "name": "unity-licensing",
+      "path": ".llm/skills/unity-licensing/SKILL.md",
+      "description": "Unity Editor licensing for CI: classic serial activation with the UNITY_SERIAL, UNITY_EMAIL, and UNITY_PASSWORD secrets, the four-layer always-return guarantee (return-at-start, PowerShell try/finally, an if: always() return-unity-license workflow step inside the org-lock window, and the next run's return-at-start), the seven-step per-job flow, the roughly two-seat no-reclaim tradeoff, and the retired UNITY_LICENSING_SERVER secret that must not come back. Use when a Unity job reports Failed to activate, No valid Unity Editor license found, or consumed serial seats; when wiring Unity secrets on a runner; or when editing license handling in run-ci-tests.ps1 or a Unity workflow. Local Unity needs no license.",
+      "metadata": {
+        "category": "unity",
+        "tags": "unity, serial, license, return, leak, seat, ci"
+      },
+      "lineCount": 73,
+      "references": [
+        ".llm/skills/unity-licensing/references/unity-license-bootstrap.md",
+        ".llm/skills/unity-licensing/references/unity-license-return-guarantee.md"
+      ]
+    },
+    {
+      "name": "unity-mcp-test-loop",
+      "path": ".llm/skills/unity-mcp-test-loop/SKILL.md",
+      "description": "Running Unity EditMode and PlayMode tests locally from the Linux devcontainer against the Windows host editor over the unity-mcp MCP server: the scripts/mcp/unity-mcp.mjs entry point and its npm run unity:mcp:bridge / :probe / :configure commands, endpoint discovery and bearer-token auth, the DxMcpTestRunner.Run bridge with its JSON result and .status sidecar, Unity_RunCommand sandbox restrictions, and using durationSeconds to measure suite speed. Use when running Unity tests locally, when the MCP endpoint is unreachable or unauthorized, when the DxMcpTestRunner bridge is missing, or when capturing a local perf baseline.",
+      "metadata": {
+        "category": "unity",
+        "tags": "unity, testing, mcp, devcontainer, test-runner"
+      },
+      "lineCount": 87,
+      "references": [
+        ".llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md"
+      ]
+    },
+    {
+      "name": "unity-test-execution",
+      "path": ".llm/skills/unity-test-execution/SKILL.md",
+      "description": "How the DxMessaging Unity test legs are hosted, filtered, and kept fast: the generated UPM host project under .artifacts/unity/projects/, NUnit [Category] filtering and -testFilter, EnterPlayModeOptions domain/scene reload disabling, batched teardown frames, [UnityTest] vs [Test], banned real-time waits, and the single-threaded bus contract. Use when an EditMode/PlayMode/standalone leg blows its wall-clock budget, when adding an asmdef or test dependency under Tests/, when picking test categories, when converting a no-yield [UnityTest], or before adding lock/Interlocked to the dispatch path.",
+      "metadata": {
+        "category": "testing",
+        "tags": "testing, unity, performance, play-mode, domain-reload"
+      },
+      "lineCount": 69,
+      "references": [
+        ".llm/skills/unity-test-execution/references/fast-unity-tests.md",
+        ".llm/skills/unity-test-execution/references/single-thread-contract.md",
+        ".llm/skills/unity-test-execution/references/test-categories-execution.md",
+        ".llm/skills/unity-test-execution/references/test-categories-part-1.md",
+        ".llm/skills/unity-test-execution/references/test-categories.md",
+        ".llm/skills/unity-test-execution/references/upm-test-harness.md"
+      ]
+    },
+    {
+      "name": "value-equality-and-hashing",
+      "path": ".llm/skills/value-equality-and-hashing/SKILL.md",
+      "description": "Give structs typed equality with IEquatable<T>, matching GetHashCode, == and != operators, and an optional constructor-cached hash so dictionary and HashSet operations stop boxing. Use when writing a struct that will be a dictionary key or set element, when the profiler shows boxing allocations in collection lookups, or when default struct equality (reflection-based) is showing up in a hot path.",
+      "metadata": {
+        "category": "solid",
+        "tags": "solid, performance, struct, equality, boxing, iequatable"
+      },
+      "lineCount": 81,
+      "references": [
+        ".llm/skills/value-equality-and-hashing/references/iequatable-implementation-usage.md",
+        ".llm/skills/value-equality-and-hashing/references/iequatable-implementation-variants.md",
+        ".llm/skills/value-equality-and-hashing/references/iequatable-implementation.md",
+        ".llm/skills/value-equality-and-hashing/references/readonly-struct-cached-hash-part-1.md",
+        ".llm/skills/value-equality-and-hashing/references/readonly-struct-cached-hash-part-2.md",
+        ".llm/skills/value-equality-and-hashing/references/readonly-struct-cached-hash-performance-notes.md",
+        ".llm/skills/value-equality-and-hashing/references/readonly-struct-cached-hash.md"
+      ]
+    }
+  ]
+}

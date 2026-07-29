@@ -70,25 +70,32 @@
     "check:banner": "node scripts/sync-banner-version.js --check",
     "update:llms-txt": "node scripts/update-llms-txt.js",
     "check:llms-txt": "node scripts/update-llms-txt.js --check",
-    "update:skills-index": "node scripts/generate-skills-index.js && prettier --write .llm/skills/index.md",
-    "check:skills-index": "node scripts/generate-skills-index.js --check",
+    "llm:index": "node scripts/llm/harness.js index",
+    "llm:validate": "node scripts/llm/harness.js validate",
+    "llm:check": "node scripts/llm/harness.js check",
     "update:issue-template-versions": "node scripts/generate-issue-template-versions.js",
     "check:issue-template-versions": "node scripts/generate-issue-template-versions.js --check",
     "refresh:analyzers": "node scripts/analyzers/verify-analyzer-payload.js --write",
     "check:analyzers": "node scripts/analyzers/verify-analyzer-payload.js --check",
     "fix:csharp-underscores": "node scripts/fix-csharp-underscore-methods.js",
+    "unity:mcp:probe": "node scripts/mcp/unity-mcp.mjs probe",
+    "unity:mcp:configure": "node scripts/mcp/unity-mcp.mjs configure",
+    "unity:mcp:bridge": "node scripts/mcp/unity-mcp.mjs bridge",
     "validate:asmdef-references": "node scripts/validate-asmdef-references.js",
     "validate:unity-versions": "node scripts/validate-unity-versions.js",
     "validate:unity-pr-policy": "python3 scripts/validate-unity-pr-policy.py",
     "validate:js-loc-budget": "node scripts/validate-js-loc-budget.js",
     "validate:npm-meta": "node scripts/validate-npm-meta.js",
     "validate:docs:strict": "python3 -m venv .artifacts/docs-venv && .artifacts/docs-venv/bin/python -m pip install -r requirements-docs.txt && .artifacts/docs-venv/bin/mkdocs build --strict --site-dir _site",
-    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run check:skills-index && npm run check:issue-template-versions"
+    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run llm:check && npm run check:issue-template-versions"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "cspell": "10.0.1",
     "markdownlint-cli2": "0.23.2",
-    "prettier": "3.9.6"
+    "prettier": "3.9.6",
+    "smol-toml": "1.7.1",
+    "yaml": "^2.9.0"
   },
   "samples": [
     {

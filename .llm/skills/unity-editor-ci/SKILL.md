@@ -1,0 +1,122 @@
+---
+name: unity-editor-ci
+description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, the canonical version list in .github/unity-versions.json enforced by npm run validate:unity-versions, the organization build-lock and timeout invariants that protect the two-seat Unity serial, the ensure-editor.ps1 standalone-CLI bootstrap with its PATH refresh and module quarantine/reinstall repair, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only or license or editor-provisioning failure, or editing a Unity workflow."
+metadata:
+  category: "unity"
+  tags: "unity, ci, matrix, il2cpp, lts, game-ci"
+---
+
+# Unity Editor CI
+
+The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self-hosted
+Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions x
+`{editmode, playmode, standalone}` = 9 cells; `standalone` builds and runs a
+`StandaloneWindows64` IL2CPP player from an ephemeral project generated under
+`.artifacts/unity/projects/<version>-<mode>/`.
+
+## When to use
+
+- Adding, bumping, or removing a Unity version in CI.
+- Triaging an IL2CPP-only failure that does not reproduce in EditMode.
+- A Unity job fails before any test output: license activation, editor provisioning, missing
+  DLL, hung domain reload.
+- Editing any workflow that consumes `compute-unity-assemblies`, the build lock, or timeouts.
+- Auditing or bumping GitHub Action major versions.
+
+## Rules
+
+### Version single source of truth
+
+- `.github/unity-versions.json` holds exactly two keys: `all` (non-empty, no duplicates,
+  strictly ascending by `major.minor.patch`) and `release` (must be a member of `all`).
+  `latest` is DEFINED as the last element of `all` and is never stored as its own key.
+- Bump versions ONLY in that file, then run `npm run validate:unity-versions`.
+- `scripts/validate-unity-versions.js` assigns each consumer one policy: `no-literals` (reads
+  the JSON at runtime via `jq`; the default for every active workflow, including
+  `unity-tests.yml`, `unity-benchmarks.yml`, `perf-numbers.yml`), `mirror-all` (literal set
+  must equal `all`: `runner-bootstrap.yml`, `scripts/unity/maintain-windows-runner.ps1`,
+  `scripts/unity/install-runner-maintenance-task.ps1`), and `mirror-release` (every literal
+  equals `release`: `release.yml`, `unity-gameci-experiment.yml`).
+- `.github/workflows-disabled/` and the canonical file itself are excluded from scanning.
+  `ci.yml` runs the validator in the `Lint GitHub Actions workflows` job, so drift blocks merge.
+
+### License seat, lock, and timeouts
+
+- The Unity serial has two activation seats org-wide with no server-side reclaim. Two controls
+  protect it: `strategy.max-parallel: 1` serializes cells WITHIN a run, and the external
+  `Ambiguous-Interactive/ambiguous-organization-build-lock` actions admit at most two runners
+  ACROSS runs and repositories.
+- `max-parallel: 1` goes under `strategy:` on the matrix workflows only (`unity-tests.yml`,
+  `unity-benchmarks.yml`). A native `concurrency.group: wallstop-organization-builds` is
+  repository-scoped and is FORBIDDEN.
+- Timeout invariant: `job timeout-minutes >= acquire timeout-minutes + RUN_BUDGET (120)`.
+  Current magnitudes: acquire `timeout-minutes: "300"`, job `timeout-minutes: 420`, and a
+  step-level `timeout-minutes: 120` on the Unity run step. The step guard must be `>= 120` and
+  STRICTLY below the job timeout so the step fails first and releases the seat.
+- Acquire the lock immediately before `run-ci-tests.ps1` and release it with `if: always()`.
+  Provision editors BEFORE taking the lock; provisioning can take tens of minutes.
+
+### The compute-unity-assemblies is-empty gate
+
+- The compute step carries `id: compute`. Every license-consuming step in the same job
+  (`ensure-editor.ps1` provision, `acquire-build-lock`, `run-ci-tests.ps1`) is gated with
+  `if: ${{ steps.compute.outputs.is-empty != 'true' }}`.
+- `Verify tests actually ran` must require `steps.compute.outcome == 'success'` plus either
+  `is-empty == 'true'` or a non-skipped Unity run step, and receives
+  `expected-empty: ${{ steps.compute.outputs.is-empty }}`. Never gate verify on is-empty alone.
+
+### Editor provisioning (`scripts/unity/ensure-editor.ps1`)
+
+- CI must pass `-ProvisioningProfile` explicitly: `EditorOnly` for editmode, playmode,
+  benchmarks, and release checks; `StandaloneWindowsIl2Cpp` for standalone (installs only
+  `windows-il2cpp`); `Android` and `Full` for the heavy module sets.
+- `unity install-path` with NO arguments is a GETTER. The SET form uses a flag (`-s`, then
+  `--set` as fallback) and is best-effort only; discovery always relies on the getter.
+- The installer only writes the User-scope registry PATH, so the session PATH must be
+  refreshed from both Machine and User scopes with `%LOCALAPPDATA%\Unity\bin` prepended and
+  the existing `$env:PATH` appended LAST to preserve process-only entries.
+- Any module install must pass `--accept-eula`, built in exactly one place
+  (`Get-UnityCliModuleInstallArguments`). `android-open-jdk` is deliberately absent from the
+  requested `-m` ids (its real id is version-pinned) but IS in the verified-on-disk groups.
+- Module presence is decided by disk probes, not CLI exit codes. Missing `core` groups trigger
+  quarantine to `<install-root>\_quarantine\<version>-<timestamp>-<id>` plus reinstall; missing
+  `android` groups retry through `Install-UnityAndroidModules` first.
+  `DXM_UNITY_DISABLE_EDITOR_REPAIR=1` is for debugging the installer only.
+- The script must stay valid PowerShell 5.1 under `Set-StrictMode -Version Latest` and reparse
+  under Linux `pwsh`.
+
+### Windows host prerequisites
+
+- A `0xC0000135` / `STATUS_DLL_NOT_FOUND` startup failure is host damage, not editor damage.
+  `ensure-editor.ps1` emits a single-line `::error::` and refuses to loop on a Unity reinstall.
+- Unity 2021.3, 2022.3, and 6000.x need BOTH the VC++ 2010 SP1 x64 Redistributable
+  (`MSVCP100.dll`, `MSVCR100.dll`) and the VC++ 2015-2022 x64 Redistributable
+  (`VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`, `MSVCP140.dll`). They are separate packages.
+- `scripts/unity/bootstrap-windows-runner.ps1` installs both, enables
+  `HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem!LongPathsEnabled = 1`, adds Defender
+  exclusions, and installs `pwsh` via winget. `.github/actions/assert-unity-host-prereqs` runs
+  it per job and exports `DXM_RUNNER_PREREQ_INSTALLED=1`; `runner-bootstrap.yml` is the
+  Actions-only recovery path. `DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1` forces `-DetectOnly`.
+
+### Caches, logs, and action versions
+
+- `actions/cache@v5` keys include OS, architecture, `matrix.unity-version`, mode, and hashes of
+  package/test inputs plus `run-ci-tests.ps1`. Never add broad `restore-keys` for `Library/`.
+- Read a failing log in order: pre-Unity setup, `LICENSE SYSTEM`, `[Licensing]` / editor
+  startup, `Reloading assemblies`, `Run tests on platform`, `Test results saved at`.
+- Keep action majors consistent repo-wide across `.github/workflows/` and
+  `.github/workflows-disabled/`: `checkout@v6`, `cache@v5`, `setup-node@v6`,
+  `setup-dotnet@v5`, `setup-python@v6`, `upload-artifact@v7`, `download-artifact@v8`,
+  `github-script@v9`, `create-github-app-token@v3`, `attest-build-provenance@v4`,
+  `deploy-pages@v5`, `upload-pages-artifact@v5`. Verify a tag exists upstream
+  (`git ls-remote --tags`) before calling a version invalid; bump all instances in one PR.
+
+## References
+
+| Document                                                                                    | Purpose                                                                                                                  |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [github-actions-version-consistency.md](./references/github-actions-version-consistency.md) | Repo-wide action major pins, the audit and upstream-tag verification commands, and artifact action pairing               |
+| [unity-ci-matrix.md](./references/unity-ci-matrix.md)                                       | The 9-cell matrix, build-lock and timeout invariants, is-empty gate, IL2CPP-only failure catalog, and log reading order  |
+| [unity-editor-cli-bootstrap.md](./references/unity-editor-cli-bootstrap.md)                 | ensure-editor.ps1 internals: PATH refresh, getter-based discovery, module desired state, and quarantine/reinstall repair |
+| [unity-runner-host-prereqs.md](./references/unity-runner-host-prereqs.md)                   | The four-layer Windows host prereq defense, both VC++ generations, and detection contracts                               |
+| [unity-version-single-source.md](./references/unity-version-single-source.md)               | The canonical unity-versions.json contract, the three consumer policies, and how to bump a version                       |

@@ -193,7 +193,7 @@ detect-or-install mode, an `ensure-editor.ps1` short-circuit that fails fast
 when Unity itself reports `0xC0000135` instead of looping on a futile editor
 reinstall, and the operator-facing workflow that recovers the host without
 RDP/SSH access. See
-[`.llm/skills/unity/unity-runner-host-prereqs.md`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity/unity-runner-host-prereqs.md)
+[`.llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md)
 for the LLM/AI-agent reference.
 
 ### Symptom
@@ -597,7 +597,7 @@ Sources:
 - Bootstrap script: [`scripts/unity/bootstrap-windows-runner.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/bootstrap-windows-runner.ps1).
 - Per-job preflight composite: [`.github/actions/assert-unity-host-prereqs/action.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/actions/assert-unity-host-prereqs/action.yml).
 - Auto-recovery workflow: [`.github/workflows/runner-bootstrap.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/runner-bootstrap.yml).
-- LLM-agent skill: [`.llm/skills/unity/unity-runner-host-prereqs.md`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity/unity-runner-host-prereqs.md).
+- LLM-agent skill: [`.llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md).
 - The [PowerShell 7 prerequisite](#powershell-7-prerequisite-on-self-hosted-runners)
   section above documents the `pwsh: command not found` failure that the
   same bootstrap fixes.
