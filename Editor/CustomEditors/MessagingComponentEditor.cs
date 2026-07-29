@@ -44,14 +44,33 @@ namespace DxMessaging.Editor.CustomEditors
         {
             base.OnInspectorGUI();
 
+            // This inspector is the package's remaining IMGUI surface, so it cannot pick colors up
+            // from the stylesheet the way the UI Toolkit windows do. It reads them from the palette
+            // instead: `Color.green` and `Color.yellow` are outside the design system, and both are
+            // close to unreadable as label text on the light skin.
+            bool proSkin = EditorGUIUtility.isProSkin;
             _matchingStyle ??= new GUIStyle(EditorStyles.label)
             {
-                normal = { textColor = Color.green },
+                normal =
+                {
+                    textColor = DxMessagingEditorPalette.ForSkin(
+                        DxMessagingEditorPalette.BroadcastText,
+                        DxMessagingEditorPalette.BroadcastTextOnLight,
+                        proSkin
+                    ),
+                },
                 fontStyle = FontStyle.Bold,
             };
             _potentialMatchStyle ??= new GUIStyle(EditorStyles.label)
             {
-                normal = { textColor = Color.yellow },
+                normal =
+                {
+                    textColor = DxMessagingEditorPalette.ForSkin(
+                        DxMessagingEditorPalette.Amber,
+                        DxMessagingEditorPalette.AmberOnLight,
+                        proSkin
+                    ),
+                },
                 fontStyle = FontStyle.Bold,
             };
             _defaultStyle ??= new GUIStyle(EditorStyles.label);

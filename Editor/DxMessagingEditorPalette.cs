@@ -20,6 +20,23 @@ namespace DxMessaging.Editor
         internal static readonly Color BorderStrong = new(0.14f, 0.17f, 0.22f, 0.52f);
         internal static readonly Color SelectedWash = new(0.96f, 0.66f, 0.21f, 0.1f);
 
+        /// <summary>
+        /// Label colors for the two skins, mirroring the <c>--dx-*-text</c> tokens and the
+        /// <c>.dx-theme.dx-light</c> overrides. UI Toolkit surfaces get these from the stylesheet;
+        /// IMGUI holdouts cannot, so they read them here instead of inventing colors.
+        /// </summary>
+        internal static readonly Color BroadcastText = FromHex(0xa8, 0xd3, 0xb2);
+        internal static readonly Color BroadcastTextOnLight = FromHex(0x33, 0x68, 0x4a);
+        internal static readonly Color AmberOnLight = FromHex(0xb0, 0x7d, 0x1f);
+
+        /// <summary>
+        /// Picks whichever of a token's two values belongs to the skin in use.
+        /// </summary>
+        internal static Color ForSkin(Color darkSkinColor, Color lightSkinColor, bool proSkin)
+        {
+            return proSkin ? darkSkinColor : lightSkinColor;
+        }
+
         internal const string UntargetedKind = "Untargeted";
         internal const string TargetedKind = "Targeted";
         internal const string BroadcastKind = "Broadcast";

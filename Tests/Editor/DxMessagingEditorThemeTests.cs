@@ -81,6 +81,32 @@ namespace DxMessaging.Tests.Editor
             AssertColor(DxMessagingEditorPalette.Trace, ReadTokenColor("--dx-untargeted"));
             AssertColor(DxMessagingEditorPalette.TraceMessage, ReadTokenColor("--dx-broadcast"));
             AssertColor(DxMessagingEditorPalette.TraceTarget, ReadTokenColor("--dx-accent-soft"));
+
+            // The IMGUI component inspector cannot read the stylesheet, so it reads these two pairs
+            // from the palette instead. Both skins are pinned, because a light-skin value that drifts
+            // is exactly the unreadable label this replaced.
+            AssertColor(
+                DxMessagingEditorPalette.BroadcastText,
+                ReadTokenColor("--dx-broadcast-text")
+            );
+            AssertColor(
+                DxMessagingEditorPalette.BroadcastTextOnLight,
+                ReadTokenColor("--dx-broadcast-text", lightSkin: true)
+            );
+            AssertColor(
+                DxMessagingEditorPalette.AmberOnLight,
+                ReadTokenColor("--dx-accent", lightSkin: true)
+            );
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ForSkinPicksTheValueBelongingToTheSkinInUse(bool proSkin)
+        {
+            Assert.That(
+                DxMessagingEditorPalette.ForSkin(Color.red, Color.blue, proSkin),
+                Is.EqualTo(proSkin ? Color.red : Color.blue)
+            );
         }
 
         /// <summary>
@@ -92,10 +118,9 @@ namespace DxMessaging.Tests.Editor
         /// surface than the windows rendered, and the leftovers were only ever found by hand-auditing
         /// -- which is why the audit that closed the last of them (issue #304) still missed
         /// <c>.dx-sep</c>. Asserting the invariant instead of the leftovers is what stops that
-        /// recurring: a
-        /// class added to the sheet but never rendered fails here, and so does a rendered class whose
-        /// last C# reference was deleted. A class with genuinely no home belongs out of the sheet,
-        /// not on an allowlist here.
+        /// recurring: a class added to the sheet but never rendered fails here, and so does a
+        /// rendered class whose last C# reference was deleted. A class with genuinely no home belongs
+        /// out of the sheet, not on an allowlist here.
         /// </remarks>
         [Test]
         public void EveryStylesheetClassIsRenderedByAnEditorSurface()
@@ -314,15 +339,28 @@ namespace DxMessaging.Tests.Editor
             return sources.ToString();
         }
 
-        private static Color ReadTokenColor(string tokenName)
+        /// <summary>
+        /// The value of a design token, from the default block or from the
+        /// <c>.dx-theme.dx-light</c> override block.
+        /// </summary>
+        private static Color ReadTokenColor(string tokenName, bool lightSkin = false)
         {
             string prefix = tokenName + ":";
+            bool inLightBlock = false;
             foreach (
                 string rawLine in System.IO.File.ReadAllLines(DxMessagingEditorTheme.TokensUssPath)
             )
             {
                 string line = rawLine.Trim();
-                if (!line.StartsWith(prefix, StringComparison.Ordinal))
+                if (line.StartsWith(".dx-theme", StringComparison.Ordinal))
+                {
+                    inLightBlock = line.Contains(
+                        DxMessagingEditorTheme.LightSkinClassName,
+                        StringComparison.Ordinal
+                    );
+                }
+
+                if (!line.StartsWith(prefix, StringComparison.Ordinal) || inLightBlock != lightSkin)
                 {
                     continue;
                 }
@@ -350,7 +388,9 @@ namespace DxMessaging.Tests.Editor
             }
 
             Assert.Fail(
-                $"Missing design token {tokenName} in {DxMessagingEditorTheme.TokensUssPath}."
+                $"Missing design token {tokenName} ({(lightSkin ? "light" : "default")} skin) in "
+                    + DxMessagingEditorTheme.TokensUssPath
+                    + "."
             );
             return Color.clear;
         }
