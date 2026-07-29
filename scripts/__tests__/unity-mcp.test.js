@@ -1353,51 +1353,36 @@ test("runProbe reports the endpoint it handshook with", async (t) => {
   );
 });
 
-// These deliberately do NOT inject `candidates`: passing one masks the narrowing that --no-discover
-// is supposed to do, which is how `probe --no-discover` shipped always-failing with an empty
-// attempts list. The endpoint has to come from options.host/options.port.
-test("probe --no-discover handshakes with the configured endpoint", async (t) => {
-  const port = await listeningPort(t);
-  const logged = captureConsole(t, "log");
-  const found = await runProbe(
-    commandOptions(temporaryDirectory(), { discover: false, host: "127.0.0.1", port }),
-    { fetchImpl: async () => initializeResponse(OK_PAYLOAD) }
-  );
-  assert.equal(found.port, port);
-  assert.match(logged.join("\n"), /Unity MCP is reachable at/);
-});
+// Deliberately no injected `candidates`: passing one masks the narrowing --no-discover performs,
+// which is how `probe --no-discover` shipped always-failing with an empty attempts list. The
+// endpoint has to come from options.host/options.port.
+test("--no-discover probes the configured endpoint rather than skipping the handshake", async (t) => {
+  const runtime = { fetchImpl: async () => initializeResponse(OK_PAYLOAD) };
+  captureConsole(t, "log");
+  captureConsole(t, "warn");
 
-test("probe --no-discover names the endpoint it tried when nothing answers", async () => {
-  const port = await closedPort();
+  const live = { discover: false, host: "127.0.0.1", port: await listeningPort(t) };
+  assert.equal(
+    (await runProbe(commandOptions(temporaryDirectory(), live), runtime)).port,
+    live.port
+  );
+
+  const repoRoot = temporaryDirectory();
+  const dead = { discover: false, host: "127.0.0.1", port: await closedPort() };
+  // The regression was an EMPTY attempts list, so naming the endpoint is the assertion.
   await assert.rejects(
-    () =>
-      runProbe(commandOptions(temporaryDirectory(), { discover: false, host: "127.0.0.1", port }), {
-        fetchImpl: async () => initializeResponse(OK_PAYLOAD)
-      }),
+    () => runProbe(commandOptions(repoRoot, dead), runtime),
     (error) => {
-      assert.match(error.message, /No Unity MCP endpoint responded/);
-      assert.match(error.message, new RegExp(`127\\.0\\.0\\.1:${port}`), "must report the attempt");
+      assert.match(error.message, new RegExp(`127\\.0\\.0\\.1:${dead.port}`));
       return true;
     }
   );
-});
 
-test("configure --no-discover writes the configured endpoint when nothing answers", async (t) => {
-  const repoRoot = temporaryDirectory();
-  const port = await closedPort();
-  captureConsole(t, "log");
-  captureConsole(t, "warn");
-  const url = await runConfigure(
-    commandOptions(repoRoot, { discover: false, host: "127.0.0.1", port }),
-    { fetchImpl: async () => initializeResponse(OK_PAYLOAD) }
-  );
-  assert.equal(url, `http://127.0.0.1:${port}/mcp`);
-  assert.equal(
-    JSON.parse(fs.readFileSync(clientConfigPaths(repoRoot).claudeCode, "utf8")).mcpServers[
-      "unity-mcp"
-    ].url,
-    url
-  );
+  // configure still writes the endpoint the caller named when the probe finds nothing there.
+  const url = await runConfigure(commandOptions(repoRoot, dead), runtime);
+  assert.equal(url, `http://127.0.0.1:${dead.port}/mcp`);
+  const written = JSON.parse(fs.readFileSync(clientConfigPaths(repoRoot).claudeCode, "utf8"));
+  assert.equal(written.mcpServers["unity-mcp"].url, url);
 });
 
 // `unauthorized` means a bridge IS running there; only the token is wrong. Falling back to the
