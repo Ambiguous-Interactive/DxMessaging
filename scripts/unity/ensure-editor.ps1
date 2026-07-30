@@ -268,8 +268,19 @@ function Invoke-WithRetry {
         try {
             return & $Action
         } catch {
-            $lastError = $_
-            $message = $_.Exception.Message
+            $caughtError = $_
+            $nonRetryable = $false
+            try {
+                $nonRetryable = [bool]$caughtError.Exception.Data['DxMessagingNonRetryable']
+            } catch {
+                $nonRetryable = $false
+            }
+            if ($nonRetryable) {
+                Write-Host "::error::Attempt $attempt of $MaxAttempts failed with a non-retryable process-safety error: $($caughtError.Exception.Message)"
+                throw $caughtError
+            }
+            $lastError = $caughtError
+            $message = $caughtError.Exception.Message
             if ($attempt -lt $MaxAttempts) {
                 $sleep = $DelaySeconds * $attempt
                 Write-Host "::warning::Attempt $attempt of $MaxAttempts failed: $message. Retrying in $sleep second(s)."
@@ -353,40 +364,33 @@ function Get-EnsureEditorProgressStallSeconds {
     # Single source of truth for the HEARTBEAT-STALL threshold applied to a captured
     # CLI invocation (see Invoke-UnityCliCaptureWithTimeout's poll loop). This is
     # COMPLEMENTARY to Get-EnsureEditorInstallTimeoutSeconds (the total wall-clock
-    # fallback): the heartbeat detector fires when the LAST observed progress
-    # triple (pct, phase, msg) has been unchanged for >= this many seconds, which
-    # is the actual failure mode of the Unity 6.3 install hang -- thousands of
-    # byte-identical `{"type":"progress","pct":50,"msg":"Installing Unity (6000.3.16f1)...","phase":"install"}`
-    # lines stream for 20 minutes with NO triple advance, then the job times out.
-    # Killing on stall classifies as retryable (sentinel exit 125, distinct from
-    # the wall-clock 124 so callers and tests can tell the two apart) and lets
-    # the existing retry + classification flow run on a hang.
+    # fallback): the heartbeat detector fires when the CLI emits NO stdout/stderr
+    # activity for >= this many seconds. Unity's beta CLI repeats one byte-identical
+    # 50-percent install triple during a healthy, long on-disk unpack, so an
+    # unchanged (pct, phase, msg) is not evidence of a hang. A silent child is
+    # still killed and classified as retryable (sentinel exit 125); a noisy child
+    # that never completes remains bounded by the wall-clock sentinel 124.
     #
     # Honors DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS following the EXACT
     # convention of Get-EnsureEditorInstallTimeoutSeconds: tests set it small
-    # (e.g. 2) to force the stall path; CI leaves it unset for the production
+    # (e.g. 1) to force the stall path; CI leaves it unset for the production
     # default. A non-integer or NEGATIVE override is ignored with a ::warning::
     # and the default is used. A value of 0 is the explicit OPT-OUT (no heartbeat
     # detection): the wall-clock fallback alone gates the run.
     #
-    # Default rationale (PROFILE-AWARE; raised from a flat 600s after CI evidence):
-    # the Unity 6000.3.16f1 install emits a SINGLE monolithic
+    # Default rationale (PROFILE-AWARE): the Unity 6000.3.16f1 install emits a
+    # SINGLE monolithic
     # `{"...,"pct":50,"phase":"install","msg":"Installing Unity (6000.3.16f1)..."}`
-    # triple that does NOT advance for the WHOLE on-disk unpack. On run 26701943540
-    # the EditorOnly playmode job sat at that exact triple for 600s on a REAL,
-    # HEALTHY install and was killed at precisely 600s (exit 125) -- a FALSE
-    # POSITIVE; it only recovered because Unity.exe happened to be resolvable and
-    # EditorOnly skips module verification. The il2cpp/standalone (and Android/Full)
-    # profiles unpack MORE payload during that same frozen phase, so they freeze
-    # even LONGER, and they CANNOT lean on the EditorOnly skip. So:
-    #   * EditorOnly                       -> 900s  (15 min; base-editor unpack only)
-    #   * StandaloneWindowsIl2Cpp/Android/Full -> 1800s (30 min; heavier payload, and
-    #                                          a false kill here cascades into the
-    #                                          module step, the real-world failure)
-    # Both stay well under the 2700s (45 min) wall-clock fallback, so a GENUINE hang
-    # is still surfaced before the job is cancelled, while a slow-but-real unpack is
-    # no longer killed mid-flight. The env override remains authoritative and is
-    # honored verbatim (tests set it to 2 to force the stall path; 0 opts out).
+    # triple throughout its on-disk work. Runs 26701943540 and 30534211162 show
+    # that an unchanged triple cannot establish a hang: the latter still emitted
+    # a line every quarter-second at the 1800-second threshold. They do not prove
+    # that install would have completed or identify the later directory locker.
+    # The detector therefore measures actual output silence. The profile-aware
+    # 900/1800-second defaults remain conservative bounds for a child that stops
+    # communicating, while the independent 2700-second wall clock bounds a child
+    # that stays noisy forever.
+    # The env override remains authoritative and is honored verbatim (tests set it
+    # to 2 to force the silent-stall path; 0 opts out).
     # StrictMode-safe: no collection reads.
     param([int]$Default = -1)
 
@@ -601,11 +605,10 @@ function Get-CliProgressTriple {
     # PURE, StrictMode-safe extractor for the (pct, phase, msg) progress TRIPLE
     # from a single captured CLI line. Returns a hashtable with three string
     # fields (any missing field is the empty string), or $null if the line is
-    # NOT a JSON progress line. Used by the heartbeat-stall detector in
-    # Invoke-UnityCliCaptureWithTimeout to recognize an UNCHANGED triple over
-    # the configured stall window (the actual failure mode of the Unity 6.3
-    # install hang -- thousands of byte-identical progress lines streaming for
-    # 20 minutes with NO triple advance).
+    # NOT a JSON progress line. Used by Invoke-UnityCliCaptureWithTimeout to keep
+    # the periodic diagnostic notice on the latest reported phase. Heartbeat
+    # liveness is based on any stdout/stderr activity, not triple changes, because
+    # the beta CLI repeats an unchanged triple during healthy on-disk unpacking.
     #
     # Deliberately regex-based (no ConvertFrom-Json): the lines are interleaved
     # progress spam, not a single JSON document, and a malformed/non-JSON beta
@@ -872,12 +875,24 @@ function Ensure-UnityCli {
     throw "Unity CLI installation completed but 'unity' is still not on PATH. Reopen the runner shell or add the Unity CLI install directory to PATH."
 }
 
+function Test-IsNonRetryableProcessSafetyError {
+    param($ErrorRecord)
+
+    try {
+        return [bool]$ErrorRecord.Exception.Data['DxMessagingNonRetryable']
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-UnityCliSafe {
-    # NON-THROWING best-effort invoker. The standalone Unity CLI is a moving
+    # Best-effort invoker for ordinary CLI failures. The standalone Unity CLI is a moving
     # beta surface (v0.1.0-beta.x); some flags are undocumented and may differ
     # between releases. For optional operations (setting the install path,
     # probing module ids) a non-zero exit must NOT abort the bootstrap, so this
-    # variant returns $true/$false and never throws on a non-zero exit code.
+    # variant returns $true/$false and never throws on a native non-zero exit code.
+    # An unconfirmed process-tree termination remains a marked, terminating safety
+    # error so no caller can continue provisioning around a possibly live child.
     # It echoes the command and surfaces any output via Write-Host so failures
     # remain diagnosable in CI logs. Captured-output callers should use
     # Get-UnityCliOutput instead; this one is for fire-and-forget effects.
@@ -891,9 +906,10 @@ function Invoke-UnityCliSafe {
 }
 
 function Get-UnityCliOutput {
-    # CAPTURING, NON-THROWING invoker for getter-style commands (install-path,
+    # CAPTURING invoker for getter-style commands (install-path,
     # editors -i --format json). Returns an array of output lines (strings) on
-    # success, or $null on any failure. Does NOT echo to the success pipeline
+    # success, or $null on an ordinary/native failure. An unconfirmed tree
+    # termination throws the marked safety error. Does NOT echo to the success pipeline
     # of this script: the caller (run-ci-tests.ps1) reads our LAST stdout line
     # as the resolved editor path, so getter output must never leak there.
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
@@ -923,6 +939,9 @@ function Get-UnityCliVersionText {
             $script:UnityCliVersionText = '(unavailable)'
         }
     } catch {
+        if (Test-IsNonRetryableProcessSafetyError -ErrorRecord $_) {
+            throw
+        }
         $script:UnityCliVersionText = "(query failed: $($_.Exception.Message))"
     }
 
@@ -930,7 +949,7 @@ function Get-UnityCliVersionText {
 }
 
 function Invoke-UnityCliCapture {
-    # CAPTURING, NON-THROWING invoker that returns BOTH the exit status AND the
+    # CAPTURING invoker that returns BOTH the exit status AND the
     # full output text, while STILL streaming output live to the console. The
     # other live invokers each give only part of this: Invoke-UnityCliSafe returns
     # a bool (no output, no exit code), and Get-UnityCliOutput captures lines but
@@ -945,12 +964,15 @@ function Invoke-UnityCliCapture {
     #                                  124 for wall-clock timeout, 125 for heartbeat-stall kill)
     #   Output            [string[]] - @()-wrapped stdout+stderr lines (never $null)
     #   StallKilled       [bool]     - $true when killed by the heartbeat-stall detector
-    #                                  (no (pct,phase,msg) triple change for the stall window);
+    #                                  (no stdout/stderr activity for the stall window);
     #                                  see Invoke-UnityCliCaptureWithTimeout
     #   TimedOutWallClock [bool]     - $true when killed by the absolute wall-clock timeout;
     #                                  mutually exclusive with StallKilled
+    #   DirectChildExited [bool]     - $true when direct CLI child exit was confirmed
     # Every field is always populated, so callers can read .Output.Count and
-    # index .Output without the 0/1/many AutomationNull hazard.
+    # index .Output without the 0/1/many AutomationNull hazard. The one deliberate
+    # exception is an unconfirmed process-tree termination: that throws a marked,
+    # non-retryable safety error instead of returning a misleading retryable result.
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
     # DELEGATE to the timeout-capable runner so EVERY captured CLI invocation
@@ -959,9 +981,9 @@ function Invoke-UnityCliCapture {
     # this function is UNCHANGED: same per-line LIVE streaming (the timeout runner
     # echoes each line the instant it arrives, exactly like this function's
     # original `& $cli | ForEach-Object { Write-Host }` did), same 2>&1 merge
-    # semantics, return shape `@{ Success; ExitCode; Output; StallKilled; TimedOutWallClock }`
-    # (the last two added with the heartbeat-stall detector; see the header for field
-    # semantics), same exit code on normal completion, same catch-on-spawn-failure behavior
+    # semantics, return shape `@{ Success; ExitCode; Output; StallKilled;
+    # TimedOutWallClock; DirectChildExited }`, same exit code on normal completion,
+    # same catch-on-spawn-failure behavior
     # (the timeout runner maps a
     # spawn failure to ExitCode -1 with the message in Output, exactly as before).
     # The timeout is sourced from the single override-aware helper so tests can
@@ -979,8 +1001,45 @@ function Invoke-UnityCliCapture {
     return Invoke-UnityCliCaptureWithTimeout -Arguments $Arguments -TimeoutSeconds $effectiveTimeout
 }
 
+function Confirm-UnityCliDirectChildExit {
+    param(
+        [Parameter(Mandatory = $true)]$Process,
+        [bool]$TerminationUnconfirmed
+    )
+
+    $reaped = $Process.WaitForExit(5000)
+    try {
+        $directChildExited = [bool]($reaped -and $Process.HasExited)
+    } catch {
+        $directChildExited = $false
+    }
+    if (-not $directChildExited) {
+        try {
+            $Process.Kill($true)
+        } catch {
+            $TerminationUnconfirmed = $true
+            try { $Process.Kill() } catch { }
+        }
+        $reaped = $Process.WaitForExit(5000)
+        try {
+            $directChildExited = [bool]($reaped -and $Process.HasExited)
+        } catch {
+            $directChildExited = $false
+        }
+    }
+    if (-not $directChildExited) {
+        $TerminationUnconfirmed = $true
+    }
+
+    return @{
+        Reaped                   = [bool]$reaped
+        DirectChildExited        = [bool]$directChildExited
+        TerminationUnconfirmed   = [bool]$TerminationUnconfirmed
+    }
+}
+
 function Invoke-UnityCliCaptureWithTimeout {
-    # TIMEOUT-CAPABLE, CAPTURING, NON-THROWING invoker -- the resilience core. It
+    # TIMEOUT-CAPABLE, CAPTURING invoker -- the resilience core. It
     # is the implementation Invoke-UnityCliCapture delegates to, and it preserves
     # that function's EXACT contract on the normal-completion path while adding a
     # total wall-clock timeout that a hung install (the Android NDK hang that gets
@@ -990,8 +1049,10 @@ function Invoke-UnityCliCaptureWithTimeout {
     # be interrupted -- a hung child runs until the whole job is killed, so the
     # retry never fires and no diagnostics are produced. A Process lets us enforce
     # a wall-clock deadline in the poll loop below and Kill($true) (tree-kill) the
-    # whole tree, so a hang is bounded, killed, classified as a (retryable)
-    # failure, and annotated.
+    # whole tree, so a hang is bounded, termination is requested, and a confirmed
+    # request is classified as a retryable failure and annotated. If tree
+    # termination cannot be confirmed safely, the wrapper throws a marked,
+    # non-retryable process-safety error.
     #
     # WHY A MAIN-THREAD POLL LOOP OVER TWO ASYNC LINE READS: two invariants must
     # hold AT ONCE -- (1) every line is echoed LIVE the instant it arrives, so a
@@ -1018,16 +1079,13 @@ function Invoke-UnityCliCaptureWithTimeout {
     # independent (tail de-dup, last-progress parse, substring matches), so
     # arrival-order is acceptable and, for live echo, strictly more faithful.
     #
-    # HEARTBEAT-STALL DETECTOR (Unity 6.3 install hang): a captured progress
-    # TRIPLE (pct, phase, msg) that has not advanced for >= $StallSeconds is
-    # classified as hung and tree-killed with sentinel exit 125 (distinct from
-    # the wall-clock 124 so callers and tests can tell hang-detected from
-    # wall-timeout-elapsed). This is the surgical fix for the Unity 6.3 install
-    # that streams ~4,672 byte-identical
-    # `{"type":"progress","pct":50,"msg":"Installing Unity (6000.3.16f1)...","phase":"install"}`
-    # lines for 20 minutes before the GitHub job is cancelled by the outer wall.
-    # Detecting the stall and surfacing it as a RETRYABLE failure (handled by
-    # the same Invoke-WithRetry flow as 124) lets the next attempt run.
+    # HEARTBEAT-STALL DETECTOR: a child that emits no stdout/stderr activity for
+    # >= $StallSeconds is classified as hung and tree-killed with sentinel exit
+    # 125 (distinct from the wall-clock 124). Repeated progress lines count as
+    # activity even when their (pct, phase, msg) triple is unchanged: Unity's beta
+    # CLI legitimately repeats one 50-percent triple throughout a long unpack.
+    # The independent wall-clock deadline still bounds a noisy child that never
+    # completes.
     #
     # The periodic ::notice:: emitted every PROGRESS_NOTICE_INTERVAL_SECONDS
     # makes the live CI log human-readable mid-flight (the alternative is a
@@ -1036,7 +1094,7 @@ function Invoke-UnityCliCaptureWithTimeout {
     # progress stream.
     #
     # Returns a SUPERSET of Invoke-UnityCliCapture's StrictMode-safe shape, with
-    # two additional fields so downstream classifiers can attribute a 125 exit to
+    # additional fields so downstream classifiers can attribute a 125 exit to
     # WHO actually killed the process (NOT to the raw exit code alone -- a
     # native exit 125 from the Unity CLI must NOT be misread as "heartbeat
     # stalled"). All callers that ONLY consume Success / ExitCode / Output
@@ -1058,6 +1116,9 @@ function Invoke-UnityCliCaptureWithTimeout {
     #                                   deadline killed the process (sentinel
     #                                   exit 124 from THIS wrapper). $false on
     #                                   a NATIVE 124 from the CLI.
+    #   DirectChildExited  [bool]     - $true when direct CLI child exit was
+    #                                   confirmed. A timeout that cannot confirm
+    #                                   this throws a non-retryable safety error.
     param(
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [int]$TimeoutSeconds = 2700,
@@ -1120,6 +1181,8 @@ function Invoke-UnityCliCaptureWithTimeout {
     $exit = -1
     $timedOut = $false
     $reaped = $false
+    $directChildExited = $false
+    $terminationUnconfirmed = $false
     # Declared at the OUTER scope (not just inside the try) so a spawn failure
     # that lands in the catch still leaves both kill-state booleans defined
     # for the StrictMode-safe return-shape construction below.
@@ -1137,6 +1200,7 @@ function Invoke-UnityCliCaptureWithTimeout {
         $proc.StartInfo = $psi
 
         [void]$proc.Start()
+        $clock = [System.Diagnostics.Stopwatch]::StartNew()
 
         # Keep ONE outstanding async line read per stream and poll both from the
         # main thread. A completed read whose Result is $null means that stream
@@ -1149,26 +1213,16 @@ function Invoke-UnityCliCaptureWithTimeout {
         $oTask = $outReader.ReadLineAsync()
         $eTask = $errReader.ReadLineAsync()
 
-        # Absolute deadline (UtcNow is monotonic-enough for a wall-clock budget and
-        # immune to the local-clock skew a relative subtraction would risk). When
-        # the timeout is opted out the deadline is DateTime.MaxValue (never fires).
-        if ($hasDeadline) {
-            $deadline = [DateTime]::UtcNow.AddMilliseconds([double]$timeoutMs)
-        } else {
-            $deadline = [DateTime]::MaxValue
-        }
-
-        # Heartbeat-stall + periodic-notice state. The "last triple" is the most
-        # recently observed (pct, phase, msg); we restart the stall clock every
-        # time it CHANGES. The notice clock is independent (time-gated, not
-        # output-gated) so a long advancing install still gets a human-readable
-        # cadence in the live log instead of the raw dupe wall. Opt-out semantics:
-        # $StallSeconds == 0 disables heartbeat-kill entirely; $startedAt is the
-        # wall-clock anchor for the elapsed/stallElapsed fields in the notice.
-        $startedAt = [DateTime]::UtcNow
-        $lastTripleAdvanceAt = $startedAt
-        $lastNoticeAt = $startedAt
-        $lastTripleKey = $null
+        # Heartbeat-stall + periodic-notice state. Every stdout/stderr line resets
+        # the activity clock; the "last triple" is retained only for the readable
+        # notice. The notice clock is independent (time-gated, not output-gated)
+        # so a long install still gets a human-readable cadence in the live log
+        # instead of the raw dupe wall. Opt-out semantics: $StallSeconds == 0
+        # disables heartbeat termination entirely. Stopwatch supplies monotonic
+        # elapsed time, so wall-clock adjustments cannot fire either guard early
+        # or postpone it.
+        $lastActivityMs = [int64]0
+        $lastNoticeMs = [int64]0
         $lastTriple = $null
         $stallEnabled = ($StallSeconds -gt 0)
         $stalled = $false
@@ -1185,17 +1239,10 @@ function Invoke-UnityCliCaptureWithTimeout {
                 } else {
                     Write-Host $line
                     $buffer.Add([string]$line)
-                    # Triple advance: if this line is a JSON progress line whose
-                    # (pct, phase, msg) differs from the last observed triple, the
-                    # install is making forward progress; reset the stall clock.
+                    $lastActivityMs = $clock.ElapsedMilliseconds
                     $triple = Get-CliProgressTriple -Line $line
                     if ($null -ne $triple) {
-                        $key = "$($triple.Pct)|$($triple.Phase)|$($triple.Msg)"
-                        if ($key -ne $lastTripleKey) {
-                            $lastTripleKey = $key
-                            $lastTriple = $triple
-                            $lastTripleAdvanceAt = [DateTime]::UtcNow
-                        }
+                        $lastTriple = $triple
                     }
                     $oTask = $outReader.ReadLineAsync()
                 }
@@ -1209,57 +1256,62 @@ function Invoke-UnityCliCaptureWithTimeout {
                 } else {
                     Write-Host $line
                     $buffer.Add([string]$line)
+                    $lastActivityMs = $clock.ElapsedMilliseconds
                     $triple = Get-CliProgressTriple -Line $line
                     if ($null -ne $triple) {
-                        $key = "$($triple.Pct)|$($triple.Phase)|$($triple.Msg)"
-                        if ($key -ne $lastTripleKey) {
-                            $lastTripleKey = $key
-                            $lastTriple = $triple
-                            $lastTripleAdvanceAt = [DateTime]::UtcNow
-                        }
+                        $lastTriple = $triple
                     }
                     $eTask = $errReader.ReadLineAsync()
                 }
                 $progressed = $true
             }
 
-            $nowUtc = [DateTime]::UtcNow
+            $elapsedMs = $clock.ElapsedMilliseconds
 
             # Periodic human-readable progress notice (time-gated, NOT per-line).
             # Reports the last triple + elapsed totals so an observer can see at a
-            # glance how far the install has come AND how long the stall clock has
-            # been ticking on the current triple.
-            $sinceNotice = ($nowUtc - $lastNoticeAt).TotalSeconds
+            # glance how far the install has come and how long the child has been
+            # silent.
+            $sinceNotice = ($elapsedMs - $lastNoticeMs) / 1000.0
             if ($progressNoticeEnabled -and $sinceNotice -ge $progressNoticeIntervalSeconds) {
-                $lastNoticeAt = $nowUtc
-                $elapsedSec = [int][Math]::Floor(($nowUtc - $startedAt).TotalSeconds)
-                $stallElapsedSec = [int][Math]::Floor(($nowUtc - $lastTripleAdvanceAt).TotalSeconds)
+                $lastNoticeMs = $elapsedMs
+                $elapsedSec = [int][Math]::Floor($elapsedMs / 1000.0)
+                $idleElapsedSec = [int][Math]::Floor(($elapsedMs - $lastActivityMs) / 1000.0)
                 if ($null -ne $lastTriple) {
                     $pctText = if ($lastTriple.Pct) { $lastTriple.Pct } else { '?' }
                     $phaseText = if ($lastTriple.Phase) { $lastTriple.Phase } else { '?' }
                     $msgText = if ($lastTriple.Msg) { $lastTriple.Msg } else { '?' }
-                    Write-Host "::notice::Unity CLI install heartbeat: pct=$pctText phase=$phaseText msg=`"$msgText`" elapsed=${elapsedSec}s stallElapsed=${stallElapsedSec}s"
+                    Write-Host "::notice::Unity CLI install heartbeat: pct=$pctText phase=$phaseText msg=`"$msgText`" elapsed=${elapsedSec}s idleElapsed=${idleElapsedSec}s"
                 } else {
-                    Write-Host "::notice::Unity CLI install heartbeat: no progress line observed yet elapsed=${elapsedSec}s stallElapsed=${stallElapsedSec}s"
+                    Write-Host "::notice::Unity CLI install heartbeat: no progress line observed yet elapsed=${elapsedSec}s idleElapsed=${idleElapsedSec}s"
                 }
             }
 
             # HEARTBEAT-STALL DETECTOR. Fires only when the operator has not opted
-            # out AND the last observed triple has been unchanged for >= the
-            # configured window. Tree-kills with the distinct stall sentinel so
-            # the failure-diagnostic path can name "heartbeat stall" specifically.
-            if ($stallEnabled -and ($nowUtc - $lastTripleAdvanceAt).TotalSeconds -ge $StallSeconds) {
+            # out AND the child has emitted no stdout/stderr for >= the configured
+            # window. Tree-kills with the distinct stall sentinel so the failure
+            # diagnostic can distinguish output silence from wall-clock expiry.
+            if ($stallEnabled -and ($elapsedMs - $lastActivityMs) -ge ([int64]$StallSeconds * 1000)) {
                 $stalled = $true
                 $timedOut = $true
                 try {
+                    # An already-exited parent cannot identify or terminate a
+                    # reparented descendant that is still holding these pipes.
+                    # Fail closed instead of retrying into a possible editor lock.
+                    $terminationUnconfirmed = [bool]$proc.HasExited
+                } catch { }
+                try {
                     $proc.Kill($true)
                 } catch {
+                    # A direct-child fallback cannot reach descendants. Even if
+                    # it succeeds, do not allow a provisioning retry.
+                    $terminationUnconfirmed = $true
                     try { $proc.Kill() } catch { }
                 }
                 break
             }
 
-            if ($nowUtc -ge $deadline) {
+            if ($hasDeadline -and $elapsedMs -ge $timeoutMs) {
                 # HUNG (or a quick-exit child whose grandchild still holds the pipe
                 # open, so EOF never arrives): kill the WHOLE process tree. The bool
                 # overload Kill($true) terminates descendants on .NET Core / PS7 (the
@@ -1269,11 +1321,15 @@ function Invoke-UnityCliCaptureWithTimeout {
                 # CRITICAL fix here is that we no longer mistake that case for success.
                 $timedOut = $true
                 try {
+                    $terminationUnconfirmed = [bool]$proc.HasExited
+                } catch { }
+                try {
                     $proc.Kill($true)
                 } catch {
                     # Best-effort: the process may have exited between the check and
                     # the kill, or the platform may reject the descendant kill; fall
                     # back to a plain kill so at least the direct child dies.
+                    $terminationUnconfirmed = $true
                     try { $proc.Kill() } catch { }
                 }
                 break
@@ -1287,10 +1343,20 @@ function Invoke-UnityCliCaptureWithTimeout {
             }
         }
 
-        # The loop ended either at EOF on both streams (normal/early exit) or at a
-        # kill. Reap the process so ExitCode is valid, bounded so a stuck reap
-        # cannot hang the harness.
-        $reaped = $proc.WaitForExit(5000)
+        # The loop ended either at EOF on both streams (normal/early exit) or
+        # after requesting termination. Reap the direct child so ExitCode and
+        # timeout classification are evidence-backed.
+        $exitConfirmation = Confirm-UnityCliDirectChildExit `
+            -Process $proc `
+            -TerminationUnconfirmed:$terminationUnconfirmed
+        $reaped = [bool]$exitConfirmation.Reaped
+        $directChildExited = [bool]$exitConfirmation.DirectChildExited
+        $terminationUnconfirmed = [bool]$exitConfirmation.TerminationUnconfirmed
+        if (-not $directChildExited) {
+            # Starting another provisioning attempt while this process may hold
+            # the editor tree is unsafe.
+            $timedOut = $true
+        }
 
         # Drain any line reads that completed during/after the kill so no pre-kill
         # output is dropped. A non-$null Result is a buffered line; $null is EOF.
@@ -1307,10 +1373,13 @@ function Invoke-UnityCliCaptureWithTimeout {
         }
 
         if ($timedOut) {
-            # Distinguish heartbeat-stall (125) from wall-clock timeout (124) so
-            # callers + tests can attribute the failure mode precisely. Both are
-            # treated as retryable by the install retry classifier.
-            if ($stalled) {
+            # Return a timeout sentinel only after the direct child is confirmed
+            # exited. An unconfirmed child is a non-retryable process-safety
+            # failure handled below.
+            if ($terminationUnconfirmed -or -not $directChildExited) {
+                $terminationUnconfirmed = $true
+                $exit = 126
+            } elseif ($stalled) {
                 $exit = $stallExitCode
             } else {
                 $exit = $timeoutExitCode
@@ -1346,6 +1415,13 @@ function Invoke-UnityCliCaptureWithTimeout {
         if (Get-Command Add-ProvisioningTimeoutEvent -ErrorAction SilentlyContinue) {
             Add-ProvisioningTimeoutEvent -Arguments $Arguments -TimeoutSeconds $TimeoutSeconds
         }
+        if ($terminationUnconfirmed) {
+            $message = "Unity CLI command '$($Arguments -join ' ')' exceeded a liveness guard, but safe process-tree termination could not be confirmed. The direct child either exited before the termination request, leaving any reparented descendant unreachable, or did not exit after two bounded termination requests. Provisioning will not retry while a process may still hold the editor tree."
+            Write-Host "::error::$message"
+            $exception = New-Object System.InvalidOperationException($message)
+            $exception.Data['DxMessagingNonRetryable'] = $true
+            throw $exception
+        }
         # Wrap-immune timeout annotation (Write-Host "::error::" is NOT subject to
         # ConciseView word-wrap): name the timeout, the configured limit, the env
         # knob to raise it, and the LAST progress message seen so CI has a stable,
@@ -1358,13 +1434,13 @@ function Invoke-UnityCliCaptureWithTimeout {
         if ($stalled) {
             # HEARTBEAT-STALL kill: distinct sentinel (125) AND distinct annotation
             # wording so an observer can tell at a glance whether the install was
-            # killed for "no triple advance in N seconds" (this branch) versus
+            # killed for "no output activity in N seconds" (this branch) versus
             # "exceeded the total wall-clock budget" (the else branch below).
             $stallKnobName = if ($StallKnob) { $StallKnob } else { 'DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS' }
-            Write-Host "::error::Unity CLI command '$($Arguments -join ' ')' HEARTBEAT STALLED after $StallSeconds second(s) with no progress (pct, phase, msg) advance; the process tree was killed (sentinel exit $stallExitCode). Raise the threshold via $stallKnobName (0 disables the heartbeat detector). Last progress message: $lastProgress. Collapsed tail:`n$collapsedTail"
+            Write-Host "::error::Unity CLI command '$($Arguments -join ' ')' HEARTBEAT STALLED after $StallSeconds second(s) with no stdout/stderr activity; tree termination was requested and direct child exit was confirmed (sentinel exit $stallExitCode). Raise the threshold via $stallKnobName (0 disables the heartbeat detector). Last progress message: $lastProgress. Collapsed tail:`n$collapsedTail"
         } else {
             $knob = if ($TimeoutKnob) { $TimeoutKnob } else { 'DXM_ENSURE_EDITOR_INSTALL_TIMEOUT_SECONDS' }
-            Write-Host "::error::Unity CLI command '$($Arguments -join ' ')' TIMED OUT after $TimeoutSeconds second(s) and the process tree was killed (sentinel exit $timeoutExitCode). Raise the limit via $knob (0 disables the timeout). Last progress message: $lastProgress. Collapsed tail:`n$collapsedTail"
+            Write-Host "::error::Unity CLI command '$($Arguments -join ' ')' TIMED OUT after $TimeoutSeconds second(s); tree termination was requested and direct child exit was confirmed (sentinel exit $timeoutExitCode). Raise the limit via $knob (0 disables the timeout). Last progress message: $lastProgress. Collapsed tail:`n$collapsedTail"
         }
     }
 
@@ -1382,6 +1458,7 @@ function Invoke-UnityCliCaptureWithTimeout {
         Output            = @($captured)
         StallKilled       = [bool]$stalled
         TimedOutWallClock = [bool]($timedOut -and -not $stalled)
+        DirectChildExited = [bool]$directChildExited
     }
 }
 
@@ -2806,6 +2883,9 @@ function Move-UnityVersionInstallToQuarantine {
             $candidateRoots.Add($cliRoot)
         }
     } catch {
+        if (Test-IsNonRetryableProcessSafetyError -ErrorRecord $_) {
+            throw
+        }
         Write-Host "::notice::Could not query Unity CLI install root while quarantining Unity ${Version}: $($_.Exception.Message)"
     }
 
@@ -3984,7 +4064,7 @@ function Test-TextIndicatesEditorNotModuleManageable {
 }
 
 function Test-UnityEditorModuleManageable {
-    # Best-effort, NON-THROWING probe: is the editor at $Version in a state where the
+    # Best-effort probe: is the editor at $Version in a state where the
     # Unity CLI's `install-modules` can ADD modules to it? Returns a StrictMode-safe
     # hashtable @{ Manageable=[bool]; Reason=[string]; Output=[string[]] }.
     #
@@ -4010,6 +4090,9 @@ function Test-UnityEditorModuleManageable {
         $effectiveTimeout = Get-EffectiveUnityCliTimeoutSeconds -RequestedSeconds $requestedTimeout
         $result = Invoke-UnityCliCaptureWithTimeout -Arguments @('install-modules', '-e', $Version, '-l') -TimeoutSeconds $effectiveTimeout -TimeoutKnob 'DXM_ENSURE_EDITOR_PROBE_TIMEOUT_SECONDS'
     } catch {
+        if (Test-IsNonRetryableProcessSafetyError -ErrorRecord $_) {
+            throw
+        }
         return @{ Manageable = $true; Reason = "module-manageability probe threw: $($_.Exception.Message)"; Output = @() }
     }
 
@@ -4174,8 +4257,9 @@ function Ensure-UnityCiModules {
         # the failure-annotation arg echo.
         $installArgs = @(Get-UnityCliModuleInstallArguments -Verb 'install-modules' -Version $Version -ModuleIds (Get-UnityCiModuleIdsForTier -Tier 'core' -Profile $Profile))
 
-        # Attempt the install via the capturing (non-throwing) path so we can inspect
-        # BOTH the exit code AND the output text before deciding whether it was fatal.
+        # Attempt the install via the capturing path so we can inspect BOTH the exit
+        # code AND output before deciding whether an ordinary failure was fatal.
+        # An unconfirmed tree termination throws immediately and cannot be retried.
         $result = Invoke-UnityCliCapture -Arguments $installArgs
 
         # Re-verify the core tier on disk (disk is the source of truth; an exit 6
@@ -4263,6 +4347,9 @@ function Write-InstalledEditorDiagnostics {
             Write-Host "Unity CLI reported install root: (unavailable)"
         }
     } catch {
+        if (Test-IsNonRetryableProcessSafetyError -ErrorRecord $_) {
+            throw
+        }
         Write-Host "::notice::Could not query Unity CLI install root: $($_.Exception.Message)"
     }
 
@@ -4280,6 +4367,9 @@ function Write-InstalledEditorDiagnostics {
         Write-Host "Installed Unity editors reported by CLI:"
         Invoke-UnityCliSafe -Arguments @('editors', '-i') | Out-Null
     } catch {
+        if (Test-IsNonRetryableProcessSafetyError -ErrorRecord $_) {
+            throw
+        }
         Write-Host "::notice::Could not query installed Unity editors: $($_.Exception.Message)"
     }
     Write-Host "::endgroup::"
@@ -4307,6 +4397,9 @@ function Write-InstallDiagnostics {
     try {
         Write-Host "Unity CLI version: $(Get-UnityCliVersionText)"
     } catch {
+        if (Test-IsNonRetryableProcessSafetyError -ErrorRecord $_) {
+            throw
+        }
         Write-Host "::notice::Could not query the Unity CLI version: $($_.Exception.Message)"
     }
 
@@ -4476,8 +4569,9 @@ if (-not $editor) {
     # The base install has been observed to fail flakily (exit 6 after a long run
     # with almost no output) AND to HANG until the job is cancelled. Each attempt
     # is now bounded by the install timeout (Invoke-UnityCliCapture delegates to
-    # the timeout runner), so a hang is killed and classified as a retryable
-    # failure that Invoke-WithRetry can re-attempt. The attempt count is sourced
+    # the timeout runner), so a hang with a confirmed tree-termination request is
+    # classified as a retryable failure that Invoke-WithRetry can re-attempt.
+    # Unconfirmed termination fails closed without retry. The attempt count is sourced
     # from the override-aware helper (default 2 -- two attempts fit inside the
     # 180-minute Provision-Unity-Editor step budget even for a slow install), and
     # the CAPTURING invoker makes a final failure THROW with the CLI output tail +

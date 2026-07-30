@@ -9,16 +9,21 @@ PR: **#316**
 The remaining editor-tooling screenshot work is narrower than the prior plan
 recorded. Unity 6000.4.6f1 can render a genuine Editor panel into an offscreen
 `RenderTexture`, so the devcontainer does not need a desktop screenshot API. The
-method produced visually inspectable proof for both acceptance surfaces:
+method produced visually inspectable staging evidence for both target surfaces:
 
-- the real Message Monitor with live package UI and data;
+- the real Message Monitor with shipped package UI and discovered component
+  rows;
 - a real Inspector containing `MessagingComponentEditor` and the current Message
   subscriptions section.
 
 The host reports `EditorGUIUtility.isProSkin == true` and `UserSkin == 1`. The
 proofs are therefore dark-theme experiments, not documentation replacements.
 The manifest requests Unity 2022.3 LTS, while the configured host is 6000.4.6f1.
-The remaining WS-7.3 work is to resolve that version choice, select Personal/light
+The Monitor mechanism completed without a capture diagnostic. The Inspector
+render emitted an IMGUI cursor diagnostic, both proofs are RGBA rather than the
+manifest's required 24-bit RGB, and no reusable capture helper is retained. The
+remaining WS-7.3 work is to make the Inspector path repeatable and
+diagnostic-free, emit RGB24, resolve the version choice, select Personal/light
 through the Unity UI, capture the complete set, inspect it, and replace the
 tracked images and manifest.
 
@@ -44,13 +49,14 @@ panel render avoids both constraints:
    washed-out grays; the linear rerun visually matched the real dark panels and
    amber borders.
 1. Close the temporary windows, destroy transient objects, restore selection and
-   render state, and clear the Console.
+   render state, and record any new Console diagnostics without clearing them.
 
 This reads only the render target created for the experiment. It does not read
 the desktop, call `ReadScreenPixel`, invoke `PrintWindow`, move a window onscreen,
 or change the Unity skin.
 
-The safe path produced two saved dark proof artifacts:
+The desktop-independent staging experiment produced two saved dark proof
+artifacts:
 
 | Surface | Artifact | Size | SHA-256 |
 | --- | --- | ---: | --- |
@@ -78,11 +84,12 @@ delegates to `InternalEditorUtility.ReadScreenPixel`, so these files are unsafe
 historical staging evidence, not acceptance or RenderTexture evidence.
 
 The render-target, `GL.sRGBWrite`, active-target, selection, and window state were
-restored in cleanup. The Inspector render emitted transient
+restored in cleanup. The Inspector render emitted
 `EditorGUIUtility.AddCursorRect called outside an editor OnGUI` diagnostics while
-painting its IMGUI body into the offscreen panel; after capture the Console was
-cleared and a fresh error query returned zero entries. Unity was idle, no
-temporary Monitor or Inspector remained, and selection was clear.
+painting its IMGUI body into the offscreen panel. The Console was cleared after
+the experiment and a fresh error query returned zero entries, but clearing is
+not acceptance evidence and must not be part of the final workflow. Unity was
+idle, no temporary Monitor or Inspector remained, and selection was clear.
 Exactly the seven standard windows remained: MainToolbar, Project, Inspector,
 Hierarchy, Scene, Game, and Console.
 
@@ -92,9 +99,10 @@ The plan and issue #314 prohibit both `ReadScreenPixel` and `PrintWindow`, but t
 repository test guarded only the first API. Added `PrintWindow` to the blocked
 capture primitives in `scripts/__tests__/design-system-dumps.test.js`.
 
-The targeted test passed before and after the change. A temporary C# probe that
-contained `PrintWindow` made the same test fail with the expected path and token;
-removing the probe restored green:
+The targeted test was green before the change because it did not yet check
+`PrintWindow`. After adding the token, a temporary C# probe containing
+`PrintWindow` made the test fail with the expected path and token; removing the
+probe restored green:
 
 ```text
 tests 3
@@ -126,22 +134,99 @@ while repairing a missing Windows IL2CPP module: another process held the manage
 Editor directory, three quarantine attempts failed, and the cleanup gate
 correctly failed closed.
 
-A controlled rerun of only that failed job was started before changing the PR
-head. Its result distinguishes transient runner state from a repeatable
-provisioning defect. The branch will then be synchronized with current `master`
-so it carries the session 176 prototype-exclusion guard before a full matrix is
-requested.
+A controlled rerun of only that failed job completed before changing the PR
+head. Retry job `90935151437` reproduced the defect:
+
+- `unity install 6000.3.16f1 --accept-eula -m windows-il2cpp` emitted 7,029
+  repeated progress lines at exactly 50 percent and made no progress-triple
+  advance for 1,800 seconds;
+- the heartbeat guard requested process-tree termination and returned sentinel
+  exit 125 without separately proving that every descendant had exited;
+- `Unity.exe` was resolvable afterward, but Windows IL2CPP was absent and the
+  Unity CLI reported that the editor had no manageable modules;
+- the atomic in-place reinstall reported that the editor was already installed,
+  without supplying the module;
+- uninstall plus all three bounded quarantine attempts then failed because a
+  process still held
+  `E:\actions-runner\_tool\u6-v3\6000.3.16f1\Editor`;
+- the version-scoped stale-process sweep matched zero processes, so the script
+  correctly surfaced the runner-operator `handle64.exe`/manual-delete
+  remediation and the cleanup gate failed closed because the build lock had
+  never been acquired.
+
+The repeat is evidence of a persistent provisioning defect, not a transient
+failure or a test failure. A read-only follow-up from the connected Unity host
+could not inspect the failed cache directly because the host does not expose the
+runner's `E:` tool-cache volume.
+
+The provisioning guard used an invalid classification signal. The Unity beta
+CLI was still emitting one progress line about every quarter-second when the
+guard killed it, and run `26701943540` had also emitted the same unchanged
+50-percent triple while laying down a resolvable editor. An unchanged
+`(pct, phase, msg)` therefore cannot distinguish a hung install from a long,
+active operation.
+
+`Invoke-UnityCliCaptureWithTimeout` now resets its heartbeat on every
+stdout/stderr line and retains the progress triple only for human-readable
+notices. A genuinely silent child still receives sentinel exit 125 after the
+profile-aware idle threshold; a child that remains noisy forever is still
+bounded by the independent 2,700-second wall-clock sentinel 124. Both guards use
+a monotonic `Stopwatch`. Before returning either sentinel, the wrapper requests
+tree termination and confirms the direct child exited. A direct-child fallback
+is not treated as proof of tree termination. If the direct child exited before
+the tree request, if `Kill(true)` is unavailable or fails, or if the child cannot
+be reaped after a second bounded termination attempt, the wrapper throws a
+marked, non-retryable process-safety error. Provisioning cannot start another
+attempt while a descendant may still hold the editor tree. A real rerun is
+still required to learn whether the 6000.3 install completes under the new
+policy; the prior logs do not prove that the termination request caused the
+partial editor or the unidentified directory lock.
+
+A hermetic AST-extracted PowerShell probe supplied the initial red-green
+evidence. Before the fix, a fake installer emitting eight identical progress
+lines at 200 ms intervals was killed after one second with exit 125 after only
+six lines. After the fix, all eight lines completed with exit 0 and
+`StallKilled == false`; a second fake installer that emitted no output was still
+killed after one second with exit 125 and `StallKilled == true`.
+
+The experiment is now retained in
+`scripts/__tests__/test-unity-editor-heartbeat.ps1`. Its 32 assertions exercise
+stdout and stderr activity, the environment override, monotonic periodic
+notices, direct-child exit confirmation, descendant tree termination, the noisy
+wall deadline, both outcomes of the second bounded reap, and the actual
+fail-closed producer/consumer path for a quick-exit parent whose live orphan
+holds inherited pipes. CI executes the test on Linux, macOS, and Windows.
+
+The branch was then merged with current `master` at `645cde05`, bringing in the
+session 176 prototype-exclusion guard and the latest performance-number update.
+That integration raised JavaScript source LOC to 17,565 against the 17,500
+budget. A table-driven consolidation in
+`scripts/__tests__/ci-aggregate-workflow.test.js` preserves the workflow
+contracts while removing repeated assertion scaffolding and reduces the total
+to 17,498. The focused aggregate-workflow suite passes all 18 tests, and the
+heartbeat probe passes all 32 assertions. The final full Node and repository
+validation reruns remain pending after these changes. The full merged
+`WallstopStudios.DxMessaging.Tests.Editor` assembly then passed 549 tests with
+zero failures in 12.3873838 seconds through `DxMcpTestRunner`; the result is
+retained at
+`.artifacts/unity-mcp/session-177-full-editmode-after-merge.json`.
 
 ## Remaining work
 
-- Finish the controlled Unity 6000.3 standalone rerun and act on its evidence.
-- Synchronize PR #316 with current `master`, validate, push, and obtain current
-  reviews and required checks.
+- Commit the current provisioning, regression-test, documentation, and
+  integration compaction changes; validate, push, and obtain current reviews and
+  required checks.
 - Switch the host to Personal/light through the Unity UI.
 - Resolve the manifest's Unity 2022.3 LTS requirement versus the configured
   6000.4.6f1 host.
+- Retain a reusable render-target capture helper, eliminate the Inspector IMGUI
+  cursor diagnostic without clearing the Console, and emit RGB24 PNGs.
+- Validate the helper on Project Settings and Flow Graph in addition to the
+  Monitor and Inspector targets.
 - Repeat the offscreen Inspector and Message Monitor captures. Capture the native
   menu cascade and combined Hierarchy/Inspector frames manually, or explicitly
   revise their scope.
 - Inspect every final image, then update the documentation screenshots and
-  manifest together.
+  `docs/guides/inspector-overlay.md` and
+  `docs/images/inspector-overlay/README.md` manifest together. Convert the
+  guide's three legacy `!!!` admonitions when editing it.

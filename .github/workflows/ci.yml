@@ -772,6 +772,11 @@ jobs:
         shell: pwsh
         run: ./scripts/__tests__/test-unity-license-activation-retry.ps1 -VerboseOutput
 
+      - name: Test Unity editor heartbeat guards
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        shell: pwsh
+        run: ./scripts/__tests__/test-unity-editor-heartbeat.ps1 -VerboseOutput
+
       - name: Run validators
         if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}
         shell: bash

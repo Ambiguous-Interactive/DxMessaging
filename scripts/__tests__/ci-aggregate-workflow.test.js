@@ -410,49 +410,32 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   const classify = `uses: ${LOCK_ACTION_PREFIX}classify-unity-cleanup-evidence@${CLEANUP_POLICY_SHA}`;
   const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${CLEANUP_POLICY_SHA}`;
   const gate = `uses: ${LOCK_ACTION_PREFIX}require-confirmed-unity-cleanup@${CLEANUP_POLICY_SHA}`;
-  const runnerLabels = new Map([
-    ["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'],
-    ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'],
-    ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'],
-    ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']
-  ]);
-  const preflightAction =
-    `${LOCK_ACTION_PREFIX}check-unity-runner-availability@${LOCK_ACTION_SHA}` +
-    LOCK_ACTION_PIN.comment;
-  const workflowSources = fs
-    .readdirSync(WORKFLOW_DIR)
-    .filter((file) => /\.ya?ml$/.test(file))
-    .map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"));
+  // prettier-ignore
+  const runnerLabels = new Map([["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'], ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']]);
+  // prettier-ignore
+  const preflightAction = `${LOCK_ACTION_PREFIX}check-unity-runner-availability@${LOCK_ACTION_SHA}` + LOCK_ACTION_PIN.comment;
+  const readWorkflow = (file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+  // prettier-ignore
+  const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map(readWorkflow);
 
   for (const [file, labels] of runnerLabels) {
-    const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+    const source = readWorkflow(file);
     const preflight = getJobBlock(source, "runner-preflight", file);
-    assert.match(preflight, /\n    runs-on: ubuntu-latest\n/, file);
-    assert.match(preflight, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), file);
-    assert.match(preflight, /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, file);
-    assert.match(
-      preflight,
-      /reader-app-private-key: \$\{\{ secrets\.BUILD_LOCK_READER_APP_PRIVATE_KEY \}\}/,
-      file
-    );
-    assert.match(preflight, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`), file);
+    // prettier-ignore
+    const contracts = [/\n    runs-on: ubuntu-latest\n/, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, /reader-app-private-key: \$\{\{ secrets\.BUILD_LOCK_READER_APP_PRIVATE_KEY \}\}/, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`)];
+    for (const contract of contracts) assert.match(preflight, contract, file);
     assert.doesNotMatch(preflight, /RUNNER_AUDIT_PAT|Soft pass|soft-pass/i, file);
   }
 
   for (const action of [acquire, returnLicense, classify, release, gate]) {
-    assert.equal(
-      workflowSources.reduce((count, source) => count + source.split(action).length - 1, 0),
-      UNITY_LOCK_WINDOWS.length,
-      action
-    );
+    const count = workflowSources.reduce((sum, source) => sum + source.split(action).length - 1, 0);
+    assert.equal(count, UNITY_LOCK_WINDOWS.length, action);
   }
 
   for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
     const label = `${file}:${jobId}`;
-    const licensedCondition =
-      `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}` +
-      "steps\\.acquire_lock\\.outputs\\.acquired == 'true'";
-    const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+    const licensedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
+    const source = readWorkflow(file);
     const job = getJobBlock(source, jobId, file);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
       assert.match(job, /\n      fail-fast: false\n      max-parallel: 1\n/, `${label} fairness`);
@@ -461,25 +444,13 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       assert.equal(job.split(action).length - 1, 1, `${label}: ${action}`);
     }
 
-    const lifecycleNames = [
-      "Acquire organization Unity lock",
-      "Require acquired Unity lock",
-      licensedWorkName,
-      "Return Unity license",
-      "Classify Unity cleanup evidence",
-      "Release organization Unity lock",
-      "Require confirmed Unity cleanup"
-    ];
+    // prettier-ignore
+    const lifecycleNames = ["Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
     const positions = lifecycleNames.map((name) => job.indexOf(`      - name: ${name}`));
-    assert.ok(
-      positions.every((position) => position >= 0),
-      `${label} lifecycle steps must all exist`
-    );
-    assert.deepEqual(
-      positions,
-      [...positions].sort((a, b) => a - b),
-      `${label} lifecycle order`
-    );
+    const sortedPositions = [...positions].sort((a, b) => a - b);
+    // prettier-ignore
+    assert.ok(positions.every((position) => position >= 0), `${label} lifecycle steps must all exist`);
+    assert.deepEqual(positions, sortedPositions, `${label} lifecycle order`);
 
     const acquireStep = getStepBlock(job, "Acquire organization Unity lock");
     const provisionStep = getStepBlock(job, "Provision Unity Editor");
@@ -490,79 +461,41 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const releaseStep = getStepBlock(job, "Release organization Unity lock");
     const gateStep = getStepBlock(job, "Require confirmed Unity cleanup");
 
-    assert.match(acquireStep, /\n        id: acquire_lock\n/);
-    assert.match(
-      provisionStep,
-      /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/,
-      `${label}: central cleanup and provisioning must use the same trusted editor root`
-    );
-    assert.doesNotMatch(
-      provisionStep,
-      /-RequireHealthyExisting/,
-      `${label}: provisioning must be able to populate the trusted editor root`
-    );
-    assert.match(
-      requireStep,
-      /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/
-    );
-    assert.match(
-      workStep,
-      new RegExp(`\\n        if: \\$\\{\\{ ${licensedCondition} \\}\\}\\n`),
-      label
-    );
-    if (file === "unity-tests.yml") {
-      assert.match(
-        workStep,
-        /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/,
-        `${label}: licensed work and central return must use the same trusted editor root`
-      );
-    }
-    assert.match(
-      workStep,
-      /-LicenseReturnOwner Central/,
-      `${label}: the trusted central action must own the post-activation return`
-    );
-    assert.match(
-      returnStep,
-      /\n        id: return_unity_license\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/
-    );
+    // prettier-ignore
+    const contracts = [
+      [acquireStep, /\n        id: acquire_lock\n/],
+      [provisionStep, /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: central cleanup and provisioning must use the same trusted editor root`],
+      [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],
+      [workStep, new RegExp(`\\n        if: \\$\\{\\{ ${licensedCondition} \\}\\}\\n`), label],
+      [workStep, /-LicenseReturnOwner Central/, `${label}: the trusted central action must own the post-activation return`],
+      [returnStep, /\n        id: return_unity_license\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/],
+      [classifyStep, /\n        id: cleanup_classification\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/],
+      [classifyStep, /return-log-digest: \$\{\{ steps\.return_unity_license\.outputs\.return-log-digest \}\}/],
+      [releaseStep, /\n        id: release_unity_lock\n        if: always\(\)\n/],
+      [releaseStep, /resource-cleanup-status: \$\{\{ steps\.cleanup_classification\.outputs\.resource-cleanup-status \}\}/],
+      [gateStep, /\n        if: always\(\)\n/],
+      [gateStep, /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/],
+      [gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/]
+    ];
+    // prettier-ignore
+    if (file === "unity-tests.yml") contracts.push([workStep, /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: licensed work and central return must use the same trusted editor root`]);
+    for (const [actual, contract, message] of contracts) assert.match(actual, contract, message);
+
+    // prettier-ignore
+    assert.doesNotMatch(provisionStep, /-RequireHealthyExisting/, `${label}: provisioning must be able to populate the trusted editor root`);
     assert.doesNotMatch(returnStep, /continue-on-error:/);
-    assert.match(
-      classifyStep,
-      /\n        id: cleanup_classification\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/
-    );
-    assert.match(
-      classifyStep,
-      /return-log-digest: \$\{\{ steps\.return_unity_license\.outputs\.return-log-digest \}\}/
-    );
-    assert.match(releaseStep, /\n        id: release_unity_lock\n        if: always\(\)\n/);
-    assert.match(
-      releaseStep,
-      /resource-cleanup-status: \$\{\{ steps\.cleanup_classification\.outputs\.resource-cleanup-status \}\}/
-    );
-    assert.match(gateStep, /\n        if: always\(\)\n/);
-    assert.match(
-      gateStep,
-      /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/
-    );
-    assert.match(gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/);
 
     const acquireHolder = /holder-id-suffix: (.+)\n/.exec(acquireStep);
     const releaseHolder = /holder-id-suffix: (.+)\n/.exec(releaseStep);
     const acquireRunner = /runner-id: (.+)\n/.exec(acquireStep);
     const releaseRunner = /runner-id: (.+)\n/.exec(releaseStep);
-    assert.ok(acquireHolder, `${label} acquire holder identity`);
-    assert.ok(releaseHolder, `${label} release holder identity`);
-    assert.ok(acquireRunner, `${label} acquire runner identity`);
-    assert.ok(releaseRunner, `${label} release runner identity`);
+    // prettier-ignore
+    for (const [identity, name] of [[acquireHolder, "acquire holder"], [releaseHolder, "release holder"], [acquireRunner, "acquire runner"], [releaseRunner, "release runner"]]) assert.ok(identity, `${label} ${name} identity`);
     assert.equal(releaseHolder?.[1], acquireHolder?.[1], `${label} holder identity`);
     assert.equal(releaseRunner?.[1], acquireRunner?.[1], `${label} runner identity`);
 
-    assert.doesNotMatch(
-      job,
-      /\n    environment:/,
-      `${label} must not require environment approval`
-    );
+    // prettier-ignore
+    assert.doesNotMatch(job, /\n    environment:/, `${label} must not require environment approval`);
     assert.doesNotMatch(job, /Delete private Unity cleanup evidence/, label);
   }
 });
