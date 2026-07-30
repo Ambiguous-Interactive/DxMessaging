@@ -50,8 +50,12 @@ lifecycle owner threw. PR #312 now contains only that fix.
 - Candidate complete PlayMode passes: **979 passed / 0 failed** twice.
 - Post-review PlayMode diagnostics + memory reclamation: **67 passed / 0
   failed**.
-- Final candidate CI: all static checks and all nine Unity legs passed across
-  2021.3, 2022.3, and 6000.3.
+- Reduced-patch complete EditMode pass after reverting the key experiment:
+  **783 passed / 0 failed** in 341.2 seconds.
+- Reduced-patch PlayMode diagnostics + memory reclamation: **65 passed / 0
+  failed** in 5.3 seconds.
+- Superseded primitive-key candidate CI: all static checks and all nine Unity
+  legs passed across 2021.3, 2022.3, and 6000.3.
 
 ## Performance science
 
