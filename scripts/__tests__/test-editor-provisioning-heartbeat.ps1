@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Behavioral tests for the Unity CLI heartbeat and wall-clock guards.
+    Behavioral tests for editor-provisioning heartbeat and wall-clock guards.
 
 .DESCRIPTION
     Extracts the real timeout runner from ensure-editor.ps1 without executing
