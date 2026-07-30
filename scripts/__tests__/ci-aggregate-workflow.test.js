@@ -334,6 +334,10 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   const runnerLabels = new Map([
     ["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'],
     ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'],
+    [
+      "runner-bootstrap.yml",
+      '[["self-hosted","Windows","RAM-64GB","${{ inputs.runner-label }}"]]'
+    ],
     ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'],
     ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']
   ]);
@@ -363,30 +367,8 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       /RUNNER_AUDIT_PAT|Soft pass|soft-pass|Require an online/i,
       file
     );
+    if (file === "runner-bootstrap.yml") assert.doesNotMatch(preflight, /\n        run:|\.status/);
   }
-
-  const bootstrapSource = fs.readFileSync(
-    path.join(WORKFLOW_DIR, "runner-bootstrap.yml"),
-    "utf8"
-  );
-  const bootstrapPreflight = getJobBlock(
-    bootstrapSource,
-    "runner-preflight",
-    "runner-bootstrap.yml"
-  );
-  assert.match(
-    bootstrapPreflight,
-    /\n    name: Self-hosted runner registration preflight\n/
-  );
-  assert.match(
-    bootstrapPreflight,
-    new RegExp(`uses: ${escapeRegExp(preflightAction)}`)
-  );
-  assert.match(
-    bootstrapPreflight,
-    /required-label-sets: '\[\["self-hosted","Windows","RAM-64GB","\$\{\{ inputs\.runner-label \}\}"\]\]'/
-  );
-  assert.doesNotMatch(bootstrapPreflight, /\n        run:|\.status|RUNNER_AUDIT_PAT/);
 
   for (const action of [acquire, returnLicense, classify, release, gate]) {
     assert.equal(
