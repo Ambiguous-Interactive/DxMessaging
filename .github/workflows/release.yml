@@ -247,6 +247,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
           $editor = ./scripts/unity/ensure-editor.ps1 `
             -UnityVersion '2022.3.45f1' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -CiManagedOnly `
             -RequireHealthyExisting `
             -ProvisioningProfile EditorOnly `
@@ -461,6 +462,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
           $editor = ./scripts/unity/ensure-editor.ps1 `
             -UnityVersion '2022.3.45f1' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -CiManagedOnly `
             -RequireHealthyExisting `
             -ProvisioningProfile EditorOnly `

@@ -403,6 +403,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     );
 
     const acquireStep = getStepBlock(job, "Acquire organization Unity lock");
+    const provisionStep = getStepBlock(job, "Provision Unity Editor");
     const requireStep = getStepBlock(job, "Require acquired Unity lock");
     const workStep = getStepBlock(job, licensedWorkName);
     const returnStep = getStepBlock(job, "Return Unity license");
@@ -411,6 +412,11 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const gateStep = getStepBlock(job, "Require confirmed Unity cleanup");
 
     assert.match(acquireStep, /\n        id: acquire_lock\n/);
+    assert.match(
+      provisionStep,
+      /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/,
+      `${label}: central cleanup and provisioning must use the same trusted editor root`
+    );
     assert.match(
       requireStep,
       /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/
@@ -483,6 +489,23 @@ test("Unity scripts retain bounded return-at-start evidence", () => {
     fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
     /validate:unity-license-classifiers/
   );
+});
+
+test("Unity Tests classifies Dependabot pull requests by immutable PR author", () => {
+  const source = fs.readFileSync(path.join(WORKFLOW_DIR, "unity-tests.yml"), "utf8");
+  const preflight = getJobBlock(source, "runner-preflight", "unity-tests.yml");
+  const licensed = getJobBlock(source, "unity-tests", "unity-tests.yml");
+  const aggregate = getJobBlock(source, "unity-ci-success", "unity-tests.yml");
+
+  for (const job of [preflight, licensed]) {
+    assert.match(job, /github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'/);
+    assert.doesNotMatch(job, /github\.actor != 'dependabot\[bot\]'/);
+  }
+  assert.match(
+    aggregate,
+    /DEPENDABOT_PR: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.user\.login == 'dependabot\[bot\]' \}\}/
+  );
+  assert.doesNotMatch(aggregate, /github\.actor == 'dependabot\[bot\]'/);
 });
 // prettier-ignore
 test("active workflows pin external actions and scope licensed credentials", () => {
