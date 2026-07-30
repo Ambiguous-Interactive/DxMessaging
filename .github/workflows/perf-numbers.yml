@@ -263,6 +263,7 @@ jobs:
       # editor. Both mutate the shared tool-cache root, so installation and
       # repair are serialized by the organization lock before licensed work.
       - name: Provision Unity Editor
+        id: provision_editor
         if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 180
         shell: pwsh
@@ -296,7 +297,7 @@ jobs:
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
         # 180 (not 120): the Standalone leg builds a COLD IL2CPP player, which is
         # far slower than a Mono build. The PlayMode leg runs IN-EDITOR (Mono) with
         # no player build and is faster, so 180 is generous for it too. Stays
@@ -329,6 +330,7 @@ jobs:
           }
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `

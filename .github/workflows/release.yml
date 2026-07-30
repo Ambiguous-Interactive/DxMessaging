@@ -263,6 +263,7 @@ jobs:
 
       # Serialize shared tool-cache installation and repair with licensed work.
       - name: Provision Unity Editor
+        id: provision_editor
         if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 180
         shell: pwsh
@@ -291,7 +292,7 @@ jobs:
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
         timeout-minutes: 120
         shell: pwsh
         env:
@@ -303,6 +304,7 @@ jobs:
         run: |
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '2022.3.45f1' `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode 'editmode' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/release-editmode' `
@@ -490,6 +492,7 @@ jobs:
       # The exporter needs only EditorOnly, but its shared cache mutation still
       # requires organization serialization before licensed work begins.
       - name: Provision Unity Editor
+        id: provision_editor
         if: ${{ steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 180
         shell: pwsh
@@ -522,7 +525,7 @@ jobs:
 
       - name: Export the .unitypackage
         id: export_unitypackage
-        if: ${{ steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
         timeout-minutes: 120
         shell: pwsh
         env:

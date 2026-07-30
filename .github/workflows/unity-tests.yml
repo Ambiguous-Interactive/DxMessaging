@@ -208,6 +208,7 @@ jobs:
       # Provision only while holding the same lock that serializes licensed
       # work, so concurrent repositories cannot repair or replace one editor.
       - name: Provision Unity Editor
+        id: provision_editor
         if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 180
         shell: pwsh
@@ -241,7 +242,7 @@ jobs:
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
         # 150 (was 120): the standalone leg builds a NON-development IL2CPP
         # player with the Release C++ configuration. Measured PR runs showed the
         # Debug C++ configuration reduces native compile time but makes the

@@ -190,7 +190,7 @@ six lines. After the fix, all eight lines completed with exit 0 and
 killed after one second with exit 125 and `StallKilled == true`.
 
 The experiment is now retained in
-`scripts/__tests__/test-unity-editor-heartbeat.ps1`. Its 37 assertions exercise
+`scripts/__tests__/test-editor-provisioning-heartbeat.ps1`. Its 37 assertions exercise
 stdout and stderr activity, the environment override, monotonic periodic
 notices, direct-child exit confirmation, descendant tree termination, the noisy
 wall deadline, and both outcomes of the second bounded reap. On Linux and macOS,
@@ -221,7 +221,7 @@ between cleanup stages cannot bypass the budget. Its data-driven contract
 rejects missing, malformed, or zero timeouts and requires every window to retain
 at least 60 minutes beyond the complete bounded lifecycle. Restoring the
 JavaScript test tables to their readable form leaves the final JavaScript total
-at 17,486.
+at 17,488.
 
 The focused aggregate-workflow suite passes all 17 data-driven tests, and the
 heartbeat probe passes all 37 assertions. The final full Node suite passes 406
