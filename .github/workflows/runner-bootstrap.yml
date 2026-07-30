@@ -107,12 +107,12 @@ jobs:
       group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - name: Require the selected Unity runner to be registered
+      - name: Require a registered Windows Unity runner
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
-          required-label-sets: '[["self-hosted","Windows","RAM-64GB","${{ inputs.runner-label }}"]]'
+          required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   bootstrap:
     # F9: surface the mode (Audit vs Maintenance) in the job display name so

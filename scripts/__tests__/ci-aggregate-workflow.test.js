@@ -336,7 +336,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'],
     [
       "runner-bootstrap.yml",
-      '[["self-hosted","Windows","RAM-64GB","${{ inputs.runner-label }}"]]'
+      '[["self-hosted","Windows","RAM-64GB"]]'
     ],
     ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'],
     ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']
@@ -367,7 +367,8 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       /RUNNER_AUDIT_PAT|Soft pass|soft-pass|Require an online/i,
       file
     );
-    if (file === "runner-bootstrap.yml") assert.doesNotMatch(preflight, /\n        run:|\.status/);
+    if (file === "runner-bootstrap.yml")
+      assert.doesNotMatch(preflight, /\n        run:|\.status|\$\{\{ inputs\.runner-label/);
   }
 
   for (const action of [acquire, returnLicense, classify, release, gate]) {
