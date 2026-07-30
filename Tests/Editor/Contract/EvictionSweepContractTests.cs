@@ -30,6 +30,19 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private readonly struct BroadcastProbeMessage : IBroadcastMessage<BroadcastProbeMessage> { }
 
+        private sealed class ThrowingIntComparer : System.Collections.Generic.IEqualityComparer<int>
+        {
+            public bool Equals(int x, int y)
+            {
+                return x == y;
+            }
+
+            public int GetHashCode(int obj)
+            {
+                throw new InvalidOperationException("Injected owner insertion failure.");
+            }
+        }
+
         [Test]
         public void ForceSweepResetsDirtyEmptyTypedSlotsAndTrimsPools()
         {
@@ -544,6 +557,37 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.AreEqual(1, pool.Count);
             Assert.AreSame(item, pool.Rent());
             Assert.AreNotSame(item, pool.Rent());
+        }
+
+        [Test]
+        public void RentAndAddReturnsValueWhenOwnerInsertionThrows()
+        {
+            CollectionPool<System.Collections.Generic.List<object>> pool =
+                new CollectionPool<System.Collections.Generic.List<object>>(
+                    maxRetained: 1,
+                    useLru: true,
+                    factory: () => new System.Collections.Generic.List<object>(),
+                    onRecycled: list => list.Clear()
+                );
+            System.Collections.Generic.List<object> expected =
+                new System.Collections.Generic.List<object>();
+            pool.Return(expected);
+            System.Collections.Generic.Dictionary<
+                int,
+                System.Collections.Generic.List<object>
+            > owner = new System.Collections.Generic.Dictionary<
+                int,
+                System.Collections.Generic.List<object>
+            >(new ThrowingIntComparer());
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+                pool.RentAndAdd(owner, 17)
+            );
+
+            Assert.AreEqual("Injected owner insertion failure.", exception.Message);
+            Assert.AreEqual(0, owner.Count);
+            Assert.AreEqual(1, pool.Count);
+            Assert.AreSame(expected, pool.Rent());
         }
 
         [Test]

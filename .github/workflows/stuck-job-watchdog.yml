@@ -133,34 +133,48 @@ jobs:
           git_auth() {
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" "$@"
           }
-          git_auth clone --depth 1 "https://github.com/${REPO}.git" repo
-          cd repo
+          remote_url="https://github.com/${REPO}.git"
           GIT_AUTHOR_ID=(-c "user.email=actions@github.com" -c "user.name=stuck-job-watchdog")
 
+          # Never materialize the default branch. The watchdog reads and writes
+          # only ${STATE_DIR} on ${STATE_BRANCH}, and checking the default branch
+          # out just to switch away from it is what failed 13 runs straight on
+          # 2026-07-29: one committed blob whose bytes disagreed with its
+          # .gitattributes eol left the pristine clone content-dirty (git skips
+          # the smudge when the blob already holds CRLF, so the file matched the
+          # blob while the clean filter hashed to something else), and switching
+          # trees aborted with "Your local changes to the following files would be
+          # overwritten by checkout". Cloning the state branch directly retires
+          # the whole class: no default-branch file is ever written, so none can
+          # block the switch. ci.yml's `line-endings` job gates the drift itself.
+          #
           # Decoupled probe + bootstrap: ls-remote distinguishes
           # "branch missing" (zero rows + exit 0) from "transient fetch
           # failure" (non-zero exit). We MUST NOT bootstrap on transient
           # failure - that would push-corrupt an existing branch by
           # rewriting it as a fresh orphan.
           state_branch_probe="$(mktemp)"
-          if ! git_auth ls-remote --heads origin "${STATE_BRANCH}" > "${state_branch_probe}" 2>/dev/null; then
-            log_summary "WARN: 'git ls-remote --heads origin ${STATE_BRANCH}' failed (transient?); refusing to bootstrap. Skipping this cycle."
+          if ! git_auth ls-remote --heads "${remote_url}" "${STATE_BRANCH}" > "${state_branch_probe}" 2>/dev/null; then
+            log_summary "WARN: 'git ls-remote --heads ${remote_url} ${STATE_BRANCH}' failed (transient?); refusing to bootstrap. Skipping this cycle."
             popd > /dev/null
             flush_summary_and_exit 0
           fi
 
           if [[ -s "${state_branch_probe}" ]]; then
-            if ! git_auth fetch origin "+${STATE_BRANCH}:refs/remotes/origin/${STATE_BRANCH}"; then
-              log_summary "WARN: state branch '${STATE_BRANCH}' exists per ls-remote but fetch failed; skipping this cycle."
+            if ! git_auth clone --depth 1 --single-branch --branch "${STATE_BRANCH}" "${remote_url}" repo; then
+              log_summary "WARN: state branch '${STATE_BRANCH}' exists per ls-remote but clone failed; skipping this cycle."
               popd > /dev/null
               flush_summary_and_exit 0
             fi
-            git checkout -B "${STATE_BRANCH}" "refs/remotes/origin/${STATE_BRANCH}"
+            cd repo
             log_summary "State branch '${STATE_BRANCH}' checked out."
           else
             log_summary "State branch '${STATE_BRANCH}' missing -- bootstrapping orphan branch."
-            git checkout --orphan "${STATE_BRANCH}"
-            git rm -rf . > /dev/null 2>&1 || true
+            mkdir repo
+            cd repo
+            git init -q
+            git checkout -q -b "${STATE_BRANCH}"
+            git remote add origin "${remote_url}"
             mkdir -p "${STATE_DIR}"
             touch "${STATE_DIR}/.gitkeep"
             git add "${STATE_DIR}/.gitkeep"

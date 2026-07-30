@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pooled collection rentals now return to their pool when attaching them to a
+  registration or reclamation owner throws, instead of remaining stranded
+  after a failed ownership transfer.
 - Documentation-site pages load faster. Every page was downloading the Mermaid
   renderer (about 950 KB compressed) whether or not it had a diagram, and pages
   that did have one rendered it twice. Diagrams now go through the site theme's own

@@ -4917,8 +4917,10 @@ namespace DxMessaging.Core
                     )
                 )
                 {
-                    sortedHandlers = DxPools.TypedHandlerPriorityDicts.Rent();
-                    handlersByContext[context] = sortedHandlers;
+                    sortedHandlers = DxPools.TypedHandlerPriorityDicts.RentAndAdd(
+                        handlersByContext,
+                        context
+                    );
                 }
 
                 if (

@@ -60,6 +60,21 @@ Windows paths need no special quoting, and a quoted one may end in a backslash
 (`UNITY_PROJECT_PATH="D:\Program Files\Proj\"`). A line these commands cannot parse is warned about
 and skipped, so unrelated entries in a shared `.env.local` cannot break them.
 
+## Troubleshooting
+
+### Repeating audio lock assertion
+
+Close the Unity Editor if its Console continually prints
+`Access version should be odd when acquiring lock`. Unity tracks that assertion as
+[UUM-146734](https://issuetracker.unity.com/issues/23329/crash-on-assertimplementation-when-audio-dual-thread-lock-version-is-even-on-acquire)
+in `audio::DualThreadManager::ControlUpdate` and reports that the loop can exhaust editor memory.
+The native assertion is distinct from the MCP probe's endpoint and bearer-token diagnoses. MCP
+activity may still trigger the Unity defect.
+
+Reopen Unity on the latest available patch and follow the Unity issue for fixed-version status. Run
+`npm run unity:mcp:probe` separately after the editor restarts; its `unreachable`, `unauthorized`,
+`http-error`, or `malformed` result identifies an actual bridge connection failure.
+
 ## Notes
 
 - The host and the container must present the same `UNITY_MCP_BEARER_TOKEN`. When they do not share

@@ -296,6 +296,9 @@ jobs:
         with:
           persist-credentials: false
 
+      # Repairs the worktree so CSharpier sees one canonical form; it is NOT the
+      # drift gate. The `line-endings` job is what fails on committed bytes that
+      # disagree with .gitattributes.
       - name: Normalize line endings
         if: ${{ needs.changes.outputs.csharpier != 'false' }}
         run: |
@@ -488,6 +491,45 @@ jobs:
       - name: Prettier check (JSON / asmdef)
         if: ${{ needs.changes.outputs.json != 'false' }}
         run: npx prettier --check "**/*.{json,asmdef,asmref}"
+
+  # Deliberately unfiltered: any tracked text file can carry the drift this
+  # detects, so there is no useful path filter and therefore no `changes`
+  # dependency or fail-closed guard to write. The check is pure git, so it costs
+  # a checkout.
+  line-endings:
+    name: Check committed line endings
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # A blob whose committed bytes already disagree with its `.gitattributes`
+      # eol is invisible to every other check: git skips the smudge when the
+      # blob already holds CRLF, so the checked-out file matches the blob byte
+      # for byte, while the clean filter converts it back and yields a different
+      # hash. A pristine clone is then content-dirty but stat-clean, which breaks
+      # any consumer that switches branches or gates on a clean tree -- see the
+      # Stuck Job Watchdog's 13 consecutive failures on
+      # SourceGenerators/...Tests.csproj (2026-07-29). Only `--renormalize`
+      # surfaces it; a worktree diff never will. Dependabot commits through the
+      # API and so bypasses the pre-commit `mixed-line-ending` hook, which is why
+      # this has to be a CI gate.
+      - name: Verify committed bytes match .gitattributes
+        run: |
+          set -euo pipefail
+          git add --renormalize .
+          if git diff --cached --quiet; then
+            echo "Every tracked text file matches its .gitattributes eol."
+            exit 0
+          fi
+          git diff --cached --name-only | while IFS= read -r file; do
+            echo "::error file=${file}::Committed line endings disagree with .gitattributes."
+          done
+          echo "::error::Fix with: git add --renormalize . && git commit"
+          exit 1
 
   spellcheck:
     name: Check spelling
@@ -954,6 +996,7 @@ jobs:
       - csharpier
       - dotnet
       - json-format
+      - line-endings
       - spellcheck
       - validate-banner
       - validate-llms-txt
