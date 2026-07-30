@@ -168,6 +168,7 @@ while ($true) {
     Assert-That 'endless noisy child exit is confirmed' $result.DirectChildExited
     Assert-That 'endless noisy child emitted activity before its deadline' (@($result.Output).Count -gt 0)
 
+    # cspell:ignore libc
     $closedPipes = @'
 Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class NativePipeClose { [DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int id); [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle); [DllImport("libc")] private static extern int close(int fd); public static void Close() { if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) { CloseHandle(GetStdHandle(-11)); CloseHandle(GetStdHandle(-12)); } else { close(1); close(2); } } }'
 [NativePipeClose]::Close()
