@@ -217,8 +217,9 @@ driven by
   are sourced from this leg; the headline throughput stays on the Standalone leg.
 - **EditMode leg (not published)** also runs in-editor under Mono with
   `-releaseCodeOptimization`. It remains a fast scope for local iteration, and
-  the weekly `unity-benchmarks.yml` runs the editmode + playmode benchmark tests
-  per Unity version as coverage; EditMode numbers are not published.
+  manually dispatched `unity-benchmarks.yml` runs the editmode + playmode
+  benchmark tests per Unity version as coverage; EditMode numbers are not
+  published.
 
 The harness can exercise every scope through the shared protocol;
 `perf-numbers.yml` runs the **Standalone IL2CPP leg (throughput)** and the
@@ -227,12 +228,10 @@ The harness can exercise every scope through the shared protocol;
 through the single organization build lock on the single `fast` runner, so adding
 the PlayMode leg increases the workflow's wall clock by the PlayMode leg's
 duration, which is shorter than the Standalone leg's because it builds no IL2CPP
-player (well under 2x total). The PlayMode leg is also **non-blocking**: it is
-marked `continue-on-error`, so a flaky PlayMode failure does NOT fail the
-benchmark job for the downstream comment/commit jobs -- the Standalone throughput
-headline and the regenerated baseline still publish, and that run simply omits the
-allocation/byte tables (no PlayMode leg measured them) until the PlayMode leg is
-healthy again (see [Editor-vs-player rationale](#editor-vs-player-rationale)).
+player (well under 2x total). The PlayMode leg is required: a failure prevents
+the aggregate performance gate and downstream publishing from succeeding, so
+refreshed numbers cannot silently omit allocation evidence (see
+[Editor-vs-player rationale](#editor-vs-player-rationale)).
 
 ## Scenario taxonomy
 
@@ -423,20 +422,14 @@ matrix from the first scope present (Standalone in published runs) and BOTH the
 GC-allocation COUNT matrix and the GC-allocated-BYTES matrix from the first scope
 that measured each metric (PlayMode in published runs).
 
-The PlayMode allocation leg is **non-blocking** (`continue-on-error` in
-`perf-numbers.yml`, see [How CI produces and publishes the
-numbers](#how-ci-produces-and-publishes-the-numbers)). The Standalone throughput
-leg is the headline and the baseline source, so it gates publishing; a flaky
-PlayMode leg must not. When the PlayMode leg fails, the matrix job still reports
-success for the downstream comment/commit jobs, the Standalone headline and the
-regenerated baseline publish as usual, and that run simply omits the
-allocation/byte tables (no leg measured them) until the PlayMode leg is healthy
-again.
+The PlayMode allocation leg is required. A failure prevents the aggregate
+performance gate and downstream publishing from succeeding, so refreshed
+numbers cannot silently omit allocation evidence.
 
 EditMode runs inside the editor's hosting environment, is the least
 representative of shipping behavior, and is not published; it -- and PlayMode --
-remain useful for local iteration and for the weekly per-version benchmark-test
-coverage in `unity-benchmarks.yml`.
+remain useful for local iteration and for manually dispatched per-version
+benchmark-test coverage in `unity-benchmarks.yml`.
 
 ## Baseline capture
 

@@ -35,8 +35,8 @@ automatically.
 ## Automation status
 
 Unity MCP scene/camera captures are suitable for scene-layout checks, but the
-current host setup has not yet proven a complete editor-window screenshot path
-for these docs targets. On 2026-07-03,
+current host setup has not yet proven a complete acceptance-ready editor-window
+screenshot path for these docs targets. On 2026-07-03,
 `UnityEditorInternal.InternalEditorUtility.ReadScreenPixel` probes captured the
 visible VS Code desktop instead of Unity editor windows, even when MCP-reported
 Unity window coordinates were used. A later synchronous Win32/GDI `PrintWindow`
@@ -52,6 +52,34 @@ against the Inspector or menu cascade targets. Do not overwrite the tracked
 Inspector overlay PNGs until the actual target artifact is Personal/light-theme,
 cropped per this manifest, visually inspected, and Unity has a clean
 post-capture console and editor-window list.
+
+On 2026-07-30, an offscreen panel-render experiment established the provisional
+desktop-independent method:
+
+1. Create a temporary `HideAndDontSave` window containing the real shipped view,
+   or a transient Inspector containing the real component editor.
+1. Give the panel a fixed size. Reflect inherited `EditorPanel` methods with
+   instance, public, and non-public binding flags; do not use `DeclaredOnly`.
+1. Call `ValidateLayout()`, repaint with `EventType.Repaint`, then call
+   `Render()` while a temporary linear `RenderTexture` is active.
+1. Preserve and restore the active render target, viewport, `GL.sRGBWrite`,
+   selection, and window state. In this linear-color project,
+   `RenderTextureReadWrite.Linear` with `GL.sRGBWrite = false` matched the real
+   panel colors.
+1. Read only that temporary render target into an RGB24 `Texture2D`, encode the
+   PNG, and verify PNG color type 2 (truecolor without alpha). The staging proofs
+   used RGBA and therefore do not satisfy this manifest's 24-bit requirement.
+1. Compare the Console error set and editor-window list before and after
+   capture. Do not clear the Console to hide capture diagnostics or erase user
+   logs; abort acceptance if the capture adds an error.
+
+This method produced a clean, visually correct Message Monitor staging image.
+The Inspector staging image was visually correct but emitted
+`EditorGUIUtility.AddCursorRect called outside an editor OnGUI` while its IMGUI
+body rendered. No reusable capture helper is retained yet. Treat the Inspector
+method as experimental until a retained helper produces the frame without new
+diagnostics. Native menu cascades and combined Hierarchy/Inspector frames still
+require manual host capture or an explicit scope change.
 
 Do not switch editor skins as part of automation. Start from an editor that is
 already in Personal/light theme, record `EditorGUIUtility.isProSkin` and the

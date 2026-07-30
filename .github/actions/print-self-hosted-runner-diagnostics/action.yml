@@ -171,16 +171,8 @@ runs:
         }
     # Assert Unity host prerequisites (VC++ redist, long-paths, Defender
     # exclusions, pwsh, UCRT). Unity test jobs are detect-only: host/editor
-    # repair belongs to scripts/unity/maintain-windows-runner.ps1 or the
-    # operator-dispatched runner-bootstrap workflow.
-    # F8: the assert-unity-host-prereqs composite's own non-Windows skip
-    # ("if DirectorySeparatorChar -ne '\' -> ::notice:: + exit 0") is
-    # DEFENSE-IN-DEPTH only -- this parent composite is itself Windows-
-    # only by contract (every consumer pins `runs-on: [self-hosted,
-    # Windows, ...]`), so the inner skip never fires in production. The
-    # belt-and-suspenders gate stays because a future reuse of
-    # assert-unity-host-prereqs from a non-Windows context must remain a
-    # no-op rather than throw.
+    # repair requires a runner administrator working directly on the host.
+    # This parent and the prerequisite composite are Windows-only by contract.
     # See scripts/unity/bootstrap-windows-runner.ps1 for the full prereq
     # list and remediation logic; this step exists because Unity.exe
     # failed with STATUS_DLL_NOT_FOUND (0xC0000135) on DAD-MACHINE when
@@ -188,5 +180,3 @@ runs:
     # Unity installs (the missing DLL is on the OS, not in Unity).
     - name: Assert Unity host prerequisites
       uses: ./.github/actions/assert-unity-host-prereqs
-      with:
-        auto-install: "false"

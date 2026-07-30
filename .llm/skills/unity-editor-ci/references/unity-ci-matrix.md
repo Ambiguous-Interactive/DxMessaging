@@ -25,9 +25,18 @@
 | `unity-version` | `2021.3.45f1`, `2022.3.45f1`, `6000.3.16f1` |
 | `test-mode`     | `editmode`, `playmode`, `standalone`        |
 
-Nine matrix cells. `editmode`/`playmode` run in-editor on Mono; `standalone` builds and runs a `StandaloneWindows64` IL2CPP player. The direct runner generates a temporary package host project under `.artifacts/unity/projects/<version>-<mode>/`, imports the repo package with a `file:` dependency, sets `testables`, and configures IL2CPP before running standalone tests. Workflow_dispatch inputs let you pin a single version or single mode for triage.
+Nine matrix cells. `editmode`/`playmode` run in-editor on Mono; `standalone`
+builds and runs a `StandaloneWindows64` IL2CPP player. The direct runner
+generates a temporary package host project under
+`.artifacts/unity/projects/<version>-<mode>/`, imports the repo package with a
+`file:` dependency, sets `testables`, and configures IL2CPP before running
+standalone tests. Dispatch runs use the same complete static matrix.
 
-The Unity version list is canonical in `.github/unity-versions.json`; `unity-tests.yml` reads it at runtime and carries no version literal. Bump versions only in that file -- see [Unity Version Single Source of Truth](./unity-version-single-source.md).
+The Unity version list is canonical in `.github/unity-versions.json`;
+`unity-tests.yml` carries a static literal mirror so the organization analyzer
+can attest every matrix identity. Bump the canonical file and every validator
+reported mirror together -- see
+[Unity Version Single Source of Truth](./unity-version-single-source.md).
 
 Licensed Unity execution is serialized by the central
 `Ambiguous-Interactive/ambiguous-organization-build-lock` actions. The workflows
@@ -50,36 +59,36 @@ The Unity serial has two activation seats shared across the organization and no 
 - `max-parallel: 1` only: cannot prevent two separate runs (two pushes, `unity-tests` plus `unity-benchmarks`, or another org repo) from racing for the seat.
 - The lock only: leaves all 9 cells spawning at once, so idle cells burn their job-timeout clocks, one repository can occupy both seats, and logs become noisy without useful per-run throughput.
 
-With both controls, a run consumes at most one seat while another repository can use the second. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows only (`unity-tests.yml`, `unity-benchmarks.yml`); single-job workflows (`release.unity-checks`, the GameCI experiment) rely on the lock for cross-run admission.
+With both controls, a run consumes at most one seat while another repository can use the second. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows (`unity-tests.yml`, `unity-benchmarks.yml`, `perf-numbers.yml`); single-job release workflows rely on the lock for cross-run admission.
 
-**Timeout invariant.** GitHub counts the lock-wait against the job clock, so a job at the back of the serialized queue is killed before its lock wait can finish unless:
+**Timeout invariant.** GitHub counts the lock wait and every subsequent step against the job clock. A job-level timeout cancels the whole job, so later `if: always()` cleanup cannot run if an earlier uncapped step consumes the remaining clock. Every step before and including `Require confirmed Unity cleanup` therefore has an explicit positive timeout.
 
 ```text
-job timeout-minutes >= acquire timeout-minutes + RUN_BUDGET (120)
+job timeout-minutes >= sum(all capped steps through cleanup gate) + 60
 ```
 
-The acquire input `timeout-minutes` is the lock POLL budget (how long the action waits for the seat), counted against the job clock. The current magnitudes are: acquire `timeout-minutes: "300"`, job `timeout-minutes: 420`, and a step-level `timeout-minutes: 120` on the Unity run step. Keep these magnitudes aligned across the Unity workflows when editing timeouts.
+Editor validation is capped at 10 minutes. The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Licensed work is capped at 120 to 180 minutes, and return/classify/release/gate at 5/2/5/2 minutes. The licensed jobs use `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
 
-The step-level `timeout-minutes: 120` protects the in-use seat from a hung editor: it must be `>= 120` and STRICTLY below the job timeout so the step fails first and releases the lock instead of the whole job being cancelled with the seat still held. This step guard matters because `stuck-job-watchdog.yml` ignores any `in_progress` job -- nothing else bounds a post-acquire hang, so without the step timeout a wedged editor would squat the seat for the full job timeout.
+The step-level caps protect the in-use seat from a hung editor or ancillary action. They must remain strictly below the job timeout so the step fails first and the cleanup chain still runs. This matters because `stuck-job-watchdog.yml` ignores any `in_progress` job; without step caps, a wedged action can squat the seat until the whole job is cancelled.
 
-**Operator note (standalone IL2CPP):** the `standalone` cells require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. `scripts/unity/ensure-editor.ps1` must be called with an explicit provisioning profile: `EditorOnly` for editmode/playmode/benchmarks/release checks, and `StandaloneWindowsIl2Cpp` for standalone so only `windows-il2cpp` is installed or verified. That script treats the beta standalone Unity CLI as a moving surface: it discovers the install root through the 0-arg `unity install-path` GETTER and sets the path best-effort, so an uncertain flag never aborts the matrix. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for the getter-vs-setter detail.
+Runner administrators manually install every exact editor and required module under `RUNNER_TOOL_CACHE/u6-v3`. Workflows validate that root with `-CiManagedOnly -RequireHealthyExisting` before acquiring the organization lock; they never install or repair editors. Release the lock only after the always-run return and cleanup-classification steps.
 
-`unity-gameci-experiment.yml` is manual-only and non-required. It generates the same ephemeral project and then calls `game-ci/unity-test-runner@v4` in normal project mode (`packageMode: false`). Do not promote GameCI back to required Windows CI unless the full matrix produces real NUnit XML repeatedly.
+**Operator note (standalone IL2CPP):** the `standalone` cells require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. `scripts/unity/ensure-editor.ps1` must be called with an explicit provisioning profile: `EditorOnly` for editmode/playmode/benchmarks/release checks, and `StandaloneWindowsIl2Cpp` for standalone so `windows-il2cpp` is verified. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for manual maintenance details.
 
-`unity-benchmarks.yml` (active; manual/nightly, NEVER on PRs):
+`unity-benchmarks.yml` (active; manual-only, NEVER on PRs):
 
-| Axis            | Values                 |
-| --------------- | ---------------------- |
-| `unity-version` | `2022.3.45f1`          |
-| `test-mode`     | `editmode`, `playmode` |
+| Axis            | Values                  |
+| --------------- | ----------------------- |
+| `unity-version` | every canonical version |
+| `test-mode`     | `editmode`, `playmode`  |
 
 The active `unity-benchmarks.yml` explicitly omits `pull_request` and `push` per the perf isolation rule.
 
 ## compute-unity-assemblies is-empty Gate
 
-Every workflow that consumes `./.github/actions/compute-unity-assemblies` mirrors the canonical wiring in `unity-tests.yml`: the compute step carries `id: compute`, and every license-consuming step in the same job is gated with `if: ${{ steps.compute.outputs.is-empty != 'true' }}`. License-consuming means the three steps that spend the paid Unity seat: Provision (`scripts/unity/ensure-editor.ps1`), Acquire organization Unity lock (`acquire-build-lock`), and Run (`scripts/unity/run-ci-tests.ps1`). When asmdef discovery resolves no DxMessaging-owned assemblies for a target, the action sets `is-empty=true` and exits 0 -- a skip, not a failure. Without the gate that empty list still provisions the editor, takes the org lock, and runs Unity before failing late at verify, burning paid license and lock time.
+Every workflow that consumes `./.github/actions/compute-unity-assemblies` mirrors the canonical wiring in `unity-tests.yml`: the compute step carries `id: compute`, and editor validation plus Unity work skip when `is-empty == 'true'`. Lock acquisition remains unconditional because the static matrix is structurally non-empty and the organization analyzer must prove each acquisition. When asmdef discovery resolves no owned assemblies, verification treats the empty selection as an intentional skip while the terminal return/classify/release/gate chain still proves cleanup.
 
-The `Verify tests actually ran` step keeps a cancellation-safe gate and must also require `steps.compute.outcome == 'success'` plus either `steps.compute.outputs.is-empty == 'true'` or a non-skipped Unity run step (never an is-empty gate alone). It receives `expected-empty: ${{ steps.compute.outputs.is-empty }}`, so an intentional skip reads as success rather than a "tests did not run" failure, while checkout/cache/setup/provisioning/lock failures that prevent Unity from launching are not obscured by a generic missing-results annotation. The skip path does not fire for the current asmdef set; it is the robustness path for a target whose assemblies are all filtered out, such as a runtime-only standalone run when every DxMessaging test asmdef is editor-only.
+The `Verify tests actually ran` step keeps a cancellation-safe gate and must also require `steps.compute.outcome == 'success'` plus either `steps.compute.outputs.is-empty == 'true'` or a non-skipped Unity run step (never an is-empty gate alone). It receives `expected-empty: ${{ steps.compute.outputs.is-empty }}`, so an intentional skip reads as success rather than a "tests did not run" failure, while checkout/cache/setup/editor-validation/lock failures that prevent Unity from launching are not obscured by a generic missing-results annotation. The skip path does not fire for the current asmdef set; it is the robustness path for a target whose assemblies are all filtered out, such as a runtime-only standalone run when every DxMessaging test asmdef is editor-only.
 
 When editing these workflows, keep every compute step carrying an `id` and every license-consuming step gated on `steps.<compute-id>.outputs.is-empty != 'true'`. Do not gate verify on is-empty, and do not remove the gated steps; mirror `unity-tests.yml`.
 
@@ -93,9 +102,16 @@ Add a version to the canonical `.github/unity-versions.json` `all` array when on
 
 ## How to Add a Unity Version
 
-1. Edit `.github/unity-versions.json` and append the new tag to the `all` array (keep it strictly ascending). `unity-tests.yml` reads this file at runtime, so the workflow itself needs no edit. Use the `unityci/editor` tag format (e.g., `2024.3.10f1`), then run `npm run validate:unity-versions`. See [Unity Version Single Source of Truth](./unity-version-single-source.md).
+1. Edit `.github/unity-versions.json` and append the new tag to the `all` array
+   (keep it strictly ascending). Update the static matrices reported by
+   `npm run validate:unity-versions`, including `unity-tests.yml` and
+   `unity-benchmarks.yml`. Use the Unity tag format (for example,
+   `2024.3.10f1`). See
+   [Unity Version Single Source of Truth](./unity-version-single-source.md).
 
-1. Verify the Unity standalone CLI can install the requested version on the self-hosted Windows runner, or that the version already exists under `UNITY_EDITOR_INSTALL_ROOT` / `C:\Unity\Editors` / Unity Hub's install path.
+1. Have a runner administrator install the exact editor and required modules
+   under that runner's `RUNNER_TOOL_CACHE/u6-v3/<version>/Editor/Unity.exe`
+   path, then run the validation-only runner audit.
 
 1. Validate the new version locally via the MCP loop against the host editor.
    The host editor must be running that exact Unity version; then run the EditMode
@@ -145,7 +161,6 @@ For `standalone` runs, the direct runner first configures the generated project 
 ## References
 
 - Unity CLI docs: https://docs.unity.com/en-us/hub/unity-cli
-- game-ci docs (experiment only): https://game.ci/docs/
 - Unity LTS roadmap: https://unity.com/releases/lts
 - Unity managed code stripping: https://docs.unity3d.com/Manual/ManagedCodeStripping.html
-- Active workflows: `.github/workflows/unity-tests.yml` (direct Unity on self-hosted Windows; editmode/playmode/standalone), `.github/workflows/unity-benchmarks.yml`, `.github/workflows/unity-gameci-experiment.yml` (manual-only experiment); ubuntu reference mirrors: `.github/workflows-disabled/`
+- Active workflows: `.github/workflows/unity-tests.yml` (direct Unity on self-hosted Windows; editmode/playmode/standalone), `.github/workflows/unity-benchmarks.yml`, `.github/workflows/perf-numbers.yml`, and `.github/workflows/release.yml`; ubuntu reference mirrors: `.github/workflows-disabled/`

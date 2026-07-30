@@ -1,6 +1,6 @@
 ## Overview
 
-The tag-triggered release pipeline (`release.yml`) ships two artifacts to each
+The tag-selected manual release pipeline (`release.yml`) ships two artifacts to each
 GitHub Release: the npm tarball and a `.unitypackage`, with a body drawn from
 `CHANGELOG.md`. Three invariants keep that release correct and complete. All
 three regressed at once in `v3.1.0` (run `75151961234`): the release body was a

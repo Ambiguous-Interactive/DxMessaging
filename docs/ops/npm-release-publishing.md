@@ -51,13 +51,15 @@ The normal path never creates the tag by hand:
    branch push or `v*` tag push.
 1. Squash-merge that PR with its default `release: vX.Y.Z` title.
 1. `.github/workflows/release-tag.yml` validates the merged commit and pushes
-   the annotated tag `vX.Y.Z` with the auto-commit GitHub App token, which
-   triggers the release workflow.
+   the annotated tag `vX.Y.Z` with the auto-commit GitHub App token.
+1. Select that exact tag in the Actions UI and manually dispatch
+   `.github/workflows/release.yml`. A branch dispatch fails closed.
 
-The manual fallback (App unavailable, or recovering from a partial run) is
-pushing a strict semver tag that points at the reviewed release commit. Use a
-signed tag when signing is available, or the repository-approved annotated
-tag fallback when signing is not available:
+The tag-creation fallback (App unavailable, or recovering from a partial run)
+is pushing a strict semver tag that points at the reviewed release commit, then
+dispatching the release workflow from that tag. Use a signed tag when signing
+is available, or the repository-approved annotated tag fallback when signing
+is not available:
 
 ```bash
 git checkout <reviewed-release-commit>
@@ -74,8 +76,8 @@ Before tagging, `package.json.version` must be `3.0.2`. The workflow rejects:
 - `v3.0.2-rc.1`
 - `v3.0.2` when `package.json.version` is still `3.0.1`
 
-The only manual dispatch is `release-prepare.yml`; `release.yml` itself stays
-tag-triggered.
+Both release stages are manual dispatches: start with `release-prepare.yml`,
+then dispatch `release.yml` from the exact reviewed tag after it exists.
 
 ## Release Gates
 

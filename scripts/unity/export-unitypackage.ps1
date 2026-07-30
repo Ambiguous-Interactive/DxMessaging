@@ -46,7 +46,10 @@ param(
 
     # Stage the project and generate the exporter without running Unity
     # (local inspection of the staged payload).
-    [switch]$StageOnly
+    [switch]$StageOnly,
+
+    [ValidateSet('Local', 'Central')]
+    [string]$LicenseReturnOwner = 'Local'
 )
 
 Set-StrictMode -Version Latest
@@ -594,7 +597,7 @@ $OutputPath = Resolve-FullPath -Path $OutputPath
 
 if (-not $StageOnly) {
     if ([string]::IsNullOrWhiteSpace($UnityEditorPath)) {
-        Write-CiError 'UnityEditorPath is required (set UNITY_EDITOR_PATH or pass -UnityEditorPath); run scripts/unity/ensure-editor.ps1 first.'
+        Write-CiError 'UnityEditorPath is required (set UNITY_EDITOR_PATH or pass -UnityEditorPath); CI must validate a manually installed editor with ensure-editor.ps1 -RequireHealthyExisting first.'
         exit 1
     }
     if (-not (Test-Path -LiteralPath $UnityEditorPath -PathType Leaf)) {
@@ -851,7 +854,7 @@ try {
     $size = (Get-Item -LiteralPath $OutputPath).Length
     Write-Host "::notice::Exported $OutputPath ($size bytes)."
 } finally {
-    if ($hasLicenseCreds) {
+    if ($hasLicenseCreds -and $LicenseReturnOwner -eq 'Local') {
         Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $returnLogPath
     }
 }

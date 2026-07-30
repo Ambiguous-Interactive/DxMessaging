@@ -85,10 +85,10 @@ If the asmdef ends up in the `core` bucket instead, the most common cause is the
 
 ## Where Perf Actually Runs
 
-| Workflow               | Triggers                        | Includes Perf? |
-| ---------------------- | ------------------------------- | -------------- |
-| `unity-tests.yml`      | PR / push / schedule / dispatch | NO             |
-| `unity-benchmarks.yml` | schedule / dispatch             | YES            |
+| Workflow               | Triggers                            | Includes Perf? |
+| ---------------------- | ----------------------------------- | -------------- |
+| `unity-tests.yml`      | PR / default-branch push / dispatch | NO             |
+| `unity-benchmarks.yml` | dispatch                            | YES            |
 
 The active `.github/workflows/unity-*.yml` workflows run Unity directly on
 self-hosted Windows runners through `scripts/unity/run-ci-tests.ps1` (benchmarks

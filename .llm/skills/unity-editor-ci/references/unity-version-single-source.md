@@ -2,7 +2,10 @@
 
 # Unity Version Single Source of Truth
 
-> **One-line summary**: `.github/unity-versions.json` is the canonical Unity version list for all CI; `scripts/validate-unity-versions.js` (`npm run validate:unity-versions`) fails loud if any workflow or script drifts, so a version bump touches only the JSON.
+> **One-line summary**: `.github/unity-versions.json` is the canonical Unity
+> version list for all CI; `scripts/validate-unity-versions.js`
+> (`npm run validate:unity-versions`) fails loud until every static workflow
+> matrix and script mirror matches it.
 
 ## When to Use
 
@@ -32,39 +35,34 @@
   to be a non-empty array of valid version literals, with no duplicates, strictly
   ascending by the leading `major.minor.patch` triple (one build per line).
 - `latest` is DEFINED as the last element of `all`. It is never stored as its own
-  key. `perf-numbers.yml` and `unity-benchmarks.yml` track this newest version.
-- `release` is the version the release pipeline and the GameCI experiment pin. The
-  validator requires it to be a member of `all`.
+  key. `perf-numbers.yml` tracks this newest version.
+- `release` is the version the release pipeline pins. The validator requires it
+  to be a member of `all`.
 
 ## Why a Split: Read the File vs Validated Mirror
 
-The clean answer would be for every consumer to read the JSON at runtime. Most
-cannot. A workflow that runs ubuntu-bash can `jq` the file at runtime; a
-self-hosted PowerShell step, a GameCI static input `default:`, and a local
-`.ps1` / `.sh` entrypoint default cannot read it the same way. So the contract
-splits consumers by capability:
+Licensed workflow matrices deliberately do not read the JSON at runtime. Their
+literal static values let the organization build-lock analyzer enumerate and
+attest every lock identity before execution. Local scripts also need literal
+defaults, so the validator keeps all mirrors aligned:
 
-- The bash-matrix resolvers read the file at runtime, carry zero literals, and are
-  truly DRY.
-- The static consumers keep a literal, and the validator keeps that literal honest
-  with a loud failure on drift.
+- `mirror-all` consumers carry the full canonical set.
+- `mirror-latest` consumers carry only the newest canonical entry.
+- `mirror-release` consumers carry the selected release entry.
 
-The result: bump versions only in `.github/unity-versions.json`, and the
-validator tells you precisely which mirror, if any, went stale.
+The result: start a bump in `.github/unity-versions.json`, then update exactly
+the static mirrors the validator reports.
 
-## The Three Consumer Policies
+## The Four Consumer Policies
 
 `scripts/validate-unity-versions.js` assigns each file one policy.
 
-- `no-literals`: the file must contain zero Unity version literal in code, because
-  it reads the canonical file at runtime via `jq`.
-  - `.github/workflows/perf-numbers.yml`
-  - `.github/workflows/unity-tests.yml`
-  - `.github/workflows/unity-benchmarks.yml`
-  - This is also the DEFAULT for every other active `.github/workflows/*.yml`, so
-    a new workflow that hardcodes a version is caught with no extra wiring.
+- `no-literals`: the file must contain zero Unity version literals in code. This
+  is the default for active workflows not explicitly registered.
 
 - `mirror-all`: the set of code literals must equal `all` exactly.
+  - `.github/workflows/unity-tests.yml`
+  - `.github/workflows/unity-benchmarks.yml`
   - `.github/workflows/runner-bootstrap.yml`
   - `scripts/unity/maintain-windows-runner.ps1`
   - `scripts/unity/install-runner-maintenance-task.ps1`
@@ -72,7 +70,9 @@ validator tells you precisely which mirror, if any, went stale.
 - `mirror-release`: every code literal must equal `release`, and there must be at
   least one.
   - `.github/workflows/release.yml`
-  - `.github/workflows/unity-gameci-experiment.yml`
+
+- `mirror-latest`: every code literal must equal the last `all` entry.
+  - `.github/workflows/perf-numbers.yml`
 
 Excluded from scanning: the canonical file itself, and everything under
 `.github/workflows-disabled/` (an intentionally unchecked archive). The
@@ -80,18 +80,16 @@ validator strips inline `#`
 comments before scanning, so a version mentioned in a comment does not count as a
 code literal.
 
-## The perf-numbers.yml Fix
+## Static Workflow Mirrors
 
-`perf-numbers.yml` previously hardcoded the latest version in three places. The
-`runner-preflight` job now resolves the latest version from the canonical file
-and exposes `latest-version` and `unity-versions` outputs. The `perf-benchmarks`
-matrix and both downstream `LATEST_VERSION` envs consume those outputs, so the
-newest version lives in exactly one place.
+The three licensed matrix workflows use literal matrices. Their policy entries
+make a canonical-version bump fail until every static mirror is updated in the
+same change.
 
 ## How to Bump a Version
 
-1. Edit `.github/unity-versions.json` only. Append or change entries in `all`
-   (keep it strictly ascending), and set `release` if the pinned release version
+1. Edit `.github/unity-versions.json`. Append or change entries in `all` (keep
+   it strictly ascending), and set `release` if the pinned release version
    moves. Adding a newer entry to the end of `all` redefines `latest`.
 1. Run the validator:
 
@@ -99,10 +97,10 @@ newest version lives in exactly one place.
    npm run validate:unity-versions
    ```
 
-1. If the validator flags a `mirror-all` or `mirror-release` consumer, update that
-   file so its literal set matches the new canonical value, then re-run the
-   validator until it passes. A `no-literals` failure means a workflow hardcoded a
-   version that it should read at runtime via `jq` instead.
+1. If the validator flags a `mirror-all`, `mirror-latest`, or `mirror-release`
+   consumer, update that file so its literal set matches the new canonical
+   value, then re-run the validator until it passes. A `no-literals` failure
+   means an unregistered workflow introduced a version literal.
 
 The validator prints the resolved `all`, `latest`, `release`, and the count of
 consumer files checked on success, so you can confirm the bump landed.

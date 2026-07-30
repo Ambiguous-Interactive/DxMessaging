@@ -86,8 +86,7 @@
     (non-admin). On a non-admin shell, prereqs that need HKLM writes (VC++ 2010,
     VC++ 2015-2022, LongPathsEnabled) will fail at install time with Access
     Denied -- the script catches that and emits a SPECIFIC ::error:: telling
-    the operator to either run the script as Administrator or trigger
-    .github/workflows/runner-bootstrap.yml from the Actions UI. We deliberately
+    the operator to run the script as Administrator directly on the host. We deliberately
     do NOT auto-elevate via Start-Process -Verb RunAs because UAC would hang
     a non-interactive CI run.
 
@@ -928,7 +927,7 @@ function Install-VcRedistModern {
     # parity. (The download/sig-check would still work on non-admin but the
     # installer would access-denied; bailing here saves the round-trip.)
     if (-not (Test-IsAdministrator)) {
-        return @{ success = $false; reason = "access denied (likely non-admin): VC++ 2015-2022 redist install requires Administrator. Run the bootstrap from an elevated shell or trigger .github/workflows/runner-bootstrap.yml." }
+        return @{ success = $false; reason = "access denied (likely non-admin): VC++ 2015-2022 redist install requires Administrator. Run the bootstrap from an elevated shell on the host." }
     }
 
     $download = Invoke-VcRedistModernDownload -Url $Url -TimeoutSeconds $DownloadTimeoutSeconds
@@ -1018,7 +1017,7 @@ function Install-VcRedist2010 {
     # deterministic error path. Mirrors the access-denied posture of the
     # modern installer.
     if (-not (Test-IsAdministrator)) {
-        return @{ success = $false; reason = "access denied (likely non-admin): VC++ 2010 redist install requires Administrator. Run the bootstrap from an elevated shell or trigger .github/workflows/runner-bootstrap.yml." }
+        return @{ success = $false; reason = "access denied (likely non-admin): VC++ 2010 redist install requires Administrator. Run the bootstrap from an elevated shell on the host." }
     }
 
     # Idempotent skip: if Test-VcRedist2010Installed already reports success,
@@ -1798,7 +1797,7 @@ function Invoke-WindowsRunnerBootstrap {
             Write-CiNotice "bootstrap-windows-runner.ps1 detected non-Windows host; nothing to do in DetectOnly mode. skipping (not Windows)"
             return 0
         }
-        Write-CiError "bootstrap-windows-runner.ps1 is Windows-only. Detected directory separator '$([System.IO.Path]::DirectorySeparatorChar)' which is not '\'. Run this on a self-hosted Windows runner or via .github/workflows/runner-bootstrap.yml."
+        Write-CiError "bootstrap-windows-runner.ps1 is Windows-only. Detected directory separator '$([System.IO.Path]::DirectorySeparatorChar)' which is not '\'. Run this directly on the self-hosted Windows runner."
         return 1
     }
 
@@ -1815,7 +1814,7 @@ function Invoke-WindowsRunnerBootstrap {
         # best-effort (Defender, which is now SKIPPED on non-admin per the
         # 2026-05-26 tiering fix -- prior code treated Defender's non-admin
         # failure as a critical failure and exited 1).
-        Write-CiWarning "bootstrap-windows-runner.ps1 running NON-admin. Critical prereqs that require HKLM writes (VC++ 2010 redist install, VC++ 2015-2022 redist install, LongPathsEnabled) will fail with Access Denied; best-effort prereqs that require admin (Defender exclusions) are SKIPPED with a notice. To install missing critical prereqs, run from an elevated shell, OR trigger .github/workflows/runner-bootstrap.yml from the Actions UI."
+        Write-CiWarning "bootstrap-windows-runner.ps1 running NON-admin. Critical prereqs that require HKLM writes (VC++ 2010 redist install, VC++ 2015-2022 redist install, LongPathsEnabled) will fail with Access Denied; best-effort prereqs that require admin (Defender exclusions) are SKIPPED with a notice. To install missing critical prereqs, run from an elevated shell on the host."
     }
 
     $results = New-Object 'System.Collections.Generic.List[object]'
@@ -1889,8 +1888,8 @@ function Invoke-WindowsRunnerBootstrap {
     # Tier-aware exit-code resolution. Failures are partitioned into:
     #   - CRITICAL: load-bearing for Unity correctness (vcredist-2010,
     #     vcredist-2015-2022, long-paths, pwsh, ucrt). A critical failure exits
-    #     1 and the operator MUST remediate (elevated re-run or
-    #     workflow_dispatch) before the next Unity job can pass.
+    #     1 and the operator MUST remediate with an elevated host-side re-run
+    #     before the next Unity job can pass.
     #   - BEST-EFFORT: perf optimizations or convenience (defender-exclusion).
     #     A best-effort failure produces a ::warning:: and the dispatcher
     #     continues -- Unity correctness is unaffected. This is the
@@ -1951,7 +1950,7 @@ function Invoke-WindowsRunnerBootstrap {
     }
 
     if ($criticalFailed.Count -gt 0) {
-        Write-CiError "bootstrap-windows-runner: one or more CRITICAL prereqs failed to install. See individual ::error:: lines above. To remediate: run this script from an elevated PowerShell, or trigger .github/workflows/runner-bootstrap.yml from the Actions UI."
+        Write-CiError "bootstrap-windows-runner: one or more CRITICAL prereqs failed to install. See individual ::error:: lines above. To remediate, run this script from an elevated PowerShell directly on the host."
         return 1
     }
     if ($DetectOnly -and $anyMissing) {

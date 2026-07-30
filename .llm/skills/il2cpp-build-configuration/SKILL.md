@@ -71,8 +71,9 @@ plus `-ReleasePlayerBuild` and `-ReleaseCodeOptimization`; Standalone tests take
   `Standalone IL2CPP x64 Release (WindowsPlayer; ...)`. A published `x64 Debug`
   row means `Debug.isDebugBuild` was true - a configuration bug, not a code
   regression.
-- Never publish a Debug or in-editor number. PlayMode and EditMode still run the
-  same scenarios (weekly `unity-benchmarks.yml`) as coverage, not as numbers.
+- Never publish a Debug number. PlayMode supplies allocation evidence in
+  `perf-numbers.yml`; manually dispatched `unity-benchmarks.yml` supplies
+  per-version editor coverage.
 
 ### Backend split
 

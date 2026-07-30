@@ -1,7 +1,7 @@
 name: Verify Unity tests actually ran
 description: >-
   Fail unless an NUnit results.xml under results-dir reports total > 0 and
-  failed = 0. When XML is absent, list provisioning diagnostics and scan the
+  failed = 0. When XML is absent, list editor-validation diagnostics and scan the
   Unity log for catastrophic compile-time failures.
 inputs:
   results-dir:
@@ -49,7 +49,7 @@ runs:
           Write-Host "::notice::No DxMessaging test assemblies were selected for $label; the Unity run was skipped, so there is nothing to verify."
           exit 0
         }
-        function Write-ProvisioningDiagnosticsHint {
+        function Write-EditorValidationDiagnosticsHint {
           param([Parameter(Mandatory = $true)][string]$ResultsDir)
 
           $roots = New-Object System.Collections.Generic.List[string]
@@ -64,19 +64,19 @@ runs:
 
           $dirs = New-Object System.Collections.Generic.List[string]
           foreach ($root in $roots) {
-            if ((Split-Path -Leaf $root) -ieq 'provisioning') {
+            if ((Split-Path -Leaf $root) -ieq 'editor-validation') {
               if (-not $dirs.Contains($root)) {
                 $dirs.Add($root)
               }
             }
 
-            $direct = Join-Path $root 'provisioning'
+            $direct = Join-Path $root 'editor-validation'
             if ((Test-Path -LiteralPath $direct) -and -not $dirs.Contains($direct)) {
               $dirs.Add((Resolve-Path -LiteralPath $direct).Path)
             }
 
             Get-ChildItem -LiteralPath $root -Directory -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -ieq 'provisioning' } |
+              Where-Object { $_.Name -ieq 'editor-validation' } |
               ForEach-Object {
                 if (-not $dirs.Contains($_.FullName)) {
                   $dirs.Add($_.FullName)
@@ -85,13 +85,13 @@ runs:
           }
 
           if ($dirs.Count -lt 1) {
-            Write-Host "::warning::No provisioning diagnostics directory found under $ResultsDir, .artifacts, or artifact."
+            Write-Host "::warning::No editor-validation diagnostics directory found under $ResultsDir, .artifacts, or artifact."
             return
           }
 
-          Write-Host "::group::Provisioning diagnostics files"
+          Write-Host "::group::Editor validation diagnostics files"
           foreach ($diagnosticsDir in $dirs) {
-            Write-Host "Provisioning diagnostics directory: $diagnosticsDir"
+            Write-Host "Editor validation diagnostics directory: $diagnosticsDir"
             $files = @(
               Get-ChildItem -LiteralPath $diagnosticsDir -File -Recurse -ErrorAction SilentlyContinue |
                 Sort-Object FullName
@@ -109,7 +109,7 @@ runs:
               Where-Object { $_.Name -match '(?i)summary' } |
               Select-Object -First 1
             if ($summary) {
-              Write-Host "::notice::Provisioning summary: $($summary.FullName)"
+              Write-Host "::notice::Editor validation summary: $($summary.FullName)"
               try {
                 $summaryJson = Get-Content -LiteralPath $summary.FullName -Raw | ConvertFrom-Json
                 $classification = if ($summaryJson.finalClassification) {
@@ -122,10 +122,10 @@ runs:
                 } else {
                   '(missing)'
                 }
-                Write-Host "::notice::Provisioning summary classification=$classification profile=$provisioningProfile"
+                Write-Host "::notice::Editor validation summary classification=$classification profile=$provisioningProfile"
                 if ($env:GITHUB_STEP_SUMMARY) {
-                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Provisioning summary: ``" + $summary.FullName + "``")
-                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Provisioning classification: ``" + $classification + "`` (profile ``" + $provisioningProfile + "``)")
+                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Editor validation summary: ``" + $summary.FullName + "``")
+                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- Editor validation classification: ``" + $classification + "`` (profile ``" + $provisioningProfile + "``)")
                 }
                 if ($classification -ne 'success' -and $classification -ne '(missing)') {
                   $missingModules = @()
@@ -141,10 +141,10 @@ runs:
                   } else {
                     ""
                   }
-                  Write-Host "::error::Provisioning failed before Unity results verification: classification=$classification profile=$provisioningProfile summary=$($summary.FullName)$missingText"
+                  Write-Host "::error::Editor validation failed before Unity results verification: classification=$classification profile=$provisioningProfile summary=$($summary.FullName)$missingText"
                 }
               } catch {
-                Write-Host "::notice::Provisioning summary metadata could not be parsed: $($_.Exception.Message)"
+                Write-Host "::notice::Editor validation summary metadata could not be parsed: $($_.Exception.Message)"
               }
             }
           }
@@ -477,7 +477,7 @@ runs:
         # summary, not buried under a generic "tests did not run" line.
         Write-UnityCatastrophicPatternHits -ResultsDir $dir
         if (-not (Test-Path $dir)) {
-          Write-ProvisioningDiagnosticsHint -ResultsDir $dir
+          Write-EditorValidationDiagnosticsHint -ResultsDir $dir
           Write-Host "::error::No artifacts directory ($dir) -- Unity Test Runner did not produce results for $label"
           exit 1
         }
@@ -490,7 +490,7 @@ runs:
           # Test-Path block); a second call here would emit duplicate
           # `::error::` annotations for the same hits.
           Write-UnityPackageManagerFailureHints -ResultsDir $dir
-          Write-ProvisioningDiagnosticsHint -ResultsDir $dir
+          Write-EditorValidationDiagnosticsHint -ResultsDir $dir
           Write-Host "::error::No NUnit results.xml (with a <test-run> element) under $dir -- tests did not run for $label"
           exit 1
         }

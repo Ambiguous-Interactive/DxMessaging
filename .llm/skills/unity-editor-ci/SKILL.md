@@ -1,6 +1,6 @@
 ---
 name: unity-editor-ci
-description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, the canonical version list in .github/unity-versions.json enforced by npm run validate:unity-versions, the organization build-lock and timeout invariants that protect the two-seat Unity serial, the ensure-editor.ps1 standalone-CLI bootstrap with its PATH refresh and module quarantine/reinstall repair, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only or license or editor-provisioning failure, or editing a Unity workflow."
+description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow."
 metadata:
   category: "unity"
   tags: "unity, ci, matrix, il2cpp, lts, game-ci"
@@ -31,12 +31,12 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
   strictly ascending by `major.minor.patch`) and `release` (must be a member of `all`).
   `latest` is DEFINED as the last element of `all` and is never stored as its own key.
 - Bump versions ONLY in that file, then run `npm run validate:unity-versions`.
-- `scripts/validate-unity-versions.js` assigns each consumer one policy: `no-literals` (reads
-  the JSON at runtime via `jq`; the default for every active workflow, including
-  `unity-tests.yml`, `unity-benchmarks.yml`, `perf-numbers.yml`), `mirror-all` (literal set
-  must equal `all`: `runner-bootstrap.yml`, `scripts/unity/maintain-windows-runner.ps1`,
-  `scripts/unity/install-runner-maintenance-task.ps1`), and `mirror-release` (every literal
-  equals `release`: `release.yml`, `unity-gameci-experiment.yml`).
+- `scripts/validate-unity-versions.js` assigns each consumer one policy:
+  `no-literals` (the default for unregistered workflows), `mirror-all`
+  (`unity-tests.yml`, `unity-benchmarks.yml`, runner bootstrap and maintenance
+  scripts), `mirror-latest` (`perf-numbers.yml`), and `mirror-release`
+  (`release.yml`). Licensed workflow matrices stay literal and static so the
+  organization lock analyzer can attest every matrix identity.
 - `.github/workflows-disabled/` and the canonical file itself are excluded from scanning.
   `ci.yml` runs the validator in the `Lint GitHub Actions workflows` job, so drift blocks merge.
 
@@ -46,30 +46,34 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
   protect it: `strategy.max-parallel: 1` serializes cells WITHIN a run, and the external
   `Ambiguous-Interactive/ambiguous-organization-build-lock` actions admit at most two runners
   ACROSS runs and repositories.
-- `max-parallel: 1` goes under `strategy:` on the matrix workflows only (`unity-tests.yml`,
-  `unity-benchmarks.yml`). A native `concurrency.group: wallstop-organization-builds` is
-  repository-scoped and is FORBIDDEN.
-- Timeout invariant: `job timeout-minutes >= acquire timeout-minutes + RUN_BUDGET (120)`.
-  Current magnitudes: acquire `timeout-minutes: "300"`, job `timeout-minutes: 420`, and a
-  step-level `timeout-minutes: 120` on the Unity run step. The step guard must be `>= 120` and
-  STRICTLY below the job timeout so the step fails first and releases the seat.
-- Acquire the lock immediately before `run-ci-tests.ps1` and release it with `if: always()`.
-  Provision editors BEFORE taking the lock; provisioning can take tens of minutes.
+- `max-parallel: 1` goes under `strategy:` on the matrix workflows (`unity-tests.yml`,
+  `unity-benchmarks.yml`, and `perf-numbers.yml`). A native
+  `concurrency.group: wallstop-organization-builds` is repository-scoped and is FORBIDDEN.
+- Timeout invariant: every step before and including the cleanup gate has an explicit positive
+  timeout. Editor validation is capped at `10`, the acquire step cap (`305`) exceeds its
+  internal wait (`300`), licensed work is capped at `120` to `180`, and cleanup uses `5`/`2`/`5`/`2`
+  for return/classify/release/gate. The `900`-minute job cap must retain at least 60 minutes
+  beyond the sum of those enforced step caps.
+- Editors and modules are installed manually by a runner administrator under
+  `RUNNER_TOOL_CACHE/u6-v3`. Workflows MUST NOT install, repair, uninstall, or quarantine
+  editors. Validate with `-CiManagedOnly -RequireHealthyExisting` before acquiring the lock.
 
 ### The compute-unity-assemblies is-empty gate
 
-- The compute step carries `id: compute`. Every license-consuming step in the same job
-  (`ensure-editor.ps1` provision, `acquire-build-lock`, `run-ci-tests.ps1`) is gated with
-  `if: ${{ steps.compute.outputs.is-empty != 'true' }}`.
+- The compute step carries `id: compute`. Editor validation and the Unity work step
+  may skip an empty assembly selection, but lock acquisition remains
+  unconditional because each static matrix is structurally non-empty and the
+  analyzer must be able to prove every acquisition.
 - `Verify tests actually ran` must require `steps.compute.outcome == 'success'` plus either
   `is-empty == 'true'` or a non-skipped Unity run step, and receives
   `expected-empty: ${{ steps.compute.outputs.is-empty }}`. Never gate verify on is-empty alone.
 
-### Editor provisioning (`scripts/unity/ensure-editor.ps1`)
+### Editor validation and manual maintenance (`scripts/unity/ensure-editor.ps1`)
 
-- CI must pass `-ProvisioningProfile` explicitly: `EditorOnly` for editmode, playmode,
-  benchmarks, and release checks; `StandaloneWindowsIl2Cpp` for standalone (installs only
-  `windows-il2cpp`); `Android` and `Full` for the heavy module sets.
+- CI must pass `-CiManagedOnly -RequireHealthyExisting` plus `-ProvisioningProfile`
+  explicitly: `EditorOnly` for editmode, playmode, benchmarks, and release checks;
+  `StandaloneWindowsIl2Cpp` for standalone (verifies `windows-il2cpp`); `Android` and `Full`
+  remain manual-maintenance profiles.
 - `unity install-path` with NO arguments is a GETTER. The SET form uses a flag (`-s`, then
   `--set` as fallback) and is best-effort only; discovery always relies on the getter.
 - The installer only writes the User-scope registry PATH, so the session PATH must be
@@ -92,11 +96,11 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
 - Unity 2021.3, 2022.3, and 6000.x need BOTH the VC++ 2010 SP1 x64 Redistributable
   (`MSVCP100.dll`, `MSVCR100.dll`) and the VC++ 2015-2022 x64 Redistributable
   (`VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`, `MSVCP140.dll`). They are separate packages.
-- `scripts/unity/bootstrap-windows-runner.ps1` installs both, enables
+- A runner administrator runs `scripts/unity/bootstrap-windows-runner.ps1` directly on the
+  host to install both and enable
   `HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem!LongPathsEnabled = 1`, adds Defender
-  exclusions, and installs `pwsh` via winget. `.github/actions/assert-unity-host-prereqs` runs
-  it per job and exports `DXM_RUNNER_PREREQ_INSTALLED=1`; `runner-bootstrap.yml` is the
-  Actions-only recovery path. `DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1` forces `-DetectOnly`.
+  exclusions, and install `pwsh` via winget. `.github/actions/assert-unity-host-prereqs` and
+  `runner-bootstrap.yml` always use `-DetectOnly`; workflows never install host prerequisites.
 
 ### Caches, logs, and action versions
 

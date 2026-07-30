@@ -32,9 +32,10 @@ built-in `GITHUB_TOKEN`. The built-in token cannot push to a protected branch:
 branch-protection bypass actor and GitHub blocks the push by design. A dedicated
 GitHub App that **is** allowed to bypass the protection does the push instead.
 
-The release pipeline uses the same App token: `release-prepare.yml` pushes the
-`release/vX.Y.Z` branch and opens the release pull request, then
-`release-tag.yml` pushes the annotated `vX.Y.Z` tag after that PR is merged. A
+The release preparation pipeline uses the same App token:
+`release-prepare.yml` pushes the `release/vX.Y.Z` branch and opens the release
+pull request, then `release-tag.yml` pushes the annotated `vX.Y.Z` tag after
+that PR is merged. An operator dispatches `release.yml` from that exact tag. A
 denied release-branch push that mentions `bot-auto-commit[bot]` and
 `Permission to ... denied` means the App token can be minted but cannot write
 that ref. Check the App installation, **Contents: Read and write**, **Pull

@@ -32,7 +32,10 @@ Local Unity verification needs NO license. The devcontainer ships no Unity build
 
 1. **Return-at-start.** Each job calls `Invoke-UnityLicenseReturn` defensively before activating, reclaiming any seat a prior force-killed run leaked on that persistent runner.
 1. **PowerShell `try`/`finally`.** `run-ci-tests.ps1` activates inside a `try` and returns in the `finally`, covering both a clean exit and an editor throw or non-zero exit.
-1. **Workflow `if: always()` step.** Every Unity workflow runs `./.github/actions/return-unity-license` as an `if: always()` step INSIDE the org-lock window, before the lock release, so a step timeout or killed script still returns the license before the next job acquires the lock.
+1. **Workflow terminal return step.** Every Unity workflow invokes the
+   centrally pinned `return-unity-license` action after diagnostics and before
+   classify/release/gate, scoped to an acquired lock, so a failed Unity step
+   still returns the license before the next job acquires the lock.
 1. **The next run's return-at-start.** If the whole runner process is killed and the three layers above never run, layer 1 of the next run on that machine reclaims the seat.
 
 ### Per-job flow
@@ -42,7 +45,8 @@ Validate the secrets with `./.github/actions/validate-unity-license` BEFORE acqu
 ### Contract invariants to check on every change
 
 - The return lives in a `finally`, and the defensive return-at-start is still present.
-- Every Unity workflow keeps the `if: always()` `return-unity-license` step inside the org-lock window.
+- Every Unity workflow keeps the acquired-scoped central return followed by
+  classifier, release, and final cleanup gate inside the org-lock window.
 - No workflow references `secrets.UNITY_LICENSING_SERVER`, and every Unity job wires all three serial secrets.
 
 Anti-patterns: returning the license only on the success path; dropping the `if: always()` step and relying on the next run's return-at-start; echoing or logging the serial or password; re-adding the retired licensing-server secret.

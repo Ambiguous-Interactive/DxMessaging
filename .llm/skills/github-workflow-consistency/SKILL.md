@@ -11,7 +11,7 @@ metadata:
 Every workflow under `.github/workflows/` follows the same skeleton, declares the least
 privilege it needs, and fails closed. This skill also covers the four subsystems that most
 often break a workflow: git commands in CI, lychee link checking, devcontainer image
-publishing, and the tag-triggered release.
+publishing, and the tag-selected manual release dispatch.
 
 ## When to use
 

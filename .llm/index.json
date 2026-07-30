@@ -208,7 +208,7 @@
         "category": "performance",
         "tags": "performance, benchmarks, il2cpp, release, ci, standalone"
       },
-      "lineCount": 116,
+      "lineCount": 117,
       "references": [
         ".llm/skills/il2cpp-build-configuration/references/mono-vs-il2cpp-optimization-split.md",
         ".llm/skills/il2cpp-build-configuration/references/perf-config-il2cpp-release-netstandard21.md"
@@ -426,12 +426,12 @@
     {
       "name": "unity-editor-ci",
       "path": ".llm/skills/unity-editor-ci/SKILL.md",
-      "description": "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, the canonical version list in .github/unity-versions.json enforced by npm run validate:unity-versions, the organization build-lock and timeout invariants that protect the two-seat Unity serial, the ensure-editor.ps1 standalone-CLI bootstrap with its PATH refresh and module quarantine/reinstall repair, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only or license or editor-provisioning failure, or editing a Unity workflow.",
+      "description": "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow.",
       "metadata": {
         "category": "unity",
         "tags": "unity, ci, matrix, il2cpp, lts, game-ci"
       },
-      "lineCount": 122,
+      "lineCount": 126,
       "references": [
         ".llm/skills/unity-editor-ci/references/github-actions-version-consistency.md",
         ".llm/skills/unity-editor-ci/references/unity-ci-matrix.md",
@@ -463,7 +463,7 @@
         "category": "unity",
         "tags": "unity, serial, license, return, leak, seat, ci"
       },
-      "lineCount": 73,
+      "lineCount": 77,
       "references": [
         ".llm/skills/unity-licensing/references/unity-license-bootstrap.md",
         ".llm/skills/unity-licensing/references/unity-license-return-guarantee.md"
