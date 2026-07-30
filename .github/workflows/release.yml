@@ -297,6 +297,7 @@ jobs:
             -TestMode 'editmode' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/release-editmode' `
+            -LicenseReturnOwner Central `
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
 
@@ -516,7 +517,8 @@ jobs:
           ./scripts/unity/export-unitypackage.ps1 `
             -UnityVersion '2022.3.45f1' `
             -OutputPath $output `
-            -ArtifactsPath '.artifacts/unity/release-unitypackage'
+            -ArtifactsPath '.artifacts/unity/release-unitypackage' `
+            -LicenseReturnOwner Central
 
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}

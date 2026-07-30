@@ -46,7 +46,10 @@ param(
 
     # Stage the project and generate the exporter without running Unity
     # (local inspection of the staged payload).
-    [switch]$StageOnly
+    [switch]$StageOnly,
+
+    [ValidateSet('Local', 'Central')]
+    [string]$LicenseReturnOwner = 'Local'
 )
 
 Set-StrictMode -Version Latest
@@ -851,7 +854,7 @@ try {
     $size = (Get-Item -LiteralPath $OutputPath).Length
     Write-Host "::notice::Exported $OutputPath ($size bytes)."
 } finally {
-    if ($hasLicenseCreds) {
+    if ($hasLicenseCreds -and $LicenseReturnOwner -eq 'Local') {
         Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $returnLogPath
     }
 }

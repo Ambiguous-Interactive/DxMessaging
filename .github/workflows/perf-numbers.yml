@@ -328,6 +328,7 @@ jobs:
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -LicenseReturnOwner Central `
             @extra
 
       - name: Capture exact standalone player size

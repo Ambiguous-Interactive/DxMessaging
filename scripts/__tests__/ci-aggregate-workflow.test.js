@@ -439,12 +439,12 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
         /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/,
         `${label}: licensed work and central return must use the same trusted editor root`
       );
-      assert.match(
-        workStep,
-        /-LicenseReturnOwner Central/,
-        `${label}: the trusted central action must own the post-activation return`
-      );
     }
+    assert.match(
+      workStep,
+      /-LicenseReturnOwner Central/,
+      `${label}: the trusted central action must own the post-activation return`
+    );
     assert.match(
       returnStep,
       /\n        id: return_unity_license\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/
@@ -510,17 +510,17 @@ test("Unity scripts retain bounded return-at-start evidence", () => {
   );
 });
 
-test("Unity test CI defers exactly one post-activation return to the central action", () => {
-  const source = fs.readFileSync(
-    path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1"),
-    "utf8"
-  );
-  assert.match(source, /\[ValidateSet\('Local', 'Central'\)\]/);
-  assert.match(source, /\[string\]\$LicenseReturnOwner = 'Local'/);
-  assert.match(
-    source,
-    /if \(\$hasLicenseCreds -and \$LicenseReturnOwner -eq 'Local'\) \{\s+Invoke-UnityLicenseReturn/
-  );
+test("Unity CI defers every post-activation return to the central action", () => {
+  for (const file of ["run-ci-tests.ps1", "export-unitypackage.ps1"]) {
+    const source = fs.readFileSync(path.join(REPO_ROOT, "scripts", "unity", file), "utf8");
+    assert.match(source, /\[ValidateSet\('Local', 'Central'\)\]/, file);
+    assert.match(source, /\[string\]\$LicenseReturnOwner = 'Local'/, file);
+    assert.match(
+      source,
+      /if \(\$hasLicenseCreds -and \$LicenseReturnOwner -eq 'Local'\) \{\s+Invoke-UnityLicenseReturn/,
+      file
+    );
+  }
 });
 
 test("Unity Tests classifies Dependabot pull requests by immutable PR author", () => {
