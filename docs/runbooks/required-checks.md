@@ -25,23 +25,17 @@ non-matching pull requests and cannot be required as written.
 
 ## Current state
 
-Auto-merge is enabled. The full CI gate is **applied and live (2026-06-16)**:
-repository ruleset `Required CI - Unity Tests (default branch)` (id `17663217`,
-active, `~DEFAULT_BRANCH`) now requires **15 contexts**: the `Unity CI Success`
-aggregate plus the 14 remediated static/correctness gates from
-[Augmenting the gate](#augmenting-the-gate-done-2026-06-15). The
-`bot-auto-commit` App (id `3977200`) stays in `bypass_actors` (mode `always`) so
-the perf-doc auto-commit still pushes to `master`. The remediation merged via
-PR #232 (`c42f8a4`); all 14 static contexts were verified
-present-and-reporting on a real PR (#232) before the augment.
+Auto-merge is enabled. The aggregate CI gate is **applied and live
+(2026-07-30)**: repository ruleset `Required CI - Unity Tests (default branch)`
+(id `17663217`, active, `~DEFAULT_BRANCH`) requires exactly `CI Success` and
+`Unity CI Success`. PR #316 verified both aggregates before merge, and the
+`CI Success` aggregate also reported on the default branch after merge. The 14
+individual static contexts remain dependencies of `CI Success`, but the
+ruleset does not require their literal names.
 
-> **Aggregate follow-up implemented in branch, not yet live in the ruleset.**
-> `.github/workflows/ci.yml` consolidates the 14 static contexts into one
-> `CI Success` alls-green gate (`re-actors/alls-green`). Unity is already
-> represented by `Unity CI Success`. After this workflow lands on `master` and
-> `CI Success` is verified on real PRs, switch ruleset `17663217` from the
-> interim 15-context set to the two aggregate contexts: `CI Success` and
-> `Unity CI Success`.
+The `bot-auto-commit` App (id `3977200`) stays in `bypass_actors` (mode
+`always`) so the perf-doc and generated-doc auto-commits can still push to
+`master`.
 
 ## Aggregate Gates
 
@@ -108,11 +102,11 @@ a matrix before expansion, GitHub can report only one skipped check with the
 literal name `Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}`, so
 requiring the expanded names leaves auto-merge waiting for absent checks.
 
-## Interim Live Static Contexts
+## Retired Individual Static Contexts
 
-Until `CI Success` lands on `master` and is verified on real PRs, ruleset
-`17663217` still requires the 14 legacy static contexts individually. They are
-listed here so operators can audit or roll back the migration if needed.
+Before the aggregate switch, ruleset `17663217` required these 14 static
+contexts individually. Keep this list as migration history and for aggregate
+dependency audits; do not add these names back to the ruleset.
 
 ```text
 Lint repository Markdown
@@ -299,9 +293,9 @@ The path-filtered gates listed above were remediated to the always-report patter
 (each gained a `changes` job that lists the PR's files via `gh api` -- failing
 safe to "run" if that call errors -- and each required gate fails closed if
 change detection itself fails or emits no valid output). The remediation merged
-via PR #232 (`c42f8a4`). **The augment is now LIVE:** ruleset `17663217`
-requires `Unity CI Success` plus these 14 remediated ones (15 total). Each of the
-14 static contexts was
+via PR #232 (`c42f8a4`). The ruleset required `Unity CI Success` plus these 14
+remediated contexts until the aggregate switch on 2026-07-30. Each static
+context was
 verified present-and-reporting `success` on PR #232's check-runs (a real PR that
 exercised the remediated workflows) before the augment; the skip-success path is
 structural. Single required jobs carry a fail-closed job-level `if:` and matrix
@@ -340,21 +334,19 @@ on real PRs.
 gh api repos/OWNER/REPO/rulesets/<id> -X PUT --input augmented-ruleset.json
 ```
 
-## Switching to the aggregate ruleset
+## Aggregate ruleset switch (DONE 2026-07-30)
 
-After `.github/workflows/ci.yml` lands on `master`, verify `CI Success` reports
-on a real documentation-only PR and a real code/workflow PR. Then update ruleset
-`17663217` so `required_status_checks` contains only:
+PR #316 verified `CI Success` and `Unity CI Success` on a real workflow and
+documentation change. Ruleset `17663217` now contains only:
 
 ```text
 CI Success
 Unity CI Success
 ```
 
-Keep the existing `conditions`, `bypass_actors`, and pull-request rule intact.
-Do not remove the interim 14 static contexts before `CI Success` has reported on
-the default branch; requiring an absent aggregate hangs auto-merge the same way
-the old path-filtered workflows did.
+The switch preserved the existing `conditions`, `bypass_actors`, enforcement
+mode, and required-check policy. `CI Success` also reported on the default
+branch after merge.
 
 ## Fragile check names
 
@@ -367,7 +359,7 @@ A required check is matched by literal string, so these break silently:
   Require `Unity CI Success` instead. Static script tests are inside `ci.yml`;
   the matrix still expands to `Script tests (ubuntu-latest)`,
   `Script tests (macos-latest)`, and `Script tests (windows-latest)`, but branch
-  protection should require only `CI Success` after the aggregate switch.
+  protection requires only `CI Success`.
 - **Jobs with no `name:`.** Their check-run context is the bare job id. Generic
   ids like `test`/`lint` collide across workflows and are easy to mistype, so
   every required job must keep a unique, stable `name:`.
