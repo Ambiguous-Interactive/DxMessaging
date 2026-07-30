@@ -132,7 +132,7 @@ RAM-64GB]` so either Windows machine can pick up any Unity job. The
 
 - [ ] In the `Ambiguous-Interactive` organization, open **Settings**,
       **Actions**, then **Runners**.
-- [ ] Confirm at least one online self-hosted Windows runner has the labels
+- [ ] Confirm at least one registered self-hosted Windows runner has the labels
       `self-hosted`, `Windows`, and `RAM-64GB`.
 - [ ] Confirm `ELI-MACHINE` retains its `fast` label for future opt-in use.
 - [ ] Confirm every licensed job in `.github/workflows/unity-tests.yml`,

@@ -348,6 +348,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   for (const [file, labels] of runnerLabels) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
     const preflight = getJobBlock(source, "runner-preflight", file);
+    assert.match(preflight, /\n    name: Self-hosted runner registration preflight\n/, file);
     assert.match(preflight, /\n    runs-on: ubuntu-latest\n/, file);
     assert.match(preflight, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), file);
     assert.match(preflight, /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, file);
@@ -357,8 +358,35 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       file
     );
     assert.match(preflight, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`), file);
-    assert.doesNotMatch(preflight, /RUNNER_AUDIT_PAT|Soft pass|soft-pass/i, file);
+    assert.doesNotMatch(
+      preflight,
+      /RUNNER_AUDIT_PAT|Soft pass|soft-pass|Require an online/i,
+      file
+    );
   }
+
+  const bootstrapSource = fs.readFileSync(
+    path.join(WORKFLOW_DIR, "runner-bootstrap.yml"),
+    "utf8"
+  );
+  const bootstrapPreflight = getJobBlock(
+    bootstrapSource,
+    "runner-preflight",
+    "runner-bootstrap.yml"
+  );
+  assert.match(
+    bootstrapPreflight,
+    /\n    name: Self-hosted runner registration preflight\n/
+  );
+  assert.match(
+    bootstrapPreflight,
+    new RegExp(`uses: ${escapeRegExp(preflightAction)}`)
+  );
+  assert.match(
+    bootstrapPreflight,
+    /required-label-sets: '\[\["self-hosted","Windows","RAM-64GB","\$\{\{ inputs\.runner-label \}\}"\]\]'/
+  );
+  assert.doesNotMatch(bootstrapPreflight, /\n        run:|\.status|RUNNER_AUDIT_PAT/);
 
   for (const action of [acquire, returnLicense, classify, release, gate]) {
     assert.equal(
@@ -385,6 +413,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const lifecycleNames = [
       "Acquire organization Unity lock",
       "Require acquired Unity lock",
+      "Provision Unity Editor",
       licensedWorkName,
       "Return Unity license",
       "Classify Unity cleanup evidence",
