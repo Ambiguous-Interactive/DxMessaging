@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 Branch: `dev/wallstop/session-176-plan-ws3-guard`
-PR: pending
+PR: **#315**
 Issues: **#308**, **#314**
 
 ## Outcome
