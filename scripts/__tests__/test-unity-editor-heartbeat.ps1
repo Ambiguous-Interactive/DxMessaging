@@ -11,7 +11,7 @@
     - repeated, byte-identical progress remains alive and completes;
     - a silent child is killed by the heartbeat sentinel;
     - a noisy child that never finishes is killed by the wall-clock sentinel;
-    - a quick-exit parent with a live orphan fails closed without retry.
+    - a quick-exit parent exercises the platform's detached-child pipe semantics.
 #>
 [CmdletBinding()]
 param(
@@ -235,12 +235,13 @@ Start-Sleep -Seconds 10
 [IO.File]::WriteAllText('$orphanPidLiteral', [string]`$child.Id)
 "@
     $orphanAttempts = 0
+    $orphanResult = $null
     $orphanSafetyErrorEscaped = $false
     $orphanSafetyMarker = $false
     $orphanId = 0
     $orphanWasAlive = $false
     try {
-        Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -Action {
+        $orphanResult = Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -Action {
             $script:orphanAttempts++
             Invoke-UnityCliCaptureWithTimeout `
                 -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $orphanParent)) `
@@ -258,10 +259,20 @@ Start-Sleep -Seconds 10
             Remove-Item -LiteralPath $orphanPidPath -Force -ErrorAction SilentlyContinue
         }
     }
-    Assert-That 'quick-exit parent leaves a live descendant holding inherited pipes' ($orphanId -gt 0 -and $orphanWasAlive)
-    Assert-That 'actual orphan path produces the process-safety error' $orphanSafetyErrorEscaped
-    Assert-That 'actual orphan path marks the error as non-retryable' $orphanSafetyMarker
-    Assert-That 'actual orphan path is attempted exactly once' ($orphanAttempts -eq 1)
+    Assert-That 'quick-exit parent leaves a live detached descendant' ($orphanId -gt 0 -and $orphanWasAlive)
+    if ($IsWindows) {
+        Assert-That 'Windows detached descendant does not retain the redirected pipes' (
+            $null -ne $orphanResult -and $orphanResult.Success
+        )
+        Assert-That 'Windows direct-child completion does not produce a process-safety marker' (
+            -not $orphanSafetyErrorEscaped -and -not $orphanSafetyMarker
+        )
+        Assert-That 'Windows detached-child path is attempted exactly once' ($orphanAttempts -eq 1)
+    } else {
+        Assert-That 'inherited-pipe orphan produces the process-safety error' $orphanSafetyErrorEscaped
+        Assert-That 'inherited-pipe orphan marks the error as non-retryable' $orphanSafetyMarker
+        Assert-That 'inherited-pipe orphan path is attempted exactly once' ($orphanAttempts -eq 1)
+    }
 } finally {
     if ($null -eq $savedNoticeInterval) {
         Remove-Item Env:DXM_ENSURE_EDITOR_PROGRESS_NOTICE_INTERVAL_SECONDS -ErrorAction SilentlyContinue

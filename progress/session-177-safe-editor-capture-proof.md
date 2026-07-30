@@ -193,9 +193,11 @@ The experiment is now retained in
 `scripts/__tests__/test-unity-editor-heartbeat.ps1`. Its 37 assertions exercise
 stdout and stderr activity, the environment override, monotonic periodic
 notices, direct-child exit confirmation, descendant tree termination, the noisy
-wall deadline, both outcomes of the second bounded reap, and the actual
-fail-closed producer/consumer path for a quick-exit parent whose live orphan
-holds inherited pipes. A native pipe-closing child also proves that a successful
+wall deadline, and both outcomes of the second bounded reap. On Linux and macOS,
+the quick-exit parent retains inherited pipes and proves the actual fail-closed,
+non-retryable producer/consumer path. On Windows, the detached child closes
+those pipes and proves successful direct-child completion instead. A native
+pipe-closing child also proves on all three platforms that a successful
 second-reap termination is attributed to wrapper timeout rather than a native
 exit. CI executes the test on Linux, macOS, and Windows.
 
