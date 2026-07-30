@@ -7,8 +7,8 @@ name: Release Prepare
 # version heading, syncs the banner SVG, re-runs the script tests and
 # validators against the bumped tree, and opens a `release/vX.Y.Z` pull
 # request with the GitHub App token. Merging that PR (squash, keeping the
-# `release: vX.Y.Z` title) triggers release-tag.yml, which creates the tag
-# that fires the existing tag-triggered release.yml.
+# `release: vX.Y.Z` title) triggers release-tag.yml, which creates the tag.
+# An operator then selects that exact tag and dispatches release.yml.
 #
 # PREREQUISITE: the AUTO_COMMIT_APP_ID / AUTO_COMMIT_APP_PRIVATE_KEY GitHub
 # App (Contents + Pull requests read-and-write, installed on this repo); the
@@ -266,7 +266,7 @@ jobs:
             echo "## What happens after merge"
             echo
             echo "1. release-tag.yml sees the \`release: ${TAG}\` commit on ${DEFAULT_BRANCH} and pushes the annotated tag \`${TAG}\`."
-            echo "1. The tag fires release.yml: validate (pack + attest), the trusted Unity editmode check, the .unitypackage export,"
+            echo "1. Select the exact \`${TAG}\` ref and manually dispatch release.yml: validate (pack + attest), the trusted Unity editmode check, the .unitypackage export,"
             echo "   npm publish (Trusted Publishing), then the GitHub Release with the .tgz, .sha256, and .unitypackage assets"
             echo "   plus the asset-store-submission artifact."
             echo "1. The Unity Asset Store upload stays MANUAL: download the asset-store-submission artifact and follow docs/runbooks/asset-store-publishing.md."

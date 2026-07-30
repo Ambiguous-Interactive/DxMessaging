@@ -1,15 +1,7 @@
 name: Unity Benchmarks
 
 on:
-  schedule:
-    - cron: "29 10 * * 3"
   workflow_dispatch:
-    inputs:
-      unity-version:
-        description: "Pin a single Unity version. Empty = full matrix."
-        required: false
-        default: ""
-        type: string
 
 # Top-level permissions are least-privilege and mirror unity-tests.yml. The
 # licensed matrix jobs (matrix-config, runner-preflight, benchmarks) only need
@@ -18,53 +10,15 @@ on:
 # documented dispatch-throughput numbers are owned entirely by the Performance
 # Numbers workflow (.github/workflows/perf-numbers.yml), which posts the refreshed
 # numbers as a non-blocking PR comment and, after merge, commits the refreshed
-# default-branch doc directly via a GitHub App installation token; this scheduled
-# workflow keeps the per-version benchmark
-# test coverage and does not maintain the doc, so it needs no write scope.
+# default-branch doc directly via a GitHub App installation token. This
+# manually dispatched workflow keeps per-version benchmark test coverage and
+# does not maintain the doc, so it needs no write scope.
 permissions:
   contents: read
   checks: write
   issues: write
 
 jobs:
-  matrix-config:
-    name: Resolve benchmark matrix
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      unity-versions: ${{ steps.resolve.outputs.unity-versions }}
-      latest-version: ${{ steps.resolve.outputs.latest-version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - name: Resolve dispatch overrides
-        id: resolve
-        env:
-          INPUT_UNITY_VERSION: ${{ inputs.unity-version }}
-        # The benchmark matrix list and the latest entry both come from the
-        # canonical source (.github/unity-versions.json), so the scheduled perf
-        # coverage tracks every supported runtime and the latest-vs-list pair
-        # cannot drift. The LAST entry is the latest Unity version (exposed as
-        # latest-version for reference; the documented doc table is now
-        # maintained by the per-PR Performance Numbers workflow,
-        # .github/workflows/perf-numbers.yml). A dispatch override pins a single
-        # version.
-        run: |
-          set -euo pipefail
-          if [ -n "${INPUT_UNITY_VERSION:-}" ]; then
-            versions="[\"${INPUT_UNITY_VERSION}\"]"
-            latest="${INPUT_UNITY_VERSION}"
-          else
-            versions="$(jq -c '.all' .github/unity-versions.json)"
-            latest="$(jq -r '.all[-1]' .github/unity-versions.json)"
-          fi
-          {
-            echo "unity-versions=${versions}"
-            echo "latest-version=${latest}"
-          } >> "${GITHUB_OUTPUT}"
-
   runner-preflight:
     name: Self-hosted runner access preflight
     runs-on: ubuntu-latest
@@ -83,7 +37,6 @@ jobs:
   benchmarks:
     name: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
     needs:
-      - matrix-config
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB]
     timeout-minutes: 660
@@ -91,7 +44,10 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        unity-version: ${{ fromJSON(needs.matrix-config.outputs.unity-versions) }}
+        unity-version:
+          - 2021.3.45f1
+          - 2022.3.45f1
+          - 6000.3.16f1
         test-mode:
           - editmode
           - playmode
@@ -198,7 +154,6 @@ jobs:
 
       - name: Acquire organization Unity lock
         id: acquire_lock
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           lock-name: wallstop-organization-builds
@@ -210,7 +165,7 @@ jobs:
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Require acquired Unity lock
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired != 'true' }}
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
         shell: pwsh
         run: exit 1
 
@@ -228,7 +183,7 @@ jobs:
         run: |
           # Release (not Debug) code optimization for the editmode/playmode perf
           # legs, mirroring the repo-wide Unity Release-mode contract so the
-          # weekly coverage run measures the same optimized hot path the docs do.
+          # coverage run measures the same optimized hot path the docs do.
           # This run keeps its editmode+playmode + no-comparisons coverage role;
           # the Release flags add no comparison rows.
           ./scripts/unity/run-ci-tests.ps1 `
@@ -238,69 +193,6 @@ jobs:
             -ArtifactsPath '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
-
-      - name: Return Unity license
-        id: return_unity_license
-        if: always()
-        timeout-minutes: 5
-        continue-on-error: true
-        uses: ./.github/actions/return-unity-license
-        with:
-          prior-return-log-path: ${{ runner.temp }}/unity-return-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
-          prior-command-succeeded: ${{ steps.run_tests.outcome == 'success' }}
-          evidence-paths: |
-            ${{ runner.temp }}/unity-activate-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
-            .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
-      - name: Release organization Unity lock
-        id: release_unity_lock
-        if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          runner-id: ${{ runner.name }}
-          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require confirmed Unity cleanup
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          acquired: ${{ steps.acquire_lock.outputs.acquired }}
-          classification-complete: ${{ steps.return_unity_license.outputs.classification-complete }}
-          cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          cleanup-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          cleanup-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-          release-outcome: ${{ steps.release_unity_lock.outcome }}
-          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
-          released: ${{ steps.release_unity_lock.outputs.released }}
-          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
-          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
-          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
-          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
-          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
-
-      - name: Delete private Unity cleanup evidence
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        shell: pwsh
-        env:
-          RETURN_LOG_PATH: ${{ steps.return_unity_license.outputs.return-log-path }}
-          SUPPLEMENTAL_EVIDENCE_PATHS: ${{ steps.return_unity_license.outputs.supplemental-evidence-paths }}
-        run: |
-          $evidencePaths = @($env:RETURN_LOG_PATH) + @($env:SUPPLEMENTAL_EVIDENCE_PATHS -split "[`r`n]+")
-          foreach ($evidencePath in @($evidencePaths | Sort-Object -Unique)) {
-            if (-not [string]::IsNullOrWhiteSpace($evidencePath) -and (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
-              Remove-Item -LiteralPath $evidencePath -Force
-            }
-          }
 
       # CANCELLATION + TIMEOUT DIAGNOSTIC: when Unity 2022 hangs in csc the
       # runner step times out (or the operator cancels), and the verify
@@ -349,3 +241,75 @@ jobs:
           path: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
           if-no-files-found: warn
           retention-days: 90
+
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          unity-version: ${{ matrix.unity-version }}
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: benchmarks
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
+
+  benchmark-unity-success:
+    name: Benchmark Unity Success
+    if: always()
+    needs:
+      - runner-preflight
+      - benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require complete benchmark validation
+        shell: bash
+        run: |
+          test "${{ needs.runner-preflight.result }}" = success
+          test "${{ needs.benchmarks.result }}" = success

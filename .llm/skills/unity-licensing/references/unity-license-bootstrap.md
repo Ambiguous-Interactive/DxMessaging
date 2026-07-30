@@ -52,8 +52,8 @@ Unity.exe -quit -batchmode -nographics -returnlicense \
 `run-ci-tests.ps1` wraps these as `Invoke-UnityLicenseActivate` (throws on
 failure) and `Invoke-UnityLicenseReturn` (best-effort, never throws). The license
 is returned on EVERY exit path through four redundant layers: a defensive
-return-at-start, a PowerShell `try`/`finally` return, a workflow `if: always()`
-step (`./.github/actions/return-unity-license`), and the next run's
+return-at-start, a PowerShell `try`/`finally` return, the acquired-scoped
+centrally pinned return/classify/release/gate chain, and the next run's
 return-at-start on the same persistent runner. Serial licenses have no
 server-side reclaim and only a small seat pool, so those return layers are the
 only thing that frees a seat -- the full guarantee, the seat-limit tradeoff, and
@@ -78,9 +78,9 @@ Windows runners. Each workflow runs `./.github/actions/validate-unity-license`
 `UNITY_LICENSING_SERVER` is still set) BEFORE acquiring the central organization
 Unity lock, so a misconfigured license fails with a clear diagnostic before Unity
 starts or blocks the shared seat. Inside the org-lock window, every Unity
-workflow also has an `if: always()` step (`./.github/actions/return-unity-license`)
-that returns the license if the process is killed, placed before the lock
-release. The `.github/workflows-disabled/*` files are ubuntu game-ci reference
+workflow also has an acquired-scoped centrally pinned return action before
+cleanup classification, release, and the final fail-closed gate. The
+`.github/workflows-disabled/*` files are ubuntu game-ci reference
 mirrors that pass the serial via `unitySerial: ${{ secrets.UNITY_SERIAL }}`,
 `unityEmail`, and `unityPassword`.
 

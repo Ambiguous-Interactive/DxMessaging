@@ -204,8 +204,7 @@ Unity test matrix:
 - `standalone` (native `StandaloneWindows64` IL2CPP player via
   `scripts/unity/run-ci-tests.ps1`, runtime-only assemblies)
 
-Release checks default to `2022.3.45f1`. Benchmarks run on schedule
-or manual dispatch only.
+Release checks use `2022.3.45f1`. Benchmarks run only by manual dispatch.
 
 ## Licensed Job Guardrails
 

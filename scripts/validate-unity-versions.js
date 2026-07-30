@@ -15,19 +15,16 @@
  *   }
  *
  * `latest` is DEFINED as the last element of `all` (it is never stored
- * separately). Three ubuntu-bash workflows READ this file at runtime via jq
- * (perf-numbers.yml, unity-tests.yml, unity-benchmarks.yml) and therefore must
- * carry ZERO version literals in their own YAML. The self-hosted / pwsh / static
- * consumers cannot easily read the JSON at runtime, so they keep literal version
- * strings; THIS validator is what keeps those literals honest -- it fails CI if
- * any consumer drifts from the canonical file.
+ * separately). Licensed workflow matrices are literal and static so the
+ * organization build-lock analyzer can prove every lock identity before the
+ * workflow runs. THIS validator keeps those literals honest and fails CI if any
+ * consumer drifts from the canonical file.
  *
  * Per-file policies (see CONSUMER_POLICIES):
- *   - `no-literals`   : the file must contain NO code version literal. Applied to
- *                       the three jq-reading workflows AND, by default, to every
- *                       other `.github/workflows/*.yml`, so a NEW workflow that
- *                       hardcodes a version is caught automatically.
+ *   - `no-literals`   : the file must contain NO code version literal. Applied by
+ *                       default to active workflows not explicitly registered.
  *   - `mirror-all`    : the SET of code literals must equal `all` exactly.
+ *   - `mirror-latest` : every code literal must equal the last `all` entry.
  *   - `mirror-release`: every code literal must equal `release`, and there must
  *                       be at least one.
  *
@@ -75,14 +72,13 @@ const VERSION_LITERAL_ANCHORED_REGEX = /^[0-9]+\.[0-9]+\.[0-9]+[abfp][0-9]+$/;
  * caught. The disabled-archive directory is excluded entirely.
  */
 const CONSUMER_POLICIES = Object.freeze({
-  ".github/workflows/perf-numbers.yml": "no-literals",
-  ".github/workflows/unity-tests.yml": "no-literals",
-  ".github/workflows/unity-benchmarks.yml": "no-literals",
+  ".github/workflows/perf-numbers.yml": "mirror-latest",
+  ".github/workflows/unity-tests.yml": "mirror-all",
+  ".github/workflows/unity-benchmarks.yml": "mirror-all",
   ".github/workflows/runner-bootstrap.yml": "mirror-all",
   "scripts/unity/maintain-windows-runner.ps1": "mirror-all",
   "scripts/unity/install-runner-maintenance-task.ps1": "mirror-all",
-  ".github/workflows/release.yml": "mirror-release",
-  ".github/workflows/unity-gameci-experiment.yml": "mirror-release"
+  ".github/workflows/release.yml": "mirror-release"
 });
 
 /**
@@ -298,7 +294,7 @@ function extractVersionLiterals(content, extension) {
  * @param {object} params Parameters.
  * @param {string} params.relativePath Repo-relative POSIX path (for messages).
  * @param {string} params.policy One of "no-literals" | "mirror-all" |
- *   "mirror-release".
+ *   "mirror-latest" | "mirror-release".
  * @param {Array<{ version: string, line: number }>} params.literals Literals
  *   from extractVersionLiterals.
  * @param {string[]} params.all The canonical `all` set.
@@ -332,6 +328,25 @@ function checkConsumer({ relativePath, policy, literals, all, release }) {
         violations.push(
           `${relativePath}:${line}: Unity version '${version}' does not match canonical ` +
             `release; expected '${release}'.`
+        );
+      }
+    }
+    return violations;
+  }
+
+  if (policy === "mirror-latest") {
+    const latest = all.at(-1);
+    if (literals.length === 0) {
+      return [
+        `${relativePath}:0: no Unity version literal found; expected at least one equal to ` +
+          `latest '${latest}'.`
+      ];
+    }
+    for (const { version, line } of literals) {
+      if (version !== latest) {
+        violations.push(
+          `${relativePath}:${line}: Unity version '${version}' does not match canonical ` +
+            `latest; expected '${latest}'.`
         );
       }
     }

@@ -8,8 +8,8 @@
 
 - Reviewing or changing `scripts/unity/run-ci-tests.ps1` license activation or
   return handling.
-- Adding, removing, or reordering the `if: always()` license-return step
-  (`./.github/actions/return-unity-license`) in a Unity workflow.
+- Adding, removing, or reordering the centrally pinned license-return,
+  classification, release, and gate steps in a Unity workflow.
 - Diagnosing a Unity job that fails to activate because all serial seats are
   consumed.
 - Reviewing any change to the Unity workflows' license activation/return steps.
@@ -64,10 +64,10 @@ layers are the ONLY things that free a seat:
 1. **PowerShell `try`/`finally` return.** `run-ci-tests.ps1` activates inside a
    `try` and calls `Invoke-UnityLicenseReturn` in the `finally`, so a clean exit
    AND an editor throw / non-zero both return the license.
-1. **Workflow `if: always()` return step.** Every Unity workflow runs
-   `./.github/actions/return-unity-license` as an `if: always()` step inside the
-   org-lock window (before the lock release), so even a step timeout or killed
-   script process returns the license before the next job can acquire the lock.
+1. **Workflow terminal return step.** Every Unity workflow invokes the
+   centrally pinned `return-unity-license` action after diagnostics and before
+   classify/release/gate, scoped to an acquired lock. A failed Unity step still
+   reaches this terminal cleanup chain before another job can acquire the lock.
 1. **The next run's return-at-start.** On a persistent self-hosted runner, if all
    three layers above are somehow skipped (for example the whole runner process
    is killed), layer 1 of the NEXT run reclaims the leaked seat on that machine.
@@ -88,8 +88,9 @@ Each Unity job follows this order:
    project.
 1. Return: the PowerShell `finally` calls `Invoke-UnityLicenseReturn` on every
    exit path.
-1. Workflow `if: always()` step runs `./.github/actions/return-unity-license`
-   inside the org-lock window, then the lock is released.
+1. The acquired-scoped central return action runs inside the org-lock window,
+   followed by cleanup classification, exact lock release, and the final
+   fail-closed cleanup gate.
 
 ## The Seat-Limit Tradeoff (documented honestly)
 
@@ -187,7 +188,8 @@ The cutover removed `UNITY_LICENSING_SERVER`. Re-wiring it is rejected by
 
 - Unity command-line arguments (`-serial`, `-returnlicense`): <https://docs.unity3d.com/Manual/CommandLineArguments.html>
 - Unity license activation methods: <https://docs.unity3d.com/Manual/LicenseActivationMethods.html>
-- Source: `scripts/unity/run-ci-tests.ps1`, `.github/actions/return-unity-license/action.yml`
+- Source: `scripts/unity/run-ci-tests.ps1` and the centrally pinned
+  `return-unity-license` action in each licensed workflow
 
 ## Changelog
 

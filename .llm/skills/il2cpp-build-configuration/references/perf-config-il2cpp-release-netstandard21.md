@@ -15,10 +15,10 @@ CI from a single runner, `scripts/unity/run-ci-tests.ps1`.
 One leg is published. The headline is a Standalone player built under IL2CPP,
 the ahead-of-time (AOT) backend shipped players actually run, with the
 .NET Standard 2.1 API surface and every Release knob engaged. The in-editor
-PlayMode Mono leg is retired from publishing; PlayMode and EditMode still run
-the same scenarios for local iteration and for the weekly per-version
-benchmark-test coverage in `unity-benchmarks.yml`, but those runs are
-coverage, not published numbers.
+PlayMode Mono supplies allocation counts and bytes alongside the Standalone
+throughput headline. PlayMode and EditMode also run the same scenarios for
+local iteration and for manually dispatched per-version benchmark-test
+coverage in `unity-benchmarks.yml`.
 
 ## Problem Statement
 
@@ -117,12 +117,14 @@ Two artifacts prove a published run used the right profile:
 ## CI Wiring
 
 The Performance Numbers workflow (`.github/workflows/perf-numbers.yml`) runs a
-single-entry matrix: the `standalone` leg with comparisons enabled and
-`StandaloneScriptingBackend = 'IL2CPP'` on top of `ReleasePlayerBuild` and
-`ReleaseCodeOptimization`. The regression gate (`render-perf-deltas.js`)
-compares `--scope Standalone` rows against the committed master baseline. The
-weekly `unity-benchmarks.yml` runs the EditMode and PlayMode benchmark tests
-across Unity versions with `-ReleaseCodeOptimization` for coverage only.
+two-cell static matrix: the `standalone` leg supplies comparison throughput
+with `StandaloneScriptingBackend = 'IL2CPP'` on top of `ReleasePlayerBuild` and
+`ReleaseCodeOptimization`, while PlayMode supplies allocation evidence. The
+regression gate (`render-perf-deltas.js`) compares `--scope Standalone` rows
+against the committed master baseline. The
+manually dispatched `unity-benchmarks.yml` runs the EditMode and PlayMode
+benchmark tests across Unity versions with `-ReleaseCodeOptimization` for
+coverage only.
 
 ## Common Pitfalls
 

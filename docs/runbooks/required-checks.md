@@ -138,9 +138,8 @@ shape; require it only if devcontainer changes must gate merges.
 
 These never gate a pull request:
 
-- Perf sticky-comment job in `perf-numbers.yml` (non-blocking by design); the
-  perf commit and release legs run on push and `workflow_dispatch`, never on a
-  pull request.
+- `perf-numbers.yml`; its benchmark and publishing jobs run on default-branch
+  push and `workflow_dispatch`, never on a pull request.
 - Auto-fix workflows `csharpier-autofix.yml` and `prettier-autofix.yml`. Their
   visible `Format and propose changes` check is path-filtered (`**/*.cs`;
   `**/*.md` etc.), so it is absent on non-matching pull requests -- the same
@@ -154,7 +153,7 @@ Markdown`, and `Prettier and yamllint` gates are the correct required checks.
   trigger (`unity-benchmarks.yml`, `release*.yml`, `runner-bootstrap.yml`,
   `update-llms-txt.yml`, `update-issue-template-versions.yml`, `sync-wiki.yml`,
   `markdown-link-validity.yml`, `stuck-job-watchdog.yml`, `unstick-run.yml`,
-  `devcontainer-prebuild.yml`, `unity-gameci-experiment.yml`).
+  `devcontainer-prebuild.yml`).
 
 ## Remediation: make a gate always-report
 
@@ -362,7 +361,7 @@ the old path-filtered workflows did.
 A required check is matched by literal string, so these break silently:
 
 - **Matrix-interpolated names.** Do not require `Unity <version> <mode>` names.
-  The Unity matrix is generated from `.github/unity-versions.json`, and
+  The static Unity matrix is validated against `.github/unity-versions.json`, and
   job-level skip paths can prevent matrix expansion entirely, producing only the
   literal skipped check `Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}`.
   Require `Unity CI Success` instead. Static script tests are inside `ci.yml`;

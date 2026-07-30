@@ -31,12 +31,12 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
   strictly ascending by `major.minor.patch`) and `release` (must be a member of `all`).
   `latest` is DEFINED as the last element of `all` and is never stored as its own key.
 - Bump versions ONLY in that file, then run `npm run validate:unity-versions`.
-- `scripts/validate-unity-versions.js` assigns each consumer one policy: `no-literals` (reads
-  the JSON at runtime via `jq`; the default for every active workflow, including
-  `unity-tests.yml`, `unity-benchmarks.yml`, `perf-numbers.yml`), `mirror-all` (literal set
-  must equal `all`: `runner-bootstrap.yml`, `scripts/unity/maintain-windows-runner.ps1`,
-  `scripts/unity/install-runner-maintenance-task.ps1`), and `mirror-release` (every literal
-  equals `release`: `release.yml`, `unity-gameci-experiment.yml`).
+- `scripts/validate-unity-versions.js` assigns each consumer one policy:
+  `no-literals` (the default for unregistered workflows), `mirror-all`
+  (`unity-tests.yml`, `unity-benchmarks.yml`, runner bootstrap and maintenance
+  scripts), `mirror-latest` (`perf-numbers.yml`), and `mirror-release`
+  (`release.yml`). Licensed workflow matrices stay literal and static so the
+  organization lock analyzer can attest every matrix identity.
 - `.github/workflows-disabled/` and the canonical file itself are excluded from scanning.
   `ci.yml` runs the validator in the `Lint GitHub Actions workflows` job, so drift blocks merge.
 
@@ -58,9 +58,10 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
 
 ### The compute-unity-assemblies is-empty gate
 
-- The compute step carries `id: compute`. Every license-consuming step in the same job
-  (`ensure-editor.ps1` provision, `acquire-build-lock`, `run-ci-tests.ps1`) is gated with
-  `if: ${{ steps.compute.outputs.is-empty != 'true' }}`.
+- The compute step carries `id: compute`. Provisioning and the Unity work step
+  may skip an empty assembly selection, but lock acquisition remains
+  unconditional because each static matrix is structurally non-empty and the
+  analyzer must be able to prove every acquisition.
 - `Verify tests actually ran` must require `steps.compute.outcome == 'success'` plus either
   `is-empty == 'true'` or a non-skipped Unity run step, and receives
   `expected-empty: ${{ steps.compute.outputs.is-empty }}`. Never gate verify on is-empty alone.

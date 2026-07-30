@@ -80,9 +80,9 @@ player number.
 
 The Performance Numbers workflow (`.github/workflows/perf-numbers.yml`)
 publishes only the `standalone` leg for this reason: a Release IL2CPP player
-is the highest shipping fidelity. The weekly `unity-benchmarks.yml` still runs
-the EditMode and PlayMode benchmark tests across Unity versions, as coverage
-rather than published numbers.
+is the highest shipping fidelity. The manually dispatched
+`unity-benchmarks.yml` still runs the EditMode and PlayMode benchmark tests
+across Unity versions, as coverage rather than published numbers.
 
 ## Common Pitfalls
 

@@ -13,12 +13,10 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
 REGISTERED_UNITY_AUTOMATION = {
-    ".github/actions/return-unity-license/action.yml",
     ".github/actions/validate-unity-license/action.yml",
     ".github/workflows/perf-numbers.yml",
     ".github/workflows/release.yml",
     ".github/workflows/unity-benchmarks.yml",
-    ".github/workflows/unity-gameci-experiment.yml",
     ".github/workflows/unity-tests.yml",
 }
 UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(
@@ -27,14 +25,16 @@ UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(
     re.IGNORECASE,
 )
 SAME_REPOSITORY_PR_GUARD = re.compile(
-    r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*\(?\s*"
+    r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*\(\s*"
+    r"github\.actor\s*!=\s*'dependabot\[bot\]'\s*&&\s*"
     r"github\.event\.pull_request\.head\.repo\.full_name\s*==\s*github\.repository"
 )
 # Dependabot jobs read from the separate Dependabot secret store, so the
 # organization Unity serial and build-lock App secrets resolve empty there. The
 # licensed jobs must exclude Dependabot the same way they exclude forks.
 DEPENDABOT_PR_GUARD = re.compile(
-    r"github\.event\.pull_request\.user\.login\s*!=\s*'dependabot\[bot\]'"
+    r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*\(?\s*"
+    r"github\.actor\s*!=\s*'dependabot\[bot\]'"
 )
 BLANKET_PR_REJECTION = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*&&"
@@ -200,7 +200,8 @@ def validate() -> None:
     )
     require(
         SAME_REPOSITORY_PR_GUARD.search(
-            "github.event_name!='pull_request'||"
+            "github.event_name!='pull_request'||("
+            "github.actor!='dependabot[bot]'&&"
             "github.event.pull_request.head.repo.full_name==github.repository"
         )
         is not None,
@@ -209,6 +210,14 @@ def validate() -> None:
     require(
         BLANKET_PR_REJECTION.search("github.event_name!='pull_request'&&(") is not None,
         "blanket rejection parser must detect compact operators",
+    )
+    require(
+        DEPENDABOT_PR_GUARD.search(
+            "github.event_name != 'pull_request' || "
+            "(github.actor != 'dependabot[bot]' && trusted)"
+        )
+        is not None,
+        "Dependabot guard parser must require PR-only exclusion",
     )
     marker_cases = (
         ("serial credential", "env: { UNITY_SERIAL: secret }"),
@@ -231,11 +240,6 @@ def validate() -> None:
         (
             "registered active workflow",
             {".github/workflows/unity-tests.yml": "env: { UNITY_SERIAL: secret }"},
-            [],
-        ),
-        (
-            "registered cleanup action",
-            {".github/actions/return-unity-license/action.yml": "env: { UNITY_EMAIL: secret }"},
             [],
         ),
         (
@@ -398,40 +402,60 @@ def validate() -> None:
     gate = job_block(source, "unity-ci-success")
     require("if: ${{ always() }}" in gate, "aggregate must always report")
     require("re-actors/alls-green" not in gate and "allowed-skips" not in gate, "skips must be typed")
-    for variable in (
-        "MATRIX_CONFIG_RESULT",
-        "RUNNER_PREFLIGHT_RESULT",
-        "UNITY_TESTS_RESULT",
-        "FORK_PR",
-        "DEPENDABOT_PR",
-        "DOCS_ONLY",
-    ):
-        require(re.search(rf"^          {variable}:", gate, re.MULTILINE) is not None, f"missing {variable}")
+    require(
+        gate.count("\n      - name:") == 1,
+        "aggregate must contain exactly one validation step",
+    )
+    aggregate_step = step_block(gate, "Verify Unity CI result shape")
+    require("        shell: bash\n" in aggregate_step, "aggregate must use bash")
+    expected_bindings = {
+        "RUNNER_PREFLIGHT_RESULT": "${{ needs.runner-preflight.result }}",
+        "UNITY_TESTS_RESULT": "${{ needs.unity-tests.result }}",
+        "FORK_PR": (
+            "${{ github.event_name == 'pull_request' && "
+            "github.event.pull_request.head.repo.full_name != github.repository }}"
+        ),
+        "DEPENDABOT_PR": (
+            "${{ github.event_name == 'pull_request' && "
+            "github.actor == 'dependabot[bot]' }}"
+        ),
+    }
+    for variable, value in expected_bindings.items():
+        require(
+            re.findall(rf"^          {variable}:.*$", aggregate_step, re.MULTILINE)
+            == [f"          {variable}: {value}"],
+            f"aggregate must bind exact {variable}",
+        )
 
-    script = run_script(step_block(gate, "Verify Unity CI result shape"))
-    # name, matrix-config, preflight, unity, FORK_PR, DEPENDABOT_PR, DOCS_ONLY, exit code
+    script = run_script(aggregate_step)
+    expected_script = """set -euo pipefail
+if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+  test "${RUNNER_PREFLIGHT_RESULT}" = skipped
+  test "${UNITY_TESTS_RESULT}" = skipped
+else
+  test "${RUNNER_PREFLIGHT_RESULT}" = success
+  test "${UNITY_TESTS_RESULT}" = success
+fi"""
+    require(script == expected_script, "aggregate result-shape script drifted")
+    # name, preflight, unity, FORK_PR, DEPENDABOT_PR, exit code
     cases = (
-        ("same-repository PR", "success", "success", "success", "false", "false", "false", 0),
-        ("fork PR", "success", "skipped", "skipped", "true", "false", "false", 0),
-        ("Dependabot PR", "success", "skipped", "skipped", "false", "true", "false", 0),
-        ("CI-owned docs-only PR", "success", "success", "skipped", "false", "false", "true", 0),
-        ("same-repository PR skipped Unity", "success", "success", "skipped", "false", "false", "false", 1),
-        ("fork unexpectedly ran Unity", "success", "skipped", "success", "true", "false", "false", 1),
-        ("Dependabot unexpectedly ran Unity", "success", "skipped", "success", "false", "true", "false", 1),
-        ("Dependabot unexpectedly ran preflight", "success", "success", "skipped", "false", "true", "false", 1),
-        ("matrix config failed", "failure", "success", "success", "false", "false", "false", 1),
+        ("same-repository PR", "success", "success", "false", "false", 0),
+        ("fork PR", "skipped", "skipped", "true", "false", 0),
+        ("Dependabot PR", "skipped", "skipped", "false", "true", 0),
+        ("same-repository PR skipped Unity", "success", "skipped", "false", "false", 1),
+        ("fork unexpectedly ran Unity", "skipped", "success", "true", "false", 1),
+        ("Dependabot unexpectedly ran Unity", "skipped", "success", "false", "true", 1),
+        ("Dependabot unexpectedly ran preflight", "success", "skipped", "false", "true", 1),
     )
     if os.name != "nt":
-        for name, matrix, preflight, unity, fork, dependabot, docs_only, expected in cases:
+        for name, preflight, unity, fork, dependabot, expected in cases:
             environment = os.environ.copy()
             environment.update(
                 {
-                    "MATRIX_CONFIG_RESULT": matrix,
                     "RUNNER_PREFLIGHT_RESULT": preflight,
                     "UNITY_TESTS_RESULT": unity,
                     "FORK_PR": fork,
                     "DEPENDABOT_PR": dependabot,
-                    "DOCS_ONLY": docs_only,
                 }
             )
             result = subprocess.run(

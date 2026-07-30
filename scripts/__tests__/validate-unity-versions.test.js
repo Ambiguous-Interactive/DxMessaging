@@ -99,6 +99,25 @@ test("checkConsumer enforces the mirror-release policy", () => {
   assert.ok(drift[0].includes("does not match canonical"));
 });
 
+test("checkConsumer enforces the mirror-latest policy", () => {
+  const base = { relativePath: "perf.yml", policy: "mirror-latest", ...VALID };
+  assert.deepEqual(
+    checkConsumer({
+      ...base,
+      literals: [{ version: VALID.all.at(-1), line: 4 }]
+    }),
+    []
+  );
+  assert.match(
+    checkConsumer({
+      ...base,
+      literals: [{ version: VALID.all[0], line: 4 }]
+    })[0],
+    /does not match canonical latest/
+  );
+  assert.match(checkConsumer({ ...base, literals: [] })[0], /no Unity version literal/);
+});
+
 test("checkConsumer enforces the mirror-all policy", () => {
   const base = { relativePath: "runner.ps1", policy: "mirror-all", ...VALID };
   const exact = VALID.all.map((version, index) => ({ version, line: index + 1 }));

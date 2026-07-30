@@ -68,7 +68,7 @@ organization password manager.
 
 ## Release Model
 
-The release pipeline runs dispatch, PR, tag, publish:
+The release pipeline runs prepare dispatch, PR, tag, release dispatch, publish:
 
 1. An operator dispatches `.github/workflows/release-prepare.yml` from the
    default branch with a bump kind (`patch`/`minor`/`major`) or an explicit
@@ -92,16 +92,17 @@ The release pipeline runs dispatch, PR, tag, publish:
    manual `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
    commands as a warning instead. If the App token exists but cannot write the
    tag ref, the job fails with the same manual fallback commands.
-1. The tag fires `.github/workflows/release.yml`, which performs the gates
-   below.
+1. After the tag exists, an operator selects that exact tag in the Actions UI
+   and dispatches `.github/workflows/release.yml`. Branch selections fail the
+   tag verifier and cannot publish.
 
 The tag must exactly match `package.json.version` with a leading `v`. For
 example, package version `3.0.1` must be released from tag `v3.0.1`.
 
-`release.yml` itself has no manual `workflow_dispatch` path; the manual entry
-point is `release-prepare.yml`. A tag such as `3.0.1` or `v3.0.1-rc.1` does
-not pass the release verifier. Pushing a valid tag by hand remains a
-supported fallback when the App is unavailable.
+`release.yml` is manual-dispatch only and must be dispatched from the reviewed
+strict-semver tag. A ref such as a branch, `3.0.1`, or `v3.0.1-rc.1` does not
+pass the release verifier. Pushing a valid tag by hand remains a supported
+fallback when the App is unavailable.
 
 The release workflow performs these gates:
 

@@ -137,7 +137,6 @@ RAM-64GB]` so either Windows machine can pick up any Unity job. The
 - [ ] Confirm `ELI-MACHINE` retains its `fast` label for future opt-in use.
 - [ ] Confirm every licensed job in `.github/workflows/unity-tests.yml`,
       `.github/workflows/unity-benchmarks.yml`,
-      `.github/workflows/unity-gameci-experiment.yml`,
       `.github/workflows/perf-numbers.yml`, and `.github/workflows/release.yml`
       acquires
       `wallstop-organization-builds`, validates Unity license secrets, runs
@@ -254,9 +253,10 @@ References:
 
 ## Semver Tag Release Flow
 
-`.github/workflows/release.yml` runs only on tags matching `vX.Y.Z`. It validates
-that the tag exactly matches `package.json` version before packing, attesting,
-creating or updating the GitHub Release, and publishing to npm.
+`.github/workflows/release.yml` is manually dispatched from a selected
+`vX.Y.Z` tag. It validates that the selected ref is a tag and exactly matches
+`package.json` version before packing, attesting, creating or updating the
+GitHub Release, and publishing to npm.
 
 - [ ] Update `package.json` `version` to the intended public version.
 - [ ] Update `CHANGELOG.md` for the user-facing release.
@@ -267,8 +267,9 @@ creating or updating the GitHub Release, and publishing to npm.
       `git tag -s vX.Y.Z` when signing is available, or the repository-approved
       annotated tag method when signing is not available.
 - [ ] Push only the intended release tag: `git push origin vX.Y.Z`.
-- [ ] Confirm `.github/workflows/release.yml` starts on the tag and that the
-      `verify-tag`, `validate`, `unity-checks`, and `publish` jobs complete.
+- [ ] Select the exact pushed tag and dispatch `.github/workflows/release.yml`.
+- [ ] Confirm the `verify-tag`, `validate`, `unity-checks`, and `publish` jobs
+      complete.
 - [ ] Confirm the GitHub Release includes the `.tgz` package and `.sha256`
       artifact.
 - [ ] Confirm npm shows the new `com.wallstop-studios.dxmessaging` version with
@@ -346,8 +347,8 @@ Run these checks after the transfer and again after the first tagged release.
       pick up any Unity job; cross-repository license serialization is
       enforced by the central `ambiguous-organization-build-lock` actions
       around the licensed Unity section.
-- [ ] `.github/workflows/release.yml` succeeds for a real semver tag and does
-      not require `NPM_TOKEN`.
+- [ ] `.github/workflows/release.yml` succeeds when dispatched from a real
+      semver tag and does not require `NPM_TOKEN`.
 - [ ] npm, OpenUPM, GitHub Releases, and GitHub Pages all point to
       `Ambiguous-Interactive/DxMessaging`.
 - [ ] If Unity has approved and published the Asset Store UPM listing, confirm

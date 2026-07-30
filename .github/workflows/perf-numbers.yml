@@ -45,7 +45,6 @@ on:
   push:
     branches:
       - master
-      - main
     # Loop break: the commit-perf-doc job pushes a doc + baseline commit with a
     # GitHub App token, which (unlike the built-in GITHUB_TOKEN) DOES re-trigger
     # workflows. Ignoring BOTH the perf doc AND the regenerated baseline CSV here
@@ -85,37 +84,14 @@ jobs:
       group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
       cancel-in-progress: true
     outputs:
-      latest-version: ${{ steps.versions.outputs.latest-version }}
-      unity-versions: ${{ steps.versions.outputs.unity-versions }}
       has-autocommit-app: ${{ steps.check-autocommit-app.outputs.has-app }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
       - name: Require an online performance runner
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
           required-label-sets: '[["self-hosted","Windows","RAM-64GB","fast"]]'
-
-      - name: Resolve Unity version from canonical source
-        id: versions
-        # Single source of truth: .github/unity-versions.json. perf tracks the
-        # LATEST entry only (last element of `all`); emitting it here means the
-        # matrix leg, the artifact-download pattern, and render-perf-doc.js all
-        # consume ONE value and cannot drift. See scripts/validate-unity-versions.js.
-        run: |
-          set -euo pipefail
-          file=.github/unity-versions.json
-          latest="$(jq -r '.all[-1]' "${file}")"
-          {
-            printf 'latest-version=%s\n' "${latest}"
-            printf 'unity-versions=%s\n' "$(jq -c '[.all[-1]]' "${file}")"
-          } >> "${GITHUB_OUTPUT}"
 
       - name: Check for the auto-commit GitHub App credentials
         id: check-autocommit-app
@@ -144,30 +120,23 @@ jobs:
       - runner-preflight
     # Licensed Unity runs only after protected code lands or through a controlled
     # default-branch dispatch; pull requests are not a workflow trigger.
-    # NON-BLOCKING PlayMode leg. The Standalone leg is the throughput HEADLINE +
-    # baseline source and MUST gate publishing; the PlayMode leg only supplies the
-    # (best-effort) allocation counts. Marking the PlayMode leg continue-on-error
-    # makes a flaky PlayMode failure report SUCCESS for the matrix-aggregating
-    # `needs.perf-benchmarks.result`, so the downstream commit job (gated on
-    # result == 'success') still publishes the Standalone headline +
-    # baseline; that run simply omits the allocation/byte tables (no leg measured
-    # them) until PlayMode is healthy again. `fail-fast: false` (below) still keeps a Standalone failure
-    # from cancelling an in-flight PlayMode leg.
-    continue-on-error: ${{ matrix.test-mode != 'standalone' }}
+    # Both the Standalone headline and PlayMode allocation leg are required.
+    # `fail-fast: false` below lets the sibling finish and preserves diagnostics
+    # when either leg fails.
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
     # runner carrying it). Keep in sync with the preflight REQUIRED_LABELS.
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
     timeout-minutes: 660
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         # LATEST Unity version only -- the documented numbers track the newest
-        # supported runtime. The single latest version is resolved from the
-        # canonical source (.github/unity-versions.json) via runner-preflight, so
-        # the matrix leg, the artifact-download pattern, and render-perf-doc.js all
-        # consume ONE value and cannot drift. Single-entry matrix (not a bare
-        # scalar) so the leg name still carries the version.
-        unity-version: ${{ fromJSON(needs.runner-preflight.outputs.unity-versions) }}
+        # supported runtime. This static mirror is enforced against
+        # .github/unity-versions.json by validate-unity-versions.js and remains
+        # statically attestable by the organization lock analyzer.
+        unity-version:
+          - 6000.3.16f1
         # BOTH legs publish. Standalone IL2CPP (Release player) is the throughput
         # HEADLINE -- the AOT backend shipped games run. The in-editor PlayMode
         # (Mono) leg supplies the REAL GC-allocation numbers: a Release player
@@ -305,7 +274,6 @@ jobs:
 
       - name: Acquire organization Unity lock
         id: acquire_lock
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           lock-name: wallstop-organization-builds
@@ -317,7 +285,7 @@ jobs:
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Require acquired Unity lock
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired != 'true' }}
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
         shell: pwsh
         run: exit 1
 
@@ -360,69 +328,6 @@ jobs:
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
             @extra
-
-      - name: Return Unity license
-        id: return_unity_license
-        if: always()
-        timeout-minutes: 5
-        continue-on-error: true
-        uses: ./.github/actions/return-unity-license
-        with:
-          prior-return-log-path: ${{ runner.temp }}/unity-return-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
-          prior-command-succeeded: ${{ steps.run_tests.outcome == 'success' }}
-          evidence-paths: |
-            ${{ runner.temp }}/unity-activate-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
-            .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
-      - name: Release organization Unity lock
-        id: release_unity_lock
-        if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          runner-id: ${{ runner.name }}
-          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require confirmed Unity cleanup
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          acquired: ${{ steps.acquire_lock.outputs.acquired }}
-          classification-complete: ${{ steps.return_unity_license.outputs.classification-complete }}
-          cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          cleanup-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          cleanup-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-          release-outcome: ${{ steps.release_unity_lock.outcome }}
-          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
-          released: ${{ steps.release_unity_lock.outputs.released }}
-          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
-          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
-          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
-          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
-          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
-
-      - name: Delete private Unity cleanup evidence
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        shell: pwsh
-        env:
-          RETURN_LOG_PATH: ${{ steps.return_unity_license.outputs.return-log-path }}
-          SUPPLEMENTAL_EVIDENCE_PATHS: ${{ steps.return_unity_license.outputs.supplemental-evidence-paths }}
-        run: |
-          $evidencePaths = @($env:RETURN_LOG_PATH) + @($env:SUPPLEMENTAL_EVIDENCE_PATHS -split "[`r`n]+")
-          foreach ($evidencePath in @($evidencePaths | Sort-Object -Unique)) {
-            if (-not [string]::IsNullOrWhiteSpace($evidencePath) -and (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
-              Remove-Item -LiteralPath $evidencePath -Force
-            }
-          }
 
       - name: Capture exact standalone player size
         if: ${{ matrix.test-mode == 'standalone' && steps.run_tests.outcome == 'success' }}
@@ -481,11 +386,84 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          unity-version: ${{ matrix.unity-version }}
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: perf
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
+
+  perf-unity-success:
+    name: Performance Unity Success
+    if: always()
+    needs:
+      - runner-preflight
+      - perf-benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require complete performance validation
+        shell: bash
+        run: |
+          test "${{ needs.runner-preflight.result }}" = success
+          test "${{ needs.perf-benchmarks.result }}" = success
+
   commit-perf-doc:
     name: Commit refreshed perf doc to the default branch
     needs:
       - runner-preflight
       - perf-benchmarks
+      - perf-unity-success
     # DEFAULT-BRANCH REFRESH path: after a PR merges (push event) -- or on a
     # manual workflow_dispatch from the default branch, which is the supported
     # RECOVERY path when an earlier auto-commit failed -- re-render the doc from
@@ -533,7 +511,7 @@ jobs:
     permissions:
       contents: read
     env:
-      LATEST_VERSION: ${{ needs.runner-preflight.outputs.latest-version }}
+      LATEST_VERSION: 6000.3.16f1
       PERF_DOC: docs/architecture/performance.md
       # The committed master baseline that the regression gate + PR delta comment
       # compare against. Regenerated from the real post-merge run and committed

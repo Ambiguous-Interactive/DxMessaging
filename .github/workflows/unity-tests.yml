@@ -4,33 +4,13 @@ on:
   pull_request:
     branches:
       - master
-      - main
   push:
     branches:
       - master
-      - main
     paths-ignore:
       - "docs/architecture/performance.md"
       - "docs/architecture/perf-baseline.csv"
-  schedule:
-    - cron: "17 8 * * 1"
   workflow_dispatch:
-    inputs:
-      unity-version:
-        description: "Pin a single Unity version. Empty = full matrix."
-        required: false
-        default: ""
-        type: string
-      test-mode:
-        description: "Pin a single test mode."
-        required: false
-        default: "all"
-        type: choice
-        options:
-          - all
-          - editmode
-          - playmode
-          - standalone
 
 permissions:
   contents: read
@@ -42,93 +22,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  matrix-config:
-    name: Resolve Unity test matrix
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    # Job-level permissions REPLACE the top-level set: contents:read for the
-    # checkout, pull-requests:read for the CI-owned-docs-only file listing.
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      unity-versions: ${{ steps.resolve.outputs.unity-versions }}
-      test-modes: ${{ steps.resolve.outputs.test-modes }}
-      ci-owned-docs-only: ${{ steps.docs-only.outputs.docs-only }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Detect CI-owned docs-only pull request
-        id: docs-only
-        # The perf-numbers workflow owns docs/architecture/performance.md and
-        # docs/architecture/perf-baseline.csv end to end and delivers them via a
-        # fallback auto-merge PR when its direct push is rejected. A PR whose
-        # ENTIRE diff is those two files has nothing for the licensed Unity
-        # matrix to test, and skipping the matrix keeps the fallback PR cheap.
-        # Branch protection requires the always-reporting `Unity CI Success`
-        # aggregate, not these matrix legs; a skipped pre-expansion matrix job
-        # can report only the literal unevaluated matrix name. CONTRACT mirror
-        # of runner-preflight: detection failures must never make CI more
-        # broken than the no-detection baseline, so any API error soft-fails to
-        # docs-only=false (full matrix runs).
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ] || [ -z "${PR_NUMBER:-}" ]; then
-            echo "docs-only=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          files_list="$(mktemp)"
-          if ! gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
-              --jq '.[].filename' > "${files_list}" 2>/dev/null; then
-            echo "::warning::Could not list PR files; assuming a full code diff (matrix runs)."
-            echo "docs-only=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          if [ ! -s "${files_list}" ]; then
-            echo "docs-only=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          docs_only=true
-          while IFS= read -r changed; do
-            case "${changed}" in
-              docs/architecture/performance.md|docs/architecture/perf-baseline.csv) ;;
-              *)
-                docs_only=false
-                break
-                ;;
-            esac
-          done < "${files_list}"
-          echo "CI-owned docs-only PR: ${docs_only}"
-          echo "docs-only=${docs_only}" >> "${GITHUB_OUTPUT}"
-      - name: Resolve dispatch overrides
-        id: resolve
-        env:
-          INPUT_UNITY_VERSION: ${{ inputs.unity-version }}
-          INPUT_TEST_MODE: ${{ inputs.test-mode }}
-        run: |
-          set -euo pipefail
-          if [ -n "${INPUT_UNITY_VERSION:-}" ]; then
-            versions="[\"${INPUT_UNITY_VERSION}\"]"
-          else
-            versions="$(jq -c '.all' .github/unity-versions.json)"
-          fi
-          if [ -n "${INPUT_TEST_MODE:-}" ] && [ "${INPUT_TEST_MODE}" != "all" ]; then
-            modes="[\"${INPUT_TEST_MODE}\"]"
-          else
-            modes='["editmode","playmode","standalone"]'
-          fi
-          {
-            echo "unity-versions=${versions}"
-            echo "test-modes=${modes}"
-          } >> "${GITHUB_OUTPUT}"
-
   runner-preflight:
     name: Self-hosted runner access preflight
     # Runs on GitHub-hosted infrastructure before any self-hosted matrix entry
@@ -143,10 +36,9 @@ jobs:
     # validated by the full matrix on the post-merge push to master.
     if: >-
       ${{
-        (github.event_name != 'pull_request' ||
-          (github.event.pull_request.head.repo.full_name == github.repository &&
-            github.event.pull_request.user.login != 'dependabot[bot]')) &&
-        (github.event_name != 'push' || github.ref_protected)
+        github.event_name != 'pull_request' ||
+        (github.actor != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository)
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -164,7 +56,6 @@ jobs:
   unity-tests:
     name: Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}
     needs:
-      - matrix-config
       - runner-preflight
     # Same-repository pull requests run licensed validation with organization
     # secrets and no environment approval. Fork pull requests and Dependabot
@@ -173,11 +64,9 @@ jobs:
     # credentials rather than on the change under test.
     if: >-
       ${{
-        (github.event_name != 'pull_request' ||
-          (github.event.pull_request.head.repo.full_name == github.repository &&
-            github.event.pull_request.user.login != 'dependabot[bot]')) &&
-        (github.event_name != 'push' || github.ref_protected) &&
-        needs.matrix-config.outputs.ci-owned-docs-only != 'true'
+        github.event_name != 'pull_request' ||
+        (github.actor != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository)
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
     timeout-minutes: 660
@@ -185,8 +74,14 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        unity-version: ${{ fromJSON(needs.matrix-config.outputs.unity-versions) }}
-        test-mode: ${{ fromJSON(needs.matrix-config.outputs.test-modes) }}
+        unity-version:
+          - 2021.3.45f1
+          - 2022.3.45f1
+          - 6000.3.16f1
+        test-mode:
+          - editmode
+          - playmode
+          - standalone
     steps:
       - name: Require current PR head before setup
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
@@ -311,7 +206,6 @@ jobs:
 
       - name: Acquire organization Unity lock
         id: acquire_lock
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           lock-name: wallstop-organization-builds
@@ -326,7 +220,7 @@ jobs:
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Require acquired Unity lock
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired != 'true' }}
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
         shell: pwsh
         run: exit 1
 
@@ -358,69 +252,6 @@ jobs:
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
-
-      - name: Return Unity license
-        id: return_unity_license
-        if: always()
-        timeout-minutes: 5
-        continue-on-error: true
-        uses: ./.github/actions/return-unity-license
-        with:
-          prior-return-log-path: ${{ runner.temp }}/unity-return-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
-          prior-command-succeeded: ${{ steps.run_tests.outcome == 'success' }}
-          evidence-paths: |
-            ${{ runner.temp }}/unity-activate-${{ matrix.unity-version }}-${{ matrix.test-mode }}.log
-            .artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
-      - name: Release organization Unity lock
-        id: release_unity_lock
-        if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          runner-id: ${{ runner.name }}
-          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require confirmed Unity cleanup
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          acquired: ${{ steps.acquire_lock.outputs.acquired }}
-          classification-complete: ${{ steps.return_unity_license.outputs.classification-complete }}
-          cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          cleanup-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          cleanup-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-          release-outcome: ${{ steps.release_unity_lock.outcome }}
-          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
-          released: ${{ steps.release_unity_lock.outputs.released }}
-          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
-          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
-          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
-          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
-          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
-
-      - name: Delete private Unity cleanup evidence
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        shell: pwsh
-        env:
-          RETURN_LOG_PATH: ${{ steps.return_unity_license.outputs.return-log-path }}
-          SUPPLEMENTAL_EVIDENCE_PATHS: ${{ steps.return_unity_license.outputs.supplemental-evidence-paths }}
-        run: |
-          $evidencePaths = @($env:RETURN_LOG_PATH) + @($env:SUPPLEMENTAL_EVIDENCE_PATHS -split "[`r`n]+")
-          foreach ($evidencePath in @($evidencePaths | Sort-Object -Unique)) {
-            if (-not [string]::IsNullOrWhiteSpace($evidencePath) -and (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
-              Remove-Item -LiteralPath $evidencePath -Force
-            }
-          }
 
       # CANCELLATION + TIMEOUT DIAGNOSTIC: when Unity 2022 hangs in csc the
       # runner step times out (or the operator cancels), and the verify
@@ -470,63 +301,94 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          unity-version: ${{ matrix.unity-version }}
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: unity-tests
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
+
   # Single aggregate gate so branch protection can require ONE "Unity CI Success"
-  # context instead of the 11 individual Unity contexts (the matrix legs +
-  # matrix-config + runner-preflight). See docs/runbooks/required-checks.md.
+  # context instead of the individual matrix and preflight contexts.
   unity-ci-success:
     name: Unity CI Success
     needs:
-      - matrix-config
       - runner-preflight
       - unity-tests
     # Exactly always() -- NEVER a falsifiable job-level if. A skipped required
     # check counts as passing and the latest run on a SHA wins, so a guard that
     # can be false on a pull_request could launder a red/pending gate into a
-    # false green. The step below validates the only three intentional skip
+    # false green. The step below validates the only two intentional skip
     # shapes: fork PRs and Dependabot PRs skip both licensed jobs (neither can
-    # read the organization secrets those jobs require), while CI-owned
-    # docs-only PRs run preflight but skip the Unity matrix. Every other run
-    # must execute Unity successfully.
+    # read the organization secrets those jobs require). Every other run must
+    # execute Unity successfully.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Verify Unity CI result shape
+        shell: bash
         env:
-          MATRIX_CONFIG_RESULT: ${{ needs.matrix-config.result }}
           RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
           UNITY_TESTS_RESULT: ${{ needs.unity-tests.result }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-          DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
-          DOCS_ONLY: ${{ needs.matrix-config.outputs.ci-owned-docs-only }}
+          DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.actor == 'dependabot[bot]' }}
         run: |
           set -euo pipefail
-          failed=0
-
-          assert_result() {
-            local variable="$1"
-            local expected="$2"
-            local actual="$3"
-            echo "${variable}=${actual} (expected ${expected})"
-            if [ "${actual}" != "${expected}" ]; then
-              failed=1
-            fi
-          }
-
-          if [ "${MATRIX_CONFIG_RESULT}" != "success" ]; then
-            echo "MATRIX_CONFIG_RESULT=${MATRIX_CONFIG_RESULT} (expected success)"
-            failed=1
-          fi
-
           if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
-            assert_result RUNNER_PREFLIGHT_RESULT skipped "${RUNNER_PREFLIGHT_RESULT}"
-            assert_result UNITY_TESTS_RESULT skipped "${UNITY_TESTS_RESULT}"
-          elif [ "${DOCS_ONLY}" = "true" ]; then
-            assert_result RUNNER_PREFLIGHT_RESULT success "${RUNNER_PREFLIGHT_RESULT}"
-            assert_result UNITY_TESTS_RESULT skipped "${UNITY_TESTS_RESULT}"
+            test "${RUNNER_PREFLIGHT_RESULT}" = skipped
+            test "${UNITY_TESTS_RESULT}" = skipped
           else
-            assert_result RUNNER_PREFLIGHT_RESULT success "${RUNNER_PREFLIGHT_RESULT}"
-            assert_result UNITY_TESTS_RESULT success "${UNITY_TESTS_RESULT}"
+            test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${UNITY_TESTS_RESULT}" = success
           fi
-
-          exit "${failed}"

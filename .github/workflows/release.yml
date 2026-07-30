@@ -1,9 +1,7 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -31,6 +29,10 @@ jobs:
         id: verify
         run: |
           set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::Release must be dispatched from a tag ref, not ${GITHUB_REF_TYPE}."
+            exit 1
+          fi
           tag="${GITHUB_REF_NAME}"
           if ! printf '%s\n' "${tag}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::Release tags must use vX.Y.Z semver format."
@@ -262,7 +264,6 @@ jobs:
 
       - name: Acquire organization Unity lock
         id: acquire_lock
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           lock-name: wallstop-organization-builds
@@ -274,7 +275,7 @@ jobs:
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 
       - name: Require acquired Unity lock
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired != 'true' }}
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
         shell: pwsh
         run: exit 1
 
@@ -297,69 +298,6 @@ jobs:
             -ArtifactsPath '.artifacts/unity/release-editmode' `
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
-
-      - name: Return Unity license
-        id: return_unity_license
-        if: always()
-        timeout-minutes: 5
-        continue-on-error: true
-        uses: ./.github/actions/return-unity-license
-        with:
-          prior-return-log-path: ${{ runner.temp }}/unity-return-2022.3.45f1-editmode.log
-          prior-command-succeeded: ${{ steps.run_tests.outcome == 'success' }}
-          evidence-paths: |
-            ${{ runner.temp }}/unity-activate-2022.3.45f1-editmode.log
-            .artifacts/unity/release-editmode
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
-      - name: Release organization Unity lock
-        id: release_unity_lock
-        if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: release-editmode
-          runner-id: ${{ runner.name }}
-          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require confirmed Unity cleanup
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          acquired: ${{ steps.acquire_lock.outputs.acquired }}
-          classification-complete: ${{ steps.return_unity_license.outputs.classification-complete }}
-          cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          cleanup-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          cleanup-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-          release-outcome: ${{ steps.release_unity_lock.outcome }}
-          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
-          released: ${{ steps.release_unity_lock.outputs.released }}
-          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
-          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
-          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
-          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
-          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
-
-      - name: Delete private Unity cleanup evidence
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        shell: pwsh
-        env:
-          RETURN_LOG_PATH: ${{ steps.return_unity_license.outputs.return-log-path }}
-          SUPPLEMENTAL_EVIDENCE_PATHS: ${{ steps.return_unity_license.outputs.supplemental-evidence-paths }}
-        run: |
-          $evidencePaths = @($env:RETURN_LOG_PATH) + @($env:SUPPLEMENTAL_EVIDENCE_PATHS -split "[`r`n]+")
-          foreach ($evidencePath in @($evidencePaths | Sort-Object -Unique)) {
-            if (-not [string]::IsNullOrWhiteSpace($evidencePath) -and (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
-              Remove-Item -LiteralPath $evidencePath -Force
-            }
-          }
 
       # CANCELLATION + TIMEOUT DIAGNOSTIC: when Unity 2022 hangs in csc the
       # runner step times out (or the operator cancels), and the verify
@@ -402,6 +340,63 @@ jobs:
           path: .artifacts/unity/release-editmode
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          unity-version: 2022.3.45f1
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: release-editmode
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: release-editmode
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
 
   unitypackage:
     name: Export .unitypackage
@@ -521,69 +516,6 @@ jobs:
             -OutputPath $output `
             -ArtifactsPath '.artifacts/unity/release-unitypackage'
 
-      - name: Return Unity license
-        id: return_unity_license
-        if: always()
-        timeout-minutes: 5
-        continue-on-error: true
-        uses: ./.github/actions/return-unity-license
-        with:
-          prior-return-log-path: ${{ runner.temp }}/unity-return-2022.3.45f1-unitypackage.log
-          prior-command-succeeded: ${{ steps.export_unitypackage.outcome == 'success' }}
-          evidence-paths: |
-            ${{ runner.temp }}/unity-activate-2022.3.45f1-unitypackage.log
-            .artifacts/unity/release-unitypackage
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
-      - name: Release organization Unity lock
-        id: release_unity_lock
-        if: always()
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: release-unitypackage
-          runner-id: ${{ runner.name }}
-          resource-cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          resource-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          resource-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require confirmed Unity cleanup
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          acquired: ${{ steps.acquire_lock.outputs.acquired }}
-          classification-complete: ${{ steps.return_unity_license.outputs.classification-complete }}
-          cleanup-status: ${{ steps.return_unity_license.outputs.resource-cleanup-status }}
-          cleanup-health: ${{ steps.return_unity_license.outputs.resource-health }}
-          cleanup-reason: ${{ steps.return_unity_license.outputs.resource-reason }}
-          release-outcome: ${{ steps.release_unity_lock.outcome }}
-          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
-          released: ${{ steps.release_unity_lock.outputs.released }}
-          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
-          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
-          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
-          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
-          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
-
-      - name: Delete private Unity cleanup evidence
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        shell: pwsh
-        env:
-          RETURN_LOG_PATH: ${{ steps.return_unity_license.outputs.return-log-path }}
-          SUPPLEMENTAL_EVIDENCE_PATHS: ${{ steps.return_unity_license.outputs.supplemental-evidence-paths }}
-        run: |
-          $evidencePaths = @($env:RETURN_LOG_PATH) + @($env:SUPPLEMENTAL_EVIDENCE_PATHS -split "[`r`n]+")
-          foreach ($evidencePath in @($evidencePaths | Sort-Object -Unique)) {
-            if (-not [string]::IsNullOrWhiteSpace($evidencePath) -and (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
-              Remove-Item -LiteralPath $evidencePath -Force
-            }
-          }
-
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}
         uses: ./.github/actions/dump-unity-log-tail
@@ -610,6 +542,93 @@ jobs:
           retention-days: 14
           overwrite: true
 
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          unity-version: 2022.3.45f1
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: release-unitypackage
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: release-unitypackage
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@08fc83e83fa4cae89c0177005b388585ffdb1d9a
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
+
+  release-checks-success:
+    name: Release Checks Success
+    if: always()
+    needs:
+      - runner-preflight
+      - unity-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require release test validation
+        shell: bash
+        run: |
+          test "${{ needs.runner-preflight.result }}" = success
+          test "${{ needs.unity-checks.result }}" = success
+
+  release-export-success:
+    name: Release Export Success
+    if: always()
+    needs:
+      - runner-preflight
+      - unitypackage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require release export validation
+        shell: bash
+        run: |
+          test "${{ needs.runner-preflight.result }}" = success
+          test "${{ needs.unitypackage.result }}" = success
+
   publish:
     name: Publish npm package and GitHub Release
     needs:
@@ -617,6 +636,8 @@ jobs:
       - validate
       - unity-checks
       - unitypackage
+      - release-checks-success
+      - release-export-success
     # ATOMIC RELEASE: the .unitypackage is a REQUIRED asset, so publish runs only
     # when every upstream job -- including unitypackage -- succeeds (default
     # needs-gating; no always() escape hatch). A failed export therefore blocks

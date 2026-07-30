@@ -1,11 +1,11 @@
 name: Release Tag
 
-# Bridges the release PR to the tag-triggered release pipeline. When a
+# Bridges the release PR to the controlled release dispatch. When a
 # release-prepare PR merges (squash, default title), the default branch gains
 # a commit whose subject is `release: vX.Y.Z` and whose package.json version
 # is X.Y.Z. This workflow notices that commit and pushes the annotated tag
-# vX.Y.Z at it with the GitHub App token (a GITHUB_TOKEN tag push would NOT
-# re-trigger workflows, so the App token is what makes release.yml fire).
+# vX.Y.Z at it with the GitHub App token. An operator then selects that exact
+# tag and dispatches release.yml; tag creation alone never publishes.
 #
 # LOOP SAFETY: the trigger is a BRANCH push filtered to package.json; the tag
 # push this job performs is a tag ref and cannot re-trigger it. The
@@ -104,9 +104,7 @@ jobs:
         id: check-autocommit-app
         if: ${{ steps.detect.outputs.proceed == 'true' }}
         # Mirrors the perf-numbers.yml probe. Without the App this degrades to
-        # a ::warning:: carrying the exact manual commands -- a GITHUB_TOKEN
-        # tag push would not trigger release.yml, so there is no point pushing
-        # the tag with it.
+        # a ::warning:: carrying the exact manual commands.
         env:
           AUTO_COMMIT_APP_ID: ${{ secrets.AUTO_COMMIT_APP_ID }}
           AUTO_COMMIT_APP_PRIVATE_KEY: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
@@ -171,4 +169,4 @@ jobs:
             echo "::error::${message}"
             exit "${push_status}"
           fi
-          echo "::notice::Pushed ${TAG} at ${GITHUB_SHA}; the tag-triggered Release workflow takes over from here."
+          echo "::notice::Pushed ${TAG} at ${GITHUB_SHA}; select this tag and manually dispatch the Release workflow."

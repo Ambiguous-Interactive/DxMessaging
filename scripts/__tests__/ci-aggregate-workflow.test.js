@@ -12,13 +12,8 @@ const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 
 // Build-lock pins are bumped by Dependabot, so they are derived here rather than
-// written as literals: a hardcoded SHA failed this suite (and the devcontainer
-// smoke job that runs `npm test`) on every dependency bump, for a reason
-// unrelated to the change under review. What must hold is that each action group
-// stays immutably pinned and identical in every file that references it, so a
-// bump either lands everywhere or fails loudly. `.github/actions/**` counts too:
-// the cleanup-policy group reaches into a composite action there, which is why
-// .github/dependabot.yml lists that directory.
+// written as literals. What must hold is that each action group stays immutably
+// pinned and identical at every call site.
 // prettier-ignore
 function resolveLockActionPin(actionNames) {
   const shas = new Map(); const comments = new Set(); const label = actionNames.join(", ");
@@ -36,16 +31,15 @@ function resolveLockActionPin(actionNames) {
   return { sha: [...shas.keys()][0], comment: [...comments][0] || "" };
 }
 
-// Acquire, preflight, and the PR-head guard ship in the build-lock release;
-// release/require-confirmed/classify carry the centralized Unity cleanup policy.
+// Acquire, preflight, and the PR-head guard ship in the build-lock release.
+// Return/classify/release/require-confirmed carry the centralized cleanup policy.
 // prettier-ignore
-const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "require-current-pr-head"], ["release-build-lock", "require-confirmed-unity-cleanup", "classify-unity-cleanup-evidence"]].map((group) => resolveLockActionPin(group));
+const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "require-current-pr-head"], ["return-unity-license", "classify-unity-cleanup-evidence", "release-build-lock", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
 const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
 const UNITY_LOCK_WINDOWS = [
   ["unity-tests.yml", "unity-tests", "Run Unity Test Runner", true],
-  ["unity-gameci-experiment.yml", "game-ci-experiment", "Run GameCI normal project mode", true],
   ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner", true],
   ["release.yml", "unity-checks", "Run Unity Test Runner", true],
   ["release.yml", "unitypackage", "Export the .unitypackage", false],
@@ -331,36 +325,164 @@ test("copyable build-lock documentation follows the runner and App credential co
     );
   }
 });
-// prettier-ignore
 test("every Unity lock window releases with explicit cleanup proof", () => {
   const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${ACQUIRE_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
+  const returnLicense = `uses: ${LOCK_ACTION_PREFIX}return-unity-license@${CLEANUP_POLICY_SHA}`;
+  const classify = `uses: ${LOCK_ACTION_PREFIX}classify-unity-cleanup-evidence@${CLEANUP_POLICY_SHA}`;
   const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${CLEANUP_POLICY_SHA}`;
   const gate = `uses: ${LOCK_ACTION_PREFIX}require-confirmed-unity-cleanup@${CLEANUP_POLICY_SHA}`;
-  const runnerLabels = new Map([["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'], ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-gameci-experiment.yml", '[["self-hosted","Windows","RAM-64GB"]]'], ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']]); const preflightAction = `${LOCK_ACTION_PREFIX}check-unity-runner-availability@${LOCK_ACTION_SHA}${LOCK_ACTION_PIN.comment}`; const workflowSources = fs.readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file)).map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8")); for (const [file, labels] of runnerLabels) { const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"); const preflight = getJobBlock(source, "runner-preflight", file); assert.match(preflight, /\n    runs-on: ubuntu-latest\n/, file); assert.match(preflight, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), file); assert.match(preflight, /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, file); assert.match(preflight, /reader-app-private-key: \$\{\{ secrets\.BUILD_LOCK_READER_APP_PRIVATE_KEY \}\}/, file); assert.match(preflight, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`), file); assert.doesNotMatch(preflight, /RUNNER_AUDIT_PAT|Soft pass|soft-pass/i, file); }
-  assert.equal(workflowSources.reduce((count, source) => count + source.split(acquire).length - 1, 0), UNITY_LOCK_WINDOWS.length);
-  assert.equal(workflowSources.reduce((count, source) => count + source.split(release).length - 1, 0), UNITY_LOCK_WINDOWS.length);
+  const runnerLabels = new Map([
+    ["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'],
+    ["release.yml", '[["self-hosted","Windows","RAM-64GB"]]'],
+    ["unity-benchmarks.yml", '[["self-hosted","Windows","RAM-64GB"]]'],
+    ["unity-tests.yml", '[["self-hosted","Windows","RAM-64GB"]]']
+  ]);
+  const preflightAction =
+    `${LOCK_ACTION_PREFIX}check-unity-runner-availability@${LOCK_ACTION_SHA}` +
+    LOCK_ACTION_PIN.comment;
+  const workflowSources = fs
+    .readdirSync(WORKFLOW_DIR)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .map((file) => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8"));
+
+  for (const [file, labels] of runnerLabels) {
+    const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+    const preflight = getJobBlock(source, "runner-preflight", file);
+    assert.match(preflight, /\n    runs-on: ubuntu-latest\n/, file);
+    assert.match(preflight, new RegExp(`uses: ${escapeRegExp(preflightAction)}`), file);
+    assert.match(preflight, /reader-app-id: \$\{\{ secrets\.BUILD_LOCK_READER_APP_ID \}\}/, file);
+    assert.match(
+      preflight,
+      /reader-app-private-key: \$\{\{ secrets\.BUILD_LOCK_READER_APP_PRIVATE_KEY \}\}/,
+      file
+    );
+    assert.match(preflight, new RegExp(`required-label-sets: '${escapeRegExp(labels)}'`), file);
+    assert.doesNotMatch(preflight, /RUNNER_AUDIT_PAT|Soft pass|soft-pass/i, file);
+  }
+
+  for (const action of [acquire, returnLicense, classify, release, gate]) {
+    assert.equal(
+      workflowSources.reduce((count, source) => count + source.split(action).length - 1, 0),
+      UNITY_LOCK_WINDOWS.length,
+      action
+    );
+  }
+
   for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
-    const label = `${file}:${jobId}`; const blockedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired != 'true'`; const licensedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
+    const label = `${file}:${jobId}`;
+    const licensedCondition =
+      `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}` +
+      "steps\\.acquire_lock\\.outputs\\.acquired == 'true'";
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
     const job = getJobBlock(source, jobId, file);
-    assert.equal(job.split(acquire).length - 1, 1, `${label} acquire count`);
-    assert.equal(job.split(release).length - 1, 1, `${label} release count`);
-    assert.equal(job.split(gate).length - 1, 1, `${label} final cleanup gate count`);
-    const positions = ["Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Release organization Unity lock", "Require confirmed Unity cleanup", "Delete private Unity cleanup evidence"].map((name) => job.indexOf(`      - name: ${name}`));
-    assert.ok(positions.every((position) => position >= 0), `${label} lifecycle steps must all exist`);
-    assert.deepEqual(positions, [...positions].sort((a, b) => a - b), `${label} lifecycle order`);
-    const orderedContract = ["- name: Acquire organization Unity lock\\n        id: acquire_lock", escapeRegExp(acquire), "holder-id-suffix: (.+)\\n          runner-id: (.+)\\n", `- name: Require acquired Unity lock\\n        if: \\$\\{\\{ ${blockedCondition} \\}\\}\\n        shell: pwsh\\n        run: exit 1`, `- name: ${escapeRegExp(licensedWorkName)}[\\s\\S]*?if: \\$\\{\\{ ${licensedCondition} \\}\\}`, "- name: Return Unity license\\n        id: return_unity_license\\n        if: always\\(\\)\\n        timeout-minutes: 5\\n        continue-on-error: true\\n        uses: \\.\\/\\.github\\/actions\\/return-unity-license", `- name: Release organization Unity lock\\n        id: release_unity_lock\\n        if: always\\(\\)\\n        ${escapeRegExp(release)}`, "holder-id-suffix: \\1\\n          runner-id: \\2\\n          resource-cleanup-status: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-cleanup-status \\}\\}\\n          resource-health: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-health \\}\\}\\n          resource-reason: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.resource-reason \\}\\}", `- name: Require confirmed Unity cleanup[\\s\\S]*?${escapeRegExp(gate)}`, "classification-complete: \\$\\{\\{ steps\\.return_unity_license\\.outputs\\.classification-complete \\}\\}", "release-outcome: \\$\\{\\{ steps\\.release_unity_lock\\.outcome \\}\\}", "- name: Delete private Unity cleanup evidence"].join("[\\s\\S]*?");
-    assert.match(job, new RegExp(orderedContract), label);
-    assert.doesNotMatch(job, /\n    environment:/, `${label} must not require environment approval`);
+    if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
+      assert.match(job, /\n      fail-fast: false\n      max-parallel: 1\n/, `${label} fairness`);
+    }
+    for (const action of [acquire, returnLicense, classify, release, gate]) {
+      assert.equal(job.split(action).length - 1, 1, `${label}: ${action}`);
+    }
+
+    const lifecycleNames = [
+      "Acquire organization Unity lock",
+      "Require acquired Unity lock",
+      licensedWorkName,
+      "Return Unity license",
+      "Classify Unity cleanup evidence",
+      "Release organization Unity lock",
+      "Require confirmed Unity cleanup"
+    ];
+    const positions = lifecycleNames.map((name) => job.indexOf(`      - name: ${name}`));
+    assert.ok(
+      positions.every((position) => position >= 0),
+      `${label} lifecycle steps must all exist`
+    );
+    assert.deepEqual(
+      positions,
+      [...positions].sort((a, b) => a - b),
+      `${label} lifecycle order`
+    );
+
+    const acquireStep = getStepBlock(job, "Acquire organization Unity lock");
+    const requireStep = getStepBlock(job, "Require acquired Unity lock");
+    const workStep = getStepBlock(job, licensedWorkName);
+    const returnStep = getStepBlock(job, "Return Unity license");
+    const classifyStep = getStepBlock(job, "Classify Unity cleanup evidence");
+    const releaseStep = getStepBlock(job, "Release organization Unity lock");
+    const gateStep = getStepBlock(job, "Require confirmed Unity cleanup");
+
+    assert.match(acquireStep, /\n        id: acquire_lock\n/);
+    assert.match(
+      requireStep,
+      /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/
+    );
+    assert.match(
+      workStep,
+      new RegExp(`\\n        if: \\$\\{\\{ ${licensedCondition} \\}\\}\\n`),
+      label
+    );
+    assert.match(
+      returnStep,
+      /\n        id: return_unity_license\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/
+    );
+    assert.doesNotMatch(returnStep, /continue-on-error:/);
+    assert.match(
+      classifyStep,
+      /\n        id: cleanup_classification\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/
+    );
+    assert.match(
+      classifyStep,
+      /return-log-digest: \$\{\{ steps\.return_unity_license\.outputs\.return-log-digest \}\}/
+    );
+    assert.match(releaseStep, /\n        id: release_unity_lock\n        if: always\(\)\n/);
+    assert.match(
+      releaseStep,
+      /resource-cleanup-status: \$\{\{ steps\.cleanup_classification\.outputs\.resource-cleanup-status \}\}/
+    );
+    assert.match(gateStep, /\n        if: always\(\)\n/);
+    assert.match(
+      gateStep,
+      /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/
+    );
+    assert.match(gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/);
+
+    const acquireHolder = /holder-id-suffix: (.+)\n/.exec(acquireStep);
+    const releaseHolder = /holder-id-suffix: (.+)\n/.exec(releaseStep);
+    const acquireRunner = /runner-id: (.+)\n/.exec(acquireStep);
+    const releaseRunner = /runner-id: (.+)\n/.exec(releaseStep);
+    assert.ok(acquireHolder, `${label} acquire holder identity`);
+    assert.ok(releaseHolder, `${label} release holder identity`);
+    assert.ok(acquireRunner, `${label} acquire runner identity`);
+    assert.ok(releaseRunner, `${label} release runner identity`);
+    assert.equal(releaseHolder?.[1], acquireHolder?.[1], `${label} holder identity`);
+    assert.equal(releaseRunner?.[1], acquireRunner?.[1], `${label} runner identity`);
+
+    assert.doesNotMatch(
+      job,
+      /\n    environment:/,
+      `${label} must not require environment approval`
+    );
+    assert.doesNotMatch(job, /Delete private Unity cleanup evidence/, label);
   }
 });
 
-// prettier-ignore
-test("Unity return proof classifications remain fail closed and non-masking", () => {
-  const actionSource = fs.readFileSync(path.join(REPO_ROOT, ".github", "actions", "return-unity-license", "action.yml"), "utf8"); const packageSource = fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"); const source = [actionSource, ...[path.join("scripts", "unity", "run-ci-tests.ps1"), path.join("scripts", "unity", "export-unitypackage.ps1")].map((file) => fs.readFileSync(path.join(REPO_ROOT, file), "utf8"))].join("\n");
-  const classifications = [["central classifier", new RegExp(`classify-unity-cleanup-evidence@${CLEANUP_POLICY_SHA}`)], ["bounded prior metadata", /file\.Length -gt 25MB[\s\S]*?\^exit_return_rc=\(-\?\[0-9\]\+\)\$/], ["fallback retains prior evidence", /\$returnLogPath = \$file\.FullName[\s\S]*?\$supplementalPaths\.Add\(\$file\.FullName\)/], ["conservative capture defaults", /\$commandCompleted = \$false[\s\S]*?\$captureComplete = \$false/], ["private redundant return log", /Out-File -FilePath \$returnLog -Encoding utf8/], ["classification completion output", /classification-complete/], ["non-masking", /central release will fail closed/]];
-  for (const [classification, pattern] of classifications) assert.match(source, pattern, classification);
-  assert.equal((source.match(/unity-return-preflight-/g) || []).length, 2); assert.equal((source.match(/Remove-Item -LiteralPath \$returnLogPath -Force/g) || []).length, 2); assert.match(source, /Add-Content -LiteralPath \$LogPath -Value "exit_return_rc=\$exitCode"/); assert.match(actionSource, /resource-health[\s\S]*resource-reason/); assert.doesNotMatch(actionSource, /if \(-not \$ready\) \{\s*\$supplementalPaths\.Add/); assert.doesNotMatch(actionSource, /Classify-Unity(?:AccountHealth|LicenseReturn)\.ps1/); assert.doesNotMatch(packageSource, /validate:unity-license-classifiers/);
+test("Unity scripts retain bounded return-at-start evidence", () => {
+  const sources = [
+    path.join("scripts", "unity", "run-ci-tests.ps1"),
+    path.join("scripts", "unity", "export-unitypackage.ps1")
+  ].map((file) => fs.readFileSync(path.join(REPO_ROOT, file), "utf8"));
+  const source = sources.join("\n");
+
+  assert.equal((source.match(/unity-return-preflight-/g) || []).length, 2);
+  assert.equal((source.match(/Remove-Item -LiteralPath \$returnLogPath -Force/g) || []).length, 2);
+  assert.equal(
+    (source.match(/Add-Content -LiteralPath \$LogPath -Value "exit_return_rc=\$exitCode"/g) || [])
+      .length,
+    2
+  );
+  assert.doesNotMatch(
+    fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
+    /validate:unity-license-classifiers/
+  );
 });
 // prettier-ignore
 test("active workflows pin external actions and scope licensed credentials", () => {
@@ -385,6 +507,7 @@ test("active workflows pin external actions and scope licensed credentials", () 
 });
 
 test("release workflows pin App write scopes and denied-push diagnostics", () => {
+  const release = fs.readFileSync(path.join(WORKFLOW_DIR, "release.yml"), "utf8");
   const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
   const tag = fs.readFileSync(path.join(WORKFLOW_DIR, "release-tag.yml"), "utf8");
   // prettier-ignore
@@ -397,5 +520,9 @@ test("release workflows pin App write scopes and denied-push diagnostics", () =>
     ["tag App scope", tag, /- name: Generate the auto-commit GitHub App token[\s\S]*\n          permission-contents: write\n/],
     ["tag diagnostics", tag, /- name: Create and push the annotated release tag[\s\S]*\n          push_status=\$\{PIPESTATUS\[0\]\}\n[\s\S]*release tag push failure[\s\S]*Manual fallback:/]
   ]) assert.match(source, pattern, name);
+  assert.match(
+    getStepBlock(getJobBlock(release, "verify-tag"), "Verify semver tag matches package.json"),
+    /if \[ "\$\{GITHUB_REF_TYPE\}" != "tag" \]; then[\s\S]*exit 1/
+  );
   assert.doesNotMatch(prepare, /\.artifacts\/release-prepare/);
 });
