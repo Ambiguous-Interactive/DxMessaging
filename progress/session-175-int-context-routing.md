@@ -25,6 +25,11 @@ and token histories retain the original Unity object reference.
   map reuse.
 - Converted dirty target lists and sets atomically with the live maps, retaining
   their independent pool caps and diagnostics.
+- Human PR review identified the exception window between renting a pooled
+  collection and attaching it to its lifecycle owner. Added
+  `CollectionPool<T>.RentAndAdd` so failed dictionary insertion returns the
+  rental, used it for every dictionary-owned collection rental, and added
+  explicit rollback for the bus context map's two-owner transfer.
 - Updated memory-reclamation and performance documentation plus the
   `[Unreleased]` changelog entry.
 - Ran two adversarial source-review passes. The first found four test/doc
@@ -39,12 +44,18 @@ and token histories retain the original Unity object reference.
 - EditMode contract fixture: **31 passed / 0 failed**.
 - PlayMode diagnostics + memory reclamation: **67 passed / 0 failed**.
 - EditMode allocation matrix: **61 passed / 0 failed**.
+- EditMode pooled-ownership contract fixture: **19 passed / 0 failed**,
+  including a throwing-comparer proof that failed owner attachment returns the
+  exact rental.
 - PlayMode TargetMap benchmarks: **20 passed / 0 failed**; every hit and miss
   row reported zero managed allocations.
 - Complete EditMode passes: **783 passed / 0 failed** twice, in 341.8 and
-  383.4 seconds.
+  383.4 seconds, then **784 passed / 0 failed** in 313.6 seconds after the
+  ownership-transfer test was added.
 - Complete PlayMode passes: **979 passed / 0 failed** twice, in 40.9 and
   28.0 seconds.
+- Post-review PlayMode diagnostics + memory reclamation: **67 passed / 0
+  failed**.
 
 ## Performance science
 

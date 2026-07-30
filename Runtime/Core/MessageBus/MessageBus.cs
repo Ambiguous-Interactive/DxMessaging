@@ -1713,14 +1713,12 @@ namespace DxMessaging.Core.MessageBus
 
             if (!_dirtyTargets.TryGetValue(typeIndex, out List<int> targets))
             {
-                targets = DxPools.ContextIdLists.Rent();
-                _dirtyTargets[typeIndex] = targets;
+                targets = DxPools.ContextIdLists.RentAndAdd(_dirtyTargets, typeIndex);
             }
 
             if (!_dirtyTargetSets.TryGetValue(typeIndex, out HashSet<int> targetSet))
             {
-                targetSet = DxPools.ContextIdSets.Rent();
-                _dirtyTargetSets[typeIndex] = targetSet;
+                targetSet = DxPools.ContextIdSets.RentAndAdd(_dirtyTargetSets, typeIndex);
             }
 
             int targetId = target.Id;
@@ -2454,8 +2452,18 @@ namespace DxMessaging.Core.MessageBus
             }
 
             handlersByTarget = ContextHandlerByTargetDicts.Rent();
-            _contextMapHighWaterCounts[handlersByTarget] = handlersByTarget.Count;
-            sinks.Set<T>(handlersByTarget);
+            try
+            {
+                _contextMapHighWaterCounts[handlersByTarget] = handlersByTarget.Count;
+                sinks.Set<T>(handlersByTarget);
+            }
+            catch
+            {
+                _contextMapHighWaterCounts.Remove(handlersByTarget);
+                sinks.Remove<T>();
+                ContextHandlerByTargetDicts.Return(handlersByTarget);
+                throw;
+            }
             return handlersByTarget;
         }
 

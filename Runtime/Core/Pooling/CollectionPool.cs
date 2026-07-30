@@ -134,6 +134,31 @@ namespace DxMessaging.Core.Pooling
             return fresh;
         }
 
+        /// <summary>
+        /// Rents a value and transfers its ownership to <paramref name="owner"/>.
+        /// If the dictionary insertion fails, returns the value to this pool
+        /// before propagating the exception.
+        /// </summary>
+        public T RentAndAdd<TKey>(Dictionary<TKey, T> owner, TKey key)
+        {
+            if (owner == null)
+            {
+                throw new ArgumentNullException(nameof(owner));
+            }
+
+            T value = Rent();
+            try
+            {
+                owner.Add(key, value);
+                return value;
+            }
+            catch
+            {
+                Return(value);
+                throw;
+            }
+        }
+
         public void Return(T value)
         {
             AssertOwnerThread();
