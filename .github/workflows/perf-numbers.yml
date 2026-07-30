@@ -126,7 +126,7 @@ jobs:
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
     # runner carrying it). Keep in sync with the preflight REQUIRED_LABELS.
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
-    timeout-minutes: 660
+    timeout-minutes: 720
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -253,6 +253,7 @@ jobs:
       # editor. Both mutate the shared tool-cache root, so installation and
       # repair are serialized by the organization lock before licensed work.
       - name: Provision Unity Editor
+        id: provision_editor
         if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 180
         shell: pwsh
@@ -285,11 +286,11 @@ jobs:
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
         # 180 (not 120): the Standalone leg builds a COLD IL2CPP player, which is
         # far slower than a Mono build. The PlayMode leg runs IN-EDITOR (Mono) with
         # no player build and is faster, so 180 is generous for it too. Stays
-        # strictly below the job-level timeout (660) so the step clock
+        # strictly below the job-level timeout (720) so the step clock
         # fires first and releases the shared Unity seat. Must stay >= the
         # validator's RUN_BUDGET (120).
         timeout-minutes: 180
@@ -318,6 +319,7 @@ jobs:
           }
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
