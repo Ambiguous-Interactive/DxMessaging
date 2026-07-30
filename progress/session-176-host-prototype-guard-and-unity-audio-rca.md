@@ -75,8 +75,13 @@ exhausts memory.
   and all nine legs of
   [Unity run 30516059562](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/30516059562)
   successfully.
+- Evidence head `21f01257` independently completed static
+  [CI run 30517212605](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/30517212605)
+  and all nine legs of
+  [Unity run 30517212555](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/30517212555)
+  successfully.
 - Two independent adversarial review passes reached zero remaining findings.
   The final review request also triggered Cursor, Copilot, and the only
-  repository collaborator. Copilot produced no review because its workflow
-  reported an exhausted monthly quota; no actionable GitHub review feedback
-  was outstanding when this evidence update was prepared.
+  repository collaborator. Two Copilot attempts produced no review because both
+  workflows reported an exhausted monthly quota; no actionable GitHub review
+  feedback was outstanding when this evidence update was prepared.
