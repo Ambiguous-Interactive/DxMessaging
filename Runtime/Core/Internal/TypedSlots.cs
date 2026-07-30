@@ -291,25 +291,27 @@ namespace DxMessaging.Core.Internal
         /// </para>
         /// <para>
         /// Unlike the bus-side <see cref="BusContextSlot.byContext"/>, which
-        /// is rented from <c>DxPools.InstanceIdDicts</c> as a
-        /// <c>Dictionary&lt;InstanceId, object&gt;</c> (boxed
-        /// <see cref="BusSinkSlot"/>) for cross-message-type pool sharing,
+        /// is rented from <c>DxPools.ContextSlotDicts</c> as a
+        /// <c>Dictionary&lt;int, object&gt;</c> (type-erased
+        /// <see cref="BusSinkSlot"/> values) for cross-message-type pool sharing,
         /// the typed-handler-side equivalent here is a strongly-typed
-        /// <c>Dictionary&lt;InstanceId, Dictionary&lt;int, IHandlerActionCache&gt;&gt;</c>.
+        /// <c>Dictionary&lt;int, Dictionary&lt;int, IHandlerActionCache&gt;&gt;</c>.
         /// Both the outer context dictionary and the inner priority
         /// dictionaries are rented from typed-handler-specific
         /// <see cref="DxPools"/> pools.
         /// </para>
         /// <para>
-        /// Shape: <c>InstanceId -&gt; (priority -&gt; IHandlerActionCache)</c>,
+        /// Shape: <c>InstanceId.Id -&gt; (priority -&gt; IHandlerActionCache)</c>,
         /// with the leaf cache type-erased to <see cref="IHandlerActionCache"/>.
-        /// The inner dictionary is keyed by priority, matching the legacy
+        /// The inner dictionary is keyed by priority, matching the three-level
+        /// topology of the legacy
         /// <c>Dictionary&lt;InstanceId, Dictionary&lt;int, HandlerActionCache&lt;TDelegate&gt;&gt;&gt;</c>
-        /// layout on <c>MessageHandler.TypedHandler&lt;T&gt;</c>. The flat
-        /// 3-level shape was chosen over the alternatives (extend
+        /// layout on <c>MessageHandler.TypedHandler&lt;T&gt;</c>; only the outer
+        /// key representation changes. The flat 3-level shape was chosen over
+        /// the alternatives (extend
         /// <see cref="IHandlerActionCache"/> with per-priority buckets, or
-        /// recurse with <c>Dictionary&lt;InstanceId, TypedSlot&lt;T&gt;&gt;</c>)
-        /// because it preserves the legacy storage layout exactly and keeps
+        /// recurse with <c>Dictionary&lt;int, TypedSlot&lt;T&gt;&gt;</c>)
+        /// because it preserves the legacy storage topology and keeps
         /// call sites aligned with the existing shape. The monotonic-version
         /// drain contract on
         /// <see cref="Reset"/> requires every inner cache to be drained through
@@ -317,7 +319,7 @@ namespace DxMessaging.Core.Internal
         /// container is cleared.
         /// </para>
         /// </remarks>
-        public Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> byContext;
+        public Dictionary<int, Dictionary<int, IHandlerActionCache>> byContext;
 
         /// <summary>
         /// Constructs a <see cref="TypedSlot{T}"/> with the supplied
@@ -432,9 +434,7 @@ namespace DxMessaging.Core.Internal
             }
             if (byContext != null)
             {
-                foreach (
-                    KeyValuePair<InstanceId, Dictionary<int, IHandlerActionCache>> ctx in byContext
-                )
+                foreach (KeyValuePair<int, Dictionary<int, IHandlerActionCache>> ctx in byContext)
                 {
                     if (ctx.Value == null)
                     {
@@ -466,9 +466,7 @@ namespace DxMessaging.Core.Internal
                 return;
             }
 
-            foreach (
-                KeyValuePair<InstanceId, Dictionary<int, IHandlerActionCache>> ctx in byContext
-            )
+            foreach (KeyValuePair<int, Dictionary<int, IHandlerActionCache>> ctx in byContext)
             {
                 DxPools.TypedHandlerPriorityDicts.Return(ctx.Value);
             }

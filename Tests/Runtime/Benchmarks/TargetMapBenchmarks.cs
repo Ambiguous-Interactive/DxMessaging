@@ -18,9 +18,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     }
 
     /// <summary>
-    /// Measures the <see cref="InstanceId"/> routing map independently from the
-    /// published dispatch headline. Each row uses one targeted message type and one
-    /// handler, varying only the number of target keys and the map operation.
+    /// Measures the context routing map reached through <see cref="InstanceId"/>
+    /// APIs independently from the published dispatch headline. Each row uses one
+    /// targeted message type and one handler, varying only the number of target keys
+    /// and the map operation.
     /// </summary>
     public sealed class TargetMapBenchmarks
     {

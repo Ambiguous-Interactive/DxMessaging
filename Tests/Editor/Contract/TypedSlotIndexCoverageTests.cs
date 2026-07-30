@@ -511,13 +511,13 @@ namespace DxMessaging.Tests.Editor.Contract
             TypedSlot<ProbeMessage> slot =
                 (TypedSlot<ProbeMessage>)slots.GetValue(TypedSlotIndex.TargetedHandleDefault);
             Assert.IsNotNull(slot);
-            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> outer = slot.byContext;
-            Dictionary<int, IHandlerActionCache> inner = outer[target];
+            Dictionary<int, Dictionary<int, IHandlerActionCache>> outer = slot.byContext;
+            Dictionary<int, IHandlerActionCache> inner = outer[target.Id];
 
             slot.Reset();
             Assert.IsNull(slot.byContext);
 
-            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> rentedAgainOuter =
+            Dictionary<int, Dictionary<int, IHandlerActionCache>> rentedAgainOuter =
                 DxPools.TypedHandlerContextDicts.Rent();
             Dictionary<int, IHandlerActionCache> rentedAgainInner =
                 DxPools.TypedHandlerPriorityDicts.Rent();
@@ -558,8 +558,8 @@ namespace DxMessaging.Tests.Editor.Contract
             TypedSlot<ProbeTargetedMessage> slot =
                 (TypedSlot<ProbeTargetedMessage>)
                     slots.GetValue(TypedSlotIndex.TargetedHandleDefault);
-            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> outer = slot.byContext;
-            Dictionary<int, IHandlerActionCache> inner = outer[target];
+            Dictionary<int, Dictionary<int, IHandlerActionCache>> outer = slot.byContext;
+            Dictionary<int, IHandlerActionCache> inner = outer[target.Id];
 
             deregistration();
             int resetCount = handler.ResetEmptyTypedSlotsForSweep(bus);
@@ -568,7 +568,7 @@ namespace DxMessaging.Tests.Editor.Contract
             Assert.IsNull(slots.GetValue(TypedSlotIndex.TargetedHandleDefault));
             Assert.IsNull(slot.byContext);
 
-            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> rentedAgainOuter =
+            Dictionary<int, Dictionary<int, IHandlerActionCache>> rentedAgainOuter =
                 DxPools.TypedHandlerContextDicts.Rent();
             Dictionary<int, IHandlerActionCache> rentedAgainInner =
                 DxPools.TypedHandlerPriorityDicts.Rent();
