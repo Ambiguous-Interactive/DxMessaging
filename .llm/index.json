@@ -431,7 +431,7 @@
         "category": "unity",
         "tags": "unity, ci, matrix, il2cpp, lts, game-ci"
       },
-      "lineCount": 123,
+      "lineCount": 125,
       "references": [
         ".llm/skills/unity-editor-ci/references/github-actions-version-consistency.md",
         ".llm/skills/unity-editor-ci/references/unity-ci-matrix.md",

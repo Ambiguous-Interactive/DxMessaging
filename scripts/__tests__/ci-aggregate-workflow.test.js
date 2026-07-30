@@ -38,6 +38,7 @@ const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability
 const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
+// SYNC: Keep scripts/validate-unity-pr-policy.py LICENSED_LOCK_WINDOWS aligned.
 const UNITY_LOCK_WINDOWS = [
   ["unity-tests.yml", "unity-tests", "Run Unity Test Runner", true],
   ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner", true],
@@ -453,9 +454,9 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [returnStep, /\n        id: return_unity_license\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/],
       [classifyStep, /\n        id: cleanup_classification\n        if: \$\{\{ always\(\) && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}\n/],
       [classifyStep, /return-log-digest: \$\{\{ steps\.return_unity_license\.outputs\.return-log-digest \}\}/],
-      [releaseStep, /\n        id: release_unity_lock\n        if: always\(\)\n/],
+      [releaseStep, /\n        id: release_unity_lock\n        if: always\(\)\n        timeout-minutes: 5\n/],
       [releaseStep, /resource-cleanup-status: \$\{\{ steps\.cleanup_classification\.outputs\.resource-cleanup-status \}\}/],
-      [gateStep, /\n        if: always\(\)\n/],
+      [gateStep, /\n        if: always\(\)\n        timeout-minutes: 2\n/],
       [gateStep, /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/],
       [gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/],
       ...(file === "unity-tests.yml" ? [[workStep, /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: licensed work and central return must use the same trusted editor root`]] : [])

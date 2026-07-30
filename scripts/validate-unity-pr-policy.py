@@ -19,6 +19,15 @@ REGISTERED_UNITY_AUTOMATION = {
     ".github/workflows/unity-benchmarks.yml",
     ".github/workflows/unity-tests.yml",
 }
+# SYNC: Keep scripts/__tests__/ci-aggregate-workflow.test.js UNITY_LOCK_WINDOWS aligned.
+LICENSED_LOCK_WINDOWS = (
+    (Path(".github/workflows/unity-tests.yml"), "unity-tests"),
+    (Path(".github/workflows/unity-benchmarks.yml"), "benchmarks"),
+    (Path(".github/workflows/perf-numbers.yml"), "perf-benchmarks"),
+    (Path(".github/workflows/release.yml"), "unity-checks"),
+    (Path(".github/workflows/release.yml"), "unitypackage"),
+)
+UNITY_LIFECYCLE_OVERHEAD_RESERVE_MINUTES = 60
 UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(
     r"\bUNITY_(?:SERIAL|EMAIL|PASSWORD|LICENSE|LICENSING_SERVER)\b|"
     r"game-ci/unity-(?:test-runner|builder|activate)@",
@@ -100,6 +109,82 @@ def step_block(job: str, name: str) -> str:
     require(start >= 0, f"missing step: {name}")
     following = job.find("\n      - name:", start + len(marker))
     return job[start : following if following >= 0 else len(job)]
+
+
+def top_level_steps_through_cleanup_gate(job: str, label: str) -> list[str]:
+    steps_start = job.find("    steps:\n")
+    require(steps_start >= 0, f"{label}: missing steps")
+    starts = [
+        match.start()
+        for match in re.finditer(r"^      -(?: |$)", job[steps_start:], re.MULTILINE)
+    ]
+    starts = [steps_start + start for start in starts]
+    require(bool(starts), f"{label}: missing top-level steps")
+    blocks = [
+        job[start : starts[index + 1] if index + 1 < len(starts) else len(job)]
+        for index, start in enumerate(starts)
+    ]
+    gate_indexes = [
+        index
+        for index, block in enumerate(blocks)
+        if block.startswith("      - name: Require confirmed Unity cleanup\n")
+    ]
+    require(
+        len(gate_indexes) == 1,
+        f"{label}: expected one confirmed-cleanup gate, found {len(gate_indexes)}",
+    )
+    return blocks[: gate_indexes[0] + 1]
+
+
+def positive_timeout(source: str, indentation: int, label: str) -> int:
+    matches = re.findall(
+        rf"^{' ' * indentation}timeout-minutes: ([1-9]\d*)[ \t]*$",
+        source,
+        re.MULTILINE,
+    )
+    require(
+        len(matches) == 1,
+        f"{label}: expected one positive integer timeout, found {matches}",
+    )
+    return int(matches[0])
+
+
+def validate_lock_window_timeout_budget(job: str, label: str) -> None:
+    steps = top_level_steps_through_cleanup_gate(job, label)
+    bounded_minutes = 0
+    for index, step in enumerate(steps, start=1):
+        name = re.search(r"^      - name: (.+)$", step, re.MULTILINE)
+        step_label = name.group(1) if name else f"step {index}"
+        bounded_minutes += positive_timeout(step, 8, f"{label}:{step_label}")
+
+    acquire_steps = [step for step in steps if f"uses: {ACQUIRE_BUILD_LOCK}" in step]
+    require(
+        len(acquire_steps) == 1,
+        f"{label}: expected one acquire step, found {len(acquire_steps)}",
+    )
+    acquire = acquire_steps[0]
+    acquire_wait = re.findall(
+        r'^          timeout-minutes: "([1-9]\d*)"[ \t]*$',
+        acquire,
+        re.MULTILINE,
+    )
+    require(
+        len(acquire_wait) == 1,
+        f"{label}: expected one positive acquire wait, found {acquire_wait}",
+    )
+    require(
+        positive_timeout(acquire, 8, f"{label}:acquire step") > int(acquire_wait[0]),
+        f"{label}: acquire step timeout must exceed its internal wait",
+    )
+
+    job_timeout = positive_timeout(job, 4, f"{label}:job")
+    require(
+        job_timeout
+        >= bounded_minutes + UNITY_LIFECYCLE_OVERHEAD_RESERVE_MINUTES,
+        f"{label}: job timeout {job_timeout} must reserve at least "
+        f"{UNITY_LIFECYCLE_OVERHEAD_RESERVE_MINUTES} minutes beyond the "
+        f"{bounded_minutes}-minute bounded lifecycle",
+    )
 
 
 def validate_licensed_workflow_policy(source: str) -> str:
@@ -188,6 +273,54 @@ def repository_unity_automation(github: Path = Path(".github")) -> dict[str, str
 
 
 def validate() -> None:
+    timeout_fixture = f"""  fixture:
+    timeout-minutes: 70
+    steps:
+      - name: Acquire organization Unity lock
+        timeout-minutes: 5
+        uses: {ACQUIRE_BUILD_LOCK}
+        with:
+          timeout-minutes: "4"
+      - name: Return Unity license
+        timeout-minutes: 1
+      - name: Require confirmed Unity cleanup
+        timeout-minutes: 2
+"""
+    validate_lock_window_timeout_budget(timeout_fixture, "timeout fixture")
+    for name, mutation in (
+        (
+            "duplicate named step",
+            timeout_fixture.replace(
+                "      - name: Require confirmed Unity cleanup\n",
+                "      - name: Return Unity license\n"
+                "      - name: Require confirmed Unity cleanup\n",
+            ),
+        ),
+        (
+            "inserted cleanup step",
+            timeout_fixture.replace(
+                "      - name: Require confirmed Unity cleanup\n",
+                "      - uses: example/unbounded@immutable\n"
+                "      - name: Require confirmed Unity cleanup\n",
+            ),
+        ),
+        (
+            "dash-only cleanup step",
+            timeout_fixture.replace(
+                "      - name: Require confirmed Unity cleanup\n",
+                "      -\n"
+                "        id: unbounded\n"
+                "        run: exit 0\n"
+                "      - name: Require confirmed Unity cleanup\n",
+            ),
+        ),
+    ):
+        try:
+            validate_lock_window_timeout_budget(mutation, name)
+        except AssertionError:
+            continue
+        raise AssertionError(f"{name}: unbounded step was accepted")
+
     parser_fixture = """      - name: Fixture
         run: |
           echo first
@@ -281,6 +414,11 @@ def validate() -> None:
         "unregistered credential-bearing or activation-capable Unity automation: "
         + ", ".join(unregistered),
     )
+    for workflow, job_id in LICENSED_LOCK_WINDOWS:
+        validate_lock_window_timeout_budget(
+            job_block(workflow.read_text(encoding="utf-8"), job_id),
+            f"{workflow}:{job_id}",
+        )
 
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = validate_licensed_workflow_policy(source)

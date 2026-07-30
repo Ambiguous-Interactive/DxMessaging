@@ -207,8 +207,23 @@ That integration raised JavaScript source LOC to 17,565 against the 17,500
 budget. A table-driven consolidation in
 `scripts/__tests__/ci-aggregate-workflow.test.js` preserves the workflow
 contracts while removing repeated assertion scaffolding and reduces the total
-to 17,485 after synchronizing the three newer PR-head commits. The focused
-aggregate-workflow suite passes all 17 data-driven tests, and the
+to 17,485 after synchronizing the three newer PR-head commits. A final Cursor
+review then found that the 660-minute licensed-job cap could be exhausted by the
+300-minute lock wait, 180-minute editor provisioning, and 180-minute licensed
+work limits before cleanup ran. The first 750-minute correction still left
+uncapped ancillary steps able to consume the job clock. All five lock windows
+now cap every step through the cleanup gate, give the acquire step 305 minutes
+for its 300-minute internal wait, and use a 900-minute job cap. Their bounded
+totals range from 696 to 793 minutes, leaving 107 to 204 minutes for GitHub
+runner overhead. The positional Python policy validator inspects every actual
+top-level step through the cleanup gate, so duplicate names and steps inserted
+between cleanup stages cannot bypass the budget. Its data-driven contract
+rejects missing, malformed, or zero timeouts and requires every window to retain
+at least 60 minutes beyond the complete bounded lifecycle. Restoring the
+JavaScript test tables to their readable form leaves the final JavaScript total
+at 17,486.
+
+The focused aggregate-workflow suite passes all 17 data-driven tests, and the
 heartbeat probe passes all 37 assertions. The final full Node suite passes 406
 tests with zero failures. `npm run validate:all`, strict documentation build,
 Actionlint, Yamllint, PowerShell parsing, and `git diff --check` also pass. The
@@ -220,7 +235,7 @@ retained at
 
 ## Remaining work
 
-- Push the committed branch and obtain current reviews and required checks.
+- Obtain current reviews and required checks for the timeout-budget fix.
 - Switch the host to Personal/light through the Unity UI.
 - Resolve the manifest's Unity 2022.3 LTS requirement versus the configured
   6000.4.6f1 host.

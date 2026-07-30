@@ -39,7 +39,7 @@ jobs:
     needs:
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB]
-    timeout-minutes: 660
+    timeout-minutes: 900
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -53,12 +53,14 @@ jobs:
           - playmode
     steps:
       - name: Enable Git long paths
+        timeout-minutes: 2
         shell: pwsh
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         run: git config --global core.longpaths true
 
       - name: Checkout
+        timeout-minutes: 30
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
@@ -67,6 +69,7 @@ jobs:
           persist-credentials: false
 
       - name: Print runner diagnostics
+        timeout-minutes: 2
         # Composite action runs PowerShell internally; `shell: bash` on this
         # self-hosted Windows runner resolved to the WSL stub at
         # C:\Windows\System32\bash.exe and failed with "Windows Subsystem
@@ -78,6 +81,7 @@ jobs:
           matrix-note: "default (organization lock wraps the Unity section)"
 
       - name: Cache Unity Library and package caches
+        timeout-minutes: 30
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         env:
           PACKAGE_HASH: >-
@@ -97,6 +101,7 @@ jobs:
           key: Library-bench-${{ runner.os }}-${{ runner.arch }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ env.PACKAGE_HASH }}
 
       - name: Setup Node.js
+        timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
@@ -108,12 +113,14 @@ jobs:
       # shell: pwsh is enforced inside the composite.
       - name: Compute benchmark assembly list
         id: compute
+        timeout-minutes: 5
         uses: ./.github/actions/compute-unity-assemblies
         with:
           include-perf: "true"
           target: "${{ matrix.test-mode }}"
 
       - name: Validate Unity license secrets
+        timeout-minutes: 2
         uses: ./.github/actions/validate-unity-license
         env:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
@@ -128,6 +135,7 @@ jobs:
       # is defense-in-depth and uniformity with the required workflows.
       - name: Acquire organization Unity lock
         id: acquire_lock
+        timeout-minutes: 305
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           lock-name: wallstop-organization-builds
@@ -140,6 +148,7 @@ jobs:
 
       - name: Require acquired Unity lock
         if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        timeout-minutes: 1
         shell: pwsh
         run: exit 1
 
@@ -163,6 +172,7 @@ jobs:
 
       - name: Upload Unity provisioning diagnostics
         if: always()
+        timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-benchmark-provisioning-${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -207,6 +217,7 @@ jobs:
       # before Unity launched).
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}
+        timeout-minutes: 5
         uses: ./.github/actions/dump-unity-log-tail
         with:
           results-dir: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -229,6 +240,7 @@ jobs:
             steps.compute.outcome == 'success' &&
             (steps.compute.outputs.is-empty == 'true' || steps.run_tests.outcome != 'skipped')
           }}
+        timeout-minutes: 10
         uses: ./.github/actions/verify-unity-results
         with:
           results-dir: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -237,6 +249,7 @@ jobs:
 
       - name: Upload benchmark artifacts
         if: always()
+        timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-benchmarks-${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -271,6 +284,7 @@ jobs:
       - name: Release organization Unity lock
         id: release_unity_lock
         if: always()
+        timeout-minutes: 5
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@0ce3dce6cbe29af210432087e3b6d81509258063
         with:
           lock-name: wallstop-organization-builds
@@ -285,6 +299,7 @@ jobs:
 
       - name: Require confirmed Unity cleanup
         if: always()
+        timeout-minutes: 2
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@0ce3dce6cbe29af210432087e3b6d81509258063
         with:
           acquired: ${{ steps.acquire_lock.outputs.acquired }}

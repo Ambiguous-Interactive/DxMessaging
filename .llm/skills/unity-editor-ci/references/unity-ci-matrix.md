@@ -61,15 +61,17 @@ The Unity serial has two activation seats shared across the organization and no 
 
 With both controls, a run consumes at most one seat while another repository can use the second. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows (`unity-tests.yml`, `unity-benchmarks.yml`, `perf-numbers.yml`); single-job release workflows rely on the lock for cross-run admission.
 
-**Timeout invariant.** GitHub counts the lock-wait against the job clock, so a job at the back of the serialized queue is killed before its lock wait can finish unless:
+**Timeout invariant.** GitHub counts the lock wait and every subsequent step against the job clock. A job-level timeout cancels the whole job, so later `if: always()` cleanup cannot run if an earlier uncapped step consumes the remaining clock. Every step before and including `Require confirmed Unity cleanup` therefore has an explicit positive timeout.
 
 ```text
-job timeout-minutes >= acquire timeout-minutes + RUN_BUDGET (120)
+job timeout-minutes >= sum(all capped steps through cleanup gate) + 60
 ```
 
-The acquire input `timeout-minutes` is the lock POLL budget (how long the action waits for the seat), counted against the job clock. The current magnitudes are: acquire `timeout-minutes: "300"`, job `timeout-minutes: 420`, and a step-level `timeout-minutes: 120` on the Unity run step. Keep these magnitudes aligned across the Unity workflows when editing timeouts.
+The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Editor provisioning is capped at 180 minutes, licensed work at 120 to 180 minutes, and return/classify/release/gate at 5/2/5/2 minutes. The licensed jobs use `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
 
-The step-level `timeout-minutes: 120` protects the in-use seat from a hung editor: it must be `>= 120` and STRICTLY below the job timeout so the step fails first and releases the lock instead of the whole job being cancelled with the seat still held. This step guard matters because `stuck-job-watchdog.yml` ignores any `in_progress` job -- nothing else bounds a post-acquire hang, so without the step timeout a wedged editor would squat the seat for the full job timeout.
+The step-level caps protect the in-use seat from a hung editor or ancillary action. They must remain strictly below the job timeout so the step fails first and the cleanup chain still runs. This matters because `stuck-job-watchdog.yml` ignores any `in_progress` job; without step caps, a wedged action can squat the seat until the whole job is cancelled.
+
+Acquire the organization lock before provisioning. All licensed workflows install or repair editors under the shared `RUNNER_TOOL_CACHE/u6-v3` root, so provisioning must be serialized with licensed work. Release the lock only after the always-run return and cleanup-classification steps.
 
 **Operator note (standalone IL2CPP):** the `standalone` cells require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. `scripts/unity/ensure-editor.ps1` must be called with an explicit provisioning profile: `EditorOnly` for editmode/playmode/benchmarks/release checks, and `StandaloneWindowsIl2Cpp` for standalone so only `windows-il2cpp` is installed or verified. That script treats the beta standalone Unity CLI as a moving surface: it discovers the install root through the 0-arg `unity install-path` GETTER and sets the path best-effort, so an uncertain flag never aborts the matrix. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for the getter-vs-setter detail.
 

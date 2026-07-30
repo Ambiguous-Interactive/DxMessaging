@@ -46,15 +46,17 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
   protect it: `strategy.max-parallel: 1` serializes cells WITHIN a run, and the external
   `Ambiguous-Interactive/ambiguous-organization-build-lock` actions admit at most two runners
   ACROSS runs and repositories.
-- `max-parallel: 1` goes under `strategy:` on the matrix workflows only (`unity-tests.yml`,
-  `unity-benchmarks.yml`). A native `concurrency.group: wallstop-organization-builds` is
-  repository-scoped and is FORBIDDEN.
-- Timeout invariant: `job timeout-minutes >= acquire timeout-minutes + RUN_BUDGET (120)`.
-  Current magnitudes: acquire `timeout-minutes: "300"`, job `timeout-minutes: 420`, and a
-  step-level `timeout-minutes: 120` on the Unity run step. The step guard must be `>= 120` and
-  STRICTLY below the job timeout so the step fails first and releases the seat.
-- Acquire the lock immediately before `run-ci-tests.ps1` and release it with `if: always()`.
-  Provision editors BEFORE taking the lock; provisioning can take tens of minutes.
+- `max-parallel: 1` goes under `strategy:` on the matrix workflows (`unity-tests.yml`,
+  `unity-benchmarks.yml`, and `perf-numbers.yml`). A native
+  `concurrency.group: wallstop-organization-builds` is repository-scoped and is FORBIDDEN.
+- Timeout invariant: every step before and including the cleanup gate has an explicit positive
+  timeout. The acquire step cap (`305`) exceeds its internal wait (`300`), provisioning is
+  capped at `180`, licensed work is capped at `120` to `180`, and cleanup uses `5`/`2`/`5`/`2`
+  for return/classify/release/gate. The `900`-minute job cap must retain at least 60 minutes
+  beyond the sum of those enforced step caps.
+- Acquire the lock before editor provisioning and release it with `if: always()`. Provisioning
+  mutates the shared tool-cache root, so it belongs inside the same lock window as licensed
+  work.
 
 ### The compute-unity-assemblies is-empty gate
 
