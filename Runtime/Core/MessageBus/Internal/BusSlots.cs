@@ -266,7 +266,7 @@ namespace DxMessaging.Core.MessageBus.Internal
 
     /// <summary>
     /// Per-message-type context-bound dispatch slot. Owns the
-    /// primitive context-ID-keyed map of inner <see cref="BusSinkSlot"/>s
+    /// <see cref="InstanceId"/>-keyed map of inner <see cref="BusSinkSlot"/>s
     /// for one message type's targeted or broadcast variants. Replaces the
     /// outer per-message-type dictionaries previously held in the
     /// targeted/broadcast sink fields on <see cref="MessageBus"/>.
@@ -274,8 +274,8 @@ namespace DxMessaging.Core.MessageBus.Internal
     /// <remarks>
     /// <para>
     /// The inner map is rented from
-    /// <see cref="DxPools.ContextSlotDicts"/>. The pool stores
-    /// <c>Dictionary&lt;int, object&gt;</c> -- type-erased to share a
+    /// <see cref="DxPools.InstanceIdDicts"/>. The pool stores
+    /// <c>Dictionary&lt;InstanceId, object&gt;</c> -- generic-erased to share a
     /// single pool across every message-type instantiation. Each value is a
     /// <see cref="BusSinkSlot"/>, accessed via
     /// <see cref="DxUnsafe.As{T}(object)"/>; the class is sealed and only inserted
@@ -296,9 +296,9 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// Inner per-context map. Null until first registration. Values are
         /// <see cref="BusSinkSlot"/> instances stored as <see cref="object"/>
         /// so the underlying dictionary can be pooled in the shared
-        /// <see cref="DxPools.ContextSlotDicts"/> pool.
+        /// <see cref="DxPools.InstanceIdDicts"/> pool.
         /// </summary>
-        public Dictionary<int, object> byContext;
+        public Dictionary<InstanceId, object> byContext;
 
         /// <summary>Monotonic version counter for the slot's structural state.</summary>
         public long version;
@@ -313,7 +313,7 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// <summary>
         /// <para>
         /// Reserved live-context counter intended to mirror the count of
-        /// primitive context IDs in <see cref="byContext"/> that
+        /// <see cref="InstanceId"/> keys in <see cref="byContext"/> that
         /// currently retain at least one live handler, so <see cref="IsEmpty"/>
         /// becomes a single integer compare rather than a recursive walk over
         /// the inner per-context slots. This counter is reserved until
@@ -367,13 +367,13 @@ namespace DxMessaging.Core.MessageBus.Internal
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryGetSlot(InstanceId context, out BusSinkSlot slot)
         {
-            Dictionary<int, object> map = byContext;
+            Dictionary<InstanceId, object> map = byContext;
             if (map == null)
             {
                 slot = null;
                 return false;
             }
-            if (!map.TryGetValue(context.Id, out object boxed))
+            if (!map.TryGetValue(context, out object boxed))
             {
                 slot = null;
                 return false;
@@ -386,7 +386,7 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// <summary>
         /// Look up or create the inner <see cref="BusSinkSlot"/> for the
         /// supplied context. Lazily rents the inner map from
-        /// <see cref="DxPools.ContextSlotDicts"/> on first use.
+        /// <see cref="DxPools.InstanceIdDicts"/> on first use.
         /// </summary>
         /// <param name="context">The <see cref="InstanceId"/> context key.</param>
         /// <returns>
@@ -395,19 +395,19 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// </returns>
         public BusSinkSlot GetOrAddSlot(InstanceId context)
         {
-            Dictionary<int, object> map = byContext;
+            Dictionary<InstanceId, object> map = byContext;
             if (map == null)
             {
-                map = DxPools.ContextSlotDicts.Rent();
+                map = DxPools.InstanceIdDicts.Rent();
                 byContext = map;
             }
-            if (map.TryGetValue(context.Id, out object boxed))
+            if (map.TryGetValue(context, out object boxed))
             {
                 DebugAssertSlot(boxed);
                 return DxUnsafe.As<BusSinkSlot>(boxed);
             }
             BusSinkSlot slot = new BusSinkSlot();
-            map[context.Id] = slot;
+            map[context] = slot;
             return slot;
         }
 
@@ -432,12 +432,12 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// </remarks>
         public bool RemoveContext(InstanceId context)
         {
-            Dictionary<int, object> map = byContext;
+            Dictionary<InstanceId, object> map = byContext;
             if (map == null)
             {
                 return false;
             }
-            return map.Remove(context.Id);
+            return map.Remove(context);
         }
 
         /// <summary>
@@ -454,7 +454,7 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// </summary>
         public void Clear()
         {
-            Dictionary<int, object> map = byContext;
+            Dictionary<InstanceId, object> map = byContext;
             if (map != null)
             {
                 foreach (object boxed in map.Values)
@@ -477,7 +477,7 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// and calls <see cref="BusSinkSlot.Reset"/> on each. Inner pooled
         /// state must be drained BEFORE the outer map is recycled. Then returns
         /// <see cref="byContext"/> to the
-        /// shared <see cref="DxPools.ContextSlotDicts"/> pool and nulls the
+        /// shared <see cref="DxPools.InstanceIdDicts"/> pool and nulls the
         /// field. Bumps <see cref="version"/> as the LAST step so any captured
         /// dispatch closure that observed the prior version detects
         /// invalidation. <see cref="lastTouchTicks"/> is intentionally
@@ -485,7 +485,7 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// </summary>
         public void Reset()
         {
-            Dictionary<int, object> map = byContext;
+            Dictionary<InstanceId, object> map = byContext;
             if (map != null)
             {
                 foreach (object boxed in map.Values)
@@ -498,7 +498,7 @@ namespace DxMessaging.Core.MessageBus.Internal
                     DxUnsafe.As<BusSinkSlot>(boxed).Reset();
                 }
                 // Pool's onRecycled callback clears the dictionary before re-use.
-                DxPools.ContextSlotDicts.Return(map);
+                DxPools.InstanceIdDicts.Return(map);
                 byContext = null;
             }
             liveCount = 0;

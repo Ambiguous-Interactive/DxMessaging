@@ -6,10 +6,8 @@ namespace DxMessaging.Tests.Editor.Contract
     using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Internal;
-    using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.MessageBus.Internal;
     using DxMessaging.Core.Messages;
-    using DxMessaging.Core.Pooling;
     using NUnit.Framework;
 
     /// <summary>
@@ -262,7 +260,7 @@ namespace DxMessaging.Tests.Editor.Contract
         /// pins that every inner cache held by
         /// <see cref="TypedSlot{T}.byContext"/> is also drained on
         /// <see cref="TypedSlot{T}.Reset"/>. Walks both axes of the flat
-        /// 3-level <c>context ID -&gt; (priority -&gt; IHandlerActionCache)</c>
+        /// 3-level <c>InstanceId -&gt; (priority -&gt; IHandlerActionCache)</c>
         /// shape used by typed storage.
         /// </summary>
         [Test]
@@ -271,14 +269,14 @@ namespace DxMessaging.Tests.Editor.Contract
             TypedSlot<ProbeMessage> slot = new TypedSlot<ProbeMessage>(requiresContext: true);
             StubCache a = new StubCache();
             StubCache b = new StubCache();
-            slot.byContext = new Dictionary<int, Dictionary<int, IHandlerActionCache>>
+            slot.byContext = new Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>
             {
                 {
-                    1,
+                    new InstanceId(1),
                     new Dictionary<int, IHandlerActionCache> { { 0, a } }
                 },
                 {
-                    2,
+                    new InstanceId(2),
                     new Dictionary<int, IHandlerActionCache> { { 5, b } }
                 },
             };
@@ -328,10 +326,10 @@ namespace DxMessaging.Tests.Editor.Contract
             TypedSlot<ProbeMessage> slot = new TypedSlot<ProbeMessage>(requiresContext: true);
             OrderingProbeCache probe = new OrderingProbeCache();
             probe.ProbeOuterCount = () => slot.byContext.Count;
-            slot.byContext = new Dictionary<int, Dictionary<int, IHandlerActionCache>>
+            slot.byContext = new Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>
             {
                 {
-                    1,
+                    new InstanceId(1),
                     new Dictionary<int, IHandlerActionCache> { { 0, probe } }
                 },
             };
@@ -714,7 +712,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
         /// <summary>
         /// Pins that <see cref="TypedSlot{T}.byContext"/> is the flat
-        /// 3-level <c>Dictionary&lt;int, Dictionary&lt;int, IHandlerActionCache&gt;&gt;</c>
+        /// 3-level <c>Dictionary&lt;InstanceId, Dictionary&lt;int, IHandlerActionCache&gt;&gt;</c>
         /// shape used by typed storage.
         /// </summary>
         [Test]
@@ -725,95 +723,15 @@ namespace DxMessaging.Tests.Editor.Contract
                 BindingFlags.Public | BindingFlags.Instance
             );
             Assert.IsNotNull(field, "TypedSlot<T>.byContext field must exist.");
-            System.Type expected = typeof(Dictionary<int, Dictionary<int, IHandlerActionCache>>);
+            System.Type expected = typeof(Dictionary<
+                InstanceId,
+                Dictionary<int, IHandlerActionCache>
+            >);
             Assert.AreEqual(
                 expected,
                 field.FieldType,
                 "TypedSlot<T>.byContext must be the flat 3-level shape "
-                    + "Dictionary<int, Dictionary<int, IHandlerActionCache>>."
-            );
-        }
-
-        [Test]
-        public void ContextRoutingStorageUsesPrimitiveIntegerKeys()
-        {
-            FieldInfo contextSinks = typeof(MessageBus).GetField(
-                "_contextSinks",
-                BindingFlags.NonPublic | BindingFlags.Instance
-            );
-            Assert.IsNotNull(contextSinks, "MessageBus._contextSinks field must exist.");
-            System.Type cacheType = contextSinks.FieldType.GetElementType();
-            Assert.IsNotNull(cacheType, "MessageBus._contextSinks must remain an array.");
-            System.Type contextMapType = cacheType.GetGenericArguments()[0];
-            AssertDictionaryKeyIsInt(contextMapType, "MessageBus._contextSinks");
-
-            FieldInfo slotMap = typeof(BusContextSlot).GetField(
-                nameof(BusContextSlot.byContext),
-                BindingFlags.Public | BindingFlags.Instance
-            );
-            Assert.IsNotNull(slotMap, "BusContextSlot.byContext field must exist.");
-            Assert.AreEqual(
-                typeof(Dictionary<int, object>),
-                slotMap.FieldType,
-                "BusContextSlot.byContext must use primitive context IDs."
-            );
-
-            Assert.AreEqual(
-                typeof(CollectionPool<Dictionary<int, object>>),
-                typeof(DxPools)
-                    .GetField(
-                        nameof(DxPools.ContextSlotDicts),
-                        BindingFlags.NonPublic | BindingFlags.Static
-                    )
-                    ?.FieldType,
-                "The shared bus-context dictionary pool must use primitive context IDs."
-            );
-            Assert.AreEqual(
-                typeof(CollectionPool<List<int>>),
-                typeof(DxPools)
-                    .GetField(
-                        nameof(DxPools.ContextIdLists),
-                        BindingFlags.NonPublic | BindingFlags.Static
-                    )
-                    ?.FieldType,
-                "Dirty context candidates must not retain InstanceId wrappers."
-            );
-            Assert.AreEqual(
-                typeof(CollectionPool<HashSet<int>>),
-                typeof(DxPools)
-                    .GetField(
-                        nameof(DxPools.ContextIdSets),
-                        BindingFlags.NonPublic | BindingFlags.Static
-                    )
-                    ?.FieldType,
-                "Dirty context de-duplication must use primitive context IDs."
-            );
-            Assert.AreEqual(
-                typeof(CollectionPool<Dictionary<int, Dictionary<int, IHandlerActionCache>>>),
-                typeof(DxPools)
-                    .GetField(
-                        nameof(DxPools.TypedHandlerContextDicts),
-                        BindingFlags.NonPublic | BindingFlags.Static
-                    )
-                    ?.FieldType,
-                "Typed-handler context storage must use primitive context IDs."
-            );
-        }
-
-        private static void AssertDictionaryKeyIsInt(System.Type dictionaryType, string owner)
-        {
-            Assert.IsTrue(
-                dictionaryType.IsGenericType
-                    && dictionaryType.GetGenericTypeDefinition() == typeof(Dictionary<,>),
-                "{0} must hold a Dictionary<TKey, TValue>. Actual={1}.",
-                owner,
-                dictionaryType
-            );
-            Assert.AreEqual(
-                typeof(int),
-                dictionaryType.GetGenericArguments()[0],
-                "{0} must key its context map by primitive int.",
-                owner
+                    + "Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>."
             );
         }
 
@@ -836,14 +754,14 @@ namespace DxMessaging.Tests.Editor.Contract
         public void TypedSlotResetNullsOutByContext()
         {
             TypedSlot<ProbeMessage> slot = new TypedSlot<ProbeMessage>(requiresContext: true);
-            slot.byContext = new Dictionary<int, Dictionary<int, IHandlerActionCache>>
+            slot.byContext = new Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>>
             {
                 {
-                    1,
+                    new InstanceId(1),
                     new Dictionary<int, IHandlerActionCache> { { 0, new StubCache() } }
                 },
                 {
-                    2,
+                    new InstanceId(2),
                     new Dictionary<int, IHandlerActionCache> { { 0, new StubCache() } }
                 },
             };

@@ -40,11 +40,6 @@ Reclamation targets two kinds of state:
   pool. Pools cap their retained entries with either LRU or bounded LIFO
   retention.
 
-Context-bound maps and their dirty-candidate pools store the primitive
-`InstanceId.Id` value. Public callbacks, registration records, and diagnostic
-history keep the complete `InstanceId`, including its Unity object reference,
-until their normal lifecycle releases it.
-
 Active registrations are never reclaimed. A handler that has not been
 deregistered, an interceptor that is still wired up, or a typed-handler slot
 with at least one live registration is treated as live state and left alone,

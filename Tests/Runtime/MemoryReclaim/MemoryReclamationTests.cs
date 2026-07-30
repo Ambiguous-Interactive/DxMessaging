@@ -811,106 +811,6 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        [TestCase(MessageKind.Targeted)]
-        [TestCase(MessageKind.Broadcast)]
-        public void ExtremeContextIdsRemainIsolatedAcrossTrimAndReplacement(MessageKind kind)
-        {
-            MessageScenario scenario =
-                kind == MessageKind.Targeted
-                    ? MessageScenario.Targeted()
-                    : MessageScenario.Broadcast();
-            MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
-            using IDisposable cleanup = ForceTrimCleanup(bus);
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: scenario.DisplayName
-            );
-            MessageHandler handler = CreateActiveHandler(bus);
-            InstanceId minimum = new InstanceId(int.MinValue);
-            InstanceId zero = new InstanceId(0);
-            InstanceId maximum = new InstanceId(int.MaxValue);
-            int staleMinimumCalls = 0;
-            int replacementMinimumCalls = 0;
-            int zeroCalls = 0;
-            int maximumCalls = 0;
-            Action staleMinimumDeregister = null;
-            Action replacementMinimumDeregister = null;
-            Action zeroDeregister = null;
-            Action maximumDeregister = null;
-
-            try
-            {
-                staleMinimumDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    minimum,
-                    () => staleMinimumCalls++
-                );
-                zeroDeregister = RegisterDirect(scenario, handler, bus, zero, () => zeroCalls++);
-                maximumDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    maximum,
-                    () => maximumCalls++
-                );
-
-                EmitFirst(scenario, bus, minimum);
-                EmitFirst(scenario, bus, zero);
-                EmitFirst(scenario, bus, maximum);
-
-                Assert.AreEqual(1, staleMinimumCalls, "[{0}] minimum ID route.", kind);
-                Assert.AreEqual(1, zeroCalls, "[{0}] zero ID route.", kind);
-                Assert.AreEqual(1, maximumCalls, "[{0}] maximum ID route.", kind);
-
-                staleMinimumDeregister();
-                IMessageBus.TrimResult trimResult = bus.Trim(force: true);
-                Assert.GreaterOrEqual(
-                    trimResult.TargetSlotsEvicted,
-                    1,
-                    "[{0}] trim must reclaim the selectively deregistered minimum-ID route.",
-                    kind
-                );
-
-                replacementMinimumDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    minimum,
-                    () => replacementMinimumCalls++
-                );
-
-                staleMinimumDeregister();
-                EmitFirst(scenario, bus, minimum);
-                EmitFirst(scenario, bus, zero);
-                EmitFirst(scenario, bus, maximum);
-
-                Assert.AreEqual(
-                    1,
-                    staleMinimumCalls,
-                    "[{0}] the stale minimum-ID registration must stay removed.",
-                    kind
-                );
-                Assert.AreEqual(
-                    1,
-                    replacementMinimumCalls,
-                    "[{0}] stale deregistration must not remove the replacement minimum-ID route.",
-                    kind
-                );
-                Assert.AreEqual(2, zeroCalls, "[{0}] zero-ID route must remain live.", kind);
-                Assert.AreEqual(2, maximumCalls, "[{0}] maximum-ID route must remain live.", kind);
-            }
-            finally
-            {
-                staleMinimumDeregister?.Invoke();
-                replacementMinimumDeregister?.Invoke();
-                zeroDeregister?.Invoke();
-                maximumDeregister?.Invoke();
-                _ = bus.Trim(force: true);
-            }
-        }
-
         [Test]
         public void OversizedDirtyTargetAndContextPoolsDropHighWaterCollections()
         {
@@ -958,12 +858,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 );
                 Assert.AreEqual(
                     0,
-                    oversizedPools.ContextIdLists.Cached,
+                    oversizedPools.InstanceIdLists.Cached,
                     "Dirty-target lists that exceeded the pool cap must be dropped instead of cached."
                 );
                 Assert.AreEqual(
                     0,
-                    oversizedPools.ContextIdSets.Cached,
+                    oversizedPools.InstanceIdSets.Cached,
                     "Dirty-target sets that exceeded the pool cap must be dropped instead of cached."
                 );
                 Assert.AreEqual(
@@ -988,12 +888,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 CollectionPoolDiagnostics smallContextPool =
                     bus.GetContextDictPoolDiagnosticsForTesting();
                 Assert.Greater(
-                    smallPools.ContextIdLists.Cached,
+                    smallPools.InstanceIdLists.Cached,
                     0,
                     "Small dirty-target lists should still return to the pool."
                 );
                 Assert.Greater(
-                    smallPools.ContextIdSets.Cached,
+                    smallPools.InstanceIdSets.Cached,
                     0,
                     "Small dirty-target sets should still return to the pool."
                 );

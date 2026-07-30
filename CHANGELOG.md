@@ -29,16 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Improve targeted and source-bound dispatch throughput by indexing internal
-  context routing and reclamation state with primitive instance IDs while
-  preserving the public `InstanceId` API and diagnostic object identity.
-  ([#289](https://github.com/Ambiguous-Interactive/DxMessaging/issues/289))
 - The `MessagingComponent` inspector's matched and potential-match emission labels
   now use the design system's colors instead of raw green and yellow, so they stay
   readable on the light editor skin.
 
 ### Fixed
 
+- Pooled collection rentals now return to their pool when attaching them to a
+  registration or reclamation owner throws, instead of remaining stranded
+  after a failed ownership transfer.
 - Documentation-site pages load faster. Every page was downloading the Mermaid
   renderer (about 950 KB compressed) whether or not it had a diagram, and pages
   that did have one rendered it twice. Diagrams now go through the site theme's own

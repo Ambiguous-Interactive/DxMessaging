@@ -186,10 +186,6 @@ shared `DxPools` pools and the bus-owned context-dictionary pool reapply the
 new caps on the next reclaim opportunity. Live registrations are not
 disturbed.
 
-The context-dictionary, dirty-context-list, and dirty-context-set pools store
-primitive `InstanceId.Id` values. Changing their caps does not change public
-`InstanceId` values or the object references retained by diagnostics.
-
 The `RuntimeInitializeOnLoadMethod(SubsystemRegistration)` hook clears
 `SettingsChanged` subscribers when a new domain loads, preventing stale
 subscriptions from previous Play mode sessions from firing.

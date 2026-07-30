@@ -2267,12 +2267,12 @@ namespace DxMessaging.Core
         )
             where T : IMessage
         {
-            Dictionary<int, Dictionary<int, IHandlerActionCache>> byContext =
+            Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> byContext =
                 typedHandler.GetContextHandlers(slotIndex);
             if (
                 byContext != null
                 && byContext.TryGetValue(
-                    context.Id,
+                    context,
                     out Dictionary<int, IHandlerActionCache> byPriority
                 )
             )
@@ -2968,10 +2968,10 @@ namespace DxMessaging.Core
 
                 // Context path: context -> (priority -> cache). Null on the scalar path.
                 private readonly Dictionary<
-                    int,
+                    InstanceId,
                     Dictionary<int, IHandlerActionCache>
                 > _handlersByContext;
-                private readonly int _contextId;
+                private readonly InstanceId _context;
 
                 private readonly bool _keyed;
                 private readonly object _originalHandler;
@@ -2996,7 +2996,7 @@ namespace DxMessaging.Core
                     _slotVersion = slotVersion;
                     _handlers = handlers;
                     _handlersByContext = null;
-                    _contextId = default;
+                    _context = default;
                     _keyed = false;
                     _originalHandler = originalHandler;
                     _priority = priority;
@@ -3009,7 +3009,7 @@ namespace DxMessaging.Core
                     long resetGeneration,
                     TypedSlot<T> slot,
                     long slotVersion,
-                    Dictionary<int, Dictionary<int, IHandlerActionCache>> handlersByContext,
+                    Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> handlersByContext,
                     InstanceId context,
                     object originalHandler,
                     int priority,
@@ -3022,7 +3022,7 @@ namespace DxMessaging.Core
                     _slotVersion = slotVersion;
                     _handlers = null;
                     _handlersByContext = handlersByContext;
-                    _contextId = context.Id;
+                    _context = context;
                     _keyed = true;
                     _originalHandler = originalHandler;
                     _priority = priority;
@@ -3051,7 +3051,7 @@ namespace DxMessaging.Core
                     {
                         if (
                             !_handlersByContext.TryGetValue(
-                                _contextId,
+                                _context,
                                 out Dictionary<int, IHandlerActionCache> sortedHandlers
                             )
                         )
@@ -3213,7 +3213,7 @@ namespace DxMessaging.Core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal Dictionary<
-                int,
+                InstanceId,
                 Dictionary<int, IHandlerActionCache>
             > GetOrCreateContextHandlers(int index)
             {
@@ -3223,9 +3223,10 @@ namespace DxMessaging.Core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal Dictionary<int, Dictionary<int, IHandlerActionCache>> GetContextHandlers(
-                int index
-            )
+            internal Dictionary<
+                InstanceId,
+                Dictionary<int, IHandlerActionCache>
+            > GetContextHandlers(int index)
             {
                 return _slots[index]?.byContext;
             }
@@ -3266,7 +3267,7 @@ namespace DxMessaging.Core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private TypedSlot<T> FindContextSlot(
-                Dictionary<int, Dictionary<int, IHandlerActionCache>> handlersByContext
+                Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> handlersByContext
             )
             {
                 for (int i = 0; i < _slots.Length; ++i)
@@ -4900,7 +4901,7 @@ namespace DxMessaging.Core
             // HandlerActionCache.Entry.flatInvoker.
             private TypedHandlerDeregistrationState AddHandlerPreservingPriorityKey<TU>(
                 InstanceId context,
-                Dictionary<int, Dictionary<int, IHandlerActionCache>> handlersByContext,
+                Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> handlersByContext,
                 TU originalHandler,
                 TU augmentedHandler,
                 MessageBusRegistration deregistration,
@@ -4911,14 +4912,14 @@ namespace DxMessaging.Core
             {
                 if (
                     !handlersByContext.TryGetValue(
-                        context.Id,
+                        context,
                         out Dictionary<int, IHandlerActionCache> sortedHandlers
                     )
                 )
                 {
                     sortedHandlers = DxPools.TypedHandlerPriorityDicts.RentAndAdd(
                         handlersByContext,
-                        context.Id
+                        context
                     );
                 }
 
@@ -4991,7 +4992,10 @@ namespace DxMessaging.Core
 
             private static Action AddHandlerPreservingPriorityKey<TU>(
                 InstanceId context,
-                ref Dictionary<int, Dictionary<int, HandlerActionCache<TU>>> handlersByContext,
+                ref Dictionary<
+                    InstanceId,
+                    Dictionary<int, HandlerActionCache<TU>>
+                > handlersByContext,
                 TU originalHandler,
                 TU augmentedHandler,
                 Action deregistration,
@@ -5000,17 +5004,17 @@ namespace DxMessaging.Core
             )
             {
                 handlersByContext ??=
-                    new Dictionary<int, Dictionary<int, HandlerActionCache<TU>>>();
+                    new Dictionary<InstanceId, Dictionary<int, HandlerActionCache<TU>>>();
 
                 if (
                     !handlersByContext.TryGetValue(
-                        context.Id,
+                        context,
                         out Dictionary<int, HandlerActionCache<TU>> sortedHandlers
                     )
                 )
                 {
                     sortedHandlers = new Dictionary<int, HandlerActionCache<TU>>();
-                    handlersByContext[context.Id] = sortedHandlers;
+                    handlersByContext[context] = sortedHandlers;
                 }
 
                 if (!sortedHandlers.TryGetValue(priority, out HandlerActionCache<TU> cache))
@@ -5037,12 +5041,14 @@ namespace DxMessaging.Core
                 cache.entries[originalHandler] = entry;
                 cache.version++;
 
-                Dictionary<int, Dictionary<int, HandlerActionCache<TU>>> localHandlersByContext =
-                    handlersByContext;
+                Dictionary<
+                    InstanceId,
+                    Dictionary<int, HandlerActionCache<TU>>
+                > localHandlersByContext = handlersByContext;
 
                 return () =>
                 {
-                    if (!localHandlersByContext.TryGetValue(context.Id, out sortedHandlers))
+                    if (!localHandlersByContext.TryGetValue(context, out sortedHandlers))
                     {
                         return;
                     }
@@ -5100,7 +5106,7 @@ namespace DxMessaging.Core
 
             private static void RunFastHandlersWithContext<TMessage>(
                 ref InstanceId context,
-                Dictionary<int, Dictionary<int, IHandlerActionCache>> fastHandlersByContext,
+                Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> fastHandlersByContext,
                 ref TMessage message,
                 int priority,
                 long emissionId
@@ -5110,7 +5116,7 @@ namespace DxMessaging.Core
                 if (
                     fastHandlersByContext is not { Count: > 0 }
                     || !fastHandlersByContext.TryGetValue(
-                        context.Id,
+                        context,
                         out Dictionary<int, IHandlerActionCache> cache
                     )
                 )
@@ -5150,7 +5156,7 @@ namespace DxMessaging.Core
             private static void RunFastHandlersWithContext<TMessage>(
                 ref InstanceId context,
                 Dictionary<
-                    int,
+                    InstanceId,
                     Dictionary<int, HandlerActionCache<FastHandler<T>>>
                 > fastHandlersByContext,
                 ref TMessage message,
@@ -5162,7 +5168,7 @@ namespace DxMessaging.Core
                 if (
                     fastHandlersByContext is not { Count: > 0 }
                     || !fastHandlersByContext.TryGetValue(
-                        context.Id,
+                        context,
                         out Dictionary<int, HandlerActionCache<FastHandler<T>>> cache
                     )
                 )
@@ -5794,7 +5800,7 @@ namespace DxMessaging.Core
 
             private static void RunHandlersWithContext<TMessage>(
                 ref InstanceId context,
-                Dictionary<int, Dictionary<int, IHandlerActionCache>> handlersByContext,
+                Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> handlersByContext,
                 ref TMessage message,
                 int priority,
                 long emissionId
@@ -5804,7 +5810,7 @@ namespace DxMessaging.Core
                 if (
                     handlersByContext is not { Count: > 0 }
                     || !handlersByContext.TryGetValue(
-                        context.Id,
+                        context,
                         out Dictionary<int, IHandlerActionCache> cache
                     )
                 )
@@ -5817,7 +5823,10 @@ namespace DxMessaging.Core
 
             private static void RunHandlersWithContext<TMessage>(
                 ref InstanceId context,
-                Dictionary<int, Dictionary<int, HandlerActionCache<Action<T>>>> handlersByContext,
+                Dictionary<
+                    InstanceId,
+                    Dictionary<int, HandlerActionCache<Action<T>>>
+                > handlersByContext,
                 ref TMessage message,
                 int priority,
                 long emissionId
@@ -5827,7 +5836,7 @@ namespace DxMessaging.Core
                 if (
                     handlersByContext is not { Count: > 0 }
                     || !handlersByContext.TryGetValue(
-                        context.Id,
+                        context,
                         out Dictionary<int, HandlerActionCache<Action<T>>> cache
                     )
                 )
@@ -6424,7 +6433,10 @@ namespace DxMessaging.Core
 
             private static Action AddHandler<TU>(
                 InstanceId context,
-                ref Dictionary<int, Dictionary<int, HandlerActionCache<TU>>> handlersByContext,
+                ref Dictionary<
+                    InstanceId,
+                    Dictionary<int, HandlerActionCache<TU>>
+                > handlersByContext,
                 TU originalHandler,
                 TU augmentedHandler,
                 Action deregistration,
@@ -6433,17 +6445,17 @@ namespace DxMessaging.Core
             )
             {
                 handlersByContext ??=
-                    new Dictionary<int, Dictionary<int, HandlerActionCache<TU>>>();
+                    new Dictionary<InstanceId, Dictionary<int, HandlerActionCache<TU>>>();
 
                 if (
                     !handlersByContext.TryGetValue(
-                        context.Id,
+                        context,
                         out Dictionary<int, HandlerActionCache<TU>> sortedHandlers
                     )
                 )
                 {
                     sortedHandlers = new Dictionary<int, HandlerActionCache<TU>>();
-                    handlersByContext[context.Id] = sortedHandlers;
+                    handlersByContext[context] = sortedHandlers;
                 }
 
                 if (!sortedHandlers.TryGetValue(priority, out HandlerActionCache<TU> cache))
@@ -6470,12 +6482,14 @@ namespace DxMessaging.Core
                 cache.entries[originalHandler] = entry;
                 cache.version++;
 
-                Dictionary<int, Dictionary<int, HandlerActionCache<TU>>> localHandlersByContext =
-                    handlersByContext;
+                Dictionary<
+                    InstanceId,
+                    Dictionary<int, HandlerActionCache<TU>>
+                > localHandlersByContext = handlersByContext;
 
                 return () =>
                 {
-                    if (!localHandlersByContext.TryGetValue(context.Id, out sortedHandlers))
+                    if (!localHandlersByContext.TryGetValue(context, out sortedHandlers))
                     {
                         return;
                     }
@@ -6510,7 +6524,7 @@ namespace DxMessaging.Core
                             _ = sortedHandlers.Remove(priority);
                             if (sortedHandlers.Count == 0)
                             {
-                                localHandlersByContext.Remove(context.Id);
+                                localHandlersByContext.Remove(context);
                             }
                         }
 

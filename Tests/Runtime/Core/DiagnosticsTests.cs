@@ -216,7 +216,6 @@ namespace DxMessaging.Tests.Runtime.Core
         )
         {
             MessageBus bus = new() { DiagnosticsMode = true };
-            bus.Log.Enabled = true;
             GameObject host = new(testName + "_" + scenario.DisplayName);
             _spawned.Add(host);
             MessageHandler handler = new(host, bus) { active = true };
@@ -263,62 +262,6 @@ namespace DxMessaging.Tests.Runtime.Core
                     1,
                     emissions.Count,
                     "[{0}] Diagnostics emission history must record the delivered Action handler.",
-                    scenario.DisplayName
-                );
-                CyclicBuffer<MessageEmissionData> busEmissions = GetEmissionBuffer(bus);
-                Assert.AreEqual(
-                    1,
-                    busEmissions.Count,
-                    "[{0}] Bus diagnostics must record the context-bearing emission.",
-                    scenario.DisplayName
-                );
-                InstanceId? expectedContext =
-                    scenario.Kind == MessageKind.Untargeted ? (InstanceId?)null : handler.owner;
-                Assert.AreEqual(
-                    expectedContext,
-                    busEmissions[0].context,
-                    "[{0}] Bus diagnostics must preserve the original context wrapper.",
-                    scenario.DisplayName
-                );
-                Assert.AreEqual(
-                    expectedContext,
-                    emissions[0].context,
-                    "[{0}] Token diagnostics must preserve the original context wrapper.",
-                    scenario.DisplayName
-                );
-                if (expectedContext.HasValue)
-                {
-                    Assert.AreSame(
-                        host,
-                        busEmissions[0].context.Value.Object,
-                        "[{0}] Bus diagnostics must retain the context object reference.",
-                        scenario.DisplayName
-                    );
-                    Assert.AreSame(
-                        host,
-                        emissions[0].context.Value.Object,
-                        "[{0}] Token diagnostics must retain the context object reference.",
-                        scenario.DisplayName
-                    );
-                }
-
-                Assert.AreEqual(
-                    1,
-                    bus.Log.Registrations.Count,
-                    "[{0}] Setup must produce one registration-log entry.",
-                    scenario.DisplayName
-                );
-                Assert.AreSame(
-                    host,
-                    bus.Log.Registrations[0].id.Object,
-                    "[{0}] Registration diagnostics must retain the owner object, not reconstruct "
-                        + "an InstanceId from its integer key.",
-                    scenario.DisplayName
-                );
-                StringAssert.Contains(
-                    host.name,
-                    bus.Log.Registrations[0].id.ToString(),
-                    "[{0}] Registration diagnostics must retain the owner name.",
                     scenario.DisplayName
                 );
             }
