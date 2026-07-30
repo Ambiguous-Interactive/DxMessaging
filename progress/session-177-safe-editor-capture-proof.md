@@ -205,8 +205,10 @@ budget. A table-driven consolidation in
 contracts while removing repeated assertion scaffolding and reduces the total
 to 17,485 after synchronizing the three newer PR-head commits. The focused
 aggregate-workflow suite passes all 17 data-driven tests, and the
-heartbeat probe passes all 32 assertions. The final full Node and repository
-validation reruns remain pending after these changes. The full merged
+heartbeat probe passes all 32 assertions. The final full Node suite passes 406
+tests with zero failures. `npm run validate:all`, strict documentation build,
+Actionlint, Yamllint, PowerShell parsing, and `git diff --check` also pass. The
+full merged
 `WallstopStudios.DxMessaging.Tests.Editor` assembly then passed 549 tests with
 zero failures in 12.3873838 seconds through `DxMcpTestRunner`; the result is
 retained at
