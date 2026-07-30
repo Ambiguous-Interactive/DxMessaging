@@ -156,6 +156,52 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void BrandingPrototypeAssemblyAndWindowsAreNotLoaded()
+        {
+            const string brandingAssemblyName = "WallstopStudios.DxMessaging.Editor.Branding";
+            const string brandingNamespacePrefix = "WallstopStudios.DxMessaging.Editor.Branding.";
+            List<string> loadedPrototypeArtifacts = new();
+
+            foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (
+                    string.Equals(
+                        assembly.GetName().Name,
+                        brandingAssemblyName,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    loadedPrototypeArtifacts.Add("assembly: " + assembly.FullName);
+                }
+            }
+
+            foreach (Type windowType in TypeCache.GetTypesDerivedFrom<EditorWindow>())
+            {
+                if (
+                    windowType.FullName != null
+                    && windowType.FullName.StartsWith(
+                        brandingNamespacePrefix,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    loadedPrototypeArtifacts.Add("window: " + windowType.AssemblyQualifiedName);
+                }
+            }
+
+            Assert.That(
+                loadedPrototypeArtifacts,
+                Is.Empty,
+                "The design-system branding prototype is imported into the host project. "
+                    + "Remove its design-system/production/unity-package content so only the "
+                    + "canonical Tools/Wallstop Studios/DxMessaging windows remain. Loaded "
+                    + "prototype artifacts: "
+                    + string.Join(", ", loadedPrototypeArtifacts)
+            );
+        }
+
+        [Test]
         public void CreateEmptyStateBuildsContainerWithTitleAndBody()
         {
             VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
