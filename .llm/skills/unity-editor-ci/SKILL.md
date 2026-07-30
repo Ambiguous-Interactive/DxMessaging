@@ -1,6 +1,6 @@
 ---
 name: unity-editor-ci
-description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, the canonical version list in .github/unity-versions.json enforced by npm run validate:unity-versions, the organization build-lock and timeout invariants that protect the two-seat Unity serial, the ensure-editor.ps1 standalone-CLI bootstrap with its PATH refresh and module quarantine/reinstall repair, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only or license or editor-provisioning failure, or editing a Unity workflow."
+description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow."
 metadata:
   category: "unity"
   tags: "unity, ci, matrix, il2cpp, lts, game-ci"
@@ -50,17 +50,17 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
   `unity-benchmarks.yml`, and `perf-numbers.yml`). A native
   `concurrency.group: wallstop-organization-builds` is repository-scoped and is FORBIDDEN.
 - Timeout invariant: every step before and including the cleanup gate has an explicit positive
-  timeout. The acquire step cap (`305`) exceeds its internal wait (`300`), provisioning is
-  capped at `180`, licensed work is capped at `120` to `180`, and cleanup uses `5`/`2`/`5`/`2`
+  timeout. Editor validation is capped at `10`, the acquire step cap (`305`) exceeds its
+  internal wait (`300`), licensed work is capped at `120` to `180`, and cleanup uses `5`/`2`/`5`/`2`
   for return/classify/release/gate. The `900`-minute job cap must retain at least 60 minutes
   beyond the sum of those enforced step caps.
-- Acquire the lock before editor provisioning and release it with `if: always()`. Provisioning
-  mutates the shared tool-cache root, so it belongs inside the same lock window as licensed
-  work.
+- Editors and modules are installed manually by a runner administrator under
+  `RUNNER_TOOL_CACHE/u6-v3`. Workflows MUST NOT install, repair, uninstall, or quarantine
+  editors. Validate with `-CiManagedOnly -RequireHealthyExisting` before acquiring the lock.
 
 ### The compute-unity-assemblies is-empty gate
 
-- The compute step carries `id: compute`. Provisioning and the Unity work step
+- The compute step carries `id: compute`. Editor validation and the Unity work step
   may skip an empty assembly selection, but lock acquisition remains
   unconditional because each static matrix is structurally non-empty and the
   analyzer must be able to prove every acquisition.
@@ -68,11 +68,12 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
   `is-empty == 'true'` or a non-skipped Unity run step, and receives
   `expected-empty: ${{ steps.compute.outputs.is-empty }}`. Never gate verify on is-empty alone.
 
-### Editor provisioning (`scripts/unity/ensure-editor.ps1`)
+### Editor validation and manual maintenance (`scripts/unity/ensure-editor.ps1`)
 
-- CI must pass `-ProvisioningProfile` explicitly: `EditorOnly` for editmode, playmode,
-  benchmarks, and release checks; `StandaloneWindowsIl2Cpp` for standalone (installs only
-  `windows-il2cpp`); `Android` and `Full` for the heavy module sets.
+- CI must pass `-CiManagedOnly -RequireHealthyExisting` plus `-ProvisioningProfile`
+  explicitly: `EditorOnly` for editmode, playmode, benchmarks, and release checks;
+  `StandaloneWindowsIl2Cpp` for standalone (verifies `windows-il2cpp`); `Android` and `Full`
+  remain manual-maintenance profiles.
 - `unity install-path` with NO arguments is a GETTER. The SET form uses a flag (`-s`, then
   `--set` as fallback) and is best-effort only; discovery always relies on the getter.
 - The installer only writes the User-scope registry PATH, so the session PATH must be
@@ -95,11 +96,11 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
 - Unity 2021.3, 2022.3, and 6000.x need BOTH the VC++ 2010 SP1 x64 Redistributable
   (`MSVCP100.dll`, `MSVCR100.dll`) and the VC++ 2015-2022 x64 Redistributable
   (`VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`, `MSVCP140.dll`). They are separate packages.
-- `scripts/unity/bootstrap-windows-runner.ps1` installs both, enables
+- A runner administrator runs `scripts/unity/bootstrap-windows-runner.ps1` directly on the
+  host to install both and enable
   `HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem!LongPathsEnabled = 1`, adds Defender
-  exclusions, and installs `pwsh` via winget. `.github/actions/assert-unity-host-prereqs` runs
-  it per job and exports `DXM_RUNNER_PREREQ_INSTALLED=1`; `runner-bootstrap.yml` is the
-  Actions-only recovery path. `DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1` forces `-DetectOnly`.
+  exclusions, and install `pwsh` via winget. `.github/actions/assert-unity-host-prereqs` and
+  `runner-bootstrap.yml` always use `-DetectOnly`; workflows never install host prerequisites.
 
 ### Caches, logs, and action versions
 

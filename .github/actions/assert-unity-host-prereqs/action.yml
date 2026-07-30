@@ -1,71 +1,34 @@
 name: Assert Unity host prerequisites
 description: >-
-  Ensure the self-hosted Windows runner has every host-OS prerequisite Unity
-  Editor needs to launch successfully (Microsoft Visual C++ 2015-2022 x64
-  Redistributable, Windows long-path support, Windows Defender exclusions,
-  PowerShell 7, UCRT). Root cause: Unity.exe failed at startup with
+  Verify the self-hosted Windows runner has every host-OS prerequisite Unity
+  Editor needs to launch successfully (Microsoft Visual C++ 2010 SP1 and
+  2015-2022 x64 Redistributables, Windows long-path support, Windows Defender
+  exclusions, PowerShell 7, UCRT). Root cause: Unity.exe failed at startup with
   -1073741515 / 0xC0000135 (STATUS_DLL_NOT_FOUND) on DAD-MACHINE because the
   VC++ redist was missing. GitHub-hosted windows-2022 ships the redist
   preinstalled; self-hosted runners do not. This action runs the bootstrap
-  script (auto-install by default) so every Unity job is preceded by a
-  resilient prereq check. Non-Windows callers (Linux/macOS) are no-ops --
-  the action emits a friendly ::notice:: skip and exits 0.
-
-  MODE RESOLUTION PRECEDENCE (highest wins):
-    1. Non-Windows host                            -> ::notice:: skip, exit 0
-    2. DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1         -> force DetectOnly
-    3. inputs.auto-install is NOT truthy           -> DetectOnly
-    4. inputs.auto-install IS truthy (default)     -> auto-install
-  Truthy normalization (F4): true/True/1/yes/y all accepted; anything else
-  (including blank) is treated as false. Operators relying on the env-var
-  override see the same precedence rule on the workflow path (see
-  .github/workflows/runner-bootstrap.yml).
-
-inputs:
-  auto-install:
-    description: >-
-      If truthy (default 'true'; accepts true/True/1/yes/y), bootstrap
-      auto-installs any missing prereq. Otherwise the script runs with
-      -DetectOnly and fails fast (exit 2) on any missing prereq. The env var
-      DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1 forces DetectOnly regardless of
-      this input (operator escape hatch).
-    required: false
-    default: "true"
+  script with -DetectOnly. It never installs or repairs host software because
+  GitHub Actions does not have administrator credentials. This composite is
+  Windows-only because its first guard uses Windows PowerShell 5.1.
 
 runs:
   using: composite
   steps:
     # F14: PowerShell 5.1 preflight FIRST. The rest of the composite uses
     # `shell: pwsh`; without this step a runner missing pwsh would fail
-    # with the cryptic "pwsh: command not found" before the bootstrap
-    # script gets a chance to install pwsh. Use Windows PowerShell 5.1
-    # (always built into Windows runners) so it executes regardless of
-    # whether pwsh exists. If pwsh is missing, point the operator at the
-    # runner-bootstrap.yml workflow_dispatch (which intentionally avoids
-    # `shell: pwsh` and CAN install pwsh; see that workflow's header for
-    # the chicken-and-egg rationale).
+    # with the cryptic "pwsh: command not found". Use Windows PowerShell 5.1
+    # (always built into Windows runners) so it can report the manual fix.
     - name: Verify PowerShell 7 (pwsh) is available
       shell: powershell
       run: |
-        # Skip the preflight on non-Windows hosts (e.g. Linux callers that
-        # consume this composite by accident): pwsh is the default shell
-        # there, Windows PowerShell 5.1 does not exist, and the platform
-        # gate inside the main step is what actually emits the skip notice.
-        if ([System.IO.Path]::DirectorySeparatorChar -ne '\') {
-            Write-Output "::notice::PS 5.1 preflight: skipping (not Windows: $env:RUNNER_OS)"
-            exit 0
-        }
         if ($null -eq (Get-Command pwsh -ErrorAction SilentlyContinue)) {
-            Write-Output ("::error title=pwsh missing on self-hosted runner::PowerShell 7 (pwsh) is not installed on runner '$env:RUNNER_NAME'. Dispatch " +
-            ".github/workflows/runner-bootstrap.yml from the Actions UI to install it (the workflow uses Windows PowerShell 5.1 so it works even on a host " +
-            "missing pwsh). See docs/runbooks/unity-runners-after-transfer.md for the PowerShell 7 prerequisite.")
+            Write-Output ("::error title=pwsh missing on self-hosted runner::PowerShell 7 (pwsh) is not installed on runner '$env:RUNNER_NAME'. " +
+            "A runner administrator must install it manually. See docs/runbooks/unity-runners-after-transfer.md for the PowerShell 7 prerequisite.")
             exit 1
         }
         Write-Output "pwsh found at: $((Get-Command pwsh).Source)"
-    - name: Probe + (optionally) install Unity host prerequisites
+    - name: Probe Unity host prerequisites
       shell: pwsh
-      env:
-        DXM_PREREQ_AUTO_INSTALL: ${{ inputs.auto-install }}
       run: |
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
@@ -83,27 +46,6 @@ runs:
             if ([string]::IsNullOrWhiteSpace($skipOs)) { $skipOs = 'non-Windows' }
             Write-Host "::notice::assert-unity-host-prereqs: skipping (not Windows: $skipOs)"
             exit 0
-        }
-
-        # Operator escape hatch: DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1 forces
-        # -DetectOnly regardless of the input. Use it when an operator wants
-        # to inspect prereq state from a Unity job without mutating the
-        # runner host. The input 'auto-install' is the workflow-author-facing
-        # control; the env var is the operator-facing override.
-        # F4: normalize the input via natural truthy parsing so 'True',
-        # ' true ', '1', 'yes', 'y' all map to auto-install; anything else
-        # falls back to DetectOnly. The string-equality compare against the
-        # literal 'true' would case-sensitively miss those equivalents.
-        $rawInput = '' + $env:DXM_PREREQ_AUTO_INSTALL
-        $normalizedInput = $rawInput.Trim().ToLowerInvariant()
-        $autoInstall = ($normalizedInput -eq 'true' -or $normalizedInput -eq '1' -or $normalizedInput -eq 'yes' -or $normalizedInput -eq 'y')
-        $detectOnly = $false
-        if ($env:DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP -eq '1') {
-            Write-Host "::notice::assert-unity-host-prereqs: DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1 -> forcing DetectOnly"
-            $detectOnly = $true
-        } elseif (-not $autoInstall) {
-            Write-Host "::notice::assert-unity-host-prereqs: auto-install='$rawInput' (normalized='$normalizedInput') -> DetectOnly"
-            $detectOnly = $true
         }
 
         # F6: resolve via $GITHUB_WORKSPACE directly. Workflows always do
@@ -128,12 +70,9 @@ runs:
             exit 1
         }
 
-        Write-Host "::notice::assert-unity-host-prereqs: invoking $scriptPath (DetectOnly=$detectOnly)"
-        if ($detectOnly) {
-            & $scriptPath -DetectOnly
-        } else {
-            & $scriptPath
-        }
+        $unityInstallRoot = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3'
+        Write-Host "::notice::assert-unity-host-prereqs: invoking $scriptPath (DetectOnly=True, UnityInstallRoot=$unityInstallRoot)"
+        & $scriptPath -DetectOnly -UnityInstallRoot $unityInstallRoot
         $code = $LASTEXITCODE
         $sw.Stop()
         $elapsed = [int]$sw.Elapsed.TotalSeconds
@@ -146,9 +85,9 @@ runs:
         # unset it falls back to the default "missing VC++ Redistributable
         # is the most likely cause". Without this producer, the consumer
         # branch is dead code and the annotation is misleading whenever the
-        # preflight just installed/confirmed VC++ but Unity still fails
+        # preflight just confirmed VC++ but Unity still fails
         # 0xC0000135 for a different reason. Set on ANY exit-0 from the
-        # bootstrap (install path OR DetectOnly: both mean "host is OK").
+        # bootstrap validation (exit 0 means "host is OK").
         # Skip when GITHUB_ENV is missing (local invocation outside Actions).
         if ($code -eq 0 -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_ENV)) {
             Add-Content -Path $env:GITHUB_ENV -Value "DXM_RUNNER_PREREQ_INSTALLED=1" -Encoding utf8

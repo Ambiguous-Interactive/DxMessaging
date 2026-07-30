@@ -190,25 +190,24 @@ a small set of OS-level prerequisites installed. GitHub-hosted `windows-2022`
 images ship with these preinstalled; freshly imaged self-hosted runners
 generally do not. This section is the operator-actionable fix for that gap.
 
-The repo ships a one-shot bootstrap script
+The repo ships a manual, administrator-run bootstrap script
 ([`scripts/unity/bootstrap-windows-runner.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/bootstrap-windows-runner.ps1))
-and a `workflow_dispatch`-only auto-recovery workflow
+and a `workflow_dispatch`-only audit workflow
 ([`.github/workflows/runner-bootstrap.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/runner-bootstrap.yml))
 plus a per-job preflight composite action
 ([`.github/actions/assert-unity-host-prereqs/action.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/actions/assert-unity-host-prereqs/action.yml))
-that wraps the script. Together they form a four-layer defense: a one-shot
-host installer, a per-job preflight that runs the same installer in
-detect-or-install mode, an `ensure-editor.ps1` short-circuit that fails fast
+that wraps the script in detect-only mode. Installation and repair always
+require an administrator working directly on the host. The workflow and
+per-job preflight only validate state. `ensure-editor.ps1` fails fast
 when Unity itself reports `0xC0000135` instead of looping on a futile editor
-reinstall, and the operator-facing workflow that recovers the host without
-RDP/SSH access. See
+reinstall. See
 [`.llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md)
 for the LLM/AI-agent reference.
 
 ### Symptom
 
-- A Unity job on a self-hosted Windows runner fails very early (typically
-  within the first ~6 minutes of `Provision Unity Editor`) with
+- A Unity job on a self-hosted Windows runner fails very early during
+  `Validate installed Unity Editor` with
   `Unity startup provisioning probe exit code: -1073741515 (0xC0000135 / STATUS_DLL_NOT_FOUND)`.
 - `ensure-editor.ps1`'s provisioning summary classifies the failure as
   "host OS/runtime prerequisite damage", not a package/test failure.
@@ -244,18 +243,9 @@ cannot help; `ensure-editor.ps1` short-circuits as soon as it sees
 annotation rather than burning ~13 minutes per matrix cell on a futile editor
 reinstall.
 
-> **WHICH PATH TO USE.** Two operator paths follow.
->
-> - **First-time fix (or any time the workflow does not yet live on the
->   default branch)**: jump to **Local recovery: bootstrap script on the
->   host** below. The script lives in the repo, so any local clone of any
->   branch works. No GitHub Actions involvement.
-> - **Every subsequent regression after the bootstrap workflow is on the
->   default branch**: use **Auto-recovery: workflow_dispatch** below.
->   `workflow_dispatch` triggers only register from the default branch, so
->   the **Run workflow** button (and `gh workflow run`) only become
->   available after this PR (or any future PR carrying
->   `.github/workflows/runner-bootstrap.yml`) is merged.
+> **REPAIR REQUIRES HOST ADMINISTRATOR ACCESS.** Use the local recovery
+> procedure below. Afterward, dispatch the audit workflow to verify the
+> runner without mutating it.
 
 `bootstrap-windows-runner.ps1` addresses three other foundational host
 concerns in the same pass: Windows long-path support (the prerequisite that
@@ -263,43 +253,28 @@ unblocks the Android NDK 93% unpack failure described in the next section),
 Windows Defender exclusions for the Unity install root and the runner
 workspace, and PowerShell 7 (`pwsh`).
 
-### Auto-recovery: workflow_dispatch (no host access required)
+### Post-maintenance audit: workflow_dispatch
 
-Use this path when you can read the Actions UI but cannot RDP/SSH to the
-runner host. The workflow installs every prereq idempotently and uploads a
-transcript artifact.
-
-> **HARD PREREQUISITE: `runner-bootstrap.yml` must be on the default
-> branch (`master`) before this path works at all.** GitHub Actions only
-> registers `workflow_dispatch` triggers from workflow files that exist on
-> the default branch; until this PR is merged, the **Run workflow** button
-> does NOT appear in the Actions UI and `gh workflow run runner-bootstrap.yml`
-> fails with `could not find any workflows named runner-bootstrap.yml`.
-> Use the **Local recovery** path below for the FIRST-TIME runner repair
-> (it has no merge dependency: the script lives in the repo and runs from
-> any branch's checkout). Once merged, this Actions-UI path becomes the
-> low-friction option for every subsequent regression.
+This path verifies a runner after an administrator has completed host-side
+maintenance. It never installs or repairs prerequisites, editors, or modules.
 
 1. (HARD-FAIL prerequisite) Take the OTHER runner offline first. Both
    self-hosted Windows runners share the labels `self-hosted, Windows,
 RAM-64GB`, so the scheduler picks either machine; this workflow HARD-FAILS
-   on wrong-target dispatch (exit 1, by design) to refuse silent bootstraps
+   on wrong-target dispatch (exit 1, by design) to refuse auditing
    of an unintended machine. Offline the unwanted runner by opening
    **Settings -> Actions -> Runners**, clicking the runner, and selecting
    **Remove runner** (or stop the runner service on the host with
    `Stop-Service actions.runner.*`), then bring it back online after the
-   bootstrap completes.
-1. Open **Actions -> Runner Bootstrap (Windows) -> Run workflow**.
-1. Pick `runner-label`: the name of the runner you want to bootstrap
+   audit completes.
+1. Open **Actions -> Runner Audit (Windows) -> Run workflow**.
+1. Pick `runner-label`: the name of the runner you want to audit
    (`DAD-MACHINE` or `ELI-MACHINE`).
-1. Pick `detect-only`: leave `false` (the default) to auto-install every
-   missing prereq. Set to `true` to audit without mutating the host (the run
-   exits 2 if anything is missing).
 1. Click **Run workflow**.
-1. Wait for the run to finish (~5-10 minutes on a healthy network) and
+1. Wait for the run to finish and
    confirm a green status. The run uploads a transcript artifact named
    `runner-bootstrap-<runner>-<run-id>-<attempt>`.
-1. Re-run the failed Unity job. The next provisioning attempt should pass.
+1. Re-run the failed Unity job. Editor validation should pass.
 
 ### Local recovery: bootstrap script on the host
 
@@ -318,7 +293,9 @@ Use this path when you can RDP/SSH/console into the runner host.
 1. Run the bootstrap script:
 
    ```powershell
-   .\scripts\unity\bootstrap-windows-runner.ps1
+   $runnerToolCache = 'C:\path\to\actions-runner\_work\_tool'
+   $editorRoot = Join-Path $runnerToolCache 'u6-v3'
+   .\scripts\unity\bootstrap-windows-runner.ps1 -UnityInstallRoot $editorRoot
    ```
 
 1. The script detects each prereq and installs only what is missing. It is
@@ -327,6 +304,29 @@ Use this path when you can RDP/SSH/console into the runner host.
    Actions UI. No runner-agent restart is required for the redistributable;
    `LongPathsEnabled` and the `pwsh` install do require a fresh agent shell,
    which the next job naturally creates.
+
+### Manual Unity editor installation
+
+Run editor maintenance from an elevated PowerShell session on each runner.
+Use that runner's actual GitHub Actions tool-cache directory; the workflows
+and central license-return action require the `u6-v3` layout exactly.
+
+```powershell
+$runnerToolCache = 'C:\path\to\actions-runner\_work\_tool'
+$editorRoot = Join-Path $runnerToolCache 'u6-v3'
+.\scripts\unity\maintain-windows-runner.ps1 `
+  -UnityVersions @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1') `
+  -InstallRoot $editorRoot `
+  -ProvisioningProfile StandaloneWindowsIl2Cpp `
+  -Force
+```
+
+This is a host-side administrator operation, not a workflow step. It installs
+the Windows IL2CPP module for every canonical version, which also satisfies
+the EditorOnly validation used by editmode and playmode jobs. Dispatch
+**Runner Audit (Windows)** afterward; a green audit confirms the exact editor
+paths, modules, host prerequisites, and startup probes without changing the
+runner.
 
 ### What the bootstrap installs
 
@@ -357,7 +357,8 @@ final exit code reflects the worst outcome across all of them.
   `HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem!LongPathsEnabled = 1`.
   Resolves the Android NDK 93% unpack failure at the legacy MAX_PATH boundary
   (see the next section for the underlying root cause).
-- **Windows Defender exclusions** for `C:\Unity\Editors` and the active
+- **Windows Defender exclusions** for the runner tool cache's `u6-v3` editor
+  root and the active
   runner workspace (**best-effort, perf optimization**). Prevents Defender
   from transient-locking NDK files during unpack. Skipped gracefully when
   Defender is absent. Also **skipped on non-admin per-job preflight runs**
@@ -365,8 +366,7 @@ final exit code reflects the worst outcome across all of them.
   cannot call `Add-MpPreference`); Defender management is not a correctness
   requirement for Unity startup, so a non-admin runner does not attempt it.
   To install or refresh exclusions, run the bootstrap from an elevated
-  shell on the host (see Local recovery above) or trigger
-  `runner-bootstrap.yml`.
+  shell on the host (see Local recovery above).
 - **PowerShell 7 (`pwsh`)** via `winget install --id Microsoft.PowerShell
 --scope user`. The `--scope user` install means Administrator is not
   required for `pwsh` itself.
@@ -386,11 +386,15 @@ every prereq's status without mutating anything. Exit codes:
 - non-zero, non-2: an unrecoverable error occurred during detection.
 
 ```powershell
-.\scripts\unity\bootstrap-windows-runner.ps1 -DetectOnly
+$runnerToolCache = 'C:\path\to\actions-runner\_work\_tool'
+$editorRoot = Join-Path $runnerToolCache 'u6-v3'
+.\scripts\unity\bootstrap-windows-runner.ps1 `
+  -DetectOnly `
+  -UnityInstallRoot $editorRoot
 ```
 
-The same audit is available via the workflow: pick `detect-only: true` on the
-`Run workflow` dialog.
+The same audit is available through **Runner Audit (Windows)**. Select only
+the target runner; the workflow is always detect-only.
 
 ### Verification
 
@@ -416,7 +420,7 @@ The next Unity job's `Print runner diagnostics` step runs the per-job
 preflight (`assert-unity-host-prereqs`). A green preflight is the live
 confirmation that recovery worked.
 
-### When auto-install fails
+### When manual installation fails
 
 Common failure modes and the remediation for each:
 
@@ -424,10 +428,8 @@ Common failure modes and the remediation for each:
   (2010 and 2015-2022) and `LongPathsEnabled` need `HKLM` writes. The
   script detects access-denied via a locale-safe exception-type check and
   emits an actionable `::error::` pointing at this section. Fix: re-run
-  the script from an elevated shell on the host, or configure the runner
-  agent service account with local admin rights and re-trigger the
-  workflow.
-- **Network failure during the VC++ download.** Re-trigger the workflow. The
+  the script from an elevated shell on the host.
+- **Network failure during the VC++ download.** Re-run the elevated host-side script. The
   script pins each generation's URL to its canonical Microsoft host
   (`https://aka.ms/vc14/vc_redist.x64.exe` for the 2015-2022 generation;
   `https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe`
@@ -510,24 +512,18 @@ missing list. Quarantine and reinstall:
    re-runs do not clobber prior quarantines):
 
    ```powershell
+   $runnerToolCache = 'C:\path\to\actions-runner\_work\_tool'
+   $editorRoot = Join-Path $runnerToolCache 'u6-v3'
    $ts = Get-Date -Format 'yyyyMMdd-HHmmss'
-   New-Item -ItemType Directory -Force -Path 'C:\Unity\Editors\_quarantine' | Out-Null
-   Move-Item 'C:\Unity\Editors\<version>' "C:\Unity\Editors\_quarantine\<version>-$ts"
+   $quarantine = Join-Path $editorRoot '_quarantine'
+   New-Item -ItemType Directory -Force -Path $quarantine | Out-Null
+   Move-Item (Join-Path $editorRoot '<version>') (Join-Path $quarantine "<version>-$ts")
    Start-Service actions.runner.*
    ```
 
-1. On the next CI run, `ensure-editor.ps1`'s auto-install path will
-   re-download Unity into the now-empty managed root.
-
-Alternatively, force `ensure-editor.ps1` to perform the managed
-reinstall in-line from CI without a host-side operation. Set
-`DXM_UNITY_FORCE_REINSTALL=1` on the re-trigger (workflow-dispatch env,
-matrix env, or step-level env): the env var **bypasses the 0xC0000135
-short-circuit** and falls through to the existing repair pipeline. The
-bypass exists exactly for this case (operator has confirmed the missing
-DLL is Unity-shipped, not OS). Do NOT set this env var when the missing
-DLL is a system library; the reinstall will not help and will burn ~6
-minutes per matrix cell.
+1. While still on the host in an elevated shell, manually install the exact
+   editor and modules under the runner tool cache's `u6-v3` directory. CI
+   will only validate that install; it will not repopulate the empty root.
 
 #### If ALL imports resolve but Unity still fails 0xC0000135
 
@@ -605,7 +601,7 @@ Sources:
 
 - Bootstrap script: [`scripts/unity/bootstrap-windows-runner.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/bootstrap-windows-runner.ps1).
 - Per-job preflight composite: [`.github/actions/assert-unity-host-prereqs/action.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/actions/assert-unity-host-prereqs/action.yml).
-- Auto-recovery workflow: [`.github/workflows/runner-bootstrap.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/runner-bootstrap.yml).
+- Validation-only runner audit: [`.github/workflows/runner-bootstrap.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/runner-bootstrap.yml).
 - LLM-agent skill: [`.llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-editor-ci/references/unity-runner-host-prereqs.md).
 - The [PowerShell 7 prerequisite](#powershell-7-prerequisite-on-self-hosted-runners)
   section above documents the `pwsh: command not found` failure that the
@@ -657,12 +653,13 @@ on the freshly written files can also interrupt the unpack.
    System -> Filesystem -> Enable Win32 long paths -> Enabled**. Restart the
    self-hosted runner agent (and ideally reboot) so the change takes effect.
 
-1. **(Optional) Add a Windows Defender exclusion** for the Unity install root
-   (`C:\Unity\Editors`) so Defender does not transiently lock NDK files during
-   extraction:
+1. **(Optional) Add a Windows Defender exclusion** for the runner tool cache's
+   `u6-v3` Unity install root so Defender does not transiently lock NDK files
+   during extraction:
 
    ```powershell
-   Add-MpPreference -ExclusionPath 'C:\Unity\Editors'
+   $editorRoot = 'C:\path\to\actions-runner\_work\_tool\u6-v3'
+   Add-MpPreference -ExclusionPath $editorRoot
    ```
 
 After enabling long paths, re-run the workflow. The post-mortem's

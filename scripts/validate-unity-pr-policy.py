@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -48,6 +49,45 @@ DEPENDABOT_PR_GUARD = re.compile(
 BLANKET_PR_REJECTION = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*&&"
 )
+WORKFLOW_EDITOR_MUTATION = re.compile(
+    r"^\s*(?:"
+    r"(?:Start-Process(?:\s+-FilePath)?|&|cmd(?:\.exe)?\s+/[ck])\s+"
+    r"['\"]?(?:[^'\"\s]*[\\/])?unity(?:\.exe)?['\"]?(?=\s|$).*$"
+    r"|['\"]?(?:[^'\"\s]*[\\/])?unity(?:\.exe)?['\"]?(?=\s|$)"
+    r"[^\n]*\b(?:install|install-modules|uninstall)\b.*$"
+    r"|(?:(?:Start-Process(?:\s+-FilePath)?|&|cmd(?:\.exe)?\s+/[ck])\s+)?"
+    r"\$[A-Za-z_][A-Za-z0-9_]*(?=\s|$)[^\n]*"
+    r"\b(?:install|install-modules|uninstall)\b.*$"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
+)
+YAML_RUN_EXTRACTOR = r"""
+const fs = require("fs");
+const YAML = require("yaml");
+const runs = [];
+function resolved(node, document) {
+  return YAML.isAlias(node) ? node.resolve(document) : node;
+}
+function visit(node, document) {
+  node = resolved(node, document);
+  if (YAML.isMap(node)) {
+    for (const pair of node.items) {
+      const value = resolved(pair.value, document);
+      if (YAML.isScalar(pair.key) && pair.key.value === "run" && YAML.isScalar(value)) {
+        runs.push(String(value.value ?? ""));
+      }
+      visit(value, document);
+    }
+  } else if (YAML.isSeq(node)) {
+    for (const item of node.items) visit(item, document);
+  }
+}
+for (const document of YAML.parseAllDocuments(fs.readFileSync(0, "utf8"), { uniqueKeys: false })) {
+  if (document.errors.length) throw document.errors[0];
+  visit(document.contents, document);
+}
+process.stdout.write(JSON.stringify(runs));
+"""
 
 
 def require(condition: bool, message: str) -> None:
@@ -147,6 +187,479 @@ def positive_timeout(source: str, indentation: int, label: str) -> int:
         f"{label}: expected one positive integer timeout, found {matches}",
     )
     return int(matches[0])
+
+
+def containing_named_step(source: str, offset: int) -> str:
+    starts = [
+        (match.start(), len(match.group("indent")))
+        for match in re.finditer(
+            r"^(?P<indent>[ \t]*)- name: .+$",
+            source,
+            re.MULTILINE,
+        )
+        if match.start() <= offset
+    ]
+    require(bool(starts), "automation call must be inside a named step")
+    start, indentation = starts[-1]
+    following = re.search(
+        rf"^{' ' * indentation}- name: .+$",
+        source[offset:],
+        re.MULTILINE,
+    )
+    end = offset + following.start() if following else len(source)
+    return source[start:end]
+
+
+def executable_powershell(source: str) -> str:
+    lines: list[str] = []
+    block_comment = False
+    here_terminator: str | None = None
+    for line in source.splitlines():
+        if here_terminator is not None:
+            if line.strip() == here_terminator:
+                here_terminator = None
+            continue
+        executable: list[str] = []
+        quote: str | None = None
+        index = 0
+        while index < len(line):
+            if block_comment:
+                end = line.find("#>", index)
+                if end < 0:
+                    break
+                block_comment = False
+                index = end + 2
+                continue
+            character = line[index]
+            if character == "`":
+                executable.append(line[index : index + 2])
+                index += 2
+                continue
+            if quote is not None:
+                executable.append(character)
+                if character == quote:
+                    if (
+                        quote == "'"
+                        and index + 1 < len(line)
+                        and line[index + 1] == "'"
+                    ):
+                        executable.append("'")
+                        index += 2
+                        continue
+                    quote = None
+                index += 1
+                continue
+            if line.startswith("<#", index):
+                block_comment = True
+                index += 2
+                continue
+            if character == "#":
+                break
+            executable.append(character)
+            if character in {"'", '"'}:
+                quote = character
+            index += 1
+        code = "".join(executable).rstrip()
+        here_start = re.search(r"@(?P<quote>['\"])\s*$", code)
+        if here_start is not None:
+            here_terminator = here_start.group("quote") + "@"
+            code = code[: here_start.start()] + "''"
+        if code.strip():
+            lines.append(code)
+    return re.sub(r"`\s*\n\s*", " ", "\n".join(lines))
+
+
+def powershell_syntax(source: str) -> str:
+    """Remove string contents so diagnostics cannot satisfy command guards."""
+    syntax: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(source):
+        character = source[index]
+        if character == "`":
+            syntax.extend("  ")
+            index += 2
+            continue
+        if quote is not None:
+            if character == quote:
+                if (
+                    quote == "'"
+                    and index + 1 < len(source)
+                    and source[index + 1] == "'"
+                ):
+                    syntax.extend("  ")
+                    index += 2
+                    continue
+                quote = None
+            syntax.append(" ")
+            index += 1
+            continue
+        if character in {"'", '"'}:
+            quote = character
+            syntax.append(" ")
+        else:
+            syntax.append(character)
+        index += 1
+    return "".join(syntax)
+
+
+def workflow_run_scripts(source: str) -> list[str]:
+    """Return every YAML run scalar, including flow-style and duplicate keys."""
+    result = subprocess.run(
+        ["node", "-e", YAML_RUN_EXTRACTOR],
+        input=source,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    require(
+        result.returncode == 0,
+        "could not parse workflow YAML while enforcing editor mutation policy: "
+        + result.stderr.strip(),
+    )
+    scripts = json.loads(result.stdout)
+    require(
+        isinstance(scripts, list) and all(isinstance(item, str) for item in scripts),
+        "workflow YAML run extractor returned an invalid payload",
+    )
+    return scripts
+
+
+def has_positive_switch(invocation: str, switch: str) -> bool:
+    syntax = powershell_syntax(invocation)
+    return (
+        re.search(
+            rf"-{re.escape(switch)}(?:"
+            rf"\s*:\s*\$true(?=\s|`|$)"
+            rf"|(?=\s|`|$)"
+            rf")",
+            syntax,
+            re.IGNORECASE,
+        )
+        is not None
+        and re.search(
+            rf"-{re.escape(switch)}\s*:\s*(?!\$true(?=\s|`|$))\S+",
+            syntax,
+            re.IGNORECASE,
+        )
+        is None
+    )
+
+
+def has_positive_detect_only(source: str) -> bool:
+    return has_positive_switch(source, "DetectOnly") or (
+        re.search(
+            r"^\s*DetectOnly\s*=\s*\$true\s*$",
+            source,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        is not None
+    )
+
+
+def has_nonpositive_detect_only(source: str) -> bool:
+    return (
+        re.search(
+            r"(?:"
+            r"-DetectOnly\s*:\s*(?!\$true(?=\s|$))\S+"
+            r"|^\s*(?:"
+            r"DetectOnly"
+            r"|\$[A-Za-z_][A-Za-z0-9_]*\.DetectOnly"
+            r"|\$[A-Za-z_][A-Za-z0-9_]*\[['\"]DetectOnly['\"]\]"
+            r")\s*=\s*(?!\$true\s*$)\S.*$"
+            r")",
+            source,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        is not None
+    )
+
+
+def find_workflow_editor_mutations(files: dict[str, str]) -> list[str]:
+    violations: list[str] = []
+    for file, source in files.items():
+        for run_script_source in workflow_run_scripts(source):
+            executable_source = executable_powershell(run_script_source)
+            executable_syntax = powershell_syntax(executable_source)
+            if re.search(
+                r"\b(?:Microsoft\.PowerShell\.Utility\\)?"
+                r"(?:Invoke-Expression|iex)\b",
+                executable_syntax,
+                re.IGNORECASE,
+            ):
+                violations.append(
+                    f"{file}: Invoke-Expression is forbidden in workflow run bodies"
+                )
+            if re.search(
+                r"\bGet-Command\b[^\n]*\bunity(?:\.exe)?\b[^\n]*"
+                r"\b(?:install|install-modules|uninstall)\b",
+                executable_syntax,
+                re.IGNORECASE | re.MULTILINE,
+            ):
+                violations.append(
+                    f"{file}: resolved Unity editor mutation command"
+                )
+            if re.search(
+                r"(?:&|\.|Start-Process|saps|start)\s+"
+                r"\((?:Get-Command|gcm)\b",
+                executable_syntax,
+                re.IGNORECASE,
+            ):
+                violations.append(
+                    f"{file}: dynamic resolved-command invocation is forbidden"
+                )
+            literal_unity_mutation = re.search(
+                r"\bunity(?:\.exe)?\b[^\n]*"
+                r"\b(?:install|install-modules|uninstall)\b",
+                executable_syntax,
+                re.IGNORECASE | re.MULTILINE,
+            ) is not None
+            if re.search(
+                r"\b(?:pwsh|powershell)(?:\.exe)?\b[^\n]*"
+                r"-Command\s+['\"][^'\"]*\bunity(?:\.exe)?\b"
+                r"[^'\"]*\b(?:install|install-modules|uninstall)\b",
+                executable_source,
+                re.IGNORECASE | re.MULTILINE,
+            ):
+                violations.append(
+                    f"{file}: nested Unity editor mutation command"
+                )
+            if re.search(
+                r"\b(?:Start-Process|saps|start)\b[^\n]*"
+                r"\b(?:pwsh|powershell)(?:\.exe)?\b[^\n]*"
+                r"\bunity(?:\.exe)?\b[^\n]*"
+                r"\b(?:install|install-modules|uninstall)\b",
+                executable_source,
+                re.IGNORECASE | re.MULTILINE,
+            ):
+                violations.append(
+                    f"{file}: nested Unity editor mutation process"
+                )
+            ensure_mentions = re.findall(
+                r"ensure-editor\.ps1\b",
+                executable_source,
+                re.IGNORECASE,
+            )
+            if ensure_mentions:
+                if len(ensure_mentions) != 1:
+                    violations.append(
+                        f"{file}: editor validation must reference "
+                        "ensure-editor.ps1 exactly once per run body"
+                    )
+                ensure_line = next(
+                    line
+                    for line in executable_source.splitlines()
+                    if re.search(
+                        r"ensure-editor\.ps1\b",
+                        line,
+                        re.IGNORECASE,
+                    )
+                )
+                ensure_syntax = powershell_syntax(ensure_line)
+                for switch in ("RequireHealthyExisting", "CiManagedOnly"):
+                    if not has_positive_switch(ensure_syntax, switch):
+                        violations.append(
+                            f"{file}: ensure-editor call missing positive -{switch}"
+                        )
+                if "-ProvisioningProfile" not in ensure_syntax:
+                    violations.append(
+                        f"{file}: ensure-editor call missing -ProvisioningProfile"
+                    )
+                if re.search(
+                    r"-InstallRoot\s+\(\s*Join-Path\s+"
+                    r"\$env:RUNNER_TOOL_CACHE\s+['\"]u6-v3['\"]\s*\)",
+                    ensure_line,
+                    re.IGNORECASE,
+                ) is None:
+                    violations.append(
+                        f"{file}: ensure-editor call missing canonical "
+                        "RUNNER_TOOL_CACHE/u6-v3 -InstallRoot"
+                    )
+            direct_mutation = (
+                WORKFLOW_EDITOR_MUTATION.search(executable_source) is not None
+                or literal_unity_mutation
+            )
+            if direct_mutation:
+                violations.append(f"{file}: direct Unity editor mutation command")
+            if not direct_mutation:
+                for variable_call in re.finditer(
+                    r"(?:"
+                    r"(?P<operator>&|\.)"
+                    r"|Start-Process"
+                    r"|saps"
+                    r"|start"
+                    r"|cmd(?:\.exe)?\s+/[ck]"
+                    r")\s+(?:-FilePath\s+)?\$(?:"
+                    r"\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}"
+                    r"|(?P<plain>[A-Za-z_][A-Za-z0-9_]*)"
+                    r")\b(?P<arguments>.*)$",
+                    executable_syntax,
+                    re.IGNORECASE | re.MULTILINE,
+                ):
+                    variable = (
+                        variable_call.group("braced")
+                        or variable_call.group("plain")
+                    )
+                    assignment = re.search(
+                        rf"^\s*\${re.escape(variable)}\s*=.*"
+                        r"(?:maintain|bootstrap)-windows-runner\.ps1.*$",
+                        executable_source,
+                        re.IGNORECASE | re.MULTILINE,
+                    )
+                    dot_sources_validated_function = (
+                        variable_call.group("operator") == "."
+                        and assignment is not None
+                        and re.search(
+                            r"\bInvoke-WindowsRunner(?:Maintenance|Bootstrap)\b",
+                            executable_source,
+                            re.IGNORECASE,
+                        )
+                        is not None
+                    )
+                    approved_detect_only_call = (
+                        assignment is not None
+                        and has_positive_detect_only(
+                            variable_call.group("arguments")
+                        )
+                        and not has_nonpositive_detect_only(
+                            variable_call.group("arguments")
+                        )
+                    )
+                    if not (
+                        dot_sources_validated_function
+                        or approved_detect_only_call
+                    ):
+                        violations.append(
+                            f"{file}: variable command invocation is not an "
+                            "approved detect-only runner audit"
+                        )
+            for script, function in (
+                (
+                    "maintain-windows-runner.ps1",
+                    "Invoke-WindowsRunnerMaintenance",
+                ),
+                (
+                    "bootstrap-windows-runner.ps1",
+                    "Invoke-WindowsRunnerBootstrap",
+                ),
+            ):
+                script_mentions = list(
+                    re.finditer(
+                        rf"{re.escape(script)}\b",
+                        executable_source,
+                        re.IGNORECASE,
+                    )
+                )
+                function_mentions = list(
+                    re.finditer(
+                        rf"{re.escape(function)}\b",
+                        executable_source,
+                        re.IGNORECASE,
+                    )
+                )
+                if not script_mentions and not function_mentions:
+                    continue
+                if len(script_mentions) > 1 or len(function_mentions) > 1:
+                    violations.append(
+                        f"{file}: {script} mutation surface appears more than once"
+                    )
+                    continue
+                if (
+                    not has_positive_detect_only(executable_source)
+                    or has_nonpositive_detect_only(executable_source)
+                ):
+                    violations.append(
+                        f"{file}: {script} call is not detect-only"
+                    )
+                    continue
+                if function_mentions:
+                    function_call = re.search(
+                        rf"^\s*(?:\$[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?"
+                        rf"{re.escape(function)}\b(?P<arguments>.*)$",
+                        executable_source,
+                        re.IGNORECASE | re.MULTILINE,
+                    )
+                    if function_call is None:
+                        violations.append(
+                            f"{file}: {function} is referenced but not invoked directly"
+                        )
+                        continue
+                    arguments = function_call.group("arguments")
+                    function_is_detect_only = (
+                        has_positive_switch(arguments, "DetectOnly")
+                        and not has_nonpositive_detect_only(arguments)
+                    )
+                    splat = re.search(
+                        r"@(?P<variable>[A-Za-z_][A-Za-z0-9_]*)\b",
+                        arguments,
+                    )
+                    if splat is not None:
+                        variable = splat.group("variable")
+                        hashtable = re.search(
+                            rf"^\s*\${re.escape(variable)}\s*=\s*@\{{"
+                            rf"(?P<body>.*?)^\s*\}}",
+                            executable_source,
+                            re.IGNORECASE | re.MULTILINE | re.DOTALL,
+                        )
+                        function_is_detect_only = (
+                            hashtable is not None
+                            and has_positive_detect_only(hashtable.group("body"))
+                            and not has_nonpositive_detect_only(
+                                hashtable.group("body")
+                            )
+                            and executable_source[
+                                hashtable.end() : function_call.start()
+                            ].strip()
+                            == ""
+                            and len(
+                                re.findall(
+                                    rf"\${re.escape(variable)}\b",
+                                    executable_source,
+                                    re.IGNORECASE,
+                                )
+                            )
+                            == 1
+                        )
+                    if not function_is_detect_only:
+                        violations.append(
+                            f"{file}: {function} invocation is not detect-only"
+                        )
+                        continue
+                assignment = re.search(
+                    rf"^\s*\$(?P<variable>[A-Za-z_][A-Za-z0-9_]*)\s*=.*"
+                    rf"{re.escape(script)}.*$",
+                    executable_source,
+                    re.IGNORECASE | re.MULTILINE,
+                )
+                if assignment is None:
+                    continue
+                variable = assignment.group("variable")
+                calls = list(
+                    re.finditer(
+                        rf"^\s*(?:"
+                        rf"&\s+\${re.escape(variable)}\b"
+                        rf"|(?:pwsh|powershell)(?:\.exe)?\b"
+                        rf"[^\n]*?-(?:File|Command)\b[^\n]*"
+                        rf"\${re.escape(variable)}\b"
+                        rf").*$",
+                        executable_source,
+                        re.IGNORECASE | re.MULTILINE,
+                    )
+                )
+                if len(calls) > 1:
+                    violations.append(
+                        f"{file}: {script} assigned command is invoked more than once"
+                    )
+                for call in calls:
+                    call_line = call.group(0)
+                    if (
+                        not has_positive_detect_only(call_line)
+                        or has_nonpositive_detect_only(call_line)
+                    ):
+                        violations.append(
+                            f"{file}: assigned {script} call is not detect-only"
+                        )
+    return violations
 
 
 def validate_lock_window_timeout_budget(job: str, label: str) -> None:
@@ -413,6 +926,562 @@ def validate() -> None:
         not unregistered,
         "unregistered credential-bearing or activation-capable Unity automation: "
         + ", ".join(unregistered),
+    )
+    active_automation_paths = [
+        *Path(".github/workflows").glob("*.yml"),
+        *Path(".github/workflows").glob("*.yaml"),
+        *Path(".github/actions").glob("*/action.yml"),
+        *Path(".github/actions").glob("*/action.yaml"),
+    ]
+    active_automation = {
+        path.as_posix(): path.read_text(encoding="utf-8")
+        for path in active_automation_paths
+    }
+    workflow_editor_mutations = find_workflow_editor_mutations(active_automation)
+    require(
+        not workflow_editor_mutations,
+        "workflow editor mutation policy failed: "
+        + "; ".join(workflow_editor_mutations),
+    )
+    validation_fixture = """steps:
+  - name: Validate installed Unity Editor
+    run: |
+      ./scripts/unity/ensure-editor.ps1 -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') -CiManagedOnly -ProvisioningProfile EditorOnly -RequireHealthyExisting
+"""
+    missing_guard_fixture = validation_fixture.replace(
+        " -RequireHealthyExisting",
+        "",
+    )
+    direct_install_fixture = """steps:
+  - name: Install editor
+    run: |
+      unity install 6000.3.16f1
+"""
+    maintenance_fixture = """steps:
+  - name: Maintain runner
+    run: ./scripts/unity/maintain-windows-runner.ps1
+"""
+    require(
+        find_workflow_editor_mutations({"valid.yml": validation_fixture}) == [],
+        "validation-only editor fixture must pass",
+    )
+    require(
+        find_workflow_editor_mutations({"missing.yml": missing_guard_fixture})
+        == [
+            "missing.yml: ensure-editor call missing positive -RequireHealthyExisting"
+        ],
+        "missing healthy-existing guard fixture must fail",
+    )
+    false_switch_fixture = validation_fixture.replace(
+        "-CiManagedOnly",
+        "-CiManagedOnly:$false",
+    ).replace(
+        "-RequireHealthyExisting",
+        "-RequireHealthyExisting:$false",
+    )
+    require(
+        find_workflow_editor_mutations({"false.yml": false_switch_fixture})
+        == [
+            "false.yml: ensure-editor call missing positive -RequireHealthyExisting",
+            "false.yml: ensure-editor call missing positive -CiManagedOnly",
+        ],
+        "false-valued validation switches must fail",
+    )
+    inline_comment_fixture = """steps:
+  - name: Unsafe validation
+    run: ./scripts/unity/ensure-editor.ps1 -UnityVersion 6000.3.16f1 # -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') -CiManagedOnly -ProvisioningProfile EditorOnly -RequireHealthyExisting
+"""
+    inline_comment_violations = find_workflow_editor_mutations(
+        {"inline-comment.yml": inline_comment_fixture}
+    )
+    require(
+        len(inline_comment_violations) == 4
+        and all(
+            "ensure-editor call missing" in item
+            for item in inline_comment_violations
+        ),
+        "inline PowerShell comments must not satisfy editor validation guards",
+    )
+    duplicate_call_fixture = """steps:
+  - name: Validate installed Unity Editor
+    run: |
+      ./scripts/unity/ensure-editor.ps1 -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') -CiManagedOnly -ProvisioningProfile EditorOnly -RequireHealthyExisting
+      ./scripts/unity/ensure-editor.ps1 -UnityVersion 6000.3.16f1
+"""
+    duplicate_violations = find_workflow_editor_mutations(
+        {"duplicate.yml": duplicate_call_fixture}
+    )
+    require(
+        duplicate_violations
+        == [
+            "duplicate.yml: editor validation must reference "
+            "ensure-editor.ps1 exactly once per run body"
+        ],
+        "each editor-validation run body must contain exactly one ensure-editor reference",
+    )
+    prose_fixture = """description: unity install is forbidden in CI
+steps:
+  - name: Explain policy
+    run: Write-Output 'validation only'
+"""
+    require(
+        find_workflow_editor_mutations({"prose.yml": prose_fixture}) == [],
+        "non-executable YAML prose must not be treated as an editor mutation",
+    )
+    require(
+        find_workflow_editor_mutations({"install.yml": direct_install_fixture})
+        == ["install.yml: direct Unity editor mutation command"],
+        "direct editor install fixture must fail",
+    )
+    for name, command in (
+        ("start-process", "Start-Process unity -ArgumentList 'install','6000.3.16f1'"),
+        (
+            "start-process-file-path",
+            "Start-Process -FilePath unity -ArgumentList 'install','6000.3.16f1'",
+        ),
+        ("quoted", "& 'unity' install 6000.3.16f1"),
+        ("variable", "& $unity install 6000.3.16f1"),
+        ("arbitrary-variable", "& $cli install 6000.3.16f1"),
+        ("absolute", "& 'C:\\Tools\\Unity.exe' install 6000.3.16f1"),
+        ("cmd", "cmd /c unity install 6000.3.16f1"),
+    ):
+        mutation_fixture = (
+            "steps:\n  - name: mutate\n    run: |\n"
+            f"      {command}\n"
+        )
+        require(
+            find_workflow_editor_mutations({f"{name}.yml": mutation_fixture})
+            == [f"{name}.yml: direct Unity editor mutation command"],
+            f"{name} editor mutation fixture must fail",
+        )
+    invoke_expression_fixture = """steps:
+  - name: mutate
+    run: Invoke-Expression 'unity install 6000.3.16f1'
+"""
+    require(
+        any(
+            "Invoke-Expression is forbidden" in violation
+            for violation in find_workflow_editor_mutations(
+                {"invoke-expression.yml": invoke_expression_fixture}
+            )
+        ),
+        "Invoke-Expression editor mutation fixture must fail",
+    )
+    folded_install_fixture = """steps:
+  - name: mutate
+    run: >
+      unity
+      install 6000.3.16f1
+"""
+    require(
+        find_workflow_editor_mutations({"folded.yml": folded_install_fixture})
+        == ["folded.yml: direct Unity editor mutation command"],
+        "folded YAML editor mutation fixture must fail",
+    )
+    require(
+        find_workflow_editor_mutations({"maintenance.yml": maintenance_fixture})
+        == [
+            "maintenance.yml: maintain-windows-runner.ps1 call is not detect-only"
+        ],
+        "workflow runner maintenance fixture must fail",
+    )
+    indirect_maintenance_fixture = """steps:
+  - name: Maintain runner
+    run: |
+      $script = Join-Path scripts unity/maintain-windows-runner.ps1
+      & $script
+"""
+    require(
+        any(
+            "maintain-windows-runner.ps1 call is not detect-only" in violation
+            for violation in find_workflow_editor_mutations(
+                {"indirect-maintenance.yml": indirect_maintenance_fixture}
+            )
+        ),
+        "indirect workflow runner maintenance fixture must fail",
+    )
+    invocation_bypass_fixtures = {
+        "dot-source-ensure": (
+            ". ./scripts/unity/ensure-editor.ps1 -UnityVersion 6000.3.16f1",
+            "ensure-editor call missing positive -RequireHealthyExisting",
+        ),
+        "command-ensure": (
+            "pwsh -Command ./scripts/unity/ensure-editor.ps1 -UnityVersion 6000.3.16f1",
+            "ensure-editor call missing positive -RequireHealthyExisting",
+        ),
+        "workspace-ensure": (
+            '& "$env:GITHUB_WORKSPACE/scripts/unity/ensure-editor.ps1" '
+            "-UnityVersion 6000.3.16f1",
+            "ensure-editor call missing positive -RequireHealthyExisting",
+        ),
+        "command-maintenance": (
+            "pwsh -Command ./scripts/unity/maintain-windows-runner.ps1",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+    }
+    for name, (command, expected_fragment) in invocation_bypass_fixtures.items():
+        fixture = (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            f"      {command}\n"
+        )
+        require(
+            any(
+                expected_fragment in violation
+                for violation in find_workflow_editor_mutations(
+                    {f"{name}.yml": fixture}
+                )
+            ),
+            f"{name} invocation bypass fixture must fail",
+        )
+    false_function_fixture = """steps:
+  - name: Unsafe maintenance
+    run: |
+      . ./scripts/unity/maintain-windows-runner.ps1
+      Invoke-WindowsRunnerMaintenance -DetectOnly:$false
+"""
+    require(
+        find_workflow_editor_mutations(
+            {"false-function.yml": false_function_fixture}
+        )
+        == [
+            "false-function.yml: "
+            "maintain-windows-runner.ps1 call is not detect-only"
+        ],
+        "false-valued maintenance function invocation must fail",
+    )
+    repeated_maintenance_fixture = """steps:
+  - name: Unsafe repeated maintenance
+    run: |
+      ./scripts/unity/maintain-windows-runner.ps1 -DetectOnly
+      ./scripts/unity/maintain-windows-runner.ps1
+"""
+    require(
+        find_workflow_editor_mutations(
+            {"repeated-maintenance.yml": repeated_maintenance_fixture}
+        )
+        == [
+            "repeated-maintenance.yml: "
+            "maintain-windows-runner.ps1 mutation surface appears more than once"
+        ],
+        "one safe maintenance call must not mask a second unsafe call",
+    )
+    null_detect_only_fixture = """steps:
+  - name: Unsafe null switch
+    run: |
+      ./scripts/unity/bootstrap-windows-runner.ps1 -DetectOnly
+      Invoke-WindowsRunnerBootstrap -DetectOnly:$null
+"""
+    require(
+        find_workflow_editor_mutations(
+            {"null-detect-only.yml": null_detect_only_fixture}
+        )
+        == [
+            "null-detect-only.yml: "
+            "bootstrap-windows-runner.ps1 call is not detect-only"
+        ],
+        "a null DetectOnly binding must fail",
+    )
+    parser_bypass_fixtures = {
+        "block-header-comment": (
+            "run: | # valid YAML comment\n      unity install 6000.3.16f1",
+            "direct Unity editor mutation command",
+        ),
+        "block-indent-indicator": (
+            "run: |2\n      unity install 6000.3.16f1",
+            "direct Unity editor mutation command",
+        ),
+        "quoted-run-key": (
+            '"run": |\n      unity install 6000.3.16f1',
+            "direct Unity editor mutation command",
+        ),
+        "spaced-run-key": (
+            "run : |\n      unity install 6000.3.16f1",
+            "direct Unity editor mutation command",
+        ),
+        "resolved-unity-command": (
+            "run: '& (Get-Command unity).Source install 6000.3.16f1'",
+            "resolved Unity editor mutation command",
+        ),
+        "block-comment-evidence": (
+            "run: |\n      <#\n      -DetectOnly\n      #>\n"
+            "      ./scripts/unity/maintain-windows-runner.ps1",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "here-string-evidence": (
+            "run: |\n      $text = @'\n      -DetectOnly\n      '@\n"
+            "      ./scripts/unity/maintain-windows-runner.ps1",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "unused-splat": (
+            "run: |\n"
+            "      . ./scripts/unity/maintain-windows-runner.ps1\n"
+            "      $maintenanceArgs = @{ DetectOnly = $true }\n"
+            "      Invoke-WindowsRunnerMaintenance",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "nested-detect-only": (
+            "run: |\n"
+            "      . ./scripts/unity/maintain-windows-runner.ps1\n"
+            "      $maintenanceArgs = @{\n"
+            "        UnityVersions = @(@{ DetectOnly = $true })\n"
+            "      }\n"
+            "      Invoke-WindowsRunnerMaintenance @maintenanceArgs",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "false-detect-expression": (
+            "run: |\n"
+            "      . ./scripts/unity/maintain-windows-runner.ps1\n"
+            "      $maintenanceArgs = @{\n"
+            "        DetectOnly = $true -and $false\n"
+            "      }\n"
+            "      Invoke-WindowsRunnerMaintenance @maintenanceArgs",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "diagnostic-ensure-guards": (
+            "run: |\n"
+            "      Write-Host \"Expected -CiManagedOnly "
+            "-RequireHealthyExisting -ProvisioningProfile "
+            "with RUNNER_TOOL_CACHE 'u6-v3'\"\n"
+            "      ./scripts/unity/ensure-editor.ps1 "
+            "-UnityVersion 6000.3.16f1",
+            "ensure-editor call missing positive -RequireHealthyExisting",
+        ),
+        "mutated-splat-property": (
+            "run: |\n"
+            "      . ./scripts/unity/maintain-windows-runner.ps1\n"
+            "      $maintenanceArgs = @{ DetectOnly = $true }\n"
+            "      $maintenanceArgs.DetectOnly = $false\n"
+            "      Invoke-WindowsRunnerMaintenance @maintenanceArgs",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "mutated-splat-index": (
+            "run: |\n"
+            "      . ./scripts/unity/maintain-windows-runner.ps1\n"
+            "      $maintenanceArgs = @{ DetectOnly = $true }\n"
+            "      $maintenanceArgs['DetectOnly'] = $false\n"
+            "      Invoke-WindowsRunnerMaintenance @maintenanceArgs",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "removed-splat-key": (
+            "run: |\n"
+            "      . ./scripts/unity/maintain-windows-runner.ps1\n"
+            "      $maintenanceArgs = @{\n"
+            "        DetectOnly = $true\n"
+            "      }\n"
+            "      [void]$maintenanceArgs.Remove('DetectOnly')\n"
+            "      Invoke-WindowsRunnerMaintenance @maintenanceArgs",
+            "Invoke-WindowsRunnerMaintenance invocation is not detect-only",
+        ),
+        "aliased-splat-mutation": (
+            "run: |\n"
+            "      . ./scripts/unity/maintain-windows-runner.ps1\n"
+            "      $maintenanceArgs = @{\n"
+            "        DetectOnly = $true\n"
+            "      }\n"
+            "      $alias = $maintenanceArgs\n"
+            "      $alias.DetectOnly = $false\n"
+            "      Invoke-WindowsRunnerMaintenance @maintenanceArgs",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "repeated-file-dispatch": (
+            "run: |\n"
+            "      $script = Join-Path scripts unity/maintain-windows-runner.ps1\n"
+            "      pwsh -File $script -DetectOnly\n"
+            "      pwsh -File $script",
+            "assigned command is invoked more than once",
+        ),
+    }
+    for name, (run_yaml, expected_fragment) in parser_bypass_fixtures.items():
+        fixture = f"steps:\n  - name: unsafe\n    {run_yaml}\n"
+        require(
+            any(
+                expected_fragment in violation
+                for violation in find_workflow_editor_mutations(
+                    {f"{name}.yml": fixture}
+                )
+            ),
+            f"{name} parser bypass fixture must fail",
+        )
+    yaml_and_binding_fixtures = {
+        "flow-step": (
+            'steps:\n  - { name: unsafe, run: "unity install 6000.3.16f1" }\n',
+            "direct Unity editor mutation command",
+        ),
+        "false-direct-switch": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      . ./scripts/unity/maintain-windows-runner.ps1\n"
+            "      Invoke-WindowsRunnerMaintenance "
+            "-DetectOnly:$true.Equals($false)\n",
+            "maintain-windows-runner.ps1 call is not detect-only",
+        ),
+        "module-invoke-expression": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      Microsoft.PowerShell.Utility\\Invoke-Expression "
+            "'unity install 6000.3.16f1'\n",
+            "Invoke-Expression is forbidden",
+        ),
+        "invoke-expression-alias": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      iex 'unity install 6000.3.16f1'\n",
+            "Invoke-Expression is forbidden",
+        ),
+        "parameterized-get-command": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      & (Get-Command -Name unity).Source install 6000.3.16f1\n",
+            "resolved Unity editor mutation command",
+        ),
+        "variable-install-verb": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      $verb='install'\n"
+            "      & unity $verb 6000.3.16f1\n",
+            "direct Unity editor mutation command",
+        ),
+        "two-variable-indirection": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      $cli='unity'\n"
+            "      $verb='install'\n"
+            "      & $cli $verb 6000.3.16f1\n",
+            "variable command invocation is not an approved detect-only runner audit",
+        ),
+        "nested-powershell-command": (
+            "steps:\n  - name: unsafe\n"
+            '    run: powershell -Command "unity install 6000.3.16f1"\n',
+            "nested Unity editor mutation command",
+        ),
+        "nested-start-process": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      Start-Process powershell -ArgumentList "
+            "'-Command', 'unity install 6000.3.16f1' -Wait\n",
+            "nested Unity editor mutation process",
+        ),
+        "braced-variable-command": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      $unity='unity'\n"
+            "      & ${unity} install 6000.3.16f1\n",
+            "direct Unity editor mutation command",
+        ),
+        "script-block-command": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      Start-Job { unity install 6000.3.16f1 } "
+            "| Wait-Job | Receive-Job\n",
+            "direct Unity editor mutation command",
+        ),
+        "dot-variable-command": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      $cli='unity'\n"
+            "      $verb='install'\n"
+            "      . $cli $verb 6000.3.16f1\n",
+            "variable command invocation is not an approved detect-only runner audit",
+        ),
+        "aliased-run": (
+            "x-command: &unsafe |\n"
+            "  unity install 6000.3.16f1\n"
+            "steps:\n"
+            "  - name: unsafe\n"
+            "    run: *unsafe\n",
+            "direct Unity editor mutation command",
+        ),
+        "start-process-alias": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      $cli='unity'\n"
+            "      $verb='install'\n"
+            "      saps $cli -ArgumentList $verb,'6000.3.16f1' -Wait\n",
+            "variable command invocation is not an approved detect-only runner audit",
+        ),
+        "nested-variable-command": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      $cli='unity'\n"
+            "      $verb='install'\n"
+            "      1 | ForEach-Object { & $cli $verb 6000.3.16f1 }\n",
+            "variable command invocation is not an approved detect-only runner audit",
+        ),
+        "resolved-variable-command": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      $cli='unity'\n"
+            "      $verb='install'\n"
+            "      & (Get-Command $cli) $verb 6000.3.16f1\n",
+            "dynamic resolved-command invocation is forbidden",
+        ),
+        "resolved-start-process": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      $cli='unity'\n"
+            "      $verb='install'\n"
+            "      Start-Process (Get-Command $cli).Source "
+            "-ArgumentList $verb,'6000.3.16f1' -Wait\n",
+            "dynamic resolved-command invocation is forbidden",
+        ),
+        "unbound-canonical-root": (
+            "steps:\n  - name: unsafe\n    run: |\n"
+            "      Write-Host $env:RUNNER_TOOL_CACHE 'u6-v3'\n"
+            "      ./scripts/unity/ensure-editor.ps1 "
+            "-InstallRoot 'C:\\Other' -CiManagedOnly "
+            "-ProvisioningProfile EditorOnly -RequireHealthyExisting\n",
+            "ensure-editor call missing canonical "
+            "RUNNER_TOOL_CACHE/u6-v3 -InstallRoot",
+        ),
+    }
+    for name, (fixture, expected_fragment) in yaml_and_binding_fixtures.items():
+        require(
+            any(
+                expected_fragment in violation
+                for violation in find_workflow_editor_mutations(
+                    {f"{name}.yml": fixture}
+                )
+            ),
+            f"{name} YAML or binding bypass fixture must fail",
+        )
+    commented_maintenance_fixture = """steps:
+  - name: Maintain runner
+    run: ./scripts/unity/maintain-windows-runner.ps1 # -DetectOnly
+"""
+    require(
+        find_workflow_editor_mutations(
+            {"commented-maintenance.yml": commented_maintenance_fixture}
+        )
+        == [
+            "commented-maintenance.yml: "
+            "maintain-windows-runner.ps1 call is not detect-only"
+        ],
+        "inline comments must not make runner maintenance detect-only",
+    )
+    maintain_source = Path("scripts/unity/maintain-windows-runner.ps1").read_text(
+        encoding="utf-8"
+    )
+    require(
+        "$busyProcesses = @($busyProcesses | Where-Object { $_.name -ne 'Runner.Worker' })"
+        in maintain_source,
+        "detect-only runner audit must ignore its own Runner.Worker",
+    )
+    require(
+        "& $bootstrap -DetectOnly -UnityInstallRoot $InstallRoot"
+        in maintain_source,
+        "runner audit must validate host prerequisites against the canonical editor root",
+    )
+    prereq_action_source = Path(
+        ".github/actions/assert-unity-host-prereqs/action.yml"
+    ).read_text(encoding="utf-8")
+    require(
+        "& $scriptPath -DetectOnly -UnityInstallRoot $unityInstallRoot"
+        in prereq_action_source
+        and "Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3'"
+        in prereq_action_source,
+        "per-job host prerequisite checks must be detect-only at the canonical editor root",
+    )
+    runner_audit_source = Path(".github/workflows/runner-bootstrap.yml").read_text(
+        encoding="utf-8"
+    )
+    require(
+        "DetectOnly = $true" in runner_audit_source
+        and "Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3'" in runner_audit_source,
+        "runner audit workflow must be validation-only at the canonical editor root",
+    )
+    ensure_editor_source = Path("scripts/unity/ensure-editor.ps1").read_text(
+        encoding="utf-8"
+    )
+    require(
+        "$RequireHealthyExisting -and $CiManagedOnly" in ensure_editor_source
+        and '"$UnityVersion\\Editor\\Unity.exe"' in ensure_editor_source,
+        "healthy-existing CI validation must require the central return action's canonical editor leaf",
     )
     for workflow, job_id in LICENSED_LOCK_WINDOWS:
         validate_lock_window_timeout_budget(

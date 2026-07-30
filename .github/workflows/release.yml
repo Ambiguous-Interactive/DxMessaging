@@ -237,11 +237,28 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
-      # Skip provisioning, the org lock, and the run when no DxMessaging test
-      # assembly matched (compute resolved an empty list). The verify step runs
-      # only after compute succeeds and is told the run was an expected skip via
-      # expected-empty. Mirrors unity-tests.yml. For the current asmdef set this
-      # never triggers; it is the robustness path for an empty target.
+      # Skip editor validation and Unity work when no test assembly matched.
+      # Lock acquisition remains structurally unconditional for the analyzer;
+      # the expected-empty signal lets result verification report a typed skip.
+      - name: Validate installed Unity Editor
+        id: validate_editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/release-editmode'
+          $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '2022.3.45f1' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -CiManagedOnly `
+            -ProvisioningProfile EditorOnly `
+            -DiagnosticsPath $diagnosticsFile `
+            -RequireHealthyExisting
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
@@ -261,38 +278,19 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      # Serialize shared tool-cache installation and repair with licensed work.
-      - name: Provision Unity Editor
-        id: provision_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 180
-        shell: pwsh
-        run: |
-          $artifactsPath = '.artifacts/unity/release-editmode'
-          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
-          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
-          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $editor = ./scripts/unity/ensure-editor.ps1 `
-            -UnityVersion '2022.3.45f1' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -CiManagedOnly `
-            -ProvisioningProfile EditorOnly `
-            -DiagnosticsPath $diagnosticsFile
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload Unity provisioning diagnostics
+      - name: Upload Unity editor validation diagnostics
         if: always()
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: unity-release-provisioning-editmode
-          path: .artifacts/unity/release-editmode/provisioning
+          name: unity-release-editor-validation-editmode
+          path: .artifacts/unity/release-editmode/editor-validation
           if-no-files-found: warn
           retention-days: 14
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.validate_editor.outcome == 'success' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 120
         shell: pwsh
         env:
@@ -330,7 +328,7 @@ jobs:
       # composite fails unless a results XML exists AND reports total > 0.
       # Gated with !cancelled() (NOT always()) so a user-initiated cancel
       # does not race against this step and emit a misleading "tests did not
-      # run" annotation. Also skips when setup/provisioning/lock work failed
+      # run" annotation. Also skips when setup/editor-validation/lock work failed
       # before the Unity run step attempted; that earlier failure remains the
       # actionable signal. Matches unity-tests.yml and unity-benchmarks.yml.
       - name: Verify tests actually ran
@@ -470,6 +468,24 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
+      - name: Validate installed Unity Editor
+        id: validate_editor
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/release-unitypackage'
+          $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '2022.3.45f1' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -CiManagedOnly `
+            -ProvisioningProfile EditorOnly `
+            -DiagnosticsPath $diagnosticsFile `
+            -RequireHealthyExisting
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
@@ -489,33 +505,13 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      # The exporter needs only EditorOnly, but its shared cache mutation still
-      # requires organization serialization before licensed work begins.
-      - name: Provision Unity Editor
-        id: provision_editor
-        if: ${{ steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 180
-        shell: pwsh
-        run: |
-          $artifactsPath = '.artifacts/unity/release-unitypackage'
-          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
-          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
-          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $editor = ./scripts/unity/ensure-editor.ps1 `
-            -UnityVersion '2022.3.45f1' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -CiManagedOnly `
-            -ProvisioningProfile EditorOnly `
-            -DiagnosticsPath $diagnosticsFile
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload Unity provisioning diagnostics
+      - name: Upload Unity editor validation diagnostics
         if: always()
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: unity-release-provisioning-unitypackage
-          path: .artifacts/unity/release-unitypackage/provisioning
+          name: unity-release-editor-validation-unitypackage
+          path: .artifacts/unity/release-unitypackage/editor-validation
           if-no-files-found: warn
           retention-days: 14
           # The documented recovery for a failed export is re-running this
@@ -525,7 +521,7 @@ jobs:
 
       - name: Export the .unitypackage
         id: export_unitypackage
-        if: ${{ steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
+        if: ${{ steps.validate_editor.outcome == 'success' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 120
         shell: pwsh
         env:

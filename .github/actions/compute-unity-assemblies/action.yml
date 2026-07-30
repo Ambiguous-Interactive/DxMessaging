@@ -57,7 +57,7 @@ runs:
           # SKIP, do not fail: the discovery succeeded but no DxMessaging-owned
           # test assembly matched this target (for example a runtime-only
           # standalone run when every DxMessaging test asmdef is editor-only).
-          # The caller gates its provision/run/verify steps on is-empty so the
+          # The caller gates its validate/run/verify steps on is-empty so the
           # target is skipped cleanly instead of failing with "0 tests ran".
           Write-Host "::notice::No DxMessaging test assemblies matched this target; the Unity run will be skipped."
           Add-Content -Path $env:GITHUB_OUTPUT -Value "assemblies=" -Encoding utf8

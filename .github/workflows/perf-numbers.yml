@@ -240,6 +240,32 @@ jobs:
             -OutputJson (Join-Path $artifactsPath 'machine-specs.json') `
             -OutputSummary (Join-Path $artifactsPath 'machine-specs.txt')
 
+      # Editors and modules are installed manually by a runner administrator.
+      # Validate before taking the organization lock.
+      - name: Validate installed Unity Editor
+        id: validate_editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $provisioningProfile = if ('${{ matrix.test-mode }}' -eq 'standalone') {
+            'StandaloneWindowsIl2Cpp'
+          } else {
+            'EditorOnly'
+          }
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -CiManagedOnly `
+            -ProvisioningProfile $provisioningProfile `
+            -DiagnosticsPath $diagnosticsFile `
+            -RequireHealthyExisting
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
@@ -259,45 +285,19 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      # The Standalone leg provisions IL2CPP support; PlayMode needs only the
-      # editor. Both mutate the shared tool-cache root, so installation and
-      # repair are serialized by the organization lock before licensed work.
-      - name: Provision Unity Editor
-        id: provision_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 180
-        shell: pwsh
-        run: |
-          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
-          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
-          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
-          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $provisioningProfile = if ('${{ matrix.test-mode }}' -eq 'standalone') {
-            'StandaloneWindowsIl2Cpp'
-          } else {
-            'EditorOnly'
-          }
-          $editor = ./scripts/unity/ensure-editor.ps1 `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -CiManagedOnly `
-            -ProvisioningProfile $provisioningProfile `
-            -DiagnosticsPath $diagnosticsFile
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload Unity provisioning diagnostics
+      - name: Upload Unity editor validation diagnostics
         if: always()
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: perf-provisioning-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}/provisioning
+          name: perf-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          path: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}/editor-validation
           if-no-files-found: warn
           retention-days: 14
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.validate_editor.outcome == 'success' && steps.acquire_lock.outputs.acquired == 'true' }}
         # 180 (not 120): the Standalone leg builds a COLD IL2CPP player, which is
         # far slower than a Mono build. The PlayMode leg runs IN-EDITOR (Mono) with
         # no player build and is faster, so 180 is generous for it too. Stays

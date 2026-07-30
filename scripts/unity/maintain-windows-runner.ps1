@@ -252,6 +252,12 @@ function Invoke-WindowsRunnerMaintenance {
         }
 
         $busyProcesses = @(Get-RunnerBusyProcesses)
+        if ($DetectOnly) {
+            # An Actions audit necessarily runs inside Runner.Worker. Ignore
+            # that host process in read-only mode, but still refuse to probe
+            # while a Unity process may be using the editor.
+            $busyProcesses = @($busyProcesses | Where-Object { $_.name -ne 'Runner.Worker' })
+        }
         if ($busyProcesses.Count -gt 0 -and -not $Force) {
             $details = ($busyProcesses | ForEach-Object { "$($_.name)[$($_.id)]" }) -join ', '
             Write-CiWarning "Runner maintenance skipped because runner/editor processes are active: $details. Re-run with -Force only from an intentionally dedicated maintenance window."
@@ -270,9 +276,9 @@ function Invoke-WindowsRunnerMaintenance {
         Write-CiNotice "Running Windows runner host bootstrap before Unity provisioning (mode=$mode)."
         $global:LASTEXITCODE = 0
         if ($DetectOnly) {
-            & $bootstrap -DetectOnly
+            & $bootstrap -DetectOnly -UnityInstallRoot $InstallRoot
         } else {
-            & $bootstrap
+            & $bootstrap -UnityInstallRoot $InstallRoot
         }
         $summary.hostBootstrapExit = $LASTEXITCODE
 

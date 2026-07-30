@@ -67,13 +67,13 @@ With both controls, a run consumes at most one seat while another repository can
 job timeout-minutes >= sum(all capped steps through cleanup gate) + 60
 ```
 
-The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Editor provisioning is capped at 180 minutes, licensed work at 120 to 180 minutes, and return/classify/release/gate at 5/2/5/2 minutes. The licensed jobs use `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
+Editor validation is capped at 10 minutes. The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Licensed work is capped at 120 to 180 minutes, and return/classify/release/gate at 5/2/5/2 minutes. The licensed jobs use `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
 
 The step-level caps protect the in-use seat from a hung editor or ancillary action. They must remain strictly below the job timeout so the step fails first and the cleanup chain still runs. This matters because `stuck-job-watchdog.yml` ignores any `in_progress` job; without step caps, a wedged action can squat the seat until the whole job is cancelled.
 
-Acquire the organization lock before provisioning. All licensed workflows install or repair editors under the shared `RUNNER_TOOL_CACHE/u6-v3` root, so provisioning must be serialized with licensed work. Release the lock only after the always-run return and cleanup-classification steps.
+Runner administrators manually install every exact editor and required module under `RUNNER_TOOL_CACHE/u6-v3`. Workflows validate that root with `-CiManagedOnly -RequireHealthyExisting` before acquiring the organization lock; they never install or repair editors. Release the lock only after the always-run return and cleanup-classification steps.
 
-**Operator note (standalone IL2CPP):** the `standalone` cells require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. `scripts/unity/ensure-editor.ps1` must be called with an explicit provisioning profile: `EditorOnly` for editmode/playmode/benchmarks/release checks, and `StandaloneWindowsIl2Cpp` for standalone so only `windows-il2cpp` is installed or verified. That script treats the beta standalone Unity CLI as a moving surface: it discovers the install root through the 0-arg `unity install-path` GETTER and sets the path best-effort, so an uncertain flag never aborts the matrix. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for the getter-vs-setter detail.
+**Operator note (standalone IL2CPP):** the `standalone` cells require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. `scripts/unity/ensure-editor.ps1` must be called with an explicit provisioning profile: `EditorOnly` for editmode/playmode/benchmarks/release checks, and `StandaloneWindowsIl2Cpp` for standalone so `windows-il2cpp` is verified. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for manual maintenance details.
 
 `unity-benchmarks.yml` (active; manual-only, NEVER on PRs):
 
@@ -86,9 +86,9 @@ The active `unity-benchmarks.yml` explicitly omits `pull_request` and `push` per
 
 ## compute-unity-assemblies is-empty Gate
 
-Every workflow that consumes `./.github/actions/compute-unity-assemblies` mirrors the canonical wiring in `unity-tests.yml`: the compute step carries `id: compute`, and provisioning plus Unity work skip when `is-empty == 'true'`. Lock acquisition remains unconditional because the static matrix is structurally non-empty and the organization analyzer must prove each acquisition. When asmdef discovery resolves no owned assemblies, verification treats the empty selection as an intentional skip while the terminal return/classify/release/gate chain still proves cleanup.
+Every workflow that consumes `./.github/actions/compute-unity-assemblies` mirrors the canonical wiring in `unity-tests.yml`: the compute step carries `id: compute`, and editor validation plus Unity work skip when `is-empty == 'true'`. Lock acquisition remains unconditional because the static matrix is structurally non-empty and the organization analyzer must prove each acquisition. When asmdef discovery resolves no owned assemblies, verification treats the empty selection as an intentional skip while the terminal return/classify/release/gate chain still proves cleanup.
 
-The `Verify tests actually ran` step keeps a cancellation-safe gate and must also require `steps.compute.outcome == 'success'` plus either `steps.compute.outputs.is-empty == 'true'` or a non-skipped Unity run step (never an is-empty gate alone). It receives `expected-empty: ${{ steps.compute.outputs.is-empty }}`, so an intentional skip reads as success rather than a "tests did not run" failure, while checkout/cache/setup/provisioning/lock failures that prevent Unity from launching are not obscured by a generic missing-results annotation. The skip path does not fire for the current asmdef set; it is the robustness path for a target whose assemblies are all filtered out, such as a runtime-only standalone run when every DxMessaging test asmdef is editor-only.
+The `Verify tests actually ran` step keeps a cancellation-safe gate and must also require `steps.compute.outcome == 'success'` plus either `steps.compute.outputs.is-empty == 'true'` or a non-skipped Unity run step (never an is-empty gate alone). It receives `expected-empty: ${{ steps.compute.outputs.is-empty }}`, so an intentional skip reads as success rather than a "tests did not run" failure, while checkout/cache/setup/editor-validation/lock failures that prevent Unity from launching are not obscured by a generic missing-results annotation. The skip path does not fire for the current asmdef set; it is the robustness path for a target whose assemblies are all filtered out, such as a runtime-only standalone run when every DxMessaging test asmdef is editor-only.
 
 When editing these workflows, keep every compute step carrying an `id` and every license-consuming step gated on `steps.<compute-id>.outputs.is-empty != 'true'`. Do not gate verify on is-empty, and do not remove the gated steps; mirror `unity-tests.yml`.
 
@@ -109,7 +109,9 @@ Add a version to the canonical `.github/unity-versions.json` `all` array when on
    `2024.3.10f1`). See
    [Unity Version Single Source of Truth](./unity-version-single-source.md).
 
-1. Verify the Unity standalone CLI can install the requested version on the self-hosted Windows runner, or that the version already exists under `UNITY_EDITOR_INSTALL_ROOT` / `C:\Unity\Editors` / Unity Hub's install path.
+1. Have a runner administrator install the exact editor and required modules
+   under that runner's `RUNNER_TOOL_CACHE/u6-v3/<version>/Editor/Unity.exe`
+   path, then run the validation-only runner audit.
 
 1. Validate the new version locally via the MCP loop against the host editor.
    The host editor must be running that exact Unity version; then run the EditMode

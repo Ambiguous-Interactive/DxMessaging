@@ -165,14 +165,35 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
-      # Skip provisioning, the org lock, and the run when no DxMessaging test
-      # assembly matched this target (compute step resolved an empty list). The
-      # verify step runs only after compute succeeds and is told the run was an
-      # expected skip via the expected-empty input. This never triggers for the
-      # current asmdef set; it is the robustness path for a target with no
-      # matching assemblies. If checkout/cache/setup fails before compute, let
-      # that setup failure stand on its own instead of adding a misleading
-      # "tests did not run" annotation for a Unity run that never started.
+      # Skip editor validation and Unity work when no test assembly matched.
+      # Lock acquisition remains structurally unconditional for the analyzer;
+      # the expected-empty signal lets result verification report a typed skip.
+      # Editors and modules are installed manually by a runner administrator.
+      # CI only verifies the exact trusted tool-cache install and never repairs it.
+      - name: Validate installed Unity Editor
+        id: validate_editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $provisioningProfile = if ('${{ matrix.test-mode }}' -eq 'standalone') {
+            'StandaloneWindowsIl2Cpp'
+          } else {
+            'EditorOnly'
+          }
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -CiManagedOnly `
+            -ProvisioningProfile $provisioningProfile `
+            -DiagnosticsPath $diagnosticsFile `
+            -RequireHealthyExisting
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Require current PR head before lock acquisition
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 2
@@ -204,45 +225,19 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      # The shared tool-cache editor root is organization-wide runner state.
-      # Provision only while holding the same lock that serializes licensed
-      # work, so concurrent repositories cannot repair or replace one editor.
-      - name: Provision Unity Editor
-        id: provision_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 180
-        shell: pwsh
-        run: |
-          $artifactsPath = '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
-          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
-          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
-          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $provisioningProfile = if ('${{ matrix.test-mode }}' -eq 'standalone') {
-            'StandaloneWindowsIl2Cpp'
-          } else {
-            'EditorOnly'
-          }
-          $editor = ./scripts/unity/ensure-editor.ps1 `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -CiManagedOnly `
-            -ProvisioningProfile $provisioningProfile `
-            -DiagnosticsPath $diagnosticsFile
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload Unity provisioning diagnostics
+      - name: Upload Unity editor validation diagnostics
         if: always()
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: unity-provisioning-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: .artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}/provisioning
+          name: unity-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          path: .artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}/editor-validation
           if-no-files-found: warn
           retention-days: 14
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.validate_editor.outcome == 'success' && steps.acquire_lock.outputs.acquired == 'true' }}
         # 150 (was 120): the standalone leg builds a NON-development IL2CPP
         # player with the Release C++ configuration. Measured PR runs showed the
         # Debug C++ configuration reduces native compile time but makes the
@@ -292,7 +287,7 @@ jobs:
       # composite fails unless a results XML exists AND reports total > 0.
       # Skip on cancellation so a user-cancelled run does not emit the
       # generic "tests did not run" annotation -- the cancellation itself
-      # is the explanation. Also skip if setup/provisioning/lock work failed
+      # is the explanation. Also skip if setup/editor-validation/lock work failed
       # before the Unity run step attempted; that earlier failure is then the
       # actionable signal. The guard still runs for intentional empty targets,
       # after a Unity-run failure (to surface "tests did not run" /

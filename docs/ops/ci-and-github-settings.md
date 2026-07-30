@@ -64,12 +64,13 @@ the `unity-tests` `test-mode` matrix. The direct Windows runner
 (`scripts/unity/run-ci-tests.ps1`) maps that mode to `StandaloneWindows64`
 and configures IL2CPP in the generated project, not a separate job.
 
-Unity editor provisioning must be scoped before the license lock. Every
-`ensure-editor.ps1 -CiManagedOnly` workflow step passes an explicit
+Unity editors and modules are installed manually by a runner administrator.
+Every workflow validates the exact tool-cache editor before the license lock
+with `ensure-editor.ps1 -CiManagedOnly -RequireHealthyExisting` and an explicit
 `-ProvisioningProfile`: `EditorOnly` for editmode, playmode, benchmarks, and
 release Unity checks; `StandaloneWindowsIl2Cpp` for standalone; and `Android`
-only for jobs that actually need Android SDK/NDK tooling. The direct runner's
-fallback uses the same mapping if `UNITY_EDITOR_PATH` is absent.
+only for jobs that actually need Android SDK/NDK tooling. Workflows never
+install, repair, uninstall, or quarantine editors.
 
 Per-runner Unity-cache safety is provided by each runner agent's exclusive
 workspace - a single self-hosted agent only ever runs one job at a time, so
@@ -316,8 +317,9 @@ Workflow-shape contract checklist:
    `scripts/unity/run-ci-tests.ps1`.
 1. Confirm each of those jobs runs `./.github/actions/validate-unity-license`
    before the direct Unity runner.
-1. Confirm each `ensure-editor.ps1 -CiManagedOnly` provisioning step passes an
-   explicit `-ProvisioningProfile` matching the Unity test mode.
+1. Confirm each `ensure-editor.ps1 -CiManagedOnly` validation step passes
+   `-RequireHealthyExisting` and an explicit `-ProvisioningProfile` matching
+   the Unity test mode.
 1. Confirm each of those jobs releases the organization lock after the direct
    Unity runner with `if: always()`.
 1. Confirm each of those jobs declares the uniform static label set

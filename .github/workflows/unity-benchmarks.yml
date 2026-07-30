@@ -127,12 +127,28 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
-      # Skip provisioning, the org lock, and the run when the compute step
-      # resolved an empty assembly list, so an empty discovery never takes the
-      # paid Unity seat / org lock only to fail late at verify. The verify step
-      # runs only after compute succeeds and is told via expected-empty. Mirrors
-      # unity-tests.yml. The benchmark list is structurally non-empty, so this
-      # is defense-in-depth and uniformity with the required workflows.
+      # Skip editor validation and Unity work when no assembly matched. Lock
+      # acquisition remains structurally unconditional for the analyzer. The
+      # benchmark list is currently non-empty, so this is defense-in-depth.
+      - name: Validate installed Unity Editor
+        id: validate_editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -CiManagedOnly `
+            -ProvisioningProfile EditorOnly `
+            -DiagnosticsPath $diagnosticsFile `
+            -RequireHealthyExisting
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
@@ -152,38 +168,19 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      # Serialize shared tool-cache installation and repair with licensed work.
-      - name: Provision Unity Editor
-        id: provision_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 180
-        shell: pwsh
-        run: |
-          $artifactsPath = '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
-          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
-          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
-          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $editor = ./scripts/unity/ensure-editor.ps1 `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -CiManagedOnly `
-            -ProvisioningProfile EditorOnly `
-            -DiagnosticsPath $diagnosticsFile
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload Unity provisioning diagnostics
+      - name: Upload Unity editor validation diagnostics
         if: always()
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: unity-benchmark-provisioning-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}/provisioning
+          name: unity-benchmark-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          path: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}/editor-validation
           if-no-files-found: warn
           retention-days: 90
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' && steps.provision_editor.outcome == 'success' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.validate_editor.outcome == 'success' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 120
         shell: pwsh
         env:
@@ -229,7 +226,7 @@ jobs:
       # composite fails unless a results XML exists AND reports total > 0.
       # Skip on cancellation so a user-cancelled run does not emit the
       # generic "tests did not run" annotation -- the cancellation itself
-      # is the explanation. Also skip if setup/provisioning/lock work failed
+      # is the explanation. Also skip if setup/editor-validation/lock work failed
       # before the Unity run step attempted; that earlier failure is then the
       # actionable signal. The guard still runs for intentional empty targets,
       # after a Unity-run failure (to surface "tests did not run" /

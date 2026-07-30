@@ -776,16 +776,21 @@ function Get-UnityEditorCandidates {
 
     $candidates = New-Object System.Collections.Generic.List[string]
     $candidates.Add((Join-Path $Root "$Version\Editor\Unity.exe"))
-    $candidates.Add((Join-Path $Root "$Version\Unity.exe"))
 
-    if ($IncludeHostInstalls -and ${env:ProgramFiles} -and ${env:ProgramFiles}.Trim().Length -gt 0) {
-        $candidates.Add((Join-Path ${env:ProgramFiles} "Unity\Hub\Editor\$Version\Editor\Unity.exe"))
-        $candidates.Add((Join-Path ${env:ProgramFiles} "Unity\$Version\Editor\Unity.exe"))
-    }
-    if ($IncludeHostInstalls -and ${env:ProgramFiles(x86)} -and ${env:ProgramFiles(x86)}.Trim().Length -gt 0) {
-        $candidates.Add(
-            (Join-Path ${env:ProgramFiles(x86)} "Unity\Hub\Editor\$Version\Editor\Unity.exe")
-        )
+    if ($IncludeHostInstalls) {
+        # The flat root layout is a legacy host-install shape. CI-managed
+        # installs deliberately exclude it because the central license-return
+        # action resolves only <root>\<version>\Editor\Unity.exe.
+        $candidates.Add((Join-Path $Root "$Version\Unity.exe"))
+        if (${env:ProgramFiles} -and ${env:ProgramFiles}.Trim().Length -gt 0) {
+            $candidates.Add((Join-Path ${env:ProgramFiles} "Unity\Hub\Editor\$Version\Editor\Unity.exe"))
+            $candidates.Add((Join-Path ${env:ProgramFiles} "Unity\$Version\Editor\Unity.exe"))
+        }
+        if (${env:ProgramFiles(x86)} -and ${env:ProgramFiles(x86)}.Trim().Length -gt 0) {
+            $candidates.Add(
+                (Join-Path ${env:ProgramFiles(x86)} "Unity\Hub\Editor\$Version\Editor\Unity.exe")
+            )
+        }
     }
 
     return @($candidates.ToArray() | Where-Object { $_ -and $_.Trim().Length -gt 0 })
@@ -1574,7 +1579,7 @@ function Write-UnityHostPrereqAnnotation {
     # WRAP-IMMUNE, single-line CI annotation for the 0xC0000135 short-circuit in
     # Ensure-UnityNativeStartupHealthy. Emits a `::error::` line that NAMES the
     # operator-actionable remediation (run scripts/unity/bootstrap-windows-runner.ps1,
-    # or trigger the runner-bootstrap workflow) AND the runbook, so the failure
+    # from an elevated host shell) AND the runbook, so the failure
     # surfaces as a host-OS prerequisite problem instead of a generic Unity install
     # error. The annotation also lists the DLLs Unity.exe IMPORTS (best-effort, via
     # Get-UnityNativeImports) -- listing imports does not tell us WHICH one is
@@ -1595,14 +1600,14 @@ function Write-UnityHostPrereqAnnotation {
     # 0xC0000135 throw the caller is about to raise. Get-UnityNativeImports is itself
     # best-effort; we still emit the rest of the line even with no imports.
     #
-    # CONTEXT-AWARE CAUSE PHRASING: when the composite preflight action
-    # (`assert-unity-host-prereqs`) has already installed VC++ at job start, it
-    # exports DXM_RUNNER_PREREQ_INSTALLED=1 to the rest of the job. In that case the
+    # CONTEXT-AWARE CAUSE PHRASING: when the validation-only composite preflight
+    # (`assert-unity-host-prereqs`) has confirmed VC++ at job start, it exports
+    # DXM_RUNNER_PREREQ_INSTALLED=1 to the rest of the job. In that case the
     # 0xC0000135 we are now diagnosing CANNOT be a missing VC++ Redistributable
-    # (preflight just installed it successfully); it is a DIFFERENT missing DLL --
+    # (preflight just confirmed it); it is a DIFFERENT missing DLL --
     # Unity-version-specific, a corrupt install, or a runtime DLL deleted mid-job.
     # The annotation branches on that env var so we never tell the operator "install
-    # VC++" after preflight already did. When the env var is unset (or any value
+    # VC++" after preflight already confirmed it. When the env var is unset (or any value
     # other than '1') we keep the original VC++-most-likely phrasing.
     #
     # REPAIR-PATH AWARENESS: callers that fire this annotation AFTER a managed
@@ -1665,8 +1670,7 @@ function Write-UnityHostPrereqAnnotation {
             # Sub-classify: if ANY missing DLL looks Unity-shipped (libfbxsdk,
             # optix*, OpenImageDenoise, *compress*, FreeImage, etc.), point at
             # "install corruption" because reinstalling Unity WILL fix that
-            # case -- and surface DXM_UNITY_FORCE_REINSTALL=1 as the
-            # operator-actionable override for the 0xC0000135 short-circuit.
+            # case and direct the runner administrator to host-side repair.
             $unityShippedMissing = @($missingList | Where-Object { Test-UnityImportLooksUnityShipped -Name $_ })
             $missingNames = ($missingList -join ', ')
             # R1 (round-3 review nit): segments do NOT end with `.` -- the
@@ -1678,7 +1682,7 @@ function Write-UnityHostPrereqAnnotation {
                 $editorDirForHint = if ($EditorPath) {
                     try { Split-Path -Parent $EditorPath } catch { '(unknown)' }
                 } else { '(unknown)' }
-                $missingSegment += "; some missing DLLs ($($unityShippedMissing -join ', ')) appear to be Unity-shipped third-party libraries, suggesting the Unity install at $editorDirForHint is partial or corrupt -- quarantine and reinstall via ``unity install $Version`` (or set DXM_UNITY_FORCE_REINSTALL=1 to override the 0xC0000135 short-circuit and let ensure-editor.ps1 perform a managed reinstall)"
+                $missingSegment += "; some missing DLLs ($($unityShippedMissing -join ', ')) appear to be Unity-shipped third-party libraries, suggesting the Unity install at $editorDirForHint is partial or corrupt -- a runner administrator must quarantine and reinstall it from an elevated host shell"
             }
             $diagnosticSegment = $missingSegment
         } else {
@@ -1764,7 +1768,7 @@ function Write-UnityHostPrereqAnnotation {
         $fixLine = if ($preflightRan) {
             "Fix: identify the missing DLL from above and install it on the host (or reimage the runner). Runbook: docs/runbooks/unity-runners-after-transfer.md (Windows host prerequisites)."
         } else {
-            "Fix: run scripts/unity/bootstrap-windows-runner.ps1 on this runner, or trigger .github/workflows/runner-bootstrap.yml from the Actions UI. Runbook: docs/runbooks/unity-runners-after-transfer.md (Windows host prerequisites)."
+            "Fix: a runner administrator must run scripts/unity/bootstrap-windows-runner.ps1 from an elevated shell on this host. Runbook: docs/runbooks/unity-runners-after-transfer.md (Windows host prerequisites)."
         }
         # Single-line, wrap-immune ::error:: annotation. Do NOT split across lines:
         # the runner emits each Write-Host as one CI log line, and a multi-line
@@ -1787,7 +1791,7 @@ function Write-UnityHostPrereqAnnotation {
         try {
             $fallbackPreflight = ($env:DXM_RUNNER_PREREQ_INSTALLED -eq '1')
             if ($fallbackPreflight) {
-                Write-Host "::error title=Unity $Version host prerequisite missing::Unity $Version native startup failed with exit $ExitCode. Preflight already installed VC++ (both 2010 and 2015-2022 generations) this job, so a DIFFERENT host DLL is missing -- inspect the Unity.exe imports above. Runbook: docs/runbooks/unity-runners-after-transfer.md."
+                Write-Host "::error title=Unity $Version host prerequisite missing::Unity $Version native startup failed with exit $ExitCode. Preflight already confirmed VC++ (both 2010 and 2015-2022 generations) this job, so a DIFFERENT host DLL is missing -- inspect the Unity.exe imports above. Runbook: docs/runbooks/unity-runners-after-transfer.md."
             } else {
                 Write-Host "::error title=Unity $Version host prerequisite missing::Unity $Version native startup failed with exit $ExitCode. Likely missing Microsoft Visual C++ Redistributables (2010 SP1 x64 ships MSVCP100.dll/MSVCR100.dll; 2015-2022 x64 ships VCRUNTIME140.dll/MSVCP140.dll -- both are required for Unity). Run scripts/unity/bootstrap-windows-runner.ps1. Runbook: docs/runbooks/unity-runners-after-transfer.md."
             }
@@ -2084,32 +2088,36 @@ function Resolve-InstalledEditor {
         [switch]$ManagedOnly
     )
 
+    if ($ManagedOnly) {
+        # The central license-return action uses this exact leaf. Managed
+        # maintenance must converge on the same layout that CI validates;
+        # accepting <root>\<version>\Unity.exe here would let host repair
+        # report success for an editor that licensed workflows cannot use.
+        $canonicalEditor = Join-Path $Root "$Version\Editor\Unity.exe"
+        if (Test-Path -LiteralPath $canonicalEditor -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $canonicalEditor).Path
+        }
+        return $null
+    }
+
     $cliRoot = Get-UnityCliInstallRoot
     if ($cliRoot) {
         foreach ($candidate in @(
                 (Join-Path $cliRoot "$Version\Editor\Unity.exe"),
                 (Join-Path $cliRoot "$Version\Unity.exe"))) {
             if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-                if ($ManagedOnly -and -not (Test-IsPathInsideDirectory -Path $candidate -Directory $Root)) {
-                    Write-CiNotice "Ignoring Unity $Version from CLI install root because it is outside the managed install root: $candidate"
-                    continue
-                }
                 return (Resolve-Path -LiteralPath $candidate).Path
             }
         }
     }
 
-    $byCandidate = Find-UnityEditor -Version $Version -Root $Root -IncludeHostInstalls:(-not $ManagedOnly)
+    $byCandidate = Find-UnityEditor -Version $Version -Root $Root -IncludeHostInstalls
     if ($byCandidate) {
         return $byCandidate
     }
 
     $byJson = Resolve-EditorFromCliJson -Version $Version
     if ($byJson) {
-        if ($ManagedOnly -and -not (Test-IsPathInsideDirectory -Path $byJson -Directory $Root)) {
-            Write-CiNotice "Ignoring Unity $Version from CLI editor inventory because it is outside the managed install root: $byJson"
-            return $null
-        }
         return $byJson
     }
 
@@ -3732,7 +3740,7 @@ function Ensure-UnityNativeStartupHealthy {
             Write-CiNotice "DXM_UNITY_FORCE_REINSTALL=1: bypassing 0xC0000135 short-circuit; will attempt managed reinstall (caller asserts the failure is install corruption, not host prereq). If the reinstall fails to recover Unity startup, the post-repair short-circuit will fire."
         } else {
             Write-UnityHostPrereqAnnotation -Version $Version -ExitCode $result.ExitCode -Description $result.Description -EditorPath $EditorPath -ProbeLog $probeLog
-            throw "Unity $Version native startup probe failed with exit code $($result.ExitCode) (0xC0000135 / STATUS_DLL_NOT_FOUND). This is a host OS prerequisite failure (the Windows loader could not find a DLL Unity.exe imports). The most likely cause is a missing Microsoft Visual C++ Redistributable: the 2010 SP1 generation ships MSVCP100.dll/MSVCR100.dll, and the 2015-2022 generation ships VCRUNTIME140.dll/MSVCP140.dll -- BOTH are required for Unity. Skipped managed reinstall (would not help: the missing DLL is on the OS, not in the Unity install). Probe log: $probeLog. Runbook: docs/runbooks/unity-runners-after-transfer.md (Windows host prerequisites). Remediation: run scripts/unity/bootstrap-windows-runner.ps1 on this runner (or trigger the runner-bootstrap workflow_dispatch from the Actions UI). If the missing DLL is Unity-shipped (libfbxsdk, optix, etc., per the MISSING DLL annotation above), set DXM_UNITY_FORCE_REINSTALL=1 to bypass this short-circuit and retry with a managed reinstall."
+            throw "Unity $Version native startup probe failed with exit code $($result.ExitCode) (0xC0000135 / STATUS_DLL_NOT_FOUND). This is a host OS prerequisite failure (the Windows loader could not find a DLL Unity.exe imports). The most likely cause is a missing Microsoft Visual C++ Redistributable: the 2010 SP1 generation ships MSVCP100.dll/MSVCR100.dll, and the 2015-2022 generation ships VCRUNTIME140.dll/MSVCP140.dll -- BOTH are required for Unity. Skipped managed reinstall (would not help: the missing DLL is on the OS, not in the Unity install). Probe log: $probeLog. Runbook: docs/runbooks/unity-runners-after-transfer.md (Windows host prerequisites). Remediation: a runner administrator must repair the host or editor from an elevated host shell."
         }
     }
 
@@ -3758,7 +3766,7 @@ function Ensure-UnityNativeStartupHealthy {
         # expected for 0xC0000135 -- the missing DLL is on the OS).
         if (Test-IsNativeDllNotFound -ExitCode $repairProbe.ExitCode) {
             Write-UnityHostPrereqAnnotation -Version $Version -ExitCode $repairProbe.ExitCode -Description $repairProbe.Description -EditorPath $repaired -ProbeLog $probeLog -RepairAttempted
-            throw "Unity $Version native startup probe still failed after managed reinstall with exit code $($repairProbe.ExitCode) ($($repairProbe.Description)). Host OS prerequisite damage. The managed reinstall did not help (as expected for 0xC0000135). Probe log: $probeLog. Runbook: docs/runbooks/unity-runners-after-transfer.md. Remediation: run scripts/unity/bootstrap-windows-runner.ps1 (or trigger .github/workflows/runner-bootstrap.yml)."
+            throw "Unity $Version native startup probe still failed after managed reinstall with exit code $($repairProbe.ExitCode) ($($repairProbe.Description)). Host OS prerequisite damage. The managed reinstall did not help (as expected for 0xC0000135). Probe log: $probeLog. Runbook: docs/runbooks/unity-runners-after-transfer.md. Remediation: a runner administrator must repair the host from an elevated shell."
         }
         throw "Unity $Version native startup probe still failed after managed reinstall with exit code $($repairProbe.ExitCode) ($($repairProbe.Description)). This indicates host OS/runtime prerequisite damage rather than a package/test issue. Probe log: $probeLog"
     }
@@ -4519,20 +4527,34 @@ Initialize-UnityProvisioningBudget
 Write-CiNotice "Unity editor provisioning profile: $ProvisioningProfile."
 
 try {
-New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
+if (-not $RequireHealthyExisting) {
+    New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
+}
 
-$editor = Find-UnityEditor -Version $UnityVersion -Root $InstallRoot -IncludeHostInstalls:(-not $CiManagedOnly)
+$editor = if ($RequireHealthyExisting -and $CiManagedOnly) {
+    # SYNC: The central return-unity-license action resolves this exact trusted
+    # leaf. A flat <root>\<version>\Unity.exe can run tests but cannot return
+    # the paid seat through that action, so CI validation must reject it.
+    $canonicalEditor = Join-Path $InstallRoot "$UnityVersion\Editor\Unity.exe"
+    if (Test-Path -LiteralPath $canonicalEditor -PathType Leaf) {
+        (Resolve-Path -LiteralPath $canonicalEditor).Path
+    } else {
+        $null
+    }
+} else {
+    Find-UnityEditor -Version $UnityVersion -Root $InstallRoot -IncludeHostInstalls:(-not $CiManagedOnly)
+}
 if ($RequireHealthyExisting) {
     if (-not $editor) {
         Write-InstalledEditorDiagnostics -Version $UnityVersion -Root $InstallRoot -Reason "RequireHealthyExisting was set and no existing Unity editor was found."
-        throw "Unity $UnityVersion is not installed under '$InstallRoot' and RequireHealthyExisting is set. CI test jobs do not install or repair Unity in-job; run scripts/unity/maintain-windows-runner.ps1 or dispatch .github/workflows/runner-bootstrap.yml to provision the editor and required modules first."
+        throw "Unity $UnityVersion is not installed at the required canonical path '$InstallRoot\$UnityVersion\Editor\Unity.exe'. CI never installs or repairs Unity. A runner administrator must manually install the exact editor and required modules at that path before retrying."
     }
 
     $script:ProvisioningEditorPath = $editor
     $missingModules = @(Get-MissingUnityCiModuleGroups -EditorPath $editor -Profile $ProvisioningProfile)
     if ($missingModules.Count -gt 0) {
         Write-InstalledEditorDiagnostics -Version $UnityVersion -Root $InstallRoot -Reason "RequireHealthyExisting was set and required module groups are missing: $($missingModules -join ', ')."
-        throw "Unity $UnityVersion is missing required CI module groups for provisioning profile '$ProvisioningProfile': $($missingModules -join ', '). CI test jobs fail fast instead of installing modules in-job; run scripts/unity/maintain-windows-runner.ps1 or dispatch .github/workflows/runner-bootstrap.yml to repair this editor."
+        throw "Unity $UnityVersion is missing required CI module groups for profile '$ProvisioningProfile': $($missingModules -join ', '). CI never installs modules. A runner administrator must add them manually before retrying."
     }
 
     if ($env:DXM_UNITY_SKIP_NATIVE_STARTUP_PROBE -eq '1') {
@@ -4545,7 +4567,7 @@ if ($RequireHealthyExisting) {
             if (Test-IsNativeDllNotFound -ExitCode $startupResult.ExitCode) {
                 Write-UnityHostPrereqAnnotation -Version $UnityVersion -ExitCode $startupResult.ExitCode -Description $startupResult.Description -EditorPath $editor -ProbeLog $probeLog
             }
-            throw "Unity $UnityVersion native startup probe failed with exit code $($startupResult.ExitCode) ($($startupResult.Description)) and RequireHealthyExisting is set. CI test jobs do not repair Unity in-job. Run scripts/unity/maintain-windows-runner.ps1 or dispatch .github/workflows/runner-bootstrap.yml. Probe log: $probeLog"
+            throw "Unity $UnityVersion native startup probe failed with exit code $($startupResult.ExitCode) ($($startupResult.Description)). CI never repairs Unity. A runner administrator must repair the host or editor manually before retrying. Probe log: $probeLog"
         }
     }
     $script:ProvisioningEditorPath = $editor

@@ -2,13 +2,13 @@
 
 # Unity Editor CLI Bootstrap
 
-> **One-line summary**: `scripts/unity/ensure-editor.ps1` installs the standalone Unity CLI on a self-hosted Windows runner, refreshes the session `$env:PATH`, discovers the editor through layered CLI-aware resolution, and enforces a profile-scoped Unity editor desired state with quarantine/reinstall repair.
+> **One-line summary**: Runner administrators use `scripts/unity/ensure-editor.ps1` for manual editor maintenance; active workflows call it with `-RequireHealthyExisting` for validation only.
 
 ## Overview
 
-The active Unity workflows run directly on self-hosted Windows runners and use the standalone Unity CLI (`unity`) to install editors and modules on demand. `scripts/unity/ensure-editor.ps1` is the bootstrap: if `unity` is not already on PATH it downloads and runs the official installer, then provisions the editor according to `-ProvisioningProfile`. CI must pass the profile explicitly. `EditorOnly` installs/verifies only the editor, `StandaloneWindowsIl2Cpp` adds only `windows-il2cpp`, `Android` adds Android player support plus SDK/NDK/OpenJDK disk proof, and `Full` preserves the historical broad module set for manual compatibility. The heavy/flaky Android SDK/NDK payload is scoped to `Android` or `Full`, because the NDK unpack can fail (~93%, exit 6) on Windows runners without long-path support. OpenJDK is NOT in any requested `-m` list -- it arrives as a dependency of `android-sdk-ndk-tools` and is only verified on disk afterward (see [CI module desired state and repair](#ci-module-desired-state-and-repair)).
+The active Unity workflows run directly on self-hosted Windows runners, but they do not install or repair editors. A runner administrator installs every exact editor and required module under `RUNNER_TOOL_CACHE/u6-v3`. Workflows call `scripts/unity/ensure-editor.ps1` with `-CiManagedOnly -RequireHealthyExisting` and an explicit `-ProvisioningProfile`; this path performs discovery, module disk checks, and a native startup probe, then fails with manual remediation instructions if anything is missing or unhealthy. The script's standalone Unity CLI install and quarantine/repair paths remain available only for an administrator running maintenance directly on the host.
 
-Editor provisioning runs before the organization Unity license lock. The locked section should only activate/return the serial license and run tests; editor install/repair can take tens of minutes and must not block other licensed Unity jobs.
+Editor validation runs before the organization Unity license lock. The locked section only activates/returns the serial license and runs tests.
 
 The standalone CLI is a moving beta surface (`v0.1.0-beta.x`). Some flags are undocumented and differ between releases, so the script treats every optional operation as best-effort and never lets an uncertain flag abort the install. Two failure modes drove the current design: the installer leaves `unity` off the current session PATH, and `unity install-path` was once called with a positional directory argument, which the CLI rejected.
 
@@ -122,11 +122,11 @@ The bootstrap keeps two DELIBERATELY DECOUPLED lists, because "what we ASK the C
 
 For a missing selected `core` group, repair is enabled by default. The script first tries `unity uninstall <version>` as a cleanup hint. It then quarantines any remaining managed version directory to `<install-root>\_quarantine\<version>-<timestamp>-<id>` and runs a fresh `unity install <version>` with the selected profile's requested module ids (the same single-source-of-truth arg vector as the primary install). Repair install retries once when the CLI still reports "already installed" without a resolvable managed editor, clearing stale CLI metadata with another uninstall before retrying. Repair is deliberately bounded to the configured install root; the script refuses to move arbitrary `ProgramFiles` installs. In CI-managed mode, repair resolution also keeps `-ManagedOnly` so a host install cannot be selected after reinstall. The same uninstall-plus-version-directory quarantine path handles partial installs where the CLI reports "already installed" but no `Unity.exe` leaf exists, so stale CLI metadata cannot keep returning the same no-op state.
 
-Set `DXM_UNITY_DISABLE_EDITOR_REPAIR=1` only when debugging the installer itself. Normal CI should keep repair enabled so manually copied, partial, or non-Hub/non-CLI-managed editors converge to a known-good CLI-managed install.
+Set `DXM_UNITY_DISABLE_EDITOR_REPAIR=1` only when debugging a manual maintenance run. CI always uses `-RequireHealthyExisting`, which exits before every install or repair path.
 
-After module validation, `ensure-editor.ps1` runs a native startup probe before the license lock. If startup fails, the script performs one managed reinstall AND re-runs `Ensure-UnityCiModules` with the selected profile, then probes again. A second startup failure is classified as host OS/runtime prerequisite damage (for example missing native DLLs such as `0xC0000135` / `STATUS_DLL_NOT_FOUND`), not a package/test failure.
+After module validation, `ensure-editor.ps1` runs a native startup probe before the license lock. Under `-RequireHealthyExisting`, any startup failure stops immediately and requires administrator remediation.
 
-The `0xC0000135` failure mode has its own short-circuit: both probe sites emit a wrap-immune single-line `::error::` annotation BEFORE the throw and refuse to loop on a futile Unity reinstall (the missing DLL is on the OS, not in the Unity install). The host-OS prereqs themselves are remediated out-of-band by [Unity Runner Host Prerequisites](./unity-runner-host-prereqs.md) -- a per-job preflight composite (`.github/actions/assert-unity-host-prereqs`) auto-installs the Microsoft Visual C++ 2015-2022 Redistributable, Windows long-path support, Defender exclusions, and PowerShell 7, exporting `DXM_RUNNER_PREREQ_INSTALLED=1` on success so the short-circuit annotation can adjust the suggested cause when the preflight has already run.
+The `0xC0000135` failure mode emits a wrap-immune single-line `::error::` annotation before the throw. Host prerequisites are installed manually by an administrator and checked by [Unity Runner Host Prerequisites](./unity-runner-host-prereqs.md).
 
 ## Verification (invariants to keep honest in review)
 
@@ -134,7 +134,7 @@ The `0xC0000135` failure mode has its own short-circuit: both probe sites emit a
 - The PATH fix stays intact: `$script:UnityCliPath`, `GetEnvironmentVariable`, `Update-SessionPathFromRegistry`, and the absolute-path fallback; `install-path` SET uses `-s` (never a positional `$Root`); `Invoke-UnityCliSafe` exists; `Get-UnityCliInstallRoot` reads `@('install-path')`; discovery stays defensive (`--format json` / `ConvertFrom-Json`); quarantine/reinstall repair is preserved.
 - The `--accept-eula` contract: `Get-UnityCliModuleInstallArguments` remains the ONLY place that builds a module-install (`install`/`install-modules` ... `-m` ...) arg vector, every live install call site routes through it, and the requested `-m` ids exclude `android-open-jdk` while the verified groups include it.
 - Disk-proof idempotency, managed-install quarantine/reinstall, and the `DXM_UNITY_DISABLE_EDITOR_REPAIR=1` refusal path keep working.
-- Active Unity workflows provision editors before acquiring the organization Unity lock and export `UNITY_EDITOR_PATH` for the locked test step.
+- Active Unity workflows validate `RUNNER_TOOL_CACHE/u6-v3` with `-CiManagedOnly -RequireHealthyExisting` before acquiring the organization Unity lock and export `UNITY_EDITOR_PATH` for the locked test step.
 
 ## See Also
 

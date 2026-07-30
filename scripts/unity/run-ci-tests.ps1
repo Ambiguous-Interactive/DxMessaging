@@ -2474,7 +2474,7 @@ function Invoke-UnityNativeStartupProbe {
     Write-Host "::endgroup::"
 
     if ($exitCode -ne 0) {
-        throw "Unity native startup probe failed with exit code $exitCode ($description) after the pre-lock healthy-existing editor check. CI Unity jobs do not repair editors in-job; run scripts/unity/maintain-windows-runner.ps1 or dispatch .github/workflows/runner-bootstrap.yml, then retry. See the streamed probe log above (also saved to $LogPath)."
+        throw "Unity native startup probe failed with exit code $exitCode ($description) after the pre-lock healthy-existing editor check. CI never repairs editors. A runner administrator must repair the host or editor manually, then retry. See the streamed probe log above (also saved to $LogPath)."
     }
 }
 

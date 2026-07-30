@@ -5,7 +5,7 @@
 > **One-line summary**: Use a four-layer defense for self-hosted Windows
 > Unity runners: bootstrap host prerequisites (BOTH VC++ 2010 and 2015-2022
 > generations), preflight every Unity job, short-circuit host-level startup
-> faults, and keep an Actions recovery path.
+> faults, and keep an Actions audit path.
 
 ## Overview
 
@@ -27,12 +27,12 @@ on downlevel Windows. It is idempotent and supports `-DetectOnly`.
 
 Three entry points consume it:
 
-1. Operators run it locally on the runner host when they have access.
+1. A runner administrator runs it locally and elevated on the host for installation or repair.
 1. `.github/workflows/runner-bootstrap.yml` exposes a `workflow_dispatch`
-   recovery path for operators who only have Actions access. It hard-fails
-   wrong-target dispatch instead of bootstrapping an unintended runner.
+   validation-only audit. It hard-fails wrong-target dispatch.
 1. `.github/actions/assert-unity-host-prereqs/` runs at the start of every
-   Unity job. On success it exports `DXM_RUNNER_PREREQ_INSTALLED=1`.
+   Unity job with `-DetectOnly`. On success it exports
+   `DXM_RUNNER_PREREQ_INSTALLED=1`.
 
 `scripts/unity/ensure-editor.ps1` keeps the repair boundary honest. If the
 native Unity startup probe returns `0xC0000135 / STATUS_DLL_NOT_FOUND`, it
@@ -42,8 +42,8 @@ quarantine/reinstall. Missing loader DLLs are host damage, not editor damage.
 ## Problem Statement
 
 Freshly imaged self-hosted Windows runners can miss DLLs that GitHub-hosted
-Windows runners already include. Unity then fails during `Provision Unity
-Editor` with `-1073741515 (0xC0000135 / STATUS_DLL_NOT_FOUND)`. The two
+Windows runners already include. Unity then fails during `Validate installed
+Unity Editor` with `-1073741515 (0xC0000135 / STATUS_DLL_NOT_FOUND)`. The two
 common cases are:
 
 - Missing `MSVCP100.dll` / `MSVCR100.dll` (VC++ 2010 SP1 generation -- the
@@ -57,8 +57,8 @@ does NOT install the other. The bootstrap installs both in one pass.
 Before this defense, `ensure-editor.ps1` treated that startup failure as a
 Unity-install fault. It quarantined and reinstalled the editor, failed the same
 startup probe again, and made each matrix cell pay minutes of unrecoverable
-work. The fix belongs at the host-OS prereq layer and must be reachable without
-manual host access whenever possible.
+work. The fix belongs at the host-OS prereq layer and requires administrator
+access to the runner host.
 
 ## Solution
 
@@ -66,21 +66,23 @@ Keep four layers in sync:
 
 1. **One-shot installer**:
    `scripts/unity/bootstrap-windows-runner.ps1` detects every host prereq,
-   repairs missing supported prereqs by default, and supports `-DetectOnly`.
+   repairs missing supported prereqs when run manually by an administrator,
+   and supports `-DetectOnly`.
 1. **Per-job preflight**:
    `.github/actions/assert-unity-host-prereqs/action.yml` invokes the same
-   script before Unity work and exports `DXM_RUNNER_PREREQ_INSTALLED=1`.
+   script with `-DetectOnly` before Unity work and exports
+   `DXM_RUNNER_PREREQ_INSTALLED=1`.
 1. **Startup short-circuit**:
    `scripts/unity/ensure-editor.ps1` recognizes `0xC0000135`, prints
    context-aware guidance, and refuses futile Unity reinstall retries.
-1. **Operator auto-recovery**:
-   `.github/workflows/runner-bootstrap.yml` lets an Actions operator run the
-   bootstrap from the UI when direct runner access is unavailable.
+1. **Operator audit**:
+   `.github/workflows/runner-bootstrap.yml` lets an Actions operator verify
+   the host after manual maintenance.
 
-The partition matters. The bootstrap script owns installation and detection;
-the composite makes it every-job hygiene; `ensure-editor.ps1` prevents a
-host-level failure from masquerading as editor corruption; the workflow gives
-operators a no-host-access recovery path.
+The partition matters. The bootstrap script owns manual installation and
+detection; the composite makes validation every-job hygiene;
+`ensure-editor.ps1` prevents a host-level failure from masquerading as editor
+corruption; the workflow provides a no-mutation audit.
 
 ## Prereqs Managed
 
@@ -100,9 +102,9 @@ operators a no-host-access recovery path.
 - **Windows long paths**: writes
   `HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem!LongPathsEnabled = 1` to
   prevent deterministic long-path unpack failures.
-- **Windows Defender exclusions**: adds allow-listed exclusions for
-  `C:\Unity\Editors` and the active runner workspace; skips cleanly when
-  Defender is unavailable.
+- **Windows Defender exclusions**: adds allow-listed exclusions for the
+  configured Unity install root (`RUNNER_TOOL_CACHE/u6-v3` in CI) and the
+  active runner workspace; skips cleanly when Defender is unavailable.
 - **PowerShell 7 (`pwsh`)**: installs through `winget install --id
 Microsoft.PowerShell --scope user`, so Administrator is not required for
   this prereq.
@@ -112,8 +114,8 @@ Microsoft.PowerShell --scope user`, so Administrator is not required for
 
 When running non-admin, HKLM-backed repairs such as both VC++ generations
 and long paths can fail with Access Denied. The script reports that
-directly and points to the elevated local-host path or the Actions recovery
-workflow. It does not use `Start-Process -Verb RunAs`; UAC prompts would
+directly and points to the elevated local-host path. The Actions workflow is
+validation-only. The script does not use `Start-Process -Verb RunAs`; UAC prompts would
 hang non-interactive CI.
 
 ## Detection Contracts
@@ -142,17 +144,14 @@ Treat file-on-disk probes as authoritative when they reflect loader behavior:
 
 ## Environment Contracts
 
-- `DXM_RUNNER_DISABLE_AUTO_BOOTSTRAP=1` forces `-DetectOnly` in the composite
-  and workflow, regardless of workflow input.
 - `DXM_RUNNER_PREREQ_INSTALLED=1` is exported by the composite after a
   successful preflight. `ensure-editor.ps1` reads it to distinguish "preflight
   never ran" from "preflight passed; investigate a different missing DLL."
 - `DXM_UNITY_FAKE_IMPORTS` and `DXM_UNITY_FAKE_LONGPATHS_ENABLED` are
   test-only seams. Production must not set them.
 
-Mode precedence is: non-Windows host skips; env override forces detect-only;
-non-truthy workflow/composite input chooses detect-only; truthy input allows
-auto-install.
+Workflows always use detect-only mode. Installation and repair require an
+administrator running the script directly on the host.
 
 ## Verification
 
