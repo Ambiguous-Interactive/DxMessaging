@@ -70,7 +70,7 @@ Change the group's visibility to all repositories:
 
 The second resolution avoids future per-transfer maintenance but exposes the runners to every repository in the organization. Use it only when that exposure is acceptable for the runner group's security posture.
 
-After applying the chosen resolution, re-run the queued workflow from the Actions tab. The preflight job added to each Unity workflow validates runner access from `ubuntu-latest` before any matrix entry attempts to dispatch onto self-hosted; a green preflight confirms the fix.
+After applying the chosen resolution, re-run the queued workflow from the Actions tab. The preflight job added to each Unity workflow validates runner registration and repository visibility from `ubuntu-latest` before any matrix entry attempts to dispatch onto self-hosted; a green preflight confirms that GitHub has a matching registered target.
 
 ## Preflight diagnostic in this repository
 
@@ -80,17 +80,26 @@ Unity workflows in this repository run a `runner-preflight` job on
 `BUILD_LOCK_READER_APP_ID` and `BUILD_LOCK_READER_APP_PRIVATE_KEY` secrets. Its
 reader App has Metadata, Actions, and organization self-hosted runner read
 permission. It filters runner groups through the repository-visible API and
-requires an online runner with the exact labels requested by the downstream
-job.
+requires a registered runner with the exact labels requested by the downstream
+job. It deliberately ignores connection and busy state, so an offline or busy
+registered runner passes and GitHub queues the dependent job normally.
 
 The preflight is fail closed. Missing reader credentials, an unreadable
 inventory, a runner-group ACL that excludes this repository, or no matching
-online runner makes the workflow red before any self-hosted job is queued. Do
+registered runner makes the workflow red before any self-hosted job is queued. Do
 not restore the retired `RUNNER_AUDIT_PAT` soft-pass path. Organization secrets
 avoid per-repository environment provisioning or manual approvals while the
 reader App remains the least-privilege inventory boundary.
 
-If the preflight passes but the matrix job still stays queued, the cause is more likely the dispatcher bug (see [GitHub Community Discussion #186811](https://github.com/orgs/community/discussions/186811)) than the access list. Use the recovery workflows in this repository: [unstick-run.yml](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unstick-run.yml) for manual recovery and [stuck-job-watchdog.yml](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/stuck-job-watchdog.yml) for the automated path.
+If the preflight passes but the matrix job stays queued, first verify whether
+the registered runner is intentionally offline or busy. If it is online and
+idle, investigate the dispatcher bug (see
+[GitHub Community Discussion #186811](https://github.com/orgs/community/discussions/186811)).
+Use the recovery workflows in this repository:
+[unstick-run.yml](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unstick-run.yml)
+for manual recovery and
+[stuck-job-watchdog.yml](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/stuck-job-watchdog.yml)
+for the automated path.
 
 ## PowerShell 7 prerequisite on self-hosted runners
 

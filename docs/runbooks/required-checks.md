@@ -103,7 +103,7 @@ Unity CI Success
 `re-actors/alls-green` over `matrix-config`, `runner-preflight`, and the
 `unity-tests` matrix, with intentional matrix skips allowed. Do **not** require
 the expanded matrix job names (`Unity <version> <mode>`), `Resolve Unity test
-matrix`, or `Self-hosted runner access preflight`. When a job-level `if:` skips
+matrix`, or `Self-hosted runner registration preflight`. When a job-level `if:` skips
 a matrix before expansion, GitHub can report only one skipped check with the
 literal name `Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}`, so
 requiring the expanded names leaves auto-merge waiting for absent checks.

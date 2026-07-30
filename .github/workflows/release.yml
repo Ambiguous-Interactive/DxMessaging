@@ -158,7 +158,7 @@ jobs:
           subject-path: .artifacts/release/*.tgz
 
   runner-preflight:
-    name: Self-hosted runner access preflight
+    name: Self-hosted runner registration preflight
     needs: verify-tag
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -166,7 +166,7 @@ jobs:
       group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - name: Require an online Unity runner
+      - name: Require a registered Unity runner
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
@@ -236,8 +236,26 @@ jobs:
       # only after compute succeeds and is told the run was an expected skip via
       # expected-empty. Mirrors unity-tests.yml. For the current asmdef set this
       # never triggers; it is the robustness path for an empty target.
+      - name: Acquire organization Unity lock
+        id: acquire_lock
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: release-editmode
+          runner-id: ${{ runner.name }}
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require acquired Unity lock
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        shell: pwsh
+        run: exit 1
+
+      # Serialize shared tool-cache installation and repair with licensed work.
       - name: Provision Unity Editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 180
         shell: pwsh
         run: |
@@ -261,23 +279,6 @@ jobs:
           path: .artifacts/unity/release-editmode/provisioning
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Acquire organization Unity lock
-        id: acquire_lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: release-editmode
-          runner-id: ${{ runner.name }}
-          timeout-minutes: "300"
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require acquired Unity lock
-        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
-        shell: pwsh
-        run: exit 1
 
       - name: Run Unity Test Runner
         id: run_tests
@@ -448,11 +449,27 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
-      # Editor install/repair does NOT take the paid Unity seat, so it runs
-      # BEFORE the org lock (mirrors unity-checks). The export only needs the
-      # editor itself; EditorOnly is the same profile unity-checks provisions,
-      # so on the runner that ran unity-checks this is a fast health check.
+      - name: Acquire organization Unity lock
+        id: acquire_lock
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: release-unitypackage
+          runner-id: ${{ runner.name }}
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require acquired Unity lock
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        shell: pwsh
+        run: exit 1
+
+      # The exporter needs only EditorOnly, but its shared cache mutation still
+      # requires organization serialization before licensed work begins.
       - name: Provision Unity Editor
+        if: ${{ steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 180
         shell: pwsh
         run: |
@@ -480,23 +497,6 @@ jobs:
           # job; the if: always() uploads from the failed attempt would 409
           # against immutable artifact names without overwrite.
           overwrite: true
-
-      - name: Acquire organization Unity lock
-        id: acquire_lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: release-unitypackage
-          runner-id: ${{ runner.name }}
-          timeout-minutes: "300"
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require acquired Unity lock
-        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
-        shell: pwsh
-        run: exit 1
 
       - name: Export the .unitypackage
         id: export_unitypackage

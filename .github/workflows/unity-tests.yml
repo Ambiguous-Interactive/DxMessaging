@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   runner-preflight:
-    name: Self-hosted runner access preflight
+    name: Self-hosted runner registration preflight
     # Runs on GitHub-hosted infrastructure before any self-hosted matrix entry
     # can queue. Reader-App or inventory failures are intentionally fail closed.
     #
@@ -46,7 +46,7 @@ jobs:
       group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - name: Require an online Unity runner
+      - name: Require a registered Unity runner
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
@@ -165,8 +165,39 @@ jobs:
       # matching assemblies. If checkout/cache/setup fails before compute, let
       # that setup failure stand on its own instead of adding a misleading
       # "tests did not run" annotation for a Unity run that never started.
-      - name: Provision Unity Editor
+      - name: Require current PR head before lock acquisition
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        with:
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ github.event.pull_request.head.sha }}
+
+      - name: Acquire organization Unity lock
+        id: acquire_lock
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          runner-id: ${{ runner.name }}
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ github.event.pull_request.head.sha }}
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require acquired Unity lock
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        shell: pwsh
+        run: exit 1
+
+      # The shared tool-cache editor root is organization-wide runner state.
+      # Provision only while holding the same lock that serializes licensed
+      # work, so concurrent repositories cannot repair or replace one editor.
+      - name: Provision Unity Editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 180
         shell: pwsh
         run: |
@@ -195,34 +226,6 @@ jobs:
           path: .artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}/provisioning
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Require current PR head before lock acquisition
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          github-token: ${{ github.token }}
-          pull-request-number: ${{ github.event.pull_request.number }}
-          expected-head-sha: ${{ github.event.pull_request.head.sha }}
-
-      - name: Acquire organization Unity lock
-        id: acquire_lock
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          runner-id: ${{ runner.name }}
-          github-token: ${{ github.token }}
-          pull-request-number: ${{ github.event.pull_request.number }}
-          expected-head-sha: ${{ github.event.pull_request.head.sha }}
-          timeout-minutes: "300"
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require acquired Unity lock
-        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
-        shell: pwsh
-        run: exit 1
 
       - name: Run Unity Test Runner
         id: run_tests

@@ -73,7 +73,7 @@ permissions:
 
 jobs:
   runner-preflight:
-    name: Self-hosted runner access preflight
+    name: Self-hosted runner registration preflight
     # Runs on GitHub-hosted infrastructure before the self-hosted matrix can
     # queue. The dedicated reader App makes missing inventory a hard failure.
     runs-on: ubuntu-latest
@@ -86,7 +86,7 @@ jobs:
     outputs:
       has-autocommit-app: ${{ steps.check-autocommit-app.outputs.has-app }}
     steps:
-      - name: Require an online performance runner
+      - name: Require a registered performance runner
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
@@ -232,46 +232,6 @@ jobs:
             -OutputJson (Join-Path $artifactsPath 'machine-specs.json') `
             -OutputSummary (Join-Path $artifactsPath 'machine-specs.txt')
 
-      # Editor install/repair does NOT require the paid Unity seat, so it runs
-      # BEFORE the org lock. The Standalone (IL2CPP) leg builds a real IL2CPP
-      # player, so it provisions StandaloneWindowsIl2Cpp (Windows Build Support
-      # with the IL2CPP scripting backend). The PlayMode leg runs IN-EDITOR (Mono)
-      # for allocation capture and builds no player, so it provisions EditorOnly
-      # -- matching run-ci-tests.ps1's own 'EditorOnly' choice for a non-standalone
-      # mode. Skip provisioning, the org lock, and the run when the
-      # compute step resolved an empty assembly list, so an empty discovery never
-      # takes the paid Unity seat / org lock only to fail late at verify. The
-      # verify step runs only after compute succeeds and is told via
-      # expected-empty. Mirrors unity-tests.yml. The perf list is structurally
-      # non-empty, so this is defense-in-depth and uniformity with the required
-      # workflows.
-      - name: Provision Unity Editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
-        timeout-minutes: 180
-        shell: pwsh
-        run: |
-          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
-          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
-          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
-          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $provisioningProfile = if ('${{ matrix.test-mode }}' -eq 'standalone') { 'StandaloneWindowsIl2Cpp' } else { 'EditorOnly' }
-          $editor = ./scripts/unity/ensure-editor.ps1 `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -CiManagedOnly `
-            -ProvisioningProfile $provisioningProfile `
-            -DiagnosticsPath $diagnosticsFile
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload Unity provisioning diagnostics
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: perf-provisioning-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}/provisioning
-          if-no-files-found: warn
-          retention-days: 14
-
       - name: Acquire organization Unity lock
         id: acquire_lock
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
@@ -288,6 +248,40 @@ jobs:
         if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
         shell: pwsh
         run: exit 1
+
+      # The Standalone leg provisions IL2CPP support; PlayMode needs only the
+      # editor. Both mutate the shared tool-cache root, so installation and
+      # repair are serialized by the organization lock before licensed work.
+      - name: Provision Unity Editor
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 180
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $diagnosticsPath = Join-Path $artifactsPath 'provisioning'
+          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
+          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
+          $provisioningProfile = if ('${{ matrix.test-mode }}' -eq 'standalone') {
+            'StandaloneWindowsIl2Cpp'
+          } else {
+            'EditorOnly'
+          }
+          $editor = ./scripts/unity/ensure-editor.ps1 `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -CiManagedOnly `
+            -ProvisioningProfile $provisioningProfile `
+            -DiagnosticsPath $diagnosticsFile
+          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload Unity provisioning diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: perf-provisioning-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          path: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}/provisioning
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Run Unity Test Runner
         id: run_tests
