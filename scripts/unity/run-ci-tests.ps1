@@ -34,6 +34,9 @@ param(
 
     [switch]$ReleasePlayerBuild,
 
+    [ValidateSet('Local', 'Central')]
+    [string]$LicenseReturnOwner = 'Local',
+
     [switch]$GenerateOnly
 )
 
@@ -3245,12 +3248,10 @@ try {
         Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath -UnityExitCode $runExit
     }
 } finally {
-    # Deterministic RETURN of the seat on EVERY exit path (clean exit, throw, or a
-    # kill that still unwinds this finally). The workflow if:always() step is the
-    # additional backstop for a hard-killed process that never reaches this finally,
-    # and the NEXT run's return-at-start reclaims anything still leaked. Best-effort
-    # and never throws, so it cannot mask a real test failure.
-    if ($hasLicenseCreds) {
+    # Standalone/local callers retain deterministic return. Organization CI passes
+    # Central so the immediately following trusted return action owns the one
+    # authoritative post-activation attempt and its typed evidence.
+    if ($hasLicenseCreds -and $LicenseReturnOwner -eq 'Local') {
         Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $returnLogPath
     }
 }

@@ -439,6 +439,11 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
         /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/,
         `${label}: licensed work and central return must use the same trusted editor root`
       );
+      assert.match(
+        workStep,
+        /-LicenseReturnOwner Central/,
+        `${label}: the trusted central action must own the post-activation return`
+      );
     }
     assert.match(
       returnStep,
@@ -502,6 +507,19 @@ test("Unity scripts retain bounded return-at-start evidence", () => {
   assert.doesNotMatch(
     fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
     /validate:unity-license-classifiers/
+  );
+});
+
+test("Unity test CI defers exactly one post-activation return to the central action", () => {
+  const source = fs.readFileSync(
+    path.join(REPO_ROOT, "scripts", "unity", "run-ci-tests.ps1"),
+    "utf8"
+  );
+  assert.match(source, /\[ValidateSet\('Local', 'Central'\)\]/);
+  assert.match(source, /\[string\]\$LicenseReturnOwner = 'Local'/);
+  assert.match(
+    source,
+    /if \(\$hasLicenseCreds -and \$LicenseReturnOwner -eq 'Local'\) \{\s+Invoke-UnityLicenseReturn/
   );
 });
 

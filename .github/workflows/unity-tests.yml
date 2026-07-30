@@ -251,6 +251,7 @@ jobs:
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -LicenseReturnOwner Central `
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
 
