@@ -417,13 +417,11 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/,
       `${label}: central cleanup and provisioning must use the same trusted editor root`
     );
-    if (file === "unity-tests.yml") {
-      assert.doesNotMatch(
-        provisionStep,
-        /-RequireHealthyExisting/,
-        `${label}: provisioning must be able to populate the trusted editor root`
-      );
-    }
+    assert.doesNotMatch(
+      provisionStep,
+      /-RequireHealthyExisting/,
+      `${label}: provisioning must be able to populate the trusted editor root`
+    );
     assert.match(
       requireStep,
       /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/

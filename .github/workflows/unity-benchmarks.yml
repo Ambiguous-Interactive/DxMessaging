@@ -139,7 +139,6 @@ jobs:
             -UnityVersion '${{ matrix.unity-version }}' `
             -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -CiManagedOnly `
-            -RequireHealthyExisting `
             -ProvisioningProfile EditorOnly `
             -DiagnosticsPath $diagnosticsFile
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
