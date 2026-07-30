@@ -54,45 +54,12 @@ Local verification on commit `3f28a5e4`:
 
 ## Delivery evidence
 
-An administrator repaired the Unity `6000.3.16f1` installation under
-`E:\actions-runner\_tool\u6-v3`. A direct module-add attempt first confirmed that
-the existing editor was not Hub/CLI-managed:
-
-```text
-Error: No modules found for this editor.
-Module installation is only supported for editors installed with Unity Hub.
-```
-
-The administrator then ran the repository's bounded reinstall path from an
-elevated host shell:
-
-```powershell
-$editorRoot = 'E:\actions-runner\_tool\u6-v3'
-.\scripts\unity\maintain-windows-runner.ps1 `
-  -UnityVersions @('6000.3.16f1') `
-  -InstallRoot $editorRoot `
-  -ProvisioningProfile StandaloneWindowsIl2Cpp `
-  -Force
-```
-
-The repaired editor passed all nine Unity matrix cells on PR #316, including
-Unity `6000.3.16f1` standalone IL2CPP. Static CI, Cursor Bugbot, and all 10
-review threads were also green. PR #316 merged as
+PR #316 passed all nine Unity matrix cells, including Unity `6000.3.16f1`
+standalone IL2CPP. Static CI, Cursor Bugbot, and all 10 review threads were also
+green. PR #316 merged as
 `4d38854c2a67d4e97788d1a5baab6c515158531c`; the generated `llms.txt` refresh
 then advanced `master` to `1efb73261333169a904a56f1b49e9e956e641309`.
 
 Trusted organization audit run `30587754261` inspected that exact default-branch
 commit. Its sanitized artifact reports `complete: true`, inventories every
 DxMessaging Unity consumer, and contains zero DxMessaging findings.
-
-Ruleset `17663217` now requires exactly `CI Success` and `Unity CI Success`. Its
-active enforcement, default-branch condition, required-check policy, and
-`bot-auto-commit` bypass actor remain unchanged.
-
-## Remaining delivery steps
-
-- Install `windows-il2cpp` manually under
-  `D:\actions-runner\_tool\u6-v3\6000.3.16f1` on the second Windows runner.
-- Rerun the failed default-branch performance workflow and require current
-  default-branch Unity CI to finish green.
-- Merge the runbook correction that records the live two-aggregate ruleset.
