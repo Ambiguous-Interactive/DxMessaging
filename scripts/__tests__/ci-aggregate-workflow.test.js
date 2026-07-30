@@ -74,6 +74,7 @@ const AGGREGATED_JOBS = [
   "csharpier",
   "dotnet",
   "json-format",
+  "line-endings",
   "spellcheck",
   "validate-banner",
   "validate-llms-txt",
@@ -246,6 +247,84 @@ test("static child jobs always report and fail closed on bad change detection", 
       `${jobId} must gate expensive steps internally`
     );
   }
+});
+
+test("committed line endings are gated, not silently repaired", () => {
+  const source = readCiWorkflow();
+  const job = getJobBlock(source, "line-endings");
+
+  // Unfiltered on purpose: every tracked text file is in scope, so there is no
+  // `changes` output to gate on and nothing to fail closed against.
+  assert.doesNotMatch(job, /\n    needs:/, "line-endings must not be path-filtered");
+
+  // Only `--renormalize` sees a blob whose committed bytes already disagree with
+  // its .gitattributes eol; git skips the smudge for such a blob, so the
+  // worktree matches it byte for byte and no ordinary diff reports anything.
+  const check = getStepBlock(job, "Verify committed bytes match .gitattributes");
+  assert.match(check, /git add --renormalize \./);
+  assert.match(check, /git diff --cached --quiet/);
+  assert.match(check, /\n          exit 1\n/, "drift must fail the job");
+
+  // The csharpier job repairs the worktree so the formatter sees one canonical
+  // form. That repair destroys the evidence, so it must never stand in for the
+  // gate: `reset --hard` there, `exit 1` here.
+  const repair = getStepBlock(getJobBlock(source, "csharpier"), "Normalize line endings");
+  assert.match(repair, /git reset --hard/);
+  assert.doesNotMatch(repair, /exit 1/);
+});
+
+test(".gitattributes declares text=auto, never a bare text", () => {
+  const source = fs.readFileSync(path.join(REPO_ROOT, ".gitattributes"), "utf8");
+
+  // A bare `text` normalizes an already-CRLF blob on the clean side while
+  // skipping the smudge, so a pristine clone reports the file modified with no
+  // edit that can fix it, and any branch switch aborts. Blobs arrive that way
+  // from GitHub-API commits (Dependabot, Copilot), which never apply these
+  // attributes. `text=auto` leaves such a blob alone -- verified to deliver an
+  // identical i/ and w/ eol for every tracked file -- so the condition becomes
+  // harmless while ci.yml's `line-endings` job still reports the drift.
+  // `text=auto` reads weaker than `text`, so this exists to stop it being
+  // "tightened" back.
+  const bare = source
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .filter((line) => /^\S+\s+text(\s|$)/.test(line));
+
+  assert.deepEqual(
+    bare,
+    [],
+    `.gitattributes must use 'text=auto', not a bare 'text': ${bare.join("; ")}`
+  );
+  assert.ok(
+    /^\*\s+text=auto\s+eol=lf$/m.test(source),
+    ".gitattributes must keep the default '* text=auto eol=lf' rule"
+  );
+});
+
+test("the stuck-job watchdog never materializes the default branch", () => {
+  const source = fs.readFileSync(path.join(WORKFLOW_DIR, "stuck-job-watchdog.yml"), "utf8");
+
+  // Cloning the default branch put the watchdog at the mercy of every tracked
+  // file: one blob whose committed bytes disagreed with its .gitattributes eol
+  // left the pristine clone content-dirty, so switching to the state tree
+  // aborted with "Your local changes to the following files would be overwritten
+  // by checkout" -- 13 consecutive failed runs on 2026-07-29. The watchdog only
+  // ever touches ${STATE_DIR} on ${STATE_BRANCH}, so cloning that branch
+  // directly makes the whole class unreachable.
+  const clones = [...source.matchAll(/git(?:_auth)? clone [^\n]*/g)].map((match) =>
+    match[0].trim()
+  );
+  assert.equal(clones.length, 1, `expected exactly one clone; found: ${clones.join(" | ")}`);
+  assert.match(
+    clones[0],
+    /--single-branch --branch "\$\{STATE_BRANCH\}"/,
+    "the clone must be scoped to the state branch"
+  );
+  assert.doesNotMatch(
+    source,
+    /git checkout -B/,
+    "switching between two populated trees is the failure mode being retired"
+  );
 });
 
 test("source marker scan is tracked-file scoped and cannot self-match workflow text", () => {
