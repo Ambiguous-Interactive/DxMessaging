@@ -183,7 +183,6 @@ jobs:
             -UnityVersion '${{ matrix.unity-version }}' `
             -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -CiManagedOnly `
-            -RequireHealthyExisting `
             -ProvisioningProfile $provisioningProfile `
             -DiagnosticsPath $diagnosticsFile
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -248,6 +247,7 @@ jobs:
         run: |
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `

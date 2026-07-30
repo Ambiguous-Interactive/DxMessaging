@@ -26,7 +26,7 @@ UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(
 )
 SAME_REPOSITORY_PR_GUARD = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*\(\s*"
-    r"github\.actor\s*!=\s*'dependabot\[bot\]'\s*&&\s*"
+    r"github\.event\.pull_request\.user\.login\s*!=\s*'dependabot\[bot\]'\s*&&\s*"
     r"github\.event\.pull_request\.head\.repo\.full_name\s*==\s*github\.repository"
 )
 # Dependabot jobs read from the separate Dependabot secret store, so the
@@ -34,7 +34,7 @@ SAME_REPOSITORY_PR_GUARD = re.compile(
 # licensed jobs must exclude Dependabot the same way they exclude forks.
 DEPENDABOT_PR_GUARD = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*\(?\s*"
-    r"github\.actor\s*!=\s*'dependabot\[bot\]'"
+    r"github\.event\.pull_request\.user\.login\s*!=\s*'dependabot\[bot\]'"
 )
 BLANKET_PR_REJECTION = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*&&"
@@ -201,7 +201,7 @@ def validate() -> None:
     require(
         SAME_REPOSITORY_PR_GUARD.search(
             "github.event_name!='pull_request'||("
-            "github.actor!='dependabot[bot]'&&"
+            "github.event.pull_request.user.login!='dependabot[bot]'&&"
             "github.event.pull_request.head.repo.full_name==github.repository"
         )
         is not None,
@@ -214,7 +214,7 @@ def validate() -> None:
     require(
         DEPENDABOT_PR_GUARD.search(
             "github.event_name != 'pull_request' || "
-            "(github.actor != 'dependabot[bot]' && trusted)"
+            "(github.event.pull_request.user.login != 'dependabot[bot]' && trusted)"
         )
         is not None,
         "Dependabot guard parser must require PR-only exclusion",
@@ -417,7 +417,7 @@ def validate() -> None:
         ),
         "DEPENDABOT_PR": (
             "${{ github.event_name == 'pull_request' && "
-            "github.actor == 'dependabot[bot]' }}"
+            "github.event.pull_request.user.login == 'dependabot[bot]' }}"
         ),
     }
     for variable, value in expected_bindings.items():
