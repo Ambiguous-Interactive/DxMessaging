@@ -168,6 +168,21 @@ while ($true) {
     Assert-That 'endless noisy child exit is confirmed' $result.DirectChildExited
     Assert-That 'endless noisy child emitted activity before its deadline' (@($result.Output).Count -gt 0)
 
+    $closedPipes = @'
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class NativePipeClose { [DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int id); [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle); [DllImport("libc")] private static extern int close(int fd); public static void Close() { if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) { CloseHandle(GetStdHandle(-11)); CloseHandle(GetStdHandle(-12)); } else { close(1); close(2); } } }'
+[NativePipeClose]::Close()
+Start-Sleep -Seconds 20
+'@
+    $result = Invoke-UnityCliCaptureWithTimeout `
+        -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $closedPipes)) `
+        -TimeoutSeconds 5 `
+        -StallSeconds 0
+    Assert-That 'closed-pipe child fails after the second reap termination' (-not $result.Success)
+    Assert-That 'closed-pipe child receives wrapper sentinel 124' ($result.ExitCode -eq 124)
+    Assert-That 'closed-pipe child is attributed to wrapper wall timeout' $result.TimedOutWallClock
+    Assert-That 'closed-pipe child is not attributed to heartbeat' (-not $result.StallKilled)
+    Assert-That 'closed-pipe child exit is confirmed' $result.DirectChildExited
+
     $descendantCode = ConvertTo-EncodedCommand 'Start-Sleep -Seconds 10'
     $pwshPath = $script:UnityCliPath.Replace("'", "''")
     $descendantParent = @"
@@ -195,7 +210,9 @@ Start-Sleep -Seconds 10
     $secondAttemptSuccess = New-FakeTerminationProcess -ExitOnSecondWait $true
     $confirmation = Confirm-UnityCliDirectChildExit -Process $secondAttemptSuccess
     Assert-That 'second reap path performs two waits and one tree request' (
-        $secondAttemptSuccess.WaitCalls -eq 2 -and $secondAttemptSuccess.KillCalls -eq 1
+        $secondAttemptSuccess.WaitCalls -eq 2 -and
+        $secondAttemptSuccess.KillCalls -eq 1 -and
+        $confirmation.TerminationRequested
     )
     Assert-That 'second reap path can confirm the direct child exit' $confirmation.DirectChildExited
     Assert-That 'successful second reap remains retry-safe' (-not $confirmation.TerminationUnconfirmed)
@@ -203,7 +220,9 @@ Start-Sleep -Seconds 10
     $secondAttemptFailure = New-FakeTerminationProcess -ExitOnSecondWait $false
     $confirmation = Confirm-UnityCliDirectChildExit -Process $secondAttemptFailure
     Assert-That 'exhausted second reap performs two waits and one tree request' (
-        $secondAttemptFailure.WaitCalls -eq 2 -and $secondAttemptFailure.KillCalls -eq 1
+        $secondAttemptFailure.WaitCalls -eq 2 -and
+        $secondAttemptFailure.KillCalls -eq 1 -and
+        $confirmation.TerminationRequested
     )
     Assert-That 'exhausted second reap leaves direct child unconfirmed' (-not $confirmation.DirectChildExited)
     Assert-That 'exhausted second reap fails closed' $confirmation.TerminationUnconfirmed

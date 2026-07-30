@@ -1013,7 +1013,9 @@ function Confirm-UnityCliDirectChildExit {
     } catch {
         $directChildExited = $false
     }
+    $terminationRequested = $false
     if (-not $directChildExited) {
+        $terminationRequested = $true
         try {
             $Process.Kill($true)
         } catch {
@@ -1035,6 +1037,7 @@ function Confirm-UnityCliDirectChildExit {
         Reaped                   = [bool]$reaped
         DirectChildExited        = [bool]$directChildExited
         TerminationUnconfirmed   = [bool]$TerminationUnconfirmed
+        TerminationRequested     = [bool]$terminationRequested
     }
 }
 
@@ -1352,6 +1355,9 @@ function Invoke-UnityCliCaptureWithTimeout {
         $reaped = [bool]$exitConfirmation.Reaped
         $directChildExited = [bool]$exitConfirmation.DirectChildExited
         $terminationUnconfirmed = [bool]$exitConfirmation.TerminationUnconfirmed
+        if ($exitConfirmation.TerminationRequested) {
+            $timedOut = $true
+        }
         if (-not $directChildExited) {
             # Starting another provisioning attempt while this process may hold
             # the editor tree is unsafe.

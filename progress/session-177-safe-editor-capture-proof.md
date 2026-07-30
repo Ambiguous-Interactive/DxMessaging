@@ -190,12 +190,14 @@ six lines. After the fix, all eight lines completed with exit 0 and
 killed after one second with exit 125 and `StallKilled == true`.
 
 The experiment is now retained in
-`scripts/__tests__/test-unity-editor-heartbeat.ps1`. Its 32 assertions exercise
+`scripts/__tests__/test-unity-editor-heartbeat.ps1`. Its 37 assertions exercise
 stdout and stderr activity, the environment override, monotonic periodic
 notices, direct-child exit confirmation, descendant tree termination, the noisy
 wall deadline, both outcomes of the second bounded reap, and the actual
 fail-closed producer/consumer path for a quick-exit parent whose live orphan
-holds inherited pipes. CI executes the test on Linux, macOS, and Windows.
+holds inherited pipes. A native pipe-closing child also proves that a successful
+second-reap termination is attributed to wrapper timeout rather than a native
+exit. CI executes the test on Linux, macOS, and Windows.
 
 The branch was then merged with current `master` at `645cde05`, bringing in the
 session 176 prototype-exclusion guard and the latest performance-number update.
@@ -205,7 +207,7 @@ budget. A table-driven consolidation in
 contracts while removing repeated assertion scaffolding and reduces the total
 to 17,485 after synchronizing the three newer PR-head commits. The focused
 aggregate-workflow suite passes all 17 data-driven tests, and the
-heartbeat probe passes all 32 assertions. The final full Node suite passes 406
+heartbeat probe passes all 37 assertions. The final full Node suite passes 406
 tests with zero failures. `npm run validate:all`, strict documentation build,
 Actionlint, Yamllint, PowerShell parsing, and `git diff --check` also pass. The
 full merged
@@ -216,9 +218,7 @@ retained at
 
 ## Remaining work
 
-- Commit the current provisioning, regression-test, documentation, and
-  integration compaction changes; validate, push, and obtain current reviews and
-  required checks.
+- Push the committed branch and obtain current reviews and required checks.
 - Switch the host to Personal/light through the Unity UI.
 - Resolve the manifest's Unity 2022.3 LTS requirement versus the configured
   6000.4.6f1 host.
