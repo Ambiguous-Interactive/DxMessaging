@@ -203,7 +203,8 @@ That integration raised JavaScript source LOC to 17,565 against the 17,500
 budget. A table-driven consolidation in
 `scripts/__tests__/ci-aggregate-workflow.test.js` preserves the workflow
 contracts while removing repeated assertion scaffolding and reduces the total
-to 17,498. The focused aggregate-workflow suite passes all 18 tests, and the
+to 17,485 after synchronizing the three newer PR-head commits. The focused
+aggregate-workflow suite passes all 17 data-driven tests, and the
 heartbeat probe passes all 32 assertions. The final full Node and repository
 validation reruns remain pending after these changes. The full merged
 `WallstopStudios.DxMessaging.Tests.Editor` assembly then passed 549 tests with
