@@ -84,6 +84,7 @@ test("editor-window screenshot automation does not use blocked capture primitive
   const violations = [];
   const blockedPatterns = [
     ["ReadScreenPixel", /\bReadScreenPixel\b/],
+    ["PrintWindow", /\bPrintWindow\b/],
     ["SwitchSkinAndRepaintAllViews", /\bSwitchSkinAndRepaintAllViews\b/]
   ];
 
