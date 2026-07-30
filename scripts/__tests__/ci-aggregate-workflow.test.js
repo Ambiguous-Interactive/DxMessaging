@@ -273,6 +273,34 @@ test("committed line endings are gated, not silently repaired", () => {
   assert.doesNotMatch(repair, /exit 1/);
 });
 
+test(".gitattributes declares text=auto, never a bare text", () => {
+  const source = fs.readFileSync(path.join(REPO_ROOT, ".gitattributes"), "utf8");
+
+  // A bare `text` normalizes an already-CRLF blob on the clean side while
+  // skipping the smudge, so a pristine clone reports the file modified with no
+  // edit that can fix it, and any branch switch aborts. Blobs arrive that way
+  // from GitHub-API commits (Dependabot, Copilot), which never apply these
+  // attributes. `text=auto` leaves such a blob alone -- verified to deliver an
+  // identical i/ and w/ eol for every tracked file -- so the condition becomes
+  // harmless while ci.yml's `line-endings` job still reports the drift.
+  // `text=auto` reads weaker than `text`, so this exists to stop it being
+  // "tightened" back.
+  const bare = source
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .filter((line) => /^\S+\s+text(\s|$)/.test(line));
+
+  assert.deepEqual(
+    bare,
+    [],
+    `.gitattributes must use 'text=auto', not a bare 'text': ${bare.join("; ")}`
+  );
+  assert.ok(
+    /^\*\s+text=auto\s+eol=lf$/m.test(source),
+    ".gitattributes must keep the default '* text=auto eol=lf' rule"
+  );
+});
+
 test("the stuck-job watchdog never materializes the default branch", () => {
   const source = fs.readFileSync(path.join(WORKFLOW_DIR, "stuck-job-watchdog.yml"), "utf8");
 

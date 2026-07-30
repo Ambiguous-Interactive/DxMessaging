@@ -3,42 +3,65 @@
 #
 # Default to LF line endings for all text files for better cross-platform
 # compatibility and CI/CD consistency. C# files use CRLF per .NET conventions.
+#
+# Every rule below says `text=auto`, never a bare `text`. Do NOT "tighten" them
+# back: `text` is what turns a cosmetic problem into an outage.
+#
+# A blob can reach this repository already holding CRLF, because commits made
+# through the GitHub API (Dependabot, Copilot) never run a git client and so
+# never apply these attributes. Under a bare `text`, git normalizes such a blob
+# on the clean side unconditionally while skipping the smudge (the blob already
+# has CRLF) -- so the checked-out file matches the blob byte for byte, the clean
+# filter hashes to the LF form, and a PRISTINE CLONE REPORTS THE FILE MODIFIED
+# with no edit that can make it clean. Any consumer that switches branches or
+# gates on a clean tree then breaks: that is what failed the Stuck Job Watchdog
+# 13 runs straight on 2026-07-29, and the same blob had been silently
+# oscillating LF/CRLF through Dependabot bumps since 2025-11.
+#
+# `text=auto` leaves an already-CRLF blob alone instead, so the clone stays
+# clean and the switch works, while still normalizing everything a git client
+# commits and still delivering the eol below to the working tree (verified
+# identical for all tracked files). It makes the condition harmless; it cannot
+# make it impossible, because attributes are instructions to a git client. The
+# `line-endings` job in ci.yml is what still reports the drift
+# (`git add --renormalize .` detects it under either form), so the index does
+# not quietly accumulate CRLF.
 ###############################################################################
 * text=auto eol=lf
 
 # C# and .NET project files use CRLF
-*.cs        text eol=crlf
-*.csproj    text eol=crlf
-*.sln       text eol=crlf
-*.props     text eol=crlf
+*.cs        text=auto eol=crlf
+*.csproj    text=auto eol=crlf
+*.sln       text=auto eol=crlf
+*.props     text=auto eol=crlf
 
 # Explicit LF entries for common text file types.
 # Other text files also use LF via the default rule: * text=auto eol=lf
-*.json      text eol=lf
-*.yaml      text eol=lf
-*.yml       text eol=lf
-*.md        text eol=lf
-*.xml       text eol=lf
-*.uxml      text eol=lf
-*.uss       text eol=lf
-*.shader    text eol=lf
-*.hlsl      text eol=lf
-*.compute   text eol=lf
-*.cginc     text eol=lf
-*.asmdef    text eol=lf
-*.asmref    text eol=lf
-*.meta      text eol=lf
-*.ps1       text eol=lf
-*.txt       text eol=lf
-*.js        text eol=lf
-*.mjs       text eol=lf
+*.json      text=auto eol=lf
+*.yaml      text=auto eol=lf
+*.yml       text=auto eol=lf
+*.md        text=auto eol=lf
+*.xml       text=auto eol=lf
+*.uxml      text=auto eol=lf
+*.uss       text=auto eol=lf
+*.shader    text=auto eol=lf
+*.hlsl      text=auto eol=lf
+*.compute   text=auto eol=lf
+*.cginc     text=auto eol=lf
+*.asmdef    text=auto eol=lf
+*.asmref    text=auto eol=lf
+*.meta      text=auto eol=lf
+*.ps1       text=auto eol=lf
+*.txt       text=auto eol=lf
+*.js        text=auto eol=lf
+*.mjs       text=auto eol=lf
 
 # Shell scripts must use LF for proper execution on Unix systems
-*.sh        text eol=lf
-*.bash      text eol=lf
-*.zsh       text eol=lf
-*.ksh       text eol=lf
-*.fish      text eol=lf
+*.sh        text=auto eol=lf
+*.bash      text=auto eol=lf
+*.zsh       text=auto eol=lf
+*.ksh       text=auto eol=lf
+*.fish      text=auto eol=lf
 
 
 ###############################################################################
