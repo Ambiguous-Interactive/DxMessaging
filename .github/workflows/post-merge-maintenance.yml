@@ -1,26 +1,56 @@
 ---
-name: Update llms.txt
+name: Post-Merge Maintenance
 
-# Regenerates llms.txt and, on the default branch, commits it back. The built-in
-# GITHUB_TOKEN cannot push to a protected branch (github-actions[bot] is a system
-# account, not a selectable branch-protection bypass actor), so the push is
-# authenticated by a GitHub App installation token (secrets.AUTO_COMMIT_APP_ID +
-# secrets.AUTO_COMMIT_APP_PRIVATE_KEY) whose App is allowed to bypass branch
-# protection. If those secrets are absent the commit degrades to a logged no-op (the
-# regeneration + validation still run). See docs/runbooks/perf-numbers-auto-commit.md.
+# One flow for every generated file the default branch self-heals, so a merge
+# produces at most ONE follow-up commit instead of one per generator (#330).
+# It replaces update-llms-txt.yml and update-issue-template-versions.yml, which
+# were the same 180-line workflow twice: same App token, same branch refresh,
+# same three-attempt push loop, different `npm run` line. Two of them could land
+# two bot commits on master for a single merge, and each of those commits
+# re-triggered the full push-side workflow set.
+#
+# What it regenerates, and why each is self-healing rather than only gated:
+#   * llms.txt + the README skill-count claim (`check:llms-txt` gates PRs).
+#   * The bug-report package-version dropdown (`check:issue-template-versions`
+#     gates PRs; release-prepare.yml also regenerates it proactively so the
+#     release PR passes its own gate).
+# The `--check` gates still block a stale hand-edit on a pull request. This is
+# the backstop for every path that reaches master without running them.
+#
+# Deliberately NOT folded in: the perf-numbers.yml doc + baseline auto-commit.
+# It runs on a self-hosted Windows runner behind the organization Unity build
+# lock and can take tens of minutes, so collapsing these two-minute generators
+# behind it would delay them by the benchmark's whole queue for no benefit.
+#
+# The built-in GITHUB_TOKEN cannot push to a protected branch
+# (github-actions[bot] is a system account, not a selectable branch-protection
+# bypass actor), so the push is authenticated by a GitHub App installation
+# token (secrets.AUTO_COMMIT_APP_ID + secrets.AUTO_COMMIT_APP_PRIVATE_KEY)
+# whose App is allowed to bypass branch protection. If those secrets are absent
+# the commit degrades to a logged no-op (regeneration + validation still run).
+# See docs/runbooks/perf-numbers-auto-commit.md.
 on:
   schedule:
-    # Run weekly on Monday at 9:00 AM UTC
+    # Weekly on Monday at 9:00 AM UTC. One slot now covers both generators; the
+    # 10:00 slot the issue-template workflow used to occupy is retired.
     - cron: "0 9 * * 1"
   workflow_dispatch:
   push:
     branches:
       - main
       - master
+    # The union of both generators' inputs and outputs. An output is listed so
+    # a hand-edit that drifts from the generator is corrected on the next push
+    # rather than waiting for the weekly cron.
     paths:
       - package.json
+      - CHANGELOG.md
+      - llms.txt
       - .llm/skills/**
+      - .github/ISSUE_TEMPLATE/bug_report.yml
       - scripts/update-llms-txt.js
+      - scripts/generate-issue-template-versions.js
+      - .github/workflows/post-merge-maintenance.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,10 +62,15 @@ permissions:
   contents: read
 
 jobs:
-  update:
-    name: Update llms.txt
+  regenerate:
+    name: Regenerate committed artifacts
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    env:
+      # Single source for what this workflow owns. Every stage -- the change
+      # probe, the staging step, and the push loop -- reads this list, so a new
+      # generator is added in one place and cannot be half-wired.
+      GENERATED_PATHS: "llms.txt README.md .github/ISSUE_TEMPLATE/bug_report.yml"
 
     steps:
       - name: Check for the auto-commit GitHub App credentials
@@ -51,7 +86,7 @@ jobs:
              [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then
             echo "has-app=true" >> "${GITHUB_OUTPUT}"
           else
-            echo "::warning::AUTO_COMMIT_APP_* secrets are not set; skipping the llms.txt auto-commit. See docs/runbooks/perf-numbers-auto-commit.md."
+            echo "::warning::AUTO_COMMIT_APP_* secrets are not set; skipping the post-merge auto-commit. See docs/runbooks/perf-numbers-auto-commit.md."
             echo "has-app=false" >> "${GITHUB_OUTPUT}"
           fi
 
@@ -80,7 +115,7 @@ jobs:
             fetch --no-tags --depth=1 origin \
             "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
           git checkout -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
-          echo "Refreshed ${GITHUB_REF_NAME} to $(git rev-parse HEAD) before generating llms.txt."
+          echo "Refreshed ${GITHUB_REF_NAME} to $(git rev-parse HEAD) before regenerating."
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -97,18 +132,23 @@ jobs:
             npm i --no-audit --no-fund
           fi
 
-      - name: Update llms.txt
-        run: npm run update:llms-txt
-
-      - name: Validate llms.txt generator contract
-        run: npm run check:llms-txt
+      # Each generator runs with its own `--check` immediately after, so a
+      # generator that cannot reach a state its own checker accepts fails here
+      # rather than committing a state the PR gate would then reject.
+      - name: Regenerate committed artifacts
+        run: |
+          set -euo pipefail
+          npm run update:llms-txt
+          npm run check:llms-txt
+          npm run update:issue-template-versions
+          npm run check:issue-template-versions
 
       - name: Check for changes
         id: git-check
         run: |
-          # update:llms-txt regenerates llms.txt and syncs the skill-count claim in
-          # README.md; both are committed so neither can drift on the default branch.
-          git diff --exit-code -- llms.txt README.md || echo "changed=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # shellcheck disable=SC2086 # GENERATED_PATHS is an intentional word list.
+          git diff --exit-code -- ${GENERATED_PATHS} || echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push changes
         if: steps.git-check.outputs.changed == 'true' && steps.check-autocommit-app.outputs.has-app == 'true'
@@ -120,34 +160,46 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          for attempt in 1 2 3; do
+          # shellcheck disable=SC2206 # GENERATED_PATHS is an intentional word list.
+          generated=(${GENERATED_PATHS})
+
+          regenerate() {
+            npm run update:llms-txt
+            npm run check:llms-txt
+            npm run update:issue-template-versions
+            npm run check:issue-template-versions
+          }
+
+          fetch_head() {
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
               fetch --no-tags --depth=1 origin \
               "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          }
+
+          for attempt in 1 2 3; do
+            fetch_head
             latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
             current_sha="$(git rev-parse HEAD)"
             if [ "${latest_sha}" != "${current_sha}" ]; then
               message="Default branch ${GITHUB_REF_NAME} advanced from ${current_sha} "
-              message+="to ${latest_sha}; regenerating llms.txt on the latest head "
-              message+="before pushing."
+              message+="to ${latest_sha}; regenerating on the latest head before pushing."
               echo "::warning::${message}"
               git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
-              npm run update:llms-txt
-              npm run check:llms-txt
+              regenerate
             fi
 
-            if git diff --quiet -- llms.txt README.md; then
-              echo "llms.txt and README are already current; nothing to commit."
+            if git diff --quiet -- "${generated[@]}"; then
+              echo "Generated artifacts are already current; nothing to commit."
               exit 0
             fi
 
             base_sha="$(git rev-parse HEAD)"
-            git add -- llms.txt README.md
-            if git diff --cached --quiet -- llms.txt README.md; then
-              echo "No staged llms.txt/README changes remain; nothing to commit."
+            git add -- "${generated[@]}"
+            if git diff --cached --quiet -- "${generated[@]}"; then
+              echo "No staged changes remain; nothing to commit."
               exit 0
             fi
-            git commit -m "chore: update llms.txt"
+            git commit -m "chore: refresh generated repository metadata"
 
             set +e
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
@@ -158,27 +210,24 @@ jobs:
               exit 0
             fi
 
-            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
-              fetch --no-tags --depth=1 origin \
-              "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+            fetch_head
             latest_after_push="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
             if [ "${latest_after_push}" = "${base_sha}" ]; then
-              echo "::error::llms.txt auto-commit push failed while ${GITHUB_REF_NAME} still pointed at ${base_sha}."
+              echo "::error::post-merge auto-commit push failed while ${GITHUB_REF_NAME} still pointed at ${base_sha}."
               exit "${push_status}"
             fi
 
             if [ "${attempt}" -eq 3 ]; then
-              message="Default branch ${GITHUB_REF_NAME} kept advancing during "
-              message+="the llms.txt auto-commit; skipping this stale attempt. "
+              message="Default branch ${GITHUB_REF_NAME} kept advancing during the "
+              message+="post-merge auto-commit; skipping this stale attempt. "
               message+="A newer run will regenerate from the latest head."
               echo "::warning::${message}"
               exit 0
             fi
 
-            message="Default branch ${GITHUB_REF_NAME} advanced during the llms.txt "
+            message="Default branch ${GITHUB_REF_NAME} advanced during the post-merge "
             message+="push; retrying from ${latest_after_push}."
             echo "::warning::${message}"
             git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
-            npm run update:llms-txt
-            npm run check:llms-txt
+            regenerate
           done

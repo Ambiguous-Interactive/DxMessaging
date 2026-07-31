@@ -130,8 +130,7 @@ Add these as repository (or organization) **Actions** secrets:
 
 The workflow reads both via `actions/create-github-app-token`. The same App and
 secrets back every auto-commit workflow that writes repository refs:
-`perf-numbers.yml`, `update-llms-txt.yml`,
-`update-issue-template-versions.yml`, `release-prepare.yml`, and
+`perf-numbers.yml`, `post-merge-maintenance.yml`, `release-prepare.yml`, and
 `release-tag.yml`. This one provisioning unblocks the doc auto-commits and the
 release branch/tag handoff.
 

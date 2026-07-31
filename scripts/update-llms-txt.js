@@ -40,6 +40,7 @@ const LLM_SKILLS_DIR = process.env.DX_SKILLS_DIR || path.join(ROOT_DIR, ".llm", 
 // entire "forgot to bump the skill count" failure class while still catching
 // genuinely false claims. See validateSkillCountClaim.
 const SKILL_CLAIM_REGEX = /(\d+)\+ specialized skills/g;
+const LAST_UPDATED_LINE = /^\*\*Last Updated:\*\*.*$/m;
 
 // Docs whose skill-count claim is guarded (missing files are skipped). Resolved
 // per run so the CLI exit-code paths stay testable against a temp fixture via the
@@ -80,7 +81,6 @@ function listSkillNames() {
 function countSkillFiles() {
   return listSkillNames().length;
 }
-
 
 /**
  * Extract every "N+ specialized skills" claim from content as integers,
@@ -145,10 +145,7 @@ function syncSkillCountClaim(filePath, actualCount) {
     return false;
   }
 
-  const updated = original.replace(
-    SKILL_CLAIM_REGEX,
-    `${actualCount}+ specialized skills`
-  );
+  const updated = original.replace(SKILL_CLAIM_REGEX, `${actualCount}+ specialized skills`);
   if (updated === original) {
     return false;
   }
@@ -198,6 +195,34 @@ function hasValidLastUpdatedLine(content) {
   // Require an ISO date after the label, e.g. "**Last Updated:** 2024-01-31"
   const isoDatePattern = /^\*\*Last Updated:\*\*\s+\d{4}-\d{2}-\d{2}\s*$/;
   return isoDatePattern.test(line);
+}
+
+/**
+ * Keep the committed "Last Updated" date when a fresh generation is otherwise
+ * byte-identical, so the field means "last time this content changed" rather
+ * than "last time the generator ran".
+ *
+ * The date is the one field that moves without the content moving, so a
+ * generator that always rewrites it makes the default-branch auto-commit fire
+ * on any day the workflow runs. That is not hypothetical: 1efb7326, the last
+ * llms.txt auto-commit on master, changed exactly one line -- the date -- and
+ * still re-triggered the whole push-side workflow set (#330).
+ *
+ * The comparison normalizes ONLY the date, not the skill-count claim that
+ * `normalizeForComparison` also folds away: a count change is real content, and
+ * must move the date with it.
+ */
+function preserveUnchangedDate(newContent, llmsTxtPath) {
+  if (!fs.existsSync(llmsTxtPath)) {
+    return newContent;
+  }
+  const current = fs.readFileSync(llmsTxtPath, "utf8");
+  const withoutDate = (text) => normalizeToLf(text).replace(LAST_UPDATED_LINE, "<DATE>");
+  if (withoutDate(current) !== withoutDate(newContent)) {
+    return newContent;
+  }
+  const committed = current.match(LAST_UPDATED_LINE);
+  return committed === null ? newContent : newContent.replace(LAST_UPDATED_LINE, committed[0]);
 }
 function getPackageInfo() {
   const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8"));
@@ -535,7 +560,7 @@ function normalizeForComparison(str) {
       // Normalize the Last Updated line by replacing the date with a fixed
       // placeholder, while keeping the marker text so structural differences are
       // still detected.
-      .replace(/^\*\*Last Updated:\*\*.*$/m, "**Last Updated:** <DATE>")
+      .replace(LAST_UPDATED_LINE, "**Last Updated:** <DATE>")
       // Normalize the floored skill-count claim. The exact number is validated
       // separately (no-overstatement, see validateSkillCountClaim); keeping it out
       // of the structural diff means adding/removing a skill never trips --check.
@@ -626,7 +651,11 @@ function main() {
     // Update mode: write llms.txt (LF endings, matching .gitattributes for
     // *.txt), then keep every other doc that advertises the skill count in sync
     // so the single documented remediation fixes the whole class of drift.
-    fs.writeFileSync(llmsTxtPath, normalizeToLf(newContent), "utf8");
+    fs.writeFileSync(
+      llmsTxtPath,
+      normalizeToLf(preserveUnchangedDate(newContent, llmsTxtPath)),
+      "utf8"
+    );
     console.log("[ok] Updated llms.txt");
 
     for (const { label, filePath } of claimFiles) {

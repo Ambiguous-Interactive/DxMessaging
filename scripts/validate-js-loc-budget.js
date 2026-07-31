@@ -77,7 +77,20 @@ const path = require("path");
 //     hand-authored scaffolding that the sibling marker-scoping fix exists to
 //     protect. +37 source and +112 test lines, including a loose timing guard
 //     that only a return to quadratic can breach: 17500.
-const TOTAL_BUDGET = 17500;
+// 077 Stop llms.txt auto-committing a date it restamped for no reason. The
+//     generator rewrote "Last Updated" on every run, so the default-branch
+//     auto-commit fired on any day the workflow ran: 1efb7326, the last
+//     llms.txt commit on master, changed exactly one line -- the date -- and
+//     still re-triggered the whole push-side workflow set (#330). The date now
+//     survives a byte-identical regeneration and moves only when the content
+//     does, so it finally means what it says. +21 source lines
+//     (preserveUnchangedDate plus a shared LAST_UPDATED_LINE that replaces a
+//     duplicated literal) and +36 test lines driving it through the CLI, so the
+//     real write path is covered rather than the helper alone; both mutations
+//     (unconditional restamp, preserve-through-a-content-change) fail the
+//     suite. Offset by -1 line in the fetch-refspec guard, whose two merged
+//     workflow entries collapsed to one, and the 13 comment lines of this very entry: 17582.
+const TOTAL_BUDGET = 17582;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

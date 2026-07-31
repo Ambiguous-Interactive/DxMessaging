@@ -24,6 +24,7 @@ const { normalizeToLf } = require("../lib/line-endings.js");
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
 const SCRIPT = path.join(__dirname, "..", "update-llms-txt.js");
 const SKILL_CLAIM = (n) => `- ${n}+ specialized skills:`;
+const LAST_UPDATED = /^\*\*Last Updated:\*\*.*$/m;
 
 test("hasValidLastUpdatedLine accepts exactly one ISO-dated line", () => {
   assert.equal(hasValidLastUpdatedLine("intro\n**Last Updated:** 2026-06-10\n"), true);
@@ -228,6 +229,46 @@ test("CLI update mode fixes a stale single claim, then --check passes (update/ch
     assert.ok(fs.existsSync(llmsTxt), "update wrote the env-pointed llms.txt");
 
     execFileSync("node", [SCRIPT, "--check"], { env, stdio: "pipe" }); // converged -> exit 0
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A generator that restamps the date on every run makes the default-branch
+// auto-commit fire on any day it runs: 1efb7326, the last llms.txt auto-commit
+// on master, changed exactly one line -- the date (#330). Driven through the
+// CLI so it covers the real write path, not just the helper.
+test("CLI update mode keeps the committed date until the content actually changes", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llms-date-"));
+  try {
+    const skills = path.join(dir, "skills");
+    for (const name of ["alpha", "beta"]) {
+      fs.mkdirSync(path.join(skills, name), { recursive: true });
+      fs.writeFileSync(path.join(skills, name, "SKILL.md"), "---\nname: x\n---\n");
+    }
+    const llmsTxt = path.join(dir, "llms.txt");
+    const readme = path.join(dir, "README.md");
+    fs.writeFileSync(readme, `intro\n${SKILL_CLAIM(2)}\noutro\n`);
+    const env = { ...process.env, DX_SKILLS_DIR: skills, DX_LLMS_TXT: llmsTxt, DX_README: readme };
+
+    execFileSync("node", [SCRIPT], { env, stdio: "pipe" });
+    const dated = fs
+      .readFileSync(llmsTxt, "utf8")
+      .replace(LAST_UPDATED, "**Last Updated:** 1999-01-01");
+    fs.writeFileSync(llmsTxt, dated);
+
+    // Same content, later day: the committed date must survive untouched.
+    execFileSync("node", [SCRIPT], { env, stdio: "pipe" });
+    assert.equal(fs.readFileSync(llmsTxt, "utf8"), dated, "a no-op regeneration rewrote the date");
+    execFileSync("node", [SCRIPT, "--check"], { env, stdio: "pipe" });
+
+    // Real content change: the date must move with it.
+    fs.mkdirSync(path.join(skills, "gamma"), { recursive: true });
+    fs.writeFileSync(path.join(skills, "gamma", "SKILL.md"), "---\nname: x\n---\n");
+    execFileSync("node", [SCRIPT], { env, stdio: "pipe" });
+    const refreshed = fs.readFileSync(llmsTxt, "utf8");
+    assert.match(refreshed, /\bgamma\b/, "the new skill was not generated");
+    assert.doesNotMatch(refreshed, /1999-01-01/, "real content changed but the date did not");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
