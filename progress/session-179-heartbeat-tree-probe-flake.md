@@ -30,6 +30,11 @@ Cursor review found that an exception during parent cleanup could skip the
 later descendant and PID-file cleanup. Nested `finally` blocks now attempt
 every cleanup stage and still propagate a cleanup failure.
 
+The re-review also found that the descendant's original 10-second lifetime
+matched the helper's two bounded 5-second waits. The synthetic descendant now
+lives for 30 seconds, so only process-tree termination can make the assertion
+pass inside the observation window.
+
 ## Verification
 
 - focused heartbeat suite: 37 passed, 0 failed;

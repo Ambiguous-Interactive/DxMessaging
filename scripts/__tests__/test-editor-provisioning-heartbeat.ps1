@@ -188,7 +188,7 @@ Start-Sleep -Seconds 20
     # tree-termination helper. The former one-second heartbeat probe mixed
     # PowerShell startup time into this contract and could kill the parent
     # before it had created or reported the descendant.
-    $descendantCode = ConvertTo-EncodedCommand 'Start-Sleep -Seconds 10'
+    $descendantCode = ConvertTo-EncodedCommand 'Start-Sleep -Seconds 30'
     $pwshPath = $script:UnityCliPath.Replace("'", "''")
     $treePidPath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-tree-$([Guid]::NewGuid().ToString('N')).pid"
     $treePidLiteral = $treePidPath.Replace("'", "''")
