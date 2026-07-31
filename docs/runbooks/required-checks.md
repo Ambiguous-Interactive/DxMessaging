@@ -80,12 +80,24 @@ every context present without allowing skipped dependencies in `CI Success`.
 
 [`unity-tests.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-tests.yml)
 hosts the Unity correctness gate. Its `pull_request` trigger has no `paths:`
-filter, so the workflow always starts. A `matrix-config` job lists changed files
-and, only when every changed file is one of the two CI-owned perf-doc artifacts
-(`docs/architecture/performance.md`, `docs/architecture/perf-baseline.csv`),
-sets a `ci-owned-docs-only` output that skips the licensed matrix. Dependabot
-and fork pull requests can also skip the licensed matrix because Unity serial
-secrets are unavailable.
+filter, so the workflow always starts. Three shapes skip the licensed matrix,
+and each is validated rather than assumed:
+
+- **A fork pull request.**
+- **A Dependabot pull request.** Both read from a different secret store, so the
+  Unity serial and the build-lock App credentials resolve empty and a licensed
+  leg would fail on missing credentials rather than on the change under test.
+- **A superseded head.** `concurrency` on this workflow sets
+  `cancel-in-progress: false` on purpose, because hard-cancelling a run that
+  holds the organization build lock is the scenario the license-return guarantee
+  exists to prevent. Without a gate, the run for the older commit keeps the
+  concurrency group through all nine legs and the current head cannot start. The
+  `head-check` job compares the event's head SHA against the live pull-request
+  head on `ubuntu-latest`, before the lock is in reach, and publishes a
+  `superseded` output that both licensed jobs gate on. It fails open: a lookup
+  that returns no SHA runs the full matrix. The per-leg
+  `Require current PR head before setup` guard still covers a push that lands
+  after `head-check` has already passed.
 
 The required Unity check name is the stable aggregate:
 
@@ -93,14 +105,20 @@ The required Unity check name is the stable aggregate:
 Unity CI Success
 ```
 
-`Unity CI Success` has `if: ${{ always() }}` and uses
-`re-actors/alls-green` over `matrix-config`, `runner-preflight`, and the
-`unity-tests` matrix, with intentional matrix skips allowed. Do **not** require
-the expanded matrix job names (`Unity <version> <mode>`), `Resolve Unity test
-matrix`, or `Self-hosted runner registration preflight`. When a job-level `if:` skips
-a matrix before expansion, GitHub can report only one skipped check with the
-literal name `Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}`, so
-requiring the expanded names leaves auto-merge waiting for absent checks.
+`Unity CI Success` has `if: ${{ always() }}` and no job-level condition that can
+be false. Its one step reads the results of `head-check`, `runner-preflight`,
+and the `unity-tests` matrix, requires `head-check` itself to have succeeded,
+and then asserts that both licensed jobs are `skipped` for exactly the three
+shapes above and `success` otherwise. `re-actors/alls-green` and blanket
+allowed-skip lists are rejected by `scripts/validate-unity-pr-policy.py`, which
+also byte-pins that step's script and runs it against a truth table.
+
+Do **not** require the expanded matrix job names (`Unity <version> <mode>`),
+`Unity head freshness`, or `Self-hosted runner registration preflight`. When a
+job-level `if:` skips a matrix before expansion, GitHub can report only one
+skipped check with the literal name
+`Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}`, so requiring the
+expanded names leaves auto-merge waiting for absent checks.
 
 ## Retired Individual Static Contexts
 

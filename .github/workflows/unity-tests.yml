@@ -22,6 +22,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  head-check:
+    name: Unity head freshness
+    # A second push to a pull request queues a second full matrix and does not
+    # retire the first. `cancel-in-progress: false` above is deliberate -- a
+    # hard cancel mid-lock is the exact scenario the four-layer license-return
+    # guarantee exists to avoid -- so the superseded run keeps the concurrency
+    # group until it has burned through every leg, and the run for the commit
+    # that matters cannot start. `Unity CI Success` is then absent on the
+    # current head, which reads as a blocked pull request on a check nobody
+    # misconfigured.
+    #
+    # Deciding it here, on GitHub-hosted infrastructure and before the lock is
+    # in reach, costs a superseded run one cheap job instead of nine
+    # self-hosted ones. The per-leg `Require current PR head before setup`
+    # guard stays: it covers the push that lands after this job has already
+    # passed.
+    #
+    # Fail open. Anything other than a pull request, and any lookup that does
+    # not return a head SHA, reports `superseded=false` and runs the matrix.
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      superseded: ${{ steps.head.outputs.superseded }}
+    steps:
+      - name: Compare the event head against the live pull-request head
+        id: head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          superseded=false
+          if [ "${EVENT_NAME}" = pull_request ]; then
+            live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" || live=
+            if [ -z "${live}" ]; then
+              echo "::warning::Live head lookup failed; treating ${EVENT_HEAD_SHA} as current."
+            elif [ "${live}" != "${EVENT_HEAD_SHA}" ]; then
+              echo "::notice::${EVENT_HEAD_SHA} is superseded by ${live}; skipping the Unity matrix."
+              superseded=true
+            fi
+          fi
+          echo "superseded=${superseded}" >> "${GITHUB_OUTPUT}"
+
   runner-preflight:
     name: Self-hosted runner registration preflight
     # Runs on GitHub-hosted infrastructure before any self-hosted matrix entry
@@ -34,11 +80,14 @@ jobs:
     # can check anything. Running it there cannot pass, and the licensed Unity
     # secrets below are unreadable for the same reason. Dependency bumps are
     # validated by the full matrix on the post-merge push to master.
+    needs:
+      - head-check
     if: >-
       ${{
-        github.event_name != 'pull_request' ||
+        needs.head-check.outputs.superseded != 'true' &&
+        (github.event_name != 'pull_request' ||
         (github.event.pull_request.user.login != 'dependabot[bot]' &&
-          github.event.pull_request.head.repo.full_name == github.repository)
+          github.event.pull_request.head.repo.full_name == github.repository))
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -56,6 +105,7 @@ jobs:
   unity-tests:
     name: Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}
     needs:
+      - head-check
       - runner-preflight
     # Same-repository pull requests run licensed validation with organization
     # secrets and no environment approval. Fork pull requests and Dependabot
@@ -64,9 +114,10 @@ jobs:
     # credentials rather than on the change under test.
     if: >-
       ${{
-        github.event_name != 'pull_request' ||
+        needs.head-check.outputs.superseded != 'true' &&
+        (github.event_name != 'pull_request' ||
         (github.event.pull_request.user.login != 'dependabot[bot]' &&
-          github.event.pull_request.head.repo.full_name == github.repository)
+          github.event.pull_request.head.repo.full_name == github.repository))
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
     timeout-minutes: 900
@@ -433,15 +484,21 @@ jobs:
   unity-ci-success:
     name: Unity CI Success
     needs:
+      - head-check
       - runner-preflight
       - unity-tests
     # Exactly always() -- NEVER a falsifiable job-level if. A skipped required
     # check counts as passing and the latest run on a SHA wins, so a guard that
     # can be false on a pull_request could launder a red/pending gate into a
-    # false green. The step below validates the only two intentional skip
+    # false green. The step below validates the only three intentional skip
     # shapes: fork PRs and Dependabot PRs skip both licensed jobs (neither can
-    # read the organization secrets those jobs require). Every other run must
-    # execute Unity successfully.
+    # read the organization secrets those jobs require), and a superseded head
+    # skips them because the run for the current head is the one that counts.
+    # A superseded run cannot launder anything -- branch protection reads only
+    # the checks on the current head -- but it still has to report its shape
+    # rather than go absent. head-check itself is never allowed to skip or
+    # fail: it is what decides which of the two branches applies. Every other
+    # run must execute Unity successfully.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -449,13 +506,16 @@ jobs:
       - name: Verify Unity CI result shape
         shell: bash
         env:
+          HEAD_CHECK_RESULT: ${{ needs.head-check.result }}
           RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
           UNITY_TESTS_RESULT: ${{ needs.unity-tests.result }}
+          SUPERSEDED: ${{ needs.head-check.outputs.superseded }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
           set -euo pipefail
-          if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+          test "${HEAD_CHECK_RESULT}" = success
+          if [ "${SUPERSEDED}" = "true" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
             test "${RUNNER_PREFLIGHT_RESULT}" = skipped
             test "${UNITY_TESTS_RESULT}" = skipped
           else
