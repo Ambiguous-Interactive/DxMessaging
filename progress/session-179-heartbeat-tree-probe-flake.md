@@ -19,31 +19,72 @@ heartbeat killed the test parent before that process had created and reported
 its descendant. The test then had no PID to assert against. Re-running the
 unchanged commit passed, which confirmed an intermittent test timing failure.
 
-The tree contract is independent of heartbeat timing: after the descendant is
+The tree contract is independent of heartbeat timing: once the descendant is
 known to exist, `Confirm-UnityCliDirectChildExit` must request whole-tree
 termination, confirm the direct child exit, and remove the descendant. The
-test now waits for the PID-file creation event, checks those outcomes against
+probe now waits for a published descendant PID, checks those outcomes against
 the production helper, and cleans up every process and temporary file on
 failure.
 
-Cursor review found that an exception during parent cleanup could skip the
-later descendant and PID-file cleanup. Nested `finally` blocks now attempt
-every cleanup stage and still propagate a cleanup failure.
+## Review findings folded in
 
-The re-review also found that the descendant's original 10-second lifetime
-matched the helper's two bounded 5-second waits. The synthetic descendant now
-lives for 30 seconds, so only process-tree termination can make the assertion
-pass inside the observation window.
+Cursor review found three defects in the first fix, and verifying the third
+uncovered a fourth:
 
-The next review found that a file-created event could precede completion of
-`WriteAllText`. The parent now writes to a sibling staging file and atomically
-moves it to the watched PID path. The watcher can only observe the published
-file after its content is complete.
+1. An exception during parent cleanup could skip the later descendant and
+   PID-file cleanup. Nested `finally` blocks now attempt every cleanup stage
+   and still propagate a cleanup failure.
+1. The descendant's original 10-second lifetime matched the helper's two
+   bounded 5-second waits, so a descendant that survived tree termination could
+   exit on its own inside the observation window. The synthetic descendant now
+   lives for 60 seconds against a 25-second worst-case probe.
+1. A file-created event could precede completion of `WriteAllText`. The parent
+   now writes to a sibling staging file and atomically moves it to the
+   published PID path.
+1. `FileSystemWatcher` cannot observe that publication at all. A
+   same-directory `File.Move` raises `Renamed`, not `Created`, so
+   `WaitForChanged([WatcherChangeTypes]::Created, 10000)` exhausted its full
+   timeout every run and the probe fell through to an unsynchronized
+   `Test-Path`. A standalone repro confirmed it: the file appeared at 300 ms
+   and `WaitForChanged` still returned `TimedOut=True` after 3003 ms of a
+   3000 ms budget.
+
+The watcher is removed rather than repaired. `Wait-ForPublishedProcessId`
+polls for a *parseable, positive* process id, which is what actually makes the
+read safe - a partially written or empty file fails to parse and the wait
+continues - and it has no platform-specific event semantics to get wrong.
+Removing the watcher also deletes one layer of the cleanup pyramid.
+
+The fourth finding exposed a fifth defect, in the cleanup guard itself:
+`Stop-Process` only requests termination, so verifying it with an immediate
+`Get-Process` races the kernel and can report a successful kill as a surviving
+process. `Wait-ForProcessExit` polls to a 10-second bound instead. A sweep
+found no other instance of this pattern; the one production `Stop-Process` in
+`ensure-editor.ps1` reports its outcome and does not re-check.
+
+Both publish sites (the tree probe and the detached-orphan probe) now use the
+same atomic publish, validating read, and verified cleanup, so the
+partial-read class is gone rather than patched at one call site.
 
 ## Verification
 
-- focused heartbeat suite: 37 passed, 0 failed;
-- former-flake loop: 50 consecutive focused-suite passes;
+Red evidence, on the pre-fix branch head:
+
+- standalone `FileSystemWatcher` repro: `WaitForChanged(Created)` returned
+  `TimedOut=True` after 3003 ms while the published file existed from 300 ms;
+- focused heartbeat suite wall clock: 34.07 s.
+
+Green evidence, after the fix:
+
+- focused heartbeat suite: 37 passed, 0 failed, 21.4 s. The 12.6 s saved is
+  the watcher timeout that never fired;
+- former-flake loop: 20 consecutive focused-suite passes;
+- mutation - direct-child-only kill instead of tree kill: fails on
+  `tree termination removes the descendant` (36 passed, 1 failed), so the
+  assertion discriminates a real tree-termination regression;
+- mutation - parent never publishes the descendant PID: fails on
+  `tree probe captures the descendant process id` (35 passed, 2 failed)
+  instead of throwing a cast error;
 - full Node/script suite: 406 passed, 0 failed;
 - `npm run validate:all` and spelling: passed;
 - unchanged master rerun: static `CI Success` passed, confirming the original

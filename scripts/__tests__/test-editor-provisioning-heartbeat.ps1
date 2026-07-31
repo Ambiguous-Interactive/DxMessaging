@@ -105,6 +105,81 @@ function New-FakeTerminationProcess {
     return $fake
 }
 
+function Wait-ForPublishedProcessId {
+    # Blocks until an atomically published PID file holds a parseable, positive
+    # process id, then returns it; returns 0 when the timeout elapses first.
+    #
+    # A FileSystemWatcher cannot do this job: the publisher completes the file
+    # under a staging name and renames it into place, and a same-directory
+    # rename raises Renamed, not Created. Waiting on Created therefore always
+    # exhausts its timeout and synchronizes on nothing. Validating the parsed
+    # content is what makes the read safe -- a partially written or empty file
+    # simply fails to parse and the wait continues.
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds
+    )
+
+    $elapsed = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $published = 0
+            $raw = $null
+            try {
+                $raw = [IO.File]::ReadAllText($Path)
+            } catch [IO.IOException] {
+                $raw = $null
+            }
+            if (
+                $null -ne $raw -and
+                [int]::TryParse($raw.Trim(), [ref]$published) -and
+                $published -gt 0
+            ) {
+                return $published
+            }
+        }
+        if ($elapsed.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            return 0
+        }
+        Start-Sleep -Milliseconds 25
+    }
+}
+
+function Wait-ForProcessExit {
+    # Stop-Process only REQUESTS termination, so verifying with an immediate
+    # Get-Process races the kernel: a successful kill can still look like a
+    # surviving process. Poll to a bound instead and report what actually
+    # happened.
+    param(
+        [Parameter(Mandatory = $true)][int]$Id,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds
+    )
+
+    $elapsed = [Diagnostics.Stopwatch]::StartNew()
+    while ($null -ne (Get-Process -Id $Id -ErrorAction SilentlyContinue)) {
+        if ($elapsed.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            return $false
+        }
+        Start-Sleep -Milliseconds 25
+    }
+    return $true
+}
+
+function Remove-PublishedProcessIdFile {
+    # Removes both halves of an atomic PID publish and fails loudly if either
+    # survives, so a leaked temp file is a test failure rather than debris.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $candidates = @($Path, "$Path.tmp")
+    foreach ($candidate in $candidates) {
+        Remove-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+    }
+    $surviving = @($candidates | Where-Object { Test-Path -LiteralPath $_ })
+    if ($surviving.Count -gt 0) {
+        throw "PID file cleanup failed: $($surviving -join ', ')."
+    }
+}
+
 $script:UnityCliPath = (Get-Command pwsh -ErrorAction Stop).Source
 $savedNoticeInterval = $env:DXM_ENSURE_EDITOR_PROGRESS_NOTICE_INTERVAL_SECONDS
 $savedStallSeconds = $env:DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS
@@ -188,23 +263,22 @@ Start-Sleep -Seconds 20
     # tree-termination helper. The former one-second heartbeat probe mixed
     # PowerShell startup time into this contract and could kill the parent
     # before it had created or reported the descendant.
-    $descendantCode = ConvertTo-EncodedCommand 'Start-Sleep -Seconds 30'
+    # The descendant must outlive every window this probe can wait through, or a
+    # descendant that SURVIVED tree termination could exit on its own and look
+    # like one that was killed. The bound is 25s: up to 10s publishing the PID,
+    # up to 10s inside Confirm-UnityCliDirectChildExit (a 5s reap, a tree kill,
+    # a second 5s reap), and a 5s exit observation. 60s leaves 35s of margin.
+    $descendantCode = ConvertTo-EncodedCommand 'Start-Sleep -Seconds 60'
     $pwshPath = $script:UnityCliPath.Replace("'", "''")
     $treePidPath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-tree-$([Guid]::NewGuid().ToString('N')).pid"
-    $treePidStagingPath = "$treePidPath.tmp"
     $treePidLiteral = $treePidPath.Replace("'", "''")
-    $treePidStagingLiteral = $treePidStagingPath.Replace("'", "''")
+    $treePidStagingLiteral = "$treePidPath.tmp".Replace("'", "''")
     $descendantParent = @"
 `$child = Start-Process -FilePath '$pwshPath' -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', '$descendantCode') -PassThru
 [IO.File]::WriteAllText('$treePidStagingLiteral', [string]`$child.Id)
 [IO.File]::Move('$treePidStagingLiteral', '$treePidLiteral')
-Start-Sleep -Seconds 30
+Start-Sleep -Seconds 60
 "@
-    $treeWatcher = [IO.FileSystemWatcher]::new(
-        [IO.Path]::GetDirectoryName($treePidPath),
-        [IO.Path]::GetFileName($treePidPath)
-    )
-    $treeWatcher.EnableRaisingEvents = $true
     $treeParent = $null
     $treeConfirmation = $null
     $descendantProcess = $null
@@ -215,11 +289,8 @@ Start-Sleep -Seconds 30
             -FilePath $script:UnityCliPath `
             -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $descendantParent)) `
             -PassThru
-        if (-not (Test-Path -LiteralPath $treePidPath -PathType Leaf)) {
-            [void]$treeWatcher.WaitForChanged([IO.WatcherChangeTypes]::Created, 10000)
-        }
-        if (Test-Path -LiteralPath $treePidPath -PathType Leaf) {
-            $descendantId = [int][IO.File]::ReadAllText($treePidPath)
+        $descendantId = Wait-ForPublishedProcessId -Path $treePidPath -TimeoutSeconds 10
+        if ($descendantId -gt 0) {
             $descendantProcess = Get-Process -Id $descendantId -ErrorAction SilentlyContinue
         }
         $treeConfirmation = Confirm-UnityCliDirectChildExit -Process $treeParent
@@ -228,44 +299,31 @@ Start-Sleep -Seconds 30
         }
     } finally {
         try {
-            $treeWatcher.Dispose()
+            try {
+                if ($null -ne $treeParent -and -not $treeParent.HasExited) {
+                    $treeParent.Kill($true)
+                    [void]$treeParent.WaitForExit(5000)
+                }
+            } finally {
+                if ($null -ne $treeParent) {
+                    $treeParent.Dispose()
+                }
+            }
         } finally {
             try {
-                try {
-                    if ($null -ne $treeParent -and -not $treeParent.HasExited) {
-                        $treeParent.Kill($true)
-                        [void]$treeParent.WaitForExit(5000)
-                    }
-                } finally {
-                    if ($null -ne $treeParent) {
-                        $treeParent.Dispose()
+                if ($descendantId -gt 0) {
+                    Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
+                    if (-not (Wait-ForProcessExit -Id $descendantId -TimeoutSeconds 10)) {
+                        throw "Tree-probe descendant process $descendantId survived cleanup."
                     }
                 }
             } finally {
                 try {
-                    if ($descendantId -gt 0) {
-                        Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
-                        if ($null -ne (Get-Process -Id $descendantId -ErrorAction SilentlyContinue)) {
-                            throw "Tree-probe descendant process $descendantId survived cleanup."
-                        }
+                    if ($null -ne $descendantProcess) {
+                        $descendantProcess.Dispose()
                     }
                 } finally {
-                    try {
-                        if ($null -ne $descendantProcess) {
-                            $descendantProcess.Dispose()
-                        }
-                    } finally {
-                        $treePidFiles = @($treePidPath, $treePidStagingPath)
-                        foreach ($treePidFile in $treePidFiles) {
-                            Remove-Item -LiteralPath $treePidFile -Force -ErrorAction SilentlyContinue
-                        }
-                        $survivingPidFiles = @(
-                            $treePidFiles | Where-Object { Test-Path -LiteralPath $_ }
-                        )
-                        if ($survivingPidFiles.Count -gt 0) {
-                            throw "Tree-probe PID file cleanup failed: $($survivingPidFiles -join ', ')."
-                        }
-                    }
+                    Remove-PublishedProcessIdFile -Path $treePidPath
                 }
             }
         }
@@ -301,9 +359,11 @@ Start-Sleep -Seconds 30
 
     $orphanPidPath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-orphan-$([Guid]::NewGuid().ToString('N')).pid"
     $orphanPidLiteral = $orphanPidPath.Replace("'", "''")
+    $orphanPidStagingLiteral = "$orphanPidPath.tmp".Replace("'", "''")
     $orphanParent = @"
 `$child = Start-Process -FilePath '$pwshPath' -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', '$descendantCode') -PassThru
-[IO.File]::WriteAllText('$orphanPidLiteral', [string]`$child.Id)
+[IO.File]::WriteAllText('$orphanPidStagingLiteral', [string]`$child.Id)
+[IO.File]::Move('$orphanPidStagingLiteral', '$orphanPidLiteral')
 "@
     $orphanAttempts = 0
     $orphanResult = $null
@@ -323,11 +383,14 @@ Start-Sleep -Seconds 30
         $orphanSafetyErrorEscaped = ($_.Exception.Message -match 'safe process-tree termination could not be confirmed')
         $orphanSafetyMarker = [bool]$_.Exception.Data['DxMessagingNonRetryable']
     } finally {
-        if (Test-Path -LiteralPath $orphanPidPath -PathType Leaf) {
-            $orphanId = [int][IO.File]::ReadAllText($orphanPidPath)
-            $orphanWasAlive = $null -ne (Get-Process -Id $orphanId -ErrorAction SilentlyContinue)
-            Stop-Process -Id $orphanId -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $orphanPidPath -Force -ErrorAction SilentlyContinue
+        try {
+            $orphanId = Wait-ForPublishedProcessId -Path $orphanPidPath -TimeoutSeconds 5
+            if ($orphanId -gt 0) {
+                $orphanWasAlive = $null -ne (Get-Process -Id $orphanId -ErrorAction SilentlyContinue)
+                Stop-Process -Id $orphanId -Force -ErrorAction SilentlyContinue
+            }
+        } finally {
+            Remove-PublishedProcessIdFile -Path $orphanPidPath
         }
     }
     Assert-That 'quick-exit parent leaves a live detached descendant' ($orphanId -gt 0 -and $orphanWasAlive)
