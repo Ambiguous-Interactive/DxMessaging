@@ -174,13 +174,15 @@ function Invoke-WrapperTreeProbe {
         [Parameter(Mandatory = $true)][string]$DescendantCode,
         [Parameter(Mandatory = $true)][string]$TailCode,
         [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
-        [Parameter(Mandatory = $true)][int]$StallSeconds
+        [Parameter(Mandatory = $true)][int]$StallSeconds,
+        [string]$PreambleCode = ''
     )
 
     $pidPath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-wrapper-$([Guid]::NewGuid().ToString('N')).pid"
     $finalLiteral = $pidPath.Replace("'", "''")
     $stagingLiteral = "$pidPath.tmp".Replace("'", "''")
     $parent = @"
+$PreambleCode
 `$child = Start-Process -FilePath '$PwshPath' -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', '$DescendantCode') -PassThru
 [IO.File]::WriteAllText('$stagingLiteral', [string]`$child.Id)
 [IO.File]::Move('$stagingLiteral', '$finalLiteral')
@@ -389,20 +391,32 @@ Start-Sleep -Seconds 60
     # Confirm-UnityCliDirectChildExit ran, that helper would see an already-exited direct child
     # and skip tree termination, and a reparented Unity installer would be orphaned holding the
     # editor tree -- with the direct probe above still green. Cover both wrapper paths.
+    # `lastActivityMs` starts at 0, so the FIRST stall window runs from process launch, not from
+    # the first line of output. Emitting before spawning the descendant is what keeps the nested
+    # Start-Process and the PID write out of that first window, leaving only pwsh's own startup
+    # inside it; publication then resets the clock before the silence that trips the heartbeat.
+    #
+    # This is a wide margin, not a structural guarantee. The stall clock cannot be made to start
+    # at publication -- that is the wrapper's contract, and this test does not get to change it.
+    # Eight seconds against a sub-second cold start is the margin, and the probe proves it held
+    # rather than assuming it: the wrapper must have READ the published marker before it killed,
+    # so a cold start that ever did overrun the window fails a named assertion instead of quietly
+    # voiding the tree check below.
     $stallTail = @'
 Write-Output 'published'
 Start-Sleep -Seconds 120
 '@
-    # Emitting the last line immediately AFTER publication starts the stall countdown at
-    # publication, so process startup is excluded from this probe by construction rather than by
-    # a generous margin. That is the same defect this file was opened to remove.
     $stallProbe = Invoke-WrapperTreeProbe `
         -PwshPath $pwshPath `
         -DescendantCode $descendantCode `
         -TailCode $stallTail `
         -TimeoutSeconds 60 `
-        -StallSeconds 2
+        -StallSeconds 8 `
+        -PreambleCode "Write-Output 'starting'"
     Assert-That 'wrapper stall path publishes a descendant' ($stallProbe.DescendantId -gt 0)
+    Assert-That 'wrapper stall path killed only after publication' (
+        @($stallProbe.Result.Output) -contains 'published'
+    )
     Assert-That 'wrapper stall path is attributed to the heartbeat' $stallProbe.Result.StallKilled
     Assert-That 'wrapper stall termination removes the descendant' $stallProbe.Removed
 

@@ -76,12 +76,27 @@ regressed to a bare `Kill()`, the parent would exit before
 direct child and skip tree termination, and a reparented Unity installer would
 be orphaned holding the editor tree -- with the direct probe still green.
 
-Both wrapper paths are now covered end to end. The stall probe emits its last
-line immediately AFTER publishing the descendant PID, so the stall countdown
-starts at publication and process startup is excluded by construction, not by a
-generous margin. The wall clock runs from launch and cannot be made structural
-that way, so it uses ten seconds against a sub-second publish and fails loudly
-on a missed publish rather than quietly voiding the tree check.
+Both wrapper paths are now covered end to end.
+
+The first attempt at the stall probe was wrong in an instructive way, and the
+re-review caught it: it claimed that emitting a line immediately after
+publication started the stall countdown at publication. It does not.
+`lastActivityMs` starts at 0, so the FIRST stall window runs from process
+launch, and a slow nested `pwsh` start could kill the parent before publication
+-- reintroducing the exact flake this branch exists to remove.
+
+The stall clock cannot be made to start at publication; that is the wrapper's
+contract and a test does not get to change it. What the probe does instead is
+emit BEFORE spawning the descendant, which keeps the nested `Start-Process` and
+the PID write out of the first window and leaves only pwsh's own startup inside
+it, against an eight-second window. That is a wide margin, not a guarantee, so
+the probe proves the margin held rather than assuming it: the wrapper must have
+READ the published marker before it killed. A cold start that ever did overrun
+the window fails a named assertion instead of silently voiding the tree check.
+
+The wall clock runs from launch and has no equivalent trick available, so it
+uses ten seconds against a sub-second publish and fails loudly on a missed
+publish.
 
 ## Verification
 
@@ -93,11 +108,11 @@ Red evidence, on the pre-fix branch head:
 
 Green evidence, after the fix:
 
-- focused heartbeat suite: 43 passed, 0 failed. It runs in 34.5 s: the watcher
-  fix took 34.07 s down to 21.4 s, and the two new wrapper probes spend 13 s of
-  that back on coverage CI did not previously have;
+- focused heartbeat suite: 44 passed, 0 failed. It runs in 40.8 s: the watcher
+  fix took 34.07 s down to 21.4 s, and the two new wrapper probes spend that
+  back plus 6 s on coverage CI did not previously have;
 - former-flake loop: 20 consecutive focused-suite passes before the wrapper
-  probes, 8 after;
+  probes, 5 after;
 - mutation - direct-child-only kill instead of tree kill: fails on
   `tree termination removes the descendant` (36 passed, 1 failed), so the
   assertion discriminates a real tree-termination regression;
@@ -109,6 +124,10 @@ Green evidence, after the fix:
 - mutation - the wrapper's wall-clock `Kill($true)` weakened to `Kill()`: fails
   on `wrapper wall-clock termination removes the descendant`, and on nothing
   else. Each assertion tracks its own kill site;
+- simulation - a five-second delay before the stall probe's first emission,
+  standing in for a cold start that overruns the window: fails
+  `wrapper stall path killed only after publication` by name, so the margin
+  failing is reported as itself rather than as a mysterious tree-check failure;
 - full Node/script suite: 406 passed, 0 failed;
 - `npm run validate:all` and spelling: passed;
 - unchanged master rerun: static `CI Success` passed, confirming the original
