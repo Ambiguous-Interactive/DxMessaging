@@ -139,7 +139,13 @@ jobs:
         timeout-minutes: 10
         shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
         run: |
-          & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" -UnityVersion '${{ matrix.unity-version }}' -InstallRoot "$env:RUNNER_TOOL_CACHE\u6-v3" -ProvisioningProfile ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }} -DiagnosticsPath unity-editor-check.json -CiManagedOnly -RequireHealthyExisting
+          & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -ProvisioningProfile ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }} `
+            -DiagnosticsPath unity-editor-check.json `
+            -CiManagedOnly `
+            -RequireHealthyExisting
 
       - name: Bind and preserve validated Unity editor
         timeout-minutes: 2
@@ -161,7 +167,6 @@ jobs:
           $destination = Join-Path $evidenceRoot '${{ github.run_id }}-${{ github.job }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}.json'
           Copy-Item -LiteralPath $source -Destination $destination -Force
           "UNITY_EDITOR_PATH=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "UNITY_EDITOR_VALIDATION_PATH=$destination" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Enable Git long paths
         timeout-minutes: 2
@@ -278,7 +283,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: ${{ env.UNITY_EDITOR_VALIDATION_PATH }}
+          path: ${{ runner.temp }}/dx-unity-editor-validation
           if-no-files-found: warn
           retention-days: 14
 

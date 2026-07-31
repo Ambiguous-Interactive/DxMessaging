@@ -466,11 +466,8 @@ def find_workflow_editor_mutations(files: dict[str, str]) -> list[str]:
                         f"{file}: ensure-editor call missing -ProvisioningProfile"
                     )
                 if re.search(
-                    r"-InstallRoot\s+(?:"
-                    r"\(\s*Join-Path\s+\$env:RUNNER_TOOL_CACHE\s+"
-                    r"['\"]u6-v3['\"]\s*\)"
-                    r"|\"\$env:RUNNER_TOOL_CACHE\\u6-v3\""
-                    r")",
+                    r"-InstallRoot\s+\(\s*Join-Path\s+"
+                    r"\$env:RUNNER_TOOL_CACHE\s+['\"]u6-v3['\"]\s*\)",
                     ensure_line,
                     re.IGNORECASE,
                 ) is None:
@@ -967,15 +964,6 @@ def validate() -> None:
     require(
         find_workflow_editor_mutations({"valid.yml": validation_fixture}) == [],
         "validation-only editor fixture must pass",
-    )
-    trusted_root_fixture = validation_fixture.replace(
-        "(Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3')",
-        '"$env:RUNNER_TOOL_CACHE\\u6-v3"',
-    )
-    require(
-        find_workflow_editor_mutations({"trusted-root.yml": trusted_root_fixture})
-        == [],
-        "exact trusted editor root fixture must pass",
     )
     require(
         find_workflow_editor_mutations({"missing.yml": missing_guard_fixture})
