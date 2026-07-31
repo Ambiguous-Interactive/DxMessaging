@@ -550,6 +550,13 @@ jobs:
               continue
             fi
 
+            # Log the verdict HERE, not only when the cancel succeeds. Classification
+            # and action are separated by the state-branch materialization, which can
+            # fail closed -- and then the summary said "a stuck run is pending" while
+            # the Stuck section sat empty, so an operator could not tell WHICH run
+            # needed attention. Every other verdict already announces itself at the
+            # point it is reached; this one did not. (Cursor Bugbot.)
+            log_summary "run ${run_id} (${run_path_base}, event=${run_event}): dispatcher-stuck; queued for cancel -- ${run_html_url}"
             printf '%s\n' "${run_meta}" | jq -c --argjson id "${run_id}" '. + {id: $id}' >> "${stuck_candidates}"
           done
 

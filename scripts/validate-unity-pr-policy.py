@@ -1290,6 +1290,12 @@ def validate_stuck_job_watchdog() -> None:
         "cancelled 1" not in text,
         f"watchdog unusable state branch: cancelled a run without a readable cap\n{text}",
     )
+    # The operator has to be able to see WHICH run is pending, not just that one is.
+    require(
+        "run 1" in text and "queued for cancel" in text,
+        "watchdog unusable state branch: the pending dispatcher-stuck run was not named "
+        "in the summary, so a fail-closed cap leaves the operator nothing to act on\n" + text,
+    )
 
     # The EXIT trap. Without it, an abort the script does not anticipate exits
     # red with a COMPLETELY EMPTY step summary and no annotation -- the worst
