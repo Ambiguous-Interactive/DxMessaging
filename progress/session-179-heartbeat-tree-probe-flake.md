@@ -66,6 +66,23 @@ Both publish sites (the tree probe and the detached-orphan probe) now use the
 same atomic publish, validating read, and verified cleanup, so the
 partial-read class is gone rather than patched at one call site.
 
+Re-review then found a sixth defect, and it was a coverage regression the fix
+itself introduced. Driving `Confirm-UnityCliDirectChildExit` directly is what
+makes the probe independent of startup timing, but
+`Invoke-UnityCliCaptureWithTimeout` has its OWN `Kill($true)` call sites for the
+stall and wall-clock paths, and those are the ones CI actually runs. If either
+regressed to a bare `Kill()`, the parent would exit before
+`Confirm-UnityCliDirectChildExit` ran, that helper would see an already-exited
+direct child and skip tree termination, and a reparented Unity installer would
+be orphaned holding the editor tree -- with the direct probe still green.
+
+Both wrapper paths are now covered end to end. The stall probe emits its last
+line immediately AFTER publishing the descendant PID, so the stall countdown
+starts at publication and process startup is excluded by construction, not by a
+generous margin. The wall clock runs from launch and cannot be made structural
+that way, so it uses ten seconds against a sub-second publish and fails loudly
+on a missed publish rather than quietly voiding the tree check.
+
 ## Verification
 
 Red evidence, on the pre-fix branch head:
@@ -76,15 +93,22 @@ Red evidence, on the pre-fix branch head:
 
 Green evidence, after the fix:
 
-- focused heartbeat suite: 37 passed, 0 failed, 21.4 s. The 12.6 s saved is
-  the watcher timeout that never fired;
-- former-flake loop: 20 consecutive focused-suite passes;
+- focused heartbeat suite: 43 passed, 0 failed. It runs in 34.5 s: the watcher
+  fix took 34.07 s down to 21.4 s, and the two new wrapper probes spend 13 s of
+  that back on coverage CI did not previously have;
+- former-flake loop: 20 consecutive focused-suite passes before the wrapper
+  probes, 8 after;
 - mutation - direct-child-only kill instead of tree kill: fails on
   `tree termination removes the descendant` (36 passed, 1 failed), so the
   assertion discriminates a real tree-termination regression;
 - mutation - parent never publishes the descendant PID: fails on
   `tree probe captures the descendant process id` (35 passed, 2 failed)
   instead of throwing a cast error;
+- mutation - the wrapper's stall-path `Kill($true)` weakened to `Kill()`: fails
+  on `wrapper stall termination removes the descendant`, and on nothing else;
+- mutation - the wrapper's wall-clock `Kill($true)` weakened to `Kill()`: fails
+  on `wrapper wall-clock termination removes the descendant`, and on nothing
+  else. Each assertion tracks its own kill site;
 - full Node/script suite: 406 passed, 0 failed;
 - `npm run validate:all` and spelling: passed;
 - unchanged master rerun: static `CI Success` passed, confirming the original

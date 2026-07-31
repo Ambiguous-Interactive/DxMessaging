@@ -165,6 +165,51 @@ function Wait-ForProcessExit {
     return $true
 }
 
+function Invoke-WrapperTreeProbe {
+    # Drives Invoke-UnityCliCaptureWithTimeout end to end with a parent that publishes a
+    # descendant PID, then reports whether that descendant survived the wrapper's own
+    # termination. Returns the wrapper result plus the descendant's fate; the caller asserts.
+    param(
+        [Parameter(Mandatory = $true)][string]$PwshPath,
+        [Parameter(Mandatory = $true)][string]$DescendantCode,
+        [Parameter(Mandatory = $true)][string]$TailCode,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
+        [Parameter(Mandatory = $true)][int]$StallSeconds
+    )
+
+    $pidPath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-wrapper-$([Guid]::NewGuid().ToString('N')).pid"
+    $finalLiteral = $pidPath.Replace("'", "''")
+    $stagingLiteral = "$pidPath.tmp".Replace("'", "''")
+    $parent = @"
+`$child = Start-Process -FilePath '$PwshPath' -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', '$DescendantCode') -PassThru
+[IO.File]::WriteAllText('$stagingLiteral', [string]`$child.Id)
+[IO.File]::Move('$stagingLiteral', '$finalLiteral')
+$TailCode
+"@
+    $descendantId = 0
+    try {
+        $wrapperResult = Invoke-UnityCliCaptureWithTimeout `
+            -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $parent)) `
+            -TimeoutSeconds $TimeoutSeconds `
+            -StallSeconds $StallSeconds
+        $descendantId = Wait-ForPublishedProcessId -Path $pidPath -TimeoutSeconds 5
+        $removed = $descendantId -gt 0 -and (Wait-ForProcessExit -Id $descendantId -TimeoutSeconds 10)
+        return [pscustomobject]@{
+            Result       = $wrapperResult
+            DescendantId = $descendantId
+            Removed      = [bool]$removed
+        }
+    } finally {
+        try {
+            if ($descendantId -gt 0) {
+                Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
+            }
+        } finally {
+            Remove-PublishedProcessIdFile -Path $pidPath
+        }
+    }
+}
+
 function Remove-PublishedProcessIdFile {
     # Removes both halves of an atomic PID publish and fails loudly if either
     # survives, so a leaked temp file is a test failure rather than debris.
@@ -336,6 +381,51 @@ Start-Sleep -Seconds 60
         $null -ne $treeConfirmation -and $treeConfirmation.DirectChildExited
     )
     Assert-That 'tree termination removes the descendant' $descendantRemovedByTreeKill
+
+    # The probe above drives Confirm-UnityCliDirectChildExit directly, which is what makes it
+    # independent of startup timing. Invoke-UnityCliCaptureWithTimeout has its OWN Kill($true)
+    # call sites for the stall and wall-clock paths, though, and they are the ones CI actually
+    # runs. If either regressed to a bare Kill(), the parent would exit before
+    # Confirm-UnityCliDirectChildExit ran, that helper would see an already-exited direct child
+    # and skip tree termination, and a reparented Unity installer would be orphaned holding the
+    # editor tree -- with the direct probe above still green. Cover both wrapper paths.
+    $stallTail = @'
+Write-Output 'published'
+Start-Sleep -Seconds 120
+'@
+    # Emitting the last line immediately AFTER publication starts the stall countdown at
+    # publication, so process startup is excluded from this probe by construction rather than by
+    # a generous margin. That is the same defect this file was opened to remove.
+    $stallProbe = Invoke-WrapperTreeProbe `
+        -PwshPath $pwshPath `
+        -DescendantCode $descendantCode `
+        -TailCode $stallTail `
+        -TimeoutSeconds 60 `
+        -StallSeconds 2
+    Assert-That 'wrapper stall path publishes a descendant' ($stallProbe.DescendantId -gt 0)
+    Assert-That 'wrapper stall path is attributed to the heartbeat' $stallProbe.Result.StallKilled
+    Assert-That 'wrapper stall termination removes the descendant' $stallProbe.Removed
+
+    $wallClockTail = @'
+while ($true) {
+    Write-Output 'working'
+    Start-Sleep -Milliseconds 200
+}
+'@
+    # The wall clock runs from process launch, so unlike the stall path its margin cannot be made
+    # structural. Ten seconds against a sub-second publish is a wide margin, and a publish that
+    # did miss fails the first assertion loudly instead of quietly voiding the tree check.
+    $wallClockProbe = Invoke-WrapperTreeProbe `
+        -PwshPath $pwshPath `
+        -DescendantCode $descendantCode `
+        -TailCode $wallClockTail `
+        -TimeoutSeconds 10 `
+        -StallSeconds 30
+    Assert-That 'wrapper wall-clock path publishes a descendant' ($wallClockProbe.DescendantId -gt 0)
+    Assert-That 'wrapper wall-clock path is attributed to the wall clock' (
+        $wallClockProbe.Result.TimedOutWallClock
+    )
+    Assert-That 'wrapper wall-clock termination removes the descendant' $wallClockProbe.Removed
 
     $secondAttemptSuccess = New-FakeTerminationProcess -ExitOnSecondWait $true
     $confirmation = Confirm-UnityCliDirectChildExit -Process $secondAttemptSuccess
