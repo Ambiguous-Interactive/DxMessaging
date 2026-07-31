@@ -874,11 +874,22 @@ def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> 
         f"\nPAYLOAD\n    exit {code} ;;\n"
         for needle, (code, payload) in routes.items()
     )
+    # Organization endpoints answer ONLY when the call carries the reader App
+    # token. A static grep can prove the token is minted; this proves it is the
+    # one actually used, which is the credential shape #328 was about -- the
+    # audit read inventory with a token that could never reach those endpoints.
     return (
         "#!/bin/bash\n"
         'if [ "$1" = "run" ] && [ "$2" = "cancel" ]; then\n'
         f'  echo "cancelled $3"; exit {0 if cancel_ok else 1}\n'
         "fi\n"
+        'case "$*" in\n'
+        "  *orgs/*)\n"
+        '    if [ "${GH_TOKEN:-}" != "stub-reader" ]; then\n'
+        '      echo "gh: Resource not accessible by integration (HTTP 403)" >&2\n'
+        "      exit 1\n"
+        "    fi ;;\n"
+        "esac\n"
         f'case "$*" in\n{cases}  *) echo "unstubbed gh: $*" >&2; exit 3 ;;\nesac\n'
     )
 
@@ -891,6 +902,7 @@ def watchdog_git_stub(
     ls_remote_ok: bool = True,
     existing_state: dict[int, int] | None = None,
     clone_ok: bool = True,
+    state_age_seconds: int = 3600,
 ) -> str:
     """A `git` that passes through except for the three remote operations.
 
@@ -908,12 +920,13 @@ def watchdog_git_stub(
             f"exit {0 if ls_remote_ok else 1}"
         )
         if clone_ok:
-            # `last_cancel` is an hour ago, comfortably inside the 24h reset
-            # window. A far-future stamp would make elapsed time negative and no
-            # window size could ever change the verdict, so the window itself
-            # would be untestable.
+            # `last_cancel` defaults to an hour ago, inside the 24h reset
+            # window; `state_age_seconds` moves it outside so the reset itself
+            # becomes reachable. A far-future stamp would make elapsed time
+            # negative, and then no window size could change the verdict at all.
             writes = "".join(
-                f"printf '{{\"cancels\": {n}, \"last_cancel\": '$(( $(date -u +%s) - 3600 ))'}}' "
+                f"printf '{{\"cancels\": {n}, \"last_cancel\": "
+                f"'$(( $(date -u +%s) - {state_age_seconds} ))'}}' "
                 f'> "$target/.watchdog-state/{run_id}.json"; '
                 for run_id, n in existing_state.items()
             )
@@ -993,6 +1006,7 @@ def run_watchdog(
     ls_remote_ok: bool = True,
     existing_state: dict[int, int] | None = None,
     clone_ok: bool = True,
+    state_age_seconds: int = 3600,
     break_date: bool = False,
     extra_env: dict[str, str] | None = None,
 ) -> tuple[int, str]:
@@ -1006,7 +1020,12 @@ def run_watchdog(
         root = Path(directory)
         stubs = [
             ("gh", watchdog_gh_stub(routes, cancel_ok)),
-            ("git", watchdog_git_stub(push_ok, ls_remote_ok, existing_state, clone_ok)),
+            (
+                "git",
+                watchdog_git_stub(
+                    push_ok, ls_remote_ok, existing_state, clone_ok, state_age_seconds
+                ),
+            ),
         ]
         if break_date:
             stubs.append(("date", "#!/bin/bash\nexit 1\n"))
@@ -1022,6 +1041,10 @@ def run_watchdog(
         environment.update(extra_env or {})
         environment["PATH"] = f"{root}{os.pathsep}{environment['PATH']}"
         environment["GITHUB_STEP_SUMMARY"] = str(summary)
+        # The audit calls `mktemp` freely, which is free on an ephemeral runner
+        # but permanent in a developer's /tmp -- roughly 440 entries per run of
+        # this validator. Point it at the case's own directory instead.
+        environment["TMPDIR"] = str(root)
         result = subprocess.run(
             ["bash", "-c", script], env=environment, capture_output=True, text=True, check=False
         )
@@ -1084,6 +1107,10 @@ STARVED_SECTION_EMPTY = "required labels)\n_(none)_"
 
 
 DISPATCHABLE_WORKFLOW_BODY = base64.b64encode(b"on:\n  workflow_dispatch:\n").decode()
+# A body that decodes cleanly but declares no `workflow_dispatch` trigger. It
+# is the only input that separates "detection said no" from "the base64 decode
+# failed", which is what an empty `content` actually exercises.
+NON_DISPATCHABLE_WORKFLOW_BODY = base64.b64encode(b"on:\n  push:\n").decode()
 
 
 def validate_stuck_job_watchdog() -> None:
@@ -1533,6 +1560,69 @@ def validate_stuck_job_watchdog() -> None:
             ("cancelled 1", STARVED_SECTION_EMPTY),
         ),
         (
+            # Pins the `workflow_dispatch:` grep itself. The dispatcher-stuck
+            # case above uses an empty `content`, so `base64 -d` fails and the
+            # grep never runs -- it reads as if it asserts detection but only
+            # asserts the decode-failure path. A regression that dispatched
+            # unconditionally would POST to a workflow with no such trigger, get
+            # a 422, and leave the run cancelled with no recovery.
+            "a run whose workflow declares no workflow_dispatch is not re-dispatched",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (
+                    0,
+                    NON_DISPATCHABLE_WORKFLOW_BODY,
+                ),
+            },
+            0,
+            ("cancelled 1", "does not support workflow_dispatch", "Re-run all jobs"),
+            ("re-dispatching",),
+        ),
+        (
+            # Pins the starvation PRECEDENCE. Two self-hosted sets starve for
+            # different reasons: one has a registered-but-offline runner, the
+            # other has nothing at all. The unregistered set must win, because a
+            # label nothing carries needs a human while an offline machine may
+            # reconnect on its own. Reporting the offline one instead points the
+            # operator at a machine that exists and will come back.
+            "an unregistered label set outranks an offline one in the report",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(
+                    ("DAD", "offline", False, ["self-hosted", "Windows"])
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    ["self-hosted", "Windows"], ["self-hosted", "unicorn"]
+                ),
+            },
+            0,
+            ("starved", "no runner registered", "unicorn"),
+            ("registered but offline", "cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
+            # Two dispatcher-stuck runs in one cycle: the cancel loop must handle
+            # both, which is what exercises the `mapfile`-not-`while read` stdin
+            # defense and per-run cap independence.
+            "two dispatcher-stuck runs are both cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1), watchdog_run(2)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/runs/2/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+            },
+            0,
+            ("cancelled 1", "cancelled 2"),
+            (),
+        ),
+        (
             "the excluded release workflow is never cancelled",
             {
                 queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),
@@ -1624,6 +1714,47 @@ def validate_stuck_job_watchdog() -> None:
     require(
         code == 1 and "could not parse the job labels" in text,
         f"watchdog unparseable job labels: expected a fail-closed exit, got {code}\n{text}",
+    )
+
+    # State is pushed immediately after EACH successful cancel, not only in the
+    # final sync. That immediacy is what makes the cap survive a crash partway
+    # through the loop: without it, a job that dies after cancelling loses every
+    # increment and the next cycle cancels the same runs again. The git stub
+    # echoes "pushed" per push, so the count distinguishes the two shapes --
+    # bootstrap + one push per cancel (3) versus bootstrap + a single final
+    # sync (2).
+    two_stuck = {
+        queued: watchdog_queued_runs(watchdog_run(1), watchdog_run(2)),
+        inventory: one_group,
+        "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+        "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        "actions/runs/2/jobs": watchdog_jobs(self_hosted),
+        "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+        "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+    }
+    code, text = run_watchdog(script, environment_literals, two_stuck)
+    require(code == 0, f"watchdog per-cancel persist: expected exit 0, got {code}\n{text}")
+    require(
+        text.count("pushed") >= 3,
+        "watchdog per-cancel persist: the cap was not pushed after each cancel "
+        f"(saw {text.count('pushed')} pushes, expected at least 3)\n{text}",
+    )
+
+    # The 24h reset. With the cap reached but the last cancel more than a day
+    # ago the counter resets and the run is cancelled again. The fixture had
+    # hardcoded an age inside the window, so the reset was unreachable and only
+    # its absence-at-1-second was ever proven.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        stuck_routes,
+        existing_state={1: 2},
+        state_age_seconds=90000,
+    )
+    require(code == 0, f"watchdog cap reset: expected exit 0, got {code}\n{text}")
+    require(
+        "cancelled 1" in text and "cap reached" not in text,
+        "watchdog cap reset: a cap older than 24h did not reset\n" + text,
     )
 
     # A state branch that exists but cannot be cloned leaves the cap unreadable.
@@ -1732,7 +1863,12 @@ MAINTENANCE = Path(".github/workflows/post-merge-maintenance.yml")
 
 
 def run_maintenance_push_loop(
-    script: str, root: Path, failing_check_calls: int, failing_pushes: int, failing: str = "issue-template"
+    script: str,
+    root: Path,
+    failing_check_calls: int,
+    failing_pushes: int,
+    failing: str = "issue-template",
+    advance_before_run: bool = False,
 ) -> int:
     """Execute the post-merge push loop against a real local remote.
 
@@ -1750,7 +1886,9 @@ def run_maintenance_push_loop(
     bin_dir.mkdir()
     subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
     for clone in (work, other):
-        subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True)
+        subprocess.run(
+            ["git", "clone", "-q", str(origin), str(clone)], check=True, capture_output=True
+        )
         for key, value in (("user.email", "t@t"), ("user.name", "t")):
             subprocess.run(["git", "-C", str(clone), "config", key, value], check=True)
     (work / ".github" / "ISSUE_TEMPLATE").mkdir(parents=True)
@@ -1801,6 +1939,26 @@ def run_maintenance_push_loop(
         stub.chmod(0o755)
 
     (work / "llms.txt").write_text("modified", encoding="utf-8")
+    if advance_before_run:
+        # Master advances between the generator steps and the commit step. That
+        # drives the TOP-of-loop regeneration, which the fixture could not reach
+        # before -- only the bottom-of-loop one after a failed push. It is the
+        # branch the whole stale-head design exists for: without it the loop
+        # commits the old head's generated output onto a new head.
+        # `other` was cloned from the still-empty bare repo, so it has to catch
+        # up to the seed commit before it can advance master.
+        subprocess.run(
+            ["git", "-C", str(other), "fetch", "-q", "origin"], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(other), "checkout", "-q", "-B", "master", "origin/master"],
+            check=True,
+            capture_output=True,
+        )
+        (other / "concurrent.txt").write_text("x", encoding="utf-8")
+        subprocess.run(["git", "-C", str(other), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(other), "commit", "-qm", "advance"], check=True)
+        subprocess.run(["git", "-C", str(other), "push", "-q", "origin", "master"], check=True)
     environment = os.environ.copy()
     environment.update(
         {
@@ -1828,6 +1986,27 @@ def validate_post_merge_push_loop() -> None:
     # step that ran it, not to this loop -- which is why the no-retry row expects 0.
     #
     # name, failing check calls, failing pushes, which generator, expected exit
+    # A head that advanced BEFORE the commit step forces the top-of-loop
+    # regeneration; a generator that fails there must still fail the job.
+    with tempfile.TemporaryDirectory() as directory:
+        code = run_maintenance_push_loop(
+            script, Path(directory), 99, 0, "issue-template", advance_before_run=True
+        )
+    require(
+        code == 1,
+        f"post-merge push loop stale head: a generator failing on the refreshed head "
+        f"must fail the job, got exit {code}",
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        code = run_maintenance_push_loop(
+            script, Path(directory), 0, 0, "issue-template", advance_before_run=True
+        )
+    require(
+        code == 0,
+        f"post-merge push loop stale head: a clean regeneration on the refreshed head "
+        f"must succeed, got exit {code}",
+    )
+
     for name, failing_checks, failing_pushes, failing, expected in (
         ("a clean run exits 0", 0, 0, "issue-template", 0),
         ("a straight retry with no generator failure exits 0", 0, 2, "issue-template", 0),
