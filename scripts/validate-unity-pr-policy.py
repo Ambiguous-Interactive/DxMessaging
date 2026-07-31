@@ -669,6 +669,43 @@ def find_workflow_editor_mutations(files: dict[str, str]) -> list[str]:
     return violations
 
 
+def validate_cleanup_gate_not_attempted_input(job: str, label: str) -> None:
+    """Pin how a lock window tells the cleanup gate that acquisition never ran.
+
+    The gate's contract is that `acquired: false` proves licensed cleanup was
+    not required, and a bare `if: always()` is what catches a seat leak when
+    acquisition fails part-way. Both have to hold at once (#327): a leg that
+    aborts before `Acquire organization Unity lock` must report exactly one
+    failure, and a leg whose acquire failed after taking the lock must still
+    fail. The distinction is `outcome`, which is empty or `skipped` only when
+    the step did not execute; gating on `acquired == 'true'` instead would
+    skip the gate in precisely the case it must never miss.
+    """
+    gate = step_block(job, "Require confirmed Unity cleanup")
+    require(
+        "\n        if: always()\n" in gate,
+        f"{label}: the cleanup gate must keep a bare `if: always()`",
+    )
+    acquired = re.search(r"\n          acquired: (.*)\n", gate)
+    require(acquired is not None, f"{label}: the cleanup gate must pass `acquired`")
+    expression = acquired.group(1)
+    for fragment in (
+        "steps.acquire_lock.outcome == 'skipped'",
+        "steps.acquire_lock.outcome == ''",
+        "&& 'false' ||",
+        "steps.acquire_lock.outputs.acquired",
+    ):
+        require(
+            fragment in expression,
+            f"{label}: the cleanup gate's `acquired` input must map only a step that "
+            f"never executed to 'false' and pass everything else through; missing {fragment!r}",
+        )
+    require(
+        "outcome == 'failure'" not in expression and "outcome != " not in expression,
+        f"{label}: a failed acquire must not be laundered into a not-attempted verdict",
+    )
+
+
 def validate_lock_window_timeout_budget(job: str, label: str) -> None:
     steps = top_level_steps_through_cleanup_gate(job, label)
     bounded_minutes = 0
@@ -1871,10 +1908,9 @@ steps:
         "healthy-existing CI validation must require the central return action's canonical editor leaf",
     )
     for workflow, job_id in LICENSED_LOCK_WINDOWS:
-        validate_lock_window_timeout_budget(
-            job_block(workflow.read_text(encoding="utf-8"), job_id),
-            f"{workflow}:{job_id}",
-        )
+        window = job_block(workflow.read_text(encoding="utf-8"), job_id)
+        validate_lock_window_timeout_budget(window, f"{workflow}:{job_id}")
+        validate_cleanup_gate_not_attempted_input(window, f"{workflow}:{job_id}")
 
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = validate_licensed_workflow_policy(source)
