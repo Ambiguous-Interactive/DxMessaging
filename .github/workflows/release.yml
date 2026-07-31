@@ -229,14 +229,6 @@ jobs:
         with:
           target: editmode
 
-      - name: Validate Unity license secrets
-        timeout-minutes: 2
-        uses: ./.github/actions/validate-unity-license
-        env:
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
       # Skip editor validation and Unity work when no test assembly matched.
       # Lock acquisition remains structurally unconditional for the analyzer;
       # the expected-empty signal lets result verification report a typed skip.
@@ -258,6 +250,14 @@ jobs:
             -DiagnosticsPath $diagnosticsFile `
             -RequireHealthyExisting
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Acquire organization Unity lock
         id: acquire_lock
@@ -460,14 +460,6 @@ jobs:
         with:
           node-version: "22.18.0"
 
-      - name: Validate Unity license secrets
-        timeout-minutes: 2
-        uses: ./.github/actions/validate-unity-license
-        env:
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
       - name: Validate installed Unity Editor
         id: validate_editor
         timeout-minutes: 10
@@ -485,6 +477,14 @@ jobs:
             -DiagnosticsPath $diagnosticsFile `
             -RequireHealthyExisting
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Acquire organization Unity lock
         id: acquire_lock

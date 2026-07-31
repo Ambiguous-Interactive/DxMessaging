@@ -157,14 +157,6 @@ jobs:
           target: "${{ matrix.test-mode }}"
           runtime-only: "${{ matrix.test-mode == 'standalone' && 'true' || 'false' }}"
 
-      - name: Validate Unity license secrets
-        timeout-minutes: 2
-        uses: ./.github/actions/validate-unity-license
-        env:
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
       # Skip editor validation and Unity work when no test assembly matched.
       # Lock acquisition remains structurally unconditional for the analyzer;
       # the expected-empty signal lets result verification report a typed skip.
@@ -193,6 +185,14 @@ jobs:
             -DiagnosticsPath $diagnosticsFile `
             -RequireHealthyExisting
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Require current PR head before lock acquisition
         if: ${{ steps.compute.outputs.is-empty != 'true' }}

@@ -444,7 +444,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     }
 
     // prettier-ignore
-    const lifecycleNames = ["Validate installed Unity Editor", "Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
+    const lifecycleNames = ["Validate installed Unity Editor", "Validate Unity license secrets", "Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
     const positions = lifecycleNames.map((name) => job.indexOf(`      - name: ${name}`));
     const sortedPositions = [...positions].sort((a, b) => a - b);
     assert.ok(
@@ -454,7 +454,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     assert.deepEqual(positions, sortedPositions, `${label} lifecycle order`);
 
     // prettier-ignore
-    const [validationStep, acquireStep, requireStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
+    const [validationStep, credentialStep, acquireStep, requireStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
 
     // prettier-ignore
     const contracts = [
@@ -463,6 +463,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [validationStep, /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: validation and central cleanup must use the same trusted editor root`],
       [validationStep, /-CiManagedOnly/],
       [validationStep, /-RequireHealthyExisting/],
+      [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
       [acquireStep, /\n        id: acquire_lock\n/],
       [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],
       [workStep, new RegExp(`\\n        if: \\$\\{\\{ ${licensedCondition} \\}\\}\\n`), label],

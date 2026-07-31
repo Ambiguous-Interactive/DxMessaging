@@ -119,14 +119,6 @@ jobs:
           include-perf: "true"
           target: "${{ matrix.test-mode }}"
 
-      - name: Validate Unity license secrets
-        timeout-minutes: 2
-        uses: ./.github/actions/validate-unity-license
-        env:
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
       # Skip editor validation and Unity work when no assembly matched. Lock
       # acquisition remains structurally unconditional for the analyzer. The
       # benchmark list is currently non-empty, so this is defense-in-depth.
@@ -148,6 +140,14 @@ jobs:
             -DiagnosticsPath $diagnosticsFile `
             -RequireHealthyExisting
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Acquire organization Unity lock
         id: acquire_lock
