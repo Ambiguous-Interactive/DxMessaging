@@ -476,6 +476,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [gateStep, /\n        if: always\(\)\n        timeout-minutes: 2\n/],
       [gateStep, /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/],
       [gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/],
+      [validationStep, /\.ci\/unity-helpers\/scripts\/unity\/ensure-editor\.ps1/],
       ...(["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file) || jobId === "unity-checks" ? [[workStep, /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: licensed work and central return must use the same trusted editor root`]] : [])
     ];
     for (const [actual, contract, message] of contracts) assert.match(actual, contract, message);

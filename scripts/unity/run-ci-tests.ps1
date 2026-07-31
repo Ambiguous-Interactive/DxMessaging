@@ -2891,17 +2891,7 @@ if ($GenerateOnly) {
 }
 
 if (-not $UnityEditorPath -or $UnityEditorPath.Trim().Length -eq 0) {
-    $ensureEditor = Join-Path $PSScriptRoot 'ensure-editor.ps1'
-    $provisioningProfile = if ($TestMode -eq 'standalone') { 'StandaloneWindowsIl2Cpp' } else { 'EditorOnly' }
-    $ensureArgs = @{
-        UnityVersion         = $UnityVersion
-        InstallRoot          = $UnityInstallRoot
-        ProvisioningProfile = $provisioningProfile
-    }
-    if ($env:GITHUB_ACTIONS -eq 'true') {
-        $ensureArgs.RequireHealthyExisting = $true
-    }
-    $UnityEditorPath = (& $ensureEditor @ensureArgs | Select-Object -Last 1)
+    throw 'UnityEditorPath is required. Validate the manually installed editor before running Unity tests.'
 }
 
 if (-not (Test-Path -LiteralPath $UnityEditorPath -PathType Leaf)) {

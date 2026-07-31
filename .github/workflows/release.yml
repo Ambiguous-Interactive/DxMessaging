@@ -203,6 +203,15 @@ jobs:
           lfs: true
           persist-credentials: false
 
+      - name: Checkout Unity runner maintenance
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Ambiguous-Interactive/unity-helpers
+          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
+          path: .ci/unity-helpers
+          persist-credentials: false
+
       - name: Print runner diagnostics
         timeout-minutes: 2
         # Composite action runs PowerShell internally; `shell: bash` on this
@@ -240,7 +249,7 @@ jobs:
           $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
           $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
           New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $editor = ./scripts/unity/ensure-editor.ps1 `
+          $editor = & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
             -UnityVersion '2022.3.45f1' `
             -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -CiManagedOnly `
@@ -444,6 +453,15 @@ jobs:
           lfs: true
           persist-credentials: false
 
+      - name: Checkout Unity runner maintenance
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Ambiguous-Interactive/unity-helpers
+          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
+          path: .ci/unity-helpers
+          persist-credentials: false
+
       - name: Print runner diagnostics
         timeout-minutes: 2
         # Composite action runs PowerShell internally; never use plain
@@ -467,7 +485,7 @@ jobs:
           $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
           $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
           New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $editor = ./scripts/unity/ensure-editor.ps1 `
+          $editor = & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
             -UnityVersion '2022.3.45f1' `
             -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -CiManagedOnly `
