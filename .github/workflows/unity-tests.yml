@@ -55,7 +55,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           superseded=false
           if [ "${EVENT_NAME}" = pull_request ]; then
             live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" || live=
@@ -211,7 +211,10 @@ jobs:
           }
           $summary = Get-Content -LiteralPath $source -Raw | ConvertFrom-Json
           $expected = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3\${{ matrix.unity-version }}\Editor\Unity.exe'))
-          $actual = [IO.Path]::GetFullPath([string]$summary.editorPath)
+          # A summary written by a failed gate can record no editor at all, and
+          # GetFullPath('') throws an ArgumentException instead of saying so.
+          $recorded = [string]$summary.editorPath
+          $actual = if ($recorded) { [IO.Path]::GetFullPath($recorded) } else { '(none recorded)' }
           if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
             throw "Validated editor '$actual' did not match the canonical editor '$expected'."
           }
