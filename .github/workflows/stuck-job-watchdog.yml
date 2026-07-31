@@ -483,7 +483,6 @@ jobs:
             match_kind="unregistered"
             starved_kind=""
             starved_labels=""
-            any_self_hosted=0
             for labels_csv in "${queued_job_labels[@]}"; do
               kind="$(jq -r --argjson labels "${labels_csv}" '
                 def satisfies($r): $labels | all(. as $l | $r.labels | index($l) | type == "number");
@@ -506,7 +505,6 @@ jobs:
               # an `unregistered` set over an `offline` one: a label set nothing
               # carries needs a human, while an offline machine may come back.
               if jq -e 'index("self-hosted") | type == "number"' <<< "${labels_csv}" > /dev/null; then
-                any_self_hosted=1
                 if [[ "${kind}" == "offline" || "${kind}" == "unregistered" ]]; then
                   if [[ -z "${starved_kind}" ]] \
                       || { [[ "${starved_kind}" == "offline" ]] && [[ "${kind}" == "unregistered" ]]; }; then
@@ -534,7 +532,7 @@ jobs:
             # registered runner may carry `ubuntu-latest` and simply be offline.
             # What is always true is that no queued job ASKED for self-hosted.
             if [[ "${match_kind}" != "idle" && -z "${starved_kind}" ]]; then
-              log_summary "run ${run_id} (${run_path_base}): no queued job requests a self-hosted runner (self-hosted sets seen: ${any_self_hosted}); not evaluable. No action."
+              log_summary "run ${run_id} (${run_path_base}): no queued job requests a self-hosted runner; not evaluable. No action."
               continue
             fi
 

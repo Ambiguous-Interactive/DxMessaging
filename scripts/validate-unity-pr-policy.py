@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -863,9 +865,13 @@ def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> 
     reaches for an endpoint this table does not model fails the case instead of
     quietly reading an empty body.
     """
+    # A `str` payload is emitted verbatim rather than JSON-encoded. The audit
+    # pipes some calls through `gh --jq`, which this stub does not implement, so
+    # a route that feeds such a call has to supply the already-extracted value.
     cases = "".join(
         f"  *{needle}*)\n    cat <<'PAYLOAD'\n"
-        f"{json.dumps(payload) if payload is not None else ''}\nPAYLOAD\n    exit {code} ;;\n"
+        f"{payload if isinstance(payload, str) else (json.dumps(payload) if payload is not None else '')}"
+        f"\nPAYLOAD\n    exit {code} ;;\n"
         for needle, (code, payload) in routes.items()
     )
     return (
@@ -880,13 +886,54 @@ def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> 
 # The watchdog never needs a real remote: `ls-remote` reporting an empty branch
 # list sends it down the bootstrap path, and `push` succeeds. Everything else
 # (init, checkout, add, commit) runs against the real git in a temp directory.
-def watchdog_git_stub(push_ok: bool = True) -> str:
+def watchdog_git_stub(
+    push_ok: bool = True,
+    ls_remote_ok: bool = True,
+    existing_state: dict[int, int] | None = None,
+    clone_ok: bool = True,
+) -> str:
+    """A `git` that passes through except for the three remote operations.
+
+    `existing_state` makes `ls-remote` report the branch as PRESENT and has
+    `clone` materialize it with the given per-run cancel counts. Without it the
+    stub could only ever exercise the bootstrap path, which left both the
+    clone-failure guard and the cancel cap unreachable from the suite.
+    """
+    if existing_state is None:
+        ls_remote = f"exit {0 if ls_remote_ok else 1}"
+        clone = "exit 1"
+    else:
+        ls_remote = (
+            f"echo 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\trefs/heads/state'; "
+            f"exit {0 if ls_remote_ok else 1}"
+        )
+        if clone_ok:
+            # `last_cancel` is an hour ago, comfortably inside the 24h reset
+            # window. A far-future stamp would make elapsed time negative and no
+            # window size could ever change the verdict, so the window itself
+            # would be untestable.
+            writes = "".join(
+                f"printf '{{\"cancels\": {n}, \"last_cancel\": '$(( $(date -u +%s) - 3600 ))'}}' "
+                f'> "$target/.watchdog-state/{run_id}.json"; '
+                for run_id, n in existing_state.items()
+            )
+            clone = (
+                'target="${@: -1}"; /usr/bin/git init -q "$target"; '
+                'mkdir -p "$target/.watchdog-state"; '
+                f"{writes}"
+                '/usr/bin/git -C "$target" add -A; '
+                '/usr/bin/git -C "$target" -c user.email=t@t -c user.name=t commit -qm state; '
+                "exit 0"
+            )
+        else:
+            clone = "exit 1"
     return (
         "#!/bin/bash\n"
         'for a in "$@"; do\n'
         '  case "$a" in\n'
-        "    ls-remote|fetch) exit 0 ;;\n"
-        "    clone) exit 1 ;;\n"
+        f"    ls-remote) {ls_remote} ;;\n"
+        "    fetch) exit 0 ;;\n"
+        f"    clone) {clone} ;;\n"
         f'    push) echo "pushed"; exit {0 if push_ok else 1} ;;\n'
         "  esac\n"
         "done\n"
@@ -908,8 +955,10 @@ WATCHDOG_CONTEXT_ENV = {
     "SELF_RUN_ID": "999",
     "EXTRA_EXCLUDED_WORKFLOWS": "",
 }
-# Literals the cases below actually depend on. Renaming or deleting one must
-# fail here rather than silently drop the behavior it configures.
+# Literals the cases below actually depend on. Each is exercised by at least one
+# case, so a rename or deletion fails rather than silently dropping the behavior
+# it configures. Adding a name here without a case that depends on its VALUE
+# would restore the false guarantee this list used to advertise.
 WATCHDOG_REQUIRED_ENV_LITERALS = (
     "STATE_BRANCH",
     "STATE_DIR",
@@ -941,6 +990,9 @@ def run_watchdog(
     routes: dict[str, tuple[int, object]],
     cancel_ok: bool = True,
     push_ok: bool = True,
+    ls_remote_ok: bool = True,
+    existing_state: dict[int, int] | None = None,
+    clone_ok: bool = True,
     break_date: bool = False,
     extra_env: dict[str, str] | None = None,
 ) -> tuple[int, str]:
@@ -954,7 +1006,7 @@ def run_watchdog(
         root = Path(directory)
         stubs = [
             ("gh", watchdog_gh_stub(routes, cancel_ok)),
-            ("git", watchdog_git_stub(push_ok)),
+            ("git", watchdog_git_stub(push_ok, ls_remote_ok, existing_state, clone_ok)),
         ]
         if break_date:
             stubs.append(("date", "#!/bin/bash\nexit 1\n"))
@@ -980,21 +1032,34 @@ def watchdog_queued_runs(*runs: dict[str, object]) -> tuple[int, object]:
     return 0, {"workflow_runs": list(runs)}
 
 
-def watchdog_run(run_id: int, workflow: str = "perf-numbers.yml") -> dict[str, object]:
+def watchdog_run(
+    run_id: int,
+    workflow: str = "perf-numbers.yml",
+    event: str = "push",
+    created_at: str = "2020-01-01T00:00:00Z",
+) -> dict[str, object]:
     # Created in 2020, so it is unconditionally older than MIN_QUEUE_AGE_SECONDS.
     return {
         "id": run_id,
-        "created_at": "2020-01-01T00:00:00Z",
+        "created_at": created_at,
         "path": f".github/workflows/{workflow}",
-        "event": "push",
+        "event": event,
         "workflow_id": 42,
         "head_branch": "master",
         "html_url": f"https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/{run_id}",
     }
 
 
-def watchdog_jobs(*label_sets: list[str]) -> tuple[int, object]:
-    return 0, {"jobs": [{"status": "queued", "labels": labels} for labels in label_sets]}
+def watchdog_jobs(*label_sets: list[str], extra: list[dict] | None = None) -> tuple[int, object]:
+    """Queued jobs carrying `label_sets`, plus any raw jobs in `extra`.
+
+    `extra` exists so a case can put a job in a NON-queued state. Without it the
+    fixture could only ever produce queued jobs, and the two guards that read job
+    status -- the in-progress early-continue and the zero-queued-jobs check --
+    were unreachable from the whole suite.
+    """
+    jobs = [{"status": "queued", "labels": labels} for labels in label_sets]
+    return 0, {"jobs": jobs + list(extra or [])}
 
 
 def watchdog_runners(*specs: tuple[str, str, bool, list[str]]) -> tuple[int, object]:
@@ -1012,8 +1077,14 @@ def watchdog_runners(*specs: tuple[str, str, bool, list[str]]) -> tuple[int, obj
     }
 
 
+# The redispatch branch reads the workflow file through `gh --jq .content`, which
+# is base64. Encoding here rather than embedding the literal keeps the fixture
+# readable and keeps a meaningless base64 blob out of the spell checker.
+DISPATCHABLE_WORKFLOW_BODY = base64.b64encode(b"on:\n  workflow_dispatch:\n").decode()
+
+
 def validate_stuck_job_watchdog() -> None:
-    """Execute the watchdog's audit script across its whole verdict space.
+    """Execute the watchdog's audit script across its verdict space.
 
     The watchdog is the automation that recovers the licensed Unity legs this
     file governs, so its failure modes belong to the same policy: #328 was a
@@ -1108,8 +1179,8 @@ def validate_stuck_job_watchdog() -> None:
                 "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
             },
             0,
-            ("dispatcher-stuck", "cancelled 1"),
-            (),
+            ("dispatcher-stuck", "cancelled 1", "does not support workflow_dispatch"),
+            ("re-dispatching",),
         ),
         (
             "busy matching runner is healthy backpressure",
@@ -1257,6 +1328,106 @@ def validate_stuck_job_watchdog() -> None:
             ("bad array subscript", "cancelled 1"),
         ),
         (
+            # THE guard that matters most. A matrix cell executing on one runner
+            # while a sibling cell waits is not dispatcher-stuck -- it holds a
+            # Unity licence seat. Cancelling it kills a live Unity session
+            # mid-test, which is the seat leak `require-confirmed-unity-cleanup`
+            # exists to catch. Nothing in the suite reached this branch before:
+            # the job fixture could only produce QUEUED jobs.
+            "a run with an in-progress job is never cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    self_hosted, extra=[{"status": "in_progress", "labels": self_hosted}]
+                ),
+            },
+            0,
+            ("healthy queued", "1 in_progress"),
+            ("cancelled 1", "queued for cancel"),
+        ),
+        (
+            # A run whose jobs have all finished is in a transitional state, not
+            # the dispatcher-stuck pattern.
+            "a run with no queued jobs is never cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    extra=[{"status": "completed", "labels": self_hosted}]
+                ),
+            },
+            0,
+            ("no queued jobs yet",),
+            ("cancelled 1",),
+        ),
+        (
+            # The audit must never cancel itself, however the exclusion list is
+            # configured. SELF_RUN_ID is 999 in the harness, so the fixture run
+            # has to carry that id for the guard to be exercised at all.
+            "the watchdog never cancels its own run",
+            {
+                queued: watchdog_queued_runs(watchdog_run(999)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            0,
+            ("this is the watchdog's own run",),
+            ("cancelled 999",),
+        ),
+        (
+            # The inventory is read in TWO calls. Only the runner-GROUP listing
+            # was covered; a failure of the per-group RUNNER listing could be
+            # downgraded to a log line and the audit would report exit 0 over an
+            # empty inventory -- precisely the #328 shape.
+            "an unreadable runner listing inside a group fails closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": (1, None),
+            },
+            1,
+            ("could not read runners in organization runner group",),
+            (),
+        ),
+        (
+            # The redispatch branch had never executed: the fixture returned an
+            # empty `content`, so `base64 -d` always failed and the workflow was
+            # always treated as non-dispatchable.
+            "a dispatchable push run is cancelled and re-dispatched",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, DISPATCHABLE_WORKFLOW_BODY),
+            },
+            0,
+            ("cancelled 1", "re-dispatching workflow 42"),
+            (),
+        ),
+        (
+            # A pull_request run must NEVER be re-dispatched: the dispatches
+            # endpoint cannot re-trigger one, and the documented path is a
+            # cancel plus an operator instruction. The workflow body here IS
+            # dispatchable, so only the event check can hold the line.
+            "a pull_request run is cancelled but never re-dispatched",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1, event="pull_request")),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, DISPATCHABLE_WORKFLOW_BODY),
+            },
+            0,
+            ("cancelled 1", "pull_request-triggered", "Re-run all jobs"),
+            ("re-dispatching",),
+        ),
+        (
             "the excluded release workflow is never cancelled",
             {
                 queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),
@@ -1308,6 +1479,88 @@ def validate_stuck_job_watchdog() -> None:
             needle in text,
             f"watchdog unexpected abort: the EXIT trap did not emit {needle!r}\n{text}",
         )
+
+    # A transient `ls-remote` failure must not be mistaken for "the state branch
+    # does not exist": bootstrapping on that would push-corrupt the real branch
+    # by rewriting it as a fresh orphan, silently resetting every cancel cap.
+    code, text = run_watchdog(script, environment_literals, stuck_routes, ls_remote_ok=False)
+    require(code == 1, f"watchdog unreadable state branch: expected exit 1, got {code}\n{text}")
+    require(
+        "cancelled 1" not in text,
+        "watchdog unreadable state branch: cancelled without a readable cap\n" + text,
+    )
+
+    # The cancel cap is what stops a run being cancelled without limit. With the
+    # cap already reached, the run must be reported for operator action and NOT
+    # cancelled again.
+    code, text = run_watchdog(
+        script, environment_literals, stuck_routes, existing_state={1: 2}
+    )
+    require(code == 0, f"watchdog cancel cap: expected exit 0, got {code}\n{text}")
+    require(
+        "cap reached" in text and "cancelled 1" not in text,
+        "watchdog cancel cap: a run past its daily cap was cancelled again\n" + text,
+    )
+
+    # Labels that are not strings make `ascii_downcase` fail INSIDE the label
+    # parse, after the job listing itself parsed cleanly -- a different guard
+    # from the listing read, and the only one that can leave a run silently
+    # unevaluated.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {
+            queued: watchdog_queued_runs(watchdog_run(1)),
+            inventory: one_group,
+            "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            "actions/runs/1/jobs": watchdog_jobs(extra=[{"status": "queued", "labels": [17]}]),
+        },
+    )
+    require(
+        code == 1 and "could not parse the job labels" in text,
+        f"watchdog unparseable job labels: expected a fail-closed exit, got {code}\n{text}",
+    )
+
+    # A state branch that exists but cannot be cloned leaves the cap unreadable.
+    code, text = run_watchdog(
+        script, environment_literals, stuck_routes, existing_state={}, clone_ok=False
+    )
+    require(
+        code == 1 and "clone failed" in text,
+        f"watchdog un-cloneable state branch: expected a fail-closed exit, got {code}\n{text}",
+    )
+
+    # Defensive: a queued listing whose ids do not round-trip to their own
+    # metadata (here an id typed as a string) leaves the run unclassifiable, and
+    # an unclassifiable run must fail the audit rather than be skipped past.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {
+            queued: (0, {"workflow_runs": [watchdog_run(1) | {"id": "1"}]}),
+            inventory: one_group,
+            "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+        },
+    )
+    require(
+        code == 1 and "carries no metadata" in text,
+        f"watchdog unclassifiable run: expected a fail-closed exit, got {code}\n{text}",
+    )
+
+    # A run younger than MIN_QUEUE_AGE_SECONDS is not a candidate at all. The
+    # timestamp is derived from the workflow's own literal, so lowering that
+    # literal to 0 (or deleting the age filter) changes the verdict here.
+    fresh = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {queued: watchdog_queued_runs(watchdog_run(1, created_at=fresh))},
+    )
+    require(code == 0, f"watchdog age gate: expected exit 0, got {code}\n{text}")
+    require(
+        "Queue is clean" in text,
+        "watchdog age gate: a just-created run was treated as queued past the threshold\n" + text,
+    )
 
     # The exclusion list is built from a repo variable, so an operator entry
     # ending in `/` strips to an EMPTY associative-array subscript -- a hard
