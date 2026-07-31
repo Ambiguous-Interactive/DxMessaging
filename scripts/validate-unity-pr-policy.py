@@ -1370,6 +1370,126 @@ def validate_stuck_job_watchdog() -> None:
             require(needle not in text, f"watchdog {name}: summary leaked {needle!r}\n{text}")
 
 
+MAINTENANCE = Path(".github/workflows/post-merge-maintenance.yml")
+
+
+def run_maintenance_push_loop(
+    script: str, root: Path, failing_check_calls: int, failing_pushes: int, failing: str = "issue-template"
+) -> int:
+    """Execute the post-merge push loop against a real local remote.
+
+    The loop is the only place in this repository where generator failure,
+    concurrent-merge retry, and the job's exit status interact, and it has now
+    produced two defects in review: a `regenerate` that always returned 0 (so an
+    not-yet-converged generator shipped green) and then a failure flag that never
+    cleared (so a transient failure reddened a job that had converged). Both are
+    invisible to a text assertion, so this runs the real thing.
+
+    `failing_pushes` forces the concurrent-merge retry: each failed push also
+    advances the remote, which is what makes the loop regenerate on a new head.
+    """
+    bin_dir, origin, work, other = (root / n for n in ("bin", "origin.git", "work", "other"))
+    bin_dir.mkdir()
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    for clone in (work, other):
+        subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True)
+        for key, value in (("user.email", "t@t"), ("user.name", "t")):
+            subprocess.run(["git", "-C", str(clone), "config", key, value], check=True)
+    (work / ".github" / "ISSUE_TEMPLATE").mkdir(parents=True)
+    for name, body in (("llms.txt", "a"), ("README.md", "b"), (".github/ISSUE_TEMPLATE/bug_report.yml", "c")):
+        (work / name).write_text(body, encoding="utf-8")
+    subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-qm", "seed"], check=True)
+    subprocess.run(["git", "-C", str(work), "branch", "-M", "master"], check=True)
+    subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "master"], check=True)
+
+    calls, pushes = root / "check-calls", root / "push-calls"
+    calls.write_text("0", encoding="utf-8")
+    pushes.write_text("0", encoding="utf-8")
+    npm = bin_dir / "npm"
+    # Whichever generator is under test counts its own calls and fails the first
+    # `failing_check_calls` of them; the other always converges. Both branches of
+    # `regenerate` set the failure flag, so both have to be exercised.
+    flaky = "check:llms-txt" if failing == "llms" else "check:issue-template-versions"
+    steady = "check:issue-template-versions" if failing == "llms" else "check:llms-txt"
+    npm.write_text(
+        "#!/bin/bash\n"
+        'case "$*" in\n'
+        '  "run update:llms-txt") date +%s%N > llms.txt; exit 0 ;;\n'
+        '  "run update:issue-template-versions") exit 0 ;;\n'
+        f'  "run {steady}") exit 0 ;;\n'
+        f'  "run {flaky}")\n'
+        f'     n=$(cat {calls}); n=$((n+1)); echo $n > {calls}\n'
+        f'     [ "$n" -le {failing_check_calls} ] && exit 1\n'
+        "     exit 0 ;;\n"
+        "esac\nexit 0\n",
+        encoding="utf-8",
+    )
+    git = bin_dir / "git"
+    git.write_text(
+        "#!/bin/bash\n"
+        'for a in "$@"; do\n'
+        '  if [ "$a" = "push" ]; then\n'
+        f'    n=$(cat {pushes}); n=$((n+1)); echo $n > {pushes}\n'
+        f'    if [ "$n" -le {failing_pushes} ]; then\n'
+        f'      (cd {other} && /usr/bin/git pull -q --rebase; echo $n > z$n.txt; '
+        "/usr/bin/git add -A; /usr/bin/git commit -qm concurrent; "
+        "/usr/bin/git push -q origin master) > /dev/null 2>&1\n"
+        "      exit 1\n    fi\n  fi\ndone\n"
+        'exec /usr/bin/git "$@"\n',
+        encoding="utf-8",
+    )
+    for stub in (npm, git):
+        stub.chmod(0o755)
+
+    (work / "llms.txt").write_text("modified", encoding="utf-8")
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{bin_dir}{os.pathsep}{environment['PATH']}",
+            "LLMS_PATHS": "llms.txt README.md",
+            "ISSUE_TEMPLATE_PATHS": ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "GH_PUSH_TOKEN": "stub",
+            "GITHUB_REF_NAME": "master",
+        }
+    )
+    return subprocess.run(
+        ["bash", "-c", script], cwd=work, env=environment, capture_output=True, text=True, check=False
+    ).returncode
+
+
+def validate_post_merge_push_loop() -> None:
+    """Pin how the post-merge push loop turns generator outcomes into an exit code."""
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    script = run_script(step_block(job_block(source, "regenerate"), "Commit and push changes"))
+    if os.name == "nt":
+        return
+    # `failing_pushes` is what forces the loop to regenerate on a refreshed head:
+    # each failed push also advances the remote. With zero failed pushes the loop
+    # never calls `regenerate` at all, so a generator failure there belongs to the
+    # step that ran it, not to this loop -- which is why the no-retry row expects 0.
+    #
+    # name, failing check calls, failing pushes, which generator, expected exit
+    for name, failing_checks, failing_pushes, failing, expected in (
+        ("a clean run exits 0", 0, 0, "issue-template", 0),
+        ("a straight retry with no generator failure exits 0", 0, 2, "issue-template", 0),
+        ("an issue-template generator that never converges fails the job", 99, 1, "issue-template", 1),
+        ("an llms.txt generator that never converges fails the job", 99, 1, "llms", 1),
+        ("a transient issue-template failure that later converges exits 0", 1, 2, "issue-template", 0),
+        # No transient-llms row on purpose. llms.txt carries the only change in
+        # these fixtures, so reverting it on failure leaves nothing to commit and
+        # the loop exits at the "already current" branch before a second
+        # regeneration can occur. The failure still propagates (the row above),
+        # which is the property that matters; a row asserting a path the loop
+        # cannot reach would only look like coverage.
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            code = run_maintenance_push_loop(
+                script, Path(directory), failing_checks, failing_pushes, failing
+            )
+        require(code == expected, f"post-merge push loop {name}: expected exit {expected}, got {code}")
+
+
 def find_unregistered_unity_automation(files: dict[str, str]) -> list[str]:
     return sorted(
         path
@@ -2319,6 +2439,7 @@ fi"""
             )
 
     validate_stuck_job_watchdog()
+    validate_post_merge_push_loop()
 
     print("Unity pull-request policy validation passed.")
 

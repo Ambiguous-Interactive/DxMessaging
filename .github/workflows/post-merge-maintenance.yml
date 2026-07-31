@@ -233,6 +233,12 @@ jobs:
           # the failure happened here rather than there.
           regenerate_failed=0
           regenerate() {
+            # Reset per call: the flag must describe the regeneration whose output
+            # actually gets pushed, not every attempt ever made. Leaving it sticky
+            # meant a transient failure on an intermediate head reddened the job
+            # even after a later retry converged and pushed good content --
+            # trading the old always-green bug for an always-red one.
+            regenerate_failed=0
             # shellcheck disable=SC2086 # intentional word lists.
             if ! (npm run update:llms-txt && npm run check:llms-txt); then
               echo "::error::llms.txt generation did not converge on the refreshed head; discarding its output."
