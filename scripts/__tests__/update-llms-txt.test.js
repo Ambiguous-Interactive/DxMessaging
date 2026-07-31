@@ -262,6 +262,20 @@ test("CLI update mode keeps the committed date until the content actually change
     assert.equal(fs.readFileSync(llmsTxt, "utf8"), dated, "a no-op regeneration rewrote the date");
     execFileSync("node", [SCRIPT, "--check"], { env, stdio: "pipe" });
 
+    // A corrupt date line must still be repairable: the normalized comparison
+    // erases the date, so a file whose only defect IS the date looks identical
+    // to a fresh generation, and carrying the bad line forward would leave a
+    // state the post-write validator rejects -- update mode exiting 1 while
+    // advertising itself as the fix.
+    fs.writeFileSync(llmsTxt, dated.replace(LAST_UPDATED, "**Last Updated:** unknown"));
+    execFileSync("node", [SCRIPT], { env, stdio: "pipe" });
+    assert.match(
+      fs.readFileSync(llmsTxt, "utf8"),
+      /^\*\*Last Updated:\*\* \d{4}-\d{2}-\d{2}$/m,
+      "a malformed date line was preserved instead of repaired"
+    );
+    fs.writeFileSync(llmsTxt, dated);
+
     // Real content change: the date must move with it.
     fs.mkdirSync(path.join(skills, "gamma"), { recursive: true });
     fs.writeFileSync(path.join(skills, "gamma", "SKILL.md"), "---\nname: x\n---\n");

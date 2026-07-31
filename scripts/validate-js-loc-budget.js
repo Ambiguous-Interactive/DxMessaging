@@ -89,8 +89,14 @@ const path = require("path");
 //     real write path is covered rather than the helper alone; both mutations
 //     (unconditional restamp, preserve-through-a-content-change) fail the
 //     suite. Offset by -1 line in the fetch-refspec guard, whose two merged
-//     workflow entries collapsed to one, and the 13 comment lines of this very entry: 17582.
-const TOTAL_BUDGET = 17582;
+//     workflow entries collapsed to one, and the comment lines of this very
+//     entry. Adversarial review then added the malformed-date guard and its
+//     regression case: preserving a date the generator itself rejects took
+//     update mode's ability to REPAIR one away, because the normalized
+//     comparison erases the date, so a file whose only defect was a corrupt
+//     date line looked identical to a fresh generation and update exited 1
+//     while advertising itself as the fix: 17612.
+const TOTAL_BUDGET = 17612;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

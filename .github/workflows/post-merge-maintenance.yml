@@ -39,13 +39,19 @@ on:
     branches:
       - main
       - master
-    # The union of both generators' inputs and outputs. An output is listed so
-    # a hand-edit that drifts from the generator is corrected on the next push
-    # rather than waiting for the weekly cron.
+    # The union of both generators' inputs, plus the one output the retired
+    # issue-template workflow already watched so a hand-edited dropdown is
+    # corrected without waiting for the weekly cron.
+    #
+    # llms.txt is deliberately NOT listed even though it is the other output.
+    # This job's own commit is pushed with an App token, which (unlike the
+    # built-in GITHUB_TOKEN) re-triggers workflows, so listing it would make
+    # every real regeneration schedule a second, guaranteed no-op run -- the
+    # churn this workflow exists to reduce. A hand-edit to llms.txt is already
+    # blocked on the pull request by `check:llms-txt`.
     paths:
       - package.json
       - CHANGELOG.md
-      - llms.txt
       - .llm/skills/**
       - .github/ISSUE_TEMPLATE/bug_report.yml
       - scripts/update-llms-txt.js
@@ -67,10 +73,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      # Single source for what this workflow owns. Every stage -- the change
-      # probe, the staging step, and the push loop -- reads this list, so a new
-      # generator is added in one place and cannot be half-wired.
-      GENERATED_PATHS: "llms.txt README.md .github/ISSUE_TEMPLATE/bug_report.yml"
+      # Single source for what each generator owns. Every stage -- the two
+      # regeneration steps, the change probe, the staging step, and the push
+      # loop -- reads these, so a new generator is added in one place and
+      # cannot be half-wired. They are kept SEPARATE, not merged into one list,
+      # because each generator reverts only its own files when it fails.
+      LLMS_PATHS: "llms.txt README.md"
+      ISSUE_TEMPLATE_PATHS: ".github/ISSUE_TEMPLATE/bug_report.yml"
 
     steps:
       - name: Check for the auto-commit GitHub App credentials
@@ -132,26 +141,58 @@ jobs:
             npm i --no-audit --no-fund
           fi
 
-      # Each generator runs with its own `--check` immediately after, so a
-      # generator that cannot reach a state its own checker accepts fails here
-      # rather than committing a state the PR gate would then reject.
-      - name: Regenerate committed artifacts
+      # One step per generator, and the second runs even when the first failed.
+      # Merging these into a single `set -e` block would re-couple what two
+      # independent workflows used to keep apart: a `bug_report.yml` the
+      # dropdown generator cannot process would abort the step before the
+      # llms.txt drift on master ever got corrected, and vice versa.
+      #
+      # Each generator runs its own `--check` immediately after, and REVERTS
+      # its own files if that check rejects them. That is what makes it safe
+      # for the commit step to run after a failure: the tree can only ever
+      # carry output a checker accepted, never a half-written file. The job
+      # still goes red at the end, so nothing is swallowed.
+      - name: Regenerate llms.txt
+        id: gen_llms
         run: |
-          set -euo pipefail
-          npm run update:llms-txt
-          npm run check:llms-txt
-          npm run update:issue-template-versions
-          npm run check:issue-template-versions
+          set -uo pipefail
+          if npm run update:llms-txt && npm run check:llms-txt; then
+            exit 0
+          fi
+          echo "::error::llms.txt generation did not converge; discarding its output."
+          # shellcheck disable=SC2086 # LLMS_PATHS is an intentional word list.
+          git checkout -- ${LLMS_PATHS}
+          exit 1
+
+      - name: Regenerate the issue-template version dropdown
+        id: gen_issue_template
+        if: always()
+        run: |
+          set -uo pipefail
+          if npm run update:issue-template-versions && npm run check:issue-template-versions; then
+            exit 0
+          fi
+          echo "::error::issue-template version generation did not converge; discarding its output."
+          # shellcheck disable=SC2086 # ISSUE_TEMPLATE_PATHS is an intentional word list.
+          git checkout -- ${ISSUE_TEMPLATE_PATHS}
+          exit 1
 
       - name: Check for changes
         id: git-check
+        if: always()
         run: |
           set -euo pipefail
-          # shellcheck disable=SC2086 # GENERATED_PATHS is an intentional word list.
-          git diff --exit-code -- ${GENERATED_PATHS} || echo "changed=true" >> "$GITHUB_OUTPUT"
+          # shellcheck disable=SC2086 # both are intentional word lists.
+          git diff --exit-code -- ${LLMS_PATHS} ${ISSUE_TEMPLATE_PATHS} \
+            || echo "changed=true" >> "$GITHUB_OUTPUT"
 
+      # Runs even after a failed generator: the revert above guarantees the tree
+      # carries only checker-accepted output, so the generator that DID converge
+      # still self-heals instead of waiting on an unrelated fix.
       - name: Commit and push changes
-        if: steps.git-check.outputs.changed == 'true' && steps.check-autocommit-app.outputs.has-app == 'true'
+        if: >-
+          always() && steps.git-check.outputs.changed == 'true' &&
+          steps.check-autocommit-app.outputs.has-app == 'true'
         env:
           GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
@@ -160,14 +201,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # shellcheck disable=SC2206 # GENERATED_PATHS is an intentional word list.
-          generated=(${GENERATED_PATHS})
+          # shellcheck disable=SC2206 # both are intentional word lists.
+          generated=(${LLMS_PATHS} ${ISSUE_TEMPLATE_PATHS})
 
+          # Same isolation as the two steps above: on the stale-head path a
+          # generator that cannot converge reverts its own files rather than
+          # aborting the push loop and stranding the other generator's output.
           regenerate() {
-            npm run update:llms-txt
-            npm run check:llms-txt
-            npm run update:issue-template-versions
-            npm run check:issue-template-versions
+            # shellcheck disable=SC2086 # intentional word lists.
+            (npm run update:llms-txt && npm run check:llms-txt) \
+              || git checkout -- ${LLMS_PATHS}
+            # shellcheck disable=SC2086
+            (npm run update:issue-template-versions && npm run check:issue-template-versions) \
+              || git checkout -- ${ISSUE_TEMPLATE_PATHS}
           }
 
           fetch_head() {
@@ -231,3 +277,26 @@ jobs:
             git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
             regenerate
           done
+
+      # The commit step is allowed to run after a failed generator, so the job's
+      # own verdict has to come from the generators themselves. Without this a
+      # generator that never converged would be reported green.
+      - name: Require every generator to have converged
+        if: always()
+        run: |
+          set -euo pipefail
+          failed=0
+          for outcome in "${LLMS_OUTCOME}" "${ISSUE_TEMPLATE_OUTCOME}"; do
+            case "${outcome}" in
+              success|skipped) ;;
+              *) failed=1 ;;
+            esac
+          done
+          if [ "${failed}" -ne 0 ]; then
+            echo "::error::a generator did not converge (llms.txt=${LLMS_OUTCOME}, issue-template=${ISSUE_TEMPLATE_OUTCOME}); see the annotations above."
+            exit 1
+          fi
+          echo "Every generator converged."
+        env:
+          LLMS_OUTCOME: ${{ steps.gen_llms.outcome }}
+          ISSUE_TEMPLATE_OUTCOME: ${{ steps.gen_issue_template.outcome }}

@@ -22,9 +22,18 @@ name: Stuck Job Watchdog
 # The repository-level fallback this workflow used to attempt was worse than
 # no fallback: this repository registers zero repository-level runners, so the
 # call would succeed and report an empty inventory, which reads identically to
-# "no runner matches" and still issues no action. Only runner groups visible to
-# THIS repository are counted, so a runner another repository can use is never
-# mistaken for one that could have picked up our job.
+# "no runner matches" and still issues no action.
+#
+# The inventory walk asks for runner groups `visible_to_repository` this
+# repository, the same call shape `check-unity-runner-availability` makes in
+# production. Note what that does and does not buy today: the organization
+# currently registers a single group ("Default"), so visible-to-us and
+# all-org-runners are the same set, and the parameter is insurance for the day a
+# restricted second group is added rather than a guarantee being relied on now.
+# The counted group names are logged for exactly that reason -- if a second group
+# ever appears in the summary, the filter's behavior is worth confirming before
+# trusting it, because over-counting capacity is what could turn a legitimately
+# queued run into a wrongful cancel.
 #
 # Detection requires ALL of the following to be true:
 #   * The workflow run is `status: queued` AND older than MIN_QUEUE_AGE_SECONDS
@@ -144,7 +153,14 @@ jobs:
           : > "${excluded_runs_file}"
           : > "${starved_runs_file}"
 
+          summary_emitted=0
+          deliberate_exit=0
+
           emit_summary() {
+            if (( summary_emitted == 1 )); then
+              return 0
+            fi
+            summary_emitted=1
             {
               echo "## Watchdog summary"
               cat "${summary_file}"
@@ -164,9 +180,28 @@ jobs:
           }
 
           finish() {
+            deliberate_exit=1
             emit_summary
             exit "${1:-0}"
           }
+
+          # Without this, ANY abort `set -e` catches outside the enumerated
+          # paths -- and this is 500 lines of bash running 288 times a day --
+          # produces a red run with a completely empty step summary and no
+          # annotation, which is the worst signal an operator can be handed.
+          # The trap makes every exit emit the buckets, and labels the ones
+          # that did not come from `finish` so an unexpected abort is not
+          # mistaken for a considered verdict.
+          # shellcheck disable=SC2317 # invoked indirectly by the EXIT trap below.
+          on_exit() {
+            local code=$?
+            if (( code != 0 )) && (( deliberate_exit == 0 )); then
+              log_summary "ERROR: the audit aborted unexpectedly (exit ${code}); the queue was not fully evaluated."
+              echo "::error::stuck-job watchdog aborted unexpectedly (exit ${code}); see the job log."
+            fi
+            emit_summary
+          }
+          trap on_exit EXIT
 
           # The audit could not answer. Never exit 0 from here: a green run has
           # to mean the queue was evaluated, not that evaluation was skipped.
@@ -210,13 +245,24 @@ jobs:
             fail_closed "failed to list queued runs for ${REPO}."
           fi
 
-          mapfile -t queued_ids < <(jq -r --argjson now "${now_epoch}" --argjson min "${MIN_QUEUE_AGE_SECONDS}" '
+          # `mapfile < <(jq ...)` throws the process substitution's exit status
+          # away, and `pipefail` does not reach inside one. A single unparseable
+          # `created_at` would abort jq, yield an empty list, and print
+          # "Queue is clean" over a genuinely stuck queue -- the exact fail-open
+          # this rewrite exists to remove. Capture, check, then split.
+          if ! queued_ids_raw="$(jq -r --argjson now "${now_epoch}" --argjson min "${MIN_QUEUE_AGE_SECONDS}" '
             .[]
             | select(.created_at != null)
             | (.created_at | fromdateiso8601) as $created
             | select(($now - $created) >= $min)
             | .id
-          ' < "${queued_runs_json}" | sort -u)
+          ' < "${queued_runs_json}" | sort -u)"; then
+            fail_closed "could not parse the queued-run listing for ${REPO}; the queue cannot be evaluated."
+          fi
+          queued_ids=()
+          if [[ -n "${queued_ids_raw}" ]]; then
+            mapfile -t queued_ids <<< "${queued_ids_raw}"
+          fi
 
           log_summary "Queued runs older than ${MIN_QUEUE_AGE_SECONDS}s: ${#queued_ids[@]}"
           if [[ ${#queued_ids[@]} -eq 0 ]]; then
@@ -245,11 +291,15 @@ jobs:
           if (( group_count == 0 )); then
             fail_closed "the organization reported no runner groups visible to ${REPO}; the inventory cannot be trusted."
           fi
+          log_summary "Runner groups visible to ${REPO}: $(jq -r '[.[].name] | join(", ")' < "${runner_groups_json}")"
 
           # mapfile, not `while read < <(...)`: the loop body runs `gh`, and a
           # child that consumes the loop's stdin silently eats the remaining
           # group ids.
-          mapfile -t runner_group_ids < <(jq -r '.[].id' < "${runner_groups_json}")
+          if ! runner_group_ids_raw="$(jq -r '.[].id' < "${runner_groups_json}")"; then
+            fail_closed "could not parse the organization runner-group inventory."
+          fi
+          mapfile -t runner_group_ids <<< "${runner_group_ids_raw}"
           runners_json="$(mktemp)"
           : > "${runners_json}"
           group_runners_json="$(mktemp)"
@@ -323,6 +373,18 @@ jobs:
             run_html_url="$(jq -r '.html_url' <<< "${run_meta}")"
             run_path_base="${run_path##*/}"
 
+            # An empty subscript is a hard bash error, and `path: (.path // "")`
+            # above already anticipates a null path. A run whose workflow file
+            # cannot be named cannot be checked against the exclusion list, and
+            # cancelling is the one irreversible thing this job does, so it is
+            # reported and left alone rather than risked.
+            if [[ -z "${run_path_base}" ]]; then
+              log_summary "run ${run_id} (event=${run_event}): no workflow path reported; cannot check the exclusion list, so taking no action."
+              echo "::warning::run ${run_id} reported no workflow path; the watchdog cannot classify it and will not cancel it."
+              printf '* run %s (unknown workflow, event=%s) -- unclassifiable, left alone -- %s\n' "${run_id}" "${run_event}" "${run_html_url}" >> "${excluded_runs_file}"
+              continue
+            fi
+
             # Workflow-file exclusion (must NOT cancel release.yml).
             if [[ -n "${EXCLUDED_BY_FILE[${run_path_base}]+x}" ]]; then
               log_summary "run ${run_id} (${run_path_base}, event=${run_event}): workflow is excluded; operator action needed if stuck."
@@ -374,21 +436,35 @@ jobs:
             # runner and manufacturing a dispatcher-stuck verdict, so a job
             # whose labels GitHub did not report is dropped rather than
             # trusted.
-            mapfile -t queued_job_labels < <(jq -c '
+            if ! queued_job_labels_raw="$(jq -c '
               [ .[] | select(.status == "queued") | [ (.labels // [])[] | ascii_downcase ] ]
               | map(select(length > 0))
               | unique
               | .[]
-            ' < "${jobs_json}")
+            ' < "${jobs_json}")"; then
+              fail_closed "could not parse the job labels for run ${run_id}; that run could not be evaluated."
+            fi
+            queued_job_labels=()
+            if [[ -n "${queued_job_labels_raw}" ]]; then
+              mapfile -t queued_job_labels <<< "${queued_job_labels_raw}"
+            fi
             if [[ ${#queued_job_labels[@]} -eq 0 ]]; then
               log_summary "run ${run_id} (${run_path_base}, event=${run_event}): queued jobs report no labels; not evaluable. No action."
               continue
             fi
 
+            # `match_kind` is the best verdict across ALL of the run's label
+            # sets and decides the action. `starved_*` is tracked SEPARATELY and
+            # only from self-hosted sets, because those are the only ones this
+            # inventory can speak to. Deriving the report from "the first set"
+            # while deciding from "all sets" made both wrong: a GitHub-hosted
+            # set sorting first suppressed a real starvation warning entirely,
+            # and when it did warn it named the hosted label rather than the
+            # self-hosted one, pointing the operator at a machine that does not
+            # exist.
             match_kind="unregistered"
-            unmatched_kind=""
-            unmatched_labels=""
-            unmatched_self_hosted=0
+            starved_kind=""
+            starved_labels=""
             for labels_csv in "${queued_job_labels[@]}"; do
               kind="$(jq -r --argjson labels "${labels_csv}" '
                 def satisfies($r): $labels | all(. as $l | $r.labels | index($l) | type == "number");
@@ -407,11 +483,15 @@ jobs:
                   || { [[ "${kind}" == "offline" ]] && [[ "${match_kind}" == "unregistered" ]]; }; then
                 match_kind="${kind}"
               fi
-              if [[ -z "${unmatched_kind}" ]]; then
-                unmatched_kind="${kind}"
-                unmatched_labels="$(jq -r 'join(", ")' <<< "${labels_csv}")"
-                if jq -e 'index("self-hosted") | type == "number"' <<< "${labels_csv}" > /dev/null; then
-                  unmatched_self_hosted=1
+              # Only a self-hosted set can starve on OUR fleet. Prefer reporting
+              # an `unregistered` set over an `offline` one: a label set nothing
+              # carries needs a human, while an offline machine may come back.
+              if [[ "${kind}" == "offline" || "${kind}" == "unregistered" ]] \
+                  && jq -e 'index("self-hosted") | type == "number"' <<< "${labels_csv}" > /dev/null; then
+                if [[ -z "${starved_kind}" ]] \
+                    || { [[ "${starved_kind}" == "offline" ]] && [[ "${kind}" == "unregistered" ]]; }; then
+                  starved_kind="${kind}"
+                  starved_labels="$(jq -r 'join(", ")' <<< "${labels_csv}")"
                 fi
               fi
             done
@@ -422,16 +502,16 @@ jobs:
               continue
             fi
 
-            if [[ "${match_kind}" == "unregistered" && ${unmatched_self_hosted} -eq 0 ]]; then
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): [${unmatched_labels}] targets GitHub-hosted capacity, which this inventory does not cover; not evaluable. No action."
+            if [[ "${match_kind}" != "idle" && -z "${starved_kind}" ]]; then
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): every queued job targets GitHub-hosted capacity, which this inventory does not cover; not evaluable. No action."
               continue
             fi
 
             if [[ "${match_kind}" != "idle" ]]; then
-              if [[ "${unmatched_kind}" == "offline" || "${match_kind}" == "offline" ]]; then
-                starved_detail="every runner carrying [${unmatched_labels}] is registered but offline"
+              if [[ "${starved_kind}" == "offline" ]]; then
+                starved_detail="every runner carrying [${starved_labels}] is registered but offline"
               else
-                starved_detail="no runner registered in a group visible to ${REPO} carries [${unmatched_labels}]"
+                starved_detail="no runner registered in a group visible to ${REPO} carries [${starved_labels}]"
               fi
               log_summary "run ${run_id} (${run_path_base}, event=${run_event}): starved -- ${starved_detail}. Not dispatcher-stuck; no action."
               echo "::warning::run ${run_id} (${run_path_base}) queued past ${MIN_QUEUE_AGE_SECONDS}s: ${starved_detail}. Bring that runner online or fix the label set."

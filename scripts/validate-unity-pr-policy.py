@@ -880,17 +880,18 @@ def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> 
 # The watchdog never needs a real remote: `ls-remote` reporting an empty branch
 # list sends it down the bootstrap path, and `push` succeeds. Everything else
 # (init, checkout, add, commit) runs against the real git in a temp directory.
-WATCHDOG_GIT_STUB = (
-    "#!/bin/bash\n"
-    'for a in "$@"; do\n'
-    '  case "$a" in\n'
-    "    ls-remote|fetch) exit 0 ;;\n"
-    "    clone) exit 1 ;;\n"
-    '    push) echo "pushed"; exit 0 ;;\n'
-    "  esac\n"
-    "done\n"
-    'exec /usr/bin/git "$@"\n'
-)
+def watchdog_git_stub(push_ok: bool = True) -> str:
+    return (
+        "#!/bin/bash\n"
+        'for a in "$@"; do\n'
+        '  case "$a" in\n'
+        "    ls-remote|fetch) exit 0 ;;\n"
+        "    clone) exit 1 ;;\n"
+        f'    push) echo "pushed"; exit {0 if push_ok else 1} ;;\n'
+        "  esac\n"
+        "done\n"
+        'exec /usr/bin/git "$@"\n'
+    )
 
 
 # Values the runner supplies from the workflow context; everything else in the
@@ -939,11 +940,15 @@ def run_watchdog(
     environment_literals: dict[str, str],
     routes: dict[str, tuple[int, object]],
     cancel_ok: bool = True,
+    push_ok: bool = True,
 ) -> tuple[int, str]:
     """Execute the watchdog audit script against a stubbed `gh` and `git`."""
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        for name, body in (("gh", watchdog_gh_stub(routes, cancel_ok)), ("git", WATCHDOG_GIT_STUB)):
+        for name, body in (
+            ("gh", watchdog_gh_stub(routes, cancel_ok)),
+            ("git", watchdog_git_stub(push_ok)),
+        ):
             stub = root / name
             stub.write_text(body, encoding="utf-8")
             stub.chmod(0o755)
@@ -1168,6 +1173,75 @@ def validate_stuck_job_watchdog() -> None:
             ("cancelled 1",),
         ),
         (
+            # Finding: `mapfile < <(jq ...)` discarded jq's exit status, so one
+            # unparseable timestamp printed "Queue is clean" over a stuck queue.
+            "an unparseable queued-run timestamp fails closed",
+            {
+                queued: (
+                    0,
+                    {
+                        "workflow_runs": [
+                            watchdog_run(1) | {"created_at": "not-a-date"},
+                            watchdog_run(2),
+                        ]
+                    },
+                )
+            },
+            1,
+            ("could not parse the queued-run listing",),
+            ("Queue is clean",),
+        ),
+        (
+            # Finding: the starvation report latched on the FIRST label set while
+            # the verdict accumulated across all of them, so a GitHub-hosted set
+            # sorting first suppressed a real starvation warning outright.
+            "a hosted label set never suppresses a self-hosted starvation",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                # "macos-latest" sorts before "self-hosted", so jq `unique` puts
+                # the hosted set first -- the ordering that used to lose.
+                "actions/runs/1/jobs": watchdog_jobs(
+                    ["macos-latest"], ["self-hosted", "Windows", "unicorn"]
+                ),
+            },
+            0,
+            ("starved", "::warning::", "self-hosted, windows, unicorn"),
+            ("GitHub-hosted capacity", "cancelled 1", "macos-latest] is registered"),
+        ),
+        (
+            # Finding: the warning interpolated the first set's labels while
+            # branching on the whole-run verdict, so it told the operator to
+            # bring online a runner named by a GitHub-hosted label.
+            "the starvation warning names the self-hosted labels, not a hosted one",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(["macos-latest"], self_hosted),
+            },
+            0,
+            ("registered but offline", "self-hosted, windows, ram-64gb, fast"),
+            ("[macos-latest] is registered", "cancelled 1"),
+        ),
+        (
+            # Finding: an empty workflow path is a hard bash error on the
+            # exclusion-list subscript, which aborted with an EMPTY summary.
+            "a run with no workflow path is reported, not crashed on",
+            {
+                queued: (
+                    0,
+                    {"workflow_runs": [watchdog_run(1) | {"path": None}]},
+                ),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            0,
+            ("no workflow path reported", "Watchdog summary"),
+            ("bad array subscript", "cancelled 1"),
+        ),
+        (
             "the excluded release workflow is never cancelled",
             {
                 queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),
@@ -1178,6 +1252,28 @@ def validate_stuck_job_watchdog() -> None:
             ("workflow is excluded",),
             ("cancelled 1",),
         ),
+    )
+
+    stuck_routes = {
+        queued: watchdog_queued_runs(watchdog_run(1)),
+        inventory: one_group,
+        "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+        "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+        "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+    }
+
+    # An unusable cancel-cap state branch must fail rather than cancel blind:
+    # without the cap, a run could be cancelled without limit. This is the only
+    # case that needs a failing `git push`, so it runs outside the shared loop.
+    code, text = run_watchdog(script, environment_literals, stuck_routes, push_ok=False)
+    require(
+        code == 1,
+        f"watchdog unusable state branch: expected exit 1, got {code}\n{text}",
+    )
+    require(
+        "cancelled 1" not in text,
+        f"watchdog unusable state branch: cancelled a run without a readable cap\n{text}",
     )
 
     for name, routes, expected_code, expected, forbidden in cases:

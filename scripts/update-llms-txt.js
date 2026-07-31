@@ -211,12 +211,22 @@ function hasValidLastUpdatedLine(content) {
  * The comparison normalizes ONLY the date, not the skill-count claim that
  * `normalizeForComparison` also folds away: a count change is real content, and
  * must move the date with it.
+ *
+ * Only a date this generator would itself accept is carried forward. Preserving
+ * a malformed one would take update mode's ability to repair it away: the
+ * normalized comparison erases the date, so a file whose ONLY defect is a
+ * corrupt date line looks identical to a fresh generation, and copying the
+ * corrupt line back leaves a state the post-write validator rejects. Update
+ * mode would then exit 1 while advertising itself as the remediation.
  */
 function preserveUnchangedDate(newContent, llmsTxtPath) {
   if (!fs.existsSync(llmsTxtPath)) {
     return newContent;
   }
   const current = fs.readFileSync(llmsTxtPath, "utf8");
+  if (!hasValidLastUpdatedLine(current)) {
+    return newContent;
+  }
   const withoutDate = (text) => normalizeToLf(text).replace(LAST_UPDATED_LINE, "<DATE>");
   if (withoutDate(current) !== withoutDate(newContent)) {
     return newContent;
