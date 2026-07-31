@@ -165,6 +165,43 @@ function Wait-ForProcessExit {
     return $true
 }
 
+function Stop-PublishedDescendant {
+    # The single cleanup path for every probe that publishes a descendant PID. Terminates the
+    # descendant, VERIFIES it actually exited, and only then removes both halves of the publish.
+    #
+    # Two things here are not optional, and each was a real leak before this helper existed:
+    #
+    # - The staging file has to be consulted. A parent that died between WriteAllText and Move
+    #   left the id ONLY there, so recovering from the final path alone learns nothing and then
+    #   deletes the last record of a process that is still running.
+    # - Stop-Process only REQUESTS termination. Deleting the PID file without waiting for the
+    #   exit turns a descendant that ignored the request into an unattributable leak.
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$KnownProcessId = 0
+    )
+
+    try {
+        $descendantId = $KnownProcessId
+        if ($descendantId -le 0) {
+            $descendantId = Wait-ForPublishedProcessId -Path $Path -TimeoutSeconds 5
+        }
+        if ($descendantId -le 0) {
+            # A single check, not a wait: the staging file only survives when the publish was
+            # interrupted, so there is nothing to wait for.
+            $descendantId = Wait-ForPublishedProcessId -Path "$Path.tmp" -TimeoutSeconds 0
+        }
+        if ($descendantId -gt 0) {
+            Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
+            if (-not (Wait-ForProcessExit -Id $descendantId -TimeoutSeconds 10)) {
+                throw "Published descendant process $descendantId ($Path) survived cleanup."
+            }
+        }
+    } finally {
+        Remove-PublishedProcessIdFile -Path $Path
+    }
+}
+
 function Invoke-WrapperTreeProbe {
     # Drives Invoke-UnityCliCaptureWithTimeout end to end with a parent that publishes a
     # descendant PID, then reports whether that descendant survived the wrapper's own
@@ -202,20 +239,9 @@ $TailCode
             Removed      = [bool]$removed
         }
     } finally {
-        try {
-            # Invoke-UnityCliCaptureWithTimeout THROWS on its non-retryable process-safety
-            # error, in which case the try block never reached the publication read and
-            # $descendantId is still 0. Read it here, before the file is removed, or the
-            # descendant leaks along with the only record of which process it was.
-            if ($descendantId -le 0) {
-                $descendantId = Wait-ForPublishedProcessId -Path $pidPath -TimeoutSeconds 5
-            }
-            if ($descendantId -gt 0) {
-                Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
-            }
-        } finally {
-            Remove-PublishedProcessIdFile -Path $pidPath
-        }
+        # Invoke-UnityCliCaptureWithTimeout THROWS on its non-retryable process-safety error, so
+        # $descendantId can still be 0 here; Stop-PublishedDescendant recovers it from the file.
+        Stop-PublishedDescendant -Path $pidPath -KnownProcessId $descendantId
     }
 }
 
@@ -365,20 +391,11 @@ Start-Sleep -Seconds 60
             }
         } finally {
             try {
-                if ($descendantId -gt 0) {
-                    Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
-                    if (-not (Wait-ForProcessExit -Id $descendantId -TimeoutSeconds 10)) {
-                        throw "Tree-probe descendant process $descendantId survived cleanup."
-                    }
+                if ($null -ne $descendantProcess) {
+                    $descendantProcess.Dispose()
                 }
             } finally {
-                try {
-                    if ($null -ne $descendantProcess) {
-                        $descendantProcess.Dispose()
-                    }
-                } finally {
-                    Remove-PublishedProcessIdFile -Path $treePidPath
-                }
+                Stop-PublishedDescendant -Path $treePidPath -KnownProcessId $descendantId
             }
         }
     }
@@ -494,15 +511,13 @@ while ($true) {
         $orphanSafetyErrorEscaped = ($_.Exception.Message -match 'safe process-tree termination could not be confirmed')
         $orphanSafetyMarker = [bool]$_.Exception.Data['DxMessagingNonRetryable']
     } finally {
-        try {
-            $orphanId = Wait-ForPublishedProcessId -Path $orphanPidPath -TimeoutSeconds 5
-            if ($orphanId -gt 0) {
-                $orphanWasAlive = $null -ne (Get-Process -Id $orphanId -ErrorAction SilentlyContinue)
-                Stop-Process -Id $orphanId -Force -ErrorAction SilentlyContinue
-            }
-        } finally {
-            Remove-PublishedProcessIdFile -Path $orphanPidPath
+        $orphanId = Wait-ForPublishedProcessId -Path $orphanPidPath -TimeoutSeconds 5
+        if ($orphanId -gt 0) {
+            # Read liveness BEFORE cleanup terminates it; that is what the assertion below is
+            # about -- a quick-exit parent leaves its descendant detached and running.
+            $orphanWasAlive = $null -ne (Get-Process -Id $orphanId -ErrorAction SilentlyContinue)
         }
+        Stop-PublishedDescendant -Path $orphanPidPath -KnownProcessId $orphanId
     }
     Assert-That 'quick-exit parent leaves a live detached descendant' ($orphanId -gt 0 -and $orphanWasAlive)
     if ($IsWindows) {

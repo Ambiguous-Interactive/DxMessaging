@@ -58,9 +58,10 @@ Removing the watcher also deletes one layer of the cleanup pyramid.
 The fourth finding exposed a fifth defect, in the cleanup guard itself:
 `Stop-Process` only requests termination, so verifying it with an immediate
 `Get-Process` races the kernel and can report a successful kill as a surviving
-process. `Wait-ForProcessExit` polls to a 10-second bound instead. A sweep
-found no other instance of this pattern; the one production `Stop-Process` in
-`ensure-editor.ps1` reports its outcome and does not re-check.
+process. `Wait-ForProcessExit` polls to a 10-second bound instead. The one
+production `Stop-Process` in `ensure-editor.ps1` reports its outcome and does
+not re-check, so it is unaffected; the sweep across the test's own cleanup
+paths came later, and found two more instances.
 
 Both publish sites (the tree probe and the detached-orphan probe) now use the
 same atomic publish, validating read, and verified cleanup, so the
@@ -98,13 +99,28 @@ The wall clock runs from launch and has no equivalent trick available, so it
 uses ten seconds against a sub-second publish and fails loudly on a missed
 publish.
 
-A further review round found a process leak in the same helper.
-`Invoke-UnityCliCaptureWithTimeout` throws on its non-retryable process-safety
-error, and on that path the try block never reached the publication read, so
-`descendantId` was still 0 when `finally` ran: the descendant was never stopped
-and the PID file -- the only record of which process it was -- was deleted
-anyway. The `finally` now reads the PID before removing the file, matching what
-the detached-orphan probe already did.
+Three further review rounds found three leaks, all of the same class and all in
+cleanup rather than in the happy path:
+
+1. `Invoke-UnityCliCaptureWithTimeout` throws on its non-retryable
+   process-safety error, and on that path the try block never reached the
+   publication read, so `descendantId` was still 0 when `finally` ran. The
+   descendant was never stopped and the PID file was deleted anyway.
+1. Recovery consulted only the FINAL PID path. A parent that died between
+   `WriteAllText` and `Move` left the id only in the staging file, so cleanup
+   learned nothing and then deleted both files.
+1. Cleanup ended at `Stop-Process`, which only REQUESTS termination. A
+   descendant that ignored the request outlived the probe with no record.
+
+Each one leaves a sixty-second sleeper running and unattributable, because the
+PID file it could have been traced through is gone.
+
+Rather than patch three call sites, `Stop-PublishedDescendant` is now the single
+cleanup path for every probe that publishes a descendant: it recovers the id
+from the final path and then the staging path, terminates, waits for the exit to
+be confirmed, and only then removes both halves of the publish. That replaced
+three bespoke cleanup blocks -- including one four-deep `finally` pyramid in the
+tree probe -- and is why the fix is a simplification rather than another layer.
 
 ## Verification
 
@@ -120,7 +136,7 @@ Green evidence, after the fix:
   fix took 34.07 s down to 21.4 s, and the two new wrapper probes spend that
   back plus 6 s on coverage CI did not previously have;
 - former-flake loop: 20 consecutive focused-suite passes before the wrapper
-  probes, 5 after;
+  probes, 4 after the cleanup refactor;
 - mutation - direct-child-only kill instead of tree kill: fails on
   `tree termination removes the descendant` (36 passed, 1 failed), so the
   assertion discriminates a real tree-termination regression;
@@ -140,6 +156,10 @@ Green evidence, after the fix:
   with the try forced to throw: the pre-fix shape reports
   `descendantLeaked=True pidFileGone=True`, the fixed shape
   `descendantLeaked=False`;
+- isolated A/B with the id present only in the staging file, standing in for a
+  parent that died between `WriteAllText` and `Move`: final-path-only recovery
+  reports `descendantLeaked=True stagingGone=True`, `Stop-PublishedDescendant`
+  reports `descendantLeaked=False`;
 - full Node/script suite: 406 passed, 0 failed;
 - `npm run validate:all` and spelling: passed;
 - unchanged master rerun: static `CI Success` passed, confirming the original
