@@ -435,23 +435,17 @@ jobs:
             in_progress_count="$(jq '[ .[] | select(.status == "in_progress") ] | length' < "${jobs_json}")"
             queued_count="$(jq '[ .[] | select(.status == "queued") ] | length' < "${jobs_json}")"
 
-            if (( in_progress_count > 0 )); then
-              # A run with even one in-progress job is by definition not
-              # dispatcher-stuck. This covers matrix cells or later jobs
-              # waiting while another job from the same run is active, and the
-              # general case of a run that has at least one runner.
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): healthy queued (${in_progress_count} in_progress, ${queued_count} queued -- waiting on concurrency/matrix slot)."
-              printf '* run %s (%s, event=%s) -- %d in_progress, %d queued\n' "${run_id}" "${run_path_base}" "${run_event}" "${in_progress_count}" "${queued_count}" >> "${healthy_runs_file}"
-              continue
-            fi
-
-            if (( queued_count == 0 )); then
-              # No queued jobs at all - the run is in some other transitional
-              # state, not the dispatcher-stuck pattern.
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): no queued jobs yet (early state); skipping."
-              continue
-            fi
-
+            # Classification runs BEFORE the early exits, because starvation has
+            # to be known on every path that reports one. The `in_progress`
+            # exit used to `continue` before labels were evaluated at all, so
+            # the moment a busy runner picked up the healthy cell the run became
+            # in-progress and a co-resident starved job went silent again for
+            # the rest of the matrix -- reopening the gap the `busy` fix had
+            # just closed, in the state that lasts longest. (Cursor Bugbot.)
+            #
+            # The exits keep their original order and messages below; only the
+            # point at which `starved_kind` becomes known has moved.
+            #
             # Resolve each queued job's label set against the inventory. Only
             # `idle` is dispatcher-stuck; the other three verdicts are the
             # states a naive "no matching idle runner" test conflates, and
@@ -482,9 +476,13 @@ jobs:
             if [[ -n "${queued_job_labels_raw}" ]]; then
               mapfile -t queued_job_labels <<< "${queued_job_labels_raw}"
             fi
-            if [[ ${#queued_job_labels[@]} -eq 0 ]]; then
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): queued jobs report no labels; not evaluable. No action."
-              continue
+            # Deferred, not `continue`d: a run can have BOTH an in-progress job
+            # and unlabelled queued jobs, and the in-progress verdict is the one
+            # that describes it. Recording the condition here keeps the exit
+            # order below identical to what it was before classification moved.
+            labels_not_usable=0
+            if (( queued_count == 0 )) || [[ ${#queued_job_labels[@]} -eq 0 ]]; then
+              labels_not_usable=1
             fi
 
             # `match_kind` is the best verdict across ALL of the run's label
@@ -499,7 +497,7 @@ jobs:
             match_kind="unregistered"
             starved_kind=""
             starved_labels=""
-            for labels_csv in "${queued_job_labels[@]}"; do
+            for labels_csv in "${queued_job_labels[@]+"${queued_job_labels[@]}"}"; do
               kind="$(jq -r --argjson labels "${labels_csv}" '
                 def satisfies($r): $labels | all(. as $l | $r.labels | index($l) | type == "number");
                 if   any(.[]; .online and (.busy | not) and satisfies(.)) then "idle"
@@ -530,6 +528,30 @@ jobs:
                 fi
               fi
             done
+
+            if (( in_progress_count > 0 )); then
+              # A run with even one in-progress job is by definition not
+              # dispatcher-stuck. This covers matrix cells or later jobs
+              # waiting while another job from the same run is active, and the
+              # general case of a run that has at least one runner. It is still
+              # not a reason to hide a sibling nothing can pick up.
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): healthy queued (${in_progress_count} in_progress, ${queued_count} queued -- waiting on concurrency/matrix slot)."
+              printf '* run %s (%s, event=%s) -- %d in_progress, %d queued\n' "${run_id}" "${run_path_base}" "${run_event}" "${in_progress_count}" "${queued_count}" >> "${healthy_runs_file}"
+              report_starvation
+              continue
+            fi
+
+            if (( queued_count == 0 )); then
+              # No queued jobs at all - the run is in some other transitional
+              # state, not the dispatcher-stuck pattern.
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): no queued jobs yet (early state); skipping."
+              continue
+            fi
+
+            if (( labels_not_usable == 1 )); then
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): queued jobs report no labels; not evaluable. No action."
+              continue
+            fi
 
             # A busy sibling does not make a starved sibling less starved. The
             # `busy` verdict used to `continue` without consulting `starved_kind`,

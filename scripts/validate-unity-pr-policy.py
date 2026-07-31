@@ -1449,6 +1449,25 @@ def validate_stuck_job_watchdog() -> None:
             ("cancelled 1", STARVED_SECTION_EMPTY),
         ),
         (
+            # The longest-lived form of the same blindness: once a runner picks
+            # up the healthy cell the run is in-progress, and that state lasts
+            # for the rest of the matrix. If the in-progress exit skips the
+            # starvation report, the starved sibling is silent for hours.
+            "an in-progress sibling does not suppress a co-resident starvation",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    ["self-hosted", "Windows", "unicorn"],
+                    extra=[{"status": "in_progress", "labels": self_hosted}],
+                ),
+            },
+            0,
+            ("healthy queued", "1 in_progress", "starved", "::warning::", "unicorn"),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
             "the excluded release workflow is never cancelled",
             {
                 queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),
