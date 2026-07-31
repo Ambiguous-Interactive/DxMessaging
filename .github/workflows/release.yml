@@ -203,6 +203,15 @@ jobs:
           lfs: true
           persist-credentials: false
 
+      - name: Checkout Unity runner maintenance
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Ambiguous-Interactive/unity-helpers
+          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
+          path: .ci/unity-helpers
+          persist-credentials: false
+
       - name: Print runner diagnostics
         timeout-minutes: 2
         # Composite action runs PowerShell internally; `shell: bash` on this
@@ -229,20 +238,10 @@ jobs:
         with:
           target: editmode
 
-      - name: Validate Unity license secrets
-        timeout-minutes: 2
-        uses: ./.github/actions/validate-unity-license
-        env:
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
-      # Skip editor validation and Unity work when no test assembly matched.
-      # Lock acquisition remains structurally unconditional for the analyzer;
-      # the expected-empty signal lets result verification report a typed skip.
+      # Unity work skips when no test assembly matched. Editor validation,
+      # credential validation, and lock acquisition remain unconditional.
       - name: Validate installed Unity Editor
         id: validate_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 10
         shell: pwsh
         run: |
@@ -250,7 +249,7 @@ jobs:
           $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
           $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
           New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $editor = ./scripts/unity/ensure-editor.ps1 `
+          $editor = & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
             -UnityVersion '2022.3.45f1' `
             -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -CiManagedOnly `
@@ -258,6 +257,14 @@ jobs:
             -DiagnosticsPath $diagnosticsFile `
             -RequireHealthyExisting
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Acquire organization Unity lock
         id: acquire_lock
@@ -446,6 +453,15 @@ jobs:
           lfs: true
           persist-credentials: false
 
+      - name: Checkout Unity runner maintenance
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Ambiguous-Interactive/unity-helpers
+          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
+          path: .ci/unity-helpers
+          persist-credentials: false
+
       - name: Print runner diagnostics
         timeout-minutes: 2
         # Composite action runs PowerShell internally; never use plain
@@ -460,14 +476,6 @@ jobs:
         with:
           node-version: "22.18.0"
 
-      - name: Validate Unity license secrets
-        timeout-minutes: 2
-        uses: ./.github/actions/validate-unity-license
-        env:
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
       - name: Validate installed Unity Editor
         id: validate_editor
         timeout-minutes: 10
@@ -477,7 +485,7 @@ jobs:
           $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
           $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
           New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $editor = ./scripts/unity/ensure-editor.ps1 `
+          $editor = & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
             -UnityVersion '2022.3.45f1' `
             -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -CiManagedOnly `
@@ -485,6 +493,14 @@ jobs:
             -DiagnosticsPath $diagnosticsFile `
             -RequireHealthyExisting
           "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Acquire organization Unity lock
         id: acquire_lock

@@ -597,7 +597,7 @@ $OutputPath = Resolve-FullPath -Path $OutputPath
 
 if (-not $StageOnly) {
     if ([string]::IsNullOrWhiteSpace($UnityEditorPath)) {
-        Write-CiError 'UnityEditorPath is required (set UNITY_EDITOR_PATH or pass -UnityEditorPath); CI must validate a manually installed editor with ensure-editor.ps1 -RequireHealthyExisting first.'
+        Write-CiError 'UnityEditorPath is required (set UNITY_EDITOR_PATH or pass -UnityEditorPath); CI must validate a manually installed editor before export.'
         exit 1
     }
     if (-not (Test-Path -LiteralPath $UnityEditorPath -PathType Leaf)) {

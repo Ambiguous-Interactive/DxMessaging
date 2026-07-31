@@ -444,7 +444,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     }
 
     // prettier-ignore
-    const lifecycleNames = ["Validate installed Unity Editor", "Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
+    const lifecycleNames = ["Validate installed Unity Editor", "Validate Unity license secrets", "Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
     const positions = lifecycleNames.map((name) => job.indexOf(`      - name: ${name}`));
     const sortedPositions = [...positions].sort((a, b) => a - b);
     assert.ok(
@@ -454,7 +454,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     assert.deepEqual(positions, sortedPositions, `${label} lifecycle order`);
 
     // prettier-ignore
-    const [validationStep, acquireStep, requireStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
+    const [validationStep, credentialStep, acquireStep, requireStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
 
     // prettier-ignore
     const contracts = [
@@ -463,6 +463,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [validationStep, /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: validation and central cleanup must use the same trusted editor root`],
       [validationStep, /-CiManagedOnly/],
       [validationStep, /-RequireHealthyExisting/],
+      [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
       [acquireStep, /\n        id: acquire_lock\n/],
       [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],
       [workStep, new RegExp(`\\n        if: \\$\\{\\{ ${licensedCondition} \\}\\}\\n`), label],
@@ -475,11 +476,12 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [gateStep, /\n        if: always\(\)\n        timeout-minutes: 2\n/],
       [gateStep, /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/],
       [gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/],
+      [validationStep, /\.ci\/unity-helpers\/scripts\/unity\/ensure-editor\.ps1/],
       ...(["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file) || jobId === "unity-checks" ? [[workStep, /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: licensed work and central return must use the same trusted editor root`]] : [])
     ];
     for (const [actual, contract, message] of contracts) assert.match(actual, contract, message);
 
-    assert.doesNotMatch(validationStep, /\b(?:install-modules|uninstall)\b/i, label);
+    assert.doesNotMatch(validationStep, /\n {8}if:|\b(?:install-modules|uninstall)\b/i, label);
     assert.doesNotMatch(returnStep, /continue-on-error:/);
 
     const acquireHolder = /holder-id-suffix: (.+)\n/.exec(acquireStep);
