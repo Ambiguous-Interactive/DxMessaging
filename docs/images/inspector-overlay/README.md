@@ -53,33 +53,52 @@ Inspector overlay PNGs until the actual target artifact is Personal/light-theme,
 cropped per this manifest, visually inspected, and Unity has a clean
 post-capture console and editor-window list.
 
-On 2026-07-30, an offscreen panel-render experiment established the provisional
-desktop-independent method:
+On 2026-07-31, that experiment became a retained helper:
+`Tests/Editor/EditorSurfaceCapture.cs`, covered by
+`Tests/Editor/EditorSurfaceCaptureTests.cs`. Use it rather than re-deriving the
+method. It renders a package-owned surface offscreen and writes a cropped 24-bit
+PNG:
 
-1. Create a temporary `HideAndDontSave` window containing the real shipped view,
-   or a transient Inspector containing the real component editor.
-1. Give the panel a fixed size. Reflect inherited `EditorPanel` methods with
-   instance, public, and non-public binding flags; do not use `DeclaredOnly`.
-1. Call `ValidateLayout()`, repaint with `EventType.Repaint`, then call
-   `Render()` while a temporary linear `RenderTexture` is active.
-1. Preserve and restore the active render target, viewport, `GL.sRGBWrite`,
-   selection, and window state. In this linear-color project,
-   `RenderTextureReadWrite.Linear` with `GL.sRGBWrite = false` matched the real
-   panel colors.
-1. Read only that temporary render target into an RGB24 `Texture2D`, encode the
-   PNG, and verify PNG color type 2 (truecolor without alpha). The staging proofs
-   used RGBA and therefore do not satisfy this manifest's 24-bit requirement.
-1. Compare the Console error set and editor-window list before and after
-   capture. Do not clear the Console to hide capture diagnostics or erase user
-   logs; abort acceptance if the capture adds an error.
+1. Host the real shipped view in a `HideAndDontSave` window from
+   `EditorWindowTestUtility`. The window must be shown, because a window that was
+   never shown has no panel and there is nothing to lay out or render.
+1. Create a linear `RenderTexture`, make it active, and disable `GL.sRGBWrite`.
+   In this linear-color project that pairing is what matches the real panel
+   colors.
+1. Drive the panel through `ValidateLayout()`, then `Repaint(Event)` with
+   `EventType.Repaint`, then `Render()`. All three are inherited, so reflect them
+   with instance, public, and non-public binding flags and without
+   `DeclaredOnly`. Skipping the repaint step yields a valid PNG of a blank frame.
+1. Read back the surface's own `worldBound`, not the whole canvas. The host
+   window draws a tab strip at the top of its panel, so a full-canvas readback
+   frames that chrome and pushes the surface underneath it. Cropping is also
+   what gives each image the tight frame the capture list asks for. Render-target
+   rows start at the bottom while UI Toolkit measures from the top, so the
+   vertical origin is `canvasHeight - worldBound.yMax`.
+1. Read into an RGB24 `Texture2D` and verify PNG color type 2 (truecolor without
+   alpha) before writing. Earlier staging proofs were RGBA and did not satisfy
+   this manifest.
+1. Restore the active render target and `GL.sRGBWrite`, and destroy the window
+   and both textures, including on the failure path.
 
-This method produced a clean, visually correct Message Monitor staging image.
-The Inspector staging image was visually correct but emitted
-`EditorGUIUtility.AddCursorRect called outside an editor OnGUI` while its IMGUI
-body rendered. No reusable capture helper is retained yet. Treat the Inspector
-method as experimental until a retained helper produces the frame without new
-diagnostics. Native menu cascades and combined Hierarchy/Inspector frames still
-require manual host capture or an explicit scope change.
+The helper reports the skin and Unity version of every capture instead of
+changing them, and the tests count distinct colors so a blank frame fails rather
+than passing as a valid PNG.
+
+Verified on 2026-07-31 against Unity 6000.4.6f1: eight capture tests pass, the
+full editor assembly is 557/0, the real `MessageAwareComponentInspectorView`
+renders to a clean 720x63 RGB24 crop with no window chrome and no clipping, the
+Console gains no entry from a capture, and the host is left with only its seven
+standard windows. Rendering the package-owned UI Toolkit view directly is also
+what avoids the
+`EditorGUIUtility.AddCursorRect called outside an editor OnGUI` diagnostic the
+2026-07-30 experiment hit: that came from driving a whole live Inspector with an
+IMGUI body, which the overlay crops do not need.
+
+Do not clear the Console to hide capture diagnostics or erase user logs; abort
+acceptance if a capture adds an error. Native menu cascades and combined
+Hierarchy/Inspector frames still require manual host capture or an explicit scope
+change, because they frame Unity chrome this helper deliberately never reads.
 
 Do not switch editor skins as part of automation. Start from an editor that is
 already in Personal/light theme, record `EditorGUIUtility.isProSkin` and the

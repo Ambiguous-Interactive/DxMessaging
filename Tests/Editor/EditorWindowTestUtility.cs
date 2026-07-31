@@ -68,6 +68,18 @@ namespace DxMessaging.Tests.Editor
 
             window.rootVisualElement.Clear();
             CreatedWindows.Remove(window);
+
+            // A window that was created but never shown has no host view, and
+            // EditorWindow.Close() dereferences that parent unconditionally. Destroying the
+            // instance is the whole of its teardown. Tests that only need a panel to lay out
+            // and render -- offscreen capture, for one -- never show their window, so closing
+            // one has to be safe rather than a NullReferenceException in teardown.
+            if (ReadMember(window, "m_Parent") == null)
+            {
+                Object.DestroyImmediate(window);
+                return;
+            }
+
             window.Close();
         }
 
