@@ -243,19 +243,23 @@ namespace DxMessaging.Tests.Editor
                 );
             }
 
-            int cropX = Mathf.Clamp(Mathf.RoundToInt(bounds.x), 0, Mathf.Max(0, canvasWidth - 1));
-            int cropY = Mathf.Clamp(
-                Mathf.RoundToInt(canvasHeight - bounds.yMax),
-                0,
-                Mathf.Max(0, canvasHeight - 1)
-            );
-            cropWidth = Mathf.Min(cropWidth, canvasWidth - cropX);
-            cropHeight = Mathf.Min(cropHeight, canvasHeight - cropY);
-            if (cropWidth <= 0 || cropHeight <= 0)
+            int cropX = Mathf.RoundToInt(bounds.x);
+            int cropY = Mathf.RoundToInt(canvasHeight - bounds.yMax);
+
+            // Refuse a surface that does not fit rather than clamping into the canvas. Clamping
+            // would return a silently clipped image, which is exactly the defect the manifest
+            // tells reviewers to look for, produced by the tool that exists to avoid it.
+            if (
+                cropX < 0
+                || cropY < 0
+                || cropX + cropWidth > canvasWidth
+                || cropY + cropHeight > canvasHeight
+            )
             {
                 throw new InvalidOperationException(
-                    $"The surface laid out at {bounds} which falls outside the "
-                        + $"{canvasWidth}x{canvasHeight} capture canvas. Enlarge the canvas."
+                    $"The surface laid out to {bounds}, which does not fit inside the "
+                        + $"{canvasWidth}x{canvasHeight} capture canvas. Enlarge the canvas; "
+                        + "cropping it here would write a silently clipped image."
                 );
             }
 

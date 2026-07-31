@@ -1,6 +1,7 @@
 #if UNITY_EDITOR && UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Editor
 {
+    using System;
     using System.Collections.Generic;
     using System.IO;
     using DxMessaging.Editor;
@@ -144,15 +145,24 @@ namespace DxMessaging.Tests.Editor
             _createdObjects.Add(sentinel);
             RenderTexture previousTarget = RenderTexture.active;
             bool previousSrgbWrite = GL.sRGBWrite;
+            int windowsBefore = Resources.FindObjectsOfTypeAll<EditorWindow>().Length;
+
+            // The failure has to happen INSIDE the capture's try, after it has taken over the
+            // render target and GL.sRGBWrite and created its host window. An argument-validation
+            // failure would return before any of that and this test would pass even if the whole
+            // finally block were deleted. An oversized surface fails at the crop step, which is
+            // past every piece of state the finally is responsible for putting back.
+            VisualElement oversized = CreateOpaqueProbe();
+            oversized.style.width = CanvasWidth + 1;
             try
             {
                 RenderTexture.active = sentinel;
                 GL.sRGBWrite = true;
 
-                Assert.Throws<System.ArgumentOutOfRangeException>(() =>
+                Assert.Throws<InvalidOperationException>(() =>
                     EditorSurfaceCapture.Capture(
-                        CreateOpaqueProbe(),
-                        0,
+                        oversized,
+                        CanvasWidth,
                         CanvasHeight,
                         ResolveOutputPath(nameof(CaptureRestoresRenderStateWhenTheSurfaceThrows))
                     )
@@ -166,6 +176,12 @@ namespace DxMessaging.Tests.Editor
                 RenderTexture.active = previousTarget;
                 GL.sRGBWrite = previousSrgbWrite;
             }
+
+            Assert.That(
+                Resources.FindObjectsOfTypeAll<EditorWindow>().Length,
+                Is.EqualTo(windowsBefore),
+                "A failed capture must still close its hidden host window."
+            );
         }
 
         [Test]
@@ -213,6 +229,30 @@ namespace DxMessaging.Tests.Editor
             // the skin instead of changing it and the reviewer rejects a Pro/dark artifact.
             Assert.That(result.IsProSkin, Is.EqualTo(EditorGUIUtility.isProSkin));
             Assert.That(result.UnityVersion, Is.EqualTo(Application.unityVersion));
+        }
+
+        [Test]
+        public void CaptureRefusesASurfaceLargerThanTheCanvas()
+        {
+            VisualElement oversized = CreateOpaqueProbe();
+            oversized.style.width = CanvasWidth + 1;
+
+            // Clamping into the canvas would write a silently clipped image, which is the exact
+            // defect the screenshot manifest asks reviewers to catch.
+            InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() =>
+                EditorSurfaceCapture.Capture(
+                    oversized,
+                    CanvasWidth,
+                    CanvasHeight,
+                    ResolveOutputPath(nameof(CaptureRefusesASurfaceLargerThanTheCanvas))
+                )
+            );
+            Assert.That(failure.Message, Does.Contain("does not fit"));
+            Assert.That(
+                File.Exists(ResolveOutputPath(nameof(CaptureRefusesASurfaceLargerThanTheCanvas))),
+                Is.False,
+                "A refused capture must not leave a partial image behind."
+            );
         }
 
         [Test]

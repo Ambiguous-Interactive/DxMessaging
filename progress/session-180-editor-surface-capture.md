@@ -11,7 +11,7 @@ Personal/light artwork. This session closed the mechanism half.
 `Tests/Editor/EditorSurfaceCapture.cs` is the retained helper session 177
 lacked. It renders a real shipped editor surface into an offscreen render target
 and writes a cropped 24-bit PNG, never reading the desktop.
-`Tests/Editor/EditorSurfaceCaptureTests.cs` pins its contract with eight tests.
+`Tests/Editor/EditorSurfaceCaptureTests.cs` pins its contract with nine tests.
 
 The artwork half stays open, and is blocked on the host rather than on code:
 the configured host is Pro/dark (`isProSkin=True`, `UserSkin=1`), the manifest
@@ -66,13 +66,35 @@ manifest asks for are crops of the package-owned UI Toolkit view, which renders
 directly and emits nothing. The Console gained no entry across this session's
 captures.
 
+## Review findings folded in
+
+Cursor Bugbot found two defects in the first push, and one of them had already
+been found independently by an adversarial pass over the same code.
+
+**The crop clamped instead of refusing.** A surface that started inside the
+canvas but extended past an edge was silently trimmed to fit, so the helper
+built to prevent clipped screenshots could quietly produce one. It now refuses a
+surface that does not fit and names both rects, and
+`CaptureRefusesASurfaceLargerThanTheCanvas` pins that.
+
+**The failure-path restore test proved nothing.** It triggered the failure by
+passing a zero canvas width, which throws in argument validation *before* the
+capture takes over the render target or creates its host window, so the whole
+`finally` block could have been deleted and the test would still pass. It now
+fails from inside the try, by way of an oversized surface, and additionally
+asserts the host window was closed.
+
+Verified by mutation: deleting the two restore lines from the `finally` fails
+both restore tests, including the failure-path one (7 passed, 2 failed). Under
+the old test body that mutation went undetected.
+
 ## Verification
 
 All against the live host, Unity 6000.4.6f1, Direct3D11:
 
-- `EditorSurfaceCaptureTests`: 8 passed, 0 failed;
-- full `WallstopStudios.DxMessaging.Tests.Editor` assembly: 557 passed, 0 failed
-  (549 before this session's 8 new tests, so no regression from the
+- `EditorSurfaceCaptureTests`: 9 passed, 0 failed;
+- full `WallstopStudios.DxMessaging.Tests.Editor` assembly: 558 passed, 0 failed
+  (549 before this session's 9 new tests, so no regression from the
   `CloseWindow` change);
 - visual inspection: `MessageAwareComponentInspectorView` renders to a 720x63
   RGB24 crop, 293 distinct colors, no window chrome, no clipping, complete
@@ -89,7 +111,8 @@ All against the live host, Unity 6000.4.6f1, Direct3D11:
 
 The red-green record is in the capture runs themselves: 3/5 pass-fail on the
 first run (teardown NRE), 6/2 once the panel existed (blank frames), 8/0 once
-the repaint step was added, and 8/0 again after the crop change.
+the repaint step was added, 8/0 again after the crop change, and 9/0 after the
+review fixes.
 
 ## Follow-up
 
