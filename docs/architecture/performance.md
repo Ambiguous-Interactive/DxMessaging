@@ -88,7 +88,7 @@ the repo-settings prerequisite that lets CI push to the default branch.
 <!-- Do not edit by hand. Rewritten by scripts/unity/render-perf-doc.js from
      the latest Unity version's benchmark run. See perf-numbers.yml. -->
 
-Latest CI benchmark run: Unity 6000.3.16f1, commit `6a70d1f8dd1103a23256fbb0a2fa280dd9c1c262`.
+Latest CI benchmark run: Unity 6000.3.16f1, commit `ac1af7defbe60e2e8d7a6c377c3434881e864faa`.
 
 Runner: 13th Gen Intel(R) Core(TM) i9-13900KF, 24C/32T @ 3000MHz; 64GB DDR5@4200; NVIDIA GeForce RTX 3060; Microsoft Windows 11 Pro N (10.0.26200)
 
@@ -98,32 +98,32 @@ Platform: Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1).
 
 | Scenario                                                       | Throughput / Wall clock |
 | -------------------------------------------------------------- | ----------------------- |
-| Empty Bus Dispatch                                             | 48.37 M emits/sec       |
-| Untargeted Flood (One Handler)                                 | 36.97 M emits/sec       |
-| Untargeted Flood (Two Handlers, One Priority)                  | 40.47 M emits/sec       |
-| Untargeted Flood (Three Handlers, One Priority)                | 31.40 M emits/sec       |
-| Untargeted Flood (Four Handlers, One Priority)                 | 28.33 M emits/sec       |
-| Untargeted Flood (Four Handlers, Four Priorities)              | 28.95 M emits/sec       |
-| Untargeted Flood (Sixteen Handlers, One Priority)              | 16.13 M emits/sec       |
-| Untargeted Flood (One Inactive Handler)                        | 37.92 M emits/sec       |
-| Untargeted First Dispatch (Cold, Distinct Types)               | 0.197 ms                |
-| Targeted Flood (No Matching Target)                            | 13.85 M emits/sec       |
-| Targeted Flood (One Listener)                                  | 11.00 M emits/sec       |
-| Targeted Flood (Sixteen Listeners)                             | 7.64 M emits/sec        |
-| Targeted First Dispatch (Cold, Distinct Types)                 | 0.196 ms                |
-| Broadcast Flood (One Handler)                                  | 20.07 M emits/sec       |
-| Broadcast First Dispatch (Cold, Distinct Types)                | 0.178 ms                |
-| Interceptor Heavy (Four Interceptors)                          | 3.89 M emits/sec        |
-| Post-Processing Heavy (Four Post-Processors)                   | 13.03 M emits/sec       |
-| Message Bus Construction (1000)                                | 27.661 ms               |
-| Registration Token Construction (1000, Prebuilt Handler + Bus) | 0.063 ms                |
-| Registration Flood (1000 Types, Cold Bus)                      | 614.333 ms              |
-| Registration Flood (1000 Types, Warm JIT)                      | 3.897 ms                |
-| Untargeted Registration (Marginal, 1000 Same-Type)             | 0.398 ms                |
-| Targeted Registration (Marginal, 1000 Same-Type)               | 0.450 ms                |
-| Broadcast Registration (Marginal, 1000 Same-Type)              | 0.454 ms                |
-| Deregistration Flood (1000 Types, Cold)                        | 1.851 ms                |
-| Deregistration Flood (1000 Types, Warm JIT)                    | 1.278 ms                |
+| Empty Bus Dispatch                                             | 47.21 M emits/sec       |
+| Untargeted Flood (One Handler)                                 | 31.46 M emits/sec       |
+| Untargeted Flood (Two Handlers, One Priority)                  | 32.32 M emits/sec       |
+| Untargeted Flood (Three Handlers, One Priority)                | 25.39 M emits/sec       |
+| Untargeted Flood (Four Handlers, One Priority)                 | 29.05 M emits/sec       |
+| Untargeted Flood (Four Handlers, Four Priorities)              | 29.22 M emits/sec       |
+| Untargeted Flood (Sixteen Handlers, One Priority)              | 17.13 M emits/sec       |
+| Untargeted Flood (One Inactive Handler)                        | 36.03 M emits/sec       |
+| Untargeted First Dispatch (Cold, Distinct Types)               | 0.243 ms                |
+| Targeted Flood (No Matching Target)                            | 14.37 M emits/sec       |
+| Targeted Flood (One Listener)                                  | 11.40 M emits/sec       |
+| Targeted Flood (Sixteen Listeners)                             | 7.71 M emits/sec        |
+| Targeted First Dispatch (Cold, Distinct Types)                 | 0.189 ms                |
+| Broadcast Flood (One Handler)                                  | 21.19 M emits/sec       |
+| Broadcast First Dispatch (Cold, Distinct Types)                | 0.188 ms                |
+| Interceptor Heavy (Four Interceptors)                          | 3.98 M emits/sec        |
+| Post-Processing Heavy (Four Post-Processors)                   | 13.57 M emits/sec       |
+| Message Bus Construction (1000)                                | 16.269 ms               |
+| Registration Token Construction (1000, Prebuilt Handler + Bus) | 0.050 ms                |
+| Registration Flood (1000 Types, Cold Bus)                      | 541.150 ms              |
+| Registration Flood (1000 Types, Warm JIT)                      | 3.397 ms                |
+| Untargeted Registration (Marginal, 1000 Same-Type)             | 0.403 ms                |
+| Targeted Registration (Marginal, 1000 Same-Type)               | 0.458 ms                |
+| Broadcast Registration (Marginal, 1000 Same-Type)              | 0.453 ms                |
+| Deregistration Flood (1000 Types, Cold)                        | 1.850 ms                |
+| Deregistration Flood (1000 Types, Warm JIT)                    | 1.144 ms                |
 
 ### Dispatch throughput - PlayMode (Mono)
 
@@ -131,46 +131,46 @@ Platform: Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1).
 
 | Scenario                                                       | Throughput / Wall clock | GC allocs | GC bytes  |
 | -------------------------------------------------------------- | ----------------------- | --------- | --------- |
-| Empty Bus Dispatch                                             | 27.12 M emits/sec       | 0         | 0         |
-| Untargeted Flood (One Handler)                                 | 19.74 M emits/sec       | 0         | 0         |
-| Untargeted Flood (Two Handlers, One Priority)                  | 19.41 M emits/sec       | 0         | 0         |
-| Untargeted Flood (Three Handlers, One Priority)                | 19.91 M emits/sec       | 0         | 0         |
-| Untargeted Flood (Four Handlers, One Priority)                 | 18.81 M emits/sec       | 0         | 0         |
-| Untargeted Flood (Four Handlers, Four Priorities)              | 18.68 M emits/sec       | 0         | 0         |
-| Untargeted Flood (Sixteen Handlers, One Priority)              | 9.42 M emits/sec        | 0         | 0         |
-| Untargeted Flood (One Inactive Handler)                        | 22.86 M emits/sec       | 0         | 0         |
-| Untargeted First Dispatch (Cold, Distinct Types)               | 5.175 ms                | 41        | 11,318    |
-| Targeted Flood (No Matching Target)                            | 21.67 M emits/sec       | 0         | 0         |
-| Targeted Flood (One Listener)                                  | 16.63 M emits/sec       | 0         | 0         |
-| Targeted Flood (Sixteen Listeners)                             | 7.52 M emits/sec        | 0         | 0         |
-| Targeted First Dispatch (Cold, Distinct Types)                 | 4.971 ms                | 42        | 19,876    |
-| Broadcast Flood (One Handler)                                  | 15.66 M emits/sec       | 0         | 0         |
-| Broadcast First Dispatch (Cold, Distinct Types)                | 3.728 ms                | 41        | 19,534    |
-| Interceptor Heavy (Four Interceptors)                          | 2.73 M emits/sec        | 0         | 0         |
-| Post-Processing Heavy (Four Post-Processors)                   | 10.65 M emits/sec       | 0         | 0         |
-| Message Bus Construction (1000)                                | 28.668 ms               | 40,009    | 2,480,640 |
-| Registration Token Construction (1000, Prebuilt Handler + Bus) | 0.091 ms                | 1,000     | 120,000   |
-| Registration Flood (1000 Types, Cold Bus)                      | 3431.176 ms             | 52,145    | 3,813,528 |
-| Registration Flood (1000 Types, Warm JIT)                      | 11.192 ms               | 30,059    | 2,489,888 |
-| Untargeted Registration (Marginal, 1000 Same-Type)             | 0.699 ms                | 2,030     | 640,484   |
-| Targeted Registration (Marginal, 1000 Same-Type)               | 0.679 ms                | 2,030     | 672,484   |
-| Broadcast Registration (Marginal, 1000 Same-Type)              | 0.588 ms                | 2,030     | 672,484   |
-| Deregistration Flood (1000 Types, Cold)                        | 92.013 ms               | 42        | 116,856   |
-| Deregistration Flood (1000 Types, Warm JIT)                    | 1.738 ms                | 42        | 116,856   |
+| Empty Bus Dispatch                                             | 24.90 M emits/sec       | 0         | 0         |
+| Untargeted Flood (One Handler)                                 | 20.87 M emits/sec       | 0         | 0         |
+| Untargeted Flood (Two Handlers, One Priority)                  | 18.11 M emits/sec       | 0         | 0         |
+| Untargeted Flood (Three Handlers, One Priority)                | 16.32 M emits/sec       | 0         | 0         |
+| Untargeted Flood (Four Handlers, One Priority)                 | 15.90 M emits/sec       | 0         | 0         |
+| Untargeted Flood (Four Handlers, Four Priorities)              | 14.43 M emits/sec       | 0         | 0         |
+| Untargeted Flood (Sixteen Handlers, One Priority)              | 8.21 M emits/sec        | 0         | 0         |
+| Untargeted Flood (One Inactive Handler)                        | 19.74 M emits/sec       | 0         | 0         |
+| Untargeted First Dispatch (Cold, Distinct Types)               | 3.097 ms                | 41        | 11,318    |
+| Targeted Flood (No Matching Target)                            | 21.22 M emits/sec       | 0         | 0         |
+| Targeted Flood (One Listener)                                  | 13.76 M emits/sec       | 0         | 0         |
+| Targeted Flood (Sixteen Listeners)                             | 7.10 M emits/sec        | 0         | 0         |
+| Targeted First Dispatch (Cold, Distinct Types)                 | 7.497 ms                | 42        | 19,876    |
+| Broadcast Flood (One Handler)                                  | 12.99 M emits/sec       | 0         | 0         |
+| Broadcast First Dispatch (Cold, Distinct Types)                | 5.838 ms                | 41        | 19,534    |
+| Interceptor Heavy (Four Interceptors)                          | 2.36 M emits/sec        | 0         | 0         |
+| Post-Processing Heavy (Four Post-Processors)                   | 9.92 M emits/sec        | 0         | 0         |
+| Message Bus Construction (1000)                                | 34.657 ms               | 40,009    | 2,480,640 |
+| Registration Token Construction (1000, Prebuilt Handler + Bus) | 0.084 ms                | 1,000     | 120,000   |
+| Registration Flood (1000 Types, Cold Bus)                      | 3498.660 ms             | 52,145    | 3,813,528 |
+| Registration Flood (1000 Types, Warm JIT)                      | 11.393 ms               | 30,059    | 2,489,888 |
+| Untargeted Registration (Marginal, 1000 Same-Type)             | 0.498 ms                | 2,030     | 640,484   |
+| Targeted Registration (Marginal, 1000 Same-Type)               | 0.566 ms                | 2,030     | 672,484   |
+| Broadcast Registration (Marginal, 1000 Same-Type)              | 0.583 ms                | 2,030     | 672,484   |
+| Deregistration Flood (1000 Types, Cold)                        | 92.628 ms               | 42        | 116,856   |
+| Deregistration Flood (1000 Types, Warm JIT)                    | 1.795 ms                | 44        | 116,952   |
 
 ### Library comparison - throughput (Standalone (IL2CPP))
 
 | Technology               | Global -> 1 subscriber | Global -> 16 subscribers | Keyed/targeted -> 1 of many | Priority-ordered dispatch | Filtered/intercepted dispatch | Post-processing dispatch | Subscribe/unsubscribe churn | Struct message (no boxing) |
 | ------------------------ | ---------------------- | ------------------------ | --------------------------- | ------------------------- | ----------------------------- | ------------------------ | --------------------------- | -------------------------- |
-| DxMessaging              | 29.67 M emits/sec      | 17.08 M emits/sec        | 10.08 M emits/sec           | **29.05 M emits/sec**     | 7.28 M emits/sec              | **13.11 M emits/sec**    | 0.91 M emits/sec            | 29.56 M emits/sec          |
-| MessagePipe              | 67.99 M emits/sec      | 14.72 M emits/sec        | 9.77 M emits/sec            | N/A                       | **59.55 M emits/sec**         | N/A                      | 1.92 M emits/sec            | 75.03 M emits/sec          |
-| UniRx MessageBroker      | 4.48 M emits/sec       | 2.45 M emits/sec         | N/A                         | N/A                       | N/A                           | N/A                      | 0.74 M emits/sec            | 4.53 M emits/sec           |
-| Zenject SignalBus        | 2.17 M emits/sec       | 1.14 M emits/sec         | N/A                         | N/A                       | N/A                           | N/A                      | 1.62 M emits/sec            | 2.06 M emits/sec           |
-| Unity Atoms              | 88.93 M emits/sec      | 36.57 M emits/sec        | 95.17 M emits/sec           | N/A                       | N/A                           | N/A                      | 12.16 M emits/sec           | N/A                        |
-| ScriptableObject channel | 131.76 M emits/sec     | 21.43 M emits/sec        | **161.59 M emits/sec**      | N/A                       | N/A                           | N/A                      | **29.88 M emits/sec**       | 169.32 M emits/sec         |
-| UnityEvent               | 77.57 M emits/sec      | 9.28 M emits/sec         | 88.90 M emits/sec           | N/A                       | N/A                           | N/A                      | 3.44 M emits/sec            | 78.78 M emits/sec          |
-| C# event                 | **287.86 M emits/sec** | **45.78 M emits/sec**    | 56.33 M emits/sec           | N/A                       | N/A                           | N/A                      | 10.76 M emits/sec           | **294.61 M emits/sec**     |
-| Unity SendMessage        | 7.39 M emits/sec       | 0.94 M emits/sec         | 7.56 M emits/sec            | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
+| DxMessaging              | 27.58 M emits/sec      | 13.27 M emits/sec        | 9.07 M emits/sec            | **23.87 M emits/sec**     | 7.03 M emits/sec              | **12.64 M emits/sec**    | 0.88 M emits/sec            | 30.26 M emits/sec          |
+| MessagePipe              | 59.21 M emits/sec      | 13.42 M emits/sec        | 9.37 M emits/sec            | N/A                       | **51.41 M emits/sec**         | N/A                      | 1.83 M emits/sec            | 67.26 M emits/sec          |
+| UniRx MessageBroker      | 4.02 M emits/sec       | 2.25 M emits/sec         | N/A                         | N/A                       | N/A                           | N/A                      | 0.76 M emits/sec            | 4.34 M emits/sec           |
+| Zenject SignalBus        | 2.00 M emits/sec       | 1.07 M emits/sec         | N/A                         | N/A                       | N/A                           | N/A                      | 1.52 M emits/sec            | 2.03 M emits/sec           |
+| Unity Atoms              | 70.87 M emits/sec      | 32.54 M emits/sec        | 86.55 M emits/sec           | N/A                       | N/A                           | N/A                      | 9.90 M emits/sec            | N/A                        |
+| ScriptableObject channel | 104.97 M emits/sec     | 18.94 M emits/sec        | **129.24 M emits/sec**      | N/A                       | N/A                           | N/A                      | **30.51 M emits/sec**       | 143.52 M emits/sec         |
+| UnityEvent               | 85.05 M emits/sec      | 9.22 M emits/sec         | 93.75 M emits/sec           | N/A                       | N/A                           | N/A                      | 3.50 M emits/sec            | 79.27 M emits/sec          |
+| C# event                 | **286.19 M emits/sec** | **51.26 M emits/sec**    | 58.14 M emits/sec           | N/A                       | N/A                           | N/A                      | 10.09 M emits/sec           | **256.72 M emits/sec**     |
+| Unity SendMessage        | 7.32 M emits/sec       | 0.91 M emits/sec         | 6.77 M emits/sec            | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
 
 ### Library comparison - GC allocations per 10k ops (PlayMode (Mono))
 
@@ -184,7 +184,7 @@ Platform: Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1).
 | ScriptableObject channel | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
 | UnityEvent               | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 50,000                      | 0                          |
 | C# event                 | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
-| Unity SendMessage        | 10,000                 | 10,000                   | 10,000                      | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
+| Unity SendMessage        | 10,008                 | 10,000                   | 10,000                      | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
 
 ### Library comparison - GC allocated bytes per 10k ops (PlayMode (Mono))
 
@@ -198,7 +198,7 @@ Platform: Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1).
 | ScriptableObject channel | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
 | UnityEvent               | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 2,960,000                   | 0                          |
 | C# event                 | 0                      | 0                        | 0                           | N/A                       | N/A                           | N/A                      | 0                           | 0                          |
-| Unity SendMessage        | 200,000                | 200,000                  | 200,000                     | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
+| Unity SendMessage        | 200,752                | 200,000                  | 200,000                     | N/A                       | N/A                           | N/A                      | N/A                         | N/A                        |
 
 <!-- AUTOGENERATED:DISPATCH-THROUGHPUT END -->
 
