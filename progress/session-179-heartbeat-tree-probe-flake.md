@@ -26,6 +26,10 @@ test now waits for the PID-file creation event, checks those outcomes against
 the production helper, and cleans up every process and temporary file on
 failure.
 
+Cursor review found that an exception during parent cleanup could skip the
+later descendant and PID-file cleanup. Nested `finally` blocks now attempt
+every cleanup stage and still propagate a cleanup failure.
+
 ## Verification
 
 - focused heartbeat suite: 37 passed, 0 failed;

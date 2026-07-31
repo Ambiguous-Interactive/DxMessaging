@@ -224,21 +224,42 @@ Start-Sleep -Seconds 30
             $descendantRemovedByTreeKill = [bool]$descendantProcess.WaitForExit(5000)
         }
     } finally {
-        $treeWatcher.Dispose()
-        if ($null -ne $treeParent) {
-            if (-not $treeParent.HasExited) {
-                $treeParent.Kill($true)
-                [void]$treeParent.WaitForExit(5000)
+        try {
+            $treeWatcher.Dispose()
+        } finally {
+            try {
+                try {
+                    if ($null -ne $treeParent -and -not $treeParent.HasExited) {
+                        $treeParent.Kill($true)
+                        [void]$treeParent.WaitForExit(5000)
+                    }
+                } finally {
+                    if ($null -ne $treeParent) {
+                        $treeParent.Dispose()
+                    }
+                }
+            } finally {
+                try {
+                    if ($descendantId -gt 0) {
+                        Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
+                        if ($null -ne (Get-Process -Id $descendantId -ErrorAction SilentlyContinue)) {
+                            throw "Tree-probe descendant process $descendantId survived cleanup."
+                        }
+                    }
+                } finally {
+                    try {
+                        if ($null -ne $descendantProcess) {
+                            $descendantProcess.Dispose()
+                        }
+                    } finally {
+                        Remove-Item -LiteralPath $treePidPath -Force -ErrorAction SilentlyContinue
+                        if (Test-Path -LiteralPath $treePidPath) {
+                            throw "Tree-probe PID file '$treePidPath' survived cleanup."
+                        }
+                    }
+                }
             }
-            $treeParent.Dispose()
         }
-        if ($descendantId -gt 0) {
-            Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
-        }
-        if ($null -ne $descendantProcess) {
-            $descendantProcess.Dispose()
-        }
-        Remove-Item -LiteralPath $treePidPath -Force -ErrorAction SilentlyContinue
     }
     Assert-That 'tree probe captures the descendant process id' ($descendantId -gt 0)
     Assert-That 'tree probe requests process-tree termination' (
