@@ -172,7 +172,7 @@ jobs:
 
       - name: Checkout trusted Unity editor validator
         timeout-minutes: 5
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         env:
           GIT_CONFIG_COUNT: 1
           GIT_CONFIG_KEY_0: core.hooksPath
@@ -283,8 +283,9 @@ jobs:
           target: "${{ matrix.test-mode }}"
           runtime-only: "${{ matrix.test-mode == 'standalone' && 'true' || 'false' }}"
 
-      # Unity work skips when no test assembly matched. Editor validation,
-      # credential validation, and lock acquisition remain unconditional.
+      # Unity work skips when no test assembly matched. Credential validation
+      # and lock acquisition remain unconditional. The editor gate ran before
+      # the repository checkout, so a failure there has already failed the job.
       # Editors and modules are installed manually by a runner administrator;
       # CI only verifies the exact trusted tool-cache install.
       - name: Validate Unity license secrets
