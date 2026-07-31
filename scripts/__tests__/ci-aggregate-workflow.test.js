@@ -433,7 +433,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
 
   for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
     const label = `${file}:${jobId}`;
-    const licensedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.validate_editor\\.outcome == 'success' && steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
+    const licensedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
     assert.match(job, /\n    timeout-minutes: 900\n/, `${label}: lifecycle budget`);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
@@ -444,7 +444,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     }
 
     // prettier-ignore
-    const lifecycleNames = ["Validate installed Unity Editor", "Validate Unity license secrets", "Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
+    const lifecycleNames = ["Require manually installed Unity editor", "Bind and preserve validated Unity editor", "Validate Unity license secrets", "Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
     const positions = lifecycleNames.map((name) => job.indexOf(`      - name: ${name}`));
     const sortedPositions = [...positions].sort((a, b) => a - b);
     assert.ok(
@@ -454,15 +454,20 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     assert.deepEqual(positions, sortedPositions, `${label} lifecycle order`);
 
     // prettier-ignore
-    const [validationStep, credentialStep, acquireStep, requireStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
+    const [validationStep, bindingStep, credentialStep, acquireStep, requireStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
 
     // prettier-ignore
     const contracts = [
-      [validationStep, /\n        id: validate_editor\n/],
       [validationStep, /\n        timeout-minutes: 10\n/],
-      [validationStep, /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: validation and central cleanup must use the same trusted editor root`],
+      [validationStep, /-InstallRoot "\$env:RUNNER_TOOL_CACHE\\u6-v3"/, `${label}: validation and central cleanup must use the same trusted editor root`],
+      [validationStep, /shell: pwsh -NoProfile -NonInteractive -Command "\. '\{0\}'"/],
       [validationStep, /-CiManagedOnly/],
       [validationStep, /-RequireHealthyExisting/],
+      [bindingStep, /ConvertFrom-Json/],
+      [bindingStep, /\[string\]::Equals\(\$actual, \$expected, \[StringComparison\]::OrdinalIgnoreCase\)/],
+      [bindingStep, /Copy-Item -LiteralPath \$source -Destination \$destination -Force/],
+      [bindingStep, /UNITY_EDITOR_PATH=\$expected/],
+      [bindingStep, /UNITY_EDITOR_VALIDATION_PATH=\$destination/],
       [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
       [acquireStep, /\n        id: acquire_lock\n/],
       [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],
