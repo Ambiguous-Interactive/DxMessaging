@@ -88,6 +88,13 @@ Verified by mutation: deleting the two restore lines from the `finally` fails
 both restore tests, including the failure-path one (7 passed, 2 failed). Under
 the old test body that mutation went undetected.
 
+Reviewing the refusal predicate then turned up a third defect, in the rounding
+it depends on. The crop rounded the origin and the size independently, which
+lets the two drift a pixel apart: a surface at `x=10.5 w=10.5` rounds to
+`x=10 w=10`, a right edge of 20 where the real edge is 21. In a helper whose
+purpose is unclipped documentation images, a lost pixel is a clipped surface.
+The crop now rounds the edges and derives the size from them.
+
 ## Verification
 
 All against the live host, Unity 6000.4.6f1, Direct3D11:

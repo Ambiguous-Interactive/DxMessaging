@@ -232,9 +232,15 @@ namespace DxMessaging.Tests.Editor
             int canvasHeight
         )
         {
+            // Round the EDGES, then derive the size from them. Rounding the origin and the size
+            // independently lets the two drift a pixel apart -- a surface at x=10.5 w=10.5 rounds
+            // to x=10 w=10, a right edge of 20 where the real one is 21 -- and a pixel lost here
+            // is a pixel of the surface clipped out of a documentation image.
             Rect bounds = content.worldBound;
-            int cropWidth = Mathf.RoundToInt(bounds.width);
-            int cropHeight = Mathf.RoundToInt(bounds.height);
+            int cropX = Mathf.RoundToInt(bounds.x);
+            int cropY = Mathf.RoundToInt(canvasHeight - bounds.yMax);
+            int cropWidth = Mathf.RoundToInt(bounds.xMax) - cropX;
+            int cropHeight = Mathf.RoundToInt(canvasHeight - bounds.y) - cropY;
             if (cropWidth <= 0 || cropHeight <= 0)
             {
                 throw new InvalidOperationException(
@@ -242,9 +248,6 @@ namespace DxMessaging.Tests.Editor
                         + "to capture. Give it an explicit size or content before capturing."
                 );
             }
-
-            int cropX = Mathf.RoundToInt(bounds.x);
-            int cropY = Mathf.RoundToInt(canvasHeight - bounds.yMax);
 
             // Refuse a surface that does not fit rather than clamping into the canvas. Clamping
             // would return a silently clipped image, which is exactly the defect the manifest
