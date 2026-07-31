@@ -774,19 +774,23 @@ def run_script(step: str) -> str:
     return "\n".join(lines)
 
 
-def run_head_check(script: str, event: str, live_head: str, event_head: str) -> str:
-    """Run the head-freshness script against a stub `gh` and return its output."""
-    if os.name == "nt":
-        return {"pull_request": "true" if live_head and live_head != event_head else "false"}.get(
-            event, "false"
-        )
+def run_head_check(script: str, event: str, live_head: str) -> str:
+    """Run the head-freshness script against a stub `gh` and return its decision."""
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         stub = root / "gh"
-        # An empty live head stands for a lookup that failed, so the stub exits
+        # The stub answers only the live-head lookup, so a script that asked a
+        # different endpoint gets nothing and the truth table below fails. An
+        # empty live head stands for a lookup that failed, so the stub exits
         # non-zero the way the real CLI does rather than printing nothing.
         stub.write_text(
-            f'#!/bin/sh\n[ -n "{live_head}" ] || exit 1\necho "{live_head}"\n', encoding="utf-8"
+            "#!/bin/sh\n"
+            'case "$*" in\n'
+            "  *repos/Ambiguous-Interactive/DxMessaging/pulls/1*.head.sha*) ;;\n"
+            '  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;\n'
+            "esac\n"
+            f'[ -n "{live_head}" ] || exit 1\necho "{live_head}"\n',
+            encoding="utf-8",
         )
         stub.chmod(0o755)
         output = root / "output"
@@ -798,7 +802,7 @@ def run_head_check(script: str, event: str, live_head: str, event_head: str) -> 
                 "GH_TOKEN": "stub",
                 "EVENT_NAME": event,
                 "PR_NUMBER": "1",
-                "EVENT_HEAD_SHA": event_head,
+                "EVENT_HEAD_SHA": "current",
                 "GITHUB_REPOSITORY": "Ambiguous-Interactive/DxMessaging",
                 "GITHUB_OUTPUT": str(output),
             }
@@ -1639,18 +1643,22 @@ steps:
             SUPERSEDED_GUARD.search(job_block(source, job_id)) is not None,
             f"{job_id} must not schedule work for a superseded head",
         )
-    head_script = run_script(step_block(head_check, "Compare the event head against the live pull-request head"))
-    # name, event, live head, event head, expected superseded output
-    for name, event, live, event_head, expected in (
-        ("push", "push", "", "", "false"),
-        ("current PR head", "pull_request", "aaa", "aaa", "false"),
-        ("superseded PR head", "pull_request", "bbb", "aaa", "true"),
-        ("failed live lookup", "pull_request", "", "aaa", "false"),
-    ):
-        require(
-            run_head_check(head_script, event, live, event_head) == expected,
-            f"head-check {name}: expected superseded={expected}",
-        )
+    head_script = run_script(
+        step_block(head_check, "Compare the event head against the live pull-request head")
+    )
+    if os.name != "nt":
+        # The event head is always "current"; the live head is what moves.
+        # name, event, live head, expected superseded decision
+        for name, event, live, expected in (
+            ("push", "push", "", "false"),
+            ("current PR head", "pull_request", "current", "false"),
+            ("superseded PR head", "pull_request", "moved-on", "true"),
+            ("failed live lookup", "pull_request", "", "false"),
+        ):
+            require(
+                run_head_check(head_script, event, live) == expected,
+                f"head-check {name}: expected superseded={expected}",
+            )
     require(
         "environment:" not in licensed,
         "Unity job must use organization secrets without an environment approval gate",
