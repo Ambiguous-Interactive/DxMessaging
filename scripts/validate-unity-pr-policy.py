@@ -1080,6 +1080,9 @@ def watchdog_runners(*specs: tuple[str, str, bool, list[str]]) -> tuple[int, obj
 # The redispatch branch reads the workflow file through `gh --jq .content`, which
 # is base64. Encoding here rather than embedding the literal keeps the fixture
 # readable and keeps a meaningless base64 blob out of the spell checker.
+STARVED_SECTION_EMPTY = "required labels)\n_(none)_"
+
+
 DISPATCHABLE_WORKFLOW_BODY = base64.b64encode(b"on:\n  workflow_dispatch:\n").decode()
 
 
@@ -1204,7 +1207,7 @@ def validate_stuck_job_watchdog() -> None:
             },
             0,
             ("starved", "registered but offline", "::warning::"),
-            ("cancelled 1",),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
         ),
         (
             "no registered self-hosted runner is starved, not stuck",
@@ -1216,7 +1219,7 @@ def validate_stuck_job_watchdog() -> None:
             },
             0,
             ("starved", "no runner registered", "::warning::"),
-            ("cancelled 1",),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
         ),
         (
             "GitHub-hosted run is not reported as starved",
@@ -1426,6 +1429,24 @@ def validate_stuck_job_watchdog() -> None:
             0,
             ("cancelled 1", "pull_request-triggered", "Re-run all jobs"),
             ("re-dispatching",),
+        ),
+        (
+            # A busy sibling must not hide a starved one. The run is legitimately
+            # healthy (something can proceed) AND a second label set can never be
+            # picked up; both are true and both have to be reported, or the
+            # starvation stays invisible for as long as the busy leg runs.
+            "a busy sibling does not suppress a co-resident starvation",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    self_hosted, ["self-hosted", "Windows", "unicorn"]
+                ),
+            },
+            0,
+            ("healthy backpressure", "starved", "::warning::", "unicorn"),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
         ),
         (
             "the excluded release workflow is never cancelled",

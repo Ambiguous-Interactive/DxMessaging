@@ -359,6 +359,22 @@ jobs:
           stuck_candidates="$(mktemp)"
           : > "${stuck_candidates}"
 
+          # Reads the per-run loop variables directly; called from both the
+          # `busy` branch (where the run can still proceed) and the not-idle
+          # branch (where it cannot). No-op when nothing starved.
+          report_starvation() {
+            [[ -z "${starved_kind}" ]] && return 0
+            local detail
+            if [[ "${starved_kind}" == "offline" ]]; then
+              detail="every runner carrying [${starved_labels}] is registered but offline"
+            else
+              detail="no runner registered in a group visible to ${REPO} carries [${starved_labels}]"
+            fi
+            log_summary "run ${run_id} (${run_path_base}, event=${run_event}): starved -- ${detail}. Not dispatcher-stuck; no action."
+            echo "::warning::run ${run_id} (${run_path_base}) queued past ${MIN_QUEUE_AGE_SECONDS}s: ${detail}. Bring that runner online or fix the label set."
+            printf '* run %s (%s, event=%s) -- %s -- %s\n' "${run_id}" "${run_path_base}" "${run_event}" "${detail}" "${run_html_url}" >> "${starved_runs_file}"
+          }
+
           for run_id in "${queued_ids[@]}"; do
             # Skip the watchdog's own run id (defense in depth - the watchdog
             # workflow file is excluded by name above, but if someone renames
@@ -515,9 +531,18 @@ jobs:
               fi
             done
 
+            # A busy sibling does not make a starved sibling less starved. The
+            # `busy` verdict used to `continue` without consulting `starved_kind`,
+            # so a matrix run with one cell queued behind a busy runner and
+            # another needing an offline or unregistered one reported only
+            # "healthy backpressure" -- no warning, no Starved row -- until every
+            # busy leg finished, which on Unity is hours. That is the #328
+            # blindness in miniature: a starved job invisible because a sibling
+            # looks fine. (Cursor Bugbot.)
             if [[ "${match_kind}" == "busy" ]]; then
               log_summary "run ${run_id} (${run_path_base}, event=${run_event}): every matching runner is online but busy; healthy backpressure. No action."
               printf '* run %s (%s, event=%s) -- waiting on a busy matching runner\n' "${run_id}" "${run_path_base}" "${run_event}" >> "${healthy_runs_file}"
+              report_starvation
               continue
             fi
 
@@ -537,14 +562,7 @@ jobs:
             fi
 
             if [[ "${match_kind}" != "idle" ]]; then
-              if [[ "${starved_kind}" == "offline" ]]; then
-                starved_detail="every runner carrying [${starved_labels}] is registered but offline"
-              else
-                starved_detail="no runner registered in a group visible to ${REPO} carries [${starved_labels}]"
-              fi
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): starved -- ${starved_detail}. Not dispatcher-stuck; no action."
-              echo "::warning::run ${run_id} (${run_path_base}) queued past ${MIN_QUEUE_AGE_SECONDS}s: ${starved_detail}. Bring that runner online or fix the label set."
-              printf '* run %s (%s, event=%s) -- %s -- %s\n' "${run_id}" "${run_path_base}" "${run_event}" "${starved_detail}" "${run_html_url}" >> "${starved_runs_file}"
+              report_starvation
               continue
             fi
 
