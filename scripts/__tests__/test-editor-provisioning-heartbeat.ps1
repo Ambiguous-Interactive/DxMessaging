@@ -191,10 +191,13 @@ Start-Sleep -Seconds 20
     $descendantCode = ConvertTo-EncodedCommand 'Start-Sleep -Seconds 30'
     $pwshPath = $script:UnityCliPath.Replace("'", "''")
     $treePidPath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-tree-$([Guid]::NewGuid().ToString('N')).pid"
+    $treePidStagingPath = "$treePidPath.tmp"
     $treePidLiteral = $treePidPath.Replace("'", "''")
+    $treePidStagingLiteral = $treePidStagingPath.Replace("'", "''")
     $descendantParent = @"
 `$child = Start-Process -FilePath '$pwshPath' -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', '$descendantCode') -PassThru
-[IO.File]::WriteAllText('$treePidLiteral', [string]`$child.Id)
+[IO.File]::WriteAllText('$treePidStagingLiteral', [string]`$child.Id)
+[IO.File]::Move('$treePidStagingLiteral', '$treePidLiteral')
 Start-Sleep -Seconds 30
 "@
     $treeWatcher = [IO.FileSystemWatcher]::new(
@@ -252,9 +255,15 @@ Start-Sleep -Seconds 30
                             $descendantProcess.Dispose()
                         }
                     } finally {
-                        Remove-Item -LiteralPath $treePidPath -Force -ErrorAction SilentlyContinue
-                        if (Test-Path -LiteralPath $treePidPath) {
-                            throw "Tree-probe PID file '$treePidPath' survived cleanup."
+                        $treePidFiles = @($treePidPath, $treePidStagingPath)
+                        foreach ($treePidFile in $treePidFiles) {
+                            Remove-Item -LiteralPath $treePidFile -Force -ErrorAction SilentlyContinue
+                        }
+                        $survivingPidFiles = @(
+                            $treePidFiles | Where-Object { Test-Path -LiteralPath $_ }
+                        )
+                        if ($survivingPidFiles.Count -gt 0) {
+                            throw "Tree-probe PID file cleanup failed: $($survivingPidFiles -join ', ')."
                         }
                     }
                 }

@@ -35,6 +35,11 @@ matched the helper's two bounded 5-second waits. The synthetic descendant now
 lives for 30 seconds, so only process-tree termination can make the assertion
 pass inside the observation window.
 
+The next review found that a file-created event could precede completion of
+`WriteAllText`. The parent now writes to a sibling staging file and atomically
+moves it to the watched PID path. The watcher can only observe the published
+file after its content is complete.
+
 ## Verification
 
 - focused heartbeat suite: 37 passed, 0 failed;
