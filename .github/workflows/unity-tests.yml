@@ -157,14 +157,12 @@ jobs:
           target: "${{ matrix.test-mode }}"
           runtime-only: "${{ matrix.test-mode == 'standalone' && 'true' || 'false' }}"
 
-      # Skip editor validation and Unity work when no test assembly matched.
-      # Lock acquisition remains structurally unconditional for the analyzer;
-      # the expected-empty signal lets result verification report a typed skip.
-      # Editors and modules are installed manually by a runner administrator.
-      # CI only verifies the exact trusted tool-cache install and never repairs it.
+      # Unity work skips when no test assembly matched. Editor validation,
+      # credential validation, and lock acquisition remain unconditional.
+      # Editors and modules are installed manually by a runner administrator;
+      # CI only verifies the exact trusted tool-cache install.
       - name: Validate installed Unity Editor
         id: validate_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 10
         shell: pwsh
         run: |

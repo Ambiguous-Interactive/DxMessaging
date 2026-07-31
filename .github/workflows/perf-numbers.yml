@@ -236,7 +236,6 @@ jobs:
       # Validate before taking the organization lock.
       - name: Validate installed Unity Editor
         id: validate_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 10
         shell: pwsh
         run: |

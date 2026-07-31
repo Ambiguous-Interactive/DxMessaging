@@ -119,12 +119,11 @@ jobs:
           include-perf: "true"
           target: "${{ matrix.test-mode }}"
 
-      # Skip editor validation and Unity work when no assembly matched. Lock
-      # acquisition remains structurally unconditional for the analyzer. The
+      # Unity work skips when no assembly matched. Editor validation,
+      # credential validation, and lock acquisition remain unconditional. The
       # benchmark list is currently non-empty, so this is defense-in-depth.
       - name: Validate installed Unity Editor
         id: validate_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 10
         shell: pwsh
         run: |

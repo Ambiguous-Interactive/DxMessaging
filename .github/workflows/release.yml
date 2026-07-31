@@ -229,12 +229,10 @@ jobs:
         with:
           target: editmode
 
-      # Skip editor validation and Unity work when no test assembly matched.
-      # Lock acquisition remains structurally unconditional for the analyzer;
-      # the expected-empty signal lets result verification report a typed skip.
+      # Unity work skips when no test assembly matched. Editor validation,
+      # credential validation, and lock acquisition remain unconditional.
       - name: Validate installed Unity Editor
         id: validate_editor
-        if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 10
         shell: pwsh
         run: |

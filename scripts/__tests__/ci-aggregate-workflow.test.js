@@ -480,7 +480,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     ];
     for (const [actual, contract, message] of contracts) assert.match(actual, contract, message);
 
-    assert.doesNotMatch(validationStep, /\b(?:install-modules|uninstall)\b/i, label);
+    assert.doesNotMatch(validationStep, /\n {8}if:|\b(?:install-modules|uninstall)\b/i, label);
     assert.doesNotMatch(returnStep, /continue-on-error:/);
 
     const acquireHolder = /holder-id-suffix: (.+)\n/.exec(acquireStep);
