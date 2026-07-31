@@ -203,6 +203,13 @@ $TailCode
         }
     } finally {
         try {
+            # Invoke-UnityCliCaptureWithTimeout THROWS on its non-retryable process-safety
+            # error, in which case the try block never reached the publication read and
+            # $descendantId is still 0. Read it here, before the file is removed, or the
+            # descendant leaks along with the only record of which process it was.
+            if ($descendantId -le 0) {
+                $descendantId = Wait-ForPublishedProcessId -Path $pidPath -TimeoutSeconds 5
+            }
             if ($descendantId -gt 0) {
                 Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
             }

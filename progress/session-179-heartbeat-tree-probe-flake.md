@@ -98,6 +98,14 @@ The wall clock runs from launch and has no equivalent trick available, so it
 uses ten seconds against a sub-second publish and fails loudly on a missed
 publish.
 
+A further review round found a process leak in the same helper.
+`Invoke-UnityCliCaptureWithTimeout` throws on its non-retryable process-safety
+error, and on that path the try block never reached the publication read, so
+`descendantId` was still 0 when `finally` ran: the descendant was never stopped
+and the PID file -- the only record of which process it was -- was deleted
+anyway. The `finally` now reads the PID before removing the file, matching what
+the detached-orphan probe already did.
+
 ## Verification
 
 Red evidence, on the pre-fix branch head:
@@ -128,6 +136,10 @@ Green evidence, after the fix:
   standing in for a cold start that overruns the window: fails
   `wrapper stall path killed only after publication` by name, so the margin
   failing is reported as itself rather than as a mysterious tree-check failure;
+- isolated A/B of the two `finally` shapes against a real published sleeper,
+  with the try forced to throw: the pre-fix shape reports
+  `descendantLeaked=True pidFileGone=True`, the fixed shape
+  `descendantLeaked=False`;
 - full Node/script suite: 406 passed, 0 failed;
 - `npm run validate:all` and spelling: passed;
 - unchanged master rerun: static `CI Success` passed, confirming the original
