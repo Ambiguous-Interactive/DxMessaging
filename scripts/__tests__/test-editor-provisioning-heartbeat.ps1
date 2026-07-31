@@ -184,29 +184,70 @@ Start-Sleep -Seconds 20
     Assert-That 'closed-pipe child is not attributed to heartbeat' (-not $result.StallKilled)
     Assert-That 'closed-pipe child exit is confirmed' $result.DirectChildExited
 
+    # 2026-07-31: Synchronize on the descendant PID before testing the real
+    # tree-termination helper. The former one-second heartbeat probe mixed
+    # PowerShell startup time into this contract and could kill the parent
+    # before it had created or reported the descendant.
     $descendantCode = ConvertTo-EncodedCommand 'Start-Sleep -Seconds 10'
     $pwshPath = $script:UnityCliPath.Replace("'", "''")
+    $treePidPath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-tree-$([Guid]::NewGuid().ToString('N')).pid"
+    $treePidLiteral = $treePidPath.Replace("'", "''")
     $descendantParent = @"
 `$child = Start-Process -FilePath '$pwshPath' -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', '$descendantCode') -PassThru
-Write-Output "descendant=`$(`$child.Id)"
-Start-Sleep -Seconds 10
+[IO.File]::WriteAllText('$treePidLiteral', [string]`$child.Id)
+Start-Sleep -Seconds 30
 "@
-    $result = Invoke-UnityCliCaptureWithTimeout `
-        -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $descendantParent)) `
-        -TimeoutSeconds 10 `
-        -StallSeconds 1
-    $descendantLine = @($result.Output | Where-Object { $_ -match '^descendant=\d+$' } | Select-Object -First 1)
-    $descendantId = if ($descendantLine.Count -eq 1) {
-        [int]($descendantLine[0] -replace '^descendant=', '')
-    } else {
-        0
-    }
-    Assert-That 'tree probe reaches heartbeat sentinel 125' ($result.ExitCode -eq 125)
-    Assert-That 'tree probe captures the descendant process id' ($descendantId -gt 0)
-    Assert-That 'tree probe confirms direct child exit' $result.DirectChildExited
-    Assert-That 'tree termination removes the descendant' (
-        $descendantId -gt 0 -and $null -eq (Get-Process -Id $descendantId -ErrorAction SilentlyContinue)
+    $treeWatcher = [IO.FileSystemWatcher]::new(
+        [IO.Path]::GetDirectoryName($treePidPath),
+        [IO.Path]::GetFileName($treePidPath)
     )
+    $treeWatcher.EnableRaisingEvents = $true
+    $treeParent = $null
+    $treeConfirmation = $null
+    $descendantProcess = $null
+    $descendantId = 0
+    $descendantRemovedByTreeKill = $false
+    try {
+        $treeParent = Start-Process `
+            -FilePath $script:UnityCliPath `
+            -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $descendantParent)) `
+            -PassThru
+        if (-not (Test-Path -LiteralPath $treePidPath -PathType Leaf)) {
+            [void]$treeWatcher.WaitForChanged([IO.WatcherChangeTypes]::Created, 10000)
+        }
+        if (Test-Path -LiteralPath $treePidPath -PathType Leaf) {
+            $descendantId = [int][IO.File]::ReadAllText($treePidPath)
+            $descendantProcess = Get-Process -Id $descendantId -ErrorAction SilentlyContinue
+        }
+        $treeConfirmation = Confirm-UnityCliDirectChildExit -Process $treeParent
+        if ($null -ne $descendantProcess) {
+            $descendantRemovedByTreeKill = [bool]$descendantProcess.WaitForExit(5000)
+        }
+    } finally {
+        $treeWatcher.Dispose()
+        if ($null -ne $treeParent) {
+            if (-not $treeParent.HasExited) {
+                $treeParent.Kill($true)
+                [void]$treeParent.WaitForExit(5000)
+            }
+            $treeParent.Dispose()
+        }
+        if ($descendantId -gt 0) {
+            Stop-Process -Id $descendantId -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $descendantProcess) {
+            $descendantProcess.Dispose()
+        }
+        Remove-Item -LiteralPath $treePidPath -Force -ErrorAction SilentlyContinue
+    }
+    Assert-That 'tree probe captures the descendant process id' ($descendantId -gt 0)
+    Assert-That 'tree probe requests process-tree termination' (
+        $null -ne $treeConfirmation -and $treeConfirmation.TerminationRequested
+    )
+    Assert-That 'tree probe confirms direct child exit' (
+        $null -ne $treeConfirmation -and $treeConfirmation.DirectChildExited
+    )
+    Assert-That 'tree termination removes the descendant' $descendantRemovedByTreeKill
 
     $secondAttemptSuccess = New-FakeTerminationProcess -ExitOnSecondWait $true
     $confirmation = Confirm-UnityCliDirectChildExit -Process $secondAttemptSuccess
