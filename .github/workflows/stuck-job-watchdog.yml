@@ -6,6 +6,26 @@ name: Stuck Job Watchdog
 # 7+ minutes, so a queued job whose label set is satisfied by an idle runner
 # nonetheless waits indefinitely until manually re-run.
 #
+# FAIL CLOSED (#328). A green run means the audit ran to completion. Every
+# input the verdict depends on -- the queued-run listing, the organization
+# runner inventory, a per-run job listing, and the cancel-cap state branch --
+# fails the job when it cannot be read, instead of logging and exiting 0.
+# Before this rule the inventory read was unauthorized on both endpoints the
+# watchdog tried and the job still reported success, so a `Performance Numbers`
+# run sat queued for ten hours while the automation meant to notice it reported
+# green every five minutes.
+#
+# Runner inventory is ORGANIZATION-scoped and is read with the build-lock
+# reader App (`organization_self_hosted_runners: read`), the same credential
+# `check-unity-runner-availability` already uses. The job's own GITHUB_TOKEN is
+# repository-scoped and can never reach `/orgs/{org}/actions/runner-groups`.
+# The repository-level fallback this workflow used to attempt was worse than
+# no fallback: this repository registers zero repository-level runners, so the
+# call would succeed and report an empty inventory, which reads identically to
+# "no runner matches" and still issues no action. Only runner groups visible to
+# THIS repository are counted, so a runner another repository can use is never
+# mistaken for one that could have picked up our job.
+#
 # Detection requires ALL of the following to be true:
 #   * The workflow run is `status: queued` AND older than MIN_QUEUE_AGE_SECONDS
 #     (default 300s / 5 min; round-2 false-positive guards below -- zero
@@ -16,12 +36,19 @@ name: Stuck Job Watchdog
 #     dispatcher-stuck. This is what prevents false positives for matrix cells
 #     or jobs waiting while another job from the same run is actively running.
 #   * At least one job in the run is `status: queued`.
-#   * At least one idle runner's labels satisfy a queued job's label
-#     requirements (superset match).
+#   * At least one ONLINE, NOT-BUSY runner's labels satisfy a queued job's
+#     label requirements (superset match, case-insensitive on both sides).
 #   * The run's workflow file is NOT in the exclusion list (`release.yml`
 #     is hard-excluded by default; additional entries may be added via the
 #     `WATCHDOG_EXCLUDED_WORKFLOWS` repo variable, whitespace-separated).
 #   * The run id is NOT the watchdog's own run id.
+#
+# A queued run that no ONLINE runner can satisfy is NOT dispatcher-stuck --
+# cancelling it would destroy work the fleet will pick up as soon as the
+# machine reconnects. It is reported in its own step-summary section and as a
+# `::warning::` annotation, so an offline runner starving the queue is visible
+# on the run page without opening a job log. That is the shape #328 hit: a
+# registered-but-offline `fast` runner, invisible because the audit was blind.
 #
 # Recovery action (per cli/cli#9221 and the gh-run-rerun manual,
 # `gh run rerun --failed` cannot be used on a `status: queued` run because
@@ -38,8 +65,12 @@ name: Stuck Job Watchdog
 #     the PR, or escalate any other automatic action.
 #
 # Cancel attempts are capped at 2 per run-id per 24h via a small state file
-# on the `watchdog-state` orphan branch. State is pushed immediately after each
-# successful cancel, with a single rebase+retry on push failure.
+# on the `watchdog-state` orphan branch. The state branch is materialized only
+# after a run is classified dispatcher-stuck, so a cycle that finds nothing to
+# cancel -- the overwhelming majority -- performs no clone and cannot be failed
+# by a state-branch problem it never needed to solve. State is pushed
+# immediately after each successful cancel, with a single rebase+retry on push
+# failure.
 #
 # Workflow-level concurrency guarantees only one watchdog instance ever runs;
 # newer schedules must not cancel an in-flight audit after it has cancelled a
@@ -64,10 +95,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Fail closed by construction: this action errors when either secret is
+      # empty, so a missing credential aborts the audit before it can report a
+      # verdict it had no way to reach.
+      - name: Mint the runner-inventory reader token
+        id: reader_token
+        timeout-minutes: 2
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
+          private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
+          # Organization-scoped (no `repositories:`) because the runner-group
+          # endpoints are organization endpoints, and narrowed to the single
+          # permission this audit needs so the minted token can do nothing else.
+          owner: ${{ github.repository_owner }}
+          permission-organization-self-hosted-runners: read
+
       - name: Audit + cancel-and-redispatch
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUNNER_INVENTORY_TOKEN: ${{ steps.reader_token.outputs.token }}
           REPO: ${{ github.repository }}
           OWNER: ${{ github.repository_owner }}
           SELF_RUN_ID: ${{ github.run_id }}
@@ -86,22 +134,48 @@ jobs:
             printf '%s\n' "$1" | tee -a "${summary_file}"
           }
 
-          flush_summary_and_exit() {
-            local code="${1:-0}"
+          # Category buckets for the final step-summary table.
+          healthy_runs_file="$(mktemp)"
+          stuck_runs_file="$(mktemp)"
+          excluded_runs_file="$(mktemp)"
+          starved_runs_file="$(mktemp)"
+          : > "${healthy_runs_file}"
+          : > "${stuck_runs_file}"
+          : > "${excluded_runs_file}"
+          : > "${starved_runs_file}"
+
+          emit_summary() {
             {
               echo "## Watchdog summary"
               cat "${summary_file}"
+              echo ""
+              echo "### Healthy queued (waiting on concurrency / matrix slot)"
+              if [[ -s "${healthy_runs_file}" ]]; then cat "${healthy_runs_file}"; else echo "_(none)_"; fi
+              echo ""
+              echo "### Stuck (auto-cancelled)"
+              if [[ -s "${stuck_runs_file}" ]]; then cat "${stuck_runs_file}"; else echo "_(none)_"; fi
+              echo ""
+              echo "### Starved (no online runner carries the required labels)"
+              if [[ -s "${starved_runs_file}" ]]; then cat "${starved_runs_file}"; else echo "_(none)_"; fi
+              echo ""
+              echo "### Stuck but excluded (operator action needed)"
+              if [[ -s "${excluded_runs_file}" ]]; then cat "${excluded_runs_file}"; else echo "_(none)_"; fi
             } >> "${GITHUB_STEP_SUMMARY}"
-            exit "${code}"
           }
 
-          # Category buckets for the final step-summary table.
-          healthy_runs_file="$(mktemp)"
-          : > "${healthy_runs_file}"
-          stuck_runs_file="$(mktemp)"
-          : > "${stuck_runs_file}"
-          excluded_runs_file="$(mktemp)"
-          : > "${excluded_runs_file}"
+          finish() {
+            emit_summary
+            exit "${1:-0}"
+          }
+
+          # The audit could not answer. Never exit 0 from here: a green run has
+          # to mean the queue was evaluated, not that evaluation was skipped.
+          fail_closed() {
+            log_summary "ERROR: ${1}"
+            log_summary "The audit could not evaluate the queue, so this run fails rather than reporting a verdict it did not reach."
+            echo "::error::stuck-job watchdog could not complete its audit: ${1}"
+            finish 1
+          }
 
           log_summary "## Stuck-job watchdog audit ($(date -u +'%Y-%m-%dT%H:%M:%SZ'))"
           log_summary "Repo: ${REPO}"
@@ -123,7 +197,261 @@ jobs:
           log_summary "Excluded workflows: ${excluded_list:-<none>}"
 
           # ------------------------------------------------------------------
-          # 1. Bootstrap or check out the watchdog-state orphan branch.
+          # 1. Enumerate queued runs older than MIN_QUEUE_AGE_SECONDS.
+          # ------------------------------------------------------------------
+          now_epoch="$(date -u +%s)"
+          queued_runs_json="$(mktemp)"
+          # `gh api --paginate` over the runs endpoint returns one JSON object
+          # per page; `jq -s '[.[] | .workflow_runs[]?]'` flattens all pages
+          # into a single array. Equivalent to using `--slurp` on newer gh
+          # versions but works on all gh versions shipped with ubuntu-latest.
+          if ! gh api --paginate "repos/${REPO}/actions/runs?status=queued&per_page=100" \
+              | jq -s '[.[] | (.workflow_runs // [])[]]' > "${queued_runs_json}"; then
+            fail_closed "failed to list queued runs for ${REPO}."
+          fi
+
+          mapfile -t queued_ids < <(jq -r --argjson now "${now_epoch}" --argjson min "${MIN_QUEUE_AGE_SECONDS}" '
+            .[]
+            | select(.created_at != null)
+            | (.created_at | fromdateiso8601) as $created
+            | select(($now - $created) >= $min)
+            | .id
+          ' < "${queued_runs_json}" | sort -u)
+
+          log_summary "Queued runs older than ${MIN_QUEUE_AGE_SECONDS}s: ${#queued_ids[@]}"
+          if [[ ${#queued_ids[@]} -eq 0 ]]; then
+            log_summary "Queue is clean. No action."
+            finish 0
+          fi
+
+          # ------------------------------------------------------------------
+          # 2. Read the organization runner inventory visible to this
+          #    repository, through the reader App. Fail closed on any failure:
+          #    an unreadable inventory cannot distinguish "nothing is stuck"
+          #    from "everything is stuck and we cannot see it".
+          # ------------------------------------------------------------------
+          gh_reader() {
+            GH_TOKEN="${RUNNER_INVENTORY_TOKEN}" gh "$@"
+          }
+
+          repo_name="${REPO##*/}"
+          runner_groups_json="$(mktemp)"
+          if ! gh_reader api --paginate \
+              "orgs/${OWNER}/actions/runner-groups?visible_to_repository=${repo_name}&per_page=100" \
+              | jq -s '[.[] | (.runner_groups // [])[] | select(.id != null)]' > "${runner_groups_json}"; then
+            fail_closed "could not read the organization runner groups visible to ${REPO}."
+          fi
+          group_count="$(jq 'length' < "${runner_groups_json}")"
+          if (( group_count == 0 )); then
+            fail_closed "the organization reported no runner groups visible to ${REPO}; the inventory cannot be trusted."
+          fi
+
+          # mapfile, not `while read < <(...)`: the loop body runs `gh`, and a
+          # child that consumes the loop's stdin silently eats the remaining
+          # group ids.
+          mapfile -t runner_group_ids < <(jq -r '.[].id' < "${runner_groups_json}")
+          runners_json="$(mktemp)"
+          : > "${runners_json}"
+          group_runners_json="$(mktemp)"
+          for group_id in "${runner_group_ids[@]}"; do
+            if ! gh_reader api --paginate \
+                "orgs/${OWNER}/actions/runner-groups/${group_id}/runners?per_page=100" \
+                | jq -s '[.[] | (.runners // [])[]]' > "${group_runners_json}"; then
+              fail_closed "could not read runners in organization runner group ${group_id}."
+            fi
+            cat "${group_runners_json}" >> "${runners_json}"
+          done
+
+          # Labels are compared case-insensitively in both directions: a job
+          # declaring `windows` and a runner registered as `Windows` are the
+          # same requirement, and an exact match would silently report every
+          # such run as unmatched.
+          inventory_json="$(mktemp)"
+          jq -s '
+            [ .[][]
+              | { id: .id,
+                  name: .name,
+                  online: (.status == "online"),
+                  busy: (.busy == true),
+                  labels: ([(.labels // [])[] | (.name // "") | ascii_downcase | select(. != "")]) }
+            ]
+            | unique_by(.id)
+          ' < "${runners_json}" > "${inventory_json}"
+
+          registered_count="$(jq 'length' < "${inventory_json}")"
+          online_count="$(jq '[.[] | select(.online)] | length' < "${inventory_json}")"
+          idle_count="$(jq '[.[] | select(.online and (.busy | not))] | length' < "${inventory_json}")"
+          log_summary "Runner inventory (groups visible to ${REPO}): ${registered_count} registered, ${online_count} online, ${idle_count} idle."
+
+          # ------------------------------------------------------------------
+          # 3. Classify every queued run. Nothing is cancelled in this pass, so
+          #    the state branch is not needed unless something lands in
+          #    `stuck_candidates`.
+          # ------------------------------------------------------------------
+          stuck_candidates="$(mktemp)"
+          : > "${stuck_candidates}"
+
+          for run_id in "${queued_ids[@]}"; do
+            # Skip the watchdog's own run id (defense in depth - the watchdog
+            # workflow file is excluded by name above, but if someone renames
+            # the file or runs ad-hoc the id check still protects us).
+            if [[ "${run_id}" == "${SELF_RUN_ID}" ]]; then
+              log_summary "run ${run_id}: this is the watchdog's own run; skipping."
+              continue
+            fi
+
+            # Pull the run metadata we need from the cached list (workflow
+            # file path, event, head_branch).
+            run_meta="$(
+              jq -c --argjson id "${run_id}" '
+                .[]
+                | select(.id == $id)
+                | {
+                    path: (.path // ""),
+                    event: (.event // ""),
+                    workflow_id: (.workflow_id // 0),
+                    head_branch: (.head_branch // ""),
+                    html_url: (.html_url // "")
+                  }
+              ' < "${queued_runs_json}" | head -n 1
+            )"
+            if [[ -z "${run_meta}" ]]; then
+              fail_closed "run ${run_id} appeared in the queued listing but carries no metadata; the queue cannot be evaluated."
+            fi
+            run_path="$(jq -r '.path' <<< "${run_meta}")"
+            run_event="$(jq -r '.event' <<< "${run_meta}")"
+            run_html_url="$(jq -r '.html_url' <<< "${run_meta}")"
+            run_path_base="${run_path##*/}"
+
+            # Workflow-file exclusion (must NOT cancel release.yml).
+            if [[ -n "${EXCLUDED_BY_FILE[${run_path_base}]+x}" ]]; then
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): workflow is excluded; operator action needed if stuck."
+              printf '* run %s (%s, event=%s) -- %s\n' "${run_id}" "${run_path_base}" "${run_event}" "${run_html_url}" >> "${excluded_runs_file}"
+              continue
+            fi
+
+            jobs_json="$(mktemp)"
+            if ! gh api --paginate "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100" \
+                | jq -s '[.[] | (.jobs // [])[]]' > "${jobs_json}"; then
+              fail_closed "failed to list jobs for run ${run_id}; that run could not be evaluated."
+            fi
+
+            in_progress_count="$(jq '[ .[] | select(.status == "in_progress") ] | length' < "${jobs_json}")"
+            queued_count="$(jq '[ .[] | select(.status == "queued") ] | length' < "${jobs_json}")"
+
+            if (( in_progress_count > 0 )); then
+              # A run with even one in-progress job is by definition not
+              # dispatcher-stuck. This covers matrix cells or later jobs
+              # waiting while another job from the same run is active, and the
+              # general case of a run that has at least one runner.
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): healthy queued (${in_progress_count} in_progress, ${queued_count} queued -- waiting on concurrency/matrix slot)."
+              printf '* run %s (%s, event=%s) -- %d in_progress, %d queued\n' "${run_id}" "${run_path_base}" "${run_event}" "${in_progress_count}" "${queued_count}" >> "${healthy_runs_file}"
+              continue
+            fi
+
+            if (( queued_count == 0 )); then
+              # No queued jobs at all - the run is in some other transitional
+              # state, not the dispatcher-stuck pattern.
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): no queued jobs yet (early state); skipping."
+              continue
+            fi
+
+            # Resolve each queued job's label set against the inventory. Only
+            # `idle` is dispatcher-stuck; the other three verdicts are the
+            # states a naive "no matching idle runner" test conflates, and
+            # cancelling any of them would destroy work the fleet still
+            # intends to run:
+            #   idle         - an online, not-busy runner carries every label
+            #   busy         - a matching runner is online but working
+            #   offline      - a matching runner is registered but disconnected
+            #   unregistered - no registered runner carries the label set
+            # `unregistered` splits again on whether the job asked for
+            # `self-hosted`. The inventory covers only self-hosted runners, so
+            # a GitHub-hosted job (`ubuntu-latest`) is unregistered by
+            # definition and says nothing about our fleet; reporting it as
+            # starved would fire a warning on every queued hosted run.
+            # An empty label set would vacuously satisfy `all`, matching every
+            # runner and manufacturing a dispatcher-stuck verdict, so a job
+            # whose labels GitHub did not report is dropped rather than
+            # trusted.
+            mapfile -t queued_job_labels < <(jq -c '
+              [ .[] | select(.status == "queued") | [ (.labels // [])[] | ascii_downcase ] ]
+              | map(select(length > 0))
+              | unique
+              | .[]
+            ' < "${jobs_json}")
+            if [[ ${#queued_job_labels[@]} -eq 0 ]]; then
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): queued jobs report no labels; not evaluable. No action."
+              continue
+            fi
+
+            match_kind="unregistered"
+            unmatched_kind=""
+            unmatched_labels=""
+            unmatched_self_hosted=0
+            for labels_csv in "${queued_job_labels[@]}"; do
+              kind="$(jq -r --argjson labels "${labels_csv}" '
+                def satisfies($r): $labels | all(. as $l | $r.labels | index($l) | type == "number");
+                if   any(.[]; .online and (.busy | not) and satisfies(.)) then "idle"
+                elif any(.[]; .online and satisfies(.))                   then "busy"
+                elif any(.[]; satisfies(.))                               then "offline"
+                else "unregistered" end
+              ' < "${inventory_json}")"
+              if [[ "${kind}" == "idle" ]]; then
+                match_kind="idle"
+                break
+              fi
+              # Precedence busy > offline > unregistered: the run only needs
+              # one satisfiable job to be waiting for a legitimate reason.
+              if [[ "${kind}" == "busy" ]] \
+                  || { [[ "${kind}" == "offline" ]] && [[ "${match_kind}" == "unregistered" ]]; }; then
+                match_kind="${kind}"
+              fi
+              if [[ -z "${unmatched_kind}" ]]; then
+                unmatched_kind="${kind}"
+                unmatched_labels="$(jq -r 'join(", ")' <<< "${labels_csv}")"
+                if jq -e 'index("self-hosted") | type == "number"' <<< "${labels_csv}" > /dev/null; then
+                  unmatched_self_hosted=1
+                fi
+              fi
+            done
+
+            if [[ "${match_kind}" == "busy" ]]; then
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): every matching runner is online but busy; healthy backpressure. No action."
+              printf '* run %s (%s, event=%s) -- waiting on a busy matching runner\n' "${run_id}" "${run_path_base}" "${run_event}" >> "${healthy_runs_file}"
+              continue
+            fi
+
+            if [[ "${match_kind}" == "unregistered" && ${unmatched_self_hosted} -eq 0 ]]; then
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): [${unmatched_labels}] targets GitHub-hosted capacity, which this inventory does not cover; not evaluable. No action."
+              continue
+            fi
+
+            if [[ "${match_kind}" != "idle" ]]; then
+              if [[ "${unmatched_kind}" == "offline" || "${match_kind}" == "offline" ]]; then
+                starved_detail="every runner carrying [${unmatched_labels}] is registered but offline"
+              else
+                starved_detail="no runner registered in a group visible to ${REPO} carries [${unmatched_labels}]"
+              fi
+              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): starved -- ${starved_detail}. Not dispatcher-stuck; no action."
+              echo "::warning::run ${run_id} (${run_path_base}) queued past ${MIN_QUEUE_AGE_SECONDS}s: ${starved_detail}. Bring that runner online or fix the label set."
+              printf '* run %s (%s, event=%s) -- %s -- %s\n' "${run_id}" "${run_path_base}" "${run_event}" "${starved_detail}" "${run_html_url}" >> "${starved_runs_file}"
+              continue
+            fi
+
+            printf '%s\n' "${run_meta}" | jq -c --argjson id "${run_id}" '. + {id: $id}' >> "${stuck_candidates}"
+          done
+
+          if [[ ! -s "${stuck_candidates}" ]]; then
+            log_summary "No dispatcher-stuck run found. No cancel issued."
+            finish 0
+          fi
+
+          # ------------------------------------------------------------------
+          # 4. Materialize the cancel-cap state branch. Only reached when a
+          #    cancel is actually about to be issued, so a state-branch problem
+          #    can no longer fail a cycle that had nothing to do -- and when it
+          #    IS needed, an unreadable cap means we must not cancel blind.
           # ------------------------------------------------------------------
           work_dir="$(mktemp -d)"
           pushd "${work_dir}" > /dev/null
@@ -155,16 +483,12 @@ jobs:
           # rewriting it as a fresh orphan.
           state_branch_probe="$(mktemp)"
           if ! git_auth ls-remote --heads "${remote_url}" "${STATE_BRANCH}" > "${state_branch_probe}" 2>/dev/null; then
-            log_summary "WARN: 'git ls-remote --heads ${remote_url} ${STATE_BRANCH}' failed (transient?); refusing to bootstrap. Skipping this cycle."
-            popd > /dev/null
-            flush_summary_and_exit 0
+            fail_closed "'git ls-remote --heads ${STATE_BRANCH}' failed; the cancel cap is unreadable and a stuck run is pending."
           fi
 
           if [[ -s "${state_branch_probe}" ]]; then
             if ! git_auth clone --depth 1 --single-branch --branch "${STATE_BRANCH}" "${remote_url}" repo; then
-              log_summary "WARN: state branch '${STATE_BRANCH}' exists per ls-remote but clone failed; skipping this cycle."
-              popd > /dev/null
-              flush_summary_and_exit 0
+              fail_closed "state branch '${STATE_BRANCH}' exists per ls-remote but the clone failed; the cancel cap is unreadable."
             fi
             cd repo
             log_summary "State branch '${STATE_BRANCH}' checked out."
@@ -180,9 +504,7 @@ jobs:
             git add "${STATE_DIR}/.gitkeep"
             git "${GIT_AUTHOR_ID[@]}" commit -m "Initialize watchdog state" || true
             if ! git_auth push origin "${STATE_BRANCH}"; then
-              log_summary "WARN: bootstrap push failed; will retry on next run."
-              popd > /dev/null
-              flush_summary_and_exit 0
+              fail_closed "bootstrap push of '${STATE_BRANCH}' failed; the cancel cap cannot be persisted."
             fi
           fi
           mkdir -p "${STATE_DIR}"
@@ -232,169 +554,21 @@ jobs:
           }
 
           # ------------------------------------------------------------------
-          # 2. Enumerate queued runs older than MIN_QUEUE_AGE_SECONDS.
+          # 5. Cancel each dispatcher-stuck run, capped at MAX_CANCELS_PER_DAY
+          #    per run-id, then re-dispatch where a safe path exists.
           # ------------------------------------------------------------------
-          now_epoch="$(date -u +%s)"
-          queued_runs_json="$(mktemp)"
-          # `gh api --paginate` over the runs endpoint returns one JSON object
-          # per page; `jq -s '[.[] | .workflow_runs[]?]'` flattens all pages
-          # into a single array. Equivalent to using `--slurp` on newer gh
-          # versions but works on all gh versions shipped with ubuntu-latest.
-          if ! gh api --paginate "repos/${REPO}/actions/runs?status=queued&per_page=100" \
-              | jq -s '[.[] | (.workflow_runs // [])[]]' > "${queued_runs_json}"; then
-            log_summary "ERROR: failed to list queued runs."
-            popd > /dev/null
-            flush_summary_and_exit 0
-          fi
+          # mapfile, not `while read < file`: `gh run cancel` inherits the
+          # loop's stdin and would swallow the remaining candidates.
+          mapfile -t stuck_candidate_lines < "${stuck_candidates}"
+          for candidate in "${stuck_candidate_lines[@]}"; do
+            run_id="$(jq -r '.id' <<< "${candidate}")"
+            run_event="$(jq -r '.event' <<< "${candidate}")"
+            run_workflow_id="$(jq -r '.workflow_id' <<< "${candidate}")"
+            run_head_branch="$(jq -r '.head_branch' <<< "${candidate}")"
+            run_html_url="$(jq -r '.html_url' <<< "${candidate}")"
+            run_path_base="$(jq -r '.path' <<< "${candidate}")"
+            run_path_base="${run_path_base##*/}"
 
-          mapfile -t queued_ids < <(jq -r --argjson now "${now_epoch}" --argjson min "${MIN_QUEUE_AGE_SECONDS}" '
-            .[]
-            | select(.created_at != null)
-            | (.created_at | fromdateiso8601) as $created
-            | select(($now - $created) >= $min)
-            | .id
-          ' < "${queued_runs_json}" | sort -u)
-
-          log_summary "Queued runs older than ${MIN_QUEUE_AGE_SECONDS}s: ${#queued_ids[@]}"
-          if [[ ${#queued_ids[@]} -eq 0 ]]; then
-            log_summary "Queue is clean. No action."
-            popd > /dev/null
-            flush_summary_and_exit 0
-          fi
-
-          # ------------------------------------------------------------------
-          # 3. Fetch idle runners (org first, fall back to repo on 403).
-          #    `gh api --paginate` over an object-shaped endpoint returns one
-          #    object per page; without `jq -s`, downstream evaluation runs
-          #    against only the last page (silent false negatives once the
-          #    org grows past 100 runners - see cli/cli#1268).
-          # ------------------------------------------------------------------
-          runners_json="$(mktemp)"
-          runners_scope="org"
-          if ! gh api --paginate "orgs/${OWNER}/actions/runners?per_page=100" \
-              | jq -s '[.[] | (.runners // [])[]]' > "${runners_json}" 2>/dev/null; then
-            runners_scope="repo"
-            log_summary "WARN: org-level runner list unavailable (likely 403). Falling back to repo runners."
-            if ! gh api --paginate "repos/${REPO}/actions/runners?per_page=100" \
-                | jq -s '[.[] | (.runners // [])[]]' > "${runners_json}"; then
-              log_summary "ERROR: repo-level runner list also failed; cannot evaluate idle runners. No action issued."
-              popd > /dev/null
-              flush_summary_and_exit 0
-            fi
-          fi
-          log_summary "Runner inventory scope: ${runners_scope}"
-
-          idle_runners_json="$(mktemp)"
-          jq '
-            [ .[]
-              | select(.status == "online")
-              | select(.busy == false)
-              | { id: .id, name: .name, labels: ([(.labels // [])[].name]) } ]
-          ' < "${runners_json}" > "${idle_runners_json}"
-          idle_count="$(jq 'length' < "${idle_runners_json}")"
-          log_summary "Idle runners (online + not busy): ${idle_count}"
-
-          # ------------------------------------------------------------------
-          # 4. For each queued run, decide stuck vs healthy vs excluded.
-          # ------------------------------------------------------------------
-          state_dirty=0
-          for run_id in "${queued_ids[@]}"; do
-            # Skip the watchdog's own run id (defense in depth - the watchdog
-            # workflow file is excluded by name above, but if someone renames
-            # the file or runs ad-hoc the id check still protects us).
-            if [[ "${run_id}" == "${SELF_RUN_ID}" ]]; then
-              log_summary "run ${run_id}: this is the watchdog's own run; skipping."
-              continue
-            fi
-
-            # Pull the run metadata we need from the cached list (workflow
-            # file path, event, head_branch).
-            run_meta="$(
-              jq -c --argjson id "${run_id}" '
-                .[]
-                | select(.id == $id)
-                | {
-                    path: (.path // ""),
-                    event: (.event // ""),
-                    workflow_id: (.workflow_id // 0),
-                    head_branch: (.head_branch // ""),
-                    html_url: (.html_url // "")
-                  }
-              ' < "${queued_runs_json}" | head -n 1
-            )"
-            if [[ -z "${run_meta}" ]]; then
-              log_summary "run ${run_id}: metadata unavailable; skipping."
-              continue
-            fi
-            run_path="$(jq -r '.path' <<< "${run_meta}")"
-            run_event="$(jq -r '.event' <<< "${run_meta}")"
-            run_workflow_id="$(jq -r '.workflow_id' <<< "${run_meta}")"
-            run_head_branch="$(jq -r '.head_branch' <<< "${run_meta}")"
-            run_html_url="$(jq -r '.html_url' <<< "${run_meta}")"
-            run_path_base="${run_path##*/}"
-
-            # Workflow-file exclusion (must NOT cancel release.yml).
-            if [[ -n "${EXCLUDED_BY_FILE[${run_path_base}]+x}" ]]; then
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): workflow is excluded; operator action needed if stuck."
-              printf '* run %s (%s, event=%s) -- %s\n' "${run_id}" "${run_path_base}" "${run_event}" "${run_html_url}" >> "${excluded_runs_file}"
-              continue
-            fi
-
-            jobs_json="$(mktemp)"
-            if ! gh api --paginate "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100" \
-                | jq -s '[.[] | (.jobs // [])[]]' > "${jobs_json}" 2>/dev/null; then
-              log_summary "run ${run_id}: failed to list jobs; skipping."
-              continue
-            fi
-
-            in_progress_count="$(jq '[ .[] | select(.status == "in_progress") ] | length' < "${jobs_json}")"
-            queued_count="$(jq '[ .[] | select(.status == "queued") ] | length' < "${jobs_json}")"
-
-            if (( in_progress_count > 0 )); then
-              # A run with even one in-progress job is by definition not
-              # dispatcher-stuck. This covers matrix cells or later jobs
-              # waiting while another job from the same run is active, and the
-              # general case of a run that has at least one runner.
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): healthy queued (${in_progress_count} in_progress, ${queued_count} queued -- waiting on concurrency/matrix slot)."
-              printf '* run %s (%s, event=%s) -- %d in_progress, %d queued\n' "${run_id}" "${run_path_base}" "${run_event}" "${in_progress_count}" "${queued_count}" >> "${healthy_runs_file}"
-              continue
-            fi
-
-            if (( queued_count == 0 )); then
-              # No queued jobs at all - the run is in some other transitional
-              # state, not the dispatcher-stuck pattern.
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): no queued jobs yet (early state); skipping."
-              continue
-            fi
-
-            mapfile -t queued_job_labels < <(jq -c '
-              .[]
-              | select(.status == "queued")
-              | (.labels // [])
-            ' < "${jobs_json}")
-
-            matched=0
-            for labels_csv in "${queued_job_labels[@]}"; do
-              # labels_csv is a JSON array like ["self-hosted","Windows","RAM-64GB"]
-              if jq -e --argjson labels "${labels_csv}" '
-                map(
-                  . as $r
-                  | ($labels | all(. as $l | $r.labels | index($l) | type == "number"))
-                ) | any
-              ' < "${idle_runners_json}" > /dev/null; then
-                matched=1
-                break
-              fi
-            done
-
-            if [[ ${matched} -eq 0 ]]; then
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): no matching idle runner -- investigate label config. No action."
-              continue
-            fi
-
-            # ------------------------------------------------------------------
-            # 5. Genuinely stuck. Cap at MAX_CANCELS_PER_DAY per run-id.
-            # ------------------------------------------------------------------
             state_file="${STATE_DIR}/${run_id}.json"
             cancels=0
             last_cancel=0
@@ -501,31 +675,4 @@ jobs:
 
           popd > /dev/null
 
-          # ------------------------------------------------------------------
-          # Final categorized step-summary table.
-          # ------------------------------------------------------------------
-          {
-            echo "## Watchdog summary"
-            cat "${summary_file}"
-            echo ""
-            echo "### Healthy queued (waiting on concurrency / matrix slot)"
-            if [[ -s "${healthy_runs_file}" ]]; then
-              cat "${healthy_runs_file}"
-            else
-              echo "_(none)_"
-            fi
-            echo ""
-            echo "### Stuck (auto-cancelled)"
-            if [[ -s "${stuck_runs_file}" ]]; then
-              cat "${stuck_runs_file}"
-            else
-              echo "_(none)_"
-            fi
-            echo ""
-            echo "### Stuck but excluded (operator action needed)"
-            if [[ -s "${excluded_runs_file}" ]]; then
-              cat "${excluded_runs_file}"
-            else
-              echo "_(none)_"
-            fi
-          } >> "${GITHUB_STEP_SUMMARY}"
+          finish 0

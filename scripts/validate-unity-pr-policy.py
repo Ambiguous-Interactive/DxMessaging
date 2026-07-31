@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
+WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
 REGISTERED_UNITY_AUTOMATION = {
     ".github/actions/validate-unity-license/action.yml",
@@ -816,6 +817,342 @@ def run_head_check(script: str, event: str, live_head: str) -> str:
             written.startswith("superseded="), f"head-check wrote no decision: {written!r}"
         )
         return written[len("superseded=") :]
+
+
+def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> str:
+    """A `gh` that answers only the stubbed endpoints and rejects the rest.
+
+    An unstubbed call exits 3 rather than printing nothing, so a watchdog that
+    reaches for an endpoint this table does not model fails the case instead of
+    quietly reading an empty body.
+    """
+    cases = "".join(
+        f"  *{needle}*)\n    cat <<'PAYLOAD'\n"
+        f"{json.dumps(payload) if payload is not None else ''}\nPAYLOAD\n    exit {code} ;;\n"
+        for needle, (code, payload) in routes.items()
+    )
+    return (
+        "#!/bin/bash\n"
+        'if [ "$1" = "run" ] && [ "$2" = "cancel" ]; then\n'
+        f'  echo "cancelled $3"; exit {0 if cancel_ok else 1}\n'
+        "fi\n"
+        f'case "$*" in\n{cases}  *) echo "unstubbed gh: $*" >&2; exit 3 ;;\nesac\n'
+    )
+
+
+# The watchdog never needs a real remote: `ls-remote` reporting an empty branch
+# list sends it down the bootstrap path, and `push` succeeds. Everything else
+# (init, checkout, add, commit) runs against the real git in a temp directory.
+WATCHDOG_GIT_STUB = (
+    "#!/bin/bash\n"
+    'for a in "$@"; do\n'
+    '  case "$a" in\n'
+    "    ls-remote|fetch) exit 0 ;;\n"
+    "    clone) exit 1 ;;\n"
+    '    push) echo "pushed"; exit 0 ;;\n'
+    "  esac\n"
+    "done\n"
+    'exec /usr/bin/git "$@"\n'
+)
+
+
+# Values the runner supplies from the workflow context; everything else in the
+# step's `env:` is a literal the workflow OWNS, and the harness must read those
+# from the file rather than restate them. Restating them is what makes a case
+# assert its own stub: a truth table that hardcodes
+# `DEFAULT_EXCLUDED_WORKFLOWS: release.yml` still passes after the workflow
+# stops excluding release.yml.
+WATCHDOG_CONTEXT_ENV = {
+    "GH_TOKEN": "stub",
+    "RUNNER_INVENTORY_TOKEN": "stub-reader",
+    "REPO": "Ambiguous-Interactive/DxMessaging",
+    "OWNER": "Ambiguous-Interactive",
+    "SELF_RUN_ID": "999",
+    "EXTRA_EXCLUDED_WORKFLOWS": "",
+}
+# Literals the cases below actually depend on. Renaming or deleting one must
+# fail here rather than silently drop the behavior it configures.
+WATCHDOG_REQUIRED_ENV_LITERALS = (
+    "STATE_BRANCH",
+    "STATE_DIR",
+    "MAX_CANCELS_PER_DAY",
+    "MIN_QUEUE_AGE_SECONDS",
+    "DEFAULT_EXCLUDED_WORKFLOWS",
+)
+
+
+def step_env_literals(step: str) -> dict[str, str]:
+    """Return the step's `env:` entries whose values are workflow literals."""
+    start = step.find("        env:\n")
+    require(start >= 0, "watchdog audit step must declare env")
+    literals: dict[str, str] = {}
+    for line in step[start + len("        env:\n") :].splitlines():
+        entry = re.fullmatch(r"          ([A-Z0-9_]+): (.*)", line)
+        if entry is None:
+            break
+        name, value = entry.group(1), entry.group(2).strip()
+        if "${{" in value:
+            continue
+        literals[name] = value[1:-1] if len(value) >= 2 and value[0] == value[-1] == '"' else value
+    return literals
+
+
+def run_watchdog(
+    script: str,
+    environment_literals: dict[str, str],
+    routes: dict[str, tuple[int, object]],
+    cancel_ok: bool = True,
+) -> tuple[int, str]:
+    """Execute the watchdog audit script against a stubbed `gh` and `git`."""
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        for name, body in (("gh", watchdog_gh_stub(routes, cancel_ok)), ("git", WATCHDOG_GIT_STUB)):
+            stub = root / name
+            stub.write_text(body, encoding="utf-8")
+            stub.chmod(0o755)
+        summary = root / "summary.md"
+        summary.touch()
+        environment = os.environ.copy()
+        environment.update(environment_literals)
+        environment.update(WATCHDOG_CONTEXT_ENV)
+        environment["PATH"] = f"{root}{os.pathsep}{environment['PATH']}"
+        environment["GITHUB_STEP_SUMMARY"] = str(summary)
+        result = subprocess.run(
+            ["bash", "-c", script], env=environment, capture_output=True, text=True, check=False
+        )
+        return result.returncode, summary.read_text(encoding="utf-8") + result.stdout + result.stderr
+
+
+def watchdog_queued_runs(*runs: dict[str, object]) -> tuple[int, object]:
+    return 0, {"workflow_runs": list(runs)}
+
+
+def watchdog_run(run_id: int, workflow: str = "perf-numbers.yml") -> dict[str, object]:
+    # Created in 2020, so it is unconditionally older than MIN_QUEUE_AGE_SECONDS.
+    return {
+        "id": run_id,
+        "created_at": "2020-01-01T00:00:00Z",
+        "path": f".github/workflows/{workflow}",
+        "event": "push",
+        "workflow_id": 42,
+        "head_branch": "master",
+        "html_url": f"https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/{run_id}",
+    }
+
+
+def watchdog_jobs(*label_sets: list[str]) -> tuple[int, object]:
+    return 0, {"jobs": [{"status": "queued", "labels": labels} for labels in label_sets]}
+
+
+def watchdog_runners(*specs: tuple[str, str, bool, list[str]]) -> tuple[int, object]:
+    return 0, {
+        "runners": [
+            {
+                "id": index,
+                "name": name,
+                "status": status,
+                "busy": busy,
+                "labels": [{"name": label} for label in labels],
+            }
+            for index, (name, status, busy, labels) in enumerate(specs, start=1)
+        ]
+    }
+
+
+def validate_stuck_job_watchdog() -> None:
+    """Execute the watchdog's audit script across its whole verdict space.
+
+    The watchdog is the automation that recovers the licensed Unity legs this
+    file governs, so its failure modes belong to the same policy: #328 was a
+    watchdog that could not read runner inventory on either endpoint it tried,
+    reported `success` anyway, and let a `Performance Numbers` run sit queued
+    for ten hours. The rule these cases pin is that a green watchdog run means
+    the queue was evaluated -- never that evaluation was skipped.
+    """
+    source = WATCHDOG.read_text(encoding="utf-8")
+    require(
+        "actions/create-github-app-token@" in source
+        and "app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}" in source,
+        "watchdog must read runner inventory with the organization reader App; "
+        "the job GITHUB_TOKEN is repository-scoped and cannot list organization runners",
+    )
+    require(
+        "repos/${REPO}/actions/runners" not in source,
+        "watchdog must not fall back to repository-level runners: this repository "
+        "registers none, so the call succeeds with an empty inventory that reads "
+        "identically to 'no runner matches' (#328)",
+    )
+    audit_step = step_block(job_block(source, "audit-queue"), "Audit + cancel-and-redispatch")
+    script = run_script(audit_step)
+    environment_literals = step_env_literals(audit_step)
+    for name in WATCHDOG_REQUIRED_ENV_LITERALS:
+        require(name in environment_literals, f"watchdog env must declare {name} as a literal")
+    require(
+        "release.yml" in environment_literals["DEFAULT_EXCLUDED_WORKFLOWS"].split(),
+        "watchdog must never cancel a queued release run",
+    )
+    if os.name == "nt":
+        return
+
+    self_hosted = ["self-hosted", "Windows", "RAM-64GB", "fast"]
+    queued = "actions/runs?status=queued"
+    inventory = "runner-groups?visible_to_repository"
+    one_group = (0, {"runner_groups": [{"id": 7, "name": "Default"}]})
+
+    # name, gh routes, expected exit, must appear, must NOT appear
+    cases: tuple[tuple[str, dict[str, tuple[int, object]], int, tuple[str, ...], tuple[str, ...]], ...] = (
+        (
+            "clean queue",
+            {queued: (0, {"workflow_runs": []})},
+            0,
+            ("Queue is clean",),
+            ("::error::",),
+        ),
+        (
+            "unreadable queue fails closed",
+            {queued: (1, None)},
+            1,
+            ("failed to list queued runs",),
+            (),
+        ),
+        (
+            "unreadable runner inventory fails closed",
+            {queued: watchdog_queued_runs(watchdog_run(1)), inventory: (1, None)},
+            1,
+            ("could not read the organization runner groups",),
+            (),
+        ),
+        (
+            "empty visible runner-group set fails closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: (0, {"runner_groups": []}),
+            },
+            1,
+            ("no runner groups visible",),
+            (),
+        ),
+        (
+            "unreadable jobs fail closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": (1, None),
+            },
+            1,
+            ("failed to list jobs for run 1",),
+            (),
+        ),
+        (
+            "idle matching runner is dispatcher-stuck",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+            },
+            0,
+            ("dispatcher-stuck", "cancelled 1"),
+            (),
+        ),
+        (
+            "busy matching runner is healthy backpressure",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+            },
+            0,
+            ("healthy backpressure",),
+            ("cancelled 1", "::warning::"),
+        ),
+        (
+            "registered but offline runner is starved, not stuck",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+            },
+            0,
+            ("starved", "registered but offline", "::warning::"),
+            ("cancelled 1",),
+        ),
+        (
+            "no registered self-hosted runner is starved, not stuck",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("MAC", "online", False, ["self-hosted", "macOS"])),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+            },
+            0,
+            ("starved", "no runner registered", "::warning::"),
+            ("cancelled 1",),
+        ),
+        (
+            "GitHub-hosted run is not reported as starved",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1, workflow="ci.yml")),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(["ubuntu-latest"]),
+            },
+            0,
+            ("GitHub-hosted capacity",),
+            ("cancelled 1", "::warning::"),
+        ),
+        (
+            "label match is case-insensitive in both directions",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, ["Self-Hosted", "WINDOWS"])),
+                "actions/runs/1/jobs": watchdog_jobs(["self-hosted", "windows"]),
+            },
+            0,
+            ("healthy backpressure",),
+            ("::warning::",),
+        ),
+        (
+            "a job reporting no labels is never cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs([]),
+            },
+            0,
+            ("queued jobs report no labels",),
+            ("cancelled 1",),
+        ),
+        (
+            "the excluded release workflow is never cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            0,
+            ("workflow is excluded",),
+            ("cancelled 1",),
+        ),
+    )
+
+    for name, routes, expected_code, expected, forbidden in cases:
+        code, text = run_watchdog(script, environment_literals, routes)
+        require(
+            code == expected_code,
+            f"watchdog {name}: expected exit {expected_code}, got {code}\n{text}",
+        )
+        for needle in expected:
+            require(needle in text, f"watchdog {name}: summary omitted {needle!r}\n{text}")
+        for needle in forbidden:
+            require(needle not in text, f"watchdog {name}: summary leaked {needle!r}\n{text}")
 
 
 def find_unregistered_unity_automation(files: dict[str, str]) -> list[str]:
@@ -1766,6 +2103,8 @@ fi"""
                 result.returncode == expected,
                 f"{name}: expected {expected}, got {result.returncode}\n{result.stdout}\n{result.stderr}",
             )
+
+    validate_stuck_job_watchdog()
 
     print("Unity pull-request policy validation passed.")
 
