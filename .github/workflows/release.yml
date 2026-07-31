@@ -359,7 +359,7 @@ jobs:
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@0ce3dce6cbe29af210432087e3b6d81509258063
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
           unity-version: 2022.3.45f1
           tool-cache: ${{ runner.tool_cache }}
@@ -371,7 +371,7 @@ jobs:
         id: cleanup_classification
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@0ce3dce6cbe29af210432087e3b6d81509258063
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
           return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
           return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
@@ -383,7 +383,7 @@ jobs:
         id: release_unity_lock
         if: always()
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@0ce3dce6cbe29af210432087e3b6d81509258063
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-editmode
@@ -398,7 +398,7 @@ jobs:
       - name: Require confirmed Unity cleanup
         if: always()
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@0ce3dce6cbe29af210432087e3b6d81509258063
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
           acquired: ${{ steps.acquire_lock.outputs.acquired }}
           classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
@@ -572,7 +572,7 @@ jobs:
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@0ce3dce6cbe29af210432087e3b6d81509258063
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
           unity-version: 2022.3.45f1
           tool-cache: ${{ runner.tool_cache }}
@@ -584,7 +584,7 @@ jobs:
         id: cleanup_classification
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@0ce3dce6cbe29af210432087e3b6d81509258063
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
           return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
           return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
@@ -596,7 +596,7 @@ jobs:
         id: release_unity_lock
         if: always()
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@0ce3dce6cbe29af210432087e3b6d81509258063
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: release-unitypackage
@@ -611,7 +611,7 @@ jobs:
       - name: Require confirmed Unity cleanup
         if: always()
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@0ce3dce6cbe29af210432087e3b6d81509258063
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
           acquired: ${{ steps.acquire_lock.outputs.acquired }}
           classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
