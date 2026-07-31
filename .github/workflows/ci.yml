@@ -972,12 +972,34 @@ jobs:
       - name: Probe external link liveness
         if: ${{ needs.changes.outputs.docs_links != 'false' }}
         run: |
-          lychee \
-            -c .lychee.toml \
-            --scheme https \
-            --scheme http \
-            --accept-timeouts=true \
-            --files-from "${RUNNER_TEMP}/doc-files.txt"
+          # This gate is required, and it asks third-party websites whether they are up.
+          # A single attempt cannot tell a genuinely dead link from a host that was briefly
+          # unreachable, so one blip anywhere on the public internet turns master red on a
+          # commit that changed no links. That happened twice on 2026-07-31, from two
+          # different hosts and two different causes: a cached openupm.com timeout
+          # reclassified as a fatal error (#324), and a shellcheck.net connection failure.
+          #
+          # Two attempts, spaced apart, separate the two cases: a dead link is still dead
+          # 30 seconds later, a blip is not. This is not a flaky test being retried into
+          # green -- the failure being smoothed over is external and outside this
+          # repository, which is the same reasoning that already accepts bot detection,
+          # throttling, and timeouts here.
+          for attempt in 1 2; do
+            if lychee \
+              -c .lychee.toml \
+              --scheme https \
+              --scheme http \
+              --accept-timeouts=true \
+              --files-from "${RUNNER_TEMP}/doc-files.txt"; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 2 ]; then
+              echo "::error::External link probe failed on both attempts; treating the links as genuinely dead."
+              exit 1
+            fi
+            echo "::notice::External link probe failed on attempt ${attempt}; retrying in 30s to rule out a transient host failure."
+            sleep 30
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -990,6 +1012,10 @@ jobs:
           This job fails for broken internal links or genuinely dead external
           links. Bot-detection, throttling, transient responses, and timeouts are
           accepted by this gate; do not add per-domain excludes for those cases.
+
+          The external probe runs twice, 30s apart, and only fails if both
+          attempts fail. If you are reading this, the link was unreachable on
+          both, so check it by hand before assuming the host was flaky.
           EOF
 
   ci-success:
