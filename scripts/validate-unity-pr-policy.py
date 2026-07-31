@@ -1468,6 +1468,71 @@ def validate_stuck_job_watchdog() -> None:
             ("cancelled 1", STARVED_SECTION_EMPTY),
         ),
         (
+            # The third and last shape of sibling blindness, and the one that
+            # persists longest: while the dispatchable cell keeps matching idle,
+            # the run is cancelled and re-dispatched over and over, and the
+            # starved cell stays invisible across every cycle. `self_hosted`
+            # sorts BEFORE the unicorn set under jq `unique`, so the idle match
+            # is seen first -- exactly the ordering a `break` would lose.
+            "a cancellable sibling does not suppress a co-resident starvation",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    self_hosted, ["self-hosted", "Windows", "unicorn"]
+                ),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+            },
+            0,
+            ("cancelled 1", "dispatcher-stuck", "starved", "::warning::", "unicorn"),
+            (STARVED_SECTION_EMPTY,),
+        ),
+        (
+            # Precedence: a later `busy` set must not demote an earlier `idle`
+            # one. Without the break, that demotion is what would silently stop
+            # the run being cancelled. The zebra set sorts AFTER self_hosted
+            # under jq `unique`, so it is scanned second.
+            "a later busy set does not demote an earlier idle match",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(
+                    ("ELI", "online", False, self_hosted),
+                    ("DAD", "online", True, ["self-hosted", "Windows", "zebra"]),
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    self_hosted, ["self-hosted", "Windows", "zebra"]
+                ),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+            },
+            0,
+            ("cancelled 1", "dispatcher-stuck"),
+            ("healthy backpressure",),
+        ),
+        (
+            # Precedence: a later `offline` set must not demote an earlier
+            # `busy` one. The run is still waiting on a real runner, so it stays
+            # healthy -- while the offline set is still reported as starved.
+            "a later offline set does not demote an earlier busy match",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(
+                    ("ELI", "online", True, ["self-hosted", "Windows", "aaa"]),
+                    ("DAD", "offline", False, ["self-hosted", "Windows", "zzz"]),
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    ["self-hosted", "Windows", "aaa"], ["self-hosted", "Windows", "zzz"]
+                ),
+            },
+            0,
+            ("healthy backpressure", "starved", "zzz"),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
             "the excluded release workflow is never cancelled",
             {
                 queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),

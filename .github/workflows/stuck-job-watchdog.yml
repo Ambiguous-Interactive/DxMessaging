@@ -505,15 +505,20 @@ jobs:
                 elif any(.[]; satisfies(.))                               then "offline"
                 else "unregistered" end
               ' < "${inventory_json}")"
+              # Precedence idle > busy > offline > unregistered. The loop does
+              # NOT break on `idle`: breaking meant the remaining label sets were
+              # never scanned, so a run with one dispatchable cell and one
+              # starved cell was cancelled with no starvation warning at all --
+              # and because the stuck sibling keeps matching idle, that starved
+              # cell could stay invisible across repeated cancel cycles. Scanning
+              # every set costs one jq call per set and is what lets the verdict
+              # and the starvation report be independent. (Cursor Bugbot.)
               if [[ "${kind}" == "idle" ]]; then
                 match_kind="idle"
-                break
-              fi
-              # Precedence busy > offline > unregistered: the run only needs
-              # one satisfiable job to be waiting for a legitimate reason.
-              if [[ "${kind}" == "busy" ]] \
-                  || { [[ "${kind}" == "offline" ]] && [[ "${match_kind}" == "unregistered" ]]; }; then
-                match_kind="${kind}"
+              elif [[ "${kind}" == "busy" && "${match_kind}" != "idle" ]]; then
+                match_kind="busy"
+              elif [[ "${kind}" == "offline" && "${match_kind}" == "unregistered" ]]; then
+                match_kind="offline"
               fi
               # Only a self-hosted set can starve on OUR fleet. Prefer reporting
               # an `unregistered` set over an `offline` one: a label set nothing
@@ -594,6 +599,10 @@ jobs:
             # the Stuck section sat empty, so an operator could not tell WHICH run
             # needed attention. Every other verdict already announces itself at the
             # point it is reached; this one did not. (Cursor Bugbot.)
+            # A cancellable sibling does not make a starved one less starved,
+            # and this is the branch that acts, so it is the one most likely to
+            # be read.
+            report_starvation
             log_summary "run ${run_id} (${run_path_base}, event=${run_event}): dispatcher-stuck; queued for cancel -- ${run_html_url}"
             printf '%s\n' "${run_meta}" | jq -c --argjson id "${run_id}" '. + {id: $id}' >> "${stuck_candidates}"
           done
