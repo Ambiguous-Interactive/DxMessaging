@@ -182,9 +182,25 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          # `--exit-code` returns 1 for "there are differences" but 128/129 for
+          # "not a git repository" / bad usage, and a bare `|| echo changed=true`
+          # swallows all of them alike. That was harmless while a failed
+          # `Checkout` skipped this step; `always()` made it reachable, and
+          # fail-OPEN is the wrong direction for a probe that decides whether to
+          # commit. Only exit 1 means "changed".
+          set +e
           # shellcheck disable=SC2086 # both are intentional word lists.
-          git diff --exit-code -- ${LLMS_PATHS} ${ISSUE_TEMPLATE_PATHS} \
-            || echo "changed=true" >> "$GITHUB_OUTPUT"
+          git diff --quiet -- ${LLMS_PATHS} ${ISSUE_TEMPLATE_PATHS}
+          diff_status=$?
+          set -e
+          case "${diff_status}" in
+            0) echo "No generated file changed." ;;
+            1) echo "changed=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::git could not compare the generated files (exit ${diff_status}); refusing to guess whether they changed."
+              exit "${diff_status}"
+              ;;
+          esac
 
       # Runs even after a failed generator: the revert above guarantees the tree
       # carries only checker-accepted output, so the generator that DID converge
@@ -207,13 +223,29 @@ jobs:
           # Same isolation as the two steps above: on the stale-head path a
           # generator that cannot converge reverts its own files rather than
           # aborting the push loop and stranding the other generator's output.
+          #
+          # It must also RECORD that it failed. An earlier version ended each
+          # branch in `|| git checkout`, which succeeds, so the function always
+          # returned 0: a generator that broke only on the refreshed head
+          # reverted silently, the loop pushed the other generator's output, and
+          # the job went green with stale content and no annotation. The two
+          # step outcomes the terminal gate reads were both `success`, because
+          # the failure happened here rather than there.
+          regenerate_failed=0
           regenerate() {
             # shellcheck disable=SC2086 # intentional word lists.
-            (npm run update:llms-txt && npm run check:llms-txt) \
-              || git checkout -- ${LLMS_PATHS}
-            # shellcheck disable=SC2086
-            (npm run update:issue-template-versions && npm run check:issue-template-versions) \
-              || git checkout -- ${ISSUE_TEMPLATE_PATHS}
+            if ! (npm run update:llms-txt && npm run check:llms-txt); then
+              echo "::error::llms.txt generation did not converge on the refreshed head; discarding its output."
+              # shellcheck disable=SC2086
+              git checkout -- ${LLMS_PATHS}
+              regenerate_failed=1
+            fi
+            if ! (npm run update:issue-template-versions && npm run check:issue-template-versions); then
+              echo "::error::issue-template version generation did not converge on the refreshed head; discarding its output."
+              # shellcheck disable=SC2086
+              git checkout -- ${ISSUE_TEMPLATE_PATHS}
+              regenerate_failed=1
+            fi
           }
 
           fetch_head() {
@@ -236,14 +268,14 @@ jobs:
 
             if git diff --quiet -- "${generated[@]}"; then
               echo "Generated artifacts are already current; nothing to commit."
-              exit 0
+              exit "${regenerate_failed}"
             fi
 
             base_sha="$(git rev-parse HEAD)"
             git add -- "${generated[@]}"
             if git diff --cached --quiet -- "${generated[@]}"; then
               echo "No staged changes remain; nothing to commit."
-              exit 0
+              exit "${regenerate_failed}"
             fi
             git commit -m "chore: refresh generated repository metadata"
 
@@ -253,7 +285,7 @@ jobs:
             push_status=$?
             set -e
             if [ "${push_status}" -eq 0 ]; then
-              exit 0
+              exit "${regenerate_failed}"
             fi
 
             fetch_head
@@ -268,7 +300,7 @@ jobs:
               message+="post-merge auto-commit; skipping this stale attempt. "
               message+="A newer run will regenerate from the latest head."
               echo "::warning::${message}"
-              exit 0
+              exit "${regenerate_failed}"
             fi
 
             message="Default branch ${GITHUB_REF_NAME} advanced during the post-merge "

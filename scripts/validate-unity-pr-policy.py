@@ -941,14 +941,24 @@ def run_watchdog(
     routes: dict[str, tuple[int, object]],
     cancel_ok: bool = True,
     push_ok: bool = True,
+    break_date: bool = False,
+    extra_env: dict[str, str] | None = None,
 ) -> tuple[int, str]:
-    """Execute the watchdog audit script against a stubbed `gh` and `git`."""
+    """Execute the watchdog audit script against a stubbed `gh` and `git`.
+
+    `break_date` fails the unguarded `now_epoch="$(date ...)"` assignment, which
+    is the cheapest way to force an abort the script does NOT anticipate -- the
+    only thing that exercises the EXIT trap rather than a `finish` call.
+    """
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        for name, body in (
+        stubs = [
             ("gh", watchdog_gh_stub(routes, cancel_ok)),
             ("git", watchdog_git_stub(push_ok)),
-        ):
+        ]
+        if break_date:
+            stubs.append(("date", "#!/bin/bash\nexit 1\n"))
+        for name, body in stubs:
             stub = root / name
             stub.write_text(body, encoding="utf-8")
             stub.chmod(0o755)
@@ -957,6 +967,7 @@ def run_watchdog(
         environment = os.environ.copy()
         environment.update(environment_literals)
         environment.update(WATCHDOG_CONTEXT_ENV)
+        environment.update(extra_env or {})
         environment["PATH"] = f"{root}{os.pathsep}{environment['PATH']}"
         environment["GITHUB_STEP_SUMMARY"] = str(summary)
         result = subprocess.run(
@@ -1145,7 +1156,7 @@ def validate_stuck_job_watchdog() -> None:
                 "actions/runs/1/jobs": watchdog_jobs(["ubuntu-latest"]),
             },
             0,
-            ("GitHub-hosted capacity",),
+            ("no queued job requests a self-hosted runner",),
             ("cancelled 1", "::warning::"),
         ),
         (
@@ -1208,7 +1219,11 @@ def validate_stuck_job_watchdog() -> None:
             },
             0,
             ("starved", "::warning::", "self-hosted, windows, unicorn"),
-            ("GitHub-hosted capacity", "cancelled 1", "macos-latest] is registered"),
+            (
+                "no queued job requests a self-hosted runner",
+                "cancelled 1",
+                "macos-latest] is registered",
+            ),
         ),
         (
             # Finding: the warning interpolated the first set's labels while
@@ -1274,6 +1289,67 @@ def validate_stuck_job_watchdog() -> None:
     require(
         "cancelled 1" not in text,
         f"watchdog unusable state branch: cancelled a run without a readable cap\n{text}",
+    )
+
+    # The EXIT trap. Without it, an abort the script does not anticipate exits
+    # red with a COMPLETELY EMPTY step summary and no annotation -- the worst
+    # signal for a job that runs 288 times a day. Forced through a failing
+    # `date`, which is unguarded on purpose so this stays reachable.
+    code, text = run_watchdog(script, environment_literals, {}, break_date=True)
+    require(code != 0, f"watchdog unexpected abort: expected a non-zero exit, got {code}\n{text}")
+    for needle in ("Watchdog summary", "aborted unexpectedly", "::error::"):
+        require(
+            needle in text,
+            f"watchdog unexpected abort: the EXIT trap did not emit {needle!r}\n{text}",
+        )
+
+    # The exclusion list is built from a repo variable, so an operator entry
+    # ending in `/` strips to an EMPTY associative-array subscript -- a hard
+    # bash error that kills the audit before it reads anything, every five
+    # minutes. Guarding only the read site left this reachable.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {queued: (0, {"workflow_runs": []})},
+        extra_env={"EXTRA_EXCLUDED_WORKFLOWS": "some/dir/ release.yml"},
+    )
+    require(
+        code == 0,
+        f"watchdog exclusion-list normalization: a trailing-slash entry aborted the audit "
+        f"(exit {code})\n{text}",
+    )
+    require(
+        "bad array subscript" not in text,
+        "watchdog exclusion-list normalization: empty subscript reached the array\n" + text,
+    )
+
+    # The summary is emitted exactly once. A second copy on the normal path
+    # would mean `finish` and the trap both fired.
+    code, text = run_watchdog(
+        script, environment_literals, {queued: (0, {"workflow_runs": []})}
+    )
+    require(code == 0, f"watchdog emit-once: expected exit 0, got {code}\n{text}")
+    require(
+        text.count("### Stuck (auto-cancelled)") == 1,
+        "watchdog emit-once: the step summary was written more than once\n" + text,
+    )
+
+    # The runner groups actually counted are named in the summary. That log line
+    # is the only way a second, restricted group ever becomes visible, which is
+    # what the visibility comment tells a future reader to watch for.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {
+            queued: watchdog_queued_runs(watchdog_run(1)),
+            inventory: (0, {"runner_groups": [{"id": 7, "name": "Default"}]}),
+            "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, self_hosted)),
+            "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        },
+    )
+    require(
+        "Runner groups visible to" in text and "Default" in text,
+        "watchdog inventory: the counted runner-group names were not reported\n" + text,
     )
 
     for name, routes, expected_code, expected, forbidden in cases:

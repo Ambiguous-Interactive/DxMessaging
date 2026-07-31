@@ -161,6 +161,8 @@ jobs:
               return 0
             fi
             summary_emitted=1
+            # `|| true`: this runs from an EXIT trap, so a failure here would
+            # replace the status the job is actually exiting with.
             {
               echo "## Watchdog summary"
               cat "${summary_file}"
@@ -176,7 +178,7 @@ jobs:
               echo ""
               echo "### Stuck but excluded (operator action needed)"
               if [[ -s "${excluded_runs_file}" ]]; then cat "${excluded_runs_file}"; else echo "_(none)_"; fi
-            } >> "${GITHUB_STEP_SUMMARY}"
+            } >> "${GITHUB_STEP_SUMMARY}" || true
           }
 
           finish() {
@@ -230,6 +232,12 @@ jobs:
             [[ -z "${wf}" ]] && continue
             # Normalize: strip any leading .github/workflows/ if present.
             base="${wf##*/}"
+            # An empty subscript is a hard bash error, and the strip above turns
+            # any operator entry ending in `/` into one -- which the very next
+            # comment invites by talking about directory prefixes. Guarding only
+            # the read site left the write site able to kill the audit outright,
+            # every five minutes, on a repo-variable typo.
+            [[ -z "${base}" ]] && continue
             EXCLUDED_BY_FILE["${base}"]=1
           done
           excluded_list=""
@@ -306,7 +314,10 @@ jobs:
           if ! runner_group_ids_raw="$(jq -r '.[].id' < "${runner_groups_json}")"; then
             fail_closed "could not parse the organization runner-group inventory."
           fi
-          mapfile -t runner_group_ids <<< "${runner_group_ids_raw}"
+          runner_group_ids=()
+          if [[ -n "${runner_group_ids_raw}" ]]; then
+            mapfile -t runner_group_ids <<< "${runner_group_ids_raw}"
+          fi
           runners_json="$(mktemp)"
           : > "${runners_json}"
           group_runners_json="$(mktemp)"
@@ -472,6 +483,7 @@ jobs:
             match_kind="unregistered"
             starved_kind=""
             starved_labels=""
+            any_self_hosted=0
             for labels_csv in "${queued_job_labels[@]}"; do
               kind="$(jq -r --argjson labels "${labels_csv}" '
                 def satisfies($r): $labels | all(. as $l | $r.labels | index($l) | type == "number");
@@ -493,12 +505,14 @@ jobs:
               # Only a self-hosted set can starve on OUR fleet. Prefer reporting
               # an `unregistered` set over an `offline` one: a label set nothing
               # carries needs a human, while an offline machine may come back.
-              if [[ "${kind}" == "offline" || "${kind}" == "unregistered" ]] \
-                  && jq -e 'index("self-hosted") | type == "number"' <<< "${labels_csv}" > /dev/null; then
-                if [[ -z "${starved_kind}" ]] \
-                    || { [[ "${starved_kind}" == "offline" ]] && [[ "${kind}" == "unregistered" ]]; }; then
-                  starved_kind="${kind}"
-                  starved_labels="$(jq -r 'join(", ")' <<< "${labels_csv}")"
+              if jq -e 'index("self-hosted") | type == "number"' <<< "${labels_csv}" > /dev/null; then
+                any_self_hosted=1
+                if [[ "${kind}" == "offline" || "${kind}" == "unregistered" ]]; then
+                  if [[ -z "${starved_kind}" ]] \
+                      || { [[ "${starved_kind}" == "offline" ]] && [[ "${kind}" == "unregistered" ]]; }; then
+                    starved_kind="${kind}"
+                    starved_labels="$(jq -r 'join(", ")' <<< "${labels_csv}")"
+                  fi
                 fi
               fi
             done
@@ -509,8 +523,18 @@ jobs:
               continue
             fi
 
+            # Reaching here implies no queued job asked for `self-hosted`:
+            # a self-hosted set that is idle breaks out above, one that is busy
+            # returns above, and one that is offline or unregistered sets
+            # `starved_kind`. So the only surviving shape is a run this
+            # inventory genuinely cannot speak to.
+            #
+            # The old wording claimed such a run "targets GitHub-hosted
+            # capacity", which is not the same statement and can be false: a
+            # registered runner may carry `ubuntu-latest` and simply be offline.
+            # What is always true is that no queued job ASKED for self-hosted.
             if [[ "${match_kind}" != "idle" && -z "${starved_kind}" ]]; then
-              log_summary "run ${run_id} (${run_path_base}, event=${run_event}): every queued job targets GitHub-hosted capacity, which this inventory does not cover; not evaluable. No action."
+              log_summary "run ${run_id} (${run_path_base}): no queued job requests a self-hosted runner (self-hosted sets seen: ${any_self_hosted}); not evaluable. No action."
               continue
             fi
 
