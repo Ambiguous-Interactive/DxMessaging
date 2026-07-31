@@ -104,29 +104,27 @@ jobs:
             -UnityVersion '${{ matrix.unity-version }}' `
             -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -ProvisioningProfile ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }} `
-            -DiagnosticsPath unity-editor-check.json `
+            -DiagnosticsPath (Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation') `
             -CiManagedOnly `
             -RequireHealthyExisting
 
-      - name: Bind and preserve validated Unity editor
+      - name: Bind validated Unity editor
         timeout-minutes: 2
         shell: pwsh
         run: |
-          $source = Join-Path $env:GITHUB_WORKSPACE 'unity-editor-check.json'
+          # ensure-editor writes this summary from a finally block, so the evidence
+          # exists for a failed gate too, and writing it under RUNNER_TEMP keeps it
+          # out of reach of the repository checkout that follows.
+          $source = Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation\ensure-editor-summary.json'
           if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "Unity editor validation evidence was not written: $source"
           }
           $summary = Get-Content -LiteralPath $source -Raw | ConvertFrom-Json
-          $expected = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3\${{ matrix.unity-version }}\Editor\Unity.exe'
+          $expected = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3\${{ matrix.unity-version }}\Editor\Unity.exe'))
           $actual = [IO.Path]::GetFullPath([string]$summary.editorPath)
-          $expected = [IO.Path]::GetFullPath($expected)
           if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
             throw "Validated editor '$actual' did not match the canonical editor '$expected'."
           }
-          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation'
-          New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
-          $destination = Join-Path $evidenceRoot '${{ github.run_id }}-${{ github.job }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}.json'
-          Copy-Item -LiteralPath $source -Destination $destination -Force
           "UNITY_EDITOR_PATH=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Enable Git long paths
