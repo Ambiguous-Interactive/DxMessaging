@@ -433,7 +433,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
 
   for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
     const label = `${file}:${jobId}`;
-    const licensedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.validate_editor\\.outcome == 'success' && steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
+    const licensedCondition = `${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
     assert.match(job, /\n    timeout-minutes: 900\n/, `${label}: lifecycle budget`);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
@@ -444,7 +444,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     }
 
     // prettier-ignore
-    const lifecycleNames = ["Validate installed Unity Editor", "Validate Unity license secrets", "Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
+    const lifecycleNames = ["Require manually installed Unity editor", "Bind validated Unity editor", "Validate Unity license secrets", "Acquire organization Unity lock", "Require acquired Unity lock", "Upload Unity editor validation diagnostics", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
     const positions = lifecycleNames.map((name) => job.indexOf(`      - name: ${name}`));
     const sortedPositions = [...positions].sort((a, b) => a - b);
     assert.ok(
@@ -454,15 +454,15 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     assert.deepEqual(positions, sortedPositions, `${label} lifecycle order`);
 
     // prettier-ignore
-    const [validationStep, credentialStep, acquireStep, requireStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
+    const [validationStep, bindingStep, credentialStep, acquireStep, requireStep, uploadStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
 
     // prettier-ignore
     const contracts = [
-      [validationStep, /\n        id: validate_editor\n/],
       [validationStep, /\n        timeout-minutes: 10\n/],
-      [validationStep, /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: validation and central cleanup must use the same trusted editor root`],
-      [validationStep, /-CiManagedOnly/],
-      [validationStep, /-RequireHealthyExisting/],
+      [validationStep, /shell: pwsh -NoProfile -NonInteractive -Command "\. '\{0\}'"/, `${label}: the gate must not inherit a runner profile`],
+      [validationStep, /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)[\s\S]*-DiagnosticsPath \(Join-Path \$env:RUNNER_TEMP 'dx-unity-editor-validation'\)[\s\S]*-CiManagedOnly[\s\S]*-RequireHealthyExisting/, `${label}: validation must pin the trusted editor root, refuse fallback installs, and write its evidence outside the workspace so a failed gate still uploads it`],
+      [bindingStep, /dx-unity-editor-validation\\ensure-editor-summary\.json'[\s\S]*ConvertFrom-Json[\s\S]*\[string\]::Equals\(\$actual, \$expected, \[StringComparison\]::OrdinalIgnoreCase\)[\s\S]*UNITY_EDITOR_PATH=\$expected/, `${label}: bind must read the preserved evidence, prove the canonical editor, then export the path`],
+      [uploadStep, /path: \$\{\{ runner\.temp \}\}\/dx-unity-editor-validation\n/, `${label}: evidence upload must not depend on a step that may never run`],
       [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
       [acquireStep, /\n        id: acquire_lock\n/],
       [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],

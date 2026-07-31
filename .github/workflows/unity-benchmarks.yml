@@ -52,6 +52,84 @@ jobs:
           - editmode
           - playmode
     steps:
+      - name: Remove stale Unity editor validator
+        timeout-minutes: 2
+        shell: pwsh -NoProfile -Command ". '{0}'"
+        run: |
+          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\', '/')
+          $parent = [IO.Path]::GetFullPath((Join-Path $workspace '.ci'))
+          $target = [IO.Path]::GetFullPath((Join-Path $parent 'unity-helpers'))
+          if (-not $target.StartsWith("$workspace\", [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Validator checkout path escaped the workspace.'
+          }
+          if (Test-Path -LiteralPath $parent) {
+            $parentItem = Get-Item -LiteralPath $parent -Force
+            if (($parentItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw 'Validator checkout parent is a reparse point.'
+            }
+          }
+          if (Test-Path -LiteralPath $target) {
+            $targetItem = Get-Item -LiteralPath $target -Force
+            if (($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              $targetItem.Delete()
+            } else {
+              Remove-Item -LiteralPath $target -Recurse -Force
+            }
+          }
+          if (Test-Path -LiteralPath $target) {
+            throw 'Validator checkout directory could not be removed.'
+          }
+
+      - name: Checkout trusted Unity editor validator
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: core.hooksPath
+          GIT_CONFIG_VALUE_0: /dev/null
+          GIT_CONFIG_NOSYSTEM: 1
+          GIT_CONFIG_GLOBAL: /dev/null
+        with:
+          repository: Ambiguous-Interactive/unity-helpers
+          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
+          path: .ci/unity-helpers
+          persist-credentials: false
+          clean: true
+
+      - name: Require manually installed Unity editor
+        timeout-minutes: 10
+        shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
+        run: |
+          & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -ProvisioningProfile ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }} `
+            -DiagnosticsPath (Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation') `
+            -CiManagedOnly `
+            -RequireHealthyExisting
+
+      - name: Bind validated Unity editor
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          # ensure-editor writes this summary from a finally block, so the evidence
+          # exists for a failed gate too, and writing it under RUNNER_TEMP keeps it
+          # out of reach of the repository checkout that follows.
+          $source = Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation\ensure-editor-summary.json'
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Unity editor validation evidence was not written: $source"
+          }
+          $summary = Get-Content -LiteralPath $source -Raw | ConvertFrom-Json
+          $expected = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3\${{ matrix.unity-version }}\Editor\Unity.exe'))
+          # A summary written by a failed gate can record no editor at all, and
+          # GetFullPath('') throws an ArgumentException instead of saying so.
+          $recorded = [string]$summary.editorPath
+          $actual = if ($recorded) { [IO.Path]::GetFullPath($recorded) } else { '(none recorded)' }
+          if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Validated editor '$actual' did not match the canonical editor '$expected'."
+          }
+          "UNITY_EDITOR_PATH=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Enable Git long paths
         timeout-minutes: 2
         shell: pwsh
@@ -66,15 +144,6 @@ jobs:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
           lfs: true
-          persist-credentials: false
-
-      - name: Checkout Unity runner maintenance
-        timeout-minutes: 5
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: Ambiguous-Interactive/unity-helpers
-          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
-          path: .ci/unity-helpers
           persist-credentials: false
 
       - name: Print runner diagnostics
@@ -128,27 +197,10 @@ jobs:
           include-perf: "true"
           target: "${{ matrix.test-mode }}"
 
-      # Unity work skips when no assembly matched. Editor validation,
-      # credential validation, and lock acquisition remain unconditional. The
+      # Unity work skips when no assembly matched. Credential validation and
+      # lock acquisition remain unconditional. The editor gate ran before the
+      # repository checkout, so a failure there has already failed the job. The
       # benchmark list is currently non-empty, so this is defense-in-depth.
-      - name: Validate installed Unity Editor
-        id: validate_editor
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $artifactsPath = '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
-          $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
-          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
-          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $editor = & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -CiManagedOnly `
-            -ProvisioningProfile EditorOnly `
-            -DiagnosticsPath $diagnosticsFile `
-            -RequireHealthyExisting
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-
       - name: Validate Unity license secrets
         timeout-minutes: 2
         uses: ./.github/actions/validate-unity-license
@@ -182,13 +234,13 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-benchmark-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}/editor-validation
+          path: ${{ runner.temp }}/dx-unity-editor-validation
           if-no-files-found: warn
           retention-days: 90
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.validate_editor.outcome == 'success' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 120
         shell: pwsh
         env:

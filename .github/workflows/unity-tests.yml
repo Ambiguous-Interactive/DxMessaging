@@ -22,6 +22,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  head-check:
+    name: Unity head freshness
+    # A second push to a pull request queues a second full matrix and does not
+    # retire the first. `cancel-in-progress: false` above is deliberate -- a
+    # hard cancel mid-lock is the exact scenario the four-layer license-return
+    # guarantee exists to avoid -- so the superseded run keeps the concurrency
+    # group until it has burned through every leg, and the run for the commit
+    # that matters cannot start. `Unity CI Success` is then absent on the
+    # current head, which reads as a blocked pull request on a check nobody
+    # misconfigured.
+    #
+    # Deciding it here, on GitHub-hosted infrastructure and before the lock is
+    # in reach, costs a superseded run one cheap job instead of nine
+    # self-hosted ones. The per-leg `Require current PR head before setup`
+    # guard stays: it covers the push that lands after this job has already
+    # passed.
+    #
+    # Fail open. Anything other than a pull request, and any lookup that does
+    # not return a head SHA, reports `superseded=false` and runs the matrix.
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      superseded: ${{ steps.head.outputs.superseded }}
+    steps:
+      - name: Compare the event head against the live pull-request head
+        id: head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          superseded=false
+          if [ "${EVENT_NAME}" = pull_request ]; then
+            live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" || live=
+            if [ -z "${live}" ]; then
+              echo "::warning::Live head lookup failed; treating ${EVENT_HEAD_SHA} as current."
+            elif [ "${live}" != "${EVENT_HEAD_SHA}" ]; then
+              echo "::notice::${EVENT_HEAD_SHA} is superseded by ${live}; skipping the Unity matrix."
+              superseded=true
+            fi
+          fi
+          echo "superseded=${superseded}" >> "${GITHUB_OUTPUT}"
+
   runner-preflight:
     name: Self-hosted runner registration preflight
     # Runs on GitHub-hosted infrastructure before any self-hosted matrix entry
@@ -34,11 +80,14 @@ jobs:
     # can check anything. Running it there cannot pass, and the licensed Unity
     # secrets below are unreadable for the same reason. Dependency bumps are
     # validated by the full matrix on the post-merge push to master.
+    needs:
+      - head-check
     if: >-
       ${{
-        github.event_name != 'pull_request' ||
+        needs.head-check.outputs.superseded != 'true' &&
+        (github.event_name != 'pull_request' ||
         (github.event.pull_request.user.login != 'dependabot[bot]' &&
-          github.event.pull_request.head.repo.full_name == github.repository)
+          github.event.pull_request.head.repo.full_name == github.repository))
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -56,6 +105,7 @@ jobs:
   unity-tests:
     name: Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}
     needs:
+      - head-check
       - runner-preflight
     # Same-repository pull requests run licensed validation with organization
     # secrets and no environment approval. Fork pull requests and Dependabot
@@ -64,9 +114,10 @@ jobs:
     # credentials rather than on the change under test.
     if: >-
       ${{
-        github.event_name != 'pull_request' ||
+        needs.head-check.outputs.superseded != 'true' &&
+        (github.event_name != 'pull_request' ||
         (github.event.pull_request.user.login != 'dependabot[bot]' &&
-          github.event.pull_request.head.repo.full_name == github.repository)
+          github.event.pull_request.head.repo.full_name == github.repository))
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
     timeout-minutes: 900
@@ -91,6 +142,84 @@ jobs:
           pull-request-number: ${{ github.event.pull_request.number }}
           expected-head-sha: ${{ github.event.pull_request.head.sha }}
 
+      - name: Remove stale Unity editor validator
+        timeout-minutes: 2
+        shell: pwsh -NoProfile -Command ". '{0}'"
+        run: |
+          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\', '/')
+          $parent = [IO.Path]::GetFullPath((Join-Path $workspace '.ci'))
+          $target = [IO.Path]::GetFullPath((Join-Path $parent 'unity-helpers'))
+          if (-not $target.StartsWith("$workspace\", [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Validator checkout path escaped the workspace.'
+          }
+          if (Test-Path -LiteralPath $parent) {
+            $parentItem = Get-Item -LiteralPath $parent -Force
+            if (($parentItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw 'Validator checkout parent is a reparse point.'
+            }
+          }
+          if (Test-Path -LiteralPath $target) {
+            $targetItem = Get-Item -LiteralPath $target -Force
+            if (($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              $targetItem.Delete()
+            } else {
+              Remove-Item -LiteralPath $target -Recurse -Force
+            }
+          }
+          if (Test-Path -LiteralPath $target) {
+            throw 'Validator checkout directory could not be removed.'
+          }
+
+      - name: Checkout trusted Unity editor validator
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: core.hooksPath
+          GIT_CONFIG_VALUE_0: /dev/null
+          GIT_CONFIG_NOSYSTEM: 1
+          GIT_CONFIG_GLOBAL: /dev/null
+        with:
+          repository: Ambiguous-Interactive/unity-helpers
+          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
+          path: .ci/unity-helpers
+          persist-credentials: false
+          clean: true
+
+      - name: Require manually installed Unity editor
+        timeout-minutes: 10
+        shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
+        run: |
+          & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -ProvisioningProfile ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }} `
+            -DiagnosticsPath (Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation') `
+            -CiManagedOnly `
+            -RequireHealthyExisting
+
+      - name: Bind validated Unity editor
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          # ensure-editor writes this summary from a finally block, so the evidence
+          # exists for a failed gate too, and writing it under RUNNER_TEMP keeps it
+          # out of reach of the repository checkout that follows.
+          $source = Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation\ensure-editor-summary.json'
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Unity editor validation evidence was not written: $source"
+          }
+          $summary = Get-Content -LiteralPath $source -Raw | ConvertFrom-Json
+          $expected = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3\${{ matrix.unity-version }}\Editor\Unity.exe'))
+          # A summary written by a failed gate can record no editor at all, and
+          # GetFullPath('') throws an ArgumentException instead of saying so.
+          $recorded = [string]$summary.editorPath
+          $actual = if ($recorded) { [IO.Path]::GetFullPath($recorded) } else { '(none recorded)' }
+          if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Validated editor '$actual' did not match the canonical editor '$expected'."
+          }
+          "UNITY_EDITOR_PATH=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Enable Git long paths
         timeout-minutes: 2
         shell: pwsh
@@ -105,15 +234,6 @@ jobs:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
           lfs: true
-          persist-credentials: false
-
-      - name: Checkout Unity runner maintenance
-        timeout-minutes: 5
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: Ambiguous-Interactive/unity-helpers
-          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
-          path: .ci/unity-helpers
           persist-credentials: false
 
       - name: Print runner diagnostics
@@ -166,33 +286,11 @@ jobs:
           target: "${{ matrix.test-mode }}"
           runtime-only: "${{ matrix.test-mode == 'standalone' && 'true' || 'false' }}"
 
-      # Unity work skips when no test assembly matched. Editor validation,
-      # credential validation, and lock acquisition remain unconditional.
+      # Unity work skips when no test assembly matched. Credential validation
+      # and lock acquisition remain unconditional. The editor gate ran before
+      # the repository checkout, so a failure there has already failed the job.
       # Editors and modules are installed manually by a runner administrator;
       # CI only verifies the exact trusted tool-cache install.
-      - name: Validate installed Unity Editor
-        id: validate_editor
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $artifactsPath = '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
-          $diagnosticsPath = Join-Path $artifactsPath 'editor-validation'
-          $diagnosticsFile = Join-Path $diagnosticsPath 'ensure-editor-summary.json'
-          New-Item -ItemType Directory -Force -Path $diagnosticsPath | Out-Null
-          $provisioningProfile = if ('${{ matrix.test-mode }}' -eq 'standalone') {
-            'StandaloneWindowsIl2Cpp'
-          } else {
-            'EditorOnly'
-          }
-          $editor = & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -CiManagedOnly `
-            -ProvisioningProfile $provisioningProfile `
-            -DiagnosticsPath $diagnosticsFile `
-            -RequireHealthyExisting
-          "UNITY_EDITOR_PATH=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
-
       - name: Validate Unity license secrets
         timeout-minutes: 2
         uses: ./.github/actions/validate-unity-license
@@ -238,13 +336,13 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: .artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}/editor-validation
+          path: ${{ runner.temp }}/dx-unity-editor-validation
           if-no-files-found: warn
           retention-days: 14
 
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.validate_editor.outcome == 'success' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         # 150 (was 120): the standalone leg builds a NON-development IL2CPP
         # player with the Release C++ configuration. Measured PR runs showed the
         # Debug C++ configuration reduces native compile time but makes the
@@ -388,15 +486,21 @@ jobs:
   unity-ci-success:
     name: Unity CI Success
     needs:
+      - head-check
       - runner-preflight
       - unity-tests
     # Exactly always() -- NEVER a falsifiable job-level if. A skipped required
     # check counts as passing and the latest run on a SHA wins, so a guard that
     # can be false on a pull_request could launder a red/pending gate into a
-    # false green. The step below validates the only two intentional skip
+    # false green. The step below validates the only three intentional skip
     # shapes: fork PRs and Dependabot PRs skip both licensed jobs (neither can
-    # read the organization secrets those jobs require). Every other run must
-    # execute Unity successfully.
+    # read the organization secrets those jobs require), and a superseded head
+    # skips them because the run for the current head is the one that counts.
+    # A superseded run cannot launder anything -- branch protection reads only
+    # the checks on the current head -- but it still has to report its shape
+    # rather than go absent. head-check itself is never allowed to skip or
+    # fail: it is what decides which of the two branches applies. Every other
+    # run must execute Unity successfully.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -404,13 +508,16 @@ jobs:
       - name: Verify Unity CI result shape
         shell: bash
         env:
+          HEAD_CHECK_RESULT: ${{ needs.head-check.result }}
           RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
           UNITY_TESTS_RESULT: ${{ needs.unity-tests.result }}
+          SUPERSEDED: ${{ needs.head-check.outputs.superseded }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
           set -euo pipefail
-          if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+          test "${HEAD_CHECK_RESULT}" = success
+          if [ "${SUPERSEDED}" = "true" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
             test "${RUNNER_PREFLIGHT_RESULT}" = skipped
             test "${UNITY_TESTS_RESULT}" = skipped
           else

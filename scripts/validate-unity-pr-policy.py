@@ -49,6 +49,12 @@ DEPENDABOT_PR_GUARD = re.compile(
 BLANKET_PR_REJECTION = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*&&"
 )
+# A pull request whose head has moved on must not schedule the licensed matrix:
+# `cancel-in-progress: false` is deliberate, so a superseded run would otherwise
+# hold the concurrency group through all nine legs while the current head waits.
+SUPERSEDED_GUARD = re.compile(
+    r"needs\.head-check\.outputs\.superseded\s*!=\s*'true'\s*&&"
+)
 WORKFLOW_EDITOR_MUTATION = re.compile(
     r"^\s*(?:"
     r"(?:Start-Process(?:\s+-FilePath)?|&|cmd(?:\.exe)?\s+/[ck])\s+"
@@ -766,6 +772,50 @@ def run_script(step: str) -> str:
         lines.append(line[10:] if line else "")
     require(bool(lines), "aggregate run script must not be empty")
     return "\n".join(lines)
+
+
+def run_head_check(script: str, event: str, live_head: str) -> str:
+    """Run the head-freshness script against a stub `gh` and return its decision."""
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        stub = root / "gh"
+        # The stub answers only the live-head lookup, so a script that asked a
+        # different endpoint gets nothing and the truth table below fails. An
+        # empty live head stands for a lookup that failed, so the stub exits
+        # non-zero the way the real CLI does rather than printing nothing.
+        stub.write_text(
+            "#!/bin/sh\n"
+            'case "$*" in\n'
+            "  *repos/Ambiguous-Interactive/DxMessaging/pulls/1*.head.sha*) ;;\n"
+            '  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;\n'
+            "esac\n"
+            f'[ -n "{live_head}" ] || exit 1\necho "{live_head}"\n',
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        output = root / "output"
+        output.touch()
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PATH": f"{root}{os.pathsep}{environment['PATH']}",
+                "GH_TOKEN": "stub",
+                "EVENT_NAME": event,
+                "PR_NUMBER": "1",
+                "EVENT_HEAD_SHA": "current",
+                "GITHUB_REPOSITORY": "Ambiguous-Interactive/DxMessaging",
+                "GITHUB_OUTPUT": str(output),
+            }
+        )
+        result = subprocess.run(
+            ["bash", "-c", script], env=environment, capture_output=True, text=True, check=False
+        )
+        require(result.returncode == 0, f"head-check script failed: {result.stderr}")
+        written = output.read_text(encoding="utf-8").strip()
+        require(
+            written.startswith("superseded="), f"head-check wrote no decision: {written!r}"
+        )
+        return written[len("superseded=") :]
 
 
 def find_unregistered_unity_automation(files: dict[str, str]) -> list[str]:
@@ -1577,6 +1627,38 @@ steps:
         BLANKET_PR_REJECTION.search(licensed) is None,
         "Unity job must not reject every pull request",
     )
+    head_check = job_block(source, "head-check")
+    require(
+        re.findall(r"^    runs-on:.*$", head_check, re.MULTILINE)
+        == ["    runs-on: ubuntu-latest"]
+        and LOCK_ACTION_PREFIX not in head_check,
+        "superseded decision must never reach a self-hosted runner or the build lock",
+    )
+    require(
+        "      superseded: ${{ steps.head.outputs.superseded }}\n" in head_check,
+        "head-check must publish the superseded decision",
+    )
+    for job_id in ("runner-preflight", "unity-tests"):
+        require(
+            SUPERSEDED_GUARD.search(job_block(source, job_id)) is not None,
+            f"{job_id} must not schedule work for a superseded head",
+        )
+    head_script = run_script(
+        step_block(head_check, "Compare the event head against the live pull-request head")
+    )
+    if os.name != "nt":
+        # The event head is always "current"; the live head is what moves.
+        # name, event, live head, expected superseded decision
+        for name, event, live, expected in (
+            ("push", "push", "", "false"),
+            ("current PR head", "pull_request", "current", "false"),
+            ("superseded PR head", "pull_request", "moved-on", "true"),
+            ("failed live lookup", "pull_request", "", "false"),
+        ):
+            require(
+                run_head_check(head_script, event, live) == expected,
+                f"head-check {name}: expected superseded={expected}",
+            )
     require(
         "environment:" not in licensed,
         "Unity job must use organization secrets without an environment approval gate",
@@ -1616,8 +1698,10 @@ steps:
     aggregate_step = step_block(gate, "Verify Unity CI result shape")
     require("        shell: bash\n" in aggregate_step, "aggregate must use bash")
     expected_bindings = {
+        "HEAD_CHECK_RESULT": "${{ needs.head-check.result }}",
         "RUNNER_PREFLIGHT_RESULT": "${{ needs.runner-preflight.result }}",
         "UNITY_TESTS_RESULT": "${{ needs.unity-tests.result }}",
+        "SUPERSEDED": "${{ needs.head-check.outputs.superseded }}",
         "FORK_PR": (
             "${{ github.event_name == 'pull_request' && "
             "github.event.pull_request.head.repo.full_name != github.repository }}"
@@ -1636,7 +1720,8 @@ steps:
 
     script = run_script(aggregate_step)
     expected_script = """set -euo pipefail
-if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+test "${HEAD_CHECK_RESULT}" = success
+if [ "${SUPERSEDED}" = "true" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
   test "${RUNNER_PREFLIGHT_RESULT}" = skipped
   test "${UNITY_TESTS_RESULT}" = skipped
 else
@@ -1644,23 +1729,28 @@ else
   test "${UNITY_TESTS_RESULT}" = success
 fi"""
     require(script == expected_script, "aggregate result-shape script drifted")
-    # name, preflight, unity, FORK_PR, DEPENDABOT_PR, exit code
+    # name, head-check, preflight, unity, SUPERSEDED, FORK_PR, DEPENDABOT_PR, exit code
     cases = (
-        ("same-repository PR", "success", "success", "false", "false", 0),
-        ("fork PR", "skipped", "skipped", "true", "false", 0),
-        ("Dependabot PR", "skipped", "skipped", "false", "true", 0),
-        ("same-repository PR skipped Unity", "success", "skipped", "false", "false", 1),
-        ("fork unexpectedly ran Unity", "skipped", "success", "true", "false", 1),
-        ("Dependabot unexpectedly ran Unity", "skipped", "success", "false", "true", 1),
-        ("Dependabot unexpectedly ran preflight", "success", "skipped", "false", "true", 1),
+        ("same-repository PR", "success", "success", "success", "false", "false", "false", 0),
+        ("fork PR", "success", "skipped", "skipped", "false", "true", "false", 0),
+        ("Dependabot PR", "success", "skipped", "skipped", "false", "false", "true", 0),
+        ("superseded PR", "success", "skipped", "skipped", "true", "false", "false", 0),
+        ("same-repository PR skipped Unity", "success", "success", "skipped", "false", "false", "false", 1),
+        ("fork unexpectedly ran Unity", "success", "skipped", "success", "false", "true", "false", 1),
+        ("Dependabot unexpectedly ran Unity", "success", "skipped", "success", "false", "false", "true", 1),
+        ("Dependabot unexpectedly ran preflight", "success", "success", "skipped", "false", "false", "true", 1),
+        ("superseded run still ran Unity", "success", "skipped", "success", "true", "false", "false", 1),
+        ("current head skipped Unity after a failed decision", "failure", "skipped", "skipped", "", "false", "false", 1),
     )
     if os.name != "nt":
-        for name, preflight, unity, fork, dependabot, expected in cases:
+        for name, head, preflight, unity, superseded, fork, dependabot, expected in cases:
             environment = os.environ.copy()
             environment.update(
                 {
+                    "HEAD_CHECK_RESULT": head,
                     "RUNNER_PREFLIGHT_RESULT": preflight,
                     "UNITY_TESTS_RESULT": unity,
+                    "SUPERSEDED": superseded,
                     "FORK_PR": fork,
                     "DEPENDABOT_PR": dependabot,
                 }
