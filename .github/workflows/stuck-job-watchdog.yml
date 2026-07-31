@@ -192,7 +192,14 @@ jobs:
           # The trap makes every exit emit the buckets, and labels the ones
           # that did not come from `finish` so an unexpected abort is not
           # mistaken for a considered verdict.
-          # shellcheck disable=SC2317 # invoked indirectly by the EXIT trap below.
+          # Invoked indirectly by the EXIT trap below, so static analysis cannot
+          # see the call. Both codes are needed because the version numbering
+          # differs: 0.9 flags the body as unreachable (SC2317), while newer
+          # builds -- including the one inside the actionlint container CI runs
+          # -- flag the function as never invoked (SC2329). Note that a comment
+          # line may not BEGIN with the analyzer's own name, or it is parsed as
+          # a malformed directive and the whole script stops being checked.
+          # shellcheck disable=SC2317,SC2329
           on_exit() {
             local code=$?
             if (( code != 0 )) && (( deliberate_exit == 0 )); then
