@@ -1465,11 +1465,18 @@ def validate_stuck_job_watchdog() -> None:
                 inventory: one_group,
                 "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
                 "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                # Ordered BEFORE the plain workflow route: the stub matches
+                # substrings in insertion order, so `actions/workflows/42` would
+                # otherwise swallow the dispatches POST and answer it silently.
+                "actions/workflows/42/dispatches": (0, "DISPATCH-REQUESTED"),
                 "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
                 "contents/.github/workflows/perf-numbers.yml": (0, DISPATCHABLE_WORKFLOW_BODY),
             },
             0,
-            ("cancelled 1", "re-dispatching workflow 42"),
+            # "cancelled 1" and the log line both precede the POST, so neither
+            # proves it happened. Only the stub's response to the dispatches
+            # call proves the request was actually made.
+            ("cancelled 1", "re-dispatching workflow 42", "DISPATCH-REQUESTED"),
             (),
         ),
         (
@@ -2175,6 +2182,26 @@ def validate_post_merge_push_loop() -> None:
         code == 1,
         f"post-merge push loop nothing-to-commit exit: a failed generator that "
         f"leaves no change must still fail the job, got exit {code}",
+    )
+
+    # The "No staged changes remain" exit is the second of the two sites where
+    # the regenerate verdict could be dropped undetected. It is reached when a
+    # change exists when the loop starts but is gone by staging time, which is
+    # what a failing generator's revert does on the refreshed head.
+    with tempfile.TemporaryDirectory() as directory:
+        code, pushed = run_maintenance_push_loop(
+            script,
+            Path(directory),
+            99,
+            1,
+            "llms",
+            quiet_other=True,
+            advance_before_run=True,
+        )
+    require(
+        code == 1,
+        f"post-merge push loop no-staged-changes exit: a failed generator must fail "
+        f"the job through this branch too, got exit {code}",
     )
 
     # A push rejected while master stood still is a genuine failure with no

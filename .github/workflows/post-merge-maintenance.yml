@@ -279,6 +279,11 @@ jobs:
 
             base_sha="$(git rev-parse HEAD)"
             git add -- "${generated[@]}"
+            # Belt-and-braces after the unstaged check above. Deliberately NOT
+            # pinned by a test: `git add` makes the staged and unstaged views
+            # agree, so reaching here needs them to disagree, and every fixture
+            # that tries ends up exercising the branch above instead. A case for
+            # a branch that cannot be reached would only look like coverage.
             if git diff --cached --quiet -- "${generated[@]}"; then
               echo "No staged changes remain; nothing to commit."
               exit "${regenerate_failed}"
