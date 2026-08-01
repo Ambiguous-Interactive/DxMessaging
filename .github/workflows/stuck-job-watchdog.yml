@@ -338,7 +338,11 @@ jobs:
           # and `ambiguous-interactive-organization-builds` -- so that premise
           # was simply wrong, and the risk documented in #335 was live rather
           # than hypothetical.
-          if ! group_rows_raw="$(jq -r '.[] | "\(.id)\t\(.visibility // "all")\t\(.name)"' < "${runner_groups_json}")"; then
+          # `!= false`, NOT `// true`: jq's `//` treats an explicit `false` as
+          # absent and yields the right-hand side, so a group that genuinely
+          # refuses public repositories would read as allowing them -- the
+          # exact inversion of the check. Caught by the fixture for it.
+          if ! group_rows_raw="$(jq -r '.[] | "\(.id)\t\(.visibility // "all")\t\(.allows_public_repositories != false)\t\(.name)"' < "${runner_groups_json}")"; then
             fail_closed "could not parse the organization runner-group inventory."
           fi
           group_rows=()
@@ -352,27 +356,45 @@ jobs:
           excluded_groups=()
           group_repos_json="$(mktemp)"
           for group_row in "${group_rows[@]}"; do
-            group_id="${group_row%%$'\t'*}"
-            group_rest="${group_row#*$'\t'}"
-            group_visibility="${group_rest%%$'\t'*}"
-            group_name="${group_rest#*$'\t'}"
+            IFS=$'\t' read -r group_id group_visibility group_public group_name <<< "${group_row}"
+            # A group can be `visibility: all` and still refuse PUBLIC
+            # repositories, and this repository is public -- its runners are
+            # then unusable capacity, which is the wrongful cancel this walk
+            # exists to prevent. (Cursor Bugbot.)
+            #
+            # Excluded unconditionally rather than only when we know we are
+            # public, which would need another API call and another failure
+            # mode. The cost of being wrong is asymmetric: for a PRIVATE
+            # repository this under-counts capacity, and under-counting can only
+            # produce a starvation report, never a cancel. Over-counting is what
+            # cancels a live run.
+            if [[ "${group_public}" != "true" ]]; then
+              excluded_groups+=("${group_name} (refuses public repositories)")
+              continue
+            fi
             if [[ "${group_visibility}" == "all" ]]; then
               runner_group_ids+=("${group_id}")
               continue
             fi
             if ! gh_reader api --paginate \
                 "orgs/${OWNER}/actions/runner-groups/${group_id}/repositories?per_page=100" \
-                | jq -s '[.[] | (.repositories // [])[] | .id]' > "${group_repos_json}"; then
+                | jq -s '[.[] | (.repositories // [])[] | .id | tostring]' > "${group_repos_json}"; then
               fail_closed "could not read which repositories may use runner group ${group_name} (${group_id})."
             fi
-            if [[ "$(jq --argjson want "${REPO_ID}" 'any(.[]; . == $want)' < "${group_repos_json}")" == "true" ]]; then
+            # `--arg`, not `--argjson`: an empty or non-numeric REPO_ID makes
+            # `--argjson` fail to parse, which under `set -e` aborts the script
+            # WITHOUT reaching `fail_closed` -- an audit that dies instead of
+            # reporting. Both sides are compared as strings. (GitHub Copilot.)
+            if [[ "$(jq --arg want "${REPO_ID}" 'any(.[]; . == $want)' < "${group_repos_json}")" == "true" ]]; then
               runner_group_ids+=("${group_id}")
             else
               excluded_groups+=("${group_name}")
             fi
           done
           if (( ${#excluded_groups[@]} > 0 )); then
-            log_summary "Runner groups not visible to ${REPO} (excluded from capacity): $(IFS=', '; echo "${excluded_groups[*]}")"
+            # NOT `IFS=', '` with `"${arr[*]}"`: bash joins with only the FIRST
+            # character of IFS there, so that renders `a,b`. (GitHub Copilot.)
+            log_summary "Runner groups not usable by ${REPO} (excluded from capacity): $(printf '%s, ' "${excluded_groups[@]}" | sed 's/, $//')"
           fi
           if (( ${#runner_group_ids[@]} == 0 )); then
             fail_closed "no organization runner group is visible to ${REPO}; the inventory cannot be trusted."

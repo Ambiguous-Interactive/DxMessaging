@@ -1888,7 +1888,7 @@ def validate_stuck_job_watchdog() -> None:
                 ),
             },
             0,
-            ("starved", "not visible to", "org-builds", "Not dispatcher-stuck; no action."),
+            ("starved", "not usable by", "org-builds", "Not dispatcher-stuck; no action."),
             # NOT "dispatcher-stuck" on its own: the starvation line legitimately
             # says "Not dispatcher-stuck", so the loose needle forbids the very
             # text this case wants to see.
@@ -1912,7 +1912,38 @@ def validate_stuck_job_watchdog() -> None:
             },
             0,
             ("dispatcher-stuck", "cancelled 1"),
-            ("not visible to",),
+            ("not usable by",),
+        ),
+        (
+            # `visibility: all` is not sufficient. A group that refuses PUBLIC
+            # repositories cannot serve this one, and counting its idle runner
+            # is exactly the over-count that cancels a live run.
+            "a group refusing public repositories is not capacity",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: (
+                    0,
+                    {
+                        "runner_groups": [
+                            {"id": 7, "name": "Default", "visibility": "all"},
+                            {
+                                "id": 9,
+                                "name": "private-only",
+                                "visibility": "all",
+                                "allows_public_repositories": False,
+                            },
+                        ]
+                    },
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "runner-groups/7/runners": watchdog_runners(("MAC", "online", False, ["self-hosted", "macOS"])),
+                "runner-groups/9/runners": watchdog_runners(
+                    ("ELI", "online", False, self_hosted), first_id=70
+                ),
+            },
+            0,
+            ("starved", "refuses public repositories", "private-only"),
+            ("cancelled 1", "queued for cancel"),
         ),
         (
             # Every group restricted, none listing us: capacity is unknowable,
