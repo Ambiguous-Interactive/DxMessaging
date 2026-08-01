@@ -2134,6 +2134,47 @@ def run_maintenance_gate(script: str, llms: str, issue_template: str) -> int:
     ).returncode
 
 
+def validate_msvc_gate_is_reachable() -> None:
+    """Every workflow declaring the MSVC gate must be able to run it.
+
+    The gate is gated on `matrix.test-mode == 'standalone'`, and it was copied
+    into `unity-benchmarks.yml`, whose matrix declares only editmode and
+    playmode. It could never run there: dead weight that implied IL2CPP coverage
+    the job does not have, on a workflow whose Mono legs never touch `cl.exe`.
+
+    This is the same class as everything else this file pins -- a check that
+    cannot fail, here a check that cannot RUN -- so it is asserted rather than
+    left to the next reader to notice. (Cursor Bugbot.)
+    """
+    for workflow in sorted(Path(".github/workflows").glob("*.yml")):
+        source = workflow.read_text(encoding="utf-8")
+        if "assert-msvc-toolchain" not in source:
+            continue
+        condition = re.search(
+            r"- name: [^\n]*MSVC[^\n]*\n\s+if: \$\{\{ matrix\.test-mode == '(\w+)' \}\}",
+            source,
+        )
+        require(
+            condition is not None,
+            f"{workflow.name}: the MSVC gate must stay gated on a `matrix.test-mode` "
+            f"comparison, so this check can tell which mode it needs",
+        )
+        needed = condition.group(1)
+        modes_block = re.search(r"^        test-mode:\n((?:          - \w+\n)+)", source, re.M)
+        require(
+            modes_block is not None,
+            f"{workflow.name}: declares the MSVC gate but no `test-mode` matrix was found",
+        )
+        modes = re.findall(r"- (\w+)", modes_block.group(1))
+        require(
+            needed in modes,
+            f"{workflow.name}: the MSVC gate requires test-mode {needed!r}, which this "
+            f"workflow's matrix does not declare ({modes}). The step can never run -- "
+            f"either add the mode or drop the step; a gate that cannot run reads as "
+            f"coverage that does not exist.",
+        )
+
+
 def validate_post_merge_terminal_gate() -> None:
     """Pin the step that decides the job's verdict.
 
@@ -3527,6 +3568,7 @@ fi"""
 
     validate_stuck_job_watchdog()
     validate_post_merge_push_loop()
+    validate_msvc_gate_is_reachable()
     validate_post_merge_terminal_gate()
     validate_post_merge_cancellation_policy()
     validate_post_merge_steps()

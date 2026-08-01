@@ -181,10 +181,12 @@ function Invoke-VsWhere {
     #
     # `-products *` so Build Tools installs count, not just full Visual Studio.
     #
-    # `-requiresAny` with the version-agnostic component AND the workload one:
-    # the v143-only filter rejects an install pinned to an older toolset, which
-    # would report `no-visual-studio` for a host whose older toolset
-    # `Test-MsvcToolchain` is explicitly written to accept.
+    # `-requiresAny` makes the two `-requires` an OR: an install satisfying
+    # EITHER the version-agnostic C++ component or the Build Tools workload
+    # counts. Requiring both would reject an install pinned to an older toolset
+    # -- reporting `no-visual-studio` for a host whose older toolset
+    # `Test-MsvcToolchain` is explicitly written to accept. (GitHub Copilot
+    # flagged the earlier wording, which said "AND" and read as the opposite.)
     $stdout = & $Path -latest -products '*' -requiresAny `
         -requires 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' `
         -requires 'Microsoft.VisualStudio.Workload.VCTools' `
