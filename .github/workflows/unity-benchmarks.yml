@@ -201,6 +201,19 @@ jobs:
       # lock acquisition remain unconditional. The editor gate ran before the
       # repository checkout, so a failure there has already failed the job. The
       # benchmark list is currently non-empty, so this is defense-in-depth.
+      # IL2CPP compiles generated C++ with `cl.exe`; Mono legs never touch it.
+      # `assert-unity-host-prereqs` covers the VC++ RUNTIME (so the Editor
+      # launches) but not the BUILD TOOLS (so IL2CPP can compile), and that gap
+      # cost three licence seats and ~2h on 2026-07-31 (#333): three standalone
+      # legs each took the organization lock, consumed a seat, built for twenty
+      # minutes, then died with a message naming neither the host nor the cause.
+      # Runs BEFORE the lock so a broken host costs seconds, not a seat.
+      - name: Require an MSVC C++ toolchain for IL2CPP
+        if: ${{ matrix.test-mode == 'standalone' }}
+        timeout-minutes: 3
+        shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
+        run: ./scripts/unity/assert-msvc-toolchain.ps1
+
       - name: Validate Unity license secrets
         timeout-minutes: 2
         uses: ./.github/actions/validate-unity-license
