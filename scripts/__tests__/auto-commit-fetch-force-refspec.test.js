@@ -17,12 +17,11 @@ const path = require("node:path");
 // the update succeeds, the subsequent SHA comparison runs, and the step proceeds (or
 // skips) deliberately. The invariant is uniform across the full ("refs/heads/x:...")
 // and short ("${BRANCH}:...") source forms, and whether the shallow boundary comes
-// from `clone --depth 1` (stuck-job-watchdog) or `fetch --depth=1` (perf/llms).
+// from `clone --depth 1` (stuck-job-watchdog) or `fetch --depth=1` (perf/maintenance).
 const WORKFLOW_DIR = path.resolve(__dirname, "..", "..", ".github", "workflows");
 const WORKFLOWS = [
   "perf-numbers.yml",
-  "update-llms-txt.yml",
-  "update-issue-template-versions.yml",
+  "post-merge-maintenance.yml",
   "stuck-job-watchdog.yml"
 ];
 

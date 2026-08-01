@@ -201,6 +201,14 @@ jobs:
       # lock acquisition remain unconditional. The editor gate ran before the
       # repository checkout, so a failure there has already failed the job. The
       # benchmark list is currently non-empty, so this is defense-in-depth.
+      #
+      # No MSVC toolchain assertion here, deliberately: this workflow's matrix is
+      # editmode and playmode only, both Mono, and Mono never invokes `cl.exe`.
+      # The #333 gate lives in `unity-tests.yml` and `perf-numbers.yml`, whose
+      # matrices declare `standalone`. A copy was carried here briefly and could
+      # never run -- `validate_msvc_gate_is_reachable` now fails any workflow
+      # whose matrix lacks the mode its gate is keyed to.
+
       - name: Validate Unity license secrets
         timeout-minutes: 2
         uses: ./.github/actions/validate-unity-license
@@ -361,7 +369,19 @@ jobs:
         timeout-minutes: 2
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@ce12fde93e67a27062350601fb97e4a2f546d405
         with:
-          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          # A leg that aborts before `Acquire organization Unity lock` runs never
+          # took a seat, and this gate's own contract treats `acquired: false` as
+          # proof that licensed cleanup was not required. Feeding it the skipped
+          # step's EMPTY output instead made it fail closed on work that never
+          # started, so a leg with one honest failure reported two (#327).
+          #
+          # This does not weaken the gate. It reads `outcome`, not `acquired`, and
+          # only the two values that prove the step never executed map to 'false'.
+          # An acquire that RAN and failed part-way reports outcome=failure while
+          # `acquired` reads empty, so the empty value still flows through and the
+          # gate still fails -- that ambiguous shape is the seat leak the bare
+          # `if: always()` above exists to catch, and it stays caught.
+          acquired: ${{ (steps.acquire_lock.outcome == 'skipped' || steps.acquire_lock.outcome == '') && 'false' || steps.acquire_lock.outputs.acquired }}
           classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
           cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
           cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}

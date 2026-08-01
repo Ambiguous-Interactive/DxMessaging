@@ -1,0 +1,410 @@
+---
+name: Post-Merge Maintenance
+
+# One flow for every generated file the default branch self-heals, so a merge
+# produces at most ONE follow-up commit instead of one per generator (#330).
+# It replaces update-llms-txt.yml and update-issue-template-versions.yml, which
+# were the same 180-line workflow twice: same App token, same branch refresh,
+# same three-attempt push loop, different `npm run` line. Two of them could land
+# two bot commits on master for a single merge, and each of those commits
+# re-triggered the full push-side workflow set.
+#
+# What it regenerates, and why each is self-healing rather than only gated:
+#   * llms.txt + the README skill-count claim (`check:llms-txt` gates PRs).
+#   * The bug-report package-version dropdown (`check:issue-template-versions`
+#     gates PRs; release-prepare.yml also regenerates it proactively so the
+#     release PR passes its own gate).
+# The `--check` gates still block a stale hand-edit on a pull request. This is
+# the backstop for every path that reaches master without running them.
+#
+# Deliberately NOT folded in: the perf-numbers.yml doc + baseline auto-commit.
+# It runs on a self-hosted Windows runner behind the organization Unity build
+# lock and can take tens of minutes, so collapsing these two-minute generators
+# behind it would delay them by the benchmark's whole queue for no benefit.
+#
+# The built-in GITHUB_TOKEN cannot push to a protected branch
+# (github-actions[bot] is a system account, not a selectable branch-protection
+# bypass actor), so the push is authenticated by a GitHub App installation
+# token (secrets.AUTO_COMMIT_APP_ID + secrets.AUTO_COMMIT_APP_PRIVATE_KEY)
+# whose App is allowed to bypass branch protection. If those secrets are absent
+# the commit degrades to a logged no-op (regeneration + validation still run).
+# See docs/runbooks/perf-numbers-auto-commit.md.
+on:
+  schedule:
+    # Weekly on Monday at 9:00 AM UTC. One slot now covers both generators; the
+    # 10:00 slot the issue-template workflow used to occupy is retired.
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    # The union of both generators' inputs, plus the one output the retired
+    # issue-template workflow already watched so a hand-edited dropdown is
+    # corrected without waiting for the weekly cron.
+    #
+    # llms.txt is deliberately NOT listed even though it is the other output.
+    # This job's own commit is pushed with an App token, which (unlike the
+    # built-in GITHUB_TOKEN) re-triggers workflows, so listing it would make
+    # every real regeneration schedule a second, guaranteed no-op run -- the
+    # churn this workflow exists to reduce. A hand-edit to llms.txt is already
+    # blocked on the pull request by `check:llms-txt`.
+    paths:
+      - package.json
+      - CHANGELOG.md
+      - .llm/skills/**
+      - .github/ISSUE_TEMPLATE/bug_report.yml
+      - scripts/update-llms-txt.js
+      - scripts/generate-issue-template-versions.js
+      - .github/workflows/post-merge-maintenance.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The push is authenticated by the GitHub App installation token, not the job's
+# GITHUB_TOKEN, so contents:read is all this job's own token needs (checkout).
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    name: Regenerate committed artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Single source for what each generator owns. Every stage -- the two
+      # regeneration steps, the change probe, the staging step, and the push
+      # loop -- reads these, so a new generator is added in one place and
+      # cannot be half-wired. They are kept SEPARATE, not merged into one list,
+      # because each generator reverts only its own files when it fails.
+      LLMS_PATHS: "llms.txt README.md"
+      ISSUE_TEMPLATE_PATHS: ".github/ISSUE_TEMPLATE/bug_report.yml"
+
+    steps:
+      - name: Check for the auto-commit GitHub App credentials
+        id: check-autocommit-app
+        # Degrade to a logged no-op when the App is not provisioned, instead of a
+        # red build. See docs/runbooks/perf-numbers-auto-commit.md.
+        env:
+          AUTO_COMMIT_APP_ID: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          AUTO_COMMIT_APP_PRIVATE_KEY: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${AUTO_COMMIT_APP_ID:-}" ] && \
+             [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then
+            echo "has-app=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::warning::AUTO_COMMIT_APP_* secrets are not set; skipping the post-merge auto-commit. See docs/runbooks/perf-numbers-auto-commit.md."
+            echo "has-app=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Generate auto-commit GitHub App token
+        id: app-token
+        if: steps.check-autocommit-app.outputs.has-app == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
+          private-key: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          persist-credentials: false
+
+      - name: Refresh branch before generating
+        if: steps.check-autocommit-app.outputs.has-app == 'true'
+        env:
+          GH_FETCH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth_header="$(printf 'x-access-token:%s' "${GH_FETCH_TOKEN}" | base64 | tr -d '\n')"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            fetch --no-tags --depth=1 origin \
+            "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          git checkout -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
+          echo "Refreshed ${GITHUB_REF_NAME} to $(git rev-parse HEAD) before regenerating."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.18.0"
+          cache: npm
+          cache-dependency-path: package.json
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i --no-audit --no-fund
+          fi
+
+      # One step per generator, and the second runs even when the first failed.
+      # Merging these into a single `set -e` block would re-couple what two
+      # independent workflows used to keep apart: a `bug_report.yml` the
+      # dropdown generator cannot process would abort the step before the
+      # llms.txt drift on master ever got corrected, and vice versa.
+      #
+      # Each generator runs its own `--check` immediately after, and REVERTS
+      # its own files if that check rejects them. That is what makes it safe
+      # for the commit step to run after a failure: the tree can only ever
+      # carry output a checker accepted, never a half-written file. The job
+      # still goes red at the end, so nothing is swallowed.
+      - name: Regenerate llms.txt
+        id: gen_llms
+        # Same `!cancelled()` as its sibling below, and for a second reason.
+        # With no condition at all this step defaulted to `success()`, so a
+        # failure anywhere earlier -- `Install dependencies` most plausibly --
+        # SKIPPED it while the sibling still ran under `!cancelled()`, still
+        # converged, and still pushed. The terminal gate counted `skipped` as
+        # converged, so master could take an auto-commit that refreshed the
+        # dropdown and never refreshed llms.txt. Running it means a real failure
+        # is reported as a failure, by the generator that had it. (Bugbot.)
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          if npm run update:llms-txt && npm run check:llms-txt; then
+            exit 0
+          fi
+          echo "::error::llms.txt generation did not converge; discarding its output."
+          # shellcheck disable=SC2086 # LLMS_PATHS is an intentional word list.
+          git checkout -- ${LLMS_PATHS}
+          # VERIFY the revert, do not assume it. The commit step is deliberately
+          # allowed to run after a failed generator, and the whole reason that is
+          # safe is the invariant "the tree can only ever carry output a checker
+          # accepted". A `git checkout` that fails -- a pathspec matching
+          # nothing, a file the generator deleted -- breaks exactly that
+          # invariant and would hand rejected output to the push step.
+          #
+          # `set -e` does NOT help here, which is worth stating because it is the
+          # obvious-looking fix: measured, both `set -uo pipefail` and
+          # `set -euo pipefail` leave the rejected content in the worktree and
+          # exit 1. Stopping the step earlier does not un-modify a file. Only
+          # refusing the push does. (GitHub Copilot raised the risk.)
+          # shellcheck disable=SC2086
+          if ! git diff --quiet -- ${LLMS_PATHS}; then
+            echo "::error::could not discard the rejected llms.txt output; the working tree still carries it, so this run must not push."
+            echo "revert-failed=true" >> "${GITHUB_OUTPUT}"
+          fi
+          exit 1
+
+      - name: Regenerate the issue-template version dropdown
+        id: gen_issue_template
+        # `!cancelled()`, NOT `always()`. Both run after a failed sibling, which
+        # is the isolation this step exists for -- but `always()` also runs after
+        # a CANCEL, and `cancel-in-progress: true` above makes that routine: a
+        # second push kills the first mid-flight. A generator killed mid-write
+        # never reaches its own revert, so continuing past a cancel is how a
+        # half-written file becomes a commit on the default branch. (Bugbot.)
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          if npm run update:issue-template-versions && npm run check:issue-template-versions; then
+            exit 0
+          fi
+          echo "::error::issue-template version generation did not converge; discarding its output."
+          # shellcheck disable=SC2086 # ISSUE_TEMPLATE_PATHS is an intentional word list.
+          git checkout -- ${ISSUE_TEMPLATE_PATHS}
+          # VERIFY the revert, do not assume it. The commit step is deliberately
+          # allowed to run after a failed generator, and the whole reason that is
+          # safe is the invariant "the tree can only ever carry output a checker
+          # accepted". A `git checkout` that fails -- a pathspec matching
+          # nothing, a file the generator deleted -- breaks exactly that
+          # invariant and would hand rejected output to the push step.
+          #
+          # `set -e` does NOT help here, which is worth stating because it is the
+          # obvious-looking fix: measured, both `set -uo pipefail` and
+          # `set -euo pipefail` leave the rejected content in the worktree and
+          # exit 1. Stopping the step earlier does not un-modify a file. Only
+          # refusing the push does. (GitHub Copilot raised the risk.)
+          # shellcheck disable=SC2086
+          if ! git diff --quiet -- ${ISSUE_TEMPLATE_PATHS}; then
+            echo "::error::could not discard the rejected issue-template output; the working tree still carries it, so this run must not push."
+            echo "revert-failed=true" >> "${GITHUB_OUTPUT}"
+          fi
+          exit 1
+
+      - name: Check for changes
+        id: git-check
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          # `--exit-code` returns 1 for "there are differences" but 128/129 for
+          # "not a git repository" / bad usage, and a bare `|| echo changed=true`
+          # swallows all of them alike. That was harmless while a failed
+          # `Checkout` skipped this step; `always()` made it reachable, and
+          # fail-OPEN is the wrong direction for a probe that decides whether to
+          # commit. Only exit 1 means "changed".
+          set +e
+          # shellcheck disable=SC2086 # both are intentional word lists.
+          git diff --quiet -- ${LLMS_PATHS} ${ISSUE_TEMPLATE_PATHS}
+          diff_status=$?
+          set -e
+          case "${diff_status}" in
+            0) echo "No generated file changed." ;;
+            1) echo "changed=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::git could not compare the generated files (exit ${diff_status}); refusing to guess whether they changed."
+              exit "${diff_status}"
+              ;;
+          esac
+
+      # Runs after a FAILED generator (the revert above guarantees the tree
+      # carries only checker-accepted output, so the generator that DID converge
+      # still self-heals) but NOT after a cancel, where a killed generator never
+      # reached its revert and the tree may be half-written.
+      - name: Commit and push changes
+        # The last clause is the tree-trust check. A generator that could not
+        # discard its rejected output says so, and this step then refuses --
+        # otherwise the one invariant that makes "push after a failed generator"
+        # safe is only assumed, never verified.
+        if: >-
+          ${{ !cancelled() && steps.git-check.outputs.changed == 'true' &&
+          steps.check-autocommit-app.outputs.has-app == 'true' &&
+          steps.gen_llms.outputs.revert-failed != 'true' &&
+          steps.gen_issue_template.outputs.revert-failed != 'true' }}
+        env:
+          GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth_header="$(printf 'x-access-token:%s' "${GH_PUSH_TOKEN}" | base64 | tr -d '\n')"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # shellcheck disable=SC2206 # both are intentional word lists.
+          generated=(${LLMS_PATHS} ${ISSUE_TEMPLATE_PATHS})
+
+          # Same isolation as the two steps above: on the stale-head path a
+          # generator that cannot converge reverts its own files rather than
+          # aborting the push loop and stranding the other generator's output.
+          #
+          # It must also RECORD that it failed. An earlier version ended each
+          # branch in `|| git checkout`, which succeeds, so the function always
+          # returned 0: a generator that broke only on the refreshed head
+          # reverted silently, the loop pushed the other generator's output, and
+          # the job went green with stale content and no annotation. The two
+          # step outcomes the terminal gate reads were both `success`, because
+          # the failure happened here rather than there.
+          regenerate_failed=0
+          regenerate() {
+            # Reset per call: the flag must describe the regeneration whose output
+            # actually gets pushed, not every attempt ever made. Leaving it sticky
+            # meant a transient failure on an intermediate head reddened the job
+            # even after a later retry converged and pushed good content --
+            # trading the old always-green bug for an always-red one.
+            regenerate_failed=0
+            # shellcheck disable=SC2086 # intentional word lists.
+            if ! (npm run update:llms-txt && npm run check:llms-txt); then
+              echo "::error::llms.txt generation did not converge on the refreshed head; discarding its output."
+              # shellcheck disable=SC2086
+              git checkout -- ${LLMS_PATHS}
+              regenerate_failed=1
+            fi
+            if ! (npm run update:issue-template-versions && npm run check:issue-template-versions); then
+              echo "::error::issue-template version generation did not converge on the refreshed head; discarding its output."
+              # shellcheck disable=SC2086
+              git checkout -- ${ISSUE_TEMPLATE_PATHS}
+              regenerate_failed=1
+            fi
+          }
+
+          fetch_head() {
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+              fetch --no-tags --depth=1 origin \
+              "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          }
+
+          for attempt in 1 2 3; do
+            fetch_head
+            latest_sha="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
+            current_sha="$(git rev-parse HEAD)"
+            if [ "${latest_sha}" != "${current_sha}" ]; then
+              message="Default branch ${GITHUB_REF_NAME} advanced from ${current_sha} "
+              message+="to ${latest_sha}; regenerating on the latest head before pushing."
+              echo "::warning::${message}"
+              git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
+              regenerate
+            fi
+
+            if git diff --quiet -- "${generated[@]}"; then
+              echo "Generated artifacts are already current; nothing to commit."
+              exit "${regenerate_failed}"
+            fi
+
+            base_sha="$(git rev-parse HEAD)"
+            git add -- "${generated[@]}"
+            # Belt-and-braces after the unstaged check above. Deliberately NOT
+            # pinned by a test: `git add` makes the staged and unstaged views
+            # agree, so reaching here needs them to disagree, and every fixture
+            # that tries ends up exercising the branch above instead. A case for
+            # a branch that cannot be reached would only look like coverage.
+            if git diff --cached --quiet -- "${generated[@]}"; then
+              echo "No staged changes remain; nothing to commit."
+              exit "${regenerate_failed}"
+            fi
+            git commit -m "chore: refresh generated repository metadata"
+
+            set +e
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+              push origin "HEAD:${GITHUB_REF_NAME}"
+            push_status=$?
+            set -e
+            if [ "${push_status}" -eq 0 ]; then
+              exit "${regenerate_failed}"
+            fi
+
+            fetch_head
+            latest_after_push="$(git rev-parse "refs/remotes/origin/${GITHUB_REF_NAME}")"
+            if [ "${latest_after_push}" = "${base_sha}" ]; then
+              echo "::error::post-merge auto-commit push failed while ${GITHUB_REF_NAME} still pointed at ${base_sha}."
+              exit "${push_status}"
+            fi
+
+            if [ "${attempt}" -eq 3 ]; then
+              message="Default branch ${GITHUB_REF_NAME} kept advancing during the "
+              message+="post-merge auto-commit; skipping this stale attempt. "
+              message+="A newer run will regenerate from the latest head."
+              echo "::warning::${message}"
+              exit "${regenerate_failed}"
+            fi
+
+            message="Default branch ${GITHUB_REF_NAME} advanced during the post-merge "
+            message+="push; retrying from ${latest_after_push}."
+            echo "::warning::${message}"
+            git checkout -f -B "${GITHUB_REF_NAME}" "refs/remotes/origin/${GITHUB_REF_NAME}"
+            regenerate
+          done
+
+      # The commit step is allowed to run after a failed generator, so the job's
+      # own verdict has to come from the generators themselves. Without this a
+      # generator that never converged would be reported green.
+      - name: Require every generator to have converged
+        # A cancelled run is already cancelled; adding a gate failure on top only
+        # obscures why it stopped.
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          # `skipped` is NOT converged. Both generators now carry `!cancelled()`,
+          # the same condition as this gate, so whenever this gate runs they both
+          # ran too -- a skipped generator means something unanticipated stopped
+          # it, and "we never generated it" must not read as "it was already
+          # current". Accepting `skipped` is what let a failed install skip
+          # llms.txt while the sibling pushed. An empty outcome (a step id that
+          # no longer exists) fails here for the same reason.
+          failed=0
+          for outcome in "${LLMS_OUTCOME}" "${ISSUE_TEMPLATE_OUTCOME}"; do
+            case "${outcome}" in
+              success) ;;
+              *) failed=1 ;;
+            esac
+          done
+          if [ "${failed}" -ne 0 ]; then
+            echo "::error::a generator did not converge (llms.txt=${LLMS_OUTCOME}, issue-template=${ISSUE_TEMPLATE_OUTCOME}); see the annotations above."
+            exit 1
+          fi
+          echo "Every generator converged."
+        env:
+          LLMS_OUTCOME: ${{ steps.gen_llms.outcome }}
+          ISSUE_TEMPLATE_OUTCOME: ${{ steps.gen_issue_template.outcome }}

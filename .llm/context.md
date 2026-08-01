@@ -62,7 +62,7 @@ discover it. `.llm/` is the single source of truth; the mirrors are generated po
 - Sync banner SVG version: `npm run sync:banner` (check-only: `npm run check:banner`)
 - Regenerate llms.txt: `npm run update:llms-txt` (check-only: `npm run check:llms-txt`)
 - Regenerate the skill index, registry block, and agent mirrors: `npm run llm:index` (check-only: `npm run llm:check`, gated in `validate:all`)
-- Regenerate the bug-report version dropdown (`.github/ISSUE_TEMPLATE/bug_report.yml`, derived from `package.json` + `CHANGELOG.md` + git tags, append-only so a shallow checkout never drops history): `npm run update:issue-template-versions` (check-only: `npm run check:issue-template-versions`, gated in `validate:all`). Self-healing in three layers: `release-prepare.yml` regenerates + stages it in its version-sync step (so the release PR passes the gate); `update-issue-template-versions.yml` auto-commits it on any `package.json`/`CHANGELOG.md` push to the default branch + a weekly cron (the same App-token pattern as `update-llms-txt.yml`); and the `--check` gate blocks a stale hand-edit on PRs.
+- Regenerate the bug-report version dropdown (`.github/ISSUE_TEMPLATE/bug_report.yml`, derived from `package.json` + `CHANGELOG.md` + git tags, append-only so a shallow checkout never drops history): `npm run update:issue-template-versions` (check-only: `npm run check:issue-template-versions`, gated in `validate:all`). Self-healing in three layers: `release-prepare.yml` regenerates + stages it in its version-sync step (so the release PR passes the gate); `post-merge-maintenance.yml` auto-commits it -- together with `llms.txt` in the SAME commit -- on any push to the default branch that touches either generator's inputs, plus a weekly cron; and the `--check` gate blocks a stale hand-edit on PRs.
 - Analyzer payload: `npm run check:analyzers` (refresh: `npm run refresh:analyzers`)
 - C# method naming auto-fix: `npm run fix:csharp-underscores`
 - Unity asmdef reference integrity: `npm run validate:asmdef-references`
@@ -163,6 +163,16 @@ Reach GitHub in this order, and stop at the first one that works:
 1. **`gh` only as a last resort.** Its token lives in `~/.config/gh/hosts.yml`, expires independently of the VS Code session, and has gone invalid mid-session while both paths above kept working. `gh auth status` failing is not a reason to stop; fall back to path 1.
 
 Never echo a token into command output, a log, or a file. Read it into a shell variable in the same command that uses it.
+
+**Do not poll.** Every `gh` invocation re-reads and re-presents credentials, so a
+watch loop that runs `gh` on a timer turns one credential use into hundreds and
+shows up as repeated credential activity on the account. This is what a long CI
+wait actually costs: a 60-second loop over a 40-minute Unity matrix is 40
+authenticated calls, and several such loops at once multiply it. Wait on a
+single blocking call, or check once when a notification says something changed.
+Reuse one token read into a shell variable across a batch of API calls rather
+than shelling out to `gh` per item. If a wait genuinely needs repetition, space
+it in minutes and run exactly one loop.
 
 ## Line Ending Policy
 

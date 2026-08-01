@@ -3,15 +3,18 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
+WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
 REGISTERED_UNITY_AUTOMATION = {
     ".github/actions/validate-unity-license/action.yml",
@@ -668,6 +671,43 @@ def find_workflow_editor_mutations(files: dict[str, str]) -> list[str]:
     return violations
 
 
+def validate_cleanup_gate_not_attempted_input(job: str, label: str) -> None:
+    """Pin how a lock window tells the cleanup gate that acquisition never ran.
+
+    The gate's contract is that `acquired: false` proves licensed cleanup was
+    not required, and a bare `if: always()` is what catches a seat leak when
+    acquisition fails part-way. Both have to hold at once (#327): a leg that
+    aborts before `Acquire organization Unity lock` must report exactly one
+    failure, and a leg whose acquire failed after taking the lock must still
+    fail. The distinction is `outcome`, which is empty or `skipped` only when
+    the step did not execute; gating on `acquired == 'true'` instead would
+    skip the gate in precisely the case it must never miss.
+    """
+    gate = step_block(job, "Require confirmed Unity cleanup")
+    require(
+        "\n        if: always()\n" in gate,
+        f"{label}: the cleanup gate must keep a bare `if: always()`",
+    )
+    acquired = re.search(r"\n          acquired: (.*)\n", gate)
+    require(acquired is not None, f"{label}: the cleanup gate must pass `acquired`")
+    expression = acquired.group(1)
+    for fragment in (
+        "steps.acquire_lock.outcome == 'skipped'",
+        "steps.acquire_lock.outcome == ''",
+        "&& 'false' ||",
+        "steps.acquire_lock.outputs.acquired",
+    ):
+        require(
+            fragment in expression,
+            f"{label}: the cleanup gate's `acquired` input must map only a step that "
+            f"never executed to 'false' and pass everything else through; missing {fragment!r}",
+        )
+    require(
+        "outcome == 'failure'" not in expression and "outcome != " not in expression,
+        f"{label}: a failed acquire must not be laundered into a not-attempted verdict",
+    )
+
+
 def validate_lock_window_timeout_budget(job: str, label: str) -> None:
     steps = top_level_steps_through_cleanup_gate(job, label)
     bounded_minutes = 0
@@ -816,6 +856,1818 @@ def run_head_check(script: str, event: str, live_head: str) -> str:
             written.startswith("superseded="), f"head-check wrote no decision: {written!r}"
         )
         return written[len("superseded=") :]
+
+
+def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> str:
+    """A `gh` that answers only the stubbed endpoints and rejects the rest.
+
+    An unstubbed call exits 3 rather than printing nothing, so a watchdog that
+    reaches for an endpoint this table does not model fails the case instead of
+    quietly reading an empty body.
+    """
+    # A `str` payload is emitted verbatim rather than JSON-encoded. The audit
+    # pipes some calls through `gh --jq`, which this stub does not implement, so
+    # a route that feeds such a call has to supply the already-extracted value.
+    #
+    # Needles are LITERALS, so their glob metacharacters are bracket-quoted
+    # before being embedded in a `case` pattern. Several routes contain `?`
+    # (query strings), which a `case` pattern reads as "any single character" --
+    # an unstubbed endpoint could then match a stubbed route and be answered
+    # instead of exiting 3, quietly defeating the fail-closed property this stub
+    # exists to provide. (GitHub Copilot.)
+    def literal(needle: str) -> str:
+        return "".join(f"[{c}]" if c in "*?[]" else c for c in needle)
+
+    cases = "".join(
+        f"  *{literal(needle)}*)\n    cat <<'PAYLOAD'\n"
+        f"{payload if isinstance(payload, str) else (json.dumps(payload) if payload is not None else '')}"
+        f"\nPAYLOAD\n    exit {code} ;;\n"
+        for needle, (code, payload) in routes.items()
+    )
+    # Organization endpoints answer ONLY when the call carries the reader App
+    # token. A static grep can prove the token is minted; this proves it is the
+    # one actually used, which is the credential shape #328 was about -- the
+    # audit read inventory with a token that could never reach those endpoints.
+    return (
+        "#!/bin/bash\n"
+        'if [ "$1" = "run" ] && [ "$2" = "cancel" ]; then\n'
+        f'  echo "cancelled $3"; exit {0 if cancel_ok else 1}\n'
+        "fi\n"
+        'case "$*" in\n'
+        "  *orgs/*)\n"
+        '    if [ "${GH_TOKEN:-}" != "stub-reader" ]; then\n'
+        '      echo "gh: Resource not accessible by integration (HTTP 403)" >&2\n'
+        "      exit 1\n"
+        "    fi ;;\n"
+        "esac\n"
+        f'case "$*" in\n{cases}  *) echo "unstubbed gh: $*" >&2; exit 3 ;;\nesac\n'
+    )
+
+
+# The watchdog never needs a real remote: `ls-remote` reporting an empty branch
+# list sends it down the bootstrap path, and `push` succeeds. Everything else
+# (init, checkout, add, commit) runs against the real git in a temp directory.
+def watchdog_git_stub(
+    push_ok: bool = True,
+    ls_remote_ok: bool = True,
+    existing_state: dict[int, int] | None = None,
+    clone_ok: bool = True,
+    state_age_seconds: int = 3600,
+) -> str:
+    """A `git` that passes through except for the three remote operations.
+
+    `existing_state` makes `ls-remote` report the branch as PRESENT and has
+    `clone` materialize it with the given per-run cancel counts. Without it the
+    stub could only ever exercise the bootstrap path, which left both the
+    clone-failure guard and the cancel cap unreachable from the suite.
+    """
+    if existing_state is None:
+        ls_remote = f"exit {0 if ls_remote_ok else 1}"
+        clone = "exit 1"
+    else:
+        ls_remote = (
+            f"echo 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\trefs/heads/state'; "
+            f"exit {0 if ls_remote_ok else 1}"
+        )
+        if clone_ok:
+            # `last_cancel` defaults to an hour ago, inside the 24h reset
+            # window; `state_age_seconds` moves it outside so the reset itself
+            # becomes reachable. A far-future stamp would make elapsed time
+            # negative, and then no window size could change the verdict at all.
+            writes = "".join(
+                f"printf '{{\"cancels\": {n}, \"last_cancel\": "
+                f"'$(( $(date -u +%s) - {state_age_seconds} ))'}}' "
+                f'> "$target/.watchdog-state/{run_id}.json"; '
+                for run_id, n in existing_state.items()
+            )
+            clone = (
+                'target="${@: -1}"; /usr/bin/git init -q "$target"; '
+                'mkdir -p "$target/.watchdog-state"; '
+                f"{writes}"
+                '/usr/bin/git -C "$target" add -A; '
+                '/usr/bin/git -C "$target" -c user.email=t@t -c user.name=t commit -qm state; '
+                "exit 0"
+            )
+        else:
+            clone = "exit 1"
+    return (
+        "#!/bin/bash\n"
+        'for a in "$@"; do\n'
+        '  case "$a" in\n'
+        f"    ls-remote) {ls_remote} ;;\n"
+        "    fetch) exit 0 ;;\n"
+        f"    clone) {clone} ;;\n"
+        f'    push) echo "pushed"; exit {0 if push_ok else 1} ;;\n'
+        "  esac\n"
+        "done\n"
+        'exec /usr/bin/git "$@"\n'
+    )
+
+
+# Values the runner supplies from the workflow context; everything else in the
+# step's `env:` is a literal the workflow OWNS, and the harness must read those
+# from the file rather than restate them. Restating them is what makes a case
+# assert its own stub: a truth table that hardcodes
+# `DEFAULT_EXCLUDED_WORKFLOWS: release.yml` still passes after the workflow
+# stops excluding release.yml.
+WATCHDOG_CONTEXT_ENV = {
+    "GH_TOKEN": "stub",
+    "RUNNER_INVENTORY_TOKEN": "stub-reader",
+    "REPO": "Ambiguous-Interactive/DxMessaging",
+    "OWNER": "Ambiguous-Interactive",
+    "SELF_RUN_ID": "999",
+    "EXTRA_EXCLUDED_WORKFLOWS": "",
+}
+# Literals the cases below actually depend on. Each is exercised by at least one
+# case, so a rename or deletion fails rather than silently dropping the behavior
+# it configures. Adding a name here without a case that depends on its VALUE
+# would restore the false guarantee this list used to advertise.
+WATCHDOG_REQUIRED_ENV_LITERALS = (
+    "STATE_BRANCH",
+    "STATE_DIR",
+    "MAX_CANCELS_PER_DAY",
+    "MIN_QUEUE_AGE_SECONDS",
+    "DEFAULT_EXCLUDED_WORKFLOWS",
+)
+
+
+def step_env_literals(step: str) -> dict[str, str]:
+    """Return the step's `env:` entries whose values are workflow literals."""
+    start = step.find("        env:\n")
+    require(start >= 0, "watchdog audit step must declare env")
+    literals: dict[str, str] = {}
+    for line in step[start + len("        env:\n") :].splitlines():
+        entry = re.fullmatch(r"          ([A-Z0-9_]+): (.*)", line)
+        if entry is None:
+            break
+        name, value = entry.group(1), entry.group(2).strip()
+        if "${{" in value:
+            continue
+        literals[name] = value[1:-1] if len(value) >= 2 and value[0] == value[-1] == '"' else value
+    return literals
+
+
+class WatchdogOutput(str):
+    """Combined job-log + step-summary text, with the summary kept separately.
+
+    `log_summary` tees to stdout, and the harness used to hand back
+    `summary + stdout + stderr` as one blob -- so every needle was satisfiable
+    from the job log alone and NO case could prove a line actually reached
+    `GITHUB_STEP_SUMMARY`. Three of the four step-summary buckets and the whole
+    audit narrative were deletable with the suite green. Behaves as the same
+    string it always did; `.summary` is the channel-specific view.
+    """
+
+    summary: str
+
+    def __new__(cls, combined: str, summary: str) -> "WatchdogOutput":
+        value = super().__new__(cls, combined)
+        value.summary = summary
+        return value
+
+
+def run_watchdog(
+    script: str,
+    environment_literals: dict[str, str],
+    routes: dict[str, tuple[int, object]],
+    cancel_ok: bool = True,
+    push_ok: bool = True,
+    ls_remote_ok: bool = True,
+    existing_state: dict[int, int] | None = None,
+    clone_ok: bool = True,
+    state_age_seconds: int = 3600,
+    break_date: bool = False,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[int, WatchdogOutput]:
+    """Execute the watchdog audit script against a stubbed `gh` and `git`.
+
+    `break_date` fails the unguarded `now_epoch="$(date ...)"` assignment, which
+    is the cheapest way to force an abort the script does NOT anticipate -- the
+    only thing that exercises the EXIT trap rather than a `finish` call.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        stubs = [
+            ("gh", watchdog_gh_stub(routes, cancel_ok)),
+            (
+                "git",
+                watchdog_git_stub(
+                    push_ok, ls_remote_ok, existing_state, clone_ok, state_age_seconds
+                ),
+            ),
+        ]
+        if break_date:
+            stubs.append(("date", "#!/bin/bash\nexit 1\n"))
+        for name, body in stubs:
+            stub = root / name
+            stub.write_text(body, encoding="utf-8")
+            stub.chmod(0o755)
+        summary = root / "summary.md"
+        summary.touch()
+        environment = os.environ.copy()
+        environment.update(environment_literals)
+        environment.update(WATCHDOG_CONTEXT_ENV)
+        environment.update(extra_env or {})
+        environment["PATH"] = f"{root}{os.pathsep}{environment['PATH']}"
+        environment["GITHUB_STEP_SUMMARY"] = str(summary)
+        # The audit calls `mktemp` freely, which is free on an ephemeral runner
+        # but permanent in a developer's /tmp -- roughly 440 entries per run of
+        # this validator. Point it at the case's own directory instead.
+        environment["TMPDIR"] = str(root)
+        result = subprocess.run(
+            ["bash", "-c", script], env=environment, capture_output=True, text=True, check=False
+        )
+        summary_text = summary.read_text(encoding="utf-8")
+        return result.returncode, WatchdogOutput(
+            summary_text + result.stdout + result.stderr, summary_text
+        )
+
+
+def watchdog_queued_runs(*runs: dict[str, object]) -> tuple[int, object]:
+    return 0, {"workflow_runs": list(runs)}
+
+
+def watchdog_run(
+    run_id: int,
+    workflow: str = "perf-numbers.yml",
+    event: str = "push",
+    created_at: str = "2020-01-01T00:00:00Z",
+) -> dict[str, object]:
+    # Created in 2020, so it is unconditionally older than MIN_QUEUE_AGE_SECONDS.
+    return {
+        "id": run_id,
+        "created_at": created_at,
+        "path": f".github/workflows/{workflow}",
+        "event": event,
+        "workflow_id": 42,
+        "head_branch": "master",
+        "html_url": f"https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/{run_id}",
+    }
+
+
+def watchdog_jobs(*label_sets: list[str], extra: list[dict] | None = None) -> tuple[int, object]:
+    """Queued jobs carrying `label_sets`, plus any raw jobs in `extra`.
+
+    `extra` exists so a case can put a job in a NON-queued state. Without it the
+    fixture could only ever produce queued jobs, and the two guards that read job
+    status -- the in-progress early-continue and the zero-queued-jobs check --
+    were unreachable from the whole suite.
+    """
+    jobs = [{"status": "queued", "labels": labels} for labels in label_sets]
+    return 0, {"jobs": jobs + list(extra or [])}
+
+
+def watchdog_runners(*specs: tuple[str, str, bool, list[str]]) -> tuple[int, object]:
+    return 0, {
+        "runners": [
+            {
+                "id": index,
+                "name": name,
+                "status": status,
+                "busy": busy,
+                "labels": [{"name": label} for label in labels],
+            }
+            for index, (name, status, busy, labels) in enumerate(specs, start=1)
+        ]
+    }
+
+
+# The redispatch branch reads the workflow file through `gh --jq .content`, which
+# is base64. Encoding here rather than embedding the literal keeps the fixture
+# readable and keeps a meaningless base64 blob out of the spell checker.
+STARVED_SECTION_EMPTY = "required labels)\n_(none)_"
+
+
+DISPATCHABLE_WORKFLOW_BODY = base64.b64encode(b"on:\n  workflow_dispatch:\n").decode()
+# A body that decodes cleanly but declares no `workflow_dispatch` trigger. It
+# is the only input that separates "detection said no" from "the base64 decode
+# failed", which is what an empty `content` actually exercises.
+NON_DISPATCHABLE_WORKFLOW_BODY = base64.b64encode(b"on:\n  push:\n").decode()
+# What the API returns for a file the redispatch branch cannot read. The stub
+# does not implement `--jq`, so routes feeding a `--jq` call must supply the
+# ALREADY-EXTRACTED value; handing it `{"content": ""}` made `base64 -d` fail
+# because the payload was a JSON object, which is a property of the stub rather
+# than of the endpoint. (GitHub Copilot.)
+EMPTY_WORKFLOW_CONTENT = ""
+
+
+def validate_stuck_job_watchdog() -> None:
+    """Execute the watchdog's audit script across its verdict space.
+
+    The watchdog is the automation that recovers the licensed Unity legs this
+    file governs, so its failure modes belong to the same policy: #328 was a
+    watchdog that could not read runner inventory on either endpoint it tried,
+    reported `success` anyway, and let a `Performance Numbers` run sit queued
+    for ten hours. The rule these cases pin is that a green watchdog run means
+    the queue was evaluated -- never that evaluation was skipped.
+    """
+    source = WATCHDOG.read_text(encoding="utf-8")
+    require(
+        "actions/create-github-app-token@" in source
+        and "app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}" in source,
+        "watchdog must read runner inventory with the organization reader App; "
+        "the job GITHUB_TOKEN is repository-scoped and cannot list organization runners",
+    )
+    require(
+        "repos/${REPO}/actions/runners" not in source,
+        "watchdog must not fall back to repository-level runners: this repository "
+        "registers none, so the call succeeds with an empty inventory that reads "
+        "identically to 'no runner matches' (#328)",
+    )
+    audit_step = step_block(job_block(source, "audit-queue"), "Audit + cancel-and-redispatch")
+    script = run_script(audit_step)
+    environment_literals = step_env_literals(audit_step)
+    for name in WATCHDOG_REQUIRED_ENV_LITERALS:
+        require(name in environment_literals, f"watchdog env must declare {name} as a literal")
+    require(
+        "release.yml" in environment_literals["DEFAULT_EXCLUDED_WORKFLOWS"].split(),
+        "watchdog must never cancel a queued release run",
+    )
+    if os.name == "nt":
+        return
+
+    self_hosted = ["self-hosted", "Windows", "RAM-64GB", "fast"]
+    queued = "actions/runs?status=queued"
+    inventory = "runner-groups?per_page"
+    one_group = (0, {"runner_groups": [{"id": 7, "name": "Default"}]})
+
+    # name, gh routes, expected exit, must appear, must NOT appear
+    #
+    # A SENTINEL, resolved to the wall clock when the row actually runs. The
+    # table is built here but executed hundreds of lines below, after several
+    # standalone blocks, so a timestamp frozen at construction ages while the
+    # suite runs -- and once it passes MIN_QUEUE_AGE_SECONDS this row's verdict
+    # silently flips. (GitHub Copilot.)
+    #
+    # Copilot suggested a fixed FUTURE timestamp instead. That would remove the
+    # flake and the test's point together: the row must keep an age in
+    # [0, MIN_QUEUE_AGE_SECONDS), because a NEGATIVE age passes the
+    # `($now - $created) >= $min` filter for every `$min`, including 0 -- so
+    # dropping the age gate to 0 would no longer be caught. Verified: that
+    # mutation is caught today. Age ~0 at execution is the only value that both
+    # stays under the gate and keeps the gate's removal detectable.
+    FRESH_TIMESTAMP = "<resolved-at-execution>"
+
+    STUCK_ROUTES = {
+        queued: watchdog_queued_runs(watchdog_run(1)),
+        inventory: one_group,
+        "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+        "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+        "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
+    }
+
+    cases: tuple[tuple[str, dict[str, tuple[int, object]], int, tuple[str, ...], tuple[str, ...]], ...] = (
+        (
+            "clean queue",
+            {queued: (0, {"workflow_runs": []})},
+            0,
+            ("Queue is clean",),
+            ("::error::",),
+        ),
+        (
+            "unreadable queue fails closed",
+            {queued: (1, None)},
+            1,
+            ("failed to list queued runs",),
+            (),
+        ),
+        (
+            "unreadable runner inventory fails closed",
+            {queued: watchdog_queued_runs(watchdog_run(1)), inventory: (1, None)},
+            1,
+            ("could not read the organization runner groups",),
+            (),
+        ),
+        (
+            "empty visible runner-group set fails closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: (0, {"runner_groups": []}),
+            },
+            1,
+            ("reported no runner groups",),
+            (),
+        ),
+        (
+            "unreadable jobs fail closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": (1, None),
+            },
+            1,
+            ("failed to list jobs for run 1",),
+            (),
+        ),
+        (
+            "idle matching runner is dispatcher-stuck",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
+            },
+            0,
+            ("dispatcher-stuck", "cancelled 1", "does not support workflow_dispatch"),
+            ("re-dispatching",),
+        ),
+        (
+            "busy matching runner is healthy backpressure",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+            },
+            0,
+            ("healthy backpressure",),
+            ("cancelled 1", "::warning::"),
+        ),
+        (
+            "registered but offline runner is starved, not stuck",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+            },
+            0,
+            ("starved", "registered but offline", "::warning::"),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
+            "no registered self-hosted runner is starved, not stuck",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("MAC", "online", False, ["self-hosted", "macOS"])),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+            },
+            0,
+            ("starved", "no runner registered", "::warning::"),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
+            "GitHub-hosted run is not reported as starved",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1, workflow="ci.yml")),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(["ubuntu-latest"]),
+            },
+            0,
+            ("no queued job requests a self-hosted runner",),
+            ("cancelled 1", "::warning::"),
+        ),
+        (
+            "label match is case-insensitive in both directions",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, ["Self-Hosted", "WINDOWS"])),
+                "actions/runs/1/jobs": watchdog_jobs(["self-hosted", "windows"]),
+            },
+            0,
+            ("healthy backpressure",),
+            ("::warning::",),
+        ),
+        (
+            "a job reporting no labels is never cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs([]),
+            },
+            0,
+            ("queued jobs report no labels",),
+            ("cancelled 1",),
+        ),
+        (
+            # Finding: `mapfile < <(jq ...)` discarded jq's exit status, so one
+            # unparseable timestamp printed "Queue is clean" over a stuck queue.
+            "an unparseable queued-run timestamp fails closed",
+            {
+                queued: (
+                    0,
+                    {
+                        "workflow_runs": [
+                            watchdog_run(1) | {"created_at": "not-a-date"},
+                            watchdog_run(2),
+                        ]
+                    },
+                )
+            },
+            1,
+            ("could not parse the queued-run listing",),
+            ("Queue is clean",),
+        ),
+        (
+            # Finding: the starvation report latched on the FIRST label set while
+            # the verdict accumulated across all of them, so a GitHub-hosted set
+            # sorting first suppressed a real starvation warning outright.
+            "a hosted label set never suppresses a self-hosted starvation",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                # "macos-latest" sorts before "self-hosted", so jq `unique` puts
+                # the hosted set first -- the ordering that used to lose.
+                "actions/runs/1/jobs": watchdog_jobs(
+                    ["macos-latest"], ["self-hosted", "Windows", "unicorn"]
+                ),
+            },
+            0,
+            ("starved", "::warning::", "self-hosted, windows, unicorn"),
+            (
+                "no queued job requests a self-hosted runner",
+                "cancelled 1",
+                "macos-latest] is registered",
+            ),
+        ),
+        (
+            # Finding: the warning interpolated the first set's labels while
+            # branching on the whole-run verdict, so it told the operator to
+            # bring online a runner named by a GitHub-hosted label.
+            "the starvation warning names the self-hosted labels, not a hosted one",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(["macos-latest"], self_hosted),
+            },
+            0,
+            ("registered but offline", "self-hosted, windows, ram-64gb, fast"),
+            ("[macos-latest] is registered", "cancelled 1"),
+        ),
+        (
+            # Finding: an empty workflow path is a hard bash error on the
+            # exclusion-list subscript, which aborted with an EMPTY summary.
+            "a run with no workflow path is reported, not crashed on",
+            {
+                queued: (
+                    0,
+                    {"workflow_runs": [watchdog_run(1) | {"path": None}]},
+                ),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            0,
+            ("no workflow path reported", "Watchdog summary"),
+            ("bad array subscript", "cancelled 1"),
+        ),
+        (
+            # THE guard that matters most. A matrix cell executing on one runner
+            # while a sibling cell waits is not dispatcher-stuck -- it holds a
+            # Unity licence seat. Cancelling it kills a live Unity session
+            # mid-test, which is the seat leak `require-confirmed-unity-cleanup`
+            # exists to catch. Nothing in the suite reached this branch before:
+            # the job fixture could only produce QUEUED jobs.
+            "a run with an in-progress job is never cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    self_hosted, extra=[{"status": "in_progress", "labels": self_hosted}]
+                ),
+            },
+            0,
+            ("healthy queued", "1 in_progress"),
+            ("cancelled 1", "queued for cancel"),
+        ),
+        (
+            # A run whose jobs have all finished is in a transitional state, not
+            # the dispatcher-stuck pattern.
+            "a run with no queued jobs is never cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    extra=[{"status": "completed", "labels": self_hosted}]
+                ),
+            },
+            0,
+            ("no queued jobs yet",),
+            ("cancelled 1",),
+        ),
+        (
+            # The audit must never cancel itself, however the exclusion list is
+            # configured. SELF_RUN_ID is 999 in the harness, so the fixture run
+            # has to carry that id for the guard to be exercised at all.
+            "the watchdog never cancels its own run",
+            {
+                queued: watchdog_queued_runs(watchdog_run(999)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            0,
+            ("this is the watchdog's own run",),
+            ("cancelled 999",),
+        ),
+        (
+            # The inventory is read in TWO calls. Only the runner-GROUP listing
+            # was covered; a failure of the per-group RUNNER listing could be
+            # downgraded to a log line and the audit would report exit 0 over an
+            # empty inventory -- precisely the #328 shape.
+            "an unreadable runner listing inside a group fails closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": (1, None),
+            },
+            1,
+            ("could not read runners in organization runner group",),
+            (),
+        ),
+        (
+            # The redispatch branch had never executed: the fixture returned an
+            # empty `content`, so `base64 -d` always failed and the workflow was
+            # always treated as non-dispatchable.
+            "a dispatchable push run is cancelled and re-dispatched",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                # Ordered BEFORE the plain workflow route: the stub matches
+                # substrings in insertion order, so `actions/workflows/42` would
+                # otherwise swallow the dispatches POST and answer it silently.
+                "actions/workflows/42/dispatches": (0, "DISPATCH-REQUESTED"),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, DISPATCHABLE_WORKFLOW_BODY),
+            },
+            0,
+            # "cancelled 1" and the log line both precede the POST, so neither
+            # proves it happened. Only the stub's response to the dispatches
+            # call proves the request was actually made.
+            ("cancelled 1", "re-dispatching workflow 42", "DISPATCH-REQUESTED"),
+            (),
+        ),
+        (
+            # A pull_request run must NEVER be re-dispatched: the dispatches
+            # endpoint cannot re-trigger one, and the documented path is a
+            # cancel plus an operator instruction. The workflow body here IS
+            # dispatchable, so only the event check can hold the line.
+            "a pull_request run is cancelled but never re-dispatched",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1, event="pull_request")),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, DISPATCHABLE_WORKFLOW_BODY),
+            },
+            0,
+            ("cancelled 1", "pull_request-triggered", "Re-run all jobs"),
+            ("re-dispatching",),
+        ),
+        (
+            # A busy sibling must not hide a starved one. The run is legitimately
+            # healthy (something can proceed) AND a second label set can never be
+            # picked up; both are true and both have to be reported, or the
+            # starvation stays invisible for as long as the busy leg runs.
+            "a busy sibling does not suppress a co-resident starvation",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    self_hosted, ["self-hosted", "Windows", "unicorn"]
+                ),
+            },
+            0,
+            ("healthy backpressure", "starved", "::warning::", "unicorn"),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
+            # The longest-lived form of the same blindness: once a runner picks
+            # up the healthy cell the run is in-progress, and that state lasts
+            # for the rest of the matrix. If the in-progress exit skips the
+            # starvation report, the starved sibling is silent for hours.
+            "an in-progress sibling does not suppress a co-resident starvation",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    ["self-hosted", "Windows", "unicorn"],
+                    extra=[{"status": "in_progress", "labels": self_hosted}],
+                ),
+            },
+            0,
+            ("healthy queued", "1 in_progress", "starved", "::warning::", "unicorn"),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
+            # The third and last shape of sibling blindness, and the one that
+            # persists longest: while the dispatchable cell keeps matching idle,
+            # the run is cancelled and re-dispatched over and over, and the
+            # starved cell stays invisible across every cycle. `self_hosted`
+            # sorts BEFORE the unicorn set under jq `unique`, so the idle match
+            # is seen first -- exactly the ordering a `break` would lose.
+            "a cancellable sibling does not suppress a co-resident starvation",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    self_hosted, ["self-hosted", "Windows", "unicorn"]
+                ),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
+            },
+            0,
+            (
+                "cancelled 1",
+                "dispatcher-stuck",
+                "starved",
+                "::warning::",
+                "unicorn",
+                # The starvation line must state THIS run's real disposition.
+                "IS dispatcher-stuck; the run is queued for cancel below",
+            ),
+            (
+                STARVED_SECTION_EMPTY,
+                # `report_starvation` hard-coded this for every caller, so the
+                # same run id got "no action" immediately above "queued for
+                # cancel". A verdict that contradicts itself is not a verdict.
+                # (Cursor Bugbot.)
+                "Not dispatcher-stuck; no action.",
+            ),
+        ),
+        (
+            # Precedence: a later `busy` set must not demote an earlier `idle`
+            # one. Without the break, that demotion is what would silently stop
+            # the run being cancelled. The zebra set sorts AFTER self_hosted
+            # under jq `unique`, so it is scanned second.
+            "a later busy set does not demote an earlier idle match",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(
+                    ("ELI", "online", False, self_hosted),
+                    ("DAD", "online", True, ["self-hosted", "Windows", "zebra"]),
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    self_hosted, ["self-hosted", "Windows", "zebra"]
+                ),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
+            },
+            0,
+            ("cancelled 1", "dispatcher-stuck"),
+            ("healthy backpressure",),
+        ),
+        (
+            # Precedence: a later `offline` set must not demote an earlier
+            # `busy` one. The run is still waiting on a real runner, so it stays
+            # healthy -- while the offline set is still reported as starved.
+            "a later offline set does not demote an earlier busy match",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(
+                    ("ELI", "online", True, ["self-hosted", "Windows", "aaa"]),
+                    ("DAD", "offline", False, ["self-hosted", "Windows", "zzz"]),
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    ["self-hosted", "Windows", "aaa"], ["self-hosted", "Windows", "zzz"]
+                ),
+            },
+            0,
+            ("healthy backpressure", "starved", "zzz"),
+            ("cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
+            # Pins the `workflow_dispatch:` grep itself. The dispatcher-stuck
+            # case above uses an empty `content`, so `base64 -d` fails and the
+            # grep never runs -- it reads as if it asserts detection but only
+            # asserts the decode-failure path. A regression that dispatched
+            # unconditionally would POST to a workflow with no such trigger, get
+            # a 422, and leave the run cancelled with no recovery.
+            "a run whose workflow declares no workflow_dispatch is not re-dispatched",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (
+                    0,
+                    NON_DISPATCHABLE_WORKFLOW_BODY,
+                ),
+            },
+            0,
+            ("cancelled 1", "does not support workflow_dispatch", "Re-run all jobs"),
+            ("re-dispatching",),
+        ),
+        (
+            # Pins the starvation PRECEDENCE. Two self-hosted sets starve for
+            # different reasons: one has a registered-but-offline runner, the
+            # other has nothing at all. The unregistered set must win, because a
+            # label nothing carries needs a human while an offline machine may
+            # reconnect on its own. Reporting the offline one instead points the
+            # operator at a machine that exists and will come back.
+            "an unregistered label set outranks an offline one in the report",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                # `aaa` sorts BEFORE `zzz` under jq `unique`, so the OFFLINE set
+                # is scanned first and plain first-wins would report it. Only the
+                # upgrade clause promotes the unregistered set. With the sets the
+                # other way round the clause never executes and its deletion
+                # survives -- which is how this case originally passed.
+                "runner-groups/7/runners": watchdog_runners(
+                    ("DAD", "offline", False, ["self-hosted", "aaa"])
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(
+                    ["self-hosted", "aaa"], ["self-hosted", "zzz"]
+                ),
+            },
+            0,
+            ("starved", "no runner registered", "zzz"),
+            ("registered but offline", "cancelled 1", STARVED_SECTION_EMPTY),
+        ),
+        (
+            # Two dispatcher-stuck runs in one cycle: the cancel loop must handle
+            # both, which is what exercises the `mapfile`-not-`while read` stdin
+            # defense and per-run cap independence.
+            "two dispatcher-stuck runs are both cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1), watchdog_run(2)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "actions/runs/2/jobs": watchdog_jobs(self_hosted),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
+            },
+            0,
+            ("cancelled 1", "cancelled 2"),
+            (),
+        ),
+        (
+            # An unusable cancel-cap state branch must fail rather than cancel
+            # blind: without the cap a run could be cancelled without limit. The
+            # pending run must still be NAMED, or a fail-closed cap leaves the
+            # operator nothing to act on.
+            "an unusable state branch fails closed and names the pending run",
+            STUCK_ROUTES,
+            1,
+            ("run 1", "queued for cancel"),
+            ("cancelled 1",),
+            {"push_ok": False},
+        ),
+        (
+            # A transient `ls-remote` failure must not be read as "the branch does
+            # not exist": bootstrapping on that would push-corrupt the real branch
+            # by rewriting it as a fresh orphan, resetting every cancel cap.
+            "an unreadable state branch fails closed",
+            STUCK_ROUTES,
+            1,
+            (),
+            ("cancelled 1",),
+            {"ls_remote_ok": False},
+        ),
+        (
+            "a state branch that cannot be cloned fails closed",
+            STUCK_ROUTES,
+            1,
+            ("clone failed",),
+            (),
+            {"existing_state": {}, "clone_ok": False},
+        ),
+        (
+            # The cap is what stops a run being cancelled without limit.
+            "a run past its daily cancel cap is not cancelled again",
+            STUCK_ROUTES,
+            0,
+            ("cap reached",),
+            ("cancelled 1",),
+            {"existing_state": {1: 2}},
+        ),
+        (
+            # ...and the cap resets after 24h, which the fixture could not reach
+            # while it hardcoded an age inside the window.
+            "a cancel cap older than 24h resets",
+            STUCK_ROUTES,
+            0,
+            ("cancelled 1",),
+            ("cap reached",),
+            {"existing_state": {1: 2}, "state_age_seconds": 90000},
+        ),
+        (
+            # A rejected cancel must not increment the cap or re-dispatch: that
+            # would duplicate a run that is still live.
+            "a rejected cancel is not treated as a cancel",
+            STUCK_ROUTES,
+            0,
+            ("will try again next cycle",),
+            ("re-dispatching",),
+            {"cancel_ok": False},
+        ),
+        (
+            # RESTORED: deleted by the table fold in 98cd2094. Labels that are not
+            # strings break `ascii_downcase` INSIDE the label parse, after the job
+            # listing itself parsed cleanly -- a different guard from the listing
+            # read, and the only one that can leave a run silently unevaluated.
+            "job labels that are not strings fail closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(extra=[{"status": "queued", "labels": [17]}]),
+            },
+            1,
+            ("could not parse the job labels",),
+            (),
+        ),
+        (
+            # RESTORED: deleted by the table fold. A queued listing whose ids do
+            # not round-trip to their own metadata (here an id typed as a string)
+            # leaves the run unclassifiable, and an unclassifiable run must fail
+            # the audit rather than be skipped past.
+            "a run whose id does not round-trip fails closed",
+            {
+                queued: (0, {"workflow_runs": [watchdog_run(1) | {"id": "1"}]}),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            1,
+            ("carries no metadata",),
+            (),
+        ),
+        (
+            # RESTORED: deleted by the table fold. A run younger than
+            # MIN_QUEUE_AGE_SECONDS is not a candidate at all. The timestamp is
+            # derived from the workflow's own literal, so lowering that literal
+            # to 0 -- or deleting the age filter -- changes the verdict here.
+            "a just-created run is below the age gate",
+            {queued: watchdog_queued_runs(watchdog_run(1, created_at=FRESH_TIMESTAMP))},
+            0,
+            ("Queue is clean",),
+            ("cancelled 1",),
+        ),
+        (
+            "the excluded release workflow is never cancelled",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            0,
+            ("workflow is excluded",),
+            ("cancelled 1",),
+        ),
+        (
+            # Pins `base="${wf##*/}"`. `release.yml` is in the workflow's OWN
+            # default list, so it stays excluded even with the strip removed --
+            # only a workflow excluded SOLELY by a prefixed repo-variable entry
+            # can prove the normalization runs.
+            "a repo-variable exclusion given with its directory prefix still matches",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1, workflow="ci.yml")),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            0,
+            ("workflow is excluded",),
+            ("cancelled 1",),
+            {"extra_env": {"EXTRA_EXCLUDED_WORKFLOWS": ".github/workflows/ci.yml"}},
+        ),
+    )
+
+
+    # The exclusion list is built from a repo variable, so an operator entry
+    # ending in `/` strips to an EMPTY associative-array subscript -- a hard
+    # bash error that kills the audit before it reads anything, every five
+    # minutes. Guarding only the read site left this reachable.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {queued: (0, {"workflow_runs": []})},
+        extra_env={"EXTRA_EXCLUDED_WORKFLOWS": "some/dir/ release.yml"},
+    )
+    require(
+        code == 0,
+        f"watchdog exclusion-list normalization: a trailing-slash entry aborted the audit "
+        f"(exit {code})\n{text}",
+    )
+    require(
+        "bad array subscript" not in text,
+        "watchdog exclusion-list normalization: empty subscript reached the array\n" + text,
+    )
+
+    # RESTORED. The fold that turned standalone cases into table rows deleted a
+    # span that included this block and the summary-channel one below, and
+    # nothing failed -- they only fail when the WORKFLOW is mutated, so the suite
+    # stayed green while silently losing the coverage. That is the exact class
+    # this file exists to catch, arriving via a cleanup. (Cursor Bugbot.)
+    #
+    # The EXIT trap. Without it, an abort the script does not anticipate exits
+    # red with a COMPLETELY EMPTY step summary and no annotation -- the worst
+    # signal for a job that runs 288 times a day. Forced through a failing
+    # `date`, which is unguarded on purpose so this stays reachable.
+    code, text = run_watchdog(script, environment_literals, {}, break_date=True)
+    require(code != 0, f"watchdog unexpected abort: expected a non-zero exit, got {code}\n{text}")
+    for needle in ("Watchdog summary", "aborted unexpectedly", "::error::"):
+        require(
+            needle in text,
+            f"watchdog unexpected abort: the EXIT trap did not emit {needle!r}\n{text}",
+        )
+
+    # The step summary is the operator-facing artifact, and nothing else proves
+    # anything reached it: `log_summary` tees to stdout, so every other needle is
+    # satisfiable from the job log alone. These assert the SUMMARY channel.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {
+            queued: watchdog_queued_runs(watchdog_run(1)),
+            inventory: one_group,
+            "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
+            "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        },
+    )
+    require(code == 0, f"watchdog summary channel: expected exit 0, got {code}\n{text}")
+    for needle in (
+        "## Watchdog summary",
+        "### Healthy queued",
+        "### Stuck (auto-cancelled)",
+        "### Starved",
+        "### Stuck but excluded",
+        "Queued runs older than",
+        "Organization runner groups:",
+        "registered but offline",
+    ):
+        require(
+            needle in text.summary,
+            f"watchdog summary channel: {needle!r} never reached GITHUB_STEP_SUMMARY "
+            f"(it may only be in the job log)\n{text.summary}",
+        )
+
+    # RESTORED: deleted by the table fold, and the most dangerous of the six.
+    # State is pushed immediately after EACH successful cancel, not only in the
+    # final sync. Deleting `state_dirty=1` makes `persist_state_changes` return
+    # early on every call, so NO cancel count is ever committed: every cycle
+    # reads `cancels=0` and cancels the same run again, without limit, against
+    # live Unity runs holding licence seats. The git stub echoes "pushed" per
+    # push, so the count separates bootstrap + one push per cancel (3) from
+    # bootstrap + a single final sync (2).
+    two_stuck = {
+        queued: watchdog_queued_runs(watchdog_run(1), watchdog_run(2)),
+        inventory: one_group,
+        "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+        "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        "actions/runs/2/jobs": watchdog_jobs(self_hosted),
+        "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+        "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
+    }
+    code, text = run_watchdog(script, environment_literals, two_stuck)
+    require(code == 0, f"watchdog per-cancel persist: expected exit 0, got {code}\n{text}")
+    require(
+        text.count("pushed") >= 3,
+        "watchdog per-cancel persist: the cap was not pushed after each cancel "
+        f"(saw {text.count('pushed')} pushes, expected at least 3)\n{text}",
+    )
+
+    # The summary is emitted exactly once. A second copy on the normal path
+    # would mean `finish` and the trap both fired.
+    code, text = run_watchdog(
+        script, environment_literals, {queued: (0, {"workflow_runs": []})}
+    )
+    require(code == 0, f"watchdog emit-once: expected exit 0, got {code}\n{text}")
+    require(
+        text.count("### Stuck (auto-cancelled)") == 1,
+        "watchdog emit-once: the step summary was written more than once\n" + text,
+    )
+
+    # The runner groups actually counted are named in the summary. That log line
+    # is the only way a second, restricted group ever becomes visible, which is
+    # what the visibility comment tells a future reader to watch for.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {
+            queued: watchdog_queued_runs(watchdog_run(1)),
+            inventory: (0, {"runner_groups": [{"id": 7, "name": "Default"}]}),
+            "runner-groups/7/runners": watchdog_runners(("ELI", "online", True, self_hosted)),
+            "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        },
+    )
+    require(
+        "Organization runner groups:" in text and "Default" in text,
+        "watchdog inventory: the counted runner-group names were not reported\n" + text,
+    )
+
+    # Rows may carry a 6th element: kwargs for `run_watchdog`. That is what lets
+    # a case needing a failing push, a pre-populated cap, or a repo variable be a
+    # ROW rather than yet another hand-rolled run-and-assert block.
+    def resolve_fresh(value: object) -> object:
+        """Swap the FRESH_TIMESTAMP sentinel for the clock, at execution time."""
+        if isinstance(value, str):
+            if value != FRESH_TIMESTAMP:
+                return value
+            return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if isinstance(value, dict):
+            return {key: resolve_fresh(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return type(value)(resolve_fresh(item) for item in value)
+        return value
+
+    for case in cases:
+        name, routes, expected_code, expected, forbidden = case[:5]
+        options = case[5] if len(case) > 5 else {}
+        routes = resolve_fresh(routes)
+        code, text = run_watchdog(script, environment_literals, routes, **options)
+        require(
+            code == expected_code,
+            f"watchdog {name}: expected exit {expected_code}, got {code}\n{text}",
+        )
+        for needle in expected:
+            require(needle in text, f"watchdog {name}: summary omitted {needle!r}\n{text}")
+        for needle in forbidden:
+            require(needle not in text, f"watchdog {name}: summary leaked {needle!r}\n{text}")
+
+
+MAINTENANCE = Path(".github/workflows/post-merge-maintenance.yml")
+
+
+def run_maintenance_push_loop(
+    script: str,
+    root: Path,
+    failing_check_calls: int,
+    failing_pushes: int,
+    failing: str = "issue-template",
+    advance_before_run: bool = False,
+    push_fails_without_advance: bool = False,
+    quiet_other: bool = False,
+) -> tuple[int, dict[str, str]]:
+    """Execute the push loop against a real local remote; return exit + pushed files.
+
+    The loop is the only place in this repository where generator failure,
+    concurrent-merge retry, and the job's exit status interact, and it has now
+    produced two defects in review: a `regenerate` that always returned 0 (so an
+    not-yet-converged generator shipped green) and then a failure flag that never
+    cleared (so a transient failure reddened a job that had converged). Both are
+    invisible to a text assertion, so this runs the real thing.
+
+    `failing_pushes` forces the concurrent-merge retry: each failed push also
+    advances the remote, which is what makes the loop regenerate on a new head.
+    """
+    bin_dir, origin, work, other = (root / n for n in ("bin", "origin.git", "work", "other"))
+    bin_dir.mkdir()
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    for clone in (work, other):
+        subprocess.run(
+            ["git", "clone", "-q", str(origin), str(clone)], check=True, capture_output=True
+        )
+        for key, value in (("user.email", "t@t"), ("user.name", "t")):
+            subprocess.run(["git", "-C", str(clone), "config", key, value], check=True)
+    (work / ".github" / "ISSUE_TEMPLATE").mkdir(parents=True)
+    for name, body in (("llms.txt", "a"), ("README.md", "b"), (".github/ISSUE_TEMPLATE/bug_report.yml", "c")):
+        (work / name).write_text(body, encoding="utf-8")
+    subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-qm", "seed"], check=True)
+    subprocess.run(["git", "-C", str(work), "branch", "-M", "master"], check=True)
+    subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "master"], check=True)
+
+    calls, pushes = root / "check-calls", root / "push-calls"
+    calls.write_text("0", encoding="utf-8")
+    pushes.write_text("0", encoding="utf-8")
+    npm = bin_dir / "npm"
+    # Whichever generator is under test counts its own calls and fails the first
+    # `failing_check_calls` of them; the other always converges. Both branches of
+    # `regenerate` set the failure flag, so both have to be exercised.
+    #
+    # `quiet_other` stops the OTHER generator writing anything. Without it every
+    # regeneration left a pending change, so the loop always exited through the
+    # commit-and-push branch and the "already current; nothing to commit" exit
+    # was unreachable -- one of two sites where the regenerate verdict could be
+    # dropped undetected.
+    flaky = "check:llms-txt" if failing == "llms" else "check:issue-template-versions"
+    steady = "check:issue-template-versions" if failing == "llms" else "check:llms-txt"
+    writes_template = "exit 0" if quiet_other else (
+        'echo "GEN-$(date +%s%N)" > .github/ISSUE_TEMPLATE/bug_report.yml; exit 0'
+    )
+    writes_llms = "exit 0" if (quiet_other and failing != "llms") else (
+        'echo "GEN-$(date +%s%N)" > llms.txt; exit 0'
+    )
+    npm.write_text(
+        "#!/bin/bash\n"
+        'case "$*" in\n'
+        f'  "run update:llms-txt") {writes_llms} ;;\n'
+        f'  "run update:issue-template-versions") {writes_template} ;;\n'
+        f'  "run {steady}") exit 0 ;;\n'
+        f'  "run {flaky}")\n'
+        f"     n=$(cat {calls}); n=$((n+1)); echo $n > {calls}\n"
+        f'     [ "$n" -le {failing_check_calls} ] && exit 1\n'
+        "     exit 0 ;;\n"
+        "esac\nexit 0\n",
+        encoding="utf-8",
+    )
+    git = bin_dir / "git"
+    # A failed push normally ALSO advances the remote, which is what drives the
+    # concurrent-merge retry. `push_fails_without_advance` withholds that, which
+    # is the genuinely different case: a push rejected while master stood still
+    # (branch protection, a bad token) is a real failure with no retry to make,
+    # and the loop must surface it rather than exit 0 having pushed nothing.
+    if push_fails_without_advance:
+        on_push_failure = "      exit 1\n"
+    else:
+        on_push_failure = (
+            f"      (cd {other} && /usr/bin/git pull -q --rebase; echo $n > z$n.txt; "
+            "/usr/bin/git add -A; /usr/bin/git commit -qm concurrent; "
+            "/usr/bin/git push -q origin master) > /dev/null 2>&1\n"
+            "      exit 1\n"
+        )
+    git.write_text(
+        "#!/bin/bash\n"
+        'for a in "$@"; do\n'
+        '  if [ "$a" = "push" ]; then\n'
+        f"    n=$(cat {pushes}); n=$((n+1)); echo $n > {pushes}\n"
+        f'    if [ "$n" -le {failing_pushes} ]; then\n'
+        f"{on_push_failure}"
+        "    fi\n  fi\ndone\n"
+        'exec /usr/bin/git "$@"\n',
+        encoding="utf-8",
+    )
+    for stub in (npm, git):
+        stub.chmod(0o755)
+
+    (work / "llms.txt").write_text("modified", encoding="utf-8")
+    if advance_before_run:
+        # Master advances between the generator steps and the commit step. That
+        # drives the TOP-of-loop regeneration, which the fixture could not reach
+        # before -- only the bottom-of-loop one after a failed push. It is the
+        # branch the whole stale-head design exists for: without it the loop
+        # commits the old head's generated output onto a new head.
+        # `other` was cloned from the still-empty bare repo, so it has to catch
+        # up to the seed commit before it can advance master.
+        subprocess.run(
+            ["git", "-C", str(other), "fetch", "-q", "origin"], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(other), "checkout", "-q", "-B", "master", "origin/master"],
+            check=True,
+            capture_output=True,
+        )
+        (other / "concurrent.txt").write_text("x", encoding="utf-8")
+        subprocess.run(["git", "-C", str(other), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(other), "commit", "-qm", "advance"], check=True)
+        subprocess.run(["git", "-C", str(other), "push", "-q", "origin", "master"], check=True)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{bin_dir}{os.pathsep}{environment['PATH']}",
+            "LLMS_PATHS": "llms.txt README.md",
+            "ISSUE_TEMPLATE_PATHS": ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "GH_PUSH_TOKEN": "stub",
+            "GITHUB_REF_NAME": "master",
+        }
+    )
+    code = subprocess.run(
+        ["bash", "-c", script], cwd=work, env=environment, capture_output=True, text=True, check=False
+    ).returncode
+    # What actually reached the remote matters as much as the exit code: a
+    # generator whose own checker rejected its output must never have that
+    # output pushed. Asserting only the exit code let the revert be deleted.
+    # Per-file, not concatenated: the generator that SUCCEEDS legitimately writes
+    # its marker, so a combined blob cannot tell whose output was reverted.
+    pushed = {}
+    for path in ("llms.txt", ".github/ISSUE_TEMPLATE/bug_report.yml"):
+        shown = subprocess.run(
+            ["git", "-C", str(origin), "show", f"master:{path}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        pushed[path] = shown.stdout if shown.returncode == 0 else ""
+    return code, pushed
+
+
+def run_maintenance_gate(script: str, llms: str, issue_template: str) -> int:
+    """Execute the terminal `Require every generator to have converged` step."""
+    environment = os.environ.copy()
+    environment.update({"LLMS_OUTCOME": llms, "ISSUE_TEMPLATE_OUTCOME": issue_template})
+    return subprocess.run(
+        ["bash", "-c", script], env=environment, capture_output=True, text=True, check=False
+    ).returncode
+
+
+def validate_msvc_gate_is_reachable() -> None:
+    """Every workflow declaring the MSVC gate must be able to run it.
+
+    The gate is gated on `matrix.test-mode == 'standalone'`, and it was copied
+    into `unity-benchmarks.yml`, whose matrix declares only editmode and
+    playmode. It could never run there: dead weight that implied IL2CPP coverage
+    the job does not have, on a workflow whose Mono legs never touch `cl.exe`.
+
+    This is the same class as everything else this file pins -- a check that
+    cannot fail, here a check that cannot RUN -- so it is asserted rather than
+    left to the next reader to notice. (Cursor Bugbot.)
+    """
+    for workflow in sorted(Path(".github/workflows").glob("*.yml")):
+        source = workflow.read_text(encoding="utf-8")
+        if "assert-msvc-toolchain" not in source:
+            continue
+        condition = re.search(
+            r"- name: [^\n]*MSVC[^\n]*\n\s+if: \$\{\{ matrix\.test-mode == '(\w+)' \}\}",
+            source,
+        )
+        require(
+            condition is not None,
+            f"{workflow.name}: the MSVC gate must stay gated on a `matrix.test-mode` "
+            f"comparison, so this check can tell which mode it needs",
+        )
+        needed = condition.group(1)
+        modes_block = re.search(r"^        test-mode:\n((?:          - \w+\n)+)", source, re.M)
+        require(
+            modes_block is not None,
+            f"{workflow.name}: declares the MSVC gate but no `test-mode` matrix was found",
+        )
+        modes = re.findall(r"- (\w+)", modes_block.group(1))
+        require(
+            needed in modes,
+            f"{workflow.name}: the MSVC gate requires test-mode {needed!r}, which this "
+            f"workflow's matrix does not declare ({modes}). The step can never run -- "
+            f"either add the mode or drop the step; a gate that cannot run reads as "
+            f"coverage that does not exist.",
+        )
+
+
+def validate_post_merge_terminal_gate() -> None:
+    """Pin the step that decides the job's verdict.
+
+    The commit step deliberately runs after a failed generator, so the job's own
+    verdict comes from this gate alone -- its comment says "without this a
+    generator that never converged would be reported green". It had no coverage
+    at all: neither its condition nor its outcome table was executed or asserted.
+    """
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    script = run_script(
+        step_block(job_block(source, "regenerate"), "Require every generator to have converged")
+    )
+    if os.name == "nt":
+        return
+    # llms outcome, issue-template outcome, expected exit
+    # `skipped` is not converged. Both generators carry `!cancelled()`, the same
+    # condition as the gate, so a skip while the gate runs means something
+    # unanticipated stopped a generator -- and it used to read as success, which
+    # is how a failed `Install dependencies` could skip llms.txt while the
+    # sibling generator converged and pushed. (Cursor Bugbot.)
+    for llms, issue_template, expected in (
+        ("success", "success", 0),
+        ("success", "skipped", 1),
+        ("skipped", "success", 1),
+        ("skipped", "skipped", 1),
+        ("failure", "success", 1),
+        ("success", "failure", 1),
+        ("failure", "failure", 1),
+        ("cancelled", "success", 1),
+        ("", "success", 1),
+    ):
+        code = run_maintenance_gate(script, llms, issue_template)
+        require(
+            code == expected,
+            f"post-merge terminal gate ({llms!r}, {issue_template!r}): "
+            f"expected exit {expected}, got {code}",
+        )
+
+
+def run_maintenance_step(
+    step_name: str, root: Path, environment_overrides: dict[str, str], seed_repo: bool = True
+) -> tuple[int, str, dict[str, str]]:
+    """Execute one `regenerate`-job step and return exit, `GITHUB_OUTPUT`, files.
+
+    Four of this job's six bash steps were reachable by no test at all: the
+    credential probe, the branch refresh, both generators, and the change probe.
+    Only the push loop and the terminal gate were ever executed, so the
+    STEP-level reverts -- the ones that stop a checker-rejected file being
+    committed -- could be deleted with every suite green.
+    """
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    script = run_script(step_block(job_block(source, "regenerate"), step_name))
+    work = root / "work"
+    work.mkdir()
+    if seed_repo:
+        subprocess.run(["git", "init", "-q", str(work)], check=True, capture_output=True)
+        for key, value in (("user.email", "t@t"), ("user.name", "t")):
+            subprocess.run(["git", "-C", str(work), "config", key, value], check=True)
+        (work / ".github" / "ISSUE_TEMPLATE").mkdir(parents=True)
+        for name, body in (
+            ("llms.txt", "GOOD"),
+            ("README.md", "readme"),
+            (".github/ISSUE_TEMPLATE/bug_report.yml", "GOOD"),
+        ):
+            (work / name).write_text(body, encoding="utf-8")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), "commit", "-qm", "seed"], check=True)
+    output = root / "github-output"
+    output.touch()
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GITHUB_OUTPUT": str(output),
+            "LLMS_PATHS": "llms.txt README.md",
+            "ISSUE_TEMPLATE_PATHS": ".github/ISSUE_TEMPLATE/bug_report.yml",
+        }
+    )
+    environment.update(environment_overrides)
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=work, env=environment, capture_output=True, text=True, check=False
+    )
+    files = {
+        name: (work / name).read_text(encoding="utf-8")
+        for name in ("llms.txt", ".github/ISSUE_TEMPLATE/bug_report.yml")
+        if (work / name).exists()
+    }
+    return result.returncode, output.read_text(encoding="utf-8") + result.stdout + result.stderr, files
+
+
+def npm_stub(root: Path, reject: str = "") -> dict[str, str]:
+    """A `npm` on PATH whose `check:<reject>` rejects what its update wrote."""
+    bin_dir = root / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "npm"
+    stub.write_text(
+        "#!/bin/bash\n"
+        'case "$*" in\n'
+        '  "run update:llms-txt") echo "REJECTED-OUTPUT" > llms.txt ;;\n'
+        '  "run update:issue-template-versions")\n'
+        '     echo "REJECTED-OUTPUT" > .github/ISSUE_TEMPLATE/bug_report.yml ;;\n'
+        f'  "run check:{reject or "__none__"}") exit 1 ;;\n'
+        "esac\nexit 0\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+
+def validate_post_merge_steps() -> None:
+    """Execute the four steps nothing else runs."""
+    if os.name == "nt":
+        return
+
+    # The credential probe decides whether anything is committed at all.
+    for name, secrets, expected in (
+        ("both secrets present", {"AUTO_COMMIT_APP_ID": "1", "AUTO_COMMIT_APP_PRIVATE_KEY": "k"}, "has-app=true"),
+        ("id missing", {"AUTO_COMMIT_APP_ID": "", "AUTO_COMMIT_APP_PRIVATE_KEY": "k"}, "has-app=false"),
+        ("key missing", {"AUTO_COMMIT_APP_ID": "1", "AUTO_COMMIT_APP_PRIVATE_KEY": ""}, "has-app=false"),
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            code, text, _ = run_maintenance_step(
+                "Check for the auto-commit GitHub App credentials", Path(directory), secrets
+            )
+        require(code == 0, f"post-merge credentials {name}: expected exit 0, got {code}\n{text}")
+        require(expected in text, f"post-merge credentials {name}: expected {expected}\n{text}")
+
+    # Each generator must REVERT its own output when its checker rejects it, and
+    # fail. Deleting either revert publishes checker-rejected content.
+    for step, reject, owned in (
+        ("Regenerate llms.txt", "llms-txt", "llms.txt"),
+        (
+            "Regenerate the issue-template version dropdown",
+            "issue-template-versions",
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ),
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code, text, files = run_maintenance_step(step, root, npm_stub(root, reject))
+        require(code != 0, f"post-merge {step}: a rejected generation must fail, got {code}\n{text}")
+        require(
+            files[owned].strip() == "GOOD",
+            f"post-merge {step}: rejected output was left in the tree instead of reverted "
+            f"({files[owned]!r}) -- it would be committed and pushed",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code, text, files = run_maintenance_step(step, root, npm_stub(root))
+        require(code == 0, f"post-merge {step}: a converged generation must pass, got {code}\n{text}")
+        require(
+            files[owned].strip() == "REJECTED-OUTPUT",
+            f"post-merge {step}: converged output was reverted anyway ({files[owned]!r})",
+        )
+
+    # The change probe decides whether the commit step runs at all. Inverted
+    # polarity turns the whole self-heal into a permanent silent no-op.
+    with tempfile.TemporaryDirectory() as directory:
+        code, text, _ = run_maintenance_step("Check for changes", Path(directory), {})
+    require(code == 0 and "changed=true" not in text, f"post-merge probe clean: {code}\n{text}")
+
+    for name, path in (
+        ("llms.txt", "llms.txt"),
+        ("issue template", ".github/ISSUE_TEMPLATE/bug_report.yml"),
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def dirty(work: Path, target: str = path) -> None:
+                (work / target).write_text("CHANGED", encoding="utf-8")
+
+            code, text, _ = run_maintenance_step_dirty("Check for changes", root, dirty)
+        require(
+            code == 0 and "changed=true" in text,
+            f"post-merge probe {name}: a change must set changed=true\n{text}",
+        )
+
+    # Not a git repository at all: `--quiet` returns 128/129, which must NOT be
+    # read as "changed".
+    with tempfile.TemporaryDirectory() as directory:
+        code, text, _ = run_maintenance_step(
+            "Check for changes", Path(directory), {}, seed_repo=False
+        )
+    require(
+        code != 0 and "changed=true" not in text,
+        f"post-merge probe outside a repo: must fail closed, got {code}\n{text}",
+    )
+
+
+def run_maintenance_step_dirty(step_name: str, root: Path, mutate) -> tuple[int, str, dict[str, str]]:
+    """`run_maintenance_step`, with the worktree dirtied after seeding."""
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    script = run_script(step_block(job_block(source, "regenerate"), step_name))
+    work = root / "work"
+    work.mkdir()
+    subprocess.run(["git", "init", "-q", str(work)], check=True, capture_output=True)
+    for key, value in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(work), "config", key, value], check=True)
+    (work / ".github" / "ISSUE_TEMPLATE").mkdir(parents=True)
+    for name, body in (
+        ("llms.txt", "GOOD"),
+        ("README.md", "readme"),
+        (".github/ISSUE_TEMPLATE/bug_report.yml", "GOOD"),
+    ):
+        (work / name).write_text(body, encoding="utf-8")
+    subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-qm", "seed"], check=True)
+    mutate(work)
+    output = root / "github-output"
+    output.touch()
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GITHUB_OUTPUT": str(output),
+            "LLMS_PATHS": "llms.txt README.md",
+            "ISSUE_TEMPLATE_PATHS": ".github/ISSUE_TEMPLATE/bug_report.yml",
+        }
+    )
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=work, env=environment, capture_output=True, text=True, check=False
+    )
+    return result.returncode, output.read_text(encoding="utf-8") + result.stdout + result.stderr, {}
+
+
+def validate_post_merge_cancellation_policy() -> None:
+    """No step that writes or pushes may survive a cancellation.
+
+    `always()` includes CANCELLED, and this workflow sets
+    `cancel-in-progress: true`, so a second push kills the first mid-flight as a
+    matter of routine. A generator killed mid-write never reaches its own revert,
+    so any step that keeps generating, probing, or pushing after a cancel can
+    commit a half-written file to the default branch. The two workflows this one
+    replaced had no `always()` at all and simply stopped. (Cursor Bugbot, high.)
+    """
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    # Anchored to the concurrency BLOCK. Matching the bare string anywhere let a
+    # prose comment satisfy it -- including the one this very guard's fix added,
+    # so flipping the real setting to `false` passed. A tripwire a comment can
+    # arm is not a tripwire.
+    concurrency = re.search(r"\nconcurrency:\n((?:  .*\n)+)", source)
+    require(concurrency is not None, "post-merge cancellation: no concurrency block")
+    require(
+        "cancel-in-progress: true" in concurrency.group(1),
+        "post-merge cancellation: the concurrency policy changed; re-check whether "
+        "cancellation is still a routine path before relaxing the guards below",
+    )
+    job = job_block(source, "regenerate")
+    # EVERY step carrying an `if:`, not a hard-coded list. The docstring's rule is
+    # "no step that writes or pushes may survive a cancellation"; a fixed list
+    # cannot enforce that for a step added later, which is the direction the
+    # regression arrives from. A step with no `if:` carries the implicit
+    # `success()` and cannot run after a cancel, so it needs no check.
+    step_starts = [m for m in re.finditer(r"^      - name: (.+)$", job, re.M)]
+    guarded = []
+    for index, match in enumerate(step_starts):
+        end = step_starts[index + 1].start() if index + 1 < len(step_starts) else len(job)
+        if re.search(r"^        if: ", job[match.start() : end], re.M):
+            guarded.append(match.group(1))
+    require(
+        len(guarded) >= 4,
+        f"post-merge cancellation: expected at least four conditional steps, found {guarded}",
+    )
+    # `always()` is the ONLY construct that survives a cancellation. Any other
+    # condition is implicitly success-gated and cannot run after one, so the rule
+    # is simply that no step in this job may say `always()`. A step that must run
+    # after a FAILED sibling says `!cancelled()` instead.
+    uses_not_cancelled = 0
+    for step_name in guarded:
+        step = step_block(job, step_name)
+        condition = re.search(r"\n        if: (?:>-\n\s+)?(.*?)\n        \w", step, re.S)
+        require(condition is not None, f"post-merge cancellation: {step_name} has no `if:`")
+        text = condition.group(1)
+        require(
+            "always()" not in text,
+            f"post-merge cancellation: {step_name} uses `always()`, which runs after a "
+            f"cancel; a generator killed mid-write never reaches its revert, so a step "
+            f"that keeps going can commit a half-written tree. Use `!cancelled()`. "
+            f"Got {text!r}",
+        )
+        if "!cancelled()" in text:
+            uses_not_cancelled += 1
+    require(
+        uses_not_cancelled >= 4,
+        f"post-merge cancellation: expected at least four steps gated on `!cancelled()` "
+        f"(the generator isolation); found {uses_not_cancelled}",
+    )
+
+    # EVERY generator must carry `!cancelled()`, including one with no `if:` at
+    # all. The loop above deliberately skips unconditional steps -- correct for
+    # cancellation, since an unconditional step cannot run after a cancel -- but
+    # blind to the other half: an unconditional step also cannot run after an
+    # earlier FAILURE. `Regenerate llms.txt` had no condition, so a failed
+    # `Install dependencies` skipped it while its `!cancelled()` sibling ran,
+    # converged, and pushed, and the terminal gate read `skipped` as converged.
+    # Master could take an auto-commit that refreshed the dropdown and never
+    # refreshed llms.txt. (Cursor Bugbot.)
+    #
+    # Discovered by `id: gen_*` rather than by name, so a third generator added
+    # later is held to the same rule.
+    generators = []
+    for index, match in enumerate(step_starts):
+        end = step_starts[index + 1].start() if index + 1 < len(step_starts) else len(job)
+        body = job[match.start() : end]
+        step_id = re.search(r"^        id: (gen_\w+)$", body, re.M)
+        if step_id:
+            generators.append((match.group(1), step_id.group(1), body))
+    require(
+        len(generators) >= 2,
+        f"post-merge cancellation: expected at least two `gen_*` generator steps, "
+        f"found {[name for name, _, _ in generators]}",
+    )
+    # The push step is deliberately allowed to run after a FAILED generator, and
+    # the only thing making that safe is "the tree can only ever carry output a
+    # checker accepted". Each generator reverts its own paths, but a
+    # `git checkout` that fails -- a pathspec matching nothing, a file the
+    # generator deleted -- breaks the invariant silently. Each generator now
+    # VERIFIES its revert and reports `revert-failed`, and the push step must
+    # honour both. Asserted because the guard is a condition clause, which is
+    # exactly the kind of thing a later edit drops without noticing.
+    # (GitHub Copilot raised the risk; `set -e` does not address it -- measured,
+    # it leaves the rejected content in the worktree either way.)
+    push = step_block(job, "Commit and push changes")
+    for step_name, step_id, _ in generators:
+        require(
+            f"steps.{step_id}.outputs.revert-failed != 'true'" in push,
+            f"post-merge push: `Commit and push changes` must refuse when {step_name!r} "
+            f"({step_id}) could not discard its rejected output; the clause "
+            f"`steps.{step_id}.outputs.revert-failed != 'true'` is missing from its `if:`",
+        )
+        body = step_block(job, step_name)
+        require(
+            "revert-failed=true" in body and "git diff --quiet" in body,
+            f"post-merge push: {step_name!r} must VERIFY its own revert and report "
+            f"`revert-failed=true` when the working tree still carries rejected output",
+        )
+
+    for step_name, step_id, step in generators:
+        condition = re.search(r"\n        if: (?:>-\n\s+)?(.*?)\n        \w", step, re.S)
+        require(
+            condition is not None and "!cancelled()" in condition.group(1),
+            f"post-merge cancellation: generator {step_name!r} ({step_id}) must be gated on "
+            f"`!cancelled()`. Without it the step is implicitly `success()`, so any earlier "
+            f"failure skips it while its sibling still generates and pushes -- a partial "
+            f"auto-commit on the default branch that the terminal gate reads as converged.",
+        )
+
+
+def validate_post_merge_push_loop() -> None:
+    """Pin how the post-merge push loop turns generator outcomes into an exit code."""
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    script = run_script(step_block(job_block(source, "regenerate"), "Commit and push changes"))
+    if os.name == "nt":
+        return
+    # `failing_pushes` is what forces the loop to regenerate on a refreshed head:
+    # each failed push also advances the remote. With zero failed pushes the loop
+    # never calls `regenerate` at all, so a generator failure there belongs to the
+    # step that ran it, not to this loop -- which is why the no-retry row expects 0.
+    #
+    # name, failing check calls, failing pushes, which generator, expected exit
+    # A head that advanced BEFORE the commit step forces the top-of-loop
+    # regeneration; a generator that fails there must still fail the job.
+    with tempfile.TemporaryDirectory() as directory:
+        code, pushed = run_maintenance_push_loop(
+            script, Path(directory), 99, 0, "issue-template", advance_before_run=True
+        )
+    require(
+        code == 1,
+        f"post-merge push loop stale head: a generator failing on the refreshed head "
+        f"must fail the job, got exit {code}",
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        code, pushed = run_maintenance_push_loop(
+            script, Path(directory), 0, 0, "issue-template", advance_before_run=True
+        )
+    require(
+        code == 0,
+        f"post-merge push loop stale head: a clean regeneration on the refreshed head "
+        f"must succeed, got exit {code}",
+    )
+
+    # The "already current" early exit must also carry the regenerate verdict.
+    # A failing llms generator reverts its own file, which removes the only
+    # pending change, so the loop leaves through that branch -- and it was one of
+    # two exit sites where `exit "${regenerate_failed}"` could become `exit 0`
+    # undetected, reinstating the always-green bug 764540b1 claims to have fixed.
+    with tempfile.TemporaryDirectory() as directory:
+        code, pushed = run_maintenance_push_loop(
+            script, Path(directory), 99, 1, "llms", quiet_other=True
+        )
+    require(
+        code == 1,
+        f"post-merge push loop nothing-to-commit exit: a failed generator that "
+        f"leaves no change must still fail the job, got exit {code}",
+    )
+
+    # The attempt-3 give-up is the FOURTH `exit "${regenerate_failed}"` site, and
+    # the one nobody executes. Master advancing three times during the job is
+    # exactly why the loop exists; a generator that stops converging on one of
+    # those heads reverts its own file, so BOTH step outcomes the terminal gate
+    # reads are `success` and only this exit reddens the job.
+    with tempfile.TemporaryDirectory() as directory:
+        # NOT `quiet_other`: the other generator must keep producing a change, or
+        # the failing one's revert empties the tree and the loop leaves through
+        # the "already current" branch before attempt 3 is ever reached.
+        code, pushed = run_maintenance_push_loop(
+            script, Path(directory), 99, 3, "llms"
+        )
+    require(
+        code == 1,
+        f"post-merge push loop attempt-cap exit: a generator that never converged "
+        f"must still fail the job when the loop gives up, got exit {code}",
+    )
+
+    # A push rejected while master stood still is a genuine failure with no
+    # retry to make -- branch protection, a bad token, a lost credential. The
+    # loop must surface it. The stub previously always advanced the remote on a
+    # failed push, so this branch was unreachable and `exit "${push_status}"`
+    # could be replaced with `exit 0`: a job reporting green having pushed
+    # nothing at all.
+    with tempfile.TemporaryDirectory() as directory:
+        code, pushed = run_maintenance_push_loop(
+            script, Path(directory), 0, 1, "issue-template", push_fails_without_advance=True
+        )
+    require(
+        code != 0,
+        f"post-merge push loop rejected push: a push rejected with master unchanged "
+        f"must fail the job, got exit {code}",
+    )
+    require(
+        "GEN-" not in pushed["llms.txt"],
+        "post-merge push loop rejected push: reported a push that never landed\n"
+        + repr(pushed["llms.txt"]),
+    )
+
+    for name, failing_checks, failing_pushes, failing, expected in (
+        ("a clean run exits 0", 0, 0, "issue-template", 0),
+        ("a straight retry with no generator failure exits 0", 0, 2, "issue-template", 0),
+        ("an issue-template generator that never converges fails the job", 99, 1, "issue-template", 1),
+        ("an llms.txt generator that never converges fails the job", 99, 1, "llms", 1),
+        ("a transient issue-template failure that later converges exits 0", 1, 2, "issue-template", 0),
+        # No transient-llms row on purpose. llms.txt carries the only change in
+        # these fixtures, so reverting it on failure leaves nothing to commit and
+        # the loop exits at the "already current" branch before a second
+        # regeneration can occur. The failure still propagates (the row above),
+        # which is the property that matters; a row asserting a path the loop
+        # cannot reach would only look like coverage.
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            code, pushed = run_maintenance_push_loop(
+                script, Path(directory), failing_checks, failing_pushes, failing
+            )
+        require(code == expected, f"post-merge push loop {name}: expected exit {expected}, got {code}")
+        # A generator whose checker rejected its output must have that output
+        # REVERTED, so the marker its update step wrote can never reach master.
+        # Only the FAILING generator's file is checked; the other one converged
+        # and its marker is expected there.
+        # Only when the generator NEVER converged (which is why the job fails).
+        # A transient failure that later succeeds legitimately pushes its output.
+        if expected == 1:
+            owned = (
+                "llms.txt" if failing == "llms" else ".github/ISSUE_TEMPLATE/bug_report.yml"
+            )
+            require(
+                "GEN-" not in pushed[owned],
+                f"post-merge push loop {name}: pushed {owned} from a generator that "
+                f"never converged\n{pushed[owned]!r}",
+            )
 
 
 def find_unregistered_unity_automation(files: dict[str, str]) -> list[str]:
@@ -1534,10 +3386,9 @@ steps:
         "healthy-existing CI validation must require the central return action's canonical editor leaf",
     )
     for workflow, job_id in LICENSED_LOCK_WINDOWS:
-        validate_lock_window_timeout_budget(
-            job_block(workflow.read_text(encoding="utf-8"), job_id),
-            f"{workflow}:{job_id}",
-        )
+        window = job_block(workflow.read_text(encoding="utf-8"), job_id)
+        validate_lock_window_timeout_budget(window, f"{workflow}:{job_id}")
+        validate_cleanup_gate_not_attempted_input(window, f"{workflow}:{job_id}")
 
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = validate_licensed_workflow_policy(source)
@@ -1766,6 +3617,13 @@ fi"""
                 result.returncode == expected,
                 f"{name}: expected {expected}, got {result.returncode}\n{result.stdout}\n{result.stderr}",
             )
+
+    validate_stuck_job_watchdog()
+    validate_post_merge_push_loop()
+    validate_msvc_gate_is_reachable()
+    validate_post_merge_terminal_gate()
+    validate_post_merge_cancellation_policy()
+    validate_post_merge_steps()
 
     print("Unity pull-request policy validation passed.")
 
