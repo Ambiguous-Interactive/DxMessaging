@@ -997,6 +997,25 @@ def step_env_literals(step: str) -> dict[str, str]:
     return literals
 
 
+class WatchdogOutput(str):
+    """Combined job-log + step-summary text, with the summary kept separately.
+
+    `log_summary` tees to stdout, and the harness used to hand back
+    `summary + stdout + stderr` as one blob -- so every needle was satisfiable
+    from the job log alone and NO case could prove a line actually reached
+    `GITHUB_STEP_SUMMARY`. Three of the four step-summary buckets and the whole
+    audit narrative were deletable with the suite green. Behaves as the same
+    string it always did; `.summary` is the channel-specific view.
+    """
+
+    summary: str
+
+    def __new__(cls, combined: str, summary: str) -> "WatchdogOutput":
+        value = super().__new__(cls, combined)
+        value.summary = summary
+        return value
+
+
 def run_watchdog(
     script: str,
     environment_literals: dict[str, str],
@@ -1048,7 +1067,10 @@ def run_watchdog(
         result = subprocess.run(
             ["bash", "-c", script], env=environment, capture_output=True, text=True, check=False
         )
-        return result.returncode, summary.read_text(encoding="utf-8") + result.stdout + result.stderr
+        summary_text = summary.read_text(encoding="utf-8")
+        return result.returncode, WatchdogOutput(
+            summary_text + result.stdout + result.stderr, summary_text
+        )
 
 
 def watchdog_queued_runs(*runs: dict[str, object]) -> tuple[int, object]:
@@ -1593,15 +1615,20 @@ def validate_stuck_job_watchdog() -> None:
             {
                 queued: watchdog_queued_runs(watchdog_run(1)),
                 inventory: one_group,
+                # `aaa` sorts BEFORE `zzz` under jq `unique`, so the OFFLINE set
+                # is scanned first and plain first-wins would report it. Only the
+                # upgrade clause promotes the unregistered set. With the sets the
+                # other way round the clause never executes and its deletion
+                # survives -- which is how this case originally passed.
                 "runner-groups/7/runners": watchdog_runners(
-                    ("DAD", "offline", False, ["self-hosted", "Windows"])
+                    ("DAD", "offline", False, ["self-hosted", "aaa"])
                 ),
                 "actions/runs/1/jobs": watchdog_jobs(
-                    ["self-hosted", "Windows"], ["self-hosted", "unicorn"]
+                    ["self-hosted", "aaa"], ["self-hosted", "zzz"]
                 ),
             },
             0,
-            ("starved", "no runner registered", "unicorn"),
+            ("starved", "no runner registered", "zzz"),
             ("registered but offline", "cancelled 1", STARVED_SECTION_EMPTY),
         ),
         (
@@ -1740,6 +1767,54 @@ def validate_stuck_job_watchdog() -> None:
         f"(saw {text.count('pushed')} pushes, expected at least 3)\n{text}",
     )
 
+    # A REJECTED cancel (403, already completed, transient) must not be treated
+    # as a cancel. Without the guard the audit still increments the cap, pushes
+    # state, and RE-DISPATCHES -- producing a duplicate run of a workflow that
+    # was never cancelled. `cancel_ok` existed as a knob but no case had ever
+    # passed False, so the guard was unpinned.
+    code, text = run_watchdog(script, environment_literals, stuck_routes, cancel_ok=False)
+    require(code == 0, f"watchdog rejected cancel: expected exit 0, got {code}\n{text}")
+    require(
+        "will try again next cycle" in text,
+        "watchdog rejected cancel: the failure was not reported\n" + text,
+    )
+    require(
+        "re-dispatching" not in text,
+        "watchdog rejected cancel: re-dispatched a run it never cancelled\n" + text,
+    )
+
+    # The step summary is the operator-facing artifact, and until now nothing
+    # proved anything reached it: `log_summary` tees to stdout, so every needle
+    # was satisfiable from the job log. Three of the four buckets and the entire
+    # audit narrative were deletable with the suite green. These assert the
+    # SUMMARY channel specifically.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {
+            queued: watchdog_queued_runs(watchdog_run(1)),
+            inventory: one_group,
+            "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
+            "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        },
+    )
+    require(code == 0, f"watchdog summary channel: expected exit 0, got {code}\n{text}")
+    for needle in (
+        "## Watchdog summary",
+        "### Healthy queued",
+        "### Stuck (auto-cancelled)",
+        "### Starved",
+        "### Stuck but excluded",
+        "Queued runs older than",
+        "Runner groups visible to",
+        "registered but offline",
+    ):
+        require(
+            needle in text.summary,
+            f"watchdog summary channel: {needle!r} never reached GITHUB_STEP_SUMMARY "
+            f"(it may only be in the job log)\n{text.summary}",
+        )
+
     # The 24h reset. With the cap reached but the last cancel more than a day
     # ago the counter resets and the run is cancelled again. The fixture had
     # hardcoded an age inside the window, so the reset was unreachable and only
@@ -1869,8 +1944,9 @@ def run_maintenance_push_loop(
     failing_pushes: int,
     failing: str = "issue-template",
     advance_before_run: bool = False,
-) -> int:
-    """Execute the post-merge push loop against a real local remote.
+    push_fails_without_advance: bool = False,
+) -> tuple[int, dict[str, str]]:
+    """Execute the push loop against a real local remote; return exit + pushed files.
 
     The loop is the only place in this repository where generator failure,
     concurrent-merge retry, and the job's exit status interact, and it has now
@@ -1911,8 +1987,9 @@ def run_maintenance_push_loop(
     npm.write_text(
         "#!/bin/bash\n"
         'case "$*" in\n'
-        '  "run update:llms-txt") date +%s%N > llms.txt; exit 0 ;;\n'
-        '  "run update:issue-template-versions") exit 0 ;;\n'
+        '  "run update:llms-txt") echo "GEN-$(date +%s%N)" > llms.txt; exit 0 ;;\n'
+        '  "run update:issue-template-versions") '
+        'echo "GEN-$(date +%s%N)" > .github/ISSUE_TEMPLATE/bug_report.yml; exit 0 ;;\n'
         f'  "run {steady}") exit 0 ;;\n'
         f'  "run {flaky}")\n'
         f'     n=$(cat {calls}); n=$((n+1)); echo $n > {calls}\n'
@@ -1922,16 +1999,28 @@ def run_maintenance_push_loop(
         encoding="utf-8",
     )
     git = bin_dir / "git"
+    # A failed push normally ALSO advances the remote, which is what drives the
+    # concurrent-merge retry. `push_fails_without_advance` withholds that, which
+    # is the genuinely different case: a push rejected while master stood still
+    # (branch protection, a bad token) is a real failure with no retry to make,
+    # and the loop must surface it rather than exit 0 having pushed nothing.
+    if push_fails_without_advance:
+        on_push_failure = "      exit 1\n"
+    else:
+        on_push_failure = (
+            f"      (cd {other} && /usr/bin/git pull -q --rebase; echo $n > z$n.txt; "
+            "/usr/bin/git add -A; /usr/bin/git commit -qm concurrent; "
+            "/usr/bin/git push -q origin master) > /dev/null 2>&1\n"
+            "      exit 1\n"
+        )
     git.write_text(
         "#!/bin/bash\n"
         'for a in "$@"; do\n'
         '  if [ "$a" = "push" ]; then\n'
-        f'    n=$(cat {pushes}); n=$((n+1)); echo $n > {pushes}\n'
+        f"    n=$(cat {pushes}); n=$((n+1)); echo $n > {pushes}\n"
         f'    if [ "$n" -le {failing_pushes} ]; then\n'
-        f'      (cd {other} && /usr/bin/git pull -q --rebase; echo $n > z$n.txt; '
-        "/usr/bin/git add -A; /usr/bin/git commit -qm concurrent; "
-        "/usr/bin/git push -q origin master) > /dev/null 2>&1\n"
-        "      exit 1\n    fi\n  fi\ndone\n"
+        f"{on_push_failure}"
+        "    fi\n  fi\ndone\n"
         'exec /usr/bin/git "$@"\n',
         encoding="utf-8",
     )
@@ -1969,9 +2058,66 @@ def run_maintenance_push_loop(
             "GITHUB_REF_NAME": "master",
         }
     )
-    return subprocess.run(
+    code = subprocess.run(
         ["bash", "-c", script], cwd=work, env=environment, capture_output=True, text=True, check=False
     ).returncode
+    # What actually reached the remote matters as much as the exit code: a
+    # generator whose own checker rejected its output must never have that
+    # output pushed. Asserting only the exit code let the revert be deleted.
+    # Per-file, not concatenated: the generator that SUCCEEDS legitimately writes
+    # its marker, so a combined blob cannot tell whose output was reverted.
+    pushed = {}
+    for path in ("llms.txt", ".github/ISSUE_TEMPLATE/bug_report.yml"):
+        shown = subprocess.run(
+            ["git", "-C", str(origin), "show", f"master:{path}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        pushed[path] = shown.stdout if shown.returncode == 0 else ""
+    return code, pushed
+
+
+def run_maintenance_gate(script: str, llms: str, issue_template: str) -> int:
+    """Execute the terminal `Require every generator to have converged` step."""
+    environment = os.environ.copy()
+    environment.update({"LLMS_OUTCOME": llms, "ISSUE_TEMPLATE_OUTCOME": issue_template})
+    return subprocess.run(
+        ["bash", "-c", script], env=environment, capture_output=True, text=True, check=False
+    ).returncode
+
+
+def validate_post_merge_terminal_gate() -> None:
+    """Pin the step that decides the job's verdict.
+
+    The commit step deliberately runs after a failed generator, so the job's own
+    verdict comes from this gate alone -- its comment says "without this a
+    generator that never converged would be reported green". It had no coverage
+    at all: neither its condition nor its outcome table was executed or asserted.
+    """
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    script = run_script(
+        step_block(job_block(source, "regenerate"), "Require every generator to have converged")
+    )
+    if os.name == "nt":
+        return
+    # llms outcome, issue-template outcome, expected exit
+    for llms, issue_template, expected in (
+        ("success", "success", 0),
+        ("success", "skipped", 0),
+        ("skipped", "skipped", 0),
+        ("failure", "success", 1),
+        ("success", "failure", 1),
+        ("failure", "failure", 1),
+        ("cancelled", "success", 1),
+        ("", "success", 1),
+    ):
+        code = run_maintenance_gate(script, llms, issue_template)
+        require(
+            code == expected,
+            f"post-merge terminal gate ({llms!r}, {issue_template!r}): "
+            f"expected exit {expected}, got {code}",
+        )
 
 
 def validate_post_merge_push_loop() -> None:
@@ -1989,7 +2135,7 @@ def validate_post_merge_push_loop() -> None:
     # A head that advanced BEFORE the commit step forces the top-of-loop
     # regeneration; a generator that fails there must still fail the job.
     with tempfile.TemporaryDirectory() as directory:
-        code = run_maintenance_push_loop(
+        code, pushed = run_maintenance_push_loop(
             script, Path(directory), 99, 0, "issue-template", advance_before_run=True
         )
     require(
@@ -1998,13 +2144,34 @@ def validate_post_merge_push_loop() -> None:
         f"must fail the job, got exit {code}",
     )
     with tempfile.TemporaryDirectory() as directory:
-        code = run_maintenance_push_loop(
+        code, pushed = run_maintenance_push_loop(
             script, Path(directory), 0, 0, "issue-template", advance_before_run=True
         )
     require(
         code == 0,
         f"post-merge push loop stale head: a clean regeneration on the refreshed head "
         f"must succeed, got exit {code}",
+    )
+
+    # A push rejected while master stood still is a genuine failure with no
+    # retry to make -- branch protection, a bad token, a lost credential. The
+    # loop must surface it. The stub previously always advanced the remote on a
+    # failed push, so this branch was unreachable and `exit "${push_status}"`
+    # could be replaced with `exit 0`: a job reporting green having pushed
+    # nothing at all.
+    with tempfile.TemporaryDirectory() as directory:
+        code, pushed = run_maintenance_push_loop(
+            script, Path(directory), 0, 1, "issue-template", push_fails_without_advance=True
+        )
+    require(
+        code != 0,
+        f"post-merge push loop rejected push: a push rejected with master unchanged "
+        f"must fail the job, got exit {code}",
+    )
+    require(
+        "GEN-" not in pushed["llms.txt"],
+        "post-merge push loop rejected push: reported a push that never landed\n"
+        + repr(pushed["llms.txt"]),
     )
 
     for name, failing_checks, failing_pushes, failing, expected in (
@@ -2021,10 +2188,25 @@ def validate_post_merge_push_loop() -> None:
         # cannot reach would only look like coverage.
     ):
         with tempfile.TemporaryDirectory() as directory:
-            code = run_maintenance_push_loop(
+            code, pushed = run_maintenance_push_loop(
                 script, Path(directory), failing_checks, failing_pushes, failing
             )
         require(code == expected, f"post-merge push loop {name}: expected exit {expected}, got {code}")
+        # A generator whose checker rejected its output must have that output
+        # REVERTED, so the marker its update step wrote can never reach master.
+        # Only the FAILING generator's file is checked; the other one converged
+        # and its marker is expected there.
+        # Only when the generator NEVER converged (which is why the job fails).
+        # A transient failure that later succeeds legitimately pushes its output.
+        if expected == 1:
+            owned = (
+                "llms.txt" if failing == "llms" else ".github/ISSUE_TEMPLATE/bug_report.yml"
+            )
+            require(
+                "GEN-" not in pushed[owned],
+                f"post-merge push loop {name}: pushed {owned} from a generator that "
+                f"never converged\n{pushed[owned]!r}",
+            )
 
 
 def find_unregistered_unity_automation(files: dict[str, str]) -> list[str]:
@@ -2977,6 +3159,7 @@ fi"""
 
     validate_stuck_job_watchdog()
     validate_post_merge_push_loop()
+    validate_post_merge_terminal_gate()
 
     print("Unity pull-request policy validation passed.")
 

@@ -164,6 +164,16 @@ Reach GitHub in this order, and stop at the first one that works:
 
 Never echo a token into command output, a log, or a file. Read it into a shell variable in the same command that uses it.
 
+**Do not poll.** Every `gh` invocation re-reads and re-presents credentials, so a
+watch loop that runs `gh` on a timer turns one credential use into hundreds and
+shows up as repeated credential activity on the account. This is what a long CI
+wait actually costs: a 60-second loop over a 40-minute Unity matrix is 40
+authenticated calls, and several such loops at once multiply it. Wait on a
+single blocking call, or check once when a notification says something changed.
+Reuse one token read into a shell variable across a batch of API calls rather
+than shelling out to `gh` per item. If a wait genuinely needs repetition, space
+it in minutes and run exactly one loop.
+
 ## Line Ending Policy
 
 - Mixed policy is required.
