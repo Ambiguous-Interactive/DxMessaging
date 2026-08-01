@@ -201,13 +201,13 @@ jobs:
       # lock acquisition remain unconditional. The editor gate ran before the
       # repository checkout, so a failure there has already failed the job. The
       # benchmark list is currently non-empty, so this is defense-in-depth.
-      # IL2CPP compiles generated C++ with `cl.exe`; Mono legs never touch it.
-      # `assert-unity-host-prereqs` covers the VC++ RUNTIME (so the Editor
-      # launches) but not the BUILD TOOLS (so IL2CPP can compile), and that gap
-      # cost three licence seats and ~2h on 2026-07-31 (#333): three standalone
-      # legs each took the organization lock, consumed a seat, built for twenty
-      # minutes, then died with a message naming neither the host nor the cause.
-      # Runs BEFORE the lock so a broken host costs seconds, not a seat.
+      #
+      # No MSVC toolchain assertion here, deliberately: this workflow's matrix is
+      # editmode and playmode only, both Mono, and Mono never invokes `cl.exe`.
+      # The #333 gate lives in `unity-tests.yml` and `perf-numbers.yml`, whose
+      # matrices declare `standalone`. A copy was carried here briefly and could
+      # never run -- `validate_msvc_gate_is_reachable` now fails any workflow
+      # whose matrix lacks the mode its gate is keyed to.
 
       - name: Validate Unity license secrets
         timeout-minutes: 2
