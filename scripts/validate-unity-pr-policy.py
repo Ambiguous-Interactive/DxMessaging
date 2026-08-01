@@ -1752,6 +1752,54 @@ def validate_stuck_job_watchdog() -> None:
         "watchdog exclusion-list normalization: empty subscript reached the array\n" + text,
     )
 
+    # RESTORED. The fold that turned standalone cases into table rows deleted a
+    # span that included this block and the summary-channel one below, and
+    # nothing failed -- they only fail when the WORKFLOW is mutated, so the suite
+    # stayed green while silently losing the coverage. That is the exact class
+    # this file exists to catch, arriving via a cleanup. (Cursor Bugbot.)
+    #
+    # The EXIT trap. Without it, an abort the script does not anticipate exits
+    # red with a COMPLETELY EMPTY step summary and no annotation -- the worst
+    # signal for a job that runs 288 times a day. Forced through a failing
+    # `date`, which is unguarded on purpose so this stays reachable.
+    code, text = run_watchdog(script, environment_literals, {}, break_date=True)
+    require(code != 0, f"watchdog unexpected abort: expected a non-zero exit, got {code}\n{text}")
+    for needle in ("Watchdog summary", "aborted unexpectedly", "::error::"):
+        require(
+            needle in text,
+            f"watchdog unexpected abort: the EXIT trap did not emit {needle!r}\n{text}",
+        )
+
+    # The step summary is the operator-facing artifact, and nothing else proves
+    # anything reached it: `log_summary` tees to stdout, so every other needle is
+    # satisfiable from the job log alone. These assert the SUMMARY channel.
+    code, text = run_watchdog(
+        script,
+        environment_literals,
+        {
+            queued: watchdog_queued_runs(watchdog_run(1)),
+            inventory: one_group,
+            "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
+            "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        },
+    )
+    require(code == 0, f"watchdog summary channel: expected exit 0, got {code}\n{text}")
+    for needle in (
+        "## Watchdog summary",
+        "### Healthy queued",
+        "### Stuck (auto-cancelled)",
+        "### Starved",
+        "### Stuck but excluded",
+        "Queued runs older than",
+        "Runner groups visible to",
+        "registered but offline",
+    ):
+        require(
+            needle in text.summary,
+            f"watchdog summary channel: {needle!r} never reached GITHUB_STEP_SUMMARY "
+            f"(it may only be in the job log)\n{text.summary}",
+        )
+
     # The summary is emitted exactly once. A second copy on the normal path
     # would mean `finish` and the trap both fired.
     code, text = run_watchdog(
