@@ -1192,7 +1192,21 @@ def validate_stuck_job_watchdog() -> None:
     one_group = (0, {"runner_groups": [{"id": 7, "name": "Default"}]})
 
     # name, gh routes, expected exit, must appear, must NOT appear
-    FRESH_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    #
+    # A SENTINEL, resolved to the wall clock when the row actually runs. The
+    # table is built here but executed hundreds of lines below, after several
+    # standalone blocks, so a timestamp frozen at construction ages while the
+    # suite runs -- and once it passes MIN_QUEUE_AGE_SECONDS this row's verdict
+    # silently flips. (GitHub Copilot.)
+    #
+    # Copilot suggested a fixed FUTURE timestamp instead. That would remove the
+    # flake and the test's point together: the row must keep an age in
+    # [0, MIN_QUEUE_AGE_SECONDS), because a NEGATIVE age passes the
+    # `($now - $created) >= $min` filter for every `$min`, including 0 -- so
+    # dropping the age gate to 0 would no longer be caught. Verified: that
+    # mutation is caught today. Age ~0 at execution is the only value that both
+    # stays under the gate and keeps the gate's removal detectable.
+    FRESH_TIMESTAMP = "<resolved-at-execution>"
 
     STUCK_ROUTES = {
         queued: watchdog_queued_runs(watchdog_run(1)),
@@ -1955,9 +1969,22 @@ def validate_stuck_job_watchdog() -> None:
     # Rows may carry a 6th element: kwargs for `run_watchdog`. That is what lets
     # a case needing a failing push, a pre-populated cap, or a repo variable be a
     # ROW rather than yet another hand-rolled run-and-assert block.
+    def resolve_fresh(value: object) -> object:
+        """Swap the FRESH_TIMESTAMP sentinel for the clock, at execution time."""
+        if isinstance(value, str):
+            if value != FRESH_TIMESTAMP:
+                return value
+            return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if isinstance(value, dict):
+            return {key: resolve_fresh(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return type(value)(resolve_fresh(item) for item in value)
+        return value
+
     for case in cases:
         name, routes, expected_code, expected, forbidden = case[:5]
         options = case[5] if len(case) > 5 else {}
+        routes = resolve_fresh(routes)
         code, text = run_watchdog(script, environment_literals, routes, **options)
         require(
             code == expected_code,
