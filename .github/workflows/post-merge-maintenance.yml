@@ -171,6 +171,23 @@ jobs:
           echo "::error::llms.txt generation did not converge; discarding its output."
           # shellcheck disable=SC2086 # LLMS_PATHS is an intentional word list.
           git checkout -- ${LLMS_PATHS}
+          # VERIFY the revert, do not assume it. The commit step is deliberately
+          # allowed to run after a failed generator, and the whole reason that is
+          # safe is the invariant "the tree can only ever carry output a checker
+          # accepted". A `git checkout` that fails -- a pathspec matching
+          # nothing, a file the generator deleted -- breaks exactly that
+          # invariant and would hand rejected output to the push step.
+          #
+          # `set -e` does NOT help here, which is worth stating because it is the
+          # obvious-looking fix: measured, both `set -uo pipefail` and
+          # `set -euo pipefail` leave the rejected content in the worktree and
+          # exit 1. Stopping the step earlier does not un-modify a file. Only
+          # refusing the push does. (GitHub Copilot raised the risk.)
+          # shellcheck disable=SC2086
+          if ! git diff --quiet -- ${LLMS_PATHS}; then
+            echo "::error::could not discard the rejected llms.txt output; the working tree still carries it, so this run must not push."
+            echo "revert-failed=true" >> "${GITHUB_OUTPUT}"
+          fi
           exit 1
 
       - name: Regenerate the issue-template version dropdown
@@ -190,6 +207,23 @@ jobs:
           echo "::error::issue-template version generation did not converge; discarding its output."
           # shellcheck disable=SC2086 # ISSUE_TEMPLATE_PATHS is an intentional word list.
           git checkout -- ${ISSUE_TEMPLATE_PATHS}
+          # VERIFY the revert, do not assume it. The commit step is deliberately
+          # allowed to run after a failed generator, and the whole reason that is
+          # safe is the invariant "the tree can only ever carry output a checker
+          # accepted". A `git checkout` that fails -- a pathspec matching
+          # nothing, a file the generator deleted -- breaks exactly that
+          # invariant and would hand rejected output to the push step.
+          #
+          # `set -e` does NOT help here, which is worth stating because it is the
+          # obvious-looking fix: measured, both `set -uo pipefail` and
+          # `set -euo pipefail` leave the rejected content in the worktree and
+          # exit 1. Stopping the step earlier does not un-modify a file. Only
+          # refusing the push does. (GitHub Copilot raised the risk.)
+          # shellcheck disable=SC2086
+          if ! git diff --quiet -- ${ISSUE_TEMPLATE_PATHS}; then
+            echo "::error::could not discard the rejected issue-template output; the working tree still carries it, so this run must not push."
+            echo "revert-failed=true" >> "${GITHUB_OUTPUT}"
+          fi
           exit 1
 
       - name: Check for changes
@@ -222,9 +256,15 @@ jobs:
       # still self-heals) but NOT after a cancel, where a killed generator never
       # reached its revert and the tree may be half-written.
       - name: Commit and push changes
+        # The last clause is the tree-trust check. A generator that could not
+        # discard its rejected output says so, and this step then refuses --
+        # otherwise the one invariant that makes "push after a failed generator"
+        # safe is only assumed, never verified.
         if: >-
           ${{ !cancelled() && steps.git-check.outputs.changed == 'true' &&
-          steps.check-autocommit-app.outputs.has-app == 'true' }}
+          steps.check-autocommit-app.outputs.has-app == 'true' &&
+          steps.gen_llms.outputs.revert-failed != 'true' &&
+          steps.gen_issue_template.outputs.revert-failed != 'true' }}
         env:
           GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |

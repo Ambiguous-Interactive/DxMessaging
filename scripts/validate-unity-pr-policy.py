@@ -2512,6 +2512,31 @@ def validate_post_merge_cancellation_policy() -> None:
         f"post-merge cancellation: expected at least two `gen_*` generator steps, "
         f"found {[name for name, _, _ in generators]}",
     )
+    # The push step is deliberately allowed to run after a FAILED generator, and
+    # the only thing making that safe is "the tree can only ever carry output a
+    # checker accepted". Each generator reverts its own paths, but a
+    # `git checkout` that fails -- a pathspec matching nothing, a file the
+    # generator deleted -- breaks the invariant silently. Each generator now
+    # VERIFIES its revert and reports `revert-failed`, and the push step must
+    # honour both. Asserted because the guard is a condition clause, which is
+    # exactly the kind of thing a later edit drops without noticing.
+    # (GitHub Copilot raised the risk; `set -e` does not address it -- measured,
+    # it leaves the rejected content in the worktree either way.)
+    push = step_block(job, "Commit and push changes")
+    for step_name, step_id, _ in generators:
+        require(
+            f"steps.{step_id}.outputs.revert-failed != 'true'" in push,
+            f"post-merge push: `Commit and push changes` must refuse when {step_name!r} "
+            f"({step_id}) could not discard its rejected output; the clause "
+            f"`steps.{step_id}.outputs.revert-failed != 'true'` is missing from its `if:`",
+        )
+        body = step_block(job, step_name)
+        require(
+            "revert-failed=true" in body and "git diff --quiet" in body,
+            f"post-merge push: {step_name!r} must VERIFY its own revert and report "
+            f"`revert-failed=true` when the working tree still carries rejected output",
+        )
+
     for step_name, step_id, step in generators:
         condition = re.search(r"\n        if: (?:>-\n\s+)?(.*?)\n        \w", step, re.S)
         require(
