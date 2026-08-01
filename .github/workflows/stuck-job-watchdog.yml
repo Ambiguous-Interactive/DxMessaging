@@ -24,16 +24,23 @@ name: Stuck Job Watchdog
 # call would succeed and report an empty inventory, which reads identically to
 # "no runner matches" and still issues no action.
 #
-# The inventory walk asks for runner groups `visible_to_repository` this
-# repository, the same call shape `check-unity-runner-availability` makes in
-# production. Note what that does and does not buy today: the organization
-# currently registers a single group ("Default"), so visible-to-us and
-# all-org-runners are the same set, and the parameter is insurance for the day a
-# restricted second group is added rather than a guarantee being relied on now.
-# The counted group names are logged for exactly that reason -- if a second group
-# ever appears in the summary, the filter's behavior is worth confirming before
-# trusting it, because over-counting capacity is what could turn a legitimately
-# queued run into a wrongful cancel.
+# The inventory walk enumerates ALL organization runner groups rather than
+# filtering with `visible_to_repository`. That parameter is documented only as a
+# "string" with no stated format, and the two plausible readings -- repository
+# name and numeric repository id -- are not distinguishable from the docs. Guess
+# wrong and the call either 4xxs or returns an empty list, and BOTH land in
+# `fail_closed` below, so this job would fail every one of its 288 daily runs
+# while reporting a credential or outage problem it does not have. The
+# organization registers a single group ("Default") today, so the filter would
+# select exactly what the unfiltered call already returns: it is a live failure
+# risk in exchange for nothing.
+#
+# The group names are logged for the day that stops being true. Enumerating all
+# groups over-counts capacity if a second, restricted group is ever added, and
+# over-counting capacity is what could turn a legitimately queued run into a
+# wrongful cancel -- so if a second name ever appears in the summary, narrow this
+# walk before trusting it, using an id confirmed against a live response rather
+# than against the documentation.
 #
 # Detection requires ALL of the following to be true:
 #   * The workflow run is `status: queued` AND older than MIN_QUEUE_AGE_SECONDS
@@ -286,8 +293,8 @@ jobs:
           fi
 
           # ------------------------------------------------------------------
-          # 2. Read the organization runner inventory visible to this
-          #    repository, through the reader App. Fail closed on any failure:
+          # 2. Read the organization runner inventory through the reader App.
+          #    Fail closed on any failure:
           #    an unreadable inventory cannot distinguish "nothing is stuck"
           #    from "everything is stuck and we cannot see it".
           # ------------------------------------------------------------------
@@ -295,18 +302,17 @@ jobs:
             GH_TOKEN="${RUNNER_INVENTORY_TOKEN}" gh "$@"
           }
 
-          repo_name="${REPO##*/}"
           runner_groups_json="$(mktemp)"
           if ! gh_reader api --paginate \
-              "orgs/${OWNER}/actions/runner-groups?visible_to_repository=${repo_name}&per_page=100" \
+              "orgs/${OWNER}/actions/runner-groups?per_page=100" \
               | jq -s '[.[] | (.runner_groups // [])[] | select(.id != null)]' > "${runner_groups_json}"; then
-            fail_closed "could not read the organization runner groups visible to ${REPO}."
+            fail_closed "could not read the organization runner groups."
           fi
           group_count="$(jq 'length' < "${runner_groups_json}")"
           if (( group_count == 0 )); then
-            fail_closed "the organization reported no runner groups visible to ${REPO}; the inventory cannot be trusted."
+            fail_closed "the organization reported no runner groups; the inventory cannot be trusted."
           fi
-          log_summary "Runner groups visible to ${REPO}: $(jq -r '[.[].name] | join(", ")' < "${runner_groups_json}")"
+          log_summary "Organization runner groups: $(jq -r '[.[].name] | join(", ")' < "${runner_groups_json}")"
 
           # mapfile, not `while read < <(...)`: the loop body runs `gh`, and a
           # child that consumes the loop's stdin silently eats the remaining
@@ -349,7 +355,7 @@ jobs:
           registered_count="$(jq 'length' < "${inventory_json}")"
           online_count="$(jq '[.[] | select(.online)] | length' < "${inventory_json}")"
           idle_count="$(jq '[.[] | select(.online and (.busy | not))] | length' < "${inventory_json}")"
-          log_summary "Runner inventory (groups visible to ${REPO}): ${registered_count} registered, ${online_count} online, ${idle_count} idle."
+          log_summary "Runner inventory (all organization groups): ${registered_count} registered, ${online_count} online, ${idle_count} idle."
 
           # ------------------------------------------------------------------
           # 3. Classify every queued run. Nothing is cancelled in this pass, so
@@ -368,7 +374,7 @@ jobs:
             if [[ "${starved_kind}" == "offline" ]]; then
               detail="every runner carrying [${starved_labels}] is registered but offline"
             else
-              detail="no runner registered in a group visible to ${REPO} carries [${starved_labels}]"
+              detail="no runner registered in any organization group carries [${starved_labels}]"
             fi
             log_summary "run ${run_id} (${run_path_base}, event=${run_event}): starved -- ${detail}. Not dispatcher-stuck; no action."
             echo "::warning::run ${run_id} (${run_path_base}) queued past ${MIN_QUEUE_AGE_SECONDS}s: ${detail}. Bring that runner online or fix the label set."

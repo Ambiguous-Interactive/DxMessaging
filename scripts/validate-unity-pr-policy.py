@@ -868,8 +868,18 @@ def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> 
     # A `str` payload is emitted verbatim rather than JSON-encoded. The audit
     # pipes some calls through `gh --jq`, which this stub does not implement, so
     # a route that feeds such a call has to supply the already-extracted value.
+    #
+    # Needles are LITERALS, so their glob metacharacters are bracket-quoted
+    # before being embedded in a `case` pattern. Several routes contain `?`
+    # (query strings), which a `case` pattern reads as "any single character" --
+    # an unstubbed endpoint could then match a stubbed route and be answered
+    # instead of exiting 3, quietly defeating the fail-closed property this stub
+    # exists to provide. (GitHub Copilot.)
+    def literal(needle: str) -> str:
+        return "".join(f"[{c}]" if c in "*?[]" else c for c in needle)
+
     cases = "".join(
-        f"  *{needle}*)\n    cat <<'PAYLOAD'\n"
+        f"  *{literal(needle)}*)\n    cat <<'PAYLOAD'\n"
         f"{payload if isinstance(payload, str) else (json.dumps(payload) if payload is not None else '')}"
         f"\nPAYLOAD\n    exit {code} ;;\n"
         for needle, (code, payload) in routes.items()
@@ -1133,6 +1143,12 @@ DISPATCHABLE_WORKFLOW_BODY = base64.b64encode(b"on:\n  workflow_dispatch:\n").de
 # is the only input that separates "detection said no" from "the base64 decode
 # failed", which is what an empty `content` actually exercises.
 NON_DISPATCHABLE_WORKFLOW_BODY = base64.b64encode(b"on:\n  push:\n").decode()
+# What the API returns for a file the redispatch branch cannot read. The stub
+# does not implement `--jq`, so routes feeding a `--jq` call must supply the
+# ALREADY-EXTRACTED value; handing it `{"content": ""}` made `base64 -d` fail
+# because the payload was a JSON object, which is a property of the stub rather
+# than of the endpoint. (GitHub Copilot.)
+EMPTY_WORKFLOW_CONTENT = ""
 
 
 def validate_stuck_job_watchdog() -> None:
@@ -1172,7 +1188,7 @@ def validate_stuck_job_watchdog() -> None:
 
     self_hosted = ["self-hosted", "Windows", "RAM-64GB", "fast"]
     queued = "actions/runs?status=queued"
-    inventory = "runner-groups?visible_to_repository"
+    inventory = "runner-groups?per_page"
     one_group = (0, {"runner_groups": [{"id": 7, "name": "Default"}]})
 
     # name, gh routes, expected exit, must appear, must NOT appear
@@ -1184,7 +1200,7 @@ def validate_stuck_job_watchdog() -> None:
         "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
         "actions/runs/1/jobs": watchdog_jobs(self_hosted),
         "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
-        "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+        "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
     }
 
     cases: tuple[tuple[str, dict[str, tuple[int, object]], int, tuple[str, ...], tuple[str, ...]], ...] = (
@@ -1216,7 +1232,7 @@ def validate_stuck_job_watchdog() -> None:
                 inventory: (0, {"runner_groups": []}),
             },
             1,
-            ("no runner groups visible",),
+            ("reported no runner groups",),
             (),
         ),
         (
@@ -1239,7 +1255,7 @@ def validate_stuck_job_watchdog() -> None:
                 "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
                 "actions/runs/1/jobs": watchdog_jobs(self_hosted),
                 "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
-                "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
             },
             0,
             ("dispatcher-stuck", "cancelled 1", "does not support workflow_dispatch"),
@@ -1550,7 +1566,7 @@ def validate_stuck_job_watchdog() -> None:
                     self_hosted, ["self-hosted", "Windows", "unicorn"]
                 ),
                 "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
-                "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
             },
             0,
             ("cancelled 1", "dispatcher-stuck", "starved", "::warning::", "unicorn"),
@@ -1573,7 +1589,7 @@ def validate_stuck_job_watchdog() -> None:
                     self_hosted, ["self-hosted", "Windows", "zebra"]
                 ),
                 "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
-                "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
             },
             0,
             ("cancelled 1", "dispatcher-stuck"),
@@ -1661,7 +1677,7 @@ def validate_stuck_job_watchdog() -> None:
                 "actions/runs/1/jobs": watchdog_jobs(self_hosted),
                 "actions/runs/2/jobs": watchdog_jobs(self_hosted),
                 "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
-                "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
             },
             0,
             ("cancelled 1", "cancelled 2"),
@@ -1858,7 +1874,7 @@ def validate_stuck_job_watchdog() -> None:
         "### Starved",
         "### Stuck but excluded",
         "Queued runs older than",
-        "Runner groups visible to",
+        "Organization runner groups:",
         "registered but offline",
     ):
         require(
@@ -1882,7 +1898,7 @@ def validate_stuck_job_watchdog() -> None:
         "actions/runs/1/jobs": watchdog_jobs(self_hosted),
         "actions/runs/2/jobs": watchdog_jobs(self_hosted),
         "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
-        "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+        "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
     }
     code, text = run_watchdog(script, environment_literals, two_stuck)
     require(code == 0, f"watchdog per-cancel persist: expected exit 0, got {code}\n{text}")
@@ -1917,7 +1933,7 @@ def validate_stuck_job_watchdog() -> None:
         },
     )
     require(
-        "Runner groups visible to" in text and "Default" in text,
+        "Organization runner groups:" in text and "Default" in text,
         "watchdog inventory: the counted runner-group names were not reported\n" + text,
     )
 
