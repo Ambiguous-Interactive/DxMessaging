@@ -118,58 +118,97 @@ finally {
 # defects that shipped lived entirely outside that function.
 #
 # Modelling notes, each learned by getting it wrong first:
-#   * the platform gate would exit 0 before any verdict here, so it is stripped;
+#   * the platform gate would exit 0 before any verdict on a non-Windows host,
+#     so it is stripped;
 #   * the workflow dot-sources a WRAPPER that calls the script by path -- dot-
 #     sourcing the script itself trips its own dot-source guard and returns 0;
 #   * a fake `vswhere` is required to reach the VERDICT path. Pointing at an
 #     absent vswhere exercises a different `throw` entirely, so a guard built
 #     that way cannot see `exit 1` versus `throw` at all.
-function Invoke-GateEndToEnd {
-    param([string]$Root, [string]$VsWhereBody)
-    $source = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../unity/assert-msvc-toolchain.ps1')
-    $gateStart = $source.IndexOf('if ([System.IO.Path]::DirectorySeparatorChar')
-    $gateEnd = $source.IndexOf('}', $source.IndexOf('exit 0', $gateStart))
-    $patched = Join-Path $Root 'assert.ps1'
-    Set-Content -LiteralPath $patched -NoNewline -Value ($source.Remove($gateStart, $gateEnd - $gateStart + 1))
+#
+# The fake is described as DATA -- stdout lines, stderr lines, exit code -- and
+# rendered into whichever dialect the host can execute. Windows is the platform
+# the gate actually runs on, so skipping it there would leave the interesting
+# half untested; splatting in particular is a PowerShell behaviour worth pinning
+# on the platform that matters.
+function New-FakeVsWhere {
+    param([string]$Root, [string[]]$Stdout, [string[]]$Stderr, [int]$ExitCode)
 
-    # The fake records its own argv: the QUERY is behaviour too. Asking for the
-    # v143 component alone rejects an install pinned to an older toolset, which
-    # `Test-MsvcToolchain` is explicitly written to accept.
-    $vswhere = Join-Path $Root 'vswhere'
-    $recorder = "printf '%s\n' " + '"$@"' + " > '$Root/argv'"
-    Set-Content -LiteralPath $vswhere -Value @('#!/bin/bash', $recorder, $VsWhereBody)
-    & chmod +x $vswhere
-
-    $wrapper = Join-Path $Root 'run.ps1'
-    Set-Content -LiteralPath $wrapper -NoNewline -Value "& '$patched' -VsWherePath '$vswhere'"
-    $output = pwsh -NoProfile -NonInteractive -Command ". '$wrapper'" 2>&1
-    return [pscustomobject]@{ Exit = $LASTEXITCODE; Output = ($output | Out-String) }
+    $argv = Join-Path $Root 'argv'
+    if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+        $path = Join-Path $Root 'vswhere.cmd'
+        # Space before `>`: `%*>` lets a trailing digit in the last argument be
+        # read as a file-descriptor redirect.
+        $lines = @('@echo off', "echo %* > `"$argv`"")
+        $lines += $Stderr | ForEach-Object { "echo $_ 1>&2" }
+        $lines += $Stdout | ForEach-Object { if ($_) { "echo $_" } else { 'echo.' } }
+        $lines += "exit /b $ExitCode"
+        Set-Content -LiteralPath $path -Value $lines -Encoding ascii
+    }
+    else {
+        $path = Join-Path $Root 'vswhere'
+        $lines = @('#!/bin/bash', ("printf '%s\n' " + '"$@"' + " > '$argv'"))
+        $lines += $Stderr | ForEach-Object { "echo '$_' >&2" }
+        $lines += $Stdout | ForEach-Object { "echo '$_'" }
+        $lines += "exit $ExitCode"
+        Set-Content -LiteralPath $path -Value $lines
+        & chmod +x $path
+    }
+    return $path
 }
 
 function Assert-EndToEnd {
-    param([string]$Name, [string]$VsWhereBody, [scriptblock]$Setup, [string]$ExpectedText,
-        [scriptblock]$Assert)
+    param(
+        [string]$Name,
+        [string[]]$Stdout = @(),
+        [string[]]$Stderr = @(),
+        [int]$ExitCode = 0,
+        [scriptblock]$Setup,
+        [string]$ExpectedText,
+        [scriptblock]$Assert
+    )
     $script:Count++
     $root = Join-Path ([System.IO.Path]::GetTempPath()) ("msvc-e2e-" + [guid]::NewGuid())
     try {
         New-Item -ItemType Directory -Force -Path $root | Out-Null
-        if ($Setup) { & $Setup $root }
-        $r = Invoke-GateEndToEnd -Root $root -VsWhereBody $VsWhereBody.Replace('{ROOT}', $root)
+        if ($Setup) { $Stdout = @(& $Setup $root) }
+
+        $source = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../unity/assert-msvc-toolchain.ps1')
+        $gateStart = $source.IndexOf('if ([System.IO.Path]::DirectorySeparatorChar')
+        $gateEnd = $source.IndexOf('}', $source.IndexOf('exit 0', $gateStart))
+        $patched = Join-Path $root 'assert.ps1'
+        Set-Content -LiteralPath $patched -NoNewline `
+            -Value ($source.Remove($gateStart, $gateEnd - $gateStart + 1))
+
+        $vswhere = New-FakeVsWhere -Root $root -Stdout $Stdout -Stderr $Stderr -ExitCode $ExitCode
+        $wrapper = Join-Path $root 'run.ps1'
+        Set-Content -LiteralPath $wrapper -NoNewline -Value "& '$patched' -VsWherePath '$vswhere'"
+        $output = (pwsh -NoProfile -NonInteractive -Command ". '$wrapper'" 2>&1 | Out-String)
+        $exit = $LASTEXITCODE
+
+        # Split on ALL whitespace: the Windows fake records argv on one line via
+        # `%*`, the Unix one line-per-argument. No expected token contains a space.
         $argvPath = Join-Path $root 'argv'
-        $r | Add-Member -NotePropertyName Argv -NotePropertyValue @(
-            if (Test-Path -LiteralPath $argvPath) { Get-Content -LiteralPath $argvPath } )
-        if ($Assert) { & $Assert $r; return }
-        if ($r.Exit -eq 0) {
+        $argv = if (Test-Path -LiteralPath $argvPath) {
+            (Get-Content -Raw -LiteralPath $argvPath) -split '\s+' | Where-Object { $_ }
+        }
+        else { @() }
+
+        if ($Assert) {
+            & $Assert ([pscustomobject]@{ Exit = $exit; Output = $output; Argv = $argv })
+            return
+        }
+        if ($exit -eq 0) {
             Write-Output ("FAIL  $Name`n      expected a non-zero exit; the gate cannot fail a step`n" +
-                "      output: $($r.Output)")
+                "      output: $output")
             $script:Failures++
         }
-        elseif ($ExpectedText -and $r.Output -notmatch [regex]::Escape($ExpectedText)) {
+        elseif ($ExpectedText -and $output -notmatch [regex]::Escape($ExpectedText)) {
             Write-Output ("FAIL  $Name`n      expected the message to contain '$ExpectedText'`n" +
-                "      output: $($r.Output)")
+                "      output: $output")
             $script:Failures++
         }
-        elseif ($VerboseOutput) { Write-Output "ok    $Name (exit $($r.Exit))" }
+        elseif ($VerboseOutput) { Write-Output "ok    $Name (exit $exit)" }
     }
     finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
 }
@@ -177,28 +216,29 @@ function Assert-EndToEnd {
 # D1: a failing VERDICT must fail the process. `exit 1` here exits only the
 # script, leaving the step green -- the bug this gate shipped with.
 Assert-EndToEnd -Name 'a failing verdict fails the process' `
-    -VsWhereBody 'echo "{ROOT}/vs"; exit 0' `
-    -Setup { param($r) New-Item -ItemType Directory -Force -Path (Join-Path $r 'vs') | Out-Null } `
+    -Setup {
+        param($r)
+        $vs = Join-Path $r 'vs'
+        New-Item -ItemType Directory -Force -Path $vs | Out-Null
+        $vs
+    } `
     -ExpectedText 'no MSVC toolset'
 
 # D3: a vswhere that FAILS is a discovery failure, not evidence the toolchain is
 # absent. Telling a healthy host to install the C++ workload blocks its IL2CPP CI.
 Assert-EndToEnd -Name 'a failing vswhere is reported as discovery failure' `
-    -VsWhereBody 'echo "boom" >&2; exit 3' `
-    -ExpectedText 'vswhere exited 3'
+    -Stderr @('boom') -ExitCode 3 -ExpectedText 'vswhere exited 3'
 
 # D4: vswhere prints usage text to stdout on a bad switch. Unvalidated, it
 # reaches Test-Path, where `Usage:` parses as a drive qualifier and throws.
 Assert-EndToEnd -Name 'vswhere usage text is not treated as a path' `
-    -VsWhereBody 'echo "Usage: vswhere.exe [-all]"; exit 0' `
-    -ExpectedText 'No Visual Studio installation'
+    -Stdout @('Usage: vswhere.exe -all') -ExpectedText 'No Visual Studio installation'
 
 # D8: the DISCOVERY QUERY is behaviour. Two ways it has already been wrong:
 # asking only for the v143 component rejects a host pinned to an older toolset
-# that `Test-MsvcToolchain` accepts, and an unquoted `*` glob-expands against the
-# working directory before vswhere ever sees it.
+# that `Test-MsvcToolchain` accepts, and SPLATTING the argument list glob-expands
+# `*` against the working directory before vswhere ever sees it.
 Assert-EndToEnd -Name 'vswhere is asked for any C++ toolset, with an unexpanded glob' `
-    -VsWhereBody 'echo ""; exit 0' `
     -Assert {
         param($r)
         $required = @(
@@ -223,3 +263,8 @@ if ($script:Failures -gt 0) {
     exit 1
 }
 Write-Output "All $script:Count MSVC toolchain assertions passed."
+# EXPLICIT. The guards above run subprocesses that are SUPPOSED to fail, so
+# `$LASTEXITCODE is 1 when this script ends. The built-in `shell: pwsh`
+# appends `exit $LASTEXITCODE`, which failed this step in CI while every
+# assertion passed. Falling off the end is not the same as succeeding.
+exit 0
