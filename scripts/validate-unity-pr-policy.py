@@ -1176,6 +1176,8 @@ def validate_stuck_job_watchdog() -> None:
     one_group = (0, {"runner_groups": [{"id": 7, "name": "Default"}]})
 
     # name, gh routes, expected exit, must appear, must NOT appear
+    FRESH_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     STUCK_ROUTES = {
         queued: watchdog_queued_runs(watchdog_run(1)),
         inventory: one_group,
@@ -1719,6 +1721,48 @@ def validate_stuck_job_watchdog() -> None:
             {"cancel_ok": False},
         ),
         (
+            # RESTORED: deleted by the table fold in 98cd2094. Labels that are not
+            # strings break `ascii_downcase` INSIDE the label parse, after the job
+            # listing itself parsed cleanly -- a different guard from the listing
+            # read, and the only one that can leave a run silently unevaluated.
+            "job labels that are not strings fail closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+                "actions/runs/1/jobs": watchdog_jobs(extra=[{"status": "queued", "labels": [17]}]),
+            },
+            1,
+            ("could not parse the job labels",),
+            (),
+        ),
+        (
+            # RESTORED: deleted by the table fold. A queued listing whose ids do
+            # not round-trip to their own metadata (here an id typed as a string)
+            # leaves the run unclassifiable, and an unclassifiable run must fail
+            # the audit rather than be skipped past.
+            "a run whose id does not round-trip fails closed",
+            {
+                queued: (0, {"workflow_runs": [watchdog_run(1) | {"id": "1"}]}),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            1,
+            ("carries no metadata",),
+            (),
+        ),
+        (
+            # RESTORED: deleted by the table fold. A run younger than
+            # MIN_QUEUE_AGE_SECONDS is not a candidate at all. The timestamp is
+            # derived from the workflow's own literal, so lowering that literal
+            # to 0 -- or deleting the age filter -- changes the verdict here.
+            "a just-created run is below the age gate",
+            {queued: watchdog_queued_runs(watchdog_run(1, created_at=FRESH_TIMESTAMP))},
+            0,
+            ("Queue is clean",),
+            ("cancelled 1",),
+        ),
+        (
             "the excluded release workflow is never cancelled",
             {
                 queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),
@@ -1728,6 +1772,22 @@ def validate_stuck_job_watchdog() -> None:
             0,
             ("workflow is excluded",),
             ("cancelled 1",),
+        ),
+        (
+            # Pins `base="${wf##*/}"`. `release.yml` is in the workflow's OWN
+            # default list, so it stays excluded even with the strip removed --
+            # only a workflow excluded SOLELY by a prefixed repo-variable entry
+            # can prove the normalization runs.
+            "a repo-variable exclusion given with its directory prefix still matches",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1, workflow="ci.yml")),
+                inventory: one_group,
+                "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+            },
+            0,
+            ("workflow is excluded",),
+            ("cancelled 1",),
+            {"extra_env": {"EXTRA_EXCLUDED_WORKFLOWS": ".github/workflows/ci.yml"}},
         ),
     )
 
@@ -1800,6 +1860,31 @@ def validate_stuck_job_watchdog() -> None:
             f"(it may only be in the job log)\n{text.summary}",
         )
 
+    # RESTORED: deleted by the table fold, and the most dangerous of the six.
+    # State is pushed immediately after EACH successful cancel, not only in the
+    # final sync. Deleting `state_dirty=1` makes `persist_state_changes` return
+    # early on every call, so NO cancel count is ever committed: every cycle
+    # reads `cancels=0` and cancels the same run again, without limit, against
+    # live Unity runs holding licence seats. The git stub echoes "pushed" per
+    # push, so the count separates bootstrap + one push per cancel (3) from
+    # bootstrap + a single final sync (2).
+    two_stuck = {
+        queued: watchdog_queued_runs(watchdog_run(1), watchdog_run(2)),
+        inventory: one_group,
+        "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+        "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        "actions/runs/2/jobs": watchdog_jobs(self_hosted),
+        "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+        "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+    }
+    code, text = run_watchdog(script, environment_literals, two_stuck)
+    require(code == 0, f"watchdog per-cancel persist: expected exit 0, got {code}\n{text}")
+    require(
+        text.count("pushed") >= 3,
+        "watchdog per-cancel persist: the cap was not pushed after each cancel "
+        f"(saw {text.count('pushed')} pushes, expected at least 3)\n{text}",
+    )
+
     # The summary is emitted exactly once. A second copy on the normal path
     # would mean `finish` and the trap both fired.
     code, text = run_watchdog(
@@ -1857,6 +1942,7 @@ def run_maintenance_push_loop(
     failing: str = "issue-template",
     advance_before_run: bool = False,
     push_fails_without_advance: bool = False,
+    quiet_other: bool = False,
 ) -> tuple[int, dict[str, str]]:
     """Execute the push loop against a real local remote; return exit + pushed files.
 
@@ -1894,17 +1980,28 @@ def run_maintenance_push_loop(
     # Whichever generator is under test counts its own calls and fails the first
     # `failing_check_calls` of them; the other always converges. Both branches of
     # `regenerate` set the failure flag, so both have to be exercised.
+    #
+    # `quiet_other` stops the OTHER generator writing anything. Without it every
+    # regeneration left a pending change, so the loop always exited through the
+    # commit-and-push branch and the "already current; nothing to commit" exit
+    # was unreachable -- one of two sites where the regenerate verdict could be
+    # dropped undetected.
     flaky = "check:llms-txt" if failing == "llms" else "check:issue-template-versions"
     steady = "check:issue-template-versions" if failing == "llms" else "check:llms-txt"
+    writes_template = "exit 0" if quiet_other else (
+        'echo "GEN-$(date +%s%N)" > .github/ISSUE_TEMPLATE/bug_report.yml; exit 0'
+    )
+    writes_llms = "exit 0" if (quiet_other and failing != "llms") else (
+        'echo "GEN-$(date +%s%N)" > llms.txt; exit 0'
+    )
     npm.write_text(
         "#!/bin/bash\n"
         'case "$*" in\n'
-        '  "run update:llms-txt") echo "GEN-$(date +%s%N)" > llms.txt; exit 0 ;;\n'
-        '  "run update:issue-template-versions") '
-        'echo "GEN-$(date +%s%N)" > .github/ISSUE_TEMPLATE/bug_report.yml; exit 0 ;;\n'
+        f'  "run update:llms-txt") {writes_llms} ;;\n'
+        f'  "run update:issue-template-versions") {writes_template} ;;\n'
         f'  "run {steady}") exit 0 ;;\n'
         f'  "run {flaky}")\n'
-        f'     n=$(cat {calls}); n=$((n+1)); echo $n > {calls}\n'
+        f"     n=$(cat {calls}); n=$((n+1)); echo $n > {calls}\n"
         f'     [ "$n" -le {failing_check_calls} ] && exit 1\n'
         "     exit 0 ;;\n"
         "esac\nexit 0\n",
@@ -2063,6 +2160,21 @@ def validate_post_merge_push_loop() -> None:
         code == 0,
         f"post-merge push loop stale head: a clean regeneration on the refreshed head "
         f"must succeed, got exit {code}",
+    )
+
+    # The "already current" early exit must also carry the regenerate verdict.
+    # A failing llms generator reverts its own file, which removes the only
+    # pending change, so the loop leaves through that branch -- and it was one of
+    # two exit sites where `exit "${regenerate_failed}"` could become `exit 0`
+    # undetected, reinstating the always-green bug 764540b1 claims to have fixed.
+    with tempfile.TemporaryDirectory() as directory:
+        code, pushed = run_maintenance_push_loop(
+            script, Path(directory), 99, 1, "llms", quiet_other=True
+        )
+    require(
+        code == 1,
+        f"post-merge push loop nothing-to-commit exit: a failed generator that "
+        f"leaves no change must still fail the job, got exit {code}",
     )
 
     # A push rejected while master stood still is a genuine failure with no
