@@ -1176,6 +1176,15 @@ def validate_stuck_job_watchdog() -> None:
     one_group = (0, {"runner_groups": [{"id": 7, "name": "Default"}]})
 
     # name, gh routes, expected exit, must appear, must NOT appear
+    STUCK_ROUTES = {
+        queued: watchdog_queued_runs(watchdog_run(1)),
+        inventory: one_group,
+        "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
+        "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+        "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+        "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
+    }
+
     cases: tuple[tuple[str, dict[str, tuple[int, object]], int, tuple[str, ...], tuple[str, ...]], ...] = (
         (
             "clean queue",
@@ -1650,6 +1659,66 @@ def validate_stuck_job_watchdog() -> None:
             (),
         ),
         (
+            # An unusable cancel-cap state branch must fail rather than cancel
+            # blind: without the cap a run could be cancelled without limit. The
+            # pending run must still be NAMED, or a fail-closed cap leaves the
+            # operator nothing to act on.
+            "an unusable state branch fails closed and names the pending run",
+            STUCK_ROUTES,
+            1,
+            ("run 1", "queued for cancel"),
+            ("cancelled 1",),
+            {"push_ok": False},
+        ),
+        (
+            # A transient `ls-remote` failure must not be read as "the branch does
+            # not exist": bootstrapping on that would push-corrupt the real branch
+            # by rewriting it as a fresh orphan, resetting every cancel cap.
+            "an unreadable state branch fails closed",
+            STUCK_ROUTES,
+            1,
+            (),
+            ("cancelled 1",),
+            {"ls_remote_ok": False},
+        ),
+        (
+            "a state branch that cannot be cloned fails closed",
+            STUCK_ROUTES,
+            1,
+            ("clone failed",),
+            (),
+            {"existing_state": {}, "clone_ok": False},
+        ),
+        (
+            # The cap is what stops a run being cancelled without limit.
+            "a run past its daily cancel cap is not cancelled again",
+            STUCK_ROUTES,
+            0,
+            ("cap reached",),
+            ("cancelled 1",),
+            {"existing_state": {1: 2}},
+        ),
+        (
+            # ...and the cap resets after 24h, which the fixture could not reach
+            # while it hardcoded an age inside the window.
+            "a cancel cap older than 24h resets",
+            STUCK_ROUTES,
+            0,
+            ("cancelled 1",),
+            ("cap reached",),
+            {"existing_state": {1: 2}, "state_age_seconds": 90000},
+        ),
+        (
+            # A rejected cancel must not increment the cap or re-dispatch: that
+            # would duplicate a run that is still live.
+            "a rejected cancel is not treated as a cancel",
+            STUCK_ROUTES,
+            0,
+            ("will try again next cycle",),
+            ("re-dispatching",),
+            {"cancel_ok": False},
+        ),
+        (
             "the excluded release workflow is never cancelled",
             {
                 queued: watchdog_queued_runs(watchdog_run(1, workflow="release.yml")),
@@ -1662,216 +1731,6 @@ def validate_stuck_job_watchdog() -> None:
         ),
     )
 
-    stuck_routes = {
-        queued: watchdog_queued_runs(watchdog_run(1)),
-        inventory: one_group,
-        "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
-        "actions/runs/1/jobs": watchdog_jobs(self_hosted),
-        "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
-        "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
-    }
-
-    # An unusable cancel-cap state branch must fail rather than cancel blind:
-    # without the cap, a run could be cancelled without limit. This is the only
-    # case that needs a failing `git push`, so it runs outside the shared loop.
-    code, text = run_watchdog(script, environment_literals, stuck_routes, push_ok=False)
-    require(
-        code == 1,
-        f"watchdog unusable state branch: expected exit 1, got {code}\n{text}",
-    )
-    require(
-        "cancelled 1" not in text,
-        f"watchdog unusable state branch: cancelled a run without a readable cap\n{text}",
-    )
-    # The operator has to be able to see WHICH run is pending, not just that one is.
-    require(
-        "run 1" in text and "queued for cancel" in text,
-        "watchdog unusable state branch: the pending dispatcher-stuck run was not named "
-        "in the summary, so a fail-closed cap leaves the operator nothing to act on\n" + text,
-    )
-
-    # The EXIT trap. Without it, an abort the script does not anticipate exits
-    # red with a COMPLETELY EMPTY step summary and no annotation -- the worst
-    # signal for a job that runs 288 times a day. Forced through a failing
-    # `date`, which is unguarded on purpose so this stays reachable.
-    code, text = run_watchdog(script, environment_literals, {}, break_date=True)
-    require(code != 0, f"watchdog unexpected abort: expected a non-zero exit, got {code}\n{text}")
-    for needle in ("Watchdog summary", "aborted unexpectedly", "::error::"):
-        require(
-            needle in text,
-            f"watchdog unexpected abort: the EXIT trap did not emit {needle!r}\n{text}",
-        )
-
-    # A transient `ls-remote` failure must not be mistaken for "the state branch
-    # does not exist": bootstrapping on that would push-corrupt the real branch
-    # by rewriting it as a fresh orphan, silently resetting every cancel cap.
-    code, text = run_watchdog(script, environment_literals, stuck_routes, ls_remote_ok=False)
-    require(code == 1, f"watchdog unreadable state branch: expected exit 1, got {code}\n{text}")
-    require(
-        "cancelled 1" not in text,
-        "watchdog unreadable state branch: cancelled without a readable cap\n" + text,
-    )
-
-    # The cancel cap is what stops a run being cancelled without limit. With the
-    # cap already reached, the run must be reported for operator action and NOT
-    # cancelled again.
-    code, text = run_watchdog(
-        script, environment_literals, stuck_routes, existing_state={1: 2}
-    )
-    require(code == 0, f"watchdog cancel cap: expected exit 0, got {code}\n{text}")
-    require(
-        "cap reached" in text and "cancelled 1" not in text,
-        "watchdog cancel cap: a run past its daily cap was cancelled again\n" + text,
-    )
-
-    # Labels that are not strings make `ascii_downcase` fail INSIDE the label
-    # parse, after the job listing itself parsed cleanly -- a different guard
-    # from the listing read, and the only one that can leave a run silently
-    # unevaluated.
-    code, text = run_watchdog(
-        script,
-        environment_literals,
-        {
-            queued: watchdog_queued_runs(watchdog_run(1)),
-            inventory: one_group,
-            "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
-            "actions/runs/1/jobs": watchdog_jobs(extra=[{"status": "queued", "labels": [17]}]),
-        },
-    )
-    require(
-        code == 1 and "could not parse the job labels" in text,
-        f"watchdog unparseable job labels: expected a fail-closed exit, got {code}\n{text}",
-    )
-
-    # State is pushed immediately after EACH successful cancel, not only in the
-    # final sync. That immediacy is what makes the cap survive a crash partway
-    # through the loop: without it, a job that dies after cancelling loses every
-    # increment and the next cycle cancels the same runs again. The git stub
-    # echoes "pushed" per push, so the count distinguishes the two shapes --
-    # bootstrap + one push per cancel (3) versus bootstrap + a single final
-    # sync (2).
-    two_stuck = {
-        queued: watchdog_queued_runs(watchdog_run(1), watchdog_run(2)),
-        inventory: one_group,
-        "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
-        "actions/runs/1/jobs": watchdog_jobs(self_hosted),
-        "actions/runs/2/jobs": watchdog_jobs(self_hosted),
-        "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
-        "contents/.github/workflows/perf-numbers.yml": (0, {"content": ""}),
-    }
-    code, text = run_watchdog(script, environment_literals, two_stuck)
-    require(code == 0, f"watchdog per-cancel persist: expected exit 0, got {code}\n{text}")
-    require(
-        text.count("pushed") >= 3,
-        "watchdog per-cancel persist: the cap was not pushed after each cancel "
-        f"(saw {text.count('pushed')} pushes, expected at least 3)\n{text}",
-    )
-
-    # A REJECTED cancel (403, already completed, transient) must not be treated
-    # as a cancel. Without the guard the audit still increments the cap, pushes
-    # state, and RE-DISPATCHES -- producing a duplicate run of a workflow that
-    # was never cancelled. `cancel_ok` existed as a knob but no case had ever
-    # passed False, so the guard was unpinned.
-    code, text = run_watchdog(script, environment_literals, stuck_routes, cancel_ok=False)
-    require(code == 0, f"watchdog rejected cancel: expected exit 0, got {code}\n{text}")
-    require(
-        "will try again next cycle" in text,
-        "watchdog rejected cancel: the failure was not reported\n" + text,
-    )
-    require(
-        "re-dispatching" not in text,
-        "watchdog rejected cancel: re-dispatched a run it never cancelled\n" + text,
-    )
-
-    # The step summary is the operator-facing artifact, and until now nothing
-    # proved anything reached it: `log_summary` tees to stdout, so every needle
-    # was satisfiable from the job log. Three of the four buckets and the entire
-    # audit narrative were deletable with the suite green. These assert the
-    # SUMMARY channel specifically.
-    code, text = run_watchdog(
-        script,
-        environment_literals,
-        {
-            queued: watchdog_queued_runs(watchdog_run(1)),
-            inventory: one_group,
-            "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
-            "actions/runs/1/jobs": watchdog_jobs(self_hosted),
-        },
-    )
-    require(code == 0, f"watchdog summary channel: expected exit 0, got {code}\n{text}")
-    for needle in (
-        "## Watchdog summary",
-        "### Healthy queued",
-        "### Stuck (auto-cancelled)",
-        "### Starved",
-        "### Stuck but excluded",
-        "Queued runs older than",
-        "Runner groups visible to",
-        "registered but offline",
-    ):
-        require(
-            needle in text.summary,
-            f"watchdog summary channel: {needle!r} never reached GITHUB_STEP_SUMMARY "
-            f"(it may only be in the job log)\n{text.summary}",
-        )
-
-    # The 24h reset. With the cap reached but the last cancel more than a day
-    # ago the counter resets and the run is cancelled again. The fixture had
-    # hardcoded an age inside the window, so the reset was unreachable and only
-    # its absence-at-1-second was ever proven.
-    code, text = run_watchdog(
-        script,
-        environment_literals,
-        stuck_routes,
-        existing_state={1: 2},
-        state_age_seconds=90000,
-    )
-    require(code == 0, f"watchdog cap reset: expected exit 0, got {code}\n{text}")
-    require(
-        "cancelled 1" in text and "cap reached" not in text,
-        "watchdog cap reset: a cap older than 24h did not reset\n" + text,
-    )
-
-    # A state branch that exists but cannot be cloned leaves the cap unreadable.
-    code, text = run_watchdog(
-        script, environment_literals, stuck_routes, existing_state={}, clone_ok=False
-    )
-    require(
-        code == 1 and "clone failed" in text,
-        f"watchdog un-cloneable state branch: expected a fail-closed exit, got {code}\n{text}",
-    )
-
-    # Defensive: a queued listing whose ids do not round-trip to their own
-    # metadata (here an id typed as a string) leaves the run unclassifiable, and
-    # an unclassifiable run must fail the audit rather than be skipped past.
-    code, text = run_watchdog(
-        script,
-        environment_literals,
-        {
-            queued: (0, {"workflow_runs": [watchdog_run(1) | {"id": "1"}]}),
-            inventory: one_group,
-            "runner-groups/7/runners": watchdog_runners(("ELI", "online", False, self_hosted)),
-        },
-    )
-    require(
-        code == 1 and "carries no metadata" in text,
-        f"watchdog unclassifiable run: expected a fail-closed exit, got {code}\n{text}",
-    )
-
-    # A run younger than MIN_QUEUE_AGE_SECONDS is not a candidate at all. The
-    # timestamp is derived from the workflow's own literal, so lowering that
-    # literal to 0 (or deleting the age filter) changes the verdict here.
-    fresh = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    code, text = run_watchdog(
-        script,
-        environment_literals,
-        {queued: watchdog_queued_runs(watchdog_run(1, created_at=fresh))},
-    )
-    require(code == 0, f"watchdog age gate: expected exit 0, got {code}\n{text}")
-    require(
-        "Queue is clean" in text,
-        "watchdog age gate: a just-created run was treated as queued past the threshold\n" + text,
-    )
 
     # The exclusion list is built from a repo variable, so an operator entry
     # ending in `/` strips to an EMPTY associative-array subscript -- a hard
@@ -1922,8 +1781,13 @@ def validate_stuck_job_watchdog() -> None:
         "watchdog inventory: the counted runner-group names were not reported\n" + text,
     )
 
-    for name, routes, expected_code, expected, forbidden in cases:
-        code, text = run_watchdog(script, environment_literals, routes)
+    # Rows may carry a 6th element: kwargs for `run_watchdog`. That is what lets
+    # a case needing a failing push, a pre-populated cap, or a repo variable be a
+    # ROW rather than yet another hand-rolled run-and-assert block.
+    for case in cases:
+        name, routes, expected_code, expected, forbidden = case[:5]
+        options = case[5] if len(case) > 5 else {}
+        code, text = run_watchdog(script, environment_literals, routes, **options)
         require(
             code == expected_code,
             f"watchdog {name}: expected exit {expected_code}, got {code}\n{text}",
