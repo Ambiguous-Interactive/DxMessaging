@@ -166,7 +166,13 @@ jobs:
 
       - name: Regenerate the issue-template version dropdown
         id: gen_issue_template
-        if: always()
+        # `!cancelled()`, NOT `always()`. Both run after a failed sibling, which
+        # is the isolation this step exists for -- but `always()` also runs after
+        # a CANCEL, and `cancel-in-progress: true` above makes that routine: a
+        # second push kills the first mid-flight. A generator killed mid-write
+        # never reaches its own revert, so continuing past a cancel is how a
+        # half-written file becomes a commit on the default branch. (Bugbot.)
+        if: ${{ !cancelled() }}
         run: |
           set -uo pipefail
           if npm run update:issue-template-versions && npm run check:issue-template-versions; then
@@ -179,7 +185,7 @@ jobs:
 
       - name: Check for changes
         id: git-check
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           # `--exit-code` returns 1 for "there are differences" but 128/129 for
@@ -202,13 +208,14 @@ jobs:
               ;;
           esac
 
-      # Runs even after a failed generator: the revert above guarantees the tree
+      # Runs after a FAILED generator (the revert above guarantees the tree
       # carries only checker-accepted output, so the generator that DID converge
-      # still self-heals instead of waiting on an unrelated fix.
+      # still self-heals) but NOT after a cancel, where a killed generator never
+      # reached its revert and the tree may be half-written.
       - name: Commit and push changes
         if: >-
-          always() && steps.git-check.outputs.changed == 'true' &&
-          steps.check-autocommit-app.outputs.has-app == 'true'
+          ${{ !cancelled() && steps.git-check.outputs.changed == 'true' &&
+          steps.check-autocommit-app.outputs.has-app == 'true' }}
         env:
           GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
@@ -325,7 +332,9 @@ jobs:
       # own verdict has to come from the generators themselves. Without this a
       # generator that never converged would be reported green.
       - name: Require every generator to have converged
-        if: always()
+        # A cancelled run is already cancelled; adding a gate failure on top only
+        # obscures why it stopped.
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           failed=0

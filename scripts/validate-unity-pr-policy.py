@@ -2136,6 +2136,45 @@ def validate_post_merge_terminal_gate() -> None:
         )
 
 
+def validate_post_merge_cancellation_policy() -> None:
+    """No step that writes or pushes may survive a cancellation.
+
+    `always()` includes CANCELLED, and this workflow sets
+    `cancel-in-progress: true`, so a second push kills the first mid-flight as a
+    matter of routine. A generator killed mid-write never reaches its own revert,
+    so any step that keeps generating, probing, or pushing after a cancel can
+    commit a half-written file to the default branch. The two workflows this one
+    replaced had no `always()` at all and simply stopped. (Cursor Bugbot, high.)
+    """
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    require(
+        "cancel-in-progress: true" in source,
+        "post-merge cancellation: the concurrency policy changed; re-check whether "
+        "cancellation is still a routine path before relaxing the guards below",
+    )
+    job = job_block(source, "regenerate")
+    for step_name in (
+        "Regenerate the issue-template version dropdown",
+        "Check for changes",
+        "Commit and push changes",
+        "Require every generator to have converged",
+    ):
+        step = step_block(job, step_name)
+        condition = re.search(r"\n        if: (?:>-\n\s+)?(.*?)\n        \w", step, re.S)
+        require(condition is not None, f"post-merge cancellation: {step_name} has no `if:`")
+        text = condition.group(1)
+        require(
+            "!cancelled()" in text,
+            f"post-merge cancellation: {step_name} must be gated on `!cancelled()`; "
+            f"got {text!r}",
+        )
+        require(
+            "always()" not in text,
+            f"post-merge cancellation: {step_name} uses `always()`, which runs after a "
+            f"cancel and can push a half-written tree; got {text!r}",
+        )
+
+
 def validate_post_merge_push_loop() -> None:
     """Pin how the post-merge push loop turns generator outcomes into an exit code."""
     source = MAINTENANCE.read_text(encoding="utf-8")
@@ -3211,6 +3250,7 @@ fi"""
     validate_stuck_job_watchdog()
     validate_post_merge_push_loop()
     validate_post_merge_terminal_gate()
+    validate_post_merge_cancellation_policy()
 
     print("Unity pull-request policy validation passed.")
 
