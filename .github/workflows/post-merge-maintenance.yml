@@ -154,6 +154,15 @@ jobs:
       # still goes red at the end, so nothing is swallowed.
       - name: Regenerate llms.txt
         id: gen_llms
+        # Same `!cancelled()` as its sibling below, and for a second reason.
+        # With no condition at all this step defaulted to `success()`, so a
+        # failure anywhere earlier -- `Install dependencies` most plausibly --
+        # SKIPPED it while the sibling still ran under `!cancelled()`, still
+        # converged, and still pushed. The terminal gate counted `skipped` as
+        # converged, so master could take an auto-commit that refreshed the
+        # dropdown and never refreshed llms.txt. Running it means a real failure
+        # is reported as a failure, by the generator that had it. (Bugbot.)
+        if: ${{ !cancelled() }}
         run: |
           set -uo pipefail
           if npm run update:llms-txt && npm run check:llms-txt; then
@@ -337,10 +346,17 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
+          # `skipped` is NOT converged. Both generators now carry `!cancelled()`,
+          # the same condition as this gate, so whenever this gate runs they both
+          # ran too -- a skipped generator means something unanticipated stopped
+          # it, and "we never generated it" must not read as "it was already
+          # current". Accepting `skipped` is what let a failed install skip
+          # llms.txt while the sibling pushed. An empty outcome (a step id that
+          # no longer exists) fails here for the same reason.
           failed=0
           for outcome in "${LLMS_OUTCOME}" "${ISSUE_TEMPLATE_OUTCOME}"; do
             case "${outcome}" in
-              success|skipped) ;;
+              success) ;;
               *) failed=1 ;;
             esac
           done

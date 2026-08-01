@@ -365,18 +365,28 @@ jobs:
           stuck_candidates="$(mktemp)"
           : > "${stuck_candidates}"
 
-          # Reads the per-run loop variables directly; called from both the
-          # `busy` branch (where the run can still proceed) and the not-idle
-          # branch (where it cannot). No-op when nothing starved.
+          # Reads the per-run loop variables directly. Called from FOUR branches:
+          # healthy-queued and `busy` (the run can still proceed), not-idle (it
+          # cannot), and dispatcher-stuck (it is about to be cancelled). Only the
+          # last needs a disposition of its own. No-op when nothing starved.
+          #
+          # The disposition is the caller's to state, because it is the one thing
+          # this function cannot know. It used to hard-code "Not dispatcher-stuck;
+          # no action." for every caller, so a run with one starved label set and
+          # another that IS dispatcher-stuck got two contradictory summary lines
+          # under the same run id -- "no action" immediately above "queued for
+          # cancel". A watchdog whose whole purpose is a verdict that matches what
+          # it observed cannot print both. (Cursor Bugbot.)
           report_starvation() {
             [[ -z "${starved_kind}" ]] && return 0
             local detail
+            local disposition="${1:-Not dispatcher-stuck; no action.}"
             if [[ "${starved_kind}" == "offline" ]]; then
               detail="every runner carrying [${starved_labels}] is registered but offline"
             else
               detail="no runner registered in any organization group carries [${starved_labels}]"
             fi
-            log_summary "run ${run_id} (${run_path_base}, event=${run_event}): starved -- ${detail}. Not dispatcher-stuck; no action."
+            log_summary "run ${run_id} (${run_path_base}, event=${run_event}): starved -- ${detail}. ${disposition}"
             echo "::warning::run ${run_id} (${run_path_base}) queued past ${MIN_QUEUE_AGE_SECONDS}s: ${detail}. Bring that runner online or fix the label set."
             printf '* run %s (%s, event=%s) -- %s -- %s\n' "${run_id}" "${run_path_base}" "${run_event}" "${detail}" "${run_html_url}" >> "${starved_runs_file}"
           }
@@ -608,7 +618,7 @@ jobs:
             # A cancellable sibling does not make a starved one less starved,
             # and this is the branch that acts, so it is the one most likely to
             # be read.
-            report_starvation
+            report_starvation "Another label set in this run IS dispatcher-stuck; the run is queued for cancel below."
             log_summary "run ${run_id} (${run_path_base}, event=${run_event}): dispatcher-stuck; queued for cancel -- ${run_html_url}"
             printf '%s\n' "${run_meta}" | jq -c --argjson id "${run_id}" '. + {id: $id}' >> "${stuck_candidates}"
           done

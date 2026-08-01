@@ -1569,8 +1569,23 @@ def validate_stuck_job_watchdog() -> None:
                 "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
             },
             0,
-            ("cancelled 1", "dispatcher-stuck", "starved", "::warning::", "unicorn"),
-            (STARVED_SECTION_EMPTY,),
+            (
+                "cancelled 1",
+                "dispatcher-stuck",
+                "starved",
+                "::warning::",
+                "unicorn",
+                # The starvation line must state THIS run's real disposition.
+                "IS dispatcher-stuck; the run is queued for cancel below",
+            ),
+            (
+                STARVED_SECTION_EMPTY,
+                # `report_starvation` hard-coded this for every caller, so the
+                # same run id got "no action" immediately above "queued for
+                # cancel". A verdict that contradicts itself is not a verdict.
+                # (Cursor Bugbot.)
+                "Not dispatcher-stuck; no action.",
+            ),
         ),
         (
             # Precedence: a later `busy` set must not demote an earlier `idle`
@@ -2134,10 +2149,16 @@ def validate_post_merge_terminal_gate() -> None:
     if os.name == "nt":
         return
     # llms outcome, issue-template outcome, expected exit
+    # `skipped` is not converged. Both generators carry `!cancelled()`, the same
+    # condition as the gate, so a skip while the gate runs means something
+    # unanticipated stopped a generator -- and it used to read as success, which
+    # is how a failed `Install dependencies` could skip llms.txt while the
+    # sibling generator converged and pushed. (Cursor Bugbot.)
     for llms, issue_template, expected in (
         ("success", "success", 0),
-        ("success", "skipped", 0),
-        ("skipped", "skipped", 0),
+        ("success", "skipped", 1),
+        ("skipped", "success", 1),
+        ("skipped", "skipped", 1),
         ("failure", "success", 1),
         ("success", "failure", 1),
         ("failure", "failure", 1),
@@ -2398,6 +2419,40 @@ def validate_post_merge_cancellation_policy() -> None:
         f"post-merge cancellation: expected at least four steps gated on `!cancelled()` "
         f"(the generator isolation); found {uses_not_cancelled}",
     )
+
+    # EVERY generator must carry `!cancelled()`, including one with no `if:` at
+    # all. The loop above deliberately skips unconditional steps -- correct for
+    # cancellation, since an unconditional step cannot run after a cancel -- but
+    # blind to the other half: an unconditional step also cannot run after an
+    # earlier FAILURE. `Regenerate llms.txt` had no condition, so a failed
+    # `Install dependencies` skipped it while its `!cancelled()` sibling ran,
+    # converged, and pushed, and the terminal gate read `skipped` as converged.
+    # Master could take an auto-commit that refreshed the dropdown and never
+    # refreshed llms.txt. (Cursor Bugbot.)
+    #
+    # Discovered by `id: gen_*` rather than by name, so a third generator added
+    # later is held to the same rule.
+    generators = []
+    for index, match in enumerate(step_starts):
+        end = step_starts[index + 1].start() if index + 1 < len(step_starts) else len(job)
+        body = job[match.start() : end]
+        step_id = re.search(r"^        id: (gen_\w+)$", body, re.M)
+        if step_id:
+            generators.append((match.group(1), step_id.group(1), body))
+    require(
+        len(generators) >= 2,
+        f"post-merge cancellation: expected at least two `gen_*` generator steps, "
+        f"found {[name for name, _, _ in generators]}",
+    )
+    for step_name, step_id, step in generators:
+        condition = re.search(r"\n        if: (?:>-\n\s+)?(.*?)\n        \w", step, re.S)
+        require(
+            condition is not None and "!cancelled()" in condition.group(1),
+            f"post-merge cancellation: generator {step_name!r} ({step_id}) must be gated on "
+            f"`!cancelled()`. Without it the step is implicitly `success()`, so any earlier "
+            f"failure skips it while its sibling still generates and pushes -- a partial "
+            f"auto-commit on the default branch that the terminal gate reads as converged.",
+        )
 
 
 def validate_post_merge_push_loop() -> None:
