@@ -219,6 +219,20 @@ else {
         "with C++' workload.")
 }
 
+# Presence, deliberately -- NOT a launch probe. Running `cl.exe /?` would also
+# catch a present-but-corrupt compiler, which this cannot. It was considered and
+# rejected for now: `cl.exe` resolves several sibling DLLs (`mspdb*`, `msvcp*`)
+# and the toolchain normally runs under `vcvars`, so a bare launch has real ways
+# to fail on a HEALTHY host -- and this gate runs before the organization build
+# lock, so a false failure blocks every IL2CPP leg on that runner. That is the
+# same shape as the `vswhere` bug above, where a discovery failure was reported
+# as a missing toolchain.
+#
+# The asymmetry decides it: a missing `cl.exe` is what #333 actually was, and
+# presence catches it. A corrupt-but-present compiler is rarer and still fails
+# the build, just later. Adding a launch probe needs a Windows host where both
+# the healthy and the corrupt case can be demonstrated, which is #336, not a
+# change made blind. (GitHub Copilot raised this.)
 $result = Test-MsvcToolchain -InstallRoot $installRoot -RunnerName $runner -ProbeExecutable {
     param($path)
     Test-Path -LiteralPath $path -PathType Leaf
