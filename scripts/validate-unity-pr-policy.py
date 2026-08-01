@@ -1038,7 +1038,7 @@ def run_watchdog(
     state_age_seconds: int = 3600,
     break_date: bool = False,
     extra_env: dict[str, str] | None = None,
-) -> tuple[int, str]:
+) -> tuple[int, WatchdogOutput]:
     """Execute the watchdog audit script against a stubbed `gh` and `git`.
 
     `break_date` fails the unguarded `now_epoch="$(date ...)"` assignment, which
