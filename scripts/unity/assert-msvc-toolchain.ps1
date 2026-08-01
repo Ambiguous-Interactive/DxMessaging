@@ -24,10 +24,15 @@
 
     The decision is separated from the discovery on purpose. `Test-MsvcToolchain`
     is pure: it takes an already-resolved installation root and a probe callback,
-    so it is exercised on Linux by
-    `scripts/__tests__/test-msvc-toolchain.ps1`. Only the thin `vswhere`
-    invocation is Windows-only and untested, which is the same split the rest of
-    the Unity PowerShell in this repository uses.
+    so every verdict is exercised on Linux by
+    `scripts/__tests__/test-msvc-toolchain.ps1`.
+
+    That suite also drives this file end to end against a fake `vswhere`, because
+    three defects lived outside the pure function entirely: `exit 1` could not
+    fail a step under this repository's custom `shell:` template, a failing
+    vswhere was reported as a missing toolchain, and splatting the argument list
+    glob-expanded `-products *` against the working directory. Only the Windows
+    path separators remain genuinely untestable here.
 
 .PARAMETER VsWherePath
     Location of `vswhere.exe`. Defaults to the fixed path the Visual Studio
@@ -45,6 +50,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Without this, `$ErrorActionPreference = 'Stop'` turns ANY non-zero exit from
+# `vswhere` into a thrown NativeCommandExitException -- an unhandled stack trace
+# instead of a diagnosis. Every other Windows-facing script in this directory
+# pins it; this one did not.
+$PSNativeCommandUseErrorActionPreference = $false
 
 function Test-MsvcToolchain {
     <#
@@ -147,16 +157,66 @@ if ([System.IO.Path]::DirectorySeparatorChar -ne '\') {
     exit 0
 }
 
+function Invoke-VsWhere {
+    <#
+        Returns the newest installation root carrying a C++ toolset, or throws
+        with a reason of its own. A vswhere that FAILS is not the same as a
+        vswhere that finds nothing: the first is a transient (a locked
+        `_Instances` state file, a concurrent VS Installer, an older vswhere that
+        rejects `-products`) on a possibly healthy host, and telling that admin
+        to "install the C++ workload" is both wrong and blocks all IL2CPP CI on
+        the machine.
+    #>
+    param([string]$Path)
+
+    # The argument list is written out literally rather than splatted from an
+    # array. SPLATTING a native command glob-expands `*` against the working
+    # directory -- source-level quoting does NOT prevent it, which is what an
+    # earlier version of this file claimed. Measured on 7.6.4:
+    #   & $p -products '*'      ->  -products *
+    #   $a=@('-products','*'); & $p @a  ->  -products __pycache__ _site ...
+    # vswhere would then have been asked for a product named after whatever
+    # happened to sit in the checkout, matched nothing, and reported a healthy
+    # host as having no Visual Studio at all.
+    #
+    # `-products *` so Build Tools installs count, not just full Visual Studio.
+    #
+    # `-requiresAny` with the version-agnostic component AND the workload one:
+    # the v143-only filter rejects an install pinned to an older toolset, which
+    # would report `no-visual-studio` for a host whose older toolset
+    # `Test-MsvcToolchain` is explicitly written to accept.
+    $stdout = & $Path -latest -products '*' -requiresAny `
+        -requires 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' `
+        -requires 'Microsoft.VisualStudio.Workload.VCTools' `
+        -property 'installationPath' 2>$null
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        throw ("vswhere exited $code while enumerating Visual Studio installations. " +
+            "This is a discovery failure, NOT evidence that the C++ toolchain is missing; " +
+            "the leg is failed closed rather than guess. Re-run, and if it persists check " +
+            "the Visual Studio Installer state on this runner.")
+    }
+    foreach ($line in @($stdout)) {
+        $candidate = "$line".Trim()
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        # vswhere prints usage text to stdout on a bad switch, and an unvalidated
+        # line reaches `Join-Path`/`Test-Path`, where `Usage:` parses as a drive
+        # qualifier and raises DriveNotFoundException.
+        if (-not [System.IO.Path]::IsPathRooted($candidate)) { continue }
+        return $candidate
+    }
+    return ''
+}
+
 $installRoot = ''
 if (Test-Path -LiteralPath $VsWherePath -PathType Leaf) {
-    # `-products *` so Build Tools installs count, not just full Visual Studio.
-    $installRoot = (& $VsWherePath -latest -products * `
-            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            -property installationPath) | Select-Object -First 1
+    $installRoot = Invoke-VsWhere -Path $VsWherePath
 }
 else {
-    Write-Output ("::warning::vswhere.exe was not found at '$VsWherePath'; " +
-        "treating the C++ toolchain as absent.")
+    throw ("vswhere.exe was not found at '$VsWherePath' on runner '$runner'. It ships with " +
+        "the Visual Studio Installer, so its absence means no Visual Studio tooling is " +
+        "installed at all. A runner administrator must install the 'Desktop development " +
+        "with C++' workload.")
 }
 
 $result = Test-MsvcToolchain -InstallRoot $installRoot -RunnerName $runner -ProbeExecutable {
@@ -175,4 +235,10 @@ if ($DetectOnly) {
 }
 
 Write-Output "::error title=MSVC C++ toolchain unusable ($($result.Reason))::$($result.Message)"
-exit 1
+# `throw`, NOT `exit 1`. Under this repository's custom `shell:` template
+# (`pwsh ... -Command ". '{0}'"`), `exit N` inside a script invoked by path sets
+# $LASTEXITCODE but does NOT exit the host pwsh, and the template -- unlike the
+# built-in `shell: pwsh` -- appends no `exit $LASTEXITCODE`. So `exit 1` here
+# made this entire gate a no-op that printed an error and passed. A terminating
+# error is what every other step on this shell uses.
+throw $result.Message
