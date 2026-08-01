@@ -476,7 +476,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [gateStep, /\n        if: always\(\)\n        timeout-minutes: 2\n/],
       [gateStep, /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/],
       [gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/],
-      [getStepBlock(job, "Checkout trusted Unity editor validator"), /persist-credentials: false[\s\S]*clean: true[\s\S]*set-safe-directory: false/, `${label}: isolated validator checkout must not write global safe.directory`],
+      [getStepBlock(job, "Checkout trusted Unity editor validator"), /GIT_CONFIG_NOSYSTEM: 1[\s\S]*GIT_CONFIG_GLOBAL: \/dev\/null[\s\S]*repository: Ambiguous-Interactive\/unity-helpers[\s\S]*path: \.ci\/unity-helpers[\s\S]*persist-credentials: false[\s\S]*clean: true[\s\S]*set-safe-directory: false/, `${label}: isolated validator checkout must use the trusted closed shape`],
       ...(["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file) || jobId === "unity-checks" ? [[workStep, /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: licensed work and central return must use the same trusted editor root`]] : [])
     ];
     for (const [actual, contract, message] of contracts) assert.match(actual, contract, message);
