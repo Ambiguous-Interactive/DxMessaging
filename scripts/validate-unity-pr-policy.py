@@ -2136,6 +2136,190 @@ def validate_post_merge_terminal_gate() -> None:
         )
 
 
+def run_maintenance_step(
+    step_name: str, root: Path, environment_overrides: dict[str, str], seed_repo: bool = True
+) -> tuple[int, str, dict[str, str]]:
+    """Execute one `regenerate`-job step and return exit, `GITHUB_OUTPUT`, files.
+
+    Four of this job's six bash steps were reachable by no test at all: the
+    credential probe, the branch refresh, both generators, and the change probe.
+    Only the push loop and the terminal gate were ever executed, so the
+    STEP-level reverts -- the ones that stop a checker-rejected file being
+    committed -- could be deleted with every suite green.
+    """
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    script = run_script(step_block(job_block(source, "regenerate"), step_name))
+    work = root / "work"
+    work.mkdir()
+    if seed_repo:
+        subprocess.run(["git", "init", "-q", str(work)], check=True, capture_output=True)
+        for key, value in (("user.email", "t@t"), ("user.name", "t")):
+            subprocess.run(["git", "-C", str(work), "config", key, value], check=True)
+        (work / ".github" / "ISSUE_TEMPLATE").mkdir(parents=True)
+        for name, body in (
+            ("llms.txt", "GOOD"),
+            ("README.md", "readme"),
+            (".github/ISSUE_TEMPLATE/bug_report.yml", "GOOD"),
+        ):
+            (work / name).write_text(body, encoding="utf-8")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), "commit", "-qm", "seed"], check=True)
+    output = root / "github-output"
+    output.touch()
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GITHUB_OUTPUT": str(output),
+            "LLMS_PATHS": "llms.txt README.md",
+            "ISSUE_TEMPLATE_PATHS": ".github/ISSUE_TEMPLATE/bug_report.yml",
+        }
+    )
+    environment.update(environment_overrides)
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=work, env=environment, capture_output=True, text=True, check=False
+    )
+    files = {
+        name: (work / name).read_text(encoding="utf-8")
+        for name in ("llms.txt", ".github/ISSUE_TEMPLATE/bug_report.yml")
+        if (work / name).exists()
+    }
+    return result.returncode, output.read_text(encoding="utf-8") + result.stdout + result.stderr, files
+
+
+def npm_stub(root: Path, reject: str = "") -> dict[str, str]:
+    """A `npm` on PATH whose `check:<reject>` rejects what its update wrote."""
+    bin_dir = root / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "npm"
+    stub.write_text(
+        "#!/bin/bash\n"
+        'case "$*" in\n'
+        '  "run update:llms-txt") echo "REJECTED-OUTPUT" > llms.txt ;;\n'
+        '  "run update:issue-template-versions")\n'
+        '     echo "REJECTED-OUTPUT" > .github/ISSUE_TEMPLATE/bug_report.yml ;;\n'
+        f'  "run check:{reject or "__none__"}") exit 1 ;;\n'
+        "esac\nexit 0\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+
+def validate_post_merge_steps() -> None:
+    """Execute the four steps nothing else runs."""
+    if os.name == "nt":
+        return
+
+    # The credential probe decides whether anything is committed at all.
+    for name, secrets, expected in (
+        ("both secrets present", {"AUTO_COMMIT_APP_ID": "1", "AUTO_COMMIT_APP_PRIVATE_KEY": "k"}, "has-app=true"),
+        ("id missing", {"AUTO_COMMIT_APP_ID": "", "AUTO_COMMIT_APP_PRIVATE_KEY": "k"}, "has-app=false"),
+        ("key missing", {"AUTO_COMMIT_APP_ID": "1", "AUTO_COMMIT_APP_PRIVATE_KEY": ""}, "has-app=false"),
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            code, text, _ = run_maintenance_step(
+                "Check for the auto-commit GitHub App credentials", Path(directory), secrets
+            )
+        require(code == 0, f"post-merge credentials {name}: expected exit 0, got {code}\n{text}")
+        require(expected in text, f"post-merge credentials {name}: expected {expected}\n{text}")
+
+    # Each generator must REVERT its own output when its checker rejects it, and
+    # fail. Deleting either revert publishes checker-rejected content.
+    for step, reject, owned in (
+        ("Regenerate llms.txt", "llms-txt", "llms.txt"),
+        (
+            "Regenerate the issue-template version dropdown",
+            "issue-template-versions",
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ),
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code, text, files = run_maintenance_step(step, root, npm_stub(root, reject))
+        require(code != 0, f"post-merge {step}: a rejected generation must fail, got {code}\n{text}")
+        require(
+            files[owned].strip() == "GOOD",
+            f"post-merge {step}: rejected output was left in the tree instead of reverted "
+            f"({files[owned]!r}) -- it would be committed and pushed",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code, text, files = run_maintenance_step(step, root, npm_stub(root))
+        require(code == 0, f"post-merge {step}: a converged generation must pass, got {code}\n{text}")
+        require(
+            files[owned].strip() == "REJECTED-OUTPUT",
+            f"post-merge {step}: converged output was reverted anyway ({files[owned]!r})",
+        )
+
+    # The change probe decides whether the commit step runs at all. Inverted
+    # polarity turns the whole self-heal into a permanent silent no-op.
+    with tempfile.TemporaryDirectory() as directory:
+        code, text, _ = run_maintenance_step("Check for changes", Path(directory), {})
+    require(code == 0 and "changed=true" not in text, f"post-merge probe clean: {code}\n{text}")
+
+    for name, path in (
+        ("llms.txt", "llms.txt"),
+        ("issue template", ".github/ISSUE_TEMPLATE/bug_report.yml"),
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def dirty(work: Path, target: str = path) -> None:
+                (work / target).write_text("CHANGED", encoding="utf-8")
+
+            code, text, _ = run_maintenance_step_dirty("Check for changes", root, dirty)
+        require(
+            code == 0 and "changed=true" in text,
+            f"post-merge probe {name}: a change must set changed=true\n{text}",
+        )
+
+    # Not a git repository at all: `--quiet` returns 128/129, which must NOT be
+    # read as "changed".
+    with tempfile.TemporaryDirectory() as directory:
+        code, text, _ = run_maintenance_step(
+            "Check for changes", Path(directory), {}, seed_repo=False
+        )
+    require(
+        code != 0 and "changed=true" not in text,
+        f"post-merge probe outside a repo: must fail closed, got {code}\n{text}",
+    )
+
+
+def run_maintenance_step_dirty(step_name: str, root: Path, mutate) -> tuple[int, str, dict[str, str]]:
+    """`run_maintenance_step`, with the worktree dirtied after seeding."""
+    source = MAINTENANCE.read_text(encoding="utf-8")
+    script = run_script(step_block(job_block(source, "regenerate"), step_name))
+    work = root / "work"
+    work.mkdir()
+    subprocess.run(["git", "init", "-q", str(work)], check=True, capture_output=True)
+    for key, value in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(work), "config", key, value], check=True)
+    (work / ".github" / "ISSUE_TEMPLATE").mkdir(parents=True)
+    for name, body in (
+        ("llms.txt", "GOOD"),
+        ("README.md", "readme"),
+        (".github/ISSUE_TEMPLATE/bug_report.yml", "GOOD"),
+    ):
+        (work / name).write_text(body, encoding="utf-8")
+    subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-qm", "seed"], check=True)
+    mutate(work)
+    output = root / "github-output"
+    output.touch()
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GITHUB_OUTPUT": str(output),
+            "LLMS_PATHS": "llms.txt README.md",
+            "ISSUE_TEMPLATE_PATHS": ".github/ISSUE_TEMPLATE/bug_report.yml",
+        }
+    )
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=work, env=environment, capture_output=True, text=True, check=False
+    )
+    return result.returncode, output.read_text(encoding="utf-8") + result.stdout + result.stderr, {}
+
+
 def validate_post_merge_cancellation_policy() -> None:
     """No step that writes or pushes may survive a cancellation.
 
@@ -2147,32 +2331,57 @@ def validate_post_merge_cancellation_policy() -> None:
     replaced had no `always()` at all and simply stopped. (Cursor Bugbot, high.)
     """
     source = MAINTENANCE.read_text(encoding="utf-8")
+    # Anchored to the concurrency BLOCK. Matching the bare string anywhere let a
+    # prose comment satisfy it -- including the one this very guard's fix added,
+    # so flipping the real setting to `false` passed. A tripwire a comment can
+    # arm is not a tripwire.
+    concurrency = re.search(r"\nconcurrency:\n((?:  .*\n)+)", source)
+    require(concurrency is not None, "post-merge cancellation: no concurrency block")
     require(
-        "cancel-in-progress: true" in source,
+        "cancel-in-progress: true" in concurrency.group(1),
         "post-merge cancellation: the concurrency policy changed; re-check whether "
         "cancellation is still a routine path before relaxing the guards below",
     )
     job = job_block(source, "regenerate")
-    for step_name in (
-        "Regenerate the issue-template version dropdown",
-        "Check for changes",
-        "Commit and push changes",
-        "Require every generator to have converged",
-    ):
+    # EVERY step carrying an `if:`, not a hard-coded list. The docstring's rule is
+    # "no step that writes or pushes may survive a cancellation"; a fixed list
+    # cannot enforce that for a step added later, which is the direction the
+    # regression arrives from. A step with no `if:` carries the implicit
+    # `success()` and cannot run after a cancel, so it needs no check.
+    step_starts = [m for m in re.finditer(r"^      - name: (.+)$", job, re.M)]
+    guarded = []
+    for index, match in enumerate(step_starts):
+        end = step_starts[index + 1].start() if index + 1 < len(step_starts) else len(job)
+        if re.search(r"^        if: ", job[match.start() : end], re.M):
+            guarded.append(match.group(1))
+    require(
+        len(guarded) >= 4,
+        f"post-merge cancellation: expected at least four conditional steps, found {guarded}",
+    )
+    # `always()` is the ONLY construct that survives a cancellation. Any other
+    # condition is implicitly success-gated and cannot run after one, so the rule
+    # is simply that no step in this job may say `always()`. A step that must run
+    # after a FAILED sibling says `!cancelled()` instead.
+    uses_not_cancelled = 0
+    for step_name in guarded:
         step = step_block(job, step_name)
         condition = re.search(r"\n        if: (?:>-\n\s+)?(.*?)\n        \w", step, re.S)
         require(condition is not None, f"post-merge cancellation: {step_name} has no `if:`")
         text = condition.group(1)
         require(
-            "!cancelled()" in text,
-            f"post-merge cancellation: {step_name} must be gated on `!cancelled()`; "
-            f"got {text!r}",
-        )
-        require(
             "always()" not in text,
             f"post-merge cancellation: {step_name} uses `always()`, which runs after a "
-            f"cancel and can push a half-written tree; got {text!r}",
+            f"cancel; a generator killed mid-write never reaches its revert, so a step "
+            f"that keeps going can commit a half-written tree. Use `!cancelled()`. "
+            f"Got {text!r}",
         )
+        if "!cancelled()" in text:
+            uses_not_cancelled += 1
+    require(
+        uses_not_cancelled >= 4,
+        f"post-merge cancellation: expected at least four steps gated on `!cancelled()` "
+        f"(the generator isolation); found {uses_not_cancelled}",
+    )
 
 
 def validate_post_merge_push_loop() -> None:
@@ -2223,24 +2432,22 @@ def validate_post_merge_push_loop() -> None:
         f"leaves no change must still fail the job, got exit {code}",
     )
 
-    # The "No staged changes remain" exit is the second of the two sites where
-    # the regenerate verdict could be dropped undetected. It is reached when a
-    # change exists when the loop starts but is gone by staging time, which is
-    # what a failing generator's revert does on the refreshed head.
+    # The attempt-3 give-up is the FOURTH `exit "${regenerate_failed}"` site, and
+    # the one nobody executes. Master advancing three times during the job is
+    # exactly why the loop exists; a generator that stops converging on one of
+    # those heads reverts its own file, so BOTH step outcomes the terminal gate
+    # reads are `success` and only this exit reddens the job.
     with tempfile.TemporaryDirectory() as directory:
+        # NOT `quiet_other`: the other generator must keep producing a change, or
+        # the failing one's revert empties the tree and the loop leaves through
+        # the "already current" branch before attempt 3 is ever reached.
         code, pushed = run_maintenance_push_loop(
-            script,
-            Path(directory),
-            99,
-            1,
-            "llms",
-            quiet_other=True,
-            advance_before_run=True,
+            script, Path(directory), 99, 3, "llms"
         )
     require(
         code == 1,
-        f"post-merge push loop no-staged-changes exit: a failed generator must fail "
-        f"the job through this branch too, got exit {code}",
+        f"post-merge push loop attempt-cap exit: a generator that never converged "
+        f"must still fail the job when the loop gives up, got exit {code}",
     )
 
     # A push rejected while master stood still is a genuine failure with no
@@ -3251,6 +3458,7 @@ fi"""
     validate_post_merge_push_loop()
     validate_post_merge_terminal_gate()
     validate_post_merge_cancellation_policy()
+    validate_post_merge_steps()
 
     print("Unity pull-request policy validation passed.")
 
