@@ -242,6 +242,292 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void BuildGraphUiPrioritizesRoutesAndCollapsesAdvancedData()
+        {
+            FlowGraphSnapshot snapshot = CreateTwoEdgeSnapshot();
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
+
+            Label overview = root.Q<Label>(DxMessagingFlowGraphWindow.RouteMapOverviewLabelName);
+            Foldout routeInsights = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.RouteMapInsightsFoldoutName
+            );
+            Foldout traceActivity = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.TraceActivityFoldoutName
+            );
+            Foldout topology = root.Q<Foldout>(DxMessagingFlowGraphWindow.TopologyFoldoutName);
+            Label detailsTitle = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName);
+
+            Assert.That(
+                overview,
+                Is.Not.Null,
+                "The visible route overview should be rendered above advanced analytics."
+            );
+            Assert.That(
+                overview.text,
+                Is.EqualTo("2 routes | 2 messages | 2 receivers | 6 calls"),
+                $"Unexpected visible overview text: {overview.text}"
+            );
+            Assert.That(
+                routeInsights.value,
+                Is.False,
+                "Route insights should default collapsed so the route map remains scannable."
+            );
+            Assert.That(
+                traceActivity,
+                Is.Null,
+                "Trace activity should be omitted when the capture has no trace paths."
+            );
+            Assert.That(
+                topology.value,
+                Is.False,
+                "Raw topology should default collapsed so components, messages, and edges do not duplicate the route map."
+            );
+            Assert.That(
+                detailsTitle.text,
+                Does.StartWith("Route:"),
+                $"The default selection should explain a route, but was '{detailsTitle.text}'."
+            );
+
+            FlowGraphSnapshot tracedSnapshot = new(
+                snapshot.ComponentNodes,
+                snapshot.MessageNodes,
+                snapshot.Edges,
+                new[]
+                {
+                    new FlowGraphTracePath(
+                        "InventoryChanged",
+                        "<none>",
+                        "component:alpha",
+                        "Root/Alpha",
+                        "Untargeted",
+                        recentTracedDeliveryCount: 1
+                    ),
+                },
+                snapshot.Warnings
+            );
+            VisualElement tracedRoot = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(tracedRoot, tracedSnapshot);
+
+            Foldout tracedActivity = tracedRoot.Q<Foldout>(
+                DxMessagingFlowGraphWindow.TraceActivityFoldoutName
+            );
+            Assert.That(
+                tracedActivity.value,
+                Is.False,
+                "Trace activity should default collapsed so secondary analysis does not bury routes."
+            );
+
+            tracedActivity.value = true;
+            Assert.That(
+                DxMessagingFlowGraphWindow.RefreshGraphContent(
+                    tracedRoot,
+                    tracedSnapshot,
+                    new FlowGraphViewState("missing")
+                ),
+                Is.True
+            );
+            Assert.That(
+                tracedRoot.Q<Foldout>(DxMessagingFlowGraphWindow.TraceActivityFoldoutName),
+                Is.Null
+            );
+            Assert.That(
+                DxMessagingFlowGraphWindow.RefreshGraphContent(
+                    tracedRoot,
+                    tracedSnapshot,
+                    FlowGraphViewState.Default
+                ),
+                Is.True
+            );
+            Assert.That(
+                tracedRoot.Q<Foldout>(DxMessagingFlowGraphWindow.TraceActivityFoldoutName).value,
+                Is.True,
+                "Refreshing graph content should preserve an expanded trace section."
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiExplainsMissingLiveRoutesWithoutRenderingZeroValueTopology()
+        {
+            FlowGraphSnapshot snapshot = new(
+                new[]
+                {
+                    new FlowGraphComponentNode(
+                        "component:listener",
+                        "Root/Listener",
+                        "MessagingComponent",
+                        activeInHierarchy: true,
+                        listenerCount: 0,
+                        registrationCount: 0,
+                        callCount: 0,
+                        localMessageCount: 0
+                    ),
+                },
+                new[]
+                {
+                    new FlowGraphMessageNode(
+                        "ObservedMessage",
+                        registrationCount: 0,
+                        callCount: 0,
+                        recentGlobalEmissionCount: 3,
+                        recentLocalMessageCount: 0,
+                        recentTracedDeliveryCount: 0
+                    ),
+                },
+                Array.Empty<FlowGraphEdge>(),
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
+
+            Label emptyTitle = root.Q<Label>(DxMessagingFlowGraphWindow.EmptyStateTitleLabelName);
+            Label emptyBody = root.Q<Label>(DxMessagingFlowGraphWindow.EmptyStateLabelName);
+
+            Assert.That(
+                emptyTitle.text,
+                Is.EqualTo("No live routes"),
+                $"Unexpected no-route title: {emptyTitle.text}"
+            );
+            Assert.That(
+                emptyBody.text,
+                Does.Contain("Enter Play mode"),
+                $"The no-route guidance should name the next action, but was '{emptyBody.text}'."
+            );
+            Assert.That(
+                root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName),
+                Is.Null,
+                "A zero-route capture should not render a zero-value route summary."
+            );
+            Assert.That(
+                root.Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.ComponentNodeClassName
+                    )
+                    .ToList(),
+                Is.Empty,
+                "A zero-route capture should not dump raw component rows below the guidance."
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiPrioritizesConcreteRoutesAndCollapsesOverflow()
+        {
+            FlowGraphComponentNode[] components = Enumerable
+                .Range(0, 10)
+                .Select(index => new FlowGraphComponentNode(
+                    $"component:{index}",
+                    $"Root/Listener {index}",
+                    "MessagingComponent",
+                    activeInHierarchy: true,
+                    listenerCount: 1,
+                    registrationCount: 1,
+                    callCount: index == 9 ? 100 : 9 - index,
+                    localMessageCount: 0
+                ))
+                .ToArray();
+            FlowGraphMessageNode[] messages = Enumerable
+                .Range(0, 9)
+                .Select(index => new FlowGraphMessageNode($"ConcreteMessage{index}", 1, 9 - index))
+                .Append(new FlowGraphMessageNode("IMessage", 1, 100))
+                .ToArray();
+            FlowGraphEdge[] edges = Enumerable
+                .Range(0, 9)
+                .Select(index => new FlowGraphEdge(
+                    $"ConcreteMessage{index}",
+                    $"component:{index}",
+                    $"Root/Listener {index}",
+                    "Untargeted",
+                    registrationCount: 1,
+                    callCount: 9 - index
+                ))
+                .Append(
+                    new FlowGraphEdge(
+                        "IMessage",
+                        "component:9",
+                        "Root/Listener 9",
+                        "GlobalAcceptAll",
+                        registrationCount: 1,
+                        callCount: 100
+                    )
+                )
+                .ToArray();
+            FlowGraphSnapshot snapshot = new(components, messages, edges, Array.Empty<string>());
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
+
+            VisualElement routeMap = root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName);
+            Foldout moreRoutes = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.RouteMapMoreRoutesFoldoutName
+            );
+            int initiallyVisibleRouteCount = routeMap
+                .Children()
+                .Count(child =>
+                    child.ClassListContains(DxMessagingFlowGraphWindow.RouteMapRouteClassName)
+                );
+            int overflowRouteCount = moreRoutes
+                .Query<VisualElement>(className: DxMessagingFlowGraphWindow.RouteMapRouteClassName)
+                .ToList()
+                .Count;
+            string detailsTitle = root.Q<Label>(
+                DxMessagingFlowGraphWindow.DetailsTitleLabelName
+            ).text;
+
+            Assert.That(
+                initiallyVisibleRouteCount,
+                Is.EqualTo(8),
+                $"Expected 8 initially visible routes, but found {initiallyVisibleRouteCount}."
+            );
+            Assert.That(
+                overflowRouteCount,
+                Is.EqualTo(2),
+                $"Expected 2 overflow routes, but found {overflowRouteCount}."
+            );
+            Assert.That(moreRoutes.value, Is.False, "Overflow routes should default collapsed.");
+            Assert.That(
+                detailsTitle,
+                Does.Contain("ConcreteMessage0"),
+                $"A concrete route should be selected ahead of GlobalAcceptAll, but was '{detailsTitle}'."
+            );
+
+            root.Q<Foldout>(DxMessagingFlowGraphWindow.RouteMapInsightsFoldoutName).value = true;
+            moreRoutes.value = true;
+            root.Q<Foldout>(DxMessagingFlowGraphWindow.TopologyFoldoutName).value = true;
+
+            Assert.That(
+                DxMessagingFlowGraphWindow.RefreshGraphContent(
+                    root,
+                    snapshot,
+                    new FlowGraphViewState("missing")
+                ),
+                Is.True
+            );
+            Assert.That(root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName), Is.Null);
+            Assert.That(
+                DxMessagingFlowGraphWindow.RefreshGraphContent(
+                    root,
+                    snapshot,
+                    FlowGraphViewState.Default
+                ),
+                Is.True
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.RouteMapInsightsFoldoutName).value,
+                Is.True
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.RouteMapMoreRoutesFoldoutName).value,
+                Is.True
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.TopologyFoldoutName).value,
+                Is.True
+            );
+        }
+
+        [Test]
         public void BuildGraphUiColorsRouteRowsByRegistrationTaxonomy()
         {
             FlowGraphSnapshot snapshot = new(
@@ -551,7 +837,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void BuildGraphUiRendersSelectionDetailsAndHighlightsFirstComponent()
+        public void BuildGraphUiRendersSelectionDetailsAndHighlightsFirstRoute()
         {
             FlowGraphSnapshot snapshot = CreateTwoEdgeSnapshot();
             VisualElement root = new();
@@ -564,27 +850,27 @@ namespace DxMessaging.Tests.Editor
             Assert.That(details, Is.Not.Null);
             Assert.That(
                 details.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName).text,
-                Does.Contain("Root/Alpha")
+                Does.Contain("InventoryChanged -> Root/Alpha")
             );
             Assert.That(
                 details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
-                Does.Contain("Inbound visible routes: 1 from 1 message types")
+                Does.Contain("Registration type: Untargeted")
             );
             Assert.That(
                 details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
                 Does.Contain("Visible call share: 4/6 (67%)")
             );
 
-            List<VisualElement> components = root.Query<VisualElement>(
-                    className: DxMessagingFlowGraphWindow.ComponentNodeClassName
+            List<VisualElement> routes = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.RouteMapRouteClassName
                 )
                 .ToList();
             Assert.That(
-                components[0].ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName),
+                routes[0].ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName),
                 Is.True
             );
             Assert.That(
-                components[1].ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName),
+                routes[1].ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName),
                 Is.False
             );
         }
@@ -6194,6 +6480,7 @@ namespace DxMessaging.Tests.Editor
 
                 TextField filter = root.Q<TextField>(DxMessagingFlowGraphWindow.FilterFieldName);
                 ScrollView content = root.Q<ScrollView>(DxMessagingFlowGraphWindow.ContentName);
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.TopologyFoldoutName).value = true;
                 List<VisualElement> messages = root.Query<VisualElement>(
                         className: DxMessagingFlowGraphWindow.MessageNodeClassName
                     )
@@ -6226,6 +6513,11 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(
                     root.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName).text,
                     Does.Contain("ScoreChanged")
+                );
+                Assert.That(
+                    root.Q<Foldout>(DxMessagingFlowGraphWindow.TopologyFoldoutName).value,
+                    Is.True,
+                    "Selecting a topology row should not collapse the section around it."
                 );
             }
             finally
@@ -6972,13 +7264,7 @@ namespace DxMessaging.Tests.Editor
 
         private static string RenderRouteMapSummary(FlowGraphSnapshot snapshot)
         {
-            VisualElement root = new();
-
-            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
-
-            return root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName)
-                .Q<Label>(DxMessagingFlowGraphWindow.RouteMapSummaryLabelName)
-                .text;
+            return DxMessagingFlowGraphWindow.CreateRouteMapSummaryText(snapshot);
         }
 
         private static string RenderTracePathsSummary(params FlowGraphTracePath[] tracePaths)

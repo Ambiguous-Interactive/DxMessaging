@@ -1,5 +1,6 @@
 namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
 {
+    using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Messages;
     using DxMessaging.Unity;
@@ -44,7 +45,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         [SerializeField]
         private string lastPayload = "None";
 
-        private bool toolingRegistrationsEnsured;
+        private static readonly HashSet<int> PreparedReceiverIds = new();
 
         public string ListenerLabel => listenerLabel;
 
@@ -61,11 +62,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         protected override void Awake()
         {
             base.Awake();
-        }
-
-        protected override void OnEnable()
-        {
-            base.OnEnable();
+            _ = PreparedReceiverIds.Add(GetInstanceID());
         }
 
         protected override void OnDisable()
@@ -73,25 +70,60 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             base.OnDisable();
         }
 
-        private void Start()
+        protected override void OnDestroy()
         {
-            EnsureToolingRegistrations();
+            _ = PreparedReceiverIds.Remove(GetInstanceID());
+            base.OnDestroy();
         }
 
-        public void EnsureToolingRegistrations()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void BeginPlayGeneration()
         {
-            if (Token == null)
+            PreparedReceiverIds.Clear();
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void RestoreRegistrationsAfterSceneLoad()
+        {
+#if UNITY_2023_1_OR_NEWER
+            DiagnosticsToolingReceiver[] receivers = FindObjectsByType<DiagnosticsToolingReceiver>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None
+            );
+#else
+            DiagnosticsToolingReceiver[] receivers =
+                FindObjectsOfType<DiagnosticsToolingReceiver>();
+#endif
+            foreach (DiagnosticsToolingReceiver receiver in receivers)
+            {
+                if (receiver != null && receiver.isActiveAndEnabled)
+                {
+                    receiver.EnsureToolingRegistrations(force: true);
+                    receiver.Token.Enable();
+                }
+            }
+        }
+
+        protected override void OnEnable()
+        {
+            EnsureToolingRegistrations();
+            base.OnEnable();
+        }
+
+        private void EnsureToolingRegistrations(bool force = false)
+        {
+            if (!force && !PreparedReceiverIds.Add(GetInstanceID()))
             {
                 return;
             }
 
-            if (!toolingRegistrationsEnsured)
-            {
-                RegisterMessageHandlers();
-                toolingRegistrationsEnsured = true;
-            }
-
-            Token.Enable();
+            _ = PreparedReceiverIds.Add(GetInstanceID());
+            MessagingComponent messagingComponent = GetComponent<MessagingComponent>();
+            messagingComponent.Release(this);
+            MessageRegistrationToken liveToken = messagingComponent.Create(this);
+            _messagingComponent = messagingComponent;
+            _messageRegistrationToken = liveToken;
+            RegisterMessageHandlers();
         }
 
         protected override void RegisterMessageHandlers()

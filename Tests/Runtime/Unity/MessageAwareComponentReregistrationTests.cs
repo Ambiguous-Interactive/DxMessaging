@@ -167,6 +167,75 @@ namespace DxMessaging.Tests.Runtime.Unity
         }
 
         [Test]
+        public void OptInReplacesEnabledTokenWhoseBusWasReset()
+        {
+            GameObject host = new(
+                nameof(OptInReplacesEnabledTokenWhoseBusWasReset),
+                typeof(MessagingComponent),
+                typeof(ReregisteringMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ReregisteringMessageAwareComponent listener =
+                host.GetComponent<ReregisteringMessageAwareComponent>();
+            int count = 0;
+            listener.untargetedHandler = () => ++count;
+            SimpleUntargetedMessage message = new();
+
+            message.EmitUntargeted();
+            Assert.AreEqual(1, count, "Positive control: the original token should deliver.");
+            MessageRegistrationToken originalToken = listener.Token;
+
+            using (LeakWatcher watcher = LeakWatcher.Watch(label: "EnabledTokenResetRecovery"))
+            {
+                DxMessagingStaticState.Reset();
+
+                Assert.IsTrue(
+                    originalToken.Enabled,
+                    "The reset reproducer requires a token whose enabled flag outlives its bus sinks."
+                );
+                Assert.AreEqual(
+                    0,
+                    MessageHandler.MessageBus.RegisteredUntargeted,
+                    "Static reset must clear the live bus registration beneath the enabled token."
+                );
+                message.EmitUntargeted();
+                Assert.AreEqual(1, count, "The stale enabled token must not deliver after reset.");
+
+                Assert.IsTrue(
+                    messaging.Release(listener),
+                    "The stale token must remain safely releasable after the bus generation changes."
+                );
+                listener.enabled = false;
+                listener.enabled = true;
+
+                Assert.AreNotSame(
+                    originalToken,
+                    listener.Token,
+                    "Recovery must replace the stale enabled token."
+                );
+                Assert.IsTrue(listener.Token.Enabled, "The replacement token should be enabled.");
+                Assert.AreEqual(
+                    1,
+                    MessageHandler.MessageBus.RegisteredUntargeted,
+                    "The replacement token should restore one live registration."
+                );
+                message.EmitUntargeted();
+                Assert.AreEqual(2, count, "Delivery should resume through the replacement token.");
+                Assert.AreEqual(
+                    2,
+                    listener.registerInvocationCount,
+                    "Recovery should replay registrations exactly once."
+                );
+            }
+
+            Assert.IsTrue(
+                messaging.Release(listener),
+                "Releasing the replacement token should succeed."
+            );
+        }
+
+        [Test]
         public void OptInDoesNotReplayRegistrationsWithoutARelease()
         {
             GameObject host = new(

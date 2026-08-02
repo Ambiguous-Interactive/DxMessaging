@@ -124,7 +124,27 @@ safe editor capture and avoid mutating provider state.
 ### Flow Graph
 
 Open **Tools > Wallstop Studios > DxMessaging > Flow Graph** to inspect loaded
-scene `MessagingComponent` registration topology. The graph aggregates:
+scene `MessagingComponent` registration topology. The window starts with the
+route map and selects its first concrete route. Routes with a concrete
+registration kind appear before `GlobalAcceptAll`; within each group, routes
+with more calls and recent traced deliveries appear first. The first eight
+routes remain visible, and additional routes start in a collapsed **more
+routes** section.
+
+The route map header reports route, message, receiver, and call totals. Expand
+**Route Insights** for route-kind mix, fan-out, fan-in, inactive-target,
+no-call, and traced-delivery analysis. **Trace Activity** contains the recent
+trace paths and trace lanes. **Topology Details** contains the raw component,
+message, and registration-edge lists. These analysis sections start collapsed
+so the active routes and selected-route details remain visible in a normal
+window height.
+
+If the snapshot sees components or messages but no registration routes, the
+window explains how to recover: enter Play mode, restart Play mode if it is
+already active, enable the listeners, and refresh. It does not render a list of
+zero-value topology summaries.
+
+The graph aggregates:
 
 - component nodes,
 - message-type nodes,
@@ -177,7 +197,8 @@ message list, and normalized context list for each trace target lane. The
 Visible Trace Context Lanes panel groups visible trace paths by normalized trace
 context, then reports path count, distinct message and target counts, distinct
 trace ids, route kinds, traced deliveries, delivery share, message list, and
-target list for each context lane. The Route Map summary reports the visible
+target list for each context lane. The expanded Route Insights summary reports
+the visible
 route-kind mix, the widest visible message by distinct target components, the
 target component with the most visible inbound routes, inactive routed targets,
 the hottest visible route by call share, and visible routes with no calls. It
@@ -185,7 +206,7 @@ also reports how many visible routes have at least one recent traced delivery an
 which visible route accounts for the largest share of recent traced deliveries,
 plus which visible message accounts for the largest share of recent route-edge
 traced deliveries and which visible target accounts for the largest share. Both
-the Route Map and Recent Trace Paths summaries report the visible trace context
+the Route Insights and Recent Trace Paths summaries report the visible trace context
 count, busiest context by recent traced deliveries, distinct visible trace ids,
 widest visible trace id by path count, and busiest visible trace message,
 target, and trace path plus each one's trace-path delivery share. The Message

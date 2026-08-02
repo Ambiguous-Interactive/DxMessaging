@@ -34,6 +34,14 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-flow-graph-route-map-route-kind";
         internal const string RouteMapTargetLabelName = "dxmessaging-flow-graph-route-map-target";
         internal const string RouteMapSummaryLabelName = "dxmessaging-flow-graph-route-map-summary";
+        internal const string RouteMapOverviewLabelName =
+            "dxmessaging-flow-graph-route-map-overview";
+        internal const string RouteMapInsightsFoldoutName =
+            "dxmessaging-flow-graph-route-map-insights";
+        internal const string RouteMapMoreRoutesFoldoutName =
+            "dxmessaging-flow-graph-route-map-more";
+        internal const string TraceActivityFoldoutName = "dxmessaging-flow-graph-trace-activity";
+        internal const string TopologyFoldoutName = "dxmessaging-flow-graph-topology";
         internal const string VisibleMessageLanesName = "dxmessaging-flow-graph-message-lanes";
         internal const string VisibleMessageLaneRowClassName =
             "dxmessaging-flow-graph-message-lane-row";
@@ -148,10 +156,19 @@ namespace DxMessaging.Editor.Windows
         internal const string WarningLabelName = "dxmessaging-flow-graph-warning";
 
         private const string Title = "Message Flow Graph";
+        private const int VisibleRouteLimit = 8;
         private const int ExportSchemaVersion = 5;
         private const string ExportCaptureMode = "registration-topology-with-recent-diagnostics";
         private const string ExportTraceSemantics =
             "traceId is emitted by concrete MessageBus dispatch and copied to token delivery records when diagnostics are enabled; edge traced counts are registration-handle exact, trace paths are built from token delivery records to avoid cross-bus trace-id collisions, recentTraceIdCount counts distinct trace ids observed for each trace path, and recentTraceIds lists those positive trace ids for cross-path breadth analysis.";
+
+        private sealed class FlowGraphFoldoutState
+        {
+            internal bool RouteInsightsExpanded;
+            internal bool MoreRoutesExpanded;
+            internal bool TraceActivityExpanded;
+            internal bool TopologyExpanded;
+        }
 
         private string _filterText = string.Empty;
         private string _selectedItemKey = string.Empty;
@@ -543,6 +560,29 @@ namespace DxMessaging.Editor.Windows
                 throw new ArgumentNullException(nameof(content));
             }
 
+            FlowGraphFoldoutState foldoutState =
+                content.userData as FlowGraphFoldoutState ?? new FlowGraphFoldoutState();
+            Foldout existingRouteInsights = content.Q<Foldout>(RouteMapInsightsFoldoutName);
+            Foldout existingMoreRoutes = content.Q<Foldout>(RouteMapMoreRoutesFoldoutName);
+            Foldout existingTraceActivity = content.Q<Foldout>(TraceActivityFoldoutName);
+            Foldout existingTopology = content.Q<Foldout>(TopologyFoldoutName);
+            if (existingRouteInsights != null)
+            {
+                foldoutState.RouteInsightsExpanded = existingRouteInsights.value;
+            }
+            if (existingMoreRoutes != null)
+            {
+                foldoutState.MoreRoutesExpanded = existingMoreRoutes.value;
+            }
+            if (existingTraceActivity != null)
+            {
+                foldoutState.TraceActivityExpanded = existingTraceActivity.value;
+            }
+            if (existingTopology != null)
+            {
+                foldoutState.TopologyExpanded = existingTopology.value;
+            }
+            content.userData = foldoutState;
             content.Clear();
             bool hasGraphItems =
                 visibleSnapshot.ComponentNodes.Count > 0
@@ -550,6 +590,9 @@ namespace DxMessaging.Editor.Windows
                 || visibleSnapshot.Edges.Count > 0
                 || visibleSnapshot.TracePaths.Count > 0;
             bool hasWarnings = visibleSnapshot.Warnings.Count > 0;
+            bool hasObservedObjects =
+                snapshot.ComponentNodes.Count > 0 || snapshot.MessageNodes.Count > 0;
+            bool hasCapturedRoutes = snapshot.Edges.Count > 0 || snapshot.TracePaths.Count > 0;
 
             if (!hasGraphItems && !hasWarnings)
             {
@@ -571,6 +614,16 @@ namespace DxMessaging.Editor.Windows
                 );
                 content.Add(empty);
             }
+            else if (hasObservedObjects && !hasCapturedRoutes)
+            {
+                VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                    "No live routes",
+                    "MessagingComponents or recent messages are visible, but no live registration routes were captured. Enter Play mode (or restart it if already playing), make sure listeners are enabled, then click Refresh.",
+                    bodyName: EmptyStateLabelName,
+                    titleName: EmptyStateTitleLabelName
+                );
+                content.Add(empty);
+            }
             else if (hasGraphItems)
             {
                 FlowGraphSelectedItem selectedItem = ResolveSelectedItem(
@@ -578,7 +631,24 @@ namespace DxMessaging.Editor.Windows
                     viewState.SelectedItemKey
                 );
 
-                content.Add(CreateRouteMap(visibleSnapshot, selectedItem.Key, onSelectionChanged));
+                VisualElement routeMap = CreateRouteMap(
+                    visibleSnapshot,
+                    selectedItem.Key,
+                    onSelectionChanged
+                );
+                routeMap.Q<Foldout>(RouteMapInsightsFoldoutName).value =
+                    foldoutState.RouteInsightsExpanded;
+                Foldout moreRoutes = routeMap.Q<Foldout>(RouteMapMoreRoutesFoldoutName);
+                if (moreRoutes != null)
+                {
+                    moreRoutes.value |= foldoutState.MoreRoutesExpanded;
+                }
+                content.Add(routeMap);
+
+                if (selectedItem.HasValue)
+                {
+                    content.Add(CreateDetailsPane(selectedItem, visibleSnapshot));
+                }
 
                 if (visibleSnapshot.Edges.Count > 0)
                 {
@@ -588,19 +658,27 @@ namespace DxMessaging.Editor.Windows
 
                 if (visibleSnapshot.TracePaths.Count > 0)
                 {
-                    content.Add(CreateVisibleFlowCorridors(visibleSnapshot));
-                    content.Add(CreateVisibleTraceRouteKindLanes(visibleSnapshot));
-                    content.Add(CreateVisibleTraceIdLanes(visibleSnapshot));
-                    content.Add(CreateVisibleTraceMessageLanes(visibleSnapshot));
-                    content.Add(CreateVisibleTraceTargetLanes(visibleSnapshot));
-                    content.Add(CreateVisibleContextLanes(visibleSnapshot));
-                    content.Add(CreateTracePaths(visibleSnapshot));
+                    Foldout traceActivity = CreateCollapsedFoldout(
+                        TraceActivityFoldoutName,
+                        "Trace Activity"
+                    );
+                    traceActivity.value = foldoutState.TraceActivityExpanded;
+                    traceActivity.Add(CreateVisibleFlowCorridors(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleTraceRouteKindLanes(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleTraceIdLanes(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleTraceMessageLanes(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleTraceTargetLanes(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleContextLanes(visibleSnapshot));
+                    traceActivity.Add(CreateTracePaths(visibleSnapshot));
+                    content.Add(traceActivity);
                 }
 
-                content.Add(CreateSectionTitle("Components"));
+                Foldout topology = CreateCollapsedFoldout(TopologyFoldoutName, "Topology Details");
+                topology.value = foldoutState.TopologyExpanded;
+                topology.Add(CreateSectionTitle("Components"));
                 foreach (FlowGraphComponentNode component in visibleSnapshot.ComponentNodes)
                 {
-                    content.Add(
+                    topology.Add(
                         CreateComponentNodeRow(
                             component,
                             string.Equals(
@@ -613,10 +691,10 @@ namespace DxMessaging.Editor.Windows
                     );
                 }
 
-                content.Add(CreateSectionTitle("Message Types"));
+                topology.Add(CreateSectionTitle("Message Types"));
                 foreach (FlowGraphMessageNode message in visibleSnapshot.MessageNodes)
                 {
-                    content.Add(
+                    topology.Add(
                         CreateMessageNodeRow(
                             message,
                             string.Equals(
@@ -629,10 +707,10 @@ namespace DxMessaging.Editor.Windows
                     );
                 }
 
-                content.Add(CreateSectionTitle("Registration Edges"));
+                topology.Add(CreateSectionTitle("Registration Edges"));
                 foreach (FlowGraphEdge edge in visibleSnapshot.Edges)
                 {
-                    content.Add(
+                    topology.Add(
                         CreateEdgeRow(
                             edge,
                             string.Equals(
@@ -644,11 +722,7 @@ namespace DxMessaging.Editor.Windows
                         )
                     );
                 }
-
-                if (selectedItem.HasValue)
-                {
-                    content.Add(CreateDetailsPane(selectedItem, visibleSnapshot));
-                }
+                content.Add(topology);
             }
 
             foreach (string warning in visibleSnapshot.Warnings)
@@ -1478,6 +1552,18 @@ namespace DxMessaging.Editor.Windows
             return title;
         }
 
+        private static Foldout CreateCollapsedFoldout(string name, string text)
+        {
+            Foldout foldout = new()
+            {
+                name = name,
+                text = text,
+                value = false,
+            };
+            foldout.style.marginTop = 8;
+            return foldout;
+        }
+
         private static VisualElement CreateRouteMap(
             FlowGraphVisibleSnapshot visibleSnapshot,
             string selectedItemKey,
@@ -1500,13 +1586,26 @@ namespace DxMessaging.Editor.Windows
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             routeMap.Add(title);
 
+            Label overview = new(CreateRouteMapOverviewText(visibleSnapshot))
+            {
+                name = RouteMapOverviewLabelName,
+            };
+            overview.style.marginTop = 2;
+            overview.style.whiteSpace = WhiteSpace.Normal;
+            routeMap.Add(overview);
+
+            Foldout insights = CreateCollapsedFoldout(
+                RouteMapInsightsFoldoutName,
+                "Route Insights"
+            );
             Label summary = new(CreateRouteMapSummaryText(visibleSnapshot))
             {
                 name = RouteMapSummaryLabelName,
             };
             summary.style.marginTop = 2;
             summary.style.whiteSpace = WhiteSpace.Normal;
-            routeMap.Add(summary);
+            insights.Add(summary);
+            routeMap.Add(insights);
 
             if (visibleSnapshot.Edges.Count == 0)
             {
@@ -1518,7 +1617,8 @@ namespace DxMessaging.Editor.Windows
             }
 
             int totalVisibleCalls = SumVisibleCalls(visibleSnapshot);
-            foreach (FlowGraphEdge edge in visibleSnapshot.Edges)
+            FlowGraphEdge[] orderedRoutes = OrderRoutesForDisplay(visibleSnapshot.Edges).ToArray();
+            foreach (FlowGraphEdge edge in orderedRoutes.Take(VisibleRouteLimit))
             {
                 string selectionKey = CreateEdgeSelectionKey(edge);
                 routeMap.Add(
@@ -1531,7 +1631,56 @@ namespace DxMessaging.Editor.Windows
                 );
             }
 
+            if (orderedRoutes.Length > VisibleRouteLimit)
+            {
+                FlowGraphEdge[] remainingRoutes = orderedRoutes.Skip(VisibleRouteLimit).ToArray();
+                Foldout moreRoutes = CreateCollapsedFoldout(
+                    RouteMapMoreRoutesFoldoutName,
+                    FormatCount(remainingRoutes.Length, "more route")
+                );
+                moreRoutes.value = remainingRoutes.Any(edge =>
+                    string.Equals(
+                        CreateEdgeSelectionKey(edge),
+                        selectedItemKey,
+                        StringComparison.Ordinal
+                    )
+                );
+                foreach (FlowGraphEdge edge in remainingRoutes)
+                {
+                    string selectionKey = CreateEdgeSelectionKey(edge);
+                    moreRoutes.Add(
+                        CreateRouteMapRow(
+                            edge,
+                            CreateCallShareText(edge.CallCount, totalVisibleCalls),
+                            string.Equals(selectionKey, selectedItemKey, StringComparison.Ordinal),
+                            onSelectionChanged
+                        )
+                    );
+                }
+                routeMap.Add(moreRoutes);
+            }
+
             return routeMap;
+        }
+
+        private static IOrderedEnumerable<FlowGraphEdge> OrderRoutesForDisplay(
+            IEnumerable<FlowGraphEdge> edges
+        )
+        {
+            return edges
+                .OrderBy(edge =>
+                    string.Equals(
+                        edge.RegistrationTypeName,
+                        nameof(MessageRegistrationType.GlobalAcceptAll),
+                        StringComparison.Ordinal
+                    )
+                )
+                .ThenByDescending(edge => edge.CallCount)
+                .ThenByDescending(edge => edge.RecentTracedDeliveryCount)
+                .ThenBy(edge => edge.MessageTypeName, StringComparer.Ordinal)
+                .ThenBy(edge => edge.TargetComponentPath, StringComparer.Ordinal)
+                .ThenBy(edge => edge.TargetComponentId, StringComparer.Ordinal)
+                .ThenBy(edge => edge.RegistrationTypeName, StringComparer.Ordinal);
         }
 
         private static VisualElement CreateVisibleMessageLanes(
@@ -3117,6 +3266,32 @@ namespace DxMessaging.Editor.Windows
             return $"{FormatCount(routeCount, "visible route")} | {FormatCount(messageCount, "message")} | {FormatCount(listenerCount, "listener")} | Calls: {totalVisibleCalls} | {CreateRouteKindMixSummary(visibleSnapshot)} | {CreateHottestRouteSummary(visibleSnapshot, totalVisibleCalls)} | {CreateWidestMessageSummary(visibleSnapshot)} | {CreateMostRoutedTargetSummary(visibleSnapshot)} | {CreateInactiveRoutedTargetsSummary(visibleSnapshot)} | No-call routes: {noCallRouteCount} | {CreateRecentTracedRoutesSummary(visibleSnapshot)} | {CreateBusiestTracedRouteSummary(visibleSnapshot.Edges)} | {CreateBusiestTracedMessageSummary(visibleSnapshot.Edges)} | {CreateBusiestTracedTargetSummary(visibleSnapshot.Edges)} | Recent traced: {tracedDeliveries} | Trace ids: {CountDistinctTraceIds(visibleSnapshot.TracePaths)} | {CreateWidestTraceSummary(visibleSnapshot.TracePaths)} | {CreateTraceContextVolumeSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTraceContextShareSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTraceMessageSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTraceTargetSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTracePathSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTracePathShareSummary(visibleSnapshot.TracePaths)}";
         }
 
+        internal static string CreateRouteMapSummaryText(
+            FlowGraphSnapshot snapshot,
+            string filterText = ""
+        )
+        {
+            if (snapshot == null)
+            {
+                throw new ArgumentNullException(nameof(snapshot));
+            }
+
+            return CreateRouteMapSummaryText(FilterSnapshot(snapshot, filterText));
+        }
+
+        private static string CreateRouteMapOverviewText(FlowGraphVisibleSnapshot visibleSnapshot)
+        {
+            int routeCount = visibleSnapshot.Edges.Count;
+            int messageCount = CountDistinct(
+                visibleSnapshot.Edges.Select(edge => edge.MessageTypeName)
+            );
+            int receiverCount = CountDistinct(
+                visibleSnapshot.Edges.Select(edge => edge.TargetComponentId)
+            );
+            int totalVisibleCalls = SumVisibleCalls(visibleSnapshot);
+            return $"{FormatCount(routeCount, "route")} | {FormatCount(messageCount, "message")} | {FormatCount(receiverCount, "receiver")} | {FormatCount(totalVisibleCalls, "call")}";
+        }
+
         private static string CreateRouteKindMixSummary(FlowGraphVisibleSnapshot visibleSnapshot)
         {
             string[] routeKindCounts = visibleSnapshot
@@ -4109,6 +4284,13 @@ namespace DxMessaging.Editor.Windows
                 }
             }
 
+            if (visibleSnapshot.Edges.Count > 0)
+            {
+                return FlowGraphSelectedItem.ForEdge(
+                    OrderRoutesForDisplay(visibleSnapshot.Edges).First()
+                );
+            }
+
             if (visibleSnapshot.ComponentNodes.Count > 0)
             {
                 return FlowGraphSelectedItem.ForComponent(visibleSnapshot.ComponentNodes[0]);
@@ -4117,11 +4299,6 @@ namespace DxMessaging.Editor.Windows
             if (visibleSnapshot.MessageNodes.Count > 0)
             {
                 return FlowGraphSelectedItem.ForMessage(visibleSnapshot.MessageNodes[0]);
-            }
-
-            if (visibleSnapshot.Edges.Count > 0)
-            {
-                return FlowGraphSelectedItem.ForEdge(visibleSnapshot.Edges[0]);
             }
 
             return FlowGraphSelectedItem.None;
