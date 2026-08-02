@@ -133,6 +133,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUNNER_INVENTORY_TOKEN: ${{ steps.reader_token.outputs.token }}
           REPO: ${{ github.repository }}
+          REPO_ID: ${{ github.repository_id }}
           OWNER: ${{ github.repository_owner }}
           SELF_RUN_ID: ${{ github.run_id }}
           STATE_BRANCH: watchdog-state
@@ -302,10 +303,15 @@ jobs:
             GH_TOKEN="${RUNNER_INVENTORY_TOKEN}" gh "$@"
           }
 
+          # `unique_by(.id)`: `--paginate` concatenates page objects, and the
+          # live organization returns "Default" twice through this walk. The
+          # runner dedupe below already made that harmless for the COUNTS, but
+          # it still cost a redundant API call per duplicate and printed a
+          # group list that made an operator distrust the summary.
           runner_groups_json="$(mktemp)"
           if ! gh_reader api --paginate \
               "orgs/${OWNER}/actions/runner-groups?per_page=100" \
-              | jq -s '[.[] | (.runner_groups // [])[] | select(.id != null)]' > "${runner_groups_json}"; then
+              | jq -s '[.[] | (.runner_groups // [])[] | select(.id != null)] | unique_by(.id)' > "${runner_groups_json}"; then
             fail_closed "could not read the organization runner groups."
           fi
           group_count="$(jq 'length' < "${runner_groups_json}")"
@@ -314,15 +320,94 @@ jobs:
           fi
           log_summary "Organization runner groups: $(jq -r '[.[].name] | join(", ")' < "${runner_groups_json}")"
 
+          # Only groups THIS repository may actually use. Counting a runner that
+          # cannot serve our jobs inflates capacity, and inflated capacity is
+          # what turns a legitimately queued run into a wrongful cancel: the
+          # audit would see an idle runner carrying the right labels, conclude
+          # the dispatcher is stuck, and cancel a run that was correctly waiting.
+          #
+          # This reads each group's documented `visibility` field rather than the
+          # `visible_to_repository` query parameter, which the REST docs type
+          # only as "string" with no stated format. `all` needs no further call;
+          # `selected` (and `private`) are resolved against the group's own
+          # repositories endpoint, which returns repository objects with numeric
+          # ids -- an unambiguous comparison against `github.repository_id`.
+          #
+          # The previous revision walked every group on the stated grounds that
+          # the organization had exactly one. It has at least two -- `Default`
+          # and `ambiguous-interactive-organization-builds` -- so that premise
+          # was simply wrong, and the risk documented in #335 was live rather
+          # than hypothetical.
+          # `!= false`, NOT `// true`: jq's `//` treats an explicit `false` as
+          # absent and yields the right-hand side, so a group that genuinely
+          # refuses public repositories would read as allowing them -- the
+          # exact inversion of the check. Caught by the fixture for it.
+          if ! group_rows_raw="$(jq -r '.[] | "\(.id)\t\(.visibility // "all")\t\(.allows_public_repositories != false)\t\(.name)"' < "${runner_groups_json}")"; then
+            fail_closed "could not parse the organization runner-group inventory."
+          fi
+          group_rows=()
+          if [[ -n "${group_rows_raw}" ]]; then
+            mapfile -t group_rows <<< "${group_rows_raw}"
+          fi
           # mapfile, not `while read < <(...)`: the loop body runs `gh`, and a
           # child that consumes the loop's stdin silently eats the remaining
           # group ids.
-          if ! runner_group_ids_raw="$(jq -r '.[].id' < "${runner_groups_json}")"; then
-            fail_closed "could not parse the organization runner-group inventory."
-          fi
           runner_group_ids=()
-          if [[ -n "${runner_group_ids_raw}" ]]; then
-            mapfile -t runner_group_ids <<< "${runner_group_ids_raw}"
+          excluded_groups=()
+          group_repos_json="$(mktemp)"
+          for group_row in "${group_rows[@]}"; do
+            IFS=$'\t' read -r group_id group_visibility group_public group_name <<< "${group_row}"
+            # A group can be `visibility: all` and still refuse PUBLIC
+            # repositories, and this repository is public -- its runners are
+            # then unusable capacity, which is the wrongful cancel this walk
+            # exists to prevent. (Cursor Bugbot.)
+            #
+            # Excluded unconditionally rather than only when we know we are
+            # public, which would need another API call and another failure
+            # mode. The cost of being wrong is asymmetric: for a PRIVATE
+            # repository this under-counts capacity, and under-counting can only
+            # produce a starvation report, never a cancel. Over-counting is what
+            # cancels a live run.
+            if [[ "${group_public}" != "true" ]]; then
+              excluded_groups+=("${group_name} (refuses public repositories)")
+              continue
+            fi
+            if [[ "${group_visibility}" == "all" ]]; then
+              runner_group_ids+=("${group_id}")
+              continue
+            fi
+            # `private` means "every PRIVATE repository in the organization" --
+            # not a selected list. This repository is public, so such a group can
+            # never serve it. Excluded here rather than fetching its repositories
+            # endpoint, which would answer a question that does not apply and
+            # could fail the whole audit closed on an error it did not need to
+            # make. (Cursor Bugbot.)
+            if [[ "${group_visibility}" == "private" ]]; then
+              excluded_groups+=("${group_name} (private repositories only)")
+              continue
+            fi
+            if ! gh_reader api --paginate \
+                "orgs/${OWNER}/actions/runner-groups/${group_id}/repositories?per_page=100" \
+                | jq -s '[.[] | (.repositories // [])[] | .id | tostring]' > "${group_repos_json}"; then
+              fail_closed "could not read which repositories may use runner group ${group_name} (${group_id})."
+            fi
+            # `--arg`, not `--argjson`: an empty or non-numeric REPO_ID makes
+            # `--argjson` fail to parse, which under `set -e` aborts the script
+            # WITHOUT reaching `fail_closed` -- an audit that dies instead of
+            # reporting. Both sides are compared as strings. (GitHub Copilot.)
+            if [[ "$(jq --arg want "${REPO_ID}" 'any(.[]; . == $want)' < "${group_repos_json}")" == "true" ]]; then
+              runner_group_ids+=("${group_id}")
+            else
+              excluded_groups+=("${group_name}")
+            fi
+          done
+          if (( ${#excluded_groups[@]} > 0 )); then
+            # NOT `IFS=', '` with `"${arr[*]}"`: bash joins with only the FIRST
+            # character of IFS there, so that renders `a,b`. (GitHub Copilot.)
+            log_summary "Runner groups not usable by ${REPO} (excluded from capacity): $(printf '%s, ' "${excluded_groups[@]}" | sed 's/, $//')"
+          fi
+          if (( ${#runner_group_ids[@]} == 0 )); then
+            fail_closed "no organization runner group is visible to ${REPO}; the inventory cannot be trusted."
           fi
           runners_json="$(mktemp)"
           : > "${runners_json}"
@@ -355,7 +440,7 @@ jobs:
           registered_count="$(jq 'length' < "${inventory_json}")"
           online_count="$(jq '[.[] | select(.online)] | length' < "${inventory_json}")"
           idle_count="$(jq '[.[] | select(.online and (.busy | not))] | length' < "${inventory_json}")"
-          log_summary "Runner inventory (all organization groups): ${registered_count} registered, ${online_count} online, ${idle_count} idle."
+          log_summary "Runner inventory (groups visible to ${REPO}): ${registered_count} registered, ${online_count} online, ${idle_count} idle."
 
           # ------------------------------------------------------------------
           # 3. Classify every queued run. Nothing is cancelled in this pass, so

@@ -975,6 +975,7 @@ WATCHDOG_CONTEXT_ENV = {
     "RUNNER_INVENTORY_TOKEN": "stub-reader",
     "REPO": "Ambiguous-Interactive/DxMessaging",
     "OWNER": "Ambiguous-Interactive",
+    "REPO_ID": "101020635",
     "SELF_RUN_ID": "999",
     "EXTRA_EXCLUDED_WORKFLOWS": "",
 }
@@ -1117,7 +1118,17 @@ def watchdog_jobs(*label_sets: list[str], extra: list[dict] | None = None) -> tu
     return 0, {"jobs": jobs + list(extra or [])}
 
 
-def watchdog_runners(*specs: tuple[str, str, bool, list[str]]) -> tuple[int, object]:
+def watchdog_runners(
+    *specs: tuple[str, str, bool, list[str]], first_id: int = 1
+) -> tuple[int, object]:
+    """Runners for one group.
+
+    `first_id` exists because the inventory is deduplicated by runner id, and
+    ids were numbered from 1 in EVERY call -- so two groups' runners collided
+    and the second group's silently vanished. A multi-group fixture then proved
+    nothing: a case checking that an invisible group's runner is excluded passed
+    identically whether or not the exclusion worked.
+    """
     return 0, {
         "runners": [
             {
@@ -1127,7 +1138,7 @@ def watchdog_runners(*specs: tuple[str, str, bool, list[str]]) -> tuple[int, obj
                 "busy": busy,
                 "labels": [{"name": label} for label in labels],
             }
-            for index, (name, status, busy, labels) in enumerate(specs, start=1)
+            for index, (name, status, busy, labels) in enumerate(specs, start=first_id)
         ]
     }
 
@@ -1190,6 +1201,24 @@ def validate_stuck_job_watchdog() -> None:
     queued = "actions/runs?status=queued"
     inventory = "runner-groups?per_page"
     one_group = (0, {"runner_groups": [{"id": 7, "name": "Default"}]})
+    # The live organization returns TWO distinct groups and repeats one of them
+    # through `--paginate`. The premise that it had exactly one -- which is what
+    # justified dropping the visibility filter -- was simply wrong.
+    duplicated_group = (
+        0,
+        {"runner_groups": [{"id": 7, "name": "Default"}, {"id": 7, "name": "Default"}]},
+    )
+    two_groups = (
+        0,
+        {
+            "runner_groups": [
+                {"id": 7, "name": "Default", "visibility": "all"},
+                {"id": 8, "name": "org-builds", "visibility": "selected"},
+            ]
+        },
+    )
+    ours = (0, {"repositories": [{"id": 101020635}]})
+    not_ours = (0, {"repositories": [{"id": 55555}]})
 
     # name, gh routes, expected exit, must appear, must NOT appear
     #
@@ -1840,6 +1869,138 @@ def validate_stuck_job_watchdog() -> None:
             ("workflow is excluded",),
             ("cancelled 1",),
             {"extra_env": {"EXTRA_EXCLUDED_WORKFLOWS": ".github/workflows/ci.yml"}},
+        ),
+        (
+            # THE WRONGFUL CANCEL THIS GUARDS. The only idle runner carrying the
+            # required labels sits in a `selected` group that does NOT list this
+            # repository, so it can never take the job. Counting it would make
+            # the audit conclude the dispatcher is stuck and cancel a run that
+            # was correctly waiting. It must read as starved instead.
+            "an idle runner in a group we cannot use is not capacity",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: two_groups,
+                "runner-groups/8/repositories": not_ours,
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "runner-groups/7/runners": watchdog_runners(("MAC", "online", False, ["self-hosted", "macOS"])),
+                "runner-groups/8/runners": watchdog_runners(
+                    ("ELI", "online", False, self_hosted), first_id=90
+                ),
+            },
+            0,
+            ("starved", "not usable by", "org-builds", "Not dispatcher-stuck; no action."),
+            # NOT "dispatcher-stuck" on its own: the starvation line legitimately
+            # says "Not dispatcher-stuck", so the loose needle forbids the very
+            # text this case wants to see.
+            ("cancelled 1", "queued for cancel"),
+        ),
+        (
+            # The same group, now listing this repository: its idle runner IS
+            # ours, so the run is dispatcher-stuck and gets cancelled.
+            "an idle runner in a group we CAN use is capacity",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: two_groups,
+                "runner-groups/8/repositories": ours,
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "runner-groups/7/runners": watchdog_runners(("MAC", "online", False, ["self-hosted", "macOS"])),
+                "runner-groups/8/runners": watchdog_runners(
+                    ("ELI", "online", False, self_hosted), first_id=90
+                ),
+                "actions/workflows/42": (0, {"path": ".github/workflows/perf-numbers.yml"}),
+                "contents/.github/workflows/perf-numbers.yml": (0, EMPTY_WORKFLOW_CONTENT),
+            },
+            0,
+            ("dispatcher-stuck", "cancelled 1"),
+            ("not usable by",),
+        ),
+        (
+            # `visibility: all` is not sufficient. A group that refuses PUBLIC
+            # repositories cannot serve this one, and counting its idle runner
+            # is exactly the over-count that cancels a live run.
+            "a group refusing public repositories is not capacity",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: (
+                    0,
+                    {
+                        "runner_groups": [
+                            {"id": 7, "name": "Default", "visibility": "all"},
+                            {
+                                "id": 9,
+                                "name": "private-only",
+                                "visibility": "all",
+                                "allows_public_repositories": False,
+                            },
+                        ]
+                    },
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "runner-groups/7/runners": watchdog_runners(("MAC", "online", False, ["self-hosted", "macOS"])),
+                "runner-groups/9/runners": watchdog_runners(
+                    ("ELI", "online", False, self_hosted), first_id=70
+                ),
+            },
+            0,
+            ("starved", "refuses public repositories", "private-only"),
+            ("cancelled 1", "queued for cancel"),
+        ),
+        (
+            # `private` is "every PRIVATE repository", not a selected list, so a
+            # public repository can never use such a group -- and asking its
+            # repositories endpoint answers the wrong question.
+            "a private-visibility group is not capacity for a public repo",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: (
+                    0,
+                    {
+                        "runner_groups": [
+                            {"id": 7, "name": "Default", "visibility": "all"},
+                            {"id": 11, "name": "priv", "visibility": "private"},
+                        ]
+                    },
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "runner-groups/7/runners": watchdog_runners(("MAC", "online", False, ["self-hosted", "macOS"])),
+                "runner-groups/11/runners": watchdog_runners(
+                    ("ELI", "online", False, self_hosted), first_id=50
+                ),
+            },
+            0,
+            ("starved", "private repositories only", "priv"),
+            ("cancelled 1", "queued for cancel"),
+        ),
+        (
+            # Every group restricted, none listing us: capacity is unknowable,
+            # not zero. Reporting "no runner matches" would be indistinguishable
+            # from a real starvation, and the audit must not issue a verdict it
+            # could not reach.
+            "no visible runner group fails closed",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: (
+                    0,
+                    {"runner_groups": [{"id": 8, "name": "org-builds", "visibility": "selected"}]},
+                ),
+                "runner-groups/8/repositories": not_ours,
+            },
+            1,
+            ("no organization runner group is visible",),
+            ("cancelled 1",),
+        ),
+        (
+            # `--paginate` repeats a group; the walk must not read it twice.
+            "a group repeated by pagination is walked once",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: duplicated_group,
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "runner-groups/7/runners": watchdog_runners(("ELI", "offline", False, self_hosted)),
+            },
+            0,
+            ("Organization runner groups: Default",),
+            ("Default, Default", "cancelled 1"),
         ),
     )
 
