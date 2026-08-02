@@ -52,9 +52,9 @@ After the default play-start burst:
   `ToolingSignal` entries with trace IDs like `sample-pulse-001`.
 - Flow Graph shows three receiver components, four message nodes (the three
   concrete messages plus `IMessage`), 15 routes, and 33 recent trace paths.
-  Concrete routes appear before the `IMessage` accept-all routes. The first
-  eight routes stay visible while the remaining seven start in the collapsed
-  **7 more routes** section.
+  Its primary canvas places the four messages on the left, the three receivers
+  on the right, and draws all 15 live connections. The textual route and trace
+  reports remain inside the collapsed **Analysis and Raw Data** section.
 - The component diagnostics panel shows enabled listener diagnostics and local
   emissions for each receiver.
 

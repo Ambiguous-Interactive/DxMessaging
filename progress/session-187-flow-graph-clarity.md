@@ -2,16 +2,16 @@
 
 Date: 2026-08-02
 Branch: `dev/wallstop/session-187-flow-graph-clarity`
-PR: pending
+PR: [#347](https://github.com/Ambiguous-Interactive/DxMessaging/pull/347)
 Issue: [#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)
 
 ## Outcome
 
-This session changed Flow Graph from a dense analytics report into a route-first
-inspection surface. It now selects a concrete route on first open, keeps the
-first eight routes visible, moves overflow routes into a collapsed section, and
-puts route insights, trace activity, and raw topology behind collapsed sections.
-The route header gives the immediate route, message, receiver, and call totals.
+This session changed Flow Graph from a dense analytics report into an
+interactive node-and-edge graph. Message nodes connect to receiver nodes through
+live route edges on a pannable, zoomable, automatically framed canvas. Selection
+opens focused details below the graph. Route reports, overflow rows, trace
+activity, and raw topology now live inside one collapsed analysis section.
 
 An empty live capture now gives recovery steps instead of rendering component
 and message rows whose route counts are all zero. The Diagnostics Tooling
@@ -21,12 +21,14 @@ Play entries when Unity disables domain and scene reload.
 
 ## Contract updates
 
-- Concrete registration routes sort before `GlobalAcceptAll` routes. Calls,
-  recent traced deliveries, names, paths, ids, and registration type provide a
-  deterministic order within that split.
-- The route map shows eight routes before moving the remainder into a collapsed
-  overflow section. Selecting an overflow route expands that section.
-- Route Insights, Trace Activity, and Topology Details start collapsed.
+- Every filtered message, receiver, and registration route appears on the
+  primary graph canvas; message-type overflow is navigated by pan and zoom, not
+  rendered as a text list.
+- Message nodes stay in the left column, receiver nodes stay in the right
+  column, and receiver ordering reduces crossings by following connected
+  message positions.
+- The textual route map, its overflow rows, Route Insights, Trace Activity, and
+  Topology Details start inside the collapsed **Analysis and Raw Data** section.
 - Components or messages without captured routes produce an actionable empty
   state and no zero-value topology wall.
 - Each active receiver releases a token from the previous Play generation and
@@ -37,16 +39,21 @@ Play entries when Unity disables domain and scene reload.
 
 ## Validation
 
-- Focused Flow Graph and sample contract fixtures: **143 passed / 0 failed**.
+- Focused Flow Graph and sample contract fixtures: **145 passed / 0 failed**.
 - Stale-token reset and re-registration fixture: **7 passed / 0 failed**.
-- Full `WallstopStudios.DxMessaging.Tests.Editor` assembly: **580 passed / 0
-  failed** twice back-to-back.
+- Full `WallstopStudios.DxMessaging.Tests.Editor` assembly: **582 passed / 0
+  failed** twice back-to-back, then **583 passed / 0 failed** after the final
+  degenerate-mesh regression test.
 - Full `WallstopStudios.DxMessaging.Tests.Runtime` assembly: **984 passed / 0
   failed** twice back-to-back.
 - Live sample science on Unity 6000.4.6f1 across two reload-disabled Play
   entries: sequence 3, 3 components, 4 messages, 15 routes, 33 trace paths, 99
-  calls, concrete default selection, 7 collapsed overflow routes, and all three
-  advanced sections collapsed.
+  calls, concrete default selection, and all advanced analysis collapsed.
+- Live graph layout science on Unity 6000.4.6f1: a 1145 x 520 canvas rendered 4
+  message nodes at x=60, 3 receiver nodes at x=680, and all 15 connections at
+  an automatically fitted 0.836 zoom. Parallel `ToolingSignal` routes to the
+  same receiver produced distinct markers at y=291 and y=334. The analysis
+  foldout remained collapsed.
 - Same-Play deactivate/reactivate science restarted the canceled runner and
   repopulated all 15 routes and 33 trace paths. The following Play entry reset
   the sample to sequence 3 and 99 calls.
@@ -54,6 +61,7 @@ Play entries when Unity disables domain and scene reload.
 - Full Node.js script suite: **406 passed / 0 failed**.
 - Documentation sample compilation, CSharpier, Prettier, markdownlint,
   spelling, `npm run validate:all`, ASCII checks, and `git diff --check` passed.
-- Four adversarial review rounds covered lifecycle recovery, reset semantics,
-  foldout persistence, test cleanup, Unity 2021.3 compatibility, documentation,
-  formatting, and bloat. The final review reported zero findings.
+- Adversarial review covered lifecycle recovery, reset semantics, foldout
+  persistence, parallel-route geometry, viewport preservation, large-graph
+  framing, complete borders, Unity 2021.3 compatibility, documentation,
+  formatting, and bloat. The final pass reported zero findings.

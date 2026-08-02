@@ -204,6 +204,49 @@ namespace DxMessaging.Tests.Editor
                     .ClassListContains(DxMessagingEditorTheme.ToolButtonClassName),
                 Is.True
             );
+            VisualElement graph = root.Q<VisualElement>(DxMessagingFlowGraphWindow.GraphCanvasName);
+            Assert.That(graph, Is.Not.Null, "The primary surface should be a graph canvas.");
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphMessageNodeClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(1)
+            );
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphReceiverNodeClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(1)
+            );
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(1)
+            );
+            VisualElement graphMessage = graph
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.GraphMessageNodeClassName
+                )
+                .First();
+            VisualElement graphReceiver = graph
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.GraphReceiverNodeClassName
+                )
+                .First();
+            Assert.That(
+                graphMessage.style.left.value.value,
+                Is.LessThan(graphReceiver.style.left.value.value),
+                "Message nodes should be laid out to the left of receiver nodes."
+            );
+            AssertCompleteBorder(graphMessage, DxMessagingEditorPalette.AmberSoft);
+            AssertCompleteBorder(graphReceiver, DxMessagingEditorPalette.Amber);
             Label routeMapKind = root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName)
                 .Query<VisualElement>(className: DxMessagingFlowGraphWindow.RouteMapRouteClassName)
                 .First()
@@ -242,7 +285,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void BuildGraphUiPrioritizesRoutesAndCollapsesAdvancedData()
+        public void BuildGraphUiLeadsWithInteractiveCanvasAndCollapsesTextAnalysis()
         {
             FlowGraphSnapshot snapshot = CreateTwoEdgeSnapshot();
             VisualElement root = new();
@@ -258,11 +301,50 @@ namespace DxMessaging.Tests.Editor
             );
             Foldout topology = root.Q<Foldout>(DxMessagingFlowGraphWindow.TopologyFoldoutName);
             Label detailsTitle = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName);
+            VisualElement graph = root.Q<VisualElement>(DxMessagingFlowGraphWindow.GraphCanvasName);
+            Foldout analysis = root.Q<Foldout>(DxMessagingFlowGraphWindow.AnalysisFoldoutName);
 
+            Assert.That(
+                graph,
+                Is.Not.Null,
+                "The primary surface should render a node-and-edge graph."
+            );
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphMessageNodeClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(2),
+                "Every visible message should be represented as a graph node."
+            );
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphReceiverNodeClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(2),
+                "Every visible receiver should be represented as a graph node."
+            );
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(2),
+                "Every visible route should be represented as a graph connection."
+            );
+            Assert.That(
+                analysis.value,
+                Is.False,
+                "Text reports should default collapsed beneath the graph."
+            );
             Assert.That(
                 overview,
                 Is.Not.Null,
-                "The visible route overview should be rendered above advanced analytics."
+                "The collapsed analysis should retain the route overview for inspection."
             );
             Assert.That(
                 overview.text,
@@ -412,7 +494,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void BuildGraphUiPrioritizesConcreteRoutesAndCollapsesOverflow()
+        public void BuildGraphUiPlacesEveryRouteOnCanvasAndKeepsTextOverflowCollapsed()
         {
             FlowGraphComponentNode[] components = Enumerable
                 .Range(0, 10)
@@ -459,6 +541,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             VisualElement routeMap = root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName);
+            VisualElement graph = root.Q<VisualElement>(DxMessagingFlowGraphWindow.GraphCanvasName);
+            Foldout analysis = root.Q<Foldout>(DxMessagingFlowGraphWindow.AnalysisFoldoutName);
             Foldout moreRoutes = root.Q<Foldout>(
                 DxMessagingFlowGraphWindow.RouteMapMoreRoutesFoldoutName
             );
@@ -474,6 +558,38 @@ namespace DxMessaging.Tests.Editor
             string detailsTitle = root.Q<Label>(
                 DxMessagingFlowGraphWindow.DetailsTitleLabelName
             ).text;
+
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphMessageNodeClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(10),
+                "Message types should remain navigable nodes instead of a text overflow list."
+            );
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphReceiverNodeClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(10)
+            );
+            Assert.That(
+                graph
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(10),
+                "The graph should retain all routes without a visible-route cap."
+            );
+            Assert.That(
+                analysis.value,
+                Is.False,
+                "Route-row overflow should stay hidden until the secondary analysis is opened."
+            );
 
             Assert.That(
                 initiallyVisibleRouteCount,
@@ -492,6 +608,7 @@ namespace DxMessaging.Tests.Editor
                 $"A concrete route should be selected ahead of GlobalAcceptAll, but was '{detailsTitle}'."
             );
 
+            analysis.value = true;
             root.Q<Foldout>(DxMessagingFlowGraphWindow.RouteMapInsightsFoldoutName).value = true;
             moreRoutes.value = true;
             root.Q<Foldout>(DxMessagingFlowGraphWindow.TopologyFoldoutName).value = true;
@@ -514,6 +631,10 @@ namespace DxMessaging.Tests.Editor
                 Is.True
             );
             Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.AnalysisFoldoutName).value,
+                Is.True
+            );
+            Assert.That(
                 root.Q<Foldout>(DxMessagingFlowGraphWindow.RouteMapInsightsFoldoutName).value,
                 Is.True
             );
@@ -525,6 +646,103 @@ namespace DxMessaging.Tests.Editor
                 root.Q<Foldout>(DxMessagingFlowGraphWindow.TopologyFoldoutName).value,
                 Is.True
             );
+        }
+
+        [Test]
+        public void GraphFrameScaleFitsLargeNodeSetsBelowLegacyZoomFloor()
+        {
+            float scale = DxMessagingFlowGraphWindow.CalculateGraphFrameScale(
+                new Vector2(520f, 520f),
+                new Vector2(990f, 80f + 100f * (92f + 34f))
+            );
+
+            Assert.That(
+                scale,
+                Is.LessThan(0.15f).And.GreaterThanOrEqualTo(0.02f),
+                $"A 100-row graph should frame below the former 0.15 zoom floor, but used {scale}."
+            );
+        }
+
+        [Test]
+        public void GraphMeshNormalizesZeroLengthSegmentsToDefinedDirection()
+        {
+            Assert.That(
+                DxMessagingFlowGraphWindow.NormalizeGraphDirection(Vector2.zero),
+                Is.EqualTo(Vector2.right),
+                "Degenerate sampled segments must still write their allocated mesh quad."
+            );
+            Assert.That(
+                DxMessagingFlowGraphWindow.NormalizeGraphDirection(new Vector2(3f, 4f)),
+                Is.EqualTo(new Vector2(0.6f, 0.8f))
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiPreservesViewportWhenGraphConnectionIsSelected()
+        {
+            FlowGraphSnapshot snapshot = CreateTwoEdgeSnapshot();
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+            string selectedItemKey = string.Empty;
+            Action<string> select = null;
+            select = key =>
+            {
+                selectedItemKey = key;
+                DxMessagingFlowGraphWindow.RefreshGraphContent(
+                    root,
+                    snapshot,
+                    new FlowGraphViewState(selectedItemKey: key),
+                    onSelectionChanged: select
+                );
+            };
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                FlowGraphViewState.Default,
+                onSelectionChanged: select
+            );
+
+            VisualElement graph = root.Q<VisualElement>(DxMessagingFlowGraphWindow.GraphCanvasName);
+            DxMessagingFlowGraphWindow.FlowGraphCanvasState canvasState =
+                (DxMessagingFlowGraphWindow.FlowGraphCanvasState)graph.userData;
+            canvasState.Initialized = true;
+            canvasState.Pan = new Vector2(123f, -47f);
+            canvasState.Zoom = 0.42f;
+            VisualElement unselectedConnection = graph
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                )
+                .ToList()
+                .Single(connection =>
+                    !connection.ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName)
+                );
+
+            using (ClickEvent click = ClickEvent.GetPooled())
+            {
+                click.target = unselectedConnection;
+                unselectedConnection.SendEvent(click);
+            }
+
+            VisualElement refreshedGraph = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.GraphCanvasName
+            );
+            DxMessagingFlowGraphWindow.FlowGraphCanvasState refreshedState =
+                (DxMessagingFlowGraphWindow.FlowGraphCanvasState)refreshedGraph.userData;
+            VisualElement selectedConnection = refreshedGraph
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                )
+                .ToList()
+                .Single(connection =>
+                    connection.ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName)
+                );
+
+            Assert.That(selectedItemKey, Is.Not.Empty);
+            Assert.That(refreshedState, Is.SameAs(canvasState));
+            Assert.That(refreshedState.Pan, Is.EqualTo(new Vector2(123f, -47f)));
+            Assert.That(refreshedState.Zoom, Is.EqualTo(0.42f));
+            Assert.That(selectedConnection.style.width.value.value, Is.EqualTo(18f));
         }
 
         [Test]
@@ -588,6 +806,32 @@ namespace DxMessaging.Tests.Editor
                 .text;
             Assert.That(targetLaneSummary, Does.Contain("Route kinds: Broadcast, Targeted"));
             Assert.That(targetLaneSummary, Does.Not.Contain("BroadcastPostProcessor"));
+
+            Dictionary<string, VisualElement> graphEdgesByKind = root.Q<VisualElement>(
+                    DxMessagingFlowGraphWindow.GraphCanvasName
+                )
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                )
+                .ToList()
+                .ToDictionary(
+                    edge =>
+                        edge.tooltip.Contains("BroadcastPostProcessor") ? "Broadcast" : "Targeted",
+                    StringComparer.Ordinal
+                );
+            AssertColor(
+                graphEdgesByKind["Targeted"].style.backgroundColor.value,
+                DxMessagingEditorPalette.Targeted
+            );
+            AssertColor(
+                graphEdgesByKind["Broadcast"].style.backgroundColor.value,
+                DxMessagingEditorPalette.Broadcast
+            );
+            Assert.That(
+                graphEdgesByKind["Targeted"].style.top.value.value,
+                Is.Not.EqualTo(graphEdgesByKind["Broadcast"].style.top.value.value),
+                "Parallel route kinds need distinct rendered geometry and hit targets."
+            );
 
             Dictionary<string, VisualElement> edgesByKind = root.Query<VisualElement>(
                     className: DxMessagingFlowGraphWindow.EdgeRowClassName

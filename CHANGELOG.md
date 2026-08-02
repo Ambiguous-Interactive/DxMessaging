@@ -33,11 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Change Flow Graph to lead with a compact, route-first view. Concrete routes
-  sort before catch-all routes, the first eight routes remain visible, and
-  route insights, trace activity, raw topology, and overflow routes start
-  collapsed. Empty captures now explain how to restore live registrations
-  instead of filling the window with zero-value summaries
+- Change Flow Graph to lead with an interactive node-and-edge canvas. Message
+  nodes connect to receiver nodes through live registration edges, with pan,
+  zoom, automatic framing, and selection. Text-heavy route analysis, trace
+  activity, raw topology, and overflow rows now start inside one collapsed
+  section. Empty captures explain how to restore live registrations instead of
+  filling the window with zero-value summaries
   ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Improve targeted and source-bound broadcast routing throughput and reduce the
   memory retained by their per-target lookup tables without changing the public

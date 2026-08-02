@@ -124,20 +124,20 @@ safe editor capture and avoid mutating provider state.
 ### Flow Graph
 
 Open **Tools > Wallstop Studios > DxMessaging > Flow Graph** to inspect loaded
-scene `MessagingComponent` registration topology. The window starts with the
-route map and selects its first concrete route. Routes with a concrete
-registration kind appear before `GlobalAcceptAll`; within each group, routes
-with more calls and recent traced deliveries appear first. The first eight
-routes remain visible, and additional routes start in a collapsed **more
-routes** section.
+scene `MessagingComponent` registration topology. The primary surface is an
+interactive graph: message nodes occupy the left column, receiver nodes occupy
+the right column, and registration edges connect them. Drag to pan, scroll to
+zoom, and select a node or connection to inspect it. The canvas frames all
+filtered nodes automatically and renders every filtered message, receiver, and
+route instead of moving extra message types into a text overflow list.
 
-The route map header reports route, message, receiver, and call totals. Expand
-**Route Insights** for route-kind mix, fan-out, fan-in, inactive-target,
-no-call, and traced-delivery analysis. **Trace Activity** contains the recent
-trace paths and trace lanes. **Topology Details** contains the raw component,
-message, and registration-edge lists. These analysis sections start collapsed
-so the active routes and selected-route details remain visible in a normal
-window height.
+The selected item details sit directly below the canvas. Expand **Analysis and
+Raw Data** only when you need the textual route map, message and target lanes,
+trace activity, or topology lists. Inside that section, concrete routes sort
+before `GlobalAcceptAll`; call volume, recent traced deliveries, and stable names
+determine the remaining order. The textual route map keeps its first eight rows
+outside its nested **more routes** foldout, but the graph itself has no
+eight-route cap.
 
 If the snapshot sees components or messages but no registration routes, the
 window explains how to recover: enter Play mode, restart Play mode if it is
@@ -162,9 +162,10 @@ The graph aggregates:
 - recent trace-path/context evidence when diagnostics captured token delivery
   records with positive trace ids.
 
-The graph supports filtering, stable row selection, details for selected
-components/messages/routes, and **Copy JSON** export. The Visible Message Lanes
-panel groups visible registration edges by message type, then reports route
+The graph supports filtering, pan and zoom, automatic framing, stable node and
+edge selection, details for selected components/messages/routes, and **Copy
+JSON** export. The collapsed Visible Message Lanes panel groups visible
+registration edges by message type, then reports route
 count, distinct target count, registration count, calls, recent traced
 deliveries, no-call routes, route kinds, call share, target paths, and inactive
 target breadth for each lane. The Visible Target Lanes panel groups visible
