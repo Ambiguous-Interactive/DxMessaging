@@ -664,7 +664,6 @@ jobs:
     env:
       LATEST_VERSION: 6000.3.16f1
       PERF_BASELINE: docs/architecture/perf-baseline.csv
-      PERF_COMMENT: .artifacts/perf-pr-comment.md
       PERF_DELTA: .artifacts/perf-pr-delta.md
       MEASURED_SHA: ${{ github.event.pull_request.head.sha }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -674,6 +673,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          PERF_COMMENT="${RUNNER_TEMP}/perf-pr-comment.md"
+          echo "PERF_COMMENT=${PERF_COMMENT}" >> "${GITHUB_ENV}"
           short_sha="${MEASURED_SHA:0:7}"
           mkdir -p "$(dirname "${PERF_COMMENT}")"
           {
@@ -721,9 +722,12 @@ jobs:
           set -euo pipefail
           changed_files="$(gh api --paginate \
             "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
-            --jq '.[].filename')"
+            --jq '.[] | [.filename, .previous_filename] | .[] | select(. != null)')"
           methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
+          methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
           methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|render-perf|run-ci-tests)'
+          methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
+          methodology_pattern+='|\.github/comparison-packages\.json$'
           methodology_pattern+='|\.github/actions/compute-unity-assemblies/'
           methodology_pattern+='|\.github/workflows/perf-numbers\.yml$)'
           incompatible="$(printf '%s\n' "${changed_files}" | grep -E \
@@ -758,45 +762,57 @@ jobs:
 
           regressed=false
           baseline_commit=''
-          if [ '${{ steps.compatibility.outputs.comparable }}' = true ]; then
-            current_baseline=.artifacts/perf-current-standalone.csv
+          for scope in Standalone PlayMode; do
+            current_scope=".artifacts/perf-current-${scope}.csv"
             node scripts/unity/extract-perf-baseline.js \
               "${inputs[@]}" \
-              --scope Standalone \
-              --output "${current_baseline}"
-            if ! diff -u \
-              <(tail -n +2 "${PERF_BASELINE}" | cut -d, -f1 | sort) \
-              <(tail -n +2 "${current_baseline}" | cut -d, -f1 | sort); then
-              echo '::error::Current Standalone scenario set does not match the trusted historical baseline.'
-              exit 1
-            fi
+              --scope "${scope}" \
+              --output "${current_scope}"
             current_commits="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' \
-              "${current_baseline}" | sort -u)"
+              "${current_scope}" | sort -u)"
             if [ "${current_commits}" != "${MEASURED_SHA}" ]; then
-              echo "::error::Current Standalone rows were not stamped only with ${MEASURED_SHA}."
+              echo "::error::Current ${scope} rows were not stamped only with ${MEASURED_SHA}."
               exit 1
             fi
-            output="$(node scripts/unity/render-perf-deltas.js \
-              "${inputs[@]}" \
-              --baseline-csv "${PERF_BASELINE}" \
-              --unity-version "${LATEST_VERSION}" \
-              --scope Standalone \
-              --output "${PERF_DELTA}")"
-            changed="$(printf '%s\n' "${output}" | sed -n 's/^changed=//p')"
-            regressed="$(printf '%s\n' "${output}" | sed -n 's/^regressed=//p')"
-            if [ "${changed}" != true ] && [ "${changed}" != false ]; then
-              echo "::error::Delta renderer omitted a valid changed signal."
-              exit 1
+          done
+          if [ '${{ steps.compatibility.outputs.comparable }}' = true ]; then
+            baseline_rows=0
+            if [ -f "${PERF_BASELINE}" ]; then
+              baseline_rows="$(awk -F, 'NR > 1 && $1 != "" { count++ } END { print count + 0 }' \
+                "${PERF_BASELINE}")"
             fi
-            if [ "${regressed}" != true ] && [ "${regressed}" != false ]; then
-              echo "::error::Delta renderer omitted a valid regressed signal."
-              exit 1
-            fi
-            baseline_commit="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' \
-              "${PERF_BASELINE}" | sort -u)"
-            if [ "$(printf '%s\n' "${baseline_commit}" | sed '/^$/d' | wc -l)" -ne 1 ]; then
-              echo '::error::Standalone baseline does not name exactly one measured commit.'
-              exit 1
+            if [ "${baseline_rows}" -eq 0 ]; then
+              echo '_Historical delta omitted because the trusted baseline has no measured rows yet._' > "${PERF_DELTA}"
+            else
+              current_baseline=.artifacts/perf-current-Standalone.csv
+              if ! diff -u \
+                <(tail -n +2 "${PERF_BASELINE}" | cut -d, -f1 | sort) \
+                <(tail -n +2 "${current_baseline}" | cut -d, -f1 | sort); then
+                echo '::error::Current Standalone scenario set does not match the trusted historical baseline.'
+                exit 1
+              fi
+              output="$(node scripts/unity/render-perf-deltas.js \
+                "${inputs[@]}" \
+                --baseline-csv "${PERF_BASELINE}" \
+                --unity-version "${LATEST_VERSION}" \
+                --scope Standalone \
+                --output "${PERF_DELTA}")"
+              changed="$(printf '%s\n' "${output}" | sed -n 's/^changed=//p')"
+              regressed="$(printf '%s\n' "${output}" | sed -n 's/^regressed=//p')"
+              if [ "${changed}" != true ] && [ "${changed}" != false ]; then
+                echo "::error::Delta renderer omitted a valid changed signal."
+                exit 1
+              fi
+              if [ "${regressed}" != true ] && [ "${regressed}" != false ]; then
+                echo "::error::Delta renderer omitted a valid regressed signal."
+                exit 1
+              fi
+              baseline_commit="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' \
+                "${PERF_BASELINE}" | sort -u)"
+              if [ "$(printf '%s\n' "${baseline_commit}" | sed '/^$/d' | wc -l)" -ne 1 ]; then
+                echo '::error::Standalone baseline does not name exactly one measured commit.'
+                exit 1
+              fi
             fi
           else
             echo '_Historical delta omitted because benchmark or harness code changed in this pull request._' > "${PERF_DELTA}"
@@ -816,7 +832,16 @@ jobs:
             /^### Library comparison - throughput/ { emit=0 }
             emit { print }
           ' "${current_doc}" > .artifacts/perf-playmode-current.md
-          if ! grep -q '^| Empty Bus Dispatch' .artifacts/perf-playmode-current.md; then
+          if ! grep -q '^| Scenario.*| GC allocs *| GC bytes *|' \
+            .artifacts/perf-playmode-current.md \
+            || ! awk -F'|' '
+              /^\| Empty Bus Dispatch/ {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", $4)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", $5)
+                measured = ($4 ~ /^[0-9,]+$/ && $5 ~ /^[0-9,]+$/)
+              }
+              END { exit measured ? 0 : 1 }
+            ' .artifacts/perf-playmode-current.md; then
             echo '::error::Current PlayMode allocation table was not rendered.'
             exit 1
           fi
@@ -831,13 +856,54 @@ jobs:
               | sed -E 's/^.*(DXM_TARGET_MAP_(BENCHMARK|CONSTRUCTION))/\1/' \
               | sed "s/^/[${scope}] /" \
               >> .artifacts/perf-target-map-current.txt || true
-          done < <(find .artifacts/perf-download -type f -name unity.log -print | sort)
+          done < <(find .artifacts/perf-download -type f \
+            \( -name unity.log -o -name player.log \) -print | sort)
           sort -u -o .artifacts/perf-target-map-current.txt .artifacts/perf-target-map-current.txt
-          target_rows="$(grep -c 'DXM_TARGET_MAP_' .artifacts/perf-target-map-current.txt || true)"
-          if [ "${target_rows}" -ne 40 ]; then
-            echo "::error::Expected 40 TargetMap rows across both benchmark legs; found ${target_rows}."
+
+          for scope in PlayMode Standalone; do
+            awk -v prefix="[${scope}]" '
+              $1 == prefix && $2 == "DXM_TARGET_MAP_BENCHMARK" { print $2, $4, $5 }
+              $1 == prefix && $2 == "DXM_TARGET_MAP_CONSTRUCTION" { print $2, $3 }
+            ' .artifacts/perf-target-map-current.txt \
+              > ".artifacts/perf-target-map-${scope}-identities.txt"
+            duplicate_target_keys="$(sort \
+              ".artifacts/perf-target-map-${scope}-identities.txt" | uniq -d)"
+            if [ -n "${duplicate_target_keys}" ]; then
+              echo "::error::Current ${scope} TargetMap evidence repeated scenario identities."
+              printf '%s\n' "${duplicate_target_keys}"
+              exit 1
+            fi
+            sort -u \
+              ".artifacts/perf-target-map-${scope}-identities.txt" \
+              > ".artifacts/perf-target-map-${scope}-keys.txt"
+          done
+          if [ ! -s .artifacts/perf-target-map-PlayMode-keys.txt ] \
+            || ! diff -u \
+              .artifacts/perf-target-map-PlayMode-keys.txt \
+              .artifacts/perf-target-map-Standalone-keys.txt; then
+            echo '::error::TargetMap scenario identities are missing or differ between benchmark legs.'
             exit 1
           fi
+
+          expected_target_keys=.artifacts/perf-target-map-expected-keys.txt
+          : > "${expected_target_keys}"
+          for key_count in 1 4 16 256 4096; do
+            for operation in Hit Miss Churn; do
+              echo "DXM_TARGET_MAP_BENCHMARK keyCount=${key_count} operation=${operation}" \
+                >> "${expected_target_keys}"
+            done
+            echo "DXM_TARGET_MAP_CONSTRUCTION keyCount=${key_count}" \
+              >> "${expected_target_keys}"
+          done
+          sort -u -o "${expected_target_keys}" "${expected_target_keys}"
+          for scope in PlayMode Standalone; do
+            if ! diff -u \
+              "${expected_target_keys}" \
+              ".artifacts/perf-target-map-${scope}-keys.txt"; then
+              echo "::error::Current ${scope} TargetMap identity set does not exactly match the trusted harness."
+              exit 1
+            fi
+          done
 
           short_sha="${MEASURED_SHA:0:7}"
           base_short="${BASE_SHA:0:7}"
@@ -871,11 +937,19 @@ jobs:
           } > "${final_comment}"
           mv "${final_comment}" "${PERF_COMMENT}"
 
-      - name: Create or update PR performance comment
+      - name: Require current PR head before comment update
+        id: report-freshness
         if: always()
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
+        with:
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ env.MEASURED_SHA }}
+
+      - name: Create or update PR performance comment
+        if: ${{ always() && steps.report-freshness.outcome == 'success' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          PERF_COMMENT: ${{ env.PERF_COMMENT }}
         with:
           script: |
             const fs = require('fs');

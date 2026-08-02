@@ -2875,16 +2875,32 @@ def validate_perf_pr_policy() -> None:
         (comment, r"actions/runs.*GITHUB_RUN_ID.*attempts.*GITHUB_RUN_ATTEMPT", "exact run-attempt link"),
         (comment, r"Require current PR head before reporting", "report freshness guard"),
         (comment, r"Classify benchmark comparison compatibility", "methodology compatibility guard"),
+        (comment, r"\.previous_filename", "renamed methodology path guard"),
+        (comment, r"for scope in Standalone PlayMode", "both-scope artifact validation"),
         (comment, r"Current Standalone scenario set does not match", "complete scenario-set guard"),
-        (comment, r"Current Standalone rows were not stamped only with", "artifact commit guard"),
+        (comment, r"Current \$\{scope\} rows were not stamped only with", "artifact commit guard"),
+        (comment, r"GC allocs \*\| GC bytes", "measured PlayMode allocation columns"),
         (comment, r"Current PlayMode allocation table was not rendered", "PlayMode allocation evidence"),
-        (comment, r"Expected 40 TargetMap rows across both benchmark legs", "TargetMap evidence"),
-        (comment, r"if: always\(\)[\s\S]*uses: actions/github-script@", "always-updated sticky comment"),
+        (comment, r"-name player\.log", "Standalone player TargetMap evidence"),
+        (comment, r"TargetMap scenario identities are missing or differ", "TargetMap evidence"),
+        (comment, r"TargetMap evidence repeated scenario identities", "unique TargetMap identities"),
+        (comment, r"TargetMap identity set does not exactly match", "exact TargetMap identities"),
+        (comment, r"Require current PR head before comment update", "final report freshness guard"),
+        (comment, r"steps\.report-freshness\.outcome == 'success'[\s\S]*uses: actions/github-script@", "fresh sticky comment update"),
     )
     for block, pattern, label in checks:
         require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
     require("AUTO_COMMIT_APP_PRIVATE_KEY" not in comment, "performance PR comment must not receive the auto-commit App key")
     require("startsWith(github.event.pull_request.head.ref, 'ci/perf-auto-update-')" not in preflight, "performance PR policy: branch names must not bypass benchmarks")
+    require(
+        re.search(r'PERF_COMMENT="\$\{RUNNER_TEMP\}/', comment) is not None,
+        "performance PR policy: fallback comment must survive checkout cleanup",
+    )
+    require(
+        comment.index("Initialize current-head performance status")
+        < comment.index("Checkout trusted PR base reporting code"),
+        "performance PR policy: fallback comment must exist before checkout can fail",
+    )
     template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
     require(re.search(r"Performance Numbers[\s\S]*pull_request[\s\S]*run-linked evidence comment", template) is not None, "PR template must describe automatic performance evidence")
 

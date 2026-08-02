@@ -485,10 +485,10 @@ Recommended commit cells:
 
 Required configuration cells:
 
-| Configuration                 | Requirement                                                                   |
-| ----------------------------- | ----------------------------------------------------------------------------- |
-| Standalone IL2CPP x64 Release | Required; the headline and only published scope.                              |
-| PlayMode Mono                 | Required in CI for current allocation evidence; useful locally for iteration. |
+| Configuration                 | Requirement                                                            |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| Standalone IL2CPP x64 Release | Required; the published headline and historical-comparison scope.      |
+| PlayMode Mono                 | Required and published as current allocation evidence; useful locally. |
 
 For each commit and configuration:
 
@@ -547,8 +547,9 @@ PlayMode allocation and TargetMap evidence still reports.
 The committed historical baseline is Standalone-only, where allocation values
 are unmeasured, so the automatic historical smoke currently gates throughput
 only. The comment still publishes the current PlayMode allocation table, and
-the required Unity EditMode suite owns exact zero-allocation contracts through
-`AllocationMatrixTests`.
+`AllocationMatrixTests` remains a separate exact-zero contract for focused local
+and manually dispatched validation; the required PR jobs do not run its
+`Allocation` category.
 
 This historical comparison is not a causal A/B/A experiment and the workflow is
 not a required branch-protection check. Treat green as evidence that the pinned
