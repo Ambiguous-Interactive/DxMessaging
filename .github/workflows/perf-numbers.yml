@@ -835,6 +835,7 @@ jobs:
           if ! grep -q '^| Scenario.*| GC allocs *| GC bytes *|' \
             .artifacts/perf-playmode-current.md \
             || ! awk -F'|' '
+              # cspell:ignore gsub
               /^\| Empty Bus Dispatch/ {
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", $4)
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", $5)

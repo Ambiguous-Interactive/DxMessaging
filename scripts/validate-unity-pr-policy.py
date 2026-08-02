@@ -2848,6 +2848,186 @@ def repository_unity_automation(github: Path = Path(".github")) -> dict[str, str
     }
 
 
+def performance_evidence_script(render_script: str) -> str:
+    start = render_script.find("if ! grep -q '^| Scenario")
+    end = render_script.find("\nshort_sha=", start)
+    require(start >= 0 and end > start, "could not isolate performance evidence guards")
+    return "set -euo pipefail\n" + render_script[start:end]
+
+
+def performance_baseline_script(render_script: str) -> str:
+    start = render_script.find("baseline_rows=0")
+    end = render_script.find('if [ "${baseline_rows}" -eq 0 ]; then', start)
+    require(start >= 0 and end > start, "could not isolate performance baseline classifier")
+    return (
+        "set -euo pipefail\n"
+        + render_script[start:end]
+        + '\ntest "${baseline_rows}" -eq "${EXPECTED_BASELINE_ROWS}"'
+    )
+
+
+def target_map_rows(metric: str = "operationsPerSecond=1000") -> list[str]:
+    rows: list[str] = []
+    for key_count in (1, 4, 16, 256, 4096):
+        for operation in ("Hit", "Miss", "Churn"):
+            rows.append(
+                "DXM_TARGET_MAP_BENCHMARK "
+                f"scenario=TargetMap_{key_count}_{operation} "
+                f"keyCount={key_count} operation={operation} {metric}"
+            )
+        rows.append(
+            f"DXM_TARGET_MAP_CONSTRUCTION keyCount={key_count} wallClockMs=1 {metric}"
+        )
+    return rows
+
+
+def run_performance_evidence_fixture(
+    script: str,
+    playmode_markdown: str,
+    playmode_rows: list[str],
+    standalone_rows: list[str],
+) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        artifacts = root / ".artifacts"
+        playmode = artifacts / "perf-download" / "perf-6000.3.16f1-playmode"
+        standalone = artifacts / "perf-download" / "perf-6000.3.16f1-standalone"
+        playmode.mkdir(parents=True)
+        standalone.mkdir(parents=True)
+        (artifacts / "perf-playmode-current.md").write_text(
+            playmode_markdown, encoding="utf-8"
+        )
+        (playmode / "unity.log").write_text(
+            "\n".join(playmode_rows) + "\n", encoding="utf-8"
+        )
+        (standalone / "unity.log").write_text(
+            "standalone editor noise\n", encoding="utf-8"
+        )
+        (standalone / "player.log").write_text(
+            "\n".join(standalone_rows) + "\n", encoding="utf-8"
+        )
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
+def validate_performance_evidence_guards(render_script: str) -> None:
+    if os.name == "nt":
+        return
+    allocation_table = (
+        "### Dispatch throughput - PlayMode (Mono)\n\n"
+        "| Scenario | Throughput / Wall clock | GC allocs | GC bytes |\n"
+        "| --- | --- | --- | --- |\n"
+        "| Empty Bus Dispatch | 20 M emits/sec | 0 | 0 |\n"
+    )
+    rows = target_map_rows()
+    script = performance_evidence_script(render_script)
+    cases = (
+        ("complete evidence", allocation_table, rows, rows, 0, ""),
+        (
+            "missing Standalone identity",
+            allocation_table,
+            rows,
+            rows[1:],
+            1,
+            "identities are missing or differ",
+        ),
+        (
+            "conflicting duplicate",
+            allocation_table,
+            rows + [target_map_rows("operationsPerSecond=2000")[0]],
+            rows,
+            1,
+            "repeated scenario identities",
+        ),
+        (
+            "throughput-only PlayMode",
+            "| Scenario | Throughput / Wall clock |\n| --- | --- |\n"
+            "| Empty Bus Dispatch | 20 M emits/sec |\n",
+            rows,
+            rows,
+            1,
+            "allocation table was not rendered",
+        ),
+        (
+            "unmeasured PlayMode allocations",
+            "| Scenario | Throughput / Wall clock | GC allocs | GC bytes |\n"
+            "| --- | --- | --- | --- |\n"
+            "| Empty Bus Dispatch | 20 M emits/sec | n/a | n/a |\n",
+            rows,
+            rows,
+            1,
+            "allocation table was not rendered",
+        ),
+        (
+            "unexpected symmetric identity",
+            allocation_table,
+            rows + ["DXM_TARGET_MAP_BENCHMARK scenario=TargetMap_32_Hit keyCount=32 operation=Hit operationsPerSecond=1000"],
+            rows + ["DXM_TARGET_MAP_BENCHMARK scenario=TargetMap_32_Hit keyCount=32 operation=Hit operationsPerSecond=1000"],
+            1,
+            "does not exactly match",
+        ),
+    )
+    for name, markdown, playmode, standalone, expected, diagnostic in cases:
+        result = run_performance_evidence_fixture(
+            script, markdown, playmode, standalone
+        )
+        require(
+            result.returncode == expected
+            and (not diagnostic or diagnostic in result.stdout + result.stderr),
+            f"performance evidence {name}: expected {expected} and {diagnostic!r}, got "
+            f"{result.returncode}\n{result.stdout}\n{result.stderr}",
+        )
+
+    baseline_script = performance_baseline_script(render_script)
+    header = (
+        "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,"
+        "wallClockMs,gcAllocatedBytes\n"
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        baseline = root / "perf-baseline.csv"
+        for contents, expected_rows in (
+            (None, "0"),
+            (header, "0"),
+            (
+                header
+                + "EmptyBus_Dispatch,Standalone IL2CPP x64 Release,abc123,"
+                "0,1000,0,1.0,-1\n",
+                "1",
+            ),
+        ):
+            if contents is None:
+                baseline.unlink(missing_ok=True)
+            else:
+                baseline.write_text(contents, encoding="utf-8")
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "EXPECTED_BASELINE_ROWS": expected_rows,
+                    "PERF_BASELINE": str(baseline),
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", baseline_script],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            require(
+                result.returncode == 0,
+                "performance baseline classifier rejected a valid fixture:\n"
+                + result.stdout
+                + result.stderr,
+            )
+
+
 def validate_perf_pr_policy() -> None:
     """Keep PR performance evidence trusted, current, and credential-free."""
     perf_path = Path(".github/workflows/perf-numbers.yml")
@@ -2903,6 +3083,10 @@ def validate_perf_pr_policy() -> None:
     )
     template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
     require(re.search(r"Performance Numbers[\s\S]*pull_request[\s\S]*run-linked evidence comment", template) is not None, "PR template must describe automatic performance evidence")
+    render_script = run_script(
+        step_block(comment, "Render current PR performance evidence")
+    )
+    validate_performance_evidence_guards(render_script)
 
     for path, job_id in LICENSED_LOCK_WINDOWS:
         workflow = path.read_text(encoding="utf-8")

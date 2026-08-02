@@ -15,7 +15,7 @@ namespace DxMessaging.Core.DataStructure
     internal class IntKeyMap<TValue>
         where TValue : class
     {
-        public struct ValueEnumerator
+        internal struct ValueEnumerator
         {
             private readonly IntKeyMap<TValue> _map;
             private int _index;
