@@ -2848,6 +2848,47 @@ def repository_unity_automation(github: Path = Path(".github")) -> dict[str, str
     }
 
 
+def validate_perf_pr_policy() -> None:
+    """Keep PR performance evidence trusted, current, and credential-free."""
+    perf_path = Path(".github/workflows/perf-numbers.yml")
+    source = perf_path.read_text(encoding="utf-8")
+    preflight = job_block(source, "runner-preflight")
+    benchmark = job_block(source, "perf-benchmarks")
+    comment = job_block(source, "comment-perf-doc")
+    checks = (
+        (source, r"\n  pull_request:\n[\s\S]*?branches:\n\s+- master", "master PR trigger"),
+        (source, r"\n  head-check:", "head-check job"),
+        (preflight, r"github\.event\.pull_request\.head\.repo\.full_name == github\.repository", "same-repository guard"),
+        (preflight, r"github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'", "Dependabot guard"),
+        (preflight, r"!startsWith\(github\.event\.pull_request\.head\.ref, 'ci/perf-auto-update-'\)", "fallback recursion guard"),
+        (benchmark, r"MEASURED_SHA:.*github\.event\.pull_request\.head\.sha", "measured head SHA"),
+        (benchmark, r"ref: \$\{\{ env\.MEASURED_SHA \}\}", "exact measured checkout"),
+        (benchmark, r"DX_PERF_COMMIT: \$\{\{ env\.MEASURED_SHA \}\}", "exact result commit"),
+        (benchmark, r"commit = '\$\{\{ env\.MEASURED_SHA \}\}'", "exact player manifest commit"),
+        (comment, r"pull-requests: write", "comment permission"),
+        (comment, r"<!-- dxmessaging-performance-numbers -->", "sticky comment marker"),
+        (comment, r"ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}", "trusted base checkout"),
+        (comment, r"GITHUB_SERVER_URL.*GITHUB_REPOSITORY.*commit.*MEASURED_SHA", "measured commit link"),
+        (comment, r"GITHUB_SERVER_URL.*GITHUB_REPOSITORY.*commit.*BASE_SHA", "baseline commit link"),
+        (comment, r"actions/runs.*GITHUB_RUN_ID.*attempts.*GITHUB_RUN_ATTEMPT", "exact run-attempt link"),
+        (comment, r"Require current PR head before reporting", "report freshness guard"),
+    )
+    for block, pattern, label in checks:
+        require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
+    require("AUTO_COMMIT_APP_PRIVATE_KEY" not in comment, "performance PR comment must not receive the auto-commit App key")
+    template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
+    require(re.search(r"Performance Numbers[\s\S]*pull_request[\s\S]*run-linked delta comment", template) is not None, "PR template must describe automatic performance evidence")
+
+    for path, job_id in LICENSED_LOCK_WINDOWS:
+        workflow = path.read_text(encoding="utf-8")
+        licensed_job = job_block(workflow, job_id)
+        top_level = workflow.split("\njobs:", 1)[0]
+        job_permissions = re.search(r"\n    permissions:\n((?:      [^\n]+\n)+)", licensed_job)
+        permissions = job_permissions.group(1) if job_permissions else top_level
+        require("actions: read" in permissions, f"{path}:{job_id}: actions: read is required for holder expiry")
+        require("github-token: ${{ github.token }}" in licensed_job, f"{path}:{job_id}: acquire-build-lock requires github.token")
+
+
 def validate() -> None:
     timeout_fixture = f"""  fixture:
     timeout-minutes: 70
@@ -3785,6 +3826,7 @@ fi"""
     validate_post_merge_terminal_gate()
     validate_post_merge_cancellation_policy()
     validate_post_merge_steps()
+    validate_perf_pr_policy()
 
     print("Unity pull-request policy validation passed.")
 

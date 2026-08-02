@@ -13,6 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   checks: write
   pull-requests: read
@@ -96,7 +97,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Require a registered Unity runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
@@ -136,7 +137,7 @@ jobs:
     steps:
       - name: Require current PR head before setup
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           github-token: ${{ github.token }}
           pull-request-number: ${{ github.event.pull_request.number }}
@@ -316,7 +317,7 @@ jobs:
       - name: Require current PR head before lock acquisition
         if: ${{ steps.compute.outputs.is-empty != 'true' }}
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           github-token: ${{ github.token }}
           pull-request-number: ${{ github.event.pull_request.number }}
@@ -325,7 +326,7 @@ jobs:
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}

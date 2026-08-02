@@ -101,7 +101,7 @@ organization lock.
     uses: ./.github/actions/validate-unity-license
 
   - name: Acquire organization Unity lock
-    uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+    uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
     with:
       lock-name: wallstop-organization-builds
       runner-id: ${{ runner.name }}
@@ -112,6 +112,9 @@ organization lock.
       BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
       BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
   ```
+
+  Grant `actions: read` to each acquiring job so the action can confirm that a
+  holder's workflow is still live before expiring its reservation.
 
   The matching release step uses the same immutable lock commit with `if:
 always()`. Never use `wallstop-organization-builds` as a native GitHub

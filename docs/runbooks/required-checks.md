@@ -150,8 +150,10 @@ shape; require it only if devcontainer changes must gate merges.
 
 These never gate a pull request:
 
-- `perf-numbers.yml`; its benchmark and publishing jobs run on default-branch
-  push and `workflow_dispatch`, never on a pull request.
+- `perf-numbers.yml`. Eligible same-repository pull requests run it and receive
+  a delta comment, but fork and Dependabot pull requests skip its licensed jobs,
+  and generated performance-doc-only pull requests do not trigger it. Requiring
+  its aggregate would leave those pull requests waiting for an absent check.
 - Auto-fix workflows `csharpier-autofix.yml` and `prettier-autofix.yml`. Their
   visible `Format and propose changes` check is path-filtered (`**/*.cs`;
   `**/*.md` etc.), so it is absent on non-matching pull requests -- the same

@@ -568,7 +568,7 @@ test("active workflows pin external actions and scope licensed credentials", () 
   }
   for (const [file, jobId] of UNITY_LOCK_WINDOWS.filter(([file]) => ["perf-numbers.yml", "unity-tests.yml"].includes(file))) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
-    if (file === "perf-numbers.yml") assert.doesNotMatch(source, /\n  pull_request:|comment-perf-doc/, file);
+    if (file === "perf-numbers.yml") assert.match(source, /\n  pull_request:|comment-perf-doc/, file);
     else assert.match(getJobBlock(source, jobId, file), /github\.event_name != 'pull_request'/, `${file}:${jobId}`);
   }
 });
