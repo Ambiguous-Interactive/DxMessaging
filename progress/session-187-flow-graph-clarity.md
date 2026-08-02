@@ -65,3 +65,12 @@ Play entries when Unity disables domain and scene reload.
   persistence, parallel-route geometry, viewport preservation, large-graph
   framing, complete borders, Unity 2021.3 compatibility, documentation,
   formatting, and bloat. The final pass reported zero findings.
+- Pull request CI ran the standalone IL2CPP performance suite with **408 total / 346
+  passed / 0 failed / 62 skipped** and reported no measured regression.
+- Unity 2021.3 EditMode exposed a fixture teardown gap after the new viewport
+  interaction test opened a host window: the test assertions passed, but closing
+  the window under `-nographics` emitted Unity's benign no-graphics error in the
+  separate teardown phase. The fixture now reapplies the shared headless-only log
+  suppression at teardown start, matching the existing editor-window fixtures.
+  The freshly compiled focused fixture passed **140 / 140**, and the full Editor
+  assembly passed **583 / 583** after the correction.

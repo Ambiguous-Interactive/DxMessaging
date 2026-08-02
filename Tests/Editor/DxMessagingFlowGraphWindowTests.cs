@@ -103,6 +103,11 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
+            // The viewport-selection test keeps a shown host window open until teardown.
+            // Unity resets LogAssert tolerance between the test body and teardown, so
+            // re-enable the shared headless-only suppression before closing that window.
+            EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
+
             foreach (Object instance in _createdObjects)
             {
                 if (instance != null)
