@@ -4,14 +4,11 @@ name: Performance Numbers
 # same-repository pull request change, every push to master/main, or a controlled
 # manual dispatch, this workflow runs the dispatch benchmarks on ELI-MACHINE
 # (the `fast` runner)
-# at the LATEST Unity version on TWO legs. BOTH legs publish: the Standalone
-# IL2CPP (Release player) leg is the throughput
-# HEADLINE -- the AOT backend shipped players run -- while the in-editor PlayMode
-# (Mono) leg supplies the REAL GC-allocation numbers, because a Release player
-# strips the GC.Alloc profiler recorder so the Standalone leg cannot measure them at
-# all (the renderer omits those memory columns). Allocation counts are build-config-independent, so
-# the Mono counts represent the shipped IL2CPP player; the committed regression
-# baseline stays Standalone-only (extract-perf-baseline.js --scope Standalone).
+# at the LATEST Unity version in one Standalone IL2CPP Release player. This is the
+# AOT backend shipped games run and the only published scope. A Release player
+# strips the GC.Alloc profiler recorder, so the renderer omits allocation columns
+# rather than publishing editor-only Mono measurements. The committed regression
+# baseline uses the same Standalone scope (extract-perf-baseline.js --scope Standalone).
 # Pull requests receive one updated delta-table comment linked to the exact
 # measured head commit and workflow run. Fork and Dependabot pull requests do not
 # receive Unity credentials and skip the licensed jobs. On push to master or main
@@ -179,9 +176,7 @@ jobs:
     # Licensed Unity runs only for protected code, controlled dispatches, and trusted
     # same-repository pull requests. Fork and Dependabot pull requests cannot
     # reach this job or its Unity/build-lock credentials.
-    # Both the Standalone headline and PlayMode allocation leg are required.
-    # `fail-fast: false` below lets the sibling finish and preserves diagnostics
-    # when either leg fails.
+    # The sole published leg is a Standalone IL2CPP Release player.
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
     # runner carrying it). Keep in sync with the preflight REQUIRED_LABELS.
     env:
@@ -198,18 +193,11 @@ jobs:
         # statically attestable by the organization lock analyzer.
         unity-version:
           - 6000.3.16f1
-        # BOTH legs publish. Standalone IL2CPP (Release player) is the throughput
-        # HEADLINE -- the AOT backend shipped games run. The in-editor PlayMode
-        # (Mono) leg supplies the REAL GC-allocation numbers: a Release player
-        # strips the GC.Alloc profiler recorder, so the Standalone leg cannot measure
-        # allocations at all (the renderer omits those memory columns), while the
-        # editor's Mono backend can count them (allocation counts are build-config-independent,
-        # so the Mono counts represent the shipped IL2CPP player). render-perf-doc.js
-        # renders whatever scopes are present and sources each matrix from the scope
-        # that measured it.
+        # One published scope: the Standalone IL2CPP Release player that shipped
+        # games run. The stripped player cannot measure GC.Alloc, so the renderer
+        # omits allocation columns instead of adding a second Mono benchmark leg.
         test-mode:
           - standalone
-          - playmode
     steps:
       - name: Require current PR head before self-hosted setup
         timeout-minutes: 2
@@ -381,7 +369,7 @@ jobs:
             -OutputJson (Join-Path $artifactsPath 'machine-specs.json') `
             -OutputSummary (Join-Path $artifactsPath 'machine-specs.txt')
 
-      # IL2CPP compiles generated C++ with `cl.exe`; Mono legs never touch it.
+      # IL2CPP compiles generated C++ with `cl.exe`.
       # `assert-unity-host-prereqs` covers the VC++ RUNTIME (so the Editor
       # launches) but not the BUILD TOOLS (so IL2CPP can compile), and that gap
       # cost three licence seats and ~2h on 2026-07-31 (#333): three standalone
@@ -437,9 +425,7 @@ jobs:
       - name: Run Unity Test Runner
         id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
-        # 180 (not 120): the Standalone leg builds a COLD IL2CPP player, which is
-        # far slower than a Mono build. The PlayMode leg runs IN-EDITOR (Mono) with
-        # no player build and is faster, so 180 is generous for it too. Stays
+        # 180 (not 120): the Standalone leg builds a COLD IL2CPP player. Stays
         # strictly below the job-level timeout (900) so the step clock
         # fires first and releases the shared Unity seat. Must stay >= the
         # validator's RUN_BUDGET (120).
@@ -728,8 +714,13 @@ jobs:
           methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|render-perf|run-ci-tests)'
           methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
           methodology_pattern+='|\.github/comparison-packages\.json$'
-          methodology_pattern+='|\.github/actions/compute-unity-assemblies/'
-          methodology_pattern+='|\.github/workflows/perf-numbers\.yml$)'
+          methodology_pattern+='|\.github/unity-versions\.json$'
+          methodology_pattern+='|\.github/actions/compute-unity-assemblies/)'
+          # perf-numbers.yml itself is intentionally not a blanket incompatibility.
+          # Its runner labels, category, comparison/perf opt-ins, Release flags,
+          # emitted platform, complete scenario set, and commit stamp are pinned
+          # separately. Reporting/orchestration-only changes therefore retain the
+          # current-baseline delta without allowing a profile change to compare.
           incompatible="$(printf '%s\n' "${changed_files}" | grep -E \
             "${methodology_pattern}" \
             || true)"
@@ -762,19 +753,25 @@ jobs:
 
           regressed=false
           baseline_commit=''
-          for scope in Standalone PlayMode; do
-            current_scope=".artifacts/perf-current-${scope}.csv"
-            node scripts/unity/extract-perf-baseline.js \
-              "${inputs[@]}" \
-              --scope "${scope}" \
-              --output "${current_scope}"
-            current_commits="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' \
-              "${current_scope}" | sort -u)"
-            if [ "${current_commits}" != "${MEASURED_SHA}" ]; then
-              echo "::error::Current ${scope} rows were not stamped only with ${MEASURED_SHA}."
-              exit 1
-            fi
-          done
+          current_baseline=.artifacts/perf-current-Standalone.csv
+          node scripts/unity/extract-perf-baseline.js \
+            "${inputs[@]}" \
+            --scope Standalone \
+            --output "${current_baseline}"
+          current_commits="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' \
+            "${current_baseline}" | sort -u)"
+          if [ "${current_commits}" != "${MEASURED_SHA}" ]; then
+            echo "::error::Current Standalone rows were not stamped only with ${MEASURED_SHA}."
+            exit 1
+          fi
+          current_platforms="$(awk -F, 'NR > 1 && $2 != "" { print $2 }' \
+            "${current_baseline}" | sort -u)"
+          expected_platform="Standalone IL2CPP x64 Release (WindowsPlayer; Unity ${LATEST_VERSION})"
+          if [ "${current_platforms}" != "${expected_platform}" ]; then
+            echo "::error::Current Standalone platform did not match ${expected_platform}."
+            printf '%s\n' "${current_platforms}"
+            exit 1
+          fi
           if [ '${{ steps.compatibility.outputs.comparable }}' = true ]; then
             baseline_rows=0
             if [ -f "${PERF_BASELINE}" ]; then
@@ -784,7 +781,13 @@ jobs:
             if [ "${baseline_rows}" -eq 0 ]; then
               echo '_Historical delta omitted because the trusted baseline has no measured rows yet._' > "${PERF_DELTA}"
             else
-              current_baseline=.artifacts/perf-current-Standalone.csv
+              baseline_platforms="$(awk -F, 'NR > 1 && $2 != "" { print $2 }' \
+                "${PERF_BASELINE}" | sort -u)"
+              if [ "${baseline_platforms}" != "${expected_platform}" ]; then
+                echo "::error::Standalone baseline platform did not match ${expected_platform}."
+                printf '%s\n' "${baseline_platforms}"
+                exit 1
+              fi
               if ! diff -u \
                 <(tail -n +2 "${PERF_BASELINE}" | cut -d, -f1 | sort) \
                 <(tail -n +2 "${current_baseline}" | cut -d, -f1 | sort); then
@@ -819,72 +822,31 @@ jobs:
           fi
           echo "regressed=${regressed}" >> "${GITHUB_OUTPUT}"
 
-          current_doc=.artifacts/perf-current.md
-          cp docs/architecture/performance.md "${current_doc}"
-          machine_specs="$(find .artifacts/perf-download -type f -name machine-specs.json -print -quit)"
-          doc_args=("${inputs[@]}" --doc "${current_doc}" --unity-version "${LATEST_VERSION}")
-          if [ -n "${machine_specs}" ]; then
-            doc_args+=(--machine-specs "${machine_specs}")
-          fi
-          node scripts/unity/render-perf-doc.js "${doc_args[@]}"
-          awk '
-            /^### Dispatch throughput - PlayMode \(Mono\)/ { emit=1 }
-            /^### Library comparison - throughput/ { emit=0 }
-            emit { print }
-          ' "${current_doc}" > .artifacts/perf-playmode-current.md
-          if ! grep -q '^| Scenario.*| GC allocs *| GC bytes *|' \
-            .artifacts/perf-playmode-current.md \
-            || ! awk -F'|' '
-              # cspell:ignore gsub
-              /^\| Empty Bus Dispatch/ {
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", $4)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", $5)
-                measured = ($4 ~ /^[0-9,]+$/ && $5 ~ /^[0-9,]+$/)
-              }
-              END { exit measured ? 0 : 1 }
-            ' .artifacts/perf-playmode-current.md; then
-            echo '::error::Current PlayMode allocation table was not rendered.'
-            exit 1
-          fi
-
           : > .artifacts/perf-target-map-current.txt
           while IFS= read -r file; do
-            scope=PlayMode
-            case "${file}" in
-              *-standalone/*) scope=Standalone ;;
-            esac
             grep 'DXM_TARGET_MAP_' "${file}" \
               | sed -E 's/^.*(DXM_TARGET_MAP_(BENCHMARK|CONSTRUCTION))/\1/' \
-              | sed "s/^/[${scope}] /" \
+              | sed 's/^/[Standalone] /' \
               >> .artifacts/perf-target-map-current.txt || true
           done < <(find .artifacts/perf-download -type f \
-            \( -name unity.log -o -name player.log \) -print | sort)
-          sort -u -o .artifacts/perf-target-map-current.txt .artifacts/perf-target-map-current.txt
+            -name player.log -print | sort)
+          sort -o .artifacts/perf-target-map-current.txt .artifacts/perf-target-map-current.txt
 
-          for scope in PlayMode Standalone; do
-            awk -v prefix="[${scope}]" '
-              $1 == prefix && $2 == "DXM_TARGET_MAP_BENCHMARK" { print $2, $4, $5 }
-              $1 == prefix && $2 == "DXM_TARGET_MAP_CONSTRUCTION" { print $2, $3 }
-            ' .artifacts/perf-target-map-current.txt \
-              > ".artifacts/perf-target-map-${scope}-identities.txt"
-            duplicate_target_keys="$(sort \
-              ".artifacts/perf-target-map-${scope}-identities.txt" | uniq -d)"
-            if [ -n "${duplicate_target_keys}" ]; then
-              echo "::error::Current ${scope} TargetMap evidence repeated scenario identities."
-              printf '%s\n' "${duplicate_target_keys}"
-              exit 1
-            fi
-            sort -u \
-              ".artifacts/perf-target-map-${scope}-identities.txt" \
-              > ".artifacts/perf-target-map-${scope}-keys.txt"
-          done
-          if [ ! -s .artifacts/perf-target-map-PlayMode-keys.txt ] \
-            || ! diff -u \
-              .artifacts/perf-target-map-PlayMode-keys.txt \
-              .artifacts/perf-target-map-Standalone-keys.txt; then
-            echo '::error::TargetMap scenario identities are missing or differ between benchmark legs.'
+          awk '
+            $1 == "[Standalone]" && $2 == "DXM_TARGET_MAP_BENCHMARK" { print $2, $4, $5 }
+            $1 == "[Standalone]" && $2 == "DXM_TARGET_MAP_CONSTRUCTION" { print $2, $3 }
+          ' .artifacts/perf-target-map-current.txt \
+            > .artifacts/perf-target-map-Standalone-identities.txt
+          duplicate_target_keys="$(sort \
+            .artifacts/perf-target-map-Standalone-identities.txt | uniq -d)"
+          if [ -n "${duplicate_target_keys}" ]; then
+            echo '::error::Current Standalone TargetMap evidence repeated scenario identities.'
+            printf '%s\n' "${duplicate_target_keys}"
             exit 1
           fi
+          sort -u \
+            .artifacts/perf-target-map-Standalone-identities.txt \
+            > .artifacts/perf-target-map-Standalone-keys.txt
 
           expected_target_keys=.artifacts/perf-target-map-expected-keys.txt
           : > "${expected_target_keys}"
@@ -897,14 +859,12 @@ jobs:
               >> "${expected_target_keys}"
           done
           sort -u -o "${expected_target_keys}" "${expected_target_keys}"
-          for scope in PlayMode Standalone; do
-            if ! diff -u \
-              "${expected_target_keys}" \
-              ".artifacts/perf-target-map-${scope}-keys.txt"; then
-              echo "::error::Current ${scope} TargetMap identity set does not exactly match the trusted harness."
-              exit 1
-            fi
-          done
+          if ! diff -u \
+            "${expected_target_keys}" \
+            .artifacts/perf-target-map-Standalone-keys.txt; then
+            echo '::error::Current Standalone TargetMap identity set does not exactly match the trusted harness.'
+            exit 1
+          fi
 
           short_sha="${MEASURED_SHA:0:7}"
           base_short="${BASE_SHA:0:7}"
@@ -924,9 +884,9 @@ jobs:
             echo
             echo '### Historical Standalone delta'
             echo
-            cat "${PERF_DELTA}"
+            echo 'Delta direction: **+ is better; - is worse.**'
             echo
-            cat .artifacts/perf-playmode-current.md
+            cat "${PERF_DELTA}"
             echo
             echo '### Current TargetMap evidence'
             echo
@@ -1139,11 +1099,7 @@ jobs:
           # Regenerate the committed master baseline from the SAME real run so the
           # diagnostic PR delta compares against REAL numbers after
           # the first master push (the committed seed is only a bootstrap).
-          # --replace overwrites the existing rows with this run's rows. --scope
-          # Standalone keeps the committed baseline Standalone-only even though the
-          # inputs now also carry the in-editor PlayMode (Mono) leg's rows -- the
-          # historical comparison is Standalone-scoped (it compares --scope Standalone),
-          # so the baseline must stay Standalone-scoped too.
+          # --replace overwrites the existing rows with this run's Standalone rows.
           node scripts/unity/extract-perf-baseline.js \
             "${inputs[@]}" \
             --output "${PERF_BASELINE}" \

@@ -57,9 +57,10 @@ recorder's per-sample `.Value` is garbage (2400 for a 1.2 MB region); and
 `GC.TryStartNoGCRegion` throws `NotImplementedException` on Unity Mono. Bytes and
 counts are self-validated independently; the Standalone Release leg cannot measure
 either (its profiler is stripped), so the renderer omits the all-unmeasured memory
-columns/matrices entirely and sources the count and byte metrics from the first scope
-that measured each (the PlayMode Mono leg), rather than reusing the count scope for
-bytes or publishing a vacuous wall of `n/a`. Bytes are
+columns/matrices entirely rather than publishing a vacuous wall of `n/a`. For local
+or manually dispatched editor runs, the renderer sources the count and byte metrics
+from the first scope that measured each rather than reusing the count scope for
+bytes. Bytes are
 INFORMATIONAL: rendered byte deltas are goodness-signed (`N fewer bytes` /
 `N more bytes`), but allocation regression classification stays on the COUNT.
 There is **no median-of-runs**: the older approach
@@ -170,12 +171,10 @@ reliable probe was available on that backend, so the budget cannot be evaluated.
 
 ## Build and runtime configuration
 
-The published THROUGHPUT numbers are measured under **Standalone IL2CPP + .NET
-Standard 2.1 + Release** in a true Release player; the published GC-ALLOCATION
-counts come from an in-editor **PlayMode (Mono)** leg, because allocations are
-only measurable where the profiler is available and a Release player strips it
-(see [Editor-vs-player rationale](#editor-vs-player-rationale)). All legs are
-driven by
+The published numbers are measured under **Standalone IL2CPP + .NET Standard
+2.1 + Release** in a true Release player. The published workflow omits allocation
+metrics because the Release player strips the required profiler recorder (see
+[Editor-vs-player rationale](#editor-vs-player-rationale)). The leg is driven by
 [`scripts/unity/run-ci-tests.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/run-ci-tests.ps1):
 
 - **Standalone perf leg (the throughput headline)** builds an **IL2CPP
@@ -198,40 +197,18 @@ driven by
   strips the `GC.Alloc` profiler recorder, so the Standalone leg cannot measure
   allocations or bytes at all; rather than fill those columns with `n/a`, the
   renderer omits the all-unmeasured memory columns from the Standalone table and
-  the all-unmeasured memory matrices entirely (the real numbers come from the
-  PlayMode Mono leg).
-- **PlayMode allocation leg (published for allocations only)** runs in-editor
-  under Mono and passes `-releaseCodeOptimization`, which sets
-  `CompilationPipeline.codeOptimization = Release` so test assemblies compile
-  without debug code paths. The differentiator from the Standalone leg is the
-  **profiler**, not bridge coverage: a built Standalone player has
-  `Application.isPlaying == true` just like PlayMode, so BOTH legs run every
-  comparison bridge (including the ones that require `Application.isPlaying`) and
-  produce a complete cross-library matrix. What the editor's Mono backend adds is
-  a functional `GC.Alloc` recorder, which a Release player strips -- so only this
-  leg can MEASURE the allocation COUNTS and bytes, and the Standalone table simply
-  omits those memory columns. Allocation counts are build-config-independent -- the
-  same code paths box and allocate under Mono and IL2CPP -- so these counts
-  represent the shipped IL2CPP player; the renderer documents this provenance by
-  labeling the allocation tables with the PlayMode (Mono) scope. Only ALLOCATIONS
-  are sourced from this leg; the headline throughput stays on the Standalone leg.
+  the all-unmeasured memory matrices entirely.
 - **EditMode leg (not published)** also runs in-editor under Mono with
   `-releaseCodeOptimization`. It remains a fast scope for local iteration, and
   manually dispatched `unity-benchmarks.yml` runs the editmode + playmode
   benchmark tests per Unity version as coverage; EditMode numbers are not
   published.
 
-The harness can exercise every scope through the shared protocol;
-`perf-numbers.yml` runs the **Standalone IL2CPP leg (throughput)** and the
-**in-editor PlayMode Mono leg (allocations)**, and publishes both (see
-[Editor-vs-player rationale](#editor-vs-player-rationale)). The two legs serialize
-through the single organization build lock on the single `fast` runner, so adding
-the PlayMode leg increases the workflow's wall clock by the PlayMode leg's
-duration, which is shorter than the Standalone leg's because it builds no IL2CPP
-player (well under 2x total). The PlayMode leg is required: a failure prevents
-the aggregate performance gate and downstream publishing from succeeding, so
-refreshed numbers cannot silently omit allocation evidence (see
-[Editor-vs-player rationale](#editor-vs-player-rationale)).
+The harness can exercise every scope through the shared protocol.
+`perf-numbers.yml` runs and publishes only the **Standalone IL2CPP leg** (see
+[Editor-vs-player rationale](#editor-vs-player-rationale)). Local MCP runs and
+manually dispatched `unity-benchmarks.yml` runs retain the editor scopes for fast
+iteration and allocation investigation.
 
 ## Scenario taxonomy
 
@@ -248,8 +225,8 @@ marginal-registration latency (zero-throughput, wall-clock rows; see
 [Cold vs warm/hot modes](#cold-vs-warmhot-modes)). The three marginal-registration
 rows report the GC-allocation cost of an additional same-type registration -- the
 surface the registration allocation work reduced -- and are measurable only where the
-profiler is present (the in-editor PlayMode/Mono leg; the published Standalone IL2CPP
-leg strips it, so their allocation columns read `n/a` there):
+profiler is present (an in-editor PlayMode/Mono run; the published Standalone IL2CPP
+leg strips it, so its allocation columns are omitted):
 
 Each marginal latency row settles the heap once, then reports the minimum of seven
 independently prepared 1000-registration trials. A long retained-population window is
@@ -343,20 +320,14 @@ The [Performance Numbers workflow](https://github.com/Ambiguous-Interactive/DxMe
 (`.github/workflows/perf-numbers.yml`) runs on eligible same-repository pull
 requests and on pushes to `master`. Fork and Dependabot pull requests skip the
 licensed jobs; generated performance-doc pull requests do not trigger this
-workflow because both generated paths are ignored. It runs two published legs with comparisons enabled
-(`-IncludeComparisons`):
+workflow because both generated paths are ignored. It runs one published leg with
+comparisons enabled (`-IncludeComparisons`): **Standalone (IL2CPP Release
+player)**, a built IL2CPP player with
+`BuildOptions.Development` stripped and the Release IL2CPP C++ configuration;
+the throughput headline scope.
 
-- **Standalone (IL2CPP Release player)** -- a built IL2CPP player with
-  `BuildOptions.Development` stripped and the Release IL2CPP C++ configuration;
-  the throughput headline scope.
-- **In-editor PlayMode (Mono)** -- an editor-only run (the matrix provisions
-  `EditorOnly` rather than the IL2CPP build support, and builds no player) whose
-  functional `GC.Alloc` recorder supplies the real allocation counts the Release
-  player cannot measure. This leg is required so a publish cannot silently omit
-  allocation evidence (see [Editor-vs-player rationale](#editor-vs-player-rationale)).
-
-After the legs finish, `scripts/unity/render-perf-doc.js` reads the benchmark
-rows from BOTH legs and rewrites the AUTOGENERATED region of
+After the leg finishes, `scripts/unity/render-perf-doc.js` reads the benchmark
+rows and rewrites the AUTOGENERATED region of
 `docs/architecture/performance.md`. The renderer derives the execution scope
 from each row's platform string (`Standalone`, `PlayMode`, `EditMode`), emits
 one dispatch-throughput table per scope present (in headline order: Standalone,
@@ -364,18 +335,14 @@ then PlayMode, then EditMode), and emits the cross-library comparison matrices.
 Each per-scope dispatch table omits any profiler metric column it could not measure
 (the Standalone Release table is throughput-only), so a column never degenerates to
 all-`n/a`. The throughput comparison matrix uses the first scope present in headline
-order (Standalone in published runs); the GC-allocation COUNT matrix and the
-GC-allocated-BYTES matrix each use the first scope that actually MEASURED their
-metric (the PlayMode Mono leg in published runs), and each is labeled with its own
-scope -- a metric no present scope measured has its whole matrix omitted rather than
-rendered all-`n/a`. These selectors are intentionally independent because
-a backend can expose the byte counter while the allocation-count recorder is
-unavailable, or vice versa. Each table's backend
+order (Standalone in published runs); a metric no present scope measured has its
+whole matrix omitted rather than rendered all-`n/a`. These selectors are
+intentionally independent because a backend can expose the byte counter while the
+allocation-count recorder is unavailable, or vice versa. Each table's backend
 label (Mono or IL2CPP) is derived from the platform string in that scope's rows,
 so the heading follows the data. Scenario rows and library rows are joined on
-stable machine keys
-(`DispatchBenchmarkScenarios.Key`, `ComparisonScenarios.Key`, and each bridge's
-`TechKey`), never on display names.
+stable machine keys (`DispatchBenchmarkScenarios.Key`, `ComparisonScenarios.Key`,
+and each bridge's `TechKey`), never on display names.
 
 The generated doc carries a privacy-safe provenance line describing the runner
 HARDWARE -- CPU, physical/logical cores, clock, RAM size/speed/type, GPU, and OS
@@ -388,9 +355,10 @@ falls back to a neutral description.
 For an eligible pull request, the reporting job checks out the trusted base
 commit's renderer and baseline, verifies artifacts stamped with the exact head
 SHA, and creates or updates one PR comment linked to that commit and workflow
-attempt. The comment includes the current PlayMode table with allocation counts,
-the current TargetMap rows from both legs, and a historical Standalone delta only
-when the pull request did not change benchmark or harness files. It re-checks the
+attempt. The comment includes current Standalone TargetMap rows and a historical
+Standalone delta only when the pull request did not change benchmark or harness
+files. Delta percentages use outcome direction: `+` is better and `-` is worse,
+for both higher-is-better throughput and lower-is-better wall clock. It re-checks the
 live PR head before reporting so a superseded run cannot overwrite newer
 evidence. A failed current-head run replaces the sticky comment's older success
 with the failed status and run link. After the pull request merges, the push run
@@ -410,29 +378,13 @@ IL2CPP C++ configuration changes the measured numbers, so the published leg
 strips `BuildOptions.Development` and pins the Release C++ configuration;
 `Debug.isDebugBuild` must be false in every published run.
 
-Allocations, however, are **only measurable where the profiler is available**. A
+Allocations are **only measurable where the profiler is available**. A
 Release player strips the `GC.Alloc` recorder, so the Standalone leg cannot measure
 allocations or bytes at all, and the renderer omits those memory columns entirely
-(rather than filling them with `n/a`). To publish real
-allocation numbers the workflow re-adds an in-editor **PlayMode (Mono)** leg,
-where the recorder is functional. The differentiator from the Standalone leg is
-the profiler, NOT bridge coverage: a built Standalone player has
-`Application.isPlaying == true` too, so BOTH legs run every comparison bridge
-(including the `Application.isPlaying`-only ones) and produce a complete matrix --
-only the editor's Mono backend can additionally MEASURE the allocations. (PlayMode
-rather than EditMode supplies them because EditMode runs with
-`Application.isPlaying == false` and so cannot host the `isPlaying`-only bridges.)
-Allocation counts are build-config-independent (the same code paths box and
-allocate under Mono and IL2CPP), so the Mono counts represent the shipped IL2CPP
-player; this is the documented provenance for sourcing throughput from one leg and
-allocations from another. The renderer therefore sources the throughput comparison
-matrix from the first scope present (Standalone in published runs) and BOTH the
-GC-allocation COUNT matrix and the GC-allocated-BYTES matrix from the first scope
-that measured each metric (PlayMode in published runs).
-
-The PlayMode allocation leg is required. A failure prevents the aggregate
-performance gate and downstream publishing from succeeding, so refreshed
-numbers cannot silently omit allocation evidence.
+(rather than filling them with `n/a`). `perf-numbers.yml` does not add a Mono leg
+solely to recover those metrics. Use local MCP runs or manually dispatched
+`unity-benchmarks.yml` editor scopes when allocation evidence is needed, and keep
+the exact-zero `AllocationMatrixTests` contract green for dispatch changes.
 
 EditMode runs inside the editor's hosting environment, is the least
 representative of shipping behavior, and is not published; it -- and PlayMode --
@@ -450,11 +402,8 @@ no data rows -- so the first rollout has no fabricated numbers. Each push to the
 default branch regenerates it with real Standalone IL2CPP rows from that run
 (`extract-perf-baseline.js --replace --scope Standalone`) and commits it
 alongside `performance.md`, so the seed becomes real after the first master push.
-Even though the perf run now also produces in-editor PlayMode (Mono) rows, the
-baseline regeneration passes `--scope Standalone` so the committed baseline stays
-**Standalone-only** -- the historical delta is Standalone-scoped (it compares
-`--scope Standalone` rows against the baseline), so mixing the PlayMode rows in
-would compare the wrong scopes. A missing or header-only baseline omits the
+The baseline regeneration passes `--scope Standalone` so the committed baseline
+stays **Standalone-only**. A missing or header-only baseline omits the
 historical delta while current evidence still reports. The committed
 baseline is therefore CI-owned and Standalone-scoped.
 
@@ -485,10 +434,10 @@ Recommended commit cells:
 
 Required configuration cells:
 
-| Configuration                 | Requirement                                                            |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| Standalone IL2CPP x64 Release | Required; the published headline and historical-comparison scope.      |
-| PlayMode Mono                 | Required and published as current allocation evidence; useful locally. |
+| Configuration                 | Requirement                                                        |
+| ----------------------------- | ------------------------------------------------------------------ |
+| Standalone IL2CPP x64 Release | Required; the published headline and historical-comparison scope.  |
+| PlayMode Mono                 | Optional; useful for local iteration and allocation investigation. |
 
 For each commit and configuration:
 
@@ -519,7 +468,7 @@ methodology -- recapture rather than compare across the boundary.
 
 ## Pull-request performance evidence
 
-After both perf legs run, the PR job publishes current-head evidence before any
+After the perf leg runs, the PR job publishes current-head evidence before any
 optimization is accepted. It calls
 [`scripts/unity/render-perf-deltas.js`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/render-perf-deltas.js)
 with `--scope Standalone`, which compares this PR's Standalone IL2CPP
@@ -541,12 +490,11 @@ the DxMessaging comparison rows and drops every other library's rows. Comparison
 rows are report-only because a single cross-library comparison sample is too
 noisy for required CI. The workflow first requires the complete expected
 Standalone scenario set and the exact measured commit stamp. A missing or
-header-only baseline yields no historical comparison, while the current
-PlayMode allocation and TargetMap evidence still reports.
+header-only baseline yields no historical comparison, while current Standalone
+TargetMap evidence still reports.
 
 The committed historical baseline is Standalone-only, where allocation values
-are unmeasured, so the automatic historical smoke currently gates throughput
-only. The comment still publishes the current PlayMode allocation table, and
+are unmeasured, so the automatic historical smoke gates throughput only.
 `AllocationMatrixTests` remains a separate exact-zero contract for focused local
 and manually dispatched validation; the required PR jobs do not run its
 `Allocation` category.

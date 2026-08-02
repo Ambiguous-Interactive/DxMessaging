@@ -212,8 +212,8 @@ Unity test matrix:
   `scripts/unity/run-ci-tests.ps1`, runtime-only assemblies)
 
 Release checks use `2022.3.45f1`. `unity-benchmarks.yml` runs only by manual
-dispatch. `perf-numbers.yml` runs the latest-version Standalone and PlayMode
-benchmark legs for eligible same-repository pull requests and protected pushes.
+dispatch. `perf-numbers.yml` runs the latest-version Standalone IL2CPP benchmark
+leg for eligible same-repository pull requests and protected pushes.
 
 ## Licensed Job Guardrails
 

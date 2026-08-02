@@ -625,8 +625,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // (a) keeps the user's handler-delegate allocation out of the measured number and
         // (b) avoids any same-handler refcount-bump fast path, so every measured call is a
         // genuine new registration. The published Standalone IL2CPP leg strips the GC.Alloc
-        // profiler, so its allocation columns read n/a; the in-editor PlayMode (Mono) leg
-        // supplies the real per-kind registration allocation numbers in the rendered doc.
+        // profiler, so the rendered doc omits its allocation columns. Profiler-bearing editor
+        // runs still report the per-kind registration allocation numbers for local analysis.
         private static DispatchBenchmarkResult MeasureRegistrationMarginal(
             DispatchBenchmarkScenario scenario
         )
