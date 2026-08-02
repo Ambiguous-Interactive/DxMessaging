@@ -151,7 +151,7 @@ shape; require it only if devcontainer changes must gate merges.
 These never gate a pull request:
 
 - `perf-numbers.yml`. Eligible same-repository pull requests run it and receive
-  a delta comment, but fork and Dependabot pull requests skip its licensed jobs,
+  a current-evidence comment, but fork and Dependabot pull requests skip its licensed jobs,
   and generated performance-doc-only pull requests do not trigger it. Requiring
   its aggregate would leave those pull requests waiting for an absent check.
 - Auto-fix workflows `csharpier-autofix.yml` and `prettier-autofix.yml`. Their

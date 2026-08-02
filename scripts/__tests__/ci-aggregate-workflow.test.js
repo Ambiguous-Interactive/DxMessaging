@@ -34,7 +34,7 @@ function resolveLockActionPin(actionNames) {
 // Acquire, preflight, and the PR-head guard ship in the build-lock release.
 // Return/classify/release/require-confirmed carry the centralized cleanup policy.
 // prettier-ignore
-const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "require-current-pr-head"], ["return-unity-license", "classify-unity-cleanup-evidence", "release-build-lock", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
+const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "release-build-lock", "require-current-pr-head"], ["return-unity-license", "classify-unity-cleanup-evidence", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
 const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
@@ -384,7 +384,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${ACQUIRE_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
   const returnLicense = `uses: ${LOCK_ACTION_PREFIX}return-unity-license@${CLEANUP_POLICY_SHA}`;
   const classify = `uses: ${LOCK_ACTION_PREFIX}classify-unity-cleanup-evidence@${CLEANUP_POLICY_SHA}`;
-  const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${CLEANUP_POLICY_SHA}`;
+  const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${ACQUIRE_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
   const gate = `uses: ${LOCK_ACTION_PREFIX}require-confirmed-unity-cleanup@${CLEANUP_POLICY_SHA}`;
   const runnerLabels = new Map([
     ["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'],
@@ -568,7 +568,7 @@ test("active workflows pin external actions and scope licensed credentials", () 
   }
   for (const [file, jobId] of UNITY_LOCK_WINDOWS.filter(([file]) => ["perf-numbers.yml", "unity-tests.yml"].includes(file))) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
-    if (file === "perf-numbers.yml") assert.match(source, /\n  pull_request:|comment-perf-doc/, file);
+    if (file === "perf-numbers.yml") { assert.match(source, /\n  pull_request:/, file); assert.match(source, /\n  comment-perf-doc:/, file); }
     else assert.match(getJobBlock(source, jobId, file), /github\.event_name != 'pull_request'/, `${file}:${jobId}`);
   }
 });

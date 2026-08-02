@@ -4,7 +4,7 @@ This runbook is the developer/ops reference for how DxMessaging's published
 performance numbers are produced. The user-facing page that shows the rendered
 tables is [Performance Benchmarks](../architecture/performance.md); this runbook
 covers the methodology behind those tables, the CI configuration that runs them,
-the scenario taxonomy, baseline capture, the permanent regression gate and the
+the scenario taxonomy, baseline capture, the automatic pull-request evidence and the
 local-only smoke gate, and how to add or bump a comparison library.
 
 ## Measurement methodology
@@ -61,7 +61,7 @@ columns/matrices entirely and sources the count and byte metrics from the first 
 that measured each (the PlayMode Mono leg), rather than reusing the count scope for
 bytes or publishing a vacuous wall of `n/a`. Bytes are
 INFORMATIONAL: rendered byte deltas are goodness-signed (`N fewer bytes` /
-`N more bytes`), but the regression gate stays on the allocation COUNT.
+`N more bytes`), but allocation regression classification stays on the COUNT.
 There is **no median-of-runs**: the older approach
 of measuring several short sub-windows and comparing their median has been
 replaced by this single long window. The shared protocol is the single source of
@@ -83,7 +83,7 @@ JIT-inclusive first execution -- the genuine first-touch hitch under Mono. "Warm
 or "hot" is steady state. The mode is encoded as a suffix on the scenario key; the
 7-column baseline CSV is unchanged. Every cold/warm-JIT scenario is a wall-clock
 (latency) row: it sets `emitsPerSecond=0` and puts the time in `wallClockMs`. That
-zero throughput is also what AUTO-EXCLUDES these rows from the CI regression gate
+zero throughput is also what AUTO-EXCLUDES these rows from the PR throughput smoke
 (`render-perf-deltas.js` treats a baseline `emitsPerSecond<=0` as non-gating), so
 they are report-only -- rendered as wall clock, never gated.
 
@@ -341,8 +341,9 @@ divergence is always topology, never shared global state.
 
 The [Performance Numbers workflow](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/perf-numbers.yml)
 (`.github/workflows/perf-numbers.yml`) runs on eligible same-repository pull
-requests and on pushes to `master`. Fork, Dependabot, and generated performance
-doc pull requests skip the licensed jobs. It runs two published legs with comparisons enabled
+requests and on pushes to `master`. Fork and Dependabot pull requests skip the
+licensed jobs; generated performance-doc pull requests do not trigger this
+workflow because both generated paths are ignored. It runs two published legs with comparisons enabled
 (`-IncludeComparisons`):
 
 - **Standalone (IL2CPP Release player)** -- a built IL2CPP player with
@@ -385,10 +386,14 @@ emits NO hostname or runner name; when the probe yields nothing the renderer
 falls back to a neutral description.
 
 For an eligible pull request, the reporting job checks out the trusted base
-commit's renderer and baseline, compares artifacts stamped with the exact head
+commit's renderer and baseline, verifies artifacts stamped with the exact head
 SHA, and creates or updates one PR comment linked to that commit and workflow
-attempt. It re-checks the live PR head before reporting so a superseded run
-cannot overwrite newer evidence. After the pull request merges, the push run
+attempt. The comment includes the current PlayMode table with allocation counts,
+the current TargetMap rows from both legs, and a historical Standalone delta only
+when the pull request did not change benchmark or harness files. It re-checks the
+live PR head before reporting so a superseded run cannot overwrite newer
+evidence. A failed current-head run replaces the sticky comment's older success
+with the failed status and run link. After the pull request merges, the push run
 re-renders and, if the doc OR the baseline moved, commits both
 `docs/architecture/performance.md` and the regenerated
 `docs/architecture/perf-baseline.csv` directly to the default branch. The
@@ -439,7 +444,7 @@ benchmark-test coverage in `unity-benchmarks.yml`.
 ### The committed master baseline
 
 [`docs/architecture/perf-baseline.csv`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/architecture/perf-baseline.csv)
-is committed and is the baseline the CI regression gate and the PR delta comment
+is committed and is the baseline the diagnostic PR regression smoke and delta table
 compare against. It ships as an honest header-only seed -- the column header with
 no data rows -- so the first rollout has no fabricated numbers. Each push to the
 default branch regenerates it with real Standalone IL2CPP rows from that run
@@ -447,10 +452,10 @@ default branch regenerates it with real Standalone IL2CPP rows from that run
 alongside `performance.md`, so the seed becomes real after the first master push.
 Even though the perf run now also produces in-editor PlayMode (Mono) rows, the
 baseline regeneration passes `--scope Standalone` so the committed baseline stays
-**Standalone-only** -- the regression gate is Standalone-scoped (it compares
+**Standalone-only** -- the historical delta is Standalone-scoped (it compares
 `--scope Standalone` rows against the baseline), so mixing the PlayMode rows in
-would make the gate compare against the wrong scope. A missing or header-only
-baseline makes both the gate and the delta comment skip gracefully. The committed
+would compare the wrong scopes. A missing or header-only baseline omits the
+historical delta while current evidence still reports. The committed
 baseline is therefore CI-owned and Standalone-scoped.
 
 To capture a baseline locally, run the explicit `DispatchThroughputBenchmarks`
@@ -472,18 +477,18 @@ measurement.
 
 Recommended commit cells:
 
-| Commit reference              | Purpose                                 |
-| ----------------------------- | --------------------------------------- |
-| Chosen comparison commit      | Accepted baseline for regression gates. |
-| Previous optimization landing | Runtime after the last relevant change. |
-| `HEAD`                        | Current branch result.                  |
+| Commit reference              | Purpose                                     |
+| ----------------------------- | ------------------------------------------- |
+| Chosen comparison commit      | Historical reference for diagnostic deltas. |
+| Previous optimization landing | Runtime after the last relevant change.     |
+| `HEAD`                        | Current branch result.                      |
 
 Required configuration cells:
 
-| Configuration                 | Requirement                                                   |
-| ----------------------------- | ------------------------------------------------------------- |
-| Standalone IL2CPP x64 Release | Required; the headline and only published scope.              |
-| PlayMode Mono                 | Optional; local iteration scope, never published or compared. |
+| Configuration                 | Requirement                                                                   |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| Standalone IL2CPP x64 Release | Required; the headline and only published scope.                              |
+| PlayMode Mono                 | Required in CI for current allocation evidence; useful locally for iteration. |
 
 For each commit and configuration:
 
@@ -512,37 +517,49 @@ PR description. In particular, a baseline captured under the old median-of-runs
 methodology is not comparable to one captured under the current single-window
 methodology -- recapture rather than compare across the boundary.
 
-## Permanent regression gate
+## Pull-request performance evidence
 
-The permanent regression gate is a CI step, not a C# test. After the perf leg
-runs, the PR job calls
+After both perf legs run, the PR job publishes current-head evidence before any
+optimization is accepted. It calls
 [`scripts/unity/render-perf-deltas.js`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/render-perf-deltas.js)
 with `--scope Standalone`, which compares this PR's Standalone IL2CPP
 DxMessaging numbers against the committed master baseline and prints two lines: `changed=true|false` (whether any metric
-moved beyond `--tolerance`) and `regressed=true|false` (the gate signal). The
-job posts the DxMessaging-only delta comment when `changed=true` OR
-`regressed=true`, then fails when `regressed=true` -- so reviewers always see the
-numbers even when a strict gate failure did not exceed the comment tolerance.
+moved beyond `--tolerance`) and `regressed=true|false` (the catastrophic-smoke
+signal). The job posts the DxMessaging-only delta before failing when
+`regressed=true`, so reviewers always see the numbers.
 The script always exits 0 itself; the workflow decides whether to fail from the
 `regressed=` line.
 
-A scenario regresses when its throughput drops by more than the regression
+A scenario trips that smoke signal when its throughput drops by more than the regression
 threshold (default `0.33`, looser than the comment tolerance) OR its allocation
 exceeds the baseline. Only canonical dispatch scenarios participate in the hard
-gate, so the wall-clock rows (the cold/warm-JIT registration and deregistration
+smoke, so the wall-clock rows (the cold/warm-JIT registration and deregistration
 floods and the cold first-dispatch scenarios, all zero throughput) never trip the
 gate. The delta
 comment is still broader diagnostic output: it keeps the dispatch scenarios plus
 the DxMessaging comparison rows and drops every other library's rows. Comparison
 rows are report-only because a single cross-library comparison sample is too
-noisy for required CI. A missing or header-only baseline yields `changed=false`
-and `regressed=false`, which skips both the delta comment and gate for a graceful
-first-rollout pass.
+noisy for required CI. The workflow first requires the complete expected
+Standalone scenario set and the exact measured commit stamp. A missing or
+header-only baseline yields no historical comparison, while the current
+PlayMode allocation and TargetMap evidence still reports.
+
+The committed historical baseline is Standalone-only, where allocation values
+are unmeasured, so the automatic historical smoke currently gates throughput
+only. The comment still publishes the current PlayMode allocation table, and
+the required Unity EditMode suite owns exact zero-allocation contracts through
+`AllocationMatrixTests`.
+
+This historical comparison is not a causal A/B/A experiment and the workflow is
+not a required branch-protection check. Treat green as evidence that the pinned
+benchmarks completed, not as proof that an optimization is acceptable. Use
+fresh, same-runner controls for a close result; do not compare across a benchmark
+or harness change.
 
 ## Local-only C# smoke gate
 
 `Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` is now a LOCAL tool only;
-it is `[Explicit, Category("PerfGate")]` and not part of the permanent gate. Use
+it is `[Explicit, Category("PerfGate")]` and not part of automatic PR evidence. Use
 it to fail a local run when a within-platform regression exceeds 1.5x against a
 captured baseline. Enable it with:
 

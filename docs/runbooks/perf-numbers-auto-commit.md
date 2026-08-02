@@ -9,9 +9,9 @@ paste secrets or screenshots of organization settings into this file.
 ## How the auto-commit works
 
 Eligible same-repository pull requests run the licensed benchmarks and receive
-one delta-table comment linked to the measured head commit and workflow attempt.
-Fork, Dependabot, and generated `ci/perf-auto-update-*` pull requests skip the
-licensed jobs. After a pull request merges, the `push` event runs the benchmarks
+one current-evidence comment linked to the measured head commit and workflow
+attempt. Fork and Dependabot pull requests skip the licensed jobs. After a pull
+request merges, the `push` event runs the benchmarks
 again and the `commit-perf-doc` job re-renders the table (a manual
 `workflow_dispatch` from the default branch does the same and is the supported
 recovery path after a failed publish). If the numbers moved, the job lands the
@@ -23,8 +23,8 @@ refreshed doc + baseline in two tiers:
    `GH006`: the same commit is pushed to a `ci/perf-auto-update-*` branch, a
    pull request is opened with the App token, and squash auto-merge is
    requested. The `pull_request` trigger ignores the generated performance doc
-   and baseline paths, and an explicit branch-prefix guard rejects fallback
-   heads, so the fallback PR cannot run licensed benchmarks. Other required
+   and baseline paths, so the fallback PR cannot run licensed benchmarks. A
+   branch name alone never bypasses the matrix. Other required
    checks still run. Superseded
    fallback PRs from older runs are closed automatically
    before a new one opens. The numbers are therefore never lost: worst case

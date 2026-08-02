@@ -81,15 +81,17 @@ workspace - a single self-hosted agent only ever runs one job at a time, so
 generated `.artifacts/unity/projects/<version>-<mode>/Library` directories
 cannot collide.
 
-Runner routing is uniform across all Unity-credential-using jobs:
+Most Unity-credential-using jobs use the shared runner set:
 
 ```yaml
 runs-on: [self-hosted, Windows, RAM-64GB]
 ```
 
-Both ELI-MACHINE and DAD-MACHINE are eligible to pick up any Unity job;
-the `fast` label remains on ELI-MACHINE only for future opt-in hotfix
-dispatch but no job requests it today.
+Both ELI-MACHINE and DAD-MACHINE can pick up those jobs. The automatic
+`Performance Numbers` pull-request matrix is the deliberate exception: it adds
+the `fast` label so the long, low-noise evidence run stays on ELI-MACHINE. Its
+GitHub-hosted preflight requires the same four-label set before the licensed job
+can queue.
 
 Lightweight matrix configuration jobs run on `ubuntu-latest` and remain
 parallelizable.

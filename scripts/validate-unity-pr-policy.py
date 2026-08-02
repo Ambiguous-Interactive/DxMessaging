@@ -2860,24 +2860,33 @@ def validate_perf_pr_policy() -> None:
         (source, r"\n  head-check:", "head-check job"),
         (preflight, r"github\.event\.pull_request\.head\.repo\.full_name == github\.repository", "same-repository guard"),
         (preflight, r"github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'", "Dependabot guard"),
-        (preflight, r"!startsWith\(github\.event\.pull_request\.head\.ref, 'ci/perf-auto-update-'\)", "fallback recursion guard"),
         (benchmark, r"MEASURED_SHA:.*github\.event\.pull_request\.head\.sha", "measured head SHA"),
         (benchmark, r"ref: \$\{\{ env\.MEASURED_SHA \}\}", "exact measured checkout"),
         (benchmark, r"DX_PERF_COMMIT: \$\{\{ env\.MEASURED_SHA \}\}", "exact result commit"),
         (benchmark, r"commit = '\$\{\{ env\.MEASURED_SHA \}\}'", "exact player manifest commit"),
         (comment, r"pull-requests: write", "comment permission"),
         (comment, r"<!-- dxmessaging-performance-numbers -->", "sticky comment marker"),
+        (comment, r"BENCHMARK_RESULT:.*needs\.perf-benchmarks\.result", "current benchmark status"),
+        (comment, r"needs\.head-check\.outputs\.superseded != 'true'", "superseded-report guard"),
         (comment, r"ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}", "trusted base checkout"),
         (comment, r"GITHUB_SERVER_URL.*GITHUB_REPOSITORY.*commit.*MEASURED_SHA", "measured commit link"),
-        (comment, r"GITHUB_SERVER_URL.*GITHUB_REPOSITORY.*commit.*BASE_SHA", "baseline commit link"),
+        (comment, r"Trusted reporting code \(PR base\).*BASE_SHA", "reporting-code commit link"),
+        (comment, r"Measured historical baseline:.*baseline_commit", "measured baseline provenance"),
         (comment, r"actions/runs.*GITHUB_RUN_ID.*attempts.*GITHUB_RUN_ATTEMPT", "exact run-attempt link"),
         (comment, r"Require current PR head before reporting", "report freshness guard"),
+        (comment, r"Classify benchmark comparison compatibility", "methodology compatibility guard"),
+        (comment, r"Current Standalone scenario set does not match", "complete scenario-set guard"),
+        (comment, r"Current Standalone rows were not stamped only with", "artifact commit guard"),
+        (comment, r"Current PlayMode allocation table was not rendered", "PlayMode allocation evidence"),
+        (comment, r"Expected 40 TargetMap rows across both benchmark legs", "TargetMap evidence"),
+        (comment, r"if: always\(\)[\s\S]*uses: actions/github-script@", "always-updated sticky comment"),
     )
     for block, pattern, label in checks:
         require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
     require("AUTO_COMMIT_APP_PRIVATE_KEY" not in comment, "performance PR comment must not receive the auto-commit App key")
+    require("startsWith(github.event.pull_request.head.ref, 'ci/perf-auto-update-')" not in preflight, "performance PR policy: branch names must not bypass benchmarks")
     template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
-    require(re.search(r"Performance Numbers[\s\S]*pull_request[\s\S]*run-linked delta comment", template) is not None, "PR template must describe automatic performance evidence")
+    require(re.search(r"Performance Numbers[\s\S]*pull_request[\s\S]*run-linked evidence comment", template) is not None, "PR template must describe automatic performance evidence")
 
     for path, job_id in LICENSED_LOCK_WINDOWS:
         workflow = path.read_text(encoding="utf-8")
