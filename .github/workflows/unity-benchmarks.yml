@@ -14,6 +14,7 @@ on:
 # manually dispatched workflow keeps per-version benchmark test coverage and
 # does not maintain the doc, so it needs no write scope.
 permissions:
+  actions: read
   contents: read
   checks: write
   issues: write
@@ -28,7 +29,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Require a registered Unity runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
@@ -221,11 +222,12 @@ jobs:
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
           runner-id: ${{ runner.name }}
+          github-token: ${{ github.token }}
           timeout-minutes: "300"
         env:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
@@ -353,7 +355,7 @@ jobs:
         id: release_unity_lock
         if: always()
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@ce12fde93e67a27062350601fb97e4a2f546d405
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}

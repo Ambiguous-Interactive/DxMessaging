@@ -127,7 +127,7 @@ namespace DxMessaging.Core.MessageBus
             ),
             new SweepableTypeCache(
                 nameof(_contextSinks),
-                typeof(MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>>[]),
+                typeof(MessageCache<ContextHandlerMap>[]),
                 static (bus, force) => bus.SweepDirtyTargetSlots(force)
             ),
             new SweepableTypeCache(
@@ -172,20 +172,17 @@ namespace DxMessaging.Core.MessageBus
         private static readonly ArrayPool<DispatchEntry> DispatchEntryPool =
             ArrayPool<DispatchEntry>.Shared;
 
-        private static CollectionPool<
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-        > ContextHandlerByTargetDictsOverride;
+        private static CollectionPool<ContextHandlerMap> ContextHandlerByTargetDictsOverride;
 
-        private static CollectionPool<
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-        > ContextHandlerByTargetDicts =>
+        private static CollectionPool<ContextHandlerMap> ContextHandlerByTargetDicts =>
             ContextHandlerByTargetDictsOverride ?? ContextHandlerByTargetDictPoolHolder.Instance;
 
-        private static CollectionPool<
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-        > CreateContextHandlerByTargetPool(int maxRetained, bool useLru)
+        private static CollectionPool<ContextHandlerMap> CreateContextHandlerByTargetPool(
+            int maxRetained,
+            bool useLru
+        )
         {
-            return new CollectionPool<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>>(
+            return new CollectionPool<ContextHandlerMap>(
                 maxRetained,
                 useLru,
                 factory: static () => CreateFreshContextHandlerMap(),
@@ -193,12 +190,9 @@ namespace DxMessaging.Core.MessageBus
             );
         }
 
-        private static Dictionary<
-            InstanceId,
-            HandlerCache<int, HandlerCache>
-        > CreateFreshContextHandlerMap()
+        private static ContextHandlerMap CreateFreshContextHandlerMap()
         {
-            return new Dictionary<InstanceId, HandlerCache<int, HandlerCache>>();
+            return new ContextHandlerMap();
         }
 
         internal static object CreateContextMapSeedForBenchmark()
@@ -215,8 +209,7 @@ namespace DxMessaging.Core.MessageBus
             HandlerCache<int, HandlerCache> typedSeed =
                 seed as HandlerCache<int, HandlerCache>
                 ?? throw new ArgumentException("Unexpected context-map seed type.", nameof(seed));
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> map =
-                CreateFreshContextHandlerMap();
+            ContextHandlerMap map = CreateFreshContextHandlerMap();
             for (int index = 0; index < keys.Length; ++index)
             {
                 map[keys[index]] = typedSeed;
@@ -230,18 +223,17 @@ namespace DxMessaging.Core.MessageBus
             out int capacity
         )
         {
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> map =
-                opaqueMap as Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
+            ContextHandlerMap map =
+                opaqueMap as ContextHandlerMap
                 ?? throw new ArgumentException("Unexpected context-map type.", nameof(opaqueMap));
             count = map.Count;
-            capacity = map.EnsureCapacity(0);
+            capacity = map.Capacity;
         }
 
         private static class ContextHandlerByTargetDictPoolHolder
         {
-            public static readonly CollectionPool<
-                Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-            > Instance = CreateContextHandlerByTargetPool(maxRetained: 512, useLru: true);
+            public static readonly CollectionPool<ContextHandlerMap> Instance =
+                CreateContextHandlerByTargetPool(maxRetained: 512, useLru: true);
         }
 
         internal static int ResetStaticPools()
@@ -433,8 +425,8 @@ namespace DxMessaging.Core.MessageBus
             public bool fastPath;
             public HandlerCache<int, HandlerCache> scalarHandle;
             public HandlerCache<int, HandlerCache> scalarPost;
-            public Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextHandle;
-            public Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextPost;
+            public ContextHandlerMap contextHandle;
+            public ContextHandlerMap contextPost;
 
             /// <summary>
             /// Drops every cached sink reference and forces a refresh on the
@@ -475,6 +467,22 @@ namespace DxMessaging.Core.MessageBus
                 dispatchState?.Reset();
                 dispatchState = null;
             }
+        }
+
+        private sealed class ContextHandlerMap : IntKeyMap<HandlerCache<int, HandlerCache>>
+        {
+            internal HandlerCache<int, HandlerCache> this[InstanceId key]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                set => Set(key.Id, value);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal bool TryGetValue(InstanceId key, out HandlerCache<int, HandlerCache> value) =>
+                TryGetValue(key.Id, out value);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal bool Remove(InstanceId key) => Remove(key.Id);
         }
 
         private sealed class InterceptorCache<TValue>
@@ -625,11 +633,7 @@ namespace DxMessaging.Core.MessageBus
 
                 for (int i = 0; i < _contextSinks.Length; ++i)
                 {
-                    foreach (
-                        Dictionary<InstanceId, HandlerCache<int, HandlerCache>> _ in _contextSinks[
-                            i
-                        ]
-                    )
+                    foreach (ContextHandlerMap _ in _contextSinks[i])
                     {
                         count++;
                     }
@@ -656,12 +660,7 @@ namespace DxMessaging.Core.MessageBus
                 int count = 0;
                 for (int i = 0; i < _contextSinks.Length; ++i)
                 {
-                    foreach (
-                        Dictionary<
-                            InstanceId,
-                            HandlerCache<int, HandlerCache>
-                        > byTarget in _contextSinks[i]
-                    )
+                    foreach (ContextHandlerMap byTarget in _contextSinks[i])
                     {
                         count += byTarget?.Count ?? 0;
                     }
@@ -778,20 +777,18 @@ namespace DxMessaging.Core.MessageBus
             return count;
         }
 
-        private static int SumTargetedSinks(
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> cache
-        )
+        private static int SumTargetedSinks(MessageCache<ContextHandlerMap> cache)
         {
             int count = 0;
-            foreach (Dictionary<InstanceId, HandlerCache<int, HandlerCache>> entry in cache)
+            foreach (ContextHandlerMap entry in cache)
             {
                 if (entry == null)
                 {
                     continue;
                 }
-                foreach (KeyValuePair<InstanceId, HandlerCache<int, HandlerCache>> kvp in entry)
+                foreach (HandlerCache<int, HandlerCache> handlers in entry)
                 {
-                    count += kvp.Value?.handlers?.Count ?? 0;
+                    count += handlers?.handlers?.Count ?? 0;
                 }
             }
             return count;
@@ -876,17 +873,14 @@ namespace DxMessaging.Core.MessageBus
                 /* [7] Reserved7                          */null,
             };
 
-        private readonly MessageCache<
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-        >[] _contextSinks = new MessageCache<
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-        >[BusContextIndex.Length]
-        {
-            /* [0] TargetedHandleDefault         */new(),
-            /* [1] BroadcastHandleDefault        */new(),
-            /* [2] TargetedPostProcessDefault    */new(),
-            /* [3] BroadcastPostProcessDefault   */new(),
-        };
+        private readonly MessageCache<ContextHandlerMap>[] _contextSinks =
+            new MessageCache<ContextHandlerMap>[BusContextIndex.Length]
+            {
+                /* [0] TargetedHandleDefault         */new(),
+                /* [1] BroadcastHandleDefault        */new(),
+                /* [2] TargetedPostProcessDefault    */new(),
+                /* [3] BroadcastPostProcessDefault   */new(),
+            };
 
         private readonly BusGlobalSlot _globalSlots = new();
 
@@ -1208,8 +1202,7 @@ namespace DxMessaging.Core.MessageBus
 
         internal static ContextMapPoolBenchmarkObservation ObserveContextMapPoolForBenchmark()
         {
-            CollectionPool<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> current =
-                ContextHandlerByTargetDicts;
+            CollectionPool<ContextHandlerMap> current = ContextHandlerByTargetDicts;
             return new ContextMapPoolBenchmarkObservation(
                 current,
                 current.UseLru,
@@ -1284,15 +1277,9 @@ namespace DxMessaging.Core.MessageBus
 
         private sealed class ContextMapPoolBenchmarkScope : IDisposable
         {
-            private readonly CollectionPool<
-                Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-            > _savedOverride;
-            private readonly CollectionPool<
-                Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-            > _savedPool;
-            private readonly CollectionPool<
-                Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-            > _isolated;
+            private readonly CollectionPool<ContextHandlerMap> _savedOverride;
+            private readonly CollectionPool<ContextHandlerMap> _savedPool;
+            private readonly CollectionPool<ContextHandlerMap> _isolated;
             private readonly ContextMapPoolBenchmarkScope _parent;
             private readonly int _ownerThreadId;
             private readonly bool _initialUseLru;
@@ -1584,10 +1571,7 @@ namespace DxMessaging.Core.MessageBus
         private readonly Dictionary<int, int> _dirtyTargetHighWaterCounts = new();
         private readonly HashSet<int> _dirtyTypeSet = new();
         private readonly Dictionary<int, HashSet<InstanceId>> _dirtyTargetSets = new();
-        private readonly Dictionary<
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>,
-            int
-        > _contextMapHighWaterCounts = new();
+        private readonly Dictionary<ContextHandlerMap, int> _contextMapHighWaterCounts = new();
         private readonly List<MessageHandler> _dirtyHandlers = new();
         private readonly HashSet<MessageHandler> _dirtyHandlerSet = new();
         private readonly Dictionary<MessageHandler, long> _dirtyHandlerTicks = new();
@@ -1966,16 +1950,12 @@ namespace DxMessaging.Core.MessageBus
                 List<InstanceId> targets = dirtyTargetEntry.Value;
                 for (int sinkIndex = 0; sinkIndex < _contextSinks.Length; ++sinkIndex)
                 {
-                    MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink =
-                        _contextSinks[sinkIndex];
+                    MessageCache<ContextHandlerMap> sink = _contextSinks[sinkIndex];
                     if (
                         sink == null
                         || !sink.TryGetValueAtIndex(
                             typeIndex,
-                            out Dictionary<
-                                InstanceId,
-                                HandlerCache<int, HandlerCache>
-                            > handlersByTarget
+                            out ContextHandlerMap handlersByTarget
                         )
                     )
                     {
@@ -2224,14 +2204,10 @@ namespace DxMessaging.Core.MessageBus
         {
             for (int sinkIndex = 0; sinkIndex < _contextSinks.Length; ++sinkIndex)
             {
-                MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink =
-                    _contextSinks[sinkIndex];
+                MessageCache<ContextHandlerMap> sink = _contextSinks[sinkIndex];
                 if (
                     sink == null
-                    || !sink.TryGetValueAtIndex(
-                        typeIndex,
-                        out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
-                    )
+                    || !sink.TryGetValueAtIndex(typeIndex, out ContextHandlerMap handlersByTarget)
                     || !handlersByTarget.TryGetValue(
                         target,
                         out HandlerCache<int, HandlerCache> handlers
@@ -2367,14 +2343,10 @@ namespace DxMessaging.Core.MessageBus
             int evicted = 0;
             for (int sinkIndex = 0; sinkIndex < _contextSinks.Length; ++sinkIndex)
             {
-                MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink =
-                    _contextSinks[sinkIndex];
+                MessageCache<ContextHandlerMap> sink = _contextSinks[sinkIndex];
                 if (
                     sink == null
-                    || !sink.TryGetValueAtIndex(
-                        typeIndex,
-                        out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
-                    )
+                    || !sink.TryGetValueAtIndex(typeIndex, out ContextHandlerMap handlersByTarget)
                     || !handlersByTarget.TryGetValue(
                         target,
                         out HandlerCache<int, HandlerCache> handlers
@@ -2423,13 +2395,10 @@ namespace DxMessaging.Core.MessageBus
         )
             where TMessage : IMessage
         {
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink =
-                _contextSinks[BusContextIndex.TargetedHandleDefault];
-            if (
-                !sink.TryGetValue<TMessage>(
-                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
-                )
-            )
+            MessageCache<ContextHandlerMap> sink = _contextSinks[
+                BusContextIndex.TargetedHandleDefault
+            ];
+            if (!sink.TryGetValue<TMessage>(out ContextHandlerMap handlersByTarget))
             {
                 entries = 0;
                 capacity = 0;
@@ -2437,20 +2406,14 @@ namespace DxMessaging.Core.MessageBus
             }
 
             entries = handlersByTarget.Count;
-            capacity = handlersByTarget.EnsureCapacity(0);
+            capacity = handlersByTarget.Capacity;
             return true;
         }
 
-        private Dictionary<InstanceId, HandlerCache<int, HandlerCache>> GetOrRentContextMap<T>(
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks
-        )
+        private ContextHandlerMap GetOrRentContextMap<T>(MessageCache<ContextHandlerMap> sinks)
             where T : IMessage
         {
-            if (
-                sinks.TryGetValue<T>(
-                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
-                )
-            )
+            if (sinks.TryGetValue<T>(out ContextHandlerMap handlersByTarget))
             {
                 return handlersByTarget;
             }
@@ -2472,18 +2435,16 @@ namespace DxMessaging.Core.MessageBus
         }
 
         private void RemoveAndReturnContextMap(
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink,
+            MessageCache<ContextHandlerMap> sink,
             int typeIndex,
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
+            ContextHandlerMap handlersByTarget
         )
         {
             sink.RemoveAtIndex(typeIndex);
             ReturnContextMap(handlersByTarget);
         }
 
-        private void ReturnContextMap(
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
-        )
+        private void ReturnContextMap(ContextHandlerMap handlersByTarget)
         {
             if (handlersByTarget == null)
             {
@@ -2493,7 +2454,7 @@ namespace DxMessaging.Core.MessageBus
             int highWaterCount = GetContextMapHighWaterCount(handlersByTarget);
             _contextMapHighWaterCounts.Remove(handlersByTarget);
 
-            foreach (HandlerCache<int, HandlerCache> handlers in handlersByTarget.Values)
+            foreach (HandlerCache<int, HandlerCache> handlers in handlersByTarget)
             {
                 if (handlers == null)
                 {
@@ -2528,13 +2489,9 @@ namespace DxMessaging.Core.MessageBus
             ContextHandlerByTargetDicts.Return(handlersByTarget);
         }
 
-        private void ClearAndReturnContextSink(
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink
-        )
+        private void ClearAndReturnContextSink(MessageCache<ContextHandlerMap> sink)
         {
-            foreach (
-                Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget in sink
-            )
+            foreach (ContextHandlerMap handlersByTarget in sink)
             {
                 ReturnContextMap(handlersByTarget);
             }
@@ -2677,9 +2634,7 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private void TrackContextMapHighWater(
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
-        )
+        private void TrackContextMapHighWater(ContextHandlerMap handlersByTarget)
         {
             if (handlersByTarget == null)
             {
@@ -2692,9 +2647,7 @@ namespace DxMessaging.Core.MessageBus
             );
         }
 
-        private int GetContextMapHighWaterCount(
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
-        )
+        private int GetContextMapHighWaterCount(ContextHandlerMap handlersByTarget)
         {
             return _contextMapHighWaterCounts.TryGetValue(handlersByTarget, out int count)
                 ? count
@@ -2812,14 +2765,10 @@ namespace DxMessaging.Core.MessageBus
         {
             for (int sinkIndex = 0; sinkIndex < _contextSinks.Length; ++sinkIndex)
             {
-                MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sink =
-                    _contextSinks[sinkIndex];
+                MessageCache<ContextHandlerMap> sink = _contextSinks[sinkIndex];
                 if (
                     sink != null
-                    && sink.TryGetValueAtIndex(
-                        typeIndex,
-                        out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> handlersByTarget
-                    )
+                    && sink.TryGetValueAtIndex(typeIndex, out ContextHandlerMap handlersByTarget)
                     && handlersByTarget.TryGetValue(
                         target,
                         out HandlerCache<int, HandlerCache> handlers
@@ -3000,24 +2949,12 @@ namespace DxMessaging.Core.MessageBus
 
         private void AddHandlersFromContextSinks(HashSet<MessageHandler> handlers)
         {
-            foreach (
-                MessageCache<
-                    Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-                > sink in _contextSinks
-            )
+            foreach (MessageCache<ContextHandlerMap> sink in _contextSinks)
             {
-                foreach (
-                    Dictionary<
-                        InstanceId,
-                        HandlerCache<int, HandlerCache>
-                    > handlersByContext in sink
-                )
+                foreach (ContextHandlerMap handlersByContext in sink)
                 {
                     foreach (
-                        HandlerCache<
-                            int,
-                            HandlerCache
-                        > handlersByPriority in handlersByContext.Values
+                        HandlerCache<int, HandlerCache> handlersByPriority in handlersByContext
                     )
                     {
                         AddHandlersFromPriorityCache(handlersByPriority, handlers);
@@ -3906,8 +3843,7 @@ namespace DxMessaging.Core.MessageBus
             if (plan.fastPath && typeof(TMessage) != typeof(ReflexiveMessage))
             {
                 bool fastFound = false;
-                Dictionary<InstanceId, HandlerCache<int, HandlerCache>> fastTargeted =
-                    plan.contextHandle;
+                ContextHandlerMap fastTargeted = plan.contextHandle;
                 if (
                     fastTargeted != null
                     && fastTargeted.TryGetValue(
@@ -4008,8 +3944,7 @@ namespace DxMessaging.Core.MessageBus
             // sweep, no user code has run since).
             DispatchSnapshot targetedPostSnapshot = DispatchSnapshot.Empty;
             DispatchSnapshot targetedWithoutTargetingPostSnapshot = DispatchSnapshot.Empty;
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> targetedPostHandlers =
-                plan.contextPost;
+            ContextHandlerMap targetedPostHandlers = plan.contextPost;
             if (
                 targetedPostHandlers != null
                 && targetedPostHandlers.TryGetValue(
@@ -4270,9 +4205,7 @@ namespace DxMessaging.Core.MessageBus
 
             if (
                 _contextSinks[BusContextIndex.TargetedHandleDefault]
-                    .TryGetValue<TMessage>(
-                        out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> targetedHandlers
-                    )
+                    .TryGetValue<TMessage>(out ContextHandlerMap targetedHandlers)
                 && targetedHandlers.TryGetValue(
                     target,
                     out HandlerCache<int, HandlerCache> sortedHandlers
@@ -4347,9 +4280,7 @@ namespace DxMessaging.Core.MessageBus
             bool foundAnyHandlers = false;
             if (
                 _contextSinks[BusContextIndex.TargetedPostProcessDefault]
-                    .TryGetValue<TMessage>(
-                        out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> targetedHandlers
-                    )
+                    .TryGetValue<TMessage>(out ContextHandlerMap targetedHandlers)
                 && targetedHandlers.TryGetValue(
                     target,
                     out HandlerCache<int, HandlerCache> sortedHandlers
@@ -4433,13 +4364,9 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : ITargetedMessage
         {
             _ = _contextSinks[BusContextIndex.TargetedHandleDefault]
-                .TryGetValue<TMessage>(
-                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextHandle
-                );
+                .TryGetValue<TMessage>(out ContextHandlerMap contextHandle);
             _ = _contextSinks[BusContextIndex.TargetedPostProcessDefault]
-                .TryGetValue<TMessage>(
-                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextPost
-                );
+                .TryGetValue<TMessage>(out ContextHandlerMap contextPost);
             _ = _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext]
                 .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarHandle);
             _ = _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext]
@@ -4553,8 +4480,7 @@ namespace DxMessaging.Core.MessageBus
                 }
 
                 bool fastFound = false;
-                Dictionary<InstanceId, HandlerCache<int, HandlerCache>> fastBroadcast =
-                    plan.contextHandle;
+                ContextHandlerMap fastBroadcast = plan.contextHandle;
                 if (
                     fastBroadcast != null
                     && fastBroadcast.TryGetValue(
@@ -4640,8 +4566,7 @@ namespace DxMessaging.Core.MessageBus
             // sweep, no user code has run since).
             DispatchSnapshot broadcastPostSnapshot = DispatchSnapshot.Empty;
             DispatchSnapshot broadcastWithoutSourcePostSnapshot = DispatchSnapshot.Empty;
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> broadcastPostHandlers =
-                plan.contextPost;
+            ContextHandlerMap broadcastPostHandlers = plan.contextPost;
             if (
                 broadcastPostHandlers != null
                 && broadcastPostHandlers.TryGetValue(
@@ -4716,9 +4641,7 @@ namespace DxMessaging.Core.MessageBus
 
             bool foundAnyHandlers = false;
             _ = _contextSinks[BusContextIndex.BroadcastHandleDefault]
-                .TryGetValue<TMessage>(
-                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> broadcastHandlers
-                );
+                .TryGetValue<TMessage>(out ContextHandlerMap broadcastHandlers);
             if (
                 broadcastHandlers != null
                 && broadcastHandlers.TryGetValue(
@@ -4825,13 +4748,9 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : IBroadcastMessage
         {
             _ = _contextSinks[BusContextIndex.BroadcastHandleDefault]
-                .TryGetValue<TMessage>(
-                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextHandle
-                );
+                .TryGetValue<TMessage>(out ContextHandlerMap contextHandle);
             _ = _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                .TryGetValue<TMessage>(
-                    out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> contextPost
-                );
+                .TryGetValue<TMessage>(out ContextHandlerMap contextPost);
             _ = _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
                 .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> scalarHandle);
             _ = _scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext]
@@ -5596,7 +5515,7 @@ namespace DxMessaging.Core.MessageBus
         private MessageBusRegistration InternalRegisterWithContext<T>(
             InstanceId context,
             MessageHandler messageHandler,
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks,
+            MessageCache<ContextHandlerMap> sinks,
             RegistrationMethod registrationMethod,
             int priority
         )
@@ -5609,10 +5528,8 @@ namespace DxMessaging.Core.MessageBus
 
             long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> broadcastHandlers =
-                GetOrRentContextMap<T>(sinks);
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>> capturedBroadcastHandlers =
-                broadcastHandlers;
+            ContextHandlerMap broadcastHandlers = GetOrRentContextMap<T>(sinks);
+            ContextHandlerMap capturedBroadcastHandlers = broadcastHandlers;
             SlotKey slotKey = RegistrationMethodAxes.GetSlotKey(registrationMethod);
 
             if (
@@ -5771,8 +5688,7 @@ namespace DxMessaging.Core.MessageBus
             // bucket currently at this priority -- the NEW live bucket after a full deregister +
             // re-registration). Re-resolve only to CLASSIFY stale-after-sweep (silent) versus
             // over-deregistration (error). Rare path; not on the steady deregistration cost.
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks =
-                ContextSinkForMethod(registrationMethod);
+            MessageCache<ContextHandlerMap> sinks = ContextSinkForMethod(registrationMethod);
             if (IsStaleContextDeregisterAfterSweep<T>(sinks, context, capturedHandlers))
             {
                 return;
@@ -5990,9 +5906,7 @@ namespace DxMessaging.Core.MessageBus
         /// Reverse of the register-side hardcoded context-sink selection: maps a keyed handler
         /// method back to its sink so <see cref="DeregisterContextHandler{T}"/> can re-resolve it.
         /// </summary>
-        private MessageCache<
-            Dictionary<InstanceId, HandlerCache<int, HandlerCache>>
-        > ContextSinkForMethod(RegistrationMethod method) =>
+        private MessageCache<ContextHandlerMap> ContextSinkForMethod(RegistrationMethod method) =>
             method switch
             {
                 RegistrationMethod.Targeted => _contextSinks[BusContextIndex.TargetedHandleDefault],
@@ -6013,7 +5927,7 @@ namespace DxMessaging.Core.MessageBus
             };
 
         private static bool IsStaleContextDeregisterAfterSweep<T>(
-            MessageCache<Dictionary<InstanceId, HandlerCache<int, HandlerCache>>> sinks,
+            MessageCache<ContextHandlerMap> sinks,
             InstanceId context,
             HandlerCache<int, HandlerCache> capturedHandlers
         )
@@ -6021,9 +5935,7 @@ namespace DxMessaging.Core.MessageBus
         {
             return capturedHandlers.handlers.Count == 0
                 && (
-                    !sinks.TryGetValue<T>(
-                        out Dictionary<InstanceId, HandlerCache<int, HandlerCache>> currentByContext
-                    )
+                    !sinks.TryGetValue<T>(out ContextHandlerMap currentByContext)
                     || !currentByContext.TryGetValue(
                         context,
                         out HandlerCache<int, HandlerCache> currentHandlers

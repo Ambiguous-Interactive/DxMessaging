@@ -2848,6 +2848,256 @@ def repository_unity_automation(github: Path = Path(".github")) -> dict[str, str
     }
 
 
+def performance_evidence_script(render_script: str) -> str:
+    start = render_script.find("if ! grep -q '^| Scenario")
+    end = render_script.find("\nshort_sha=", start)
+    require(start >= 0 and end > start, "could not isolate performance evidence guards")
+    return "set -euo pipefail\n" + render_script[start:end]
+
+
+def performance_baseline_script(render_script: str) -> str:
+    start = render_script.find("baseline_rows=0")
+    end = render_script.find('if [ "${baseline_rows}" -eq 0 ]; then', start)
+    require(start >= 0 and end > start, "could not isolate performance baseline classifier")
+    return (
+        "set -euo pipefail\n"
+        + render_script[start:end]
+        + '\ntest "${baseline_rows}" -eq "${EXPECTED_BASELINE_ROWS}"'
+    )
+
+
+def target_map_rows(metric: str = "operationsPerSecond=1000") -> list[str]:
+    rows: list[str] = []
+    for key_count in (1, 4, 16, 256, 4096):
+        for operation in ("Hit", "Miss", "Churn"):
+            rows.append(
+                "DXM_TARGET_MAP_BENCHMARK "
+                f"scenario=TargetMap_{key_count}_{operation} "
+                f"keyCount={key_count} operation={operation} {metric}"
+            )
+        rows.append(
+            f"DXM_TARGET_MAP_CONSTRUCTION keyCount={key_count} wallClockMs=1 {metric}"
+        )
+    return rows
+
+
+def run_performance_evidence_fixture(
+    script: str,
+    playmode_markdown: str,
+    playmode_rows: list[str],
+    standalone_rows: list[str],
+) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        artifacts = root / ".artifacts"
+        playmode = artifacts / "perf-download" / "perf-6000.3.16f1-playmode"
+        standalone = artifacts / "perf-download" / "perf-6000.3.16f1-standalone"
+        playmode.mkdir(parents=True)
+        standalone.mkdir(parents=True)
+        (artifacts / "perf-playmode-current.md").write_text(
+            playmode_markdown, encoding="utf-8"
+        )
+        (playmode / "unity.log").write_text(
+            "\n".join(playmode_rows) + "\n", encoding="utf-8"
+        )
+        (standalone / "unity.log").write_text(
+            "standalone editor noise\n", encoding="utf-8"
+        )
+        (standalone / "player.log").write_text(
+            "\n".join(standalone_rows) + "\n", encoding="utf-8"
+        )
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
+def validate_performance_evidence_guards(render_script: str) -> None:
+    if os.name == "nt":
+        return
+    allocation_table = (
+        "### Dispatch throughput - PlayMode (Mono)\n\n"
+        "| Scenario | Throughput / Wall clock | GC allocs | GC bytes |\n"
+        "| --- | --- | --- | --- |\n"
+        "| Empty Bus Dispatch | 20 M emits/sec | 0 | 0 |\n"
+    )
+    rows = target_map_rows()
+    script = performance_evidence_script(render_script)
+    cases = (
+        ("complete evidence", allocation_table, rows, rows, 0, ""),
+        (
+            "missing Standalone identity",
+            allocation_table,
+            rows,
+            rows[1:],
+            1,
+            "identities are missing or differ",
+        ),
+        (
+            "conflicting duplicate",
+            allocation_table,
+            rows + [target_map_rows("operationsPerSecond=2000")[0]],
+            rows,
+            1,
+            "repeated scenario identities",
+        ),
+        (
+            "throughput-only PlayMode",
+            "| Scenario | Throughput / Wall clock |\n| --- | --- |\n"
+            "| Empty Bus Dispatch | 20 M emits/sec |\n",
+            rows,
+            rows,
+            1,
+            "allocation table was not rendered",
+        ),
+        (
+            "unmeasured PlayMode allocations",
+            "| Scenario | Throughput / Wall clock | GC allocs | GC bytes |\n"
+            "| --- | --- | --- | --- |\n"
+            "| Empty Bus Dispatch | 20 M emits/sec | n/a | n/a |\n",
+            rows,
+            rows,
+            1,
+            "allocation table was not rendered",
+        ),
+        (
+            "unexpected symmetric identity",
+            allocation_table,
+            rows + ["DXM_TARGET_MAP_BENCHMARK scenario=TargetMap_32_Hit keyCount=32 operation=Hit operationsPerSecond=1000"],
+            rows + ["DXM_TARGET_MAP_BENCHMARK scenario=TargetMap_32_Hit keyCount=32 operation=Hit operationsPerSecond=1000"],
+            1,
+            "does not exactly match",
+        ),
+    )
+    for name, markdown, playmode, standalone, expected, diagnostic in cases:
+        result = run_performance_evidence_fixture(
+            script, markdown, playmode, standalone
+        )
+        require(
+            result.returncode == expected
+            and (not diagnostic or diagnostic in result.stdout + result.stderr),
+            f"performance evidence {name}: expected {expected} and {diagnostic!r}, got "
+            f"{result.returncode}\n{result.stdout}\n{result.stderr}",
+        )
+
+    baseline_script = performance_baseline_script(render_script)
+    header = (
+        "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,"
+        "wallClockMs,gcAllocatedBytes\n"
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        baseline = root / "perf-baseline.csv"
+        for contents, expected_rows in (
+            (None, "0"),
+            (header, "0"),
+            (
+                header
+                + "EmptyBus_Dispatch,Standalone IL2CPP x64 Release,abc123,"
+                "0,1000,0,1.0,-1\n",
+                "1",
+            ),
+        ):
+            if contents is None:
+                baseline.unlink(missing_ok=True)
+            else:
+                baseline.write_text(contents, encoding="utf-8")
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "EXPECTED_BASELINE_ROWS": expected_rows,
+                    "PERF_BASELINE": str(baseline),
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", baseline_script],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            require(
+                result.returncode == 0,
+                "performance baseline classifier rejected a valid fixture:\n"
+                + result.stdout
+                + result.stderr,
+            )
+
+
+def validate_perf_pr_policy() -> None:
+    """Keep PR performance evidence trusted, current, and credential-free."""
+    perf_path = Path(".github/workflows/perf-numbers.yml")
+    source = perf_path.read_text(encoding="utf-8")
+    preflight = job_block(source, "runner-preflight")
+    benchmark = job_block(source, "perf-benchmarks")
+    comment = job_block(source, "comment-perf-doc")
+    checks = (
+        (source, r"\n  pull_request:\n[\s\S]*?branches:\n\s+- master", "master PR trigger"),
+        (source, r"\n  head-check:", "head-check job"),
+        (preflight, r"github\.event\.pull_request\.head\.repo\.full_name == github\.repository", "same-repository guard"),
+        (preflight, r"github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'", "Dependabot guard"),
+        (benchmark, r"MEASURED_SHA:.*github\.event\.pull_request\.head\.sha", "measured head SHA"),
+        (benchmark, r"ref: \$\{\{ env\.MEASURED_SHA \}\}", "exact measured checkout"),
+        (benchmark, r"DX_PERF_COMMIT: \$\{\{ env\.MEASURED_SHA \}\}", "exact result commit"),
+        (benchmark, r"commit = '\$\{\{ env\.MEASURED_SHA \}\}'", "exact player manifest commit"),
+        (comment, r"pull-requests: write", "comment permission"),
+        (comment, r"<!-- dxmessaging-performance-numbers -->", "sticky comment marker"),
+        (comment, r"BENCHMARK_RESULT:.*needs\.perf-benchmarks\.result", "current benchmark status"),
+        (comment, r"needs\.head-check\.outputs\.superseded != 'true'", "superseded-report guard"),
+        (comment, r"ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}", "trusted base checkout"),
+        (comment, r"GITHUB_SERVER_URL.*GITHUB_REPOSITORY.*commit.*MEASURED_SHA", "measured commit link"),
+        (comment, r"Trusted reporting code \(PR base\).*BASE_SHA", "reporting-code commit link"),
+        (comment, r"Measured historical baseline:.*baseline_commit", "measured baseline provenance"),
+        (comment, r"actions/runs.*GITHUB_RUN_ID.*attempts.*GITHUB_RUN_ATTEMPT", "exact run-attempt link"),
+        (comment, r"Require current PR head before reporting", "report freshness guard"),
+        (comment, r"Classify benchmark comparison compatibility", "methodology compatibility guard"),
+        (comment, r"\.previous_filename", "renamed methodology path guard"),
+        (comment, r"for scope in Standalone PlayMode", "both-scope artifact validation"),
+        (comment, r"Current Standalone scenario set does not match", "complete scenario-set guard"),
+        (comment, r"Current \$\{scope\} rows were not stamped only with", "artifact commit guard"),
+        (comment, r"GC allocs \*\| GC bytes", "measured PlayMode allocation columns"),
+        (comment, r"Current PlayMode allocation table was not rendered", "PlayMode allocation evidence"),
+        (comment, r"-name player\.log", "Standalone player TargetMap evidence"),
+        (comment, r"TargetMap scenario identities are missing or differ", "TargetMap evidence"),
+        (comment, r"TargetMap evidence repeated scenario identities", "unique TargetMap identities"),
+        (comment, r"TargetMap identity set does not exactly match", "exact TargetMap identities"),
+        (comment, r"Require current PR head before comment update", "final report freshness guard"),
+        (comment, r"steps\.report-freshness\.outcome == 'success'[\s\S]*uses: actions/github-script@", "fresh sticky comment update"),
+    )
+    for block, pattern, label in checks:
+        require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
+    require("AUTO_COMMIT_APP_PRIVATE_KEY" not in comment, "performance PR comment must not receive the auto-commit App key")
+    require("startsWith(github.event.pull_request.head.ref, 'ci/perf-auto-update-')" not in preflight, "performance PR policy: branch names must not bypass benchmarks")
+    require(
+        re.search(r'PERF_COMMENT="\$\{RUNNER_TEMP\}/', comment) is not None,
+        "performance PR policy: fallback comment must survive checkout cleanup",
+    )
+    require(
+        comment.index("Initialize current-head performance status")
+        < comment.index("Checkout trusted PR base reporting code"),
+        "performance PR policy: fallback comment must exist before checkout can fail",
+    )
+    template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
+    require(re.search(r"Performance Numbers[\s\S]*pull_request[\s\S]*run-linked evidence comment", template) is not None, "PR template must describe automatic performance evidence")
+    render_script = run_script(
+        step_block(comment, "Render current PR performance evidence")
+    )
+    validate_performance_evidence_guards(render_script)
+
+    for path, job_id in LICENSED_LOCK_WINDOWS:
+        workflow = path.read_text(encoding="utf-8")
+        licensed_job = job_block(workflow, job_id)
+        top_level = workflow.split("\njobs:", 1)[0]
+        job_permissions = re.search(r"\n    permissions:\n((?:      [^\n]+\n)+)", licensed_job)
+        permissions = job_permissions.group(1) if job_permissions else top_level
+        require("actions: read" in permissions, f"{path}:{job_id}: actions: read is required for holder expiry")
+        require("github-token: ${{ github.token }}" in licensed_job, f"{path}:{job_id}: acquire-build-lock requires github.token")
+
+
 def validate() -> None:
     timeout_fixture = f"""  fixture:
     timeout-minutes: 70
@@ -3785,6 +4035,7 @@ fi"""
     validate_post_merge_terminal_gate()
     validate_post_merge_cancellation_policy()
     validate_post_merge_steps()
+    validate_perf_pr_policy()
 
     print("Unity pull-request policy validation passed.")
 

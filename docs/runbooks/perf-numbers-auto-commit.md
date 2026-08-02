@@ -8,9 +8,11 @@ paste secrets or screenshots of organization settings into this file.
 
 ## How the auto-commit works
 
-Licensed performance benchmarks do not run on pull-request code. After a pull
-request merges, the `push` event runs the benchmarks and the `commit-perf-doc`
-job re-renders the table (a manual
+Eligible same-repository pull requests run the licensed benchmarks and receive
+one current-evidence comment linked to the measured head commit and workflow
+attempt. Fork and Dependabot pull requests skip the licensed jobs. After a pull
+request merges, the `push` event runs the benchmarks
+again and the `commit-perf-doc` job re-renders the table (a manual
 `workflow_dispatch` from the default branch does the same and is the supported
 recovery path after a failed publish). If the numbers moved, the job lands the
 refreshed doc + baseline in two tiers:
@@ -20,8 +22,10 @@ refreshed doc + baseline in two tiers:
 1. **Fallback auto-merge pull request** when the direct push is rejected with
    `GH006`: the same commit is pushed to a `ci/perf-auto-update-*` branch, a
    pull request is opened with the App token, and squash auto-merge is
-   requested. This workflow has no `pull_request` trigger, so the fallback PR
-   cannot run licensed benchmarks. Other required checks still run. Superseded
+   requested. The `pull_request` trigger ignores the generated performance doc
+   and baseline paths, so the fallback PR cannot run licensed benchmarks. A
+   branch name alone never bypasses the matrix. Other required
+   checks still run. Superseded
    fallback PRs from older runs are closed automatically
    before a new one opens. The numbers are therefore never lost: worst case
    they wait in a visible PR for one human merge click.
@@ -44,9 +48,9 @@ requests: Read and write**, and any branch or tag rulesets that target
 
 App-token pushes **do** re-trigger workflows (only the built-in `GITHUB_TOKEN`
 suppresses that). Recursion is therefore broken at the trigger: the `push`
-trigger has `paths-ignore: [docs/architecture/performance.md]`, so the doc-only
-auto-commit cannot re-run the benchmark. There is no loop guard and no bot pull
-request.
+trigger ignores both `docs/architecture/performance.md` and
+`docs/architecture/perf-baseline.csv`, so the generated auto-commit cannot
+re-run the benchmark.
 
 If the App credentials are absent, the `commit-perf-doc` job is skipped with a
 warning, so the workflow is never red just because the App has not been

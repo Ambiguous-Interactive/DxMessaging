@@ -36,7 +36,7 @@ the central lock immediately before the licensed Unity section:
   uses: ./.github/actions/validate-unity-license
 
 - name: Acquire organization Unity lock
-  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
   with:
     lock-name: wallstop-organization-builds
     runner-id: ${{ runner.name }}
@@ -47,6 +47,10 @@ the central lock immediately before the licensed Unity section:
     BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
     BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
 ```
+
+Grant `actions: read` to every job that acquires the lock. The action uses the
+workflow token to distinguish a live holder from an expired reservation before
+the reaper can reclaim it.
 
 The matching release step uses the same immutable lock commit with `if:
 always()`. This lets checkout, cache, Node setup, and assembly discovery split
@@ -77,15 +81,17 @@ workspace - a single self-hosted agent only ever runs one job at a time, so
 generated `.artifacts/unity/projects/<version>-<mode>/Library` directories
 cannot collide.
 
-Runner routing is uniform across all Unity-credential-using jobs:
+Most Unity-credential-using jobs use the shared runner set:
 
 ```yaml
 runs-on: [self-hosted, Windows, RAM-64GB]
 ```
 
-Both ELI-MACHINE and DAD-MACHINE are eligible to pick up any Unity job;
-the `fast` label remains on ELI-MACHINE only for future opt-in hotfix
-dispatch but no job requests it today.
+Both ELI-MACHINE and DAD-MACHINE can pick up those jobs. The automatic
+`Performance Numbers` pull-request matrix is the deliberate exception: it adds
+the `fast` label so the long, low-noise evidence run stays on ELI-MACHINE. Its
+GitHub-hosted preflight requires the same four-label set before the licensed job
+can queue.
 
 Lightweight matrix configuration jobs run on `ubuntu-latest` and remain
 parallelizable.
@@ -205,7 +211,9 @@ Unity test matrix:
 - `standalone` (native `StandaloneWindows64` IL2CPP player via
   `scripts/unity/run-ci-tests.ps1`, runtime-only assemblies)
 
-Release checks use `2022.3.45f1`. Benchmarks run only by manual dispatch.
+Release checks use `2022.3.45f1`. `unity-benchmarks.yml` runs only by manual
+dispatch. `perf-numbers.yml` runs the latest-version Standalone and PlayMode
+benchmark legs for eligible same-repository pull requests and protected pushes.
 
 ## Licensed Job Guardrails
 

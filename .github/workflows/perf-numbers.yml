@@ -1,8 +1,9 @@
 name: Performance Numbers
 
-# CI owns the documented dispatch-throughput numbers end to end. On every push to
-# master/main -- or on a controlled manual dispatch from the default branch --
-# this workflow runs the dispatch benchmarks on ELI-MACHINE (the `fast` runner)
+# CI owns the documented dispatch-throughput numbers end to end. On every trusted
+# same-repository pull request change, every push to master/main, or a controlled
+# manual dispatch, this workflow runs the dispatch benchmarks on ELI-MACHINE
+# (the `fast` runner)
 # at the LATEST Unity version on TWO legs. BOTH legs publish: the Standalone
 # IL2CPP (Release player) leg is the throughput
 # HEADLINE -- the AOT backend shipped players run -- while the in-editor PlayMode
@@ -11,7 +12,10 @@ name: Performance Numbers
 # all (the renderer omits those memory columns). Allocation counts are build-config-independent, so
 # the Mono counts represent the shipped IL2CPP player; the committed regression
 # baseline stays Standalone-only (extract-perf-baseline.js --scope Standalone).
-# On push to master or main (after the PR merges) -- or on a manual
+# Pull requests receive one updated delta-table comment linked to the exact
+# measured head commit and workflow run. Fork and Dependabot pull requests do not
+# receive Unity credentials and skip the licensed jobs. On push to master or main
+# (after the PR merges) -- or on a manual
 # workflow_dispatch from the default
 # branch, the supported recovery path after a failed publish -- the same
 # benchmarks run and, if the numbers moved, CI lands the refreshed doc AND the
@@ -28,8 +32,8 @@ name: Performance Numbers
 # the job warns and skips the stale artifacts. App-token pushes DO re-trigger
 # workflows, so recursion is broken the simple way: the push trigger ignores
 # docs/architecture/performance.md and docs/architecture/perf-baseline.csv below,
-# so the auto-commit cannot re-run the benchmark. Fallback PRs do not match a
-# workflow trigger, so they cannot run licensed benchmarks either. The committed
+# so the auto-commit cannot re-run the benchmark. Fallback PRs change only the
+# two ignored generated paths, so they cannot run licensed benchmarks either. The committed
 # numbers are therefore owned by CI, not by committed state, manual runs, or
 # PR-body text.
 #
@@ -53,6 +57,14 @@ on:
     paths-ignore:
       - docs/architecture/performance.md
       - docs/architecture/perf-baseline.csv
+  pull_request:
+    branches:
+      - master
+    # The generated fallback PR changes only these two files. Ignoring them keeps
+    # that delivery path from consuming a second licensed benchmark run.
+    paths-ignore:
+      - docs/architecture/performance.md
+      - docs/architecture/perf-baseline.csv
   workflow_dispatch:
 
 # Serialize merge-path runs on the same ref so two post-merge push jobs from
@@ -68,17 +80,62 @@ concurrency:
 # contents:read. It grants that scope on the job itself so the licensed Unity job
 # never inherits write.
 permissions:
+  actions: read
   contents: read
   checks: write
+  pull-requests: read
 
 jobs:
+  head-check:
+    name: Performance head freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      superseded: ${{ steps.head.outputs.superseded }}
+    steps:
+      - name: Compare the event head against the live pull-request head
+        id: head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          superseded=false
+          if [ "${EVENT_NAME}" = pull_request ]; then
+            live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" || live=
+            if [ -z "${live}" ]; then
+              echo "::warning::Live head lookup failed; treating ${EVENT_HEAD_SHA} as current."
+            elif [ "${live}" != "${EVENT_HEAD_SHA}" ]; then
+              echo "::notice::${EVENT_HEAD_SHA} is superseded by ${live}; skipping the performance matrix."
+              superseded=true
+            fi
+          fi
+          echo "superseded=${superseded}" >> "${GITHUB_OUTPUT}"
+
   runner-preflight:
     name: Self-hosted runner registration preflight
     # Runs on GitHub-hosted infrastructure before the self-hosted matrix can
     # queue. The dedicated reader App makes missing inventory a hard failure.
+    needs:
+      - head-check
+    if: >-
+      ${{
+        needs.head-check.outputs.superseded != 'true' &&
+        (
+          github.event_name != 'pull_request' ||
+          (
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            github.event.pull_request.user.login != 'dependabot[bot]'
+          )
+        )
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
+      actions: read
       contents: read
     concurrency:
       group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
@@ -87,7 +144,7 @@ jobs:
       has-autocommit-app: ${{ steps.check-autocommit-app.outputs.has-app }}
     steps:
       - name: Require a registered performance runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
@@ -95,6 +152,7 @@ jobs:
 
       - name: Check for the auto-commit GitHub App credentials
         id: check-autocommit-app
+        if: github.event_name != 'pull_request'
         # Gates the post-merge commit job so a repo that has not yet provisioned
         # the AUTO_COMMIT_APP_* GitHub App degrades to a logged no-op (the PR
         # comment still posts) instead of a red push-build. See
@@ -118,13 +176,16 @@ jobs:
     name: Perf benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
     needs:
       - runner-preflight
-    # Licensed Unity runs only after protected code lands or through a controlled
-    # default-branch dispatch; pull requests are not a workflow trigger.
+    # Licensed Unity runs only for protected code, controlled dispatches, and trusted
+    # same-repository pull requests. Fork and Dependabot pull requests cannot
+    # reach this job or its Unity/build-lock credentials.
     # Both the Standalone headline and PlayMode allocation leg are required.
     # `fail-fast: false` below lets the sibling finish and preserves diagnostics
     # when either leg fails.
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
     # runner carrying it). Keep in sync with the preflight REQUIRED_LABELS.
+    env:
+      MEASURED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
     timeout-minutes: 900
     strategy:
@@ -150,6 +211,14 @@ jobs:
           - standalone
           - playmode
     steps:
+      - name: Require current PR head before self-hosted setup
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
+        with:
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ github.event.pull_request.head.sha }}
+
       - name: Remove stale Unity editor validator
         timeout-minutes: 2
         shell: pwsh -NoProfile -Command ". '{0}'"
@@ -244,6 +313,7 @@ jobs:
         with:
           lfs: true
           persist-credentials: false
+          ref: ${{ env.MEASURED_SHA }}
 
       - name: Print runner diagnostics
         timeout-minutes: 2
@@ -335,11 +405,14 @@ jobs:
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@3741b56ceab4a68ba4c09fe7e91e804b53ff2412 # v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
           runner-id: ${{ runner.name }}
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ github.event.pull_request.head.sha }}
           timeout-minutes: "300"
         env:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
@@ -377,7 +450,7 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
-          DX_PERF_COMMIT: ${{ github.sha }}
+          DX_PERF_COMMIT: ${{ env.MEASURED_SHA }}
           DXM_UNITY_TEST_CATEGORY: "PerfBench;Comparison"
         run: |
           # HASHTABLE splat (not an array): array splatting passes elements
@@ -416,7 +489,7 @@ jobs:
           $files = @(Get-ChildItem -LiteralPath $playerDir -File -Recurse -Force)
           [long]$totalBytes = ($files | Measure-Object -Property Length -Sum).Sum
           $manifest = [ordered]@{
-            commit = '${{ github.sha }}'
+            commit = '${{ env.MEASURED_SHA }}'
             unityVersion = '${{ matrix.unity-version }}'
             scriptingBackend = 'IL2CPP'
             codeOptimization = 'Release'
@@ -492,7 +565,7 @@ jobs:
         id: release_unity_lock
         if: always()
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@ce12fde93e67a27062350601fb97e4a2f546d405
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -539,16 +612,373 @@ jobs:
     name: Performance Unity Success
     if: always()
     needs:
+      - head-check
       - runner-preflight
       - perf-benchmarks
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      TRUSTED_PR: >-
+        ${{
+          github.event_name != 'pull_request' ||
+          (
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            github.event.pull_request.user.login != 'dependabot[bot]'
+          )
+        }}
+      SUPERSEDED: ${{ needs.head-check.outputs.superseded }}
     steps:
       - name: Require complete performance validation
         shell: bash
         run: |
-          test "${{ needs.runner-preflight.result }}" = success
-          test "${{ needs.perf-benchmarks.result }}" = success
+          set -euo pipefail
+          test "${{ needs.head-check.result }}" = success
+          if [ "${SUPERSEDED}" = "true" ] || [ "${TRUSTED_PR}" != "true" ]; then
+            test "${{ needs.runner-preflight.result }}" = skipped
+            test "${{ needs.perf-benchmarks.result }}" = skipped
+            echo "Licensed performance benchmarks skip superseded or untrusted pull requests."
+          else
+            test "${{ needs.runner-preflight.result }}" = success
+            test "${{ needs.perf-benchmarks.result }}" = success
+          fi
+
+  comment-perf-doc:
+    name: Report performance deltas on PR
+    if: >-
+      ${{
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login != 'dependabot[bot]' &&
+        always() &&
+        needs.head-check.outputs.superseded != 'true'
+      }}
+    needs:
+      - head-check
+      - perf-benchmarks
+      - perf-unity-success
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      LATEST_VERSION: 6000.3.16f1
+      PERF_BASELINE: docs/architecture/perf-baseline.csv
+      PERF_DELTA: .artifacts/perf-pr-delta.md
+      MEASURED_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      BENCHMARK_RESULT: ${{ needs.perf-benchmarks.result }}
+    steps:
+      - name: Initialize current-head performance status
+        shell: bash
+        run: |
+          set -euo pipefail
+          PERF_COMMENT="${RUNNER_TEMP}/perf-pr-comment.md"
+          echo "PERF_COMMENT=${PERF_COMMENT}" >> "${GITHUB_ENV}"
+          short_sha="${MEASURED_SHA:0:7}"
+          mkdir -p "$(dirname "${PERF_COMMENT}")"
+          {
+            echo '<!-- dxmessaging-performance-numbers -->'
+            echo '## Performance Numbers'
+            echo
+            echo "Measured commit: [\`${short_sha}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${MEASURED_SHA})"
+            echo "Workflow run: [\`${GITHUB_RUN_ID}\` attempt \`${GITHUB_RUN_ATTEMPT}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT})"
+            echo
+            echo "Current benchmark matrix result: **${BENCHMARK_RESULT}**."
+            echo
+            echo 'Detailed evidence for this head was not produced. Inspect the linked workflow run; this status deliberately replaces any older successful result.'
+          } > "${PERF_COMMENT}"
+
+      - name: Checkout trusted PR base reporting code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Download perf benchmark artifacts
+        if: needs.perf-benchmarks.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: perf-${{ env.LATEST_VERSION }}-*
+          path: .artifacts/perf-download
+
+      - name: Require current PR head before reporting
+        if: needs.perf-benchmarks.result == 'success'
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
+        with:
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ env.MEASURED_SHA }}
+
+      - name: Classify benchmark comparison compatibility
+        if: needs.perf-benchmarks.result == 'success'
+        id: compatibility
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          changed_files="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --jq '.[] | [.filename, .previous_filename] | .[] | select(. != null)')"
+          methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
+          methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
+          methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|render-perf|run-ci-tests)'
+          methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
+          methodology_pattern+='|\.github/comparison-packages\.json$'
+          methodology_pattern+='|\.github/actions/compute-unity-assemblies/'
+          methodology_pattern+='|\.github/workflows/perf-numbers\.yml$)'
+          incompatible="$(printf '%s\n' "${changed_files}" | grep -E \
+            "${methodology_pattern}" \
+            || true)"
+          if [ -n "${incompatible}" ]; then
+            echo 'comparable=false' >> "${GITHUB_OUTPUT}"
+            {
+              echo 'Benchmark or harness paths changed, so historical deltas are non-comparable:'
+              printf '%s\n' "${incompatible}" | sed 's/^/- `/' | sed 's/$/`/'
+            } > .artifacts/perf-comparison-status.md
+          else
+            echo 'comparable=true' >> "${GITHUB_OUTPUT}"
+            echo 'Benchmark methodology is unchanged; the historical Standalone comparison is diagnostic regression smoke.' > .artifacts/perf-comparison-status.md
+          fi
+
+      - name: Render current PR performance evidence
+        if: needs.perf-benchmarks.result == 'success'
+        id: delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs=()
+          while IFS= read -r -d '' file; do
+            inputs+=(--input "${file}")
+          done < <(find .artifacts/perf-download \
+            -type f \( -name 'unity.log' -o -name 'results.xml' \) -print0)
+          if [ "${#inputs[@]}" -eq 0 ]; then
+            echo "::error::No unity.log/results.xml found for ${LATEST_VERSION}."
+            exit 1
+          fi
+
+          regressed=false
+          baseline_commit=''
+          for scope in Standalone PlayMode; do
+            current_scope=".artifacts/perf-current-${scope}.csv"
+            node scripts/unity/extract-perf-baseline.js \
+              "${inputs[@]}" \
+              --scope "${scope}" \
+              --output "${current_scope}"
+            current_commits="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' \
+              "${current_scope}" | sort -u)"
+            if [ "${current_commits}" != "${MEASURED_SHA}" ]; then
+              echo "::error::Current ${scope} rows were not stamped only with ${MEASURED_SHA}."
+              exit 1
+            fi
+          done
+          if [ '${{ steps.compatibility.outputs.comparable }}' = true ]; then
+            baseline_rows=0
+            if [ -f "${PERF_BASELINE}" ]; then
+              baseline_rows="$(awk -F, 'NR > 1 && $1 != "" { count++ } END { print count + 0 }' \
+                "${PERF_BASELINE}")"
+            fi
+            if [ "${baseline_rows}" -eq 0 ]; then
+              echo '_Historical delta omitted because the trusted baseline has no measured rows yet._' > "${PERF_DELTA}"
+            else
+              current_baseline=.artifacts/perf-current-Standalone.csv
+              if ! diff -u \
+                <(tail -n +2 "${PERF_BASELINE}" | cut -d, -f1 | sort) \
+                <(tail -n +2 "${current_baseline}" | cut -d, -f1 | sort); then
+                echo '::error::Current Standalone scenario set does not match the trusted historical baseline.'
+                exit 1
+              fi
+              output="$(node scripts/unity/render-perf-deltas.js \
+                "${inputs[@]}" \
+                --baseline-csv "${PERF_BASELINE}" \
+                --unity-version "${LATEST_VERSION}" \
+                --scope Standalone \
+                --output "${PERF_DELTA}")"
+              changed="$(printf '%s\n' "${output}" | sed -n 's/^changed=//p')"
+              regressed="$(printf '%s\n' "${output}" | sed -n 's/^regressed=//p')"
+              if [ "${changed}" != true ] && [ "${changed}" != false ]; then
+                echo "::error::Delta renderer omitted a valid changed signal."
+                exit 1
+              fi
+              if [ "${regressed}" != true ] && [ "${regressed}" != false ]; then
+                echo "::error::Delta renderer omitted a valid regressed signal."
+                exit 1
+              fi
+              baseline_commit="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' \
+                "${PERF_BASELINE}" | sort -u)"
+              if [ "$(printf '%s\n' "${baseline_commit}" | sed '/^$/d' | wc -l)" -ne 1 ]; then
+                echo '::error::Standalone baseline does not name exactly one measured commit.'
+                exit 1
+              fi
+            fi
+          else
+            echo '_Historical delta omitted because benchmark or harness code changed in this pull request._' > "${PERF_DELTA}"
+          fi
+          echo "regressed=${regressed}" >> "${GITHUB_OUTPUT}"
+
+          current_doc=.artifacts/perf-current.md
+          cp docs/architecture/performance.md "${current_doc}"
+          machine_specs="$(find .artifacts/perf-download -type f -name machine-specs.json -print -quit)"
+          doc_args=("${inputs[@]}" --doc "${current_doc}" --unity-version "${LATEST_VERSION}")
+          if [ -n "${machine_specs}" ]; then
+            doc_args+=(--machine-specs "${machine_specs}")
+          fi
+          node scripts/unity/render-perf-doc.js "${doc_args[@]}"
+          awk '
+            /^### Dispatch throughput - PlayMode \(Mono\)/ { emit=1 }
+            /^### Library comparison - throughput/ { emit=0 }
+            emit { print }
+          ' "${current_doc}" > .artifacts/perf-playmode-current.md
+          if ! grep -q '^| Scenario.*| GC allocs *| GC bytes *|' \
+            .artifacts/perf-playmode-current.md \
+            || ! awk -F'|' '
+              # cspell:ignore gsub
+              /^\| Empty Bus Dispatch/ {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", $4)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", $5)
+                measured = ($4 ~ /^[0-9,]+$/ && $5 ~ /^[0-9,]+$/)
+              }
+              END { exit measured ? 0 : 1 }
+            ' .artifacts/perf-playmode-current.md; then
+            echo '::error::Current PlayMode allocation table was not rendered.'
+            exit 1
+          fi
+
+          : > .artifacts/perf-target-map-current.txt
+          while IFS= read -r file; do
+            scope=PlayMode
+            case "${file}" in
+              *-standalone/*) scope=Standalone ;;
+            esac
+            grep 'DXM_TARGET_MAP_' "${file}" \
+              | sed -E 's/^.*(DXM_TARGET_MAP_(BENCHMARK|CONSTRUCTION))/\1/' \
+              | sed "s/^/[${scope}] /" \
+              >> .artifacts/perf-target-map-current.txt || true
+          done < <(find .artifacts/perf-download -type f \
+            \( -name unity.log -o -name player.log \) -print | sort)
+          sort -u -o .artifacts/perf-target-map-current.txt .artifacts/perf-target-map-current.txt
+
+          for scope in PlayMode Standalone; do
+            awk -v prefix="[${scope}]" '
+              $1 == prefix && $2 == "DXM_TARGET_MAP_BENCHMARK" { print $2, $4, $5 }
+              $1 == prefix && $2 == "DXM_TARGET_MAP_CONSTRUCTION" { print $2, $3 }
+            ' .artifacts/perf-target-map-current.txt \
+              > ".artifacts/perf-target-map-${scope}-identities.txt"
+            duplicate_target_keys="$(sort \
+              ".artifacts/perf-target-map-${scope}-identities.txt" | uniq -d)"
+            if [ -n "${duplicate_target_keys}" ]; then
+              echo "::error::Current ${scope} TargetMap evidence repeated scenario identities."
+              printf '%s\n' "${duplicate_target_keys}"
+              exit 1
+            fi
+            sort -u \
+              ".artifacts/perf-target-map-${scope}-identities.txt" \
+              > ".artifacts/perf-target-map-${scope}-keys.txt"
+          done
+          if [ ! -s .artifacts/perf-target-map-PlayMode-keys.txt ] \
+            || ! diff -u \
+              .artifacts/perf-target-map-PlayMode-keys.txt \
+              .artifacts/perf-target-map-Standalone-keys.txt; then
+            echo '::error::TargetMap scenario identities are missing or differ between benchmark legs.'
+            exit 1
+          fi
+
+          expected_target_keys=.artifacts/perf-target-map-expected-keys.txt
+          : > "${expected_target_keys}"
+          for key_count in 1 4 16 256 4096; do
+            for operation in Hit Miss Churn; do
+              echo "DXM_TARGET_MAP_BENCHMARK keyCount=${key_count} operation=${operation}" \
+                >> "${expected_target_keys}"
+            done
+            echo "DXM_TARGET_MAP_CONSTRUCTION keyCount=${key_count}" \
+              >> "${expected_target_keys}"
+          done
+          sort -u -o "${expected_target_keys}" "${expected_target_keys}"
+          for scope in PlayMode Standalone; do
+            if ! diff -u \
+              "${expected_target_keys}" \
+              ".artifacts/perf-target-map-${scope}-keys.txt"; then
+              echo "::error::Current ${scope} TargetMap identity set does not exactly match the trusted harness."
+              exit 1
+            fi
+          done
+
+          short_sha="${MEASURED_SHA:0:7}"
+          base_short="${BASE_SHA:0:7}"
+          final_comment="${PERF_COMMENT}.complete"
+          {
+            echo '<!-- dxmessaging-performance-numbers -->'
+            echo '## Performance Numbers'
+            echo
+            echo "Measured commit: [\`${short_sha}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${MEASURED_SHA})"
+            echo "Trusted reporting code (PR base): [\`${base_short}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${BASE_SHA})"
+            if [ -n "${baseline_commit}" ]; then
+              echo "Measured historical baseline: [\`${baseline_commit:0:7}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${baseline_commit})"
+            fi
+            echo "Workflow run: [\`${GITHUB_RUN_ID}\` attempt \`${GITHUB_RUN_ATTEMPT}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT})"
+            echo
+            cat .artifacts/perf-comparison-status.md
+            echo
+            echo '### Historical Standalone delta'
+            echo
+            cat "${PERF_DELTA}"
+            echo
+            cat .artifacts/perf-playmode-current.md
+            echo
+            echo '### Current TargetMap evidence'
+            echo
+            echo 'These raw rows are current-run diagnostics. Use fresh bracketed controls before accepting a micro-optimization.'
+            echo
+            echo '```text'
+            cat .artifacts/perf-target-map-current.txt
+            echo '```'
+          } > "${final_comment}"
+          mv "${final_comment}" "${PERF_COMMENT}"
+
+      - name: Require current PR head before comment update
+        id: report-freshness
+        if: always()
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
+        with:
+          github-token: ${{ github.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          expected-head-sha: ${{ env.MEASURED_SHA }}
+
+      - name: Create or update PR performance comment
+        if: ${{ always() && steps.report-freshness.outcome == 'success' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- dxmessaging-performance-numbers -->';
+            const body = fs.readFileSync(process.env.PERF_COMMENT, 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100
+            });
+            const existing = comments.find((comment) =>
+              comment.user.type === 'Bot' && comment.body.includes(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Fail after reporting a measured regression
+        if: steps.delta.outputs.regressed == 'true'
+        shell: bash
+        run: |
+          echo "::error::Standalone performance exceeded the diagnostic regression threshold; see the PR delta comment."
+          exit 1
 
   commit-perf-doc:
     name: Commit refreshed perf doc to the default branch
@@ -571,8 +1001,9 @@ jobs:
     #      with the App token, and enables squash auto-merge. The numbers are
     #      then NEVER lost: worst case the PR waits for a human merge (which can
     #      require an admin if a required check never reports on doc-only
-    #      diffs -- see the runbook's fallback prerequisites). No pull_request
-    #      trigger exists, so the fallback PR cannot run licensed benchmarks.
+    #      diffs -- see the runbook's fallback prerequisites). The pull_request
+    #      trigger ignores the generated doc and baseline paths, so the fallback
+    #      PR cannot run licensed benchmarks.
     # Recursion is broken by the push trigger's paths-ignore on the perf doc +
     # baseline, not by token identity, so the doc + baseline auto-commit cannot
     # re-run the benchmark -- no loop guard needed. Gated on a clean benchmark
@@ -605,8 +1036,8 @@ jobs:
     env:
       LATEST_VERSION: 6000.3.16f1
       PERF_DOC: docs/architecture/performance.md
-      # The committed master baseline that the regression gate + PR delta comment
-      # compare against. Regenerated from the real post-merge run and committed
+      # The committed master baseline used by the PR's diagnostic historical
+      # delta. Regenerated from the real post-merge run and committed
       # alongside performance.md so the seeded bootstrap baseline becomes REAL
       # after the first master push. Added to the push trigger's paths-ignore so
       # this auto-commit cannot re-trigger the benchmark workflow.
@@ -706,12 +1137,12 @@ jobs:
             "${machine_specs_args[@]}"
           npx prettier --write "${PERF_DOC}"
           # Regenerate the committed master baseline from the SAME real run so the
-          # regression gate + PR delta comment compare against REAL numbers after
+          # diagnostic PR delta compares against REAL numbers after
           # the first master push (the committed seed is only a bootstrap).
           # --replace overwrites the existing rows with this run's rows. --scope
           # Standalone keeps the committed baseline Standalone-only even though the
           # inputs now also carry the in-editor PlayMode (Mono) leg's rows -- the
-          # regression gate is Standalone-scoped (it compares --scope Standalone),
+          # historical comparison is Standalone-scoped (it compares --scope Standalone),
           # so the baseline must stay Standalone-scoped too.
           node scripts/unity/extract-perf-baseline.js \
             "${inputs[@]}" \
@@ -826,8 +1257,8 @@ jobs:
 
           # TIER 2: fallback pull request. Push the SAME commit to a unique
           # ci/perf-auto-update-* branch, open a PR with the App token, and enable
-          # squash auto-merge. No pull_request trigger exists, so this PR cannot
-          # run the benchmark. Superseded
+          # squash auto-merge. The pull_request trigger ignores its generated
+          # doc+baseline-only diff, so this PR cannot run the benchmark. Superseded
           # fallback PRs are closed AFTER the replacement exists, so a failure
           # here never destroys the only pending copy of valid (if stale) numbers.
           fallback_branch="${FALLBACK_BRANCH_PREFIX}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"

@@ -169,7 +169,7 @@ jobs:
           scripts_pattern="$scripts_pattern"'|^Editor/|^Runtime\.meta$|^Runtime/'
           scripts_pattern="$scripts_pattern"'|^Samples~/|^SourceGenerators\.meta$'
           scripts_pattern="$scripts_pattern"'|^SourceGenerators/|^scripts/.*\.ps1$'
-          scripts_pattern="$scripts_pattern"'|^scripts/.*\.sh$'
+          scripts_pattern="$scripts_pattern"'|^scripts/.*\.(py|sh)$'
           scripts_pattern="$scripts_pattern"'|\.js$|\.cjs$|\.mjs$|\.asmdef$|\.cs\.meta$)'
           set_output scripts \
             "$scripts_pattern"

@@ -74,10 +74,13 @@ whichever leg could measure them and omitted when none could. A scope that canno
 measure a metric (the profiler-stripped Standalone leg) omits that column rather
 than filling it with `n/a`. The block also carries a privacy-safe provenance
 line describing the runner hardware (CPU, cores, clock, RAM, GPU, OS), never a
-hostname or runner name. Licensed benchmarks do not run on pull-request code.
-After a pull request merges, the workflow commits the refreshed tables -- and
-the sibling baseline
-`perf-baseline.csv` that the regression gate compares against -- directly to the
+hostname or runner name. Eligible same-repository pull requests run both legs
+and receive a current-evidence comment linked to the exact measured commit and
+workflow attempt. The comment includes PlayMode allocation data and TargetMap
+rows, plus a historical Standalone delta when methodology is unchanged; fork
+and Dependabot pull requests skip licensed work. After a pull
+request merges, the workflow commits the refreshed tables -- and the sibling baseline
+`perf-baseline.csv` used for the diagnostic PR historical delta -- directly to the
 default branch when the auto-commit App is provisioned and the branch has not
 advanced past the measured commit. Do not edit it by hand. See the
 [perf-numbers auto-commit runbook](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/runbooks/perf-numbers-auto-commit.md) for
