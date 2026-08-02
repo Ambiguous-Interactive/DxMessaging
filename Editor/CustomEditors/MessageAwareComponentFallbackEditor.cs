@@ -2,6 +2,7 @@ namespace DxMessaging.Editor.CustomEditors
 {
 #if UNITY_EDITOR
     using System;
+    using System.Collections.Generic;
     using DxMessaging.Editor.Analyzers;
     using DxMessaging.Unity;
     using UnityEditor;
@@ -140,7 +141,7 @@ namespace DxMessaging.Editor.CustomEditors
             InspectorElement.FillDefaultInspector(defaultBody, editor.serializedObject, editor);
             root.Add(defaultBody);
 
-            AddSubscriptionsSection(root, ResolveSingleComponent(editor));
+            AddSubscriptionsSection(root, ResolveComponents(editor));
 
             root.RegisterCallback<AttachToPanelEvent>(_ => binding.Connect());
             root.RegisterCallback<DetachFromPanelEvent>(_ => binding.Disconnect());
@@ -149,22 +150,44 @@ namespace DxMessaging.Editor.CustomEditors
         }
 
         /// <summary>
-        /// The subscriptions section describes one component's registrations, so it is omitted
-        /// while several objects are edited together rather than showing one target's rows as if
-        /// they belonged to all of them.
+        /// Captures every selected component so the subscriptions section can show either the
+        /// existing single-target rows or a multi-target aggregate without misrepresenting one
+        /// target as the whole selection.
         /// </summary>
-        private static MessageAwareComponent ResolveSingleComponent(Editor editor)
+        private static MessageAwareComponent[] ResolveComponents(Editor editor)
         {
             UnityEngine.Object[] targets = editor.targets;
-            return targets is { Length: 1 } ? targets[0] as MessageAwareComponent : null;
+            if (targets == null || targets.Length == 0)
+            {
+                return Array.Empty<MessageAwareComponent>();
+            }
+
+            MessageAwareComponent[] components = new MessageAwareComponent[targets.Length];
+            int componentCount = 0;
+            for (int index = 0; index < targets.Length; index++)
+            {
+                if (targets[index] is MessageAwareComponent component)
+                {
+                    components[componentCount++] = component;
+                }
+            }
+
+            if (componentCount == components.Length)
+            {
+                return components;
+            }
+
+            MessageAwareComponent[] validComponents = new MessageAwareComponent[componentCount];
+            Array.Copy(components, validComponents, componentCount);
+            return validComponents;
         }
 
         private static void AddSubscriptionsSection(
             VisualElement root,
-            MessageAwareComponent component
+            IReadOnlyList<MessageAwareComponent> components
         )
         {
-            if (component == null)
+            if (components == null || components.Count == 0)
             {
                 return;
             }
@@ -176,14 +199,14 @@ namespace DxMessaging.Editor.CustomEditors
             long revision = long.MinValue;
             void Refresh()
             {
-                if (component == null)
+                MessageAwareComponentSubscriptionsState state =
+                    MessageAwareComponentSubscriptionsState.Capture(components);
+                if (state.SelectionCount == 0)
                 {
+                    revision = state.Revision;
                     host.Clear();
                     return;
                 }
-
-                MessageAwareComponentSubscriptionsState state =
-                    MessageAwareComponentSubscriptionsState.Capture(component);
                 if (host.childCount > 0 && state.Revision == revision)
                 {
                     return;

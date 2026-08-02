@@ -274,6 +274,408 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void AggregateCaptureCountsSelectedComponentsAndReportsDivergence()
+        {
+            SubscriptionsTestComponent first = CreateConfiguredComponent();
+            _ = first.RegisterAlpha();
+            first.TestToken.Enable();
+
+            SubscriptionsTestComponent second = CreateConfiguredComponent();
+            _ = second.RegisterAlpha();
+
+            SubscriptionsTestComponent third = CreateConfiguredComponent();
+            _ = third.RegisterBeta();
+            third.TestToken.Enable();
+
+            try
+            {
+                MessageAwareComponentSubscriptionsState state =
+                    MessageAwareComponentSubscriptionsState.Capture(
+                        new MessageAwareComponent[] { first, second, third }
+                    );
+
+                Assert.That(state.IsAggregate, Is.True, "Three targets must use aggregate mode.");
+                Assert.That(state.SelectionCount, Is.EqualTo(3), "Every selected target counts.");
+                Assert.That(
+                    state.TokenCount,
+                    Is.EqualTo(3),
+                    "Every configured target has a token."
+                );
+                Assert.That(
+                    state.Rows.Count,
+                    Is.EqualTo(2),
+                    "The selection has two row identities."
+                );
+
+                MessageAwareComponentSubscriptionRow alpha = state.Rows.Single(row =>
+                    row.MessageTypeName == nameof(SubscriptionsAlphaMessage)
+                );
+                Assert.That(
+                    alpha.SelectedComponentCount,
+                    Is.EqualTo(2),
+                    "Alpha is present on two of the three selected components."
+                );
+                Assert.That(
+                    alpha.Liveness,
+                    Is.EqualTo(MessageAwareComponentSubscriptionLiveness.Mixed),
+                    "One Alpha token is enabled and one is disabled."
+                );
+
+                MessageAwareComponentSubscriptionRow beta = state.Rows.Single(row =>
+                    row.MessageTypeName == nameof(SubscriptionsBetaMessage)
+                );
+                Assert.That(
+                    beta.SelectedComponentCount,
+                    Is.EqualTo(1),
+                    "Beta is present on one of the three selected components."
+                );
+                Assert.That(
+                    beta.Liveness,
+                    Is.EqualTo(MessageAwareComponentSubscriptionLiveness.Live),
+                    "The only component carrying Beta is enabled."
+                );
+            }
+            finally
+            {
+                first.TestToken.Disable();
+                third.TestToken.Disable();
+            }
+        }
+
+        [TestCase(false, false, (int)MessageAwareComponentSubscriptionLiveness.Idle, "disabled")]
+        [TestCase(true, true, (int)MessageAwareComponentSubscriptionLiveness.Live, "enabled")]
+        [TestCase(false, true, (int)MessageAwareComponentSubscriptionLiveness.Mixed, "mixed")]
+        public void AggregateCaptureClassifiesEnabledState(
+            bool firstEnabled,
+            bool secondEnabled,
+            int expectedValue,
+            string expectedText
+        )
+        {
+            SubscriptionsTestComponent first = CreateConfiguredComponent();
+            _ = first.RegisterAlpha();
+
+            SubscriptionsTestComponent second = CreateConfiguredComponent();
+            _ = second.RegisterAlpha();
+
+            if (firstEnabled)
+            {
+                first.TestToken.Enable();
+            }
+            if (secondEnabled)
+            {
+                second.TestToken.Enable();
+            }
+
+            try
+            {
+                MessageAwareComponentSubscriptionLiveness expected =
+                    (MessageAwareComponentSubscriptionLiveness)expectedValue;
+                string caseContext =
+                    $"firstEnabled={firstEnabled}, secondEnabled={secondEnabled}, expectedValue={expectedValue}, expectedText={expectedText}";
+                MessageAwareComponentSubscriptionRow row = MessageAwareComponentSubscriptionsState
+                    .Capture(new MessageAwareComponent[] { first, second })
+                    .Rows.Single();
+
+                Assert.That(
+                    row.Liveness,
+                    Is.EqualTo(expected),
+                    $"{caseContext}: aggregate liveness must classify as {expected}."
+                );
+                Assert.That(
+                    MessageAwareComponentSubscriptionsView.CreateRowMetaText(row),
+                    Does.EndWith("| " + expectedText),
+                    $"{caseContext}: aggregate state must render as {expectedText}."
+                );
+            }
+            finally
+            {
+                first.TestToken.Disable();
+                second.TestToken.Disable();
+            }
+        }
+
+        [Test]
+        public void AggregateCaptureCountsEachComponentOnlyOncePerRowIdentity()
+        {
+            SubscriptionsTestComponent first = CreateConfiguredComponent();
+            _ = first.RegisterAlpha();
+            _ = first.RegisterAlpha();
+
+            SubscriptionsTestComponent second = CreateConfiguredComponent();
+            _ = second.RegisterAlpha();
+
+            MessageAwareComponentSubscriptionsState state =
+                MessageAwareComponentSubscriptionsState.Capture(
+                    new MessageAwareComponent[] { first, second }
+                );
+
+            Assert.That(state.Rows.Count, Is.EqualTo(1), "Equivalent registrations share one row.");
+            Assert.That(
+                state.Rows[0].SelectedComponentCount,
+                Is.EqualTo(2),
+                "Two registrations on one component must not inflate selected-component coverage."
+            );
+        }
+
+        [Test]
+        public void AggregateCaptureKeepsRegistrationKindAndPriorityDistinct()
+        {
+            SubscriptionsTestComponent registered = CreateConfiguredComponent();
+            _ = registered.RegisterAlpha(priority: 0);
+            _ = registered.RegisterAlpha(priority: 10);
+            _ = registered.RegisterAlphaPostProcessor(priority: 0);
+
+            SubscriptionsTestComponent empty = CreateConfiguredComponent();
+
+            MessageAwareComponentSubscriptionsState state =
+                MessageAwareComponentSubscriptionsState.Capture(
+                    new MessageAwareComponent[] { registered, empty }
+                );
+
+            Assert.That(
+                state.Rows.Count,
+                Is.EqualTo(3),
+                "One type with two priorities and two registration kinds needs three rows."
+            );
+            Assert.That(
+                state.Rows.Select(row => row.Priority).Distinct().OrderBy(value => value).ToArray(),
+                Is.EqualTo(new[] { 0, 10 }),
+                "Priority is part of the aggregate row identity."
+            );
+            Assert.That(
+                state
+                    .Rows.Select(row => row.RegistrationTypeName)
+                    .Distinct()
+                    .OrderBy(value => value)
+                    .ToArray(),
+                Is.EqualTo(
+                    new[]
+                    {
+                        MessageRegistrationType.Untargeted.ToString(),
+                        MessageRegistrationType.UntargetedPostProcessor.ToString(),
+                    }
+                ),
+                "Registration kind is part of the aggregate row identity."
+            );
+        }
+
+        [Test]
+        public void AggregateCaptureRejectsNullSelection()
+        {
+            Assert.That(
+                () =>
+                    MessageAwareComponentSubscriptionsState.Capture(
+                        (IReadOnlyList<MessageAwareComponent>)null
+                    ),
+                Throws.ArgumentNullException,
+                "A missing selection is a caller error rather than an empty aggregate."
+            );
+        }
+
+        [Test]
+        public void AggregateCaptureToleratesTargetsDestroyedBetweenPolls()
+        {
+            SubscriptionsTestComponent destroyed = CreateComponent(out _);
+            Object.DestroyImmediate(destroyed);
+
+            MessageAwareComponentSubscriptionsState state =
+                MessageAwareComponentSubscriptionsState.Capture(
+                    new MessageAwareComponent[] { destroyed, null }
+                );
+
+            Assert.That(state.IsAggregate, Is.False, "No live selection remains to aggregate.");
+            Assert.That(state.SelectionCount, Is.Zero, "Destroyed targets leave the denominator.");
+            Assert.That(state.TokenCount, Is.Zero, "Destroyed targets do not contribute tokens.");
+            Assert.That(state.Rows, Is.Empty, "Destroyed targets do not contribute registrations.");
+        }
+
+        [Test]
+        public void AggregateCaptureReportsPartialTokenCoverageWithoutRows()
+        {
+            SubscriptionsTestComponent configured = CreateConfiguredComponent();
+            SubscriptionsTestComponent noToken = CreateComponent(out _);
+            SubscriptionsTestComponent alsoNoToken = CreateComponent(out _);
+
+            MessageAwareComponentSubscriptionsState state =
+                MessageAwareComponentSubscriptionsState.Capture(
+                    new MessageAwareComponent[] { configured, noToken, alsoNoToken }
+                );
+
+            Assert.That(
+                state.TokenCount,
+                Is.EqualTo(1),
+                "Only one selected component has a token."
+            );
+            Assert.That(state.Rows, Is.Empty, "The one token has no registered handlers.");
+        }
+
+        [TestCase(3, 0, "3 selected | No tokens", "do not have registration tokens")]
+        [TestCase(3, 1, "3 selected | 1 token | 0 patterns", "other 2 do not")]
+        [TestCase(2, 1, "2 selected | 1 token | 0 patterns", "other selected component does not")]
+        [TestCase(
+            3,
+            3,
+            "3 selected | 0 patterns",
+            "have registration tokens but no registered handlers"
+        )]
+        public void AggregateEmptyTextReportsTokenCoverage(
+            int selectionCount,
+            int tokenCount,
+            string expectedSummary,
+            string expectedBody
+        )
+        {
+            string caseContext =
+                $"selectionCount={selectionCount}, tokenCount={tokenCount}, expectedSummary={expectedSummary}, expectedBody={expectedBody}";
+            MessageAwareComponentSubscriptionsState state = new(
+                hasToken: tokenCount > 0,
+                tokenEnabled: false,
+                diagnosticsEnabled: false,
+                rows: new MessageAwareComponentSubscriptionRow[0],
+                isAggregate: true,
+                selectionCount: selectionCount,
+                tokenCount: tokenCount
+            );
+
+            Assert.That(
+                MessageAwareComponentSubscriptionsView.CreateSummaryText(state),
+                Is.EqualTo(expectedSummary),
+                $"{caseContext}: aggregate summary must match."
+            );
+            Assert.That(
+                MessageAwareComponentSubscriptionsView.CreateEmptyBodyText(state),
+                Does.Contain(expectedBody),
+                $"{caseContext}: aggregate empty body must match."
+            );
+        }
+
+        [Test]
+        public void AggregateRevisionMovesWhenCoverageOrLivenessChanges()
+        {
+            SubscriptionsTestComponent first = CreateConfiguredComponent();
+            _ = first.RegisterAlpha();
+
+            SubscriptionsTestComponent second = CreateConfiguredComponent();
+            MessageRegistrationHandle secondAlpha = second.RegisterAlpha();
+
+            MessageAwareComponent[] selection = { first, second };
+            long initial = MessageAwareComponentSubscriptionsState.Capture(selection).Revision;
+
+            second.TestToken.Enable();
+            long mixed = MessageAwareComponentSubscriptionsState.Capture(selection).Revision;
+            Assert.That(
+                mixed,
+                Is.Not.EqualTo(initial),
+                "Changing one carrier from idle to live must rebuild the mixed-state dot."
+            );
+
+            second.TestToken.RemoveRegistration(secondAlpha);
+            long missing = MessageAwareComponentSubscriptionsState.Capture(selection).Revision;
+            Assert.That(
+                missing,
+                Is.Not.EqualTo(mixed),
+                "Removing one carrier must rebuild the selection-coverage count."
+            );
+
+            second.TestToken.Disable();
+        }
+
+        [Test]
+        public void AggregateCaptureKeepsDifferentTypesWithTheSameSimpleNameDistinct()
+        {
+            SubscriptionsTestComponent first = CreateConfiguredComponent();
+            _ = first.RegisterAlpha();
+
+            SubscriptionsTestComponent second = CreateConfiguredComponent();
+            _ = second.RegisterOtherAlpha();
+
+            MessageAwareComponentSubscriptionsState state =
+                MessageAwareComponentSubscriptionsState.Capture(
+                    new MessageAwareComponent[] { first, second }
+                );
+
+            Assert.That(
+                state.Rows.Count,
+                Is.EqualTo(2),
+                "Aggregation must key on System.Type rather than the displayed simple name."
+            );
+            Assert.That(
+                state.Rows.Select(row => row.MessageTypeName).Distinct().Count(),
+                Is.EqualTo(1),
+                "The fixture must exercise two distinct types with the same displayed name."
+            );
+            Assert.That(
+                state.Rows.Select(row => row.MessageType.AssemblyQualifiedName).Distinct().Count(),
+                Is.EqualTo(2),
+                "Each row retains the actual type identity for its explanatory tooltip."
+            );
+
+            VisualElement root = MessageAwareComponentSubscriptionsView.Create(state);
+            List<Label> names = root.Query<Label>(
+                    className: MessageAwareComponentSubscriptionsView.RowNameClassName
+                )
+                .ToList();
+            Assert.That(names.Count, Is.EqualTo(2), "Both same-name message rows must render.");
+            Assert.That(
+                names.Select(label => label.tooltip).Distinct().Count(),
+                Is.EqualTo(2),
+                "Qualified tooltips must distinguish rows with the same displayed type name."
+            );
+        }
+
+        [Test]
+        public void AggregateViewShowsCoverageAndMixedState()
+        {
+            SubscriptionsTestComponent first = CreateConfiguredComponent();
+            _ = first.RegisterAlpha();
+            first.TestToken.Enable();
+
+            SubscriptionsTestComponent second = CreateConfiguredComponent();
+            _ = second.RegisterAlpha();
+
+            try
+            {
+                MessageAwareComponentSubscriptionsState state =
+                    MessageAwareComponentSubscriptionsState.Capture(
+                        new MessageAwareComponent[] { first, second }
+                    );
+                VisualElement root = MessageAwareComponentSubscriptionsView.Create(state);
+
+                Assert.That(
+                    root.Q<Label>(MessageAwareComponentSubscriptionsView.MetaLabelName).text,
+                    Is.EqualTo("2 selected | 1 pattern"),
+                    "The header must identify aggregate mode and the number of distinct rows."
+                );
+                Assert.That(
+                    MessageAwareComponentSubscriptionsView.CreateRowMetaText(state.Rows[0]),
+                    Is.EqualTo("Untargeted | 2 of 2 selected | mixed"),
+                    "Aggregate rows report selection coverage and visible state instead of summed call counts."
+                );
+                VisualElement status = root.Q<VisualElement>(
+                    MessageAwareComponentSubscriptionsView.RowStatusName
+                );
+                Assert.That(status, Is.Not.Null, "Every aggregate row needs a status dot.");
+                Assert.That(
+                    status.ClassListContains(
+                        MessageAwareComponentSubscriptionsView.RowMixedClassName
+                    ),
+                    Is.True,
+                    "Disagreeing token states use the mixed-state class."
+                );
+                Assert.That(
+                    status.tooltip,
+                    Does.Contain("differs"),
+                    "The mixed dot tooltip must explain its meaning."
+                );
+            }
+            finally
+            {
+                first.TestToken.Disable();
+            }
+        }
+
+        [Test]
         public void ViewCarriesTheDesignSystemSubscriptionClasses()
         {
             SubscriptionsTestComponent component = CreateComponent(
@@ -441,6 +843,15 @@ namespace DxMessaging.Tests.Editor
             messagingComponent = host.AddComponent<MessagingComponent>();
             return host.AddComponent<SubscriptionsTestComponent>();
         }
+
+        private SubscriptionsTestComponent CreateConfiguredComponent()
+        {
+            SubscriptionsTestComponent component = CreateComponent(
+                out MessagingComponent messagingComponent
+            );
+            component.ConfigureForEditorTest(messagingComponent);
+            return component;
+        }
     }
 
     // Registrations are normally created in Awake, which the editor never runs for a plain
@@ -464,9 +875,20 @@ namespace DxMessaging.Tests.Editor
             _ = RegisterBeta();
         }
 
-        internal MessageRegistrationHandle RegisterAlpha()
+        internal MessageRegistrationHandle RegisterAlpha(int priority = 0)
         {
-            return _messageRegistrationToken.RegisterUntargeted<SubscriptionsAlphaMessage>(OnAlpha);
+            return _messageRegistrationToken.RegisterUntargeted<SubscriptionsAlphaMessage>(
+                OnAlpha,
+                priority
+            );
+        }
+
+        internal MessageRegistrationHandle RegisterAlphaPostProcessor(int priority = 0)
+        {
+            return _messageRegistrationToken.RegisterUntargetedPostProcessor<SubscriptionsAlphaMessage>(
+                OnAlpha,
+                priority
+            );
         }
 
         internal MessageRegistrationHandle RegisterBeta()
@@ -477,13 +899,29 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        internal MessageRegistrationHandle RegisterOtherAlpha()
+        {
+            return _messageRegistrationToken.RegisterUntargeted<Other.SubscriptionsAlphaMessage>(
+                OnOtherAlpha
+            );
+        }
+
         private void OnAlpha(ref SubscriptionsAlphaMessage message) { }
 
         private void OnBeta(ref SubscriptionsBetaMessage message) { }
+
+        private void OnOtherAlpha(ref Other.SubscriptionsAlphaMessage message) { }
     }
 
     internal readonly struct SubscriptionsAlphaMessage : IUntargetedMessage { }
 
     internal readonly struct SubscriptionsBetaMessage : ITargetedMessage { }
+}
+
+namespace DxMessaging.Tests.Editor.Other
+{
+    using Core.Messages;
+
+    internal readonly struct SubscriptionsAlphaMessage : IUntargetedMessage { }
 }
 #endif

@@ -43,8 +43,12 @@ the `RoslynAnalyzer` label, so it runs on every Unity-driven compile);
 the Inspector overlay is the in-Editor reminder you cannot ignore while
 wiring a prefab.
 
-!!! tip
-Severity is per-project tunable. Add lines like `dotnet_diagnostic.DXMSG006.severity = error` to your `.editorconfig` to upgrade missing base calls into a build break, or `severity = none` to silence one project-wide. See [Suppression precedence](../reference/analyzers.md#suppression-precedence) for the full ordering.
+> **Tip**: Severity is per-project tunable. Add lines like
+> `dotnet_diagnostic.DXMSG006.severity = error` to your `.editorconfig` to
+> upgrade missing base calls into a build break, or `severity = none` to
+> silence one project-wide. See
+> [Suppression precedence](../reference/analyzers.md#suppression-precedence)
+> for the full ordering.
 
 ## The Warning Surfaces
 
@@ -144,18 +148,18 @@ the action row collapses to a single button:
   repaint; if the type still violates the rule, the warning returns
   after the next fresh scan, compile, or manual rescan.
 
-!!! warning
-Adding a type to the ignore list silences the **overlay** and the compile-time
-base-call analyzer for that type, but it does not change the runtime behaviour.
-If the override genuinely never reaches `base.OnEnable()`, the messaging system
-on that component is still dead. For finer-grained control, the source-level
-`[DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]` attribute suppresses the
-analyzer at the class or method level and is checked **before** the project
-ignore list -- see the [Suppression precedence ordering](../reference/analyzers.md#suppression-precedence)
-for the full priority. Use either suppression path only when the silencing is
-genuinely intentional (for example, a deliberate adapter that should not
-participate in messaging) and document the reason somewhere your team can find
-it.
+> **Warning**: Adding a type to the ignore list silences the **overlay** and the
+> compile-time base-call analyzer for that type, but it does not change the
+> runtime behaviour. If the override genuinely never reaches `base.OnEnable()`,
+> the messaging system on that component is still dead. For finer-grained
+> control, the source-level
+> `[DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]` attribute suppresses
+> the analyzer at the class or method level and is checked **before** the
+> project ignore list. See the
+> [suppression precedence ordering](../reference/analyzers.md#suppression-precedence)
+> for the full priority. Use either suppression path only when the silencing is
+> intentional (for example, a deliberate adapter that should not participate
+> in messaging), and document the reason for your team.
 
 ## Message Subscriptions
 
@@ -188,8 +192,18 @@ state instead of rows. Call counts require diagnostics; turn them on through
 **Diagnostics Targets** below, or per token through
 `MessageRegistrationToken.DiagnosticMode`. The section samples the token while it
 is on screen and redraws only when the registrations, the token state, or the
-call counts change. It is hidden while several objects are selected together,
-because the rows describe one component.
+call counts change.
+
+When you select several `MessageAwareComponent` objects of the same type, the
+section groups registrations by message type, registration kind, and priority.
+Each row reports how many selected components carry that registration. A green
+dot means every component carrying the row has an enabled token, grey means all
+of them are disabled, and amber means their enabled states differ. A count below
+the selection size shows that one or more selected components are missing the
+registration. Aggregate rows omit call counts because summing them would hide
+per-component differences.
+
+> **Added in v3.3.0**
 
 ## Project Settings Panel
 
@@ -235,8 +249,10 @@ mirrored to the sidecar
 `Assets/Editor/DxMessaging.BaseCallIgnore.txt` that the analyzer reads
 via `csc.rsp`'s `-additionalfile:` switch.
 
-!!! note
-The Inspector overlay's **Ignore this type** / **Stop ignoring** buttons read and write the same ignore-list field that Project Settings exposes. You can also bulk-edit the list directly from the settings asset Inspector.
+> **Note**: The Inspector overlay's **Ignore this type** / **Stop ignoring**
+> buttons read and write the same ignore-list field that Project Settings
+> exposes. You can also bulk-edit the list directly from the settings asset
+> Inspector.
 
 For the field-by-field semantics -- including the ScriptableObject
 behaviour around `OnValidate` regenerating the sidecar -- see
