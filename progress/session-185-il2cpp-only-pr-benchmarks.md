@@ -2,7 +2,7 @@
 
 Date: 2026-08-02
 Branch: `dev/wallstop/session-185-il2cpp-only-pr-benchmarks`
-PR: pending
+PR: [#342](https://github.com/Ambiguous-Interactive/DxMessaging/pull/342)
 Issue: **#341**
 
 ## Outcome
@@ -47,6 +47,8 @@ PR performance comment no longer publishes Mono allocation data.
   `DxMcpTestRunner` bridge was loaded and idle.
 - `PerfRegressionGateMatchingTests`: **11 passed / 0 failed** in EditMode through
   the Unity MCP bridge (0.61 seconds).
+- Repeated adversarial review of the final base-aware diff reached **zero
+  findings**.
 
 ## Live evidence
 
@@ -58,3 +60,7 @@ non-comparable under the fail-closed harness-path rule. Before completion, it mu
 show one Standalone benchmark cell, an explicit sign-direction legend, all CI
 checks green, and zero unresolved review feedback. The next ordinary PR must
 demonstrate the historical delta against the refreshed master baseline.
+
+The first published head explicitly requested Cursor Bugbot and GitHub Copilot
+reviews by tagged comment, requested Copilot through the reviewer API, and tagged
+the sole repository collaborator for human review.
