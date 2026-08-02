@@ -34,8 +34,8 @@ Dispatch-throughput numbers are owned entirely by CI: the Performance Numbers
 workflow (.github/workflows/perf-numbers.yml) re-runs the benchmarks on each
 eligible same-repository pull_request change and posts an exact commit- and
 run-linked evidence comment on this PR. The comment includes current Standalone
-IL2CPP throughput, PlayMode allocation evidence, TargetMap rows, and a historical
-delta only when the benchmark methodology is unchanged. Fork and Dependabot pull requests skip
+IL2CPP throughput deltas against the current baseline and Standalone TargetMap
+rows. In every delta, "+" means better and "-" means worse. Fork and Dependabot pull requests skip
 licensed benchmarks because they cannot receive Unity credentials. After the PR
 merges, CI commits the refreshed table directly to the default branch
 (docs/architecture/performance.md). You do NOT need to paste before/after numbers

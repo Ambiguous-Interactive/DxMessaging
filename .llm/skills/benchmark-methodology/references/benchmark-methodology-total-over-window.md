@@ -112,8 +112,9 @@ public const int BatchSize = 10_000;
    no raw enable/disable pair to leak a permanently-enabled recorder (whose
    profiler overhead would distort every later measurement in the domain). The
    recorder needs the profiler, so it is functional in the editor / development
-   builds but NOT in a Release IL2CPP player; the published allocation numbers
-   therefore come from the in-editor Mono leg (see the methodology runbook).
+   builds but NOT in a Release IL2CPP player. The published workflow therefore
+   omits allocation metrics; editor scopes remain available locally and through
+   the manually dispatched benchmark workflow (see the methodology runbook).
 
 Allocation windows that need a settled heap call
 `AllocationProbe.SettleHeapForMeasurement()`. Do not inline
@@ -146,8 +147,8 @@ registration scenarios (`{Untargeted,Targeted,Broadcast}Registration_Marginal`)
 register 1000 more handlers of one already-warmed message type, using distinct
 pre-built handler delegates so the measured window captures only the registration
 machinery (not the handler delegate, and not a same-handler refcount bump); their
-allocation count/bytes (the published per-kind registration cost) populate on the
-profiler-bearing in-editor leg and read `n/a` on the stripped Standalone leg.
+allocation count/bytes populate on a profiler-bearing editor leg and read `n/a`
+on the stripped published Standalone leg.
 
 Marginal registration is fast enough that one 1000-registration pass completes in
 less than a millisecond on IL2CPP. It is also allocation-heavy, so retaining enough

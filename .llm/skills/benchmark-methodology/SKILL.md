@@ -68,8 +68,8 @@ over a separate untimed batch. Never median-of-runs, never a single untimed pass
 - `AllocationProbe.Unmeasured` is `-1` and renders `n/a`. A measured `0` and an
   `n/a` are NOT the same thing, and a fabricated `0` is never acceptable. The
   profiler is stripped from the non-development Standalone IL2CPP Release leg, so
-  both metrics read `Unmeasured` there; published allocation numbers come from
-  the in-editor Mono leg.
+  both metrics read `Unmeasured` there. The published workflow omits allocation
+  columns and does not run a second Mono leg solely to recover them.
 - A surface where EVERY row is `Unmeasured` is dropped, not filled with `n/a`:
   the per-scope table omits the column, the comparison matrix for an unmeasured
   metric is omitted, and the delta cell drops the segment. `n/a` survives only as
