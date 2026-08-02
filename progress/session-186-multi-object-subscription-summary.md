@@ -2,7 +2,7 @@
 
 Date: 2026-08-02
 Branch: `agent/multi-object-subscription-summary`
-PR: pending
+PR: [#343](https://github.com/Ambiguous-Interactive/DxMessaging/pull/343)
 Issue: [#297](https://github.com/Ambiguous-Interactive/DxMessaging/issues/297)
 
 ## Outcome
