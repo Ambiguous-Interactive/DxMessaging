@@ -1946,6 +1946,32 @@ def validate_stuck_job_watchdog() -> None:
             ("cancelled 1", "queued for cancel"),
         ),
         (
+            # `private` is "every PRIVATE repository", not a selected list, so a
+            # public repository can never use such a group -- and asking its
+            # repositories endpoint answers the wrong question.
+            "a private-visibility group is not capacity for a public repo",
+            {
+                queued: watchdog_queued_runs(watchdog_run(1)),
+                inventory: (
+                    0,
+                    {
+                        "runner_groups": [
+                            {"id": 7, "name": "Default", "visibility": "all"},
+                            {"id": 11, "name": "priv", "visibility": "private"},
+                        ]
+                    },
+                ),
+                "actions/runs/1/jobs": watchdog_jobs(self_hosted),
+                "runner-groups/7/runners": watchdog_runners(("MAC", "online", False, ["self-hosted", "macOS"])),
+                "runner-groups/11/runners": watchdog_runners(
+                    ("ELI", "online", False, self_hosted), first_id=50
+                ),
+            },
+            0,
+            ("starved", "private repositories only", "priv"),
+            ("cancelled 1", "queued for cancel"),
+        ),
+        (
             # Every group restricted, none listing us: capacity is unknowable,
             # not zero. Reporting "no runner matches" would be indistinguishable
             # from a real starvation, and the audit must not issue a verdict it

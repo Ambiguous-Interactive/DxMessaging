@@ -376,6 +376,16 @@ jobs:
               runner_group_ids+=("${group_id}")
               continue
             fi
+            # `private` means "every PRIVATE repository in the organization" --
+            # not a selected list. This repository is public, so such a group can
+            # never serve it. Excluded here rather than fetching its repositories
+            # endpoint, which would answer a question that does not apply and
+            # could fail the whole audit closed on an error it did not need to
+            # make. (Cursor Bugbot.)
+            if [[ "${group_visibility}" == "private" ]]; then
+              excluded_groups+=("${group_name} (private repositories only)")
+              continue
+            fi
             if ! gh_reader api --paginate \
                 "orgs/${OWNER}/actions/runner-groups/${group_id}/repositories?per_page=100" \
                 | jq -s '[.[] | (.repositories // [])[] | .id | tostring]' > "${group_repos_json}"; then
