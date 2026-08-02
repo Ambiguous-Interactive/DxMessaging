@@ -154,7 +154,7 @@ namespace DxMessaging.Editor.CustomEditors
         /// existing single-target rows or a multi-target aggregate without misrepresenting one
         /// target as the whole selection.
         /// </summary>
-        private static MessageAwareComponent[] ResolveComponents(Editor editor)
+        private static IReadOnlyList<MessageAwareComponent> ResolveComponents(Editor editor)
         {
             UnityEngine.Object[] targets = editor.targets;
             if (targets == null || targets.Length == 0)
@@ -162,24 +162,22 @@ namespace DxMessaging.Editor.CustomEditors
                 return Array.Empty<MessageAwareComponent>();
             }
 
-            MessageAwareComponent[] components = new MessageAwareComponent[targets.Length];
-            int componentCount = 0;
+            List<MessageAwareComponent> components = new(targets.Length);
             for (int index = 0; index < targets.Length; index++)
             {
-                if (targets[index] is MessageAwareComponent component)
+                UnityEngine.Object target = targets[index];
+                if (target == null)
                 {
-                    components[componentCount++] = component;
+                    continue;
+                }
+
+                if (target is MessageAwareComponent component)
+                {
+                    components.Add(component);
                 }
             }
 
-            if (componentCount == components.Length)
-            {
-                return components;
-            }
-
-            MessageAwareComponent[] validComponents = new MessageAwareComponent[componentCount];
-            Array.Copy(components, validComponents, componentCount);
-            return validComponents;
+            return components;
         }
 
         private static void AddSubscriptionsSection(
