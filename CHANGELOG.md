@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Improve targeted and source-bound broadcast routing throughput and reduce the
+  memory retained by their per-target lookup tables without changing the public
+  messaging API or delivery behavior
+  ([#289](https://github.com/Ambiguous-Interactive/DxMessaging/issues/289)).
 - The `MessagingComponent` inspector's matched and potential-match emission labels
   now use the design system's colors instead of raw green and yellow, so they stay
   readable on the light editor skin.
