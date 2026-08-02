@@ -20,11 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could drain them raise a notice saying the log has gaps instead of leaving that
   to a number in the footer. Live mode is editor-only and reads data the bus
   already records, so it adds no runtime cost.
-- Every `MessageAwareComponent` inspector now shows a **Message subscriptions**
-  section listing the registrations its `MessageRegistrationToken` holds: the
+- Add a **Message subscriptions** section to every `MessageAwareComponent`
+  inspector. It lists the registrations its `MessageRegistrationToken` holds: the
   message type, the registration kind, a priority badge, the observed call count,
   and a dot showing whether the registration is currently subscribed on the bus.
   Call counts read as `calls n/a` while diagnostics are off rather than as zero.
+  Multi-object selections group matching registrations, show how many selected
+  components carry each one, and mark mixed enabled states so a missing or
+  disabled handler stands out across a scene selection
+  ([#297](https://github.com/Ambiguous-Interactive/DxMessaging/issues/297)).
   See [Inspector Overlay](docs/guides/inspector-overlay.md#message-subscriptions).
 
 ### Changed

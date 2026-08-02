@@ -722,6 +722,112 @@ namespace DxMessaging.Tests.Editor
                 .ConvertAll(field => field.bindingPath);
             Assert.That(bindingPaths, Does.Contain("m_Script"));
             Assert.That(bindingPaths, Does.Contain("_value"));
+
+            VisualElement subscriptionsHost = root.Q<VisualElement>(
+                MessageAwareComponentFallbackEditor.SubscriptionsHostName
+            );
+            Assert.That(
+                subscriptionsHost,
+                Is.Not.Null,
+                "Single-target inspectors must retain the existing subscriptions section."
+            );
+            Label subscriptionsMeta = subscriptionsHost.Q<Label>(
+                MessageAwareComponentSubscriptionsView.MetaLabelName
+            );
+            Assert.That(subscriptionsMeta, Is.Not.Null, "The single-target header must render.");
+            Assert.That(
+                subscriptionsMeta.text,
+                Is.EqualTo("No token"),
+                "The list-based capture path must preserve single-target summary behavior."
+            );
+        }
+
+        [Test]
+        public void FallbackEditorCreatesAggregateSubscriptionsForMultipleTargets()
+        {
+            MessageAwareComponent first = CreateTrackedMessageAwareComponent(
+                "FallbackEditorMultiFirst",
+                typeof(SerializedFieldMessageAwareComponentForFallbackTest)
+            );
+            MessageAwareComponent second = CreateTrackedMessageAwareComponent(
+                "FallbackEditorMultiSecond",
+                typeof(SerializedFieldMessageAwareComponentForFallbackTest)
+            );
+            MessageAwareComponentFallbackEditor editor = CreateFallbackEditor(
+                new[] { first, second }
+            );
+
+            VisualElement root = editor.CreateInspectorGUI();
+
+            VisualElement subscriptionsHost = root.Q<VisualElement>(
+                MessageAwareComponentFallbackEditor.SubscriptionsHostName
+            );
+            Assert.That(
+                subscriptionsHost,
+                Is.Not.Null,
+                "A multi-object selection must retain the subscriptions section."
+            );
+            Label meta = subscriptionsHost.Q<Label>(
+                MessageAwareComponentSubscriptionsView.MetaLabelName
+            );
+            Assert.That(meta, Is.Not.Null, "The aggregate subscriptions header must render.");
+            Assert.That(
+                meta.text,
+                Is.EqualTo("2 selected | No tokens"),
+                "Two Edit-mode components have no registration tokens yet."
+            );
+        }
+
+        [Test]
+        public void FallbackEditorRendersRegistrationCoverageForMultipleTargets()
+        {
+            GameObject firstHost = CreateTrackedObject("FallbackEditorAggregateFirst");
+            MessagingComponent firstMessaging = firstHost.AddComponent<MessagingComponent>();
+            SubscriptionsTestComponent first = firstHost.AddComponent<SubscriptionsTestComponent>();
+            first.ConfigureForEditorTest(firstMessaging);
+            _ = first.RegisterAlpha();
+
+            GameObject secondHost = CreateTrackedObject("FallbackEditorAggregateSecond");
+            MessagingComponent secondMessaging = secondHost.AddComponent<MessagingComponent>();
+            SubscriptionsTestComponent second =
+                secondHost.AddComponent<SubscriptionsTestComponent>();
+            second.ConfigureForEditorTest(secondMessaging);
+            _ = second.RegisterAlpha();
+
+            MessageAwareComponentFallbackEditor editor = CreateFallbackEditor(
+                new MessageAwareComponent[] { first, second }
+            );
+
+            VisualElement root = editor.CreateInspectorGUI();
+            VisualElement subscriptionsHost = root.Q<VisualElement>(
+                MessageAwareComponentFallbackEditor.SubscriptionsHostName
+            );
+            List<VisualElement> rows = new(
+                subscriptionsHost
+                    .Q<VisualElement>(MessageAwareComponentSubscriptionsView.RowsName)
+                    .Children()
+            );
+
+            Assert.That(
+                rows.Count,
+                Is.EqualTo(1),
+                "Matching registrations aggregate into one row."
+            );
+            Label meta = null;
+            foreach (Label label in rows[0].Query<Label>().ToList())
+            {
+                if (label.text.Contains("selected"))
+                {
+                    meta = label;
+                    break;
+                }
+            }
+            Assert.That(meta, Is.Not.Null, "The aggregate row metadata label must render.");
+            Assert.That(
+                meta.text,
+                Is.EqualTo("Untargeted | 2 of 2 selected | disabled"),
+                "The editor.targets path must render aggregate coverage and visible token state."
+            );
         }
 
         [Test]
@@ -1328,6 +1434,20 @@ namespace DxMessaging.Tests.Editor
             UnityEditor.Editor editor = UnityEditor.Editor.CreateEditor(component);
             _createdEditors.Add(editor);
             Assert.That(editor, Is.InstanceOf<MessageAwareComponentFallbackEditor>());
+            return (MessageAwareComponentFallbackEditor)editor;
+        }
+
+        private MessageAwareComponentFallbackEditor CreateFallbackEditor(
+            MessageAwareComponent[] components
+        )
+        {
+            UnityEditor.Editor editor = UnityEditor.Editor.CreateEditor(components);
+            _createdEditors.Add(editor);
+            Assert.That(
+                editor,
+                Is.InstanceOf<MessageAwareComponentFallbackEditor>(),
+                "Unity must select the package fallback editor for a homogeneous selection."
+            );
             return (MessageAwareComponentFallbackEditor)editor;
         }
 

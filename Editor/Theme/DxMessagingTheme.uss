@@ -251,3 +251,4 @@
 .dx-sub__meta { color: var(--dx-text-muted); font-size: 10px; margin-right: 8px; }
 .dx-sub__live { width: 7px; height: 7px; border-radius: 4px; background-color: var(--dx-ok); }
 .dx-sub__idle { width: 7px; height: 7px; border-radius: 4px; background-color: #4a4a4a; }
+.dx-sub__mixed { width: 7px; height: 7px; border-radius: 4px; background-color: var(--dx-accent); }

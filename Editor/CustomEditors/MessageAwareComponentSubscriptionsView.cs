@@ -4,6 +4,7 @@ namespace DxMessaging.Editor.CustomEditors
     using System;
     using System.Collections.Generic;
     using System.Globalization;
+    using System.Runtime.CompilerServices;
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Editor;
@@ -28,6 +29,7 @@ namespace DxMessaging.Editor.CustomEditors
         internal const string RowsName = "dxmessaging-inspector-subscriptions-rows";
         internal const string EmptyBodyName = "dxmessaging-inspector-subscriptions-empty-body";
         internal const string RowPriorityLabelName = "dxmessaging-inspector-subscriptions-priority";
+        internal const string RowStatusName = "dxmessaging-inspector-subscriptions-status";
 
         internal const string RootClassName = "dx-inspector";
         internal const string HeadClassName = "dx-inspector__head";
@@ -38,6 +40,7 @@ namespace DxMessaging.Editor.CustomEditors
         internal const string RowMetaClassName = "dx-sub__meta";
         internal const string RowLiveClassName = "dx-sub__live";
         internal const string RowIdleClassName = "dx-sub__idle";
+        internal const string RowMixedClassName = "dx-sub__mixed";
         internal const string PriorityClassName = "dx-prio";
 
         internal const string Title = "Message subscriptions";
@@ -115,6 +118,24 @@ namespace DxMessaging.Editor.CustomEditors
 
         internal static string CreateSummaryText(MessageAwareComponentSubscriptionsState state)
         {
+            if (state.IsAggregate)
+            {
+                if (state.TokenCount == 0)
+                {
+                    return $"{state.SelectionCount} selected | No tokens";
+                }
+
+                string patterns =
+                    state.Rows.Count == 1 ? "1 pattern" : $"{state.Rows.Count} patterns";
+                if (state.TokenCount < state.SelectionCount)
+                {
+                    string tokens =
+                        state.TokenCount == 1 ? "1 token" : $"{state.TokenCount} tokens";
+                    return $"{state.SelectionCount} selected | {tokens} | {patterns}";
+                }
+                return $"{state.SelectionCount} selected | {patterns}";
+            }
+
             if (!state.HasToken)
             {
                 return "No token";
@@ -127,6 +148,29 @@ namespace DxMessaging.Editor.CustomEditors
 
         internal static string CreateEmptyBodyText(MessageAwareComponentSubscriptionsState state)
         {
+            if (state.IsAggregate)
+            {
+                if (state.TokenCount == 0)
+                {
+                    return $"The {state.SelectionCount} selected components do not have registration tokens yet.";
+                }
+                if (state.TokenCount < state.SelectionCount)
+                {
+                    string tokens =
+                        state.TokenCount == 1
+                            ? "1 selected component has a registration token"
+                            : $"{state.TokenCount} selected components have registration tokens";
+                    int missingTokenCount = state.SelectionCount - state.TokenCount;
+                    string missing =
+                        missingTokenCount == 1
+                            ? "the other selected component does not"
+                            : $"the other {missingTokenCount} do not";
+                    return $"{tokens}; {missing}, and no registered handlers were found.";
+                }
+
+                return $"The {state.SelectionCount} selected components have registration tokens but no registered handlers.";
+            }
+
             return state.HasToken
                 ? "This component has a registration token but has registered no handlers."
                 : "Registrations are created in Awake, so they appear once the component is running in Play mode.";
@@ -134,6 +178,17 @@ namespace DxMessaging.Editor.CustomEditors
 
         internal static string CreateRowMetaText(MessageAwareComponentSubscriptionRow row)
         {
+            if (row.IsAggregate)
+            {
+                string status = row.Liveness switch
+                {
+                    MessageAwareComponentSubscriptionLiveness.Live => "enabled",
+                    MessageAwareComponentSubscriptionLiveness.Mixed => "mixed",
+                    _ => "disabled",
+                };
+                return $"{row.RegistrationTypeName} | {row.SelectedComponentCount} of {row.SelectionCount} selected | {status}";
+            }
+
             string calls =
                 row.CallCount == MessageAwareComponentSubscriptionRow.UnknownCallCount ? "calls n/a"
                 : row.CallCount == 1 ? "1 call"
@@ -156,7 +211,10 @@ namespace DxMessaging.Editor.CustomEditors
             VisualElement element = new();
             element.AddToClassList(RowClassName);
 
-            Label name = new(row.MessageTypeName);
+            Label name = new(row.MessageTypeName)
+            {
+                tooltip = row.MessageType?.AssemblyQualifiedName ?? "Unknown message type",
+            };
             name.AddToClassList(RowNameClassName);
             element.Add(name);
 
@@ -170,12 +228,38 @@ namespace DxMessaging.Editor.CustomEditors
             meta.AddToClassList(RowMetaClassName);
             element.Add(meta);
 
-            VisualElement dot = new();
-            dot.AddToClassList(row.IsLive ? RowLiveClassName : RowIdleClassName);
+            VisualElement dot = new() { name = RowStatusName };
+            switch (row.Liveness)
+            {
+                case MessageAwareComponentSubscriptionLiveness.Live:
+                    dot.AddToClassList(RowLiveClassName);
+                    dot.tooltip = row.IsAggregate
+                        ? "Enabled on every selected component carrying this registration."
+                        : "This registration is enabled.";
+                    break;
+                case MessageAwareComponentSubscriptionLiveness.Mixed:
+                    dot.AddToClassList(RowMixedClassName);
+                    dot.tooltip =
+                        "Enabled state differs across the selected components carrying this registration.";
+                    break;
+                default:
+                    dot.AddToClassList(RowIdleClassName);
+                    dot.tooltip = row.IsAggregate
+                        ? "Disabled on every selected component carrying this registration."
+                        : "This registration is disabled.";
+                    break;
+            }
             element.Add(dot);
 
             return element;
         }
+    }
+
+    internal enum MessageAwareComponentSubscriptionLiveness
+    {
+        Idle,
+        Live,
+        Mixed,
     }
 
     /// <summary>
@@ -190,19 +274,27 @@ namespace DxMessaging.Editor.CustomEditors
         internal const int UnknownCallCount = -1;
 
         internal MessageAwareComponentSubscriptionRow(
+            Type messageType,
             string messageTypeName,
             string registrationTypeName,
             int priority,
             int callCount,
-            bool isLive
+            MessageAwareComponentSubscriptionLiveness liveness,
+            int selectedComponentCount,
+            int selectionCount
         )
         {
+            MessageType = messageType;
             MessageTypeName = messageTypeName;
             RegistrationTypeName = registrationTypeName;
             Priority = priority;
             CallCount = callCount;
-            IsLive = isLive;
+            Liveness = liveness;
+            SelectedComponentCount = selectedComponentCount;
+            SelectionCount = selectionCount;
         }
+
+        internal Type MessageType { get; }
 
         internal string MessageTypeName { get; }
 
@@ -221,8 +313,16 @@ namespace DxMessaging.Editor.CustomEditors
         /// </summary>
         internal int CallCount { get; }
 
-        /// <summary>True while the registration is subscribed on the bus.</summary>
-        internal bool IsLive { get; }
+        internal MessageAwareComponentSubscriptionLiveness Liveness { get; }
+
+        /// <summary>True while every represented registration is subscribed on its bus.</summary>
+        internal bool IsLive => Liveness == MessageAwareComponentSubscriptionLiveness.Live;
+
+        internal int SelectedComponentCount { get; }
+
+        internal int SelectionCount { get; }
+
+        internal bool IsAggregate => SelectionCount > 1;
     }
 
     /// <summary>
@@ -234,24 +334,43 @@ namespace DxMessaging.Editor.CustomEditors
         private static readonly MessageAwareComponentSubscriptionRow[] NoRows =
             Array.Empty<MessageAwareComponentSubscriptionRow>();
 
+        private static readonly MessageAwareComponentSubscriptionsState EmptySelection = new(
+            hasToken: false,
+            tokenEnabled: false,
+            diagnosticsEnabled: false,
+            rows: NoRows,
+            isAggregate: false,
+            selectionCount: 0,
+            tokenCount: 0
+        );
+
         internal static readonly MessageAwareComponentSubscriptionsState None = new(
             hasToken: false,
             tokenEnabled: false,
             diagnosticsEnabled: false,
-            rows: NoRows
+            rows: NoRows,
+            isAggregate: false,
+            selectionCount: 1,
+            tokenCount: 0
         );
 
         internal MessageAwareComponentSubscriptionsState(
             bool hasToken,
             bool tokenEnabled,
             bool diagnosticsEnabled,
-            IReadOnlyList<MessageAwareComponentSubscriptionRow> rows
+            IReadOnlyList<MessageAwareComponentSubscriptionRow> rows,
+            bool isAggregate,
+            int selectionCount,
+            int tokenCount
         )
         {
             HasToken = hasToken;
             TokenEnabled = tokenEnabled;
             DiagnosticsEnabled = diagnosticsEnabled;
             Rows = rows ?? throw new ArgumentNullException(nameof(rows));
+            IsAggregate = isAggregate;
+            SelectionCount = selectionCount;
+            TokenCount = tokenCount;
         }
 
         internal bool HasToken { get; }
@@ -261,6 +380,12 @@ namespace DxMessaging.Editor.CustomEditors
         internal bool DiagnosticsEnabled { get; }
 
         internal IReadOnlyList<MessageAwareComponentSubscriptionRow> Rows { get; }
+
+        internal bool IsAggregate { get; }
+
+        internal int SelectionCount { get; }
+
+        internal int TokenCount { get; }
 
         /// <summary>
         /// Cheap change signal, so a polling inspector only rebuilds the row list when something
@@ -278,12 +403,18 @@ namespace DxMessaging.Editor.CustomEditors
             {
                 long revision = HasToken ? 1 : 0;
                 revision = (revision * 31) + (TokenEnabled ? 1 : 0);
+                revision = (revision * 31) + (IsAggregate ? 1 : 0);
+                revision = (revision * 31) + SelectionCount;
+                revision = (revision * 31) + TokenCount;
                 revision = (revision * 31) + Rows.Count;
                 foreach (MessageAwareComponentSubscriptionRow row in Rows)
                 {
                     revision = (revision * 31) + row.CallCount;
                     revision = (revision * 31) + row.Priority;
-                    revision = (revision * 31) + (row.IsLive ? 1 : 0);
+                    revision = (revision * 31) + (int)row.Liveness;
+                    revision = (revision * 31) + row.SelectedComponentCount;
+                    revision = (revision * 31) + row.SelectionCount;
+                    revision = (revision * 31) + (row.MessageType?.GetHashCode() ?? 0);
                     revision =
                         (revision * 31) + StringComparer.Ordinal.GetHashCode(row.MessageTypeName);
                     revision =
@@ -329,11 +460,16 @@ namespace DxMessaging.Editor.CustomEditors
                 MessageRegistrationMetadata metadata = entry.Value;
                 rows.Add(
                     new MessageAwareComponentSubscriptionRow(
+                        metadata.type,
                         metadata.type == null ? "<unknown>" : metadata.type.Name,
                         metadata.registrationType.ToString(),
                         metadata.priority,
                         ResolveCallCount(entry.Key),
                         token.Enabled
+                            ? MessageAwareComponentSubscriptionLiveness.Live
+                            : MessageAwareComponentSubscriptionLiveness.Idle,
+                        selectedComponentCount: 1,
+                        selectionCount: 1
                     )
                 );
             }
@@ -343,7 +479,123 @@ namespace DxMessaging.Editor.CustomEditors
                 hasToken: true,
                 tokenEnabled: token.Enabled,
                 diagnosticsEnabled: diagnosticsEnabled,
-                rows: rows
+                rows: rows,
+                isAggregate: false,
+                selectionCount: 1,
+                tokenCount: 1
+            );
+        }
+
+        internal static MessageAwareComponentSubscriptionsState Capture(
+            IReadOnlyList<MessageAwareComponent> components
+        )
+        {
+            if (components == null)
+            {
+                throw new ArgumentNullException(nameof(components));
+            }
+
+            int liveComponentCount = 0;
+            MessageAwareComponent onlyLiveComponent = null;
+            for (int componentIndex = 0; componentIndex < components.Count; componentIndex++)
+            {
+                MessageAwareComponent component = components[componentIndex];
+                if (component == null)
+                {
+                    continue;
+                }
+
+                liveComponentCount++;
+                onlyLiveComponent = component;
+            }
+            if (liveComponentCount == 0)
+            {
+                return EmptySelection;
+            }
+            if (liveComponentCount == 1)
+            {
+                return Capture(onlyLiveComponent);
+            }
+
+            Dictionary<MessageAwareComponentSubscriptionKey, AggregateRow> aggregateRows = new();
+            int tokenCount = 0;
+            for (int componentIndex = 0; componentIndex < components.Count; componentIndex++)
+            {
+                MessageAwareComponent component = components[componentIndex];
+                MessageRegistrationToken token = component == null ? null : component.Token;
+                if (token == null)
+                {
+                    continue;
+                }
+
+                tokenCount++;
+                HashSet<MessageAwareComponentSubscriptionKey> seenForComponent = new();
+                foreach (
+                    KeyValuePair<
+                        MessageRegistrationHandle,
+                        MessageRegistrationMetadata
+                    > entry in token._metadata
+                )
+                {
+                    MessageRegistrationMetadata metadata = entry.Value;
+                    MessageAwareComponentSubscriptionKey key = new(
+                        metadata.type,
+                        metadata.registrationType,
+                        metadata.priority
+                    );
+                    if (!seenForComponent.Add(key))
+                    {
+                        continue;
+                    }
+
+                    if (!aggregateRows.TryGetValue(key, out AggregateRow aggregate))
+                    {
+                        aggregate = new AggregateRow(key);
+                        aggregateRows.Add(key, aggregate);
+                    }
+
+                    aggregate.SelectedComponentCount++;
+                    if (token.Enabled)
+                    {
+                        aggregate.EnabledComponentCount++;
+                    }
+                }
+            }
+
+            List<MessageAwareComponentSubscriptionRow> rows = new(aggregateRows.Count);
+            foreach (AggregateRow aggregate in aggregateRows.Values)
+            {
+                MessageAwareComponentSubscriptionLiveness liveness =
+                    aggregate.EnabledComponentCount == 0
+                        ? MessageAwareComponentSubscriptionLiveness.Idle
+                    : aggregate.EnabledComponentCount == aggregate.SelectedComponentCount
+                        ? MessageAwareComponentSubscriptionLiveness.Live
+                    : MessageAwareComponentSubscriptionLiveness.Mixed;
+                rows.Add(
+                    new MessageAwareComponentSubscriptionRow(
+                        aggregate.Key.MessageType,
+                        aggregate.Key.MessageType == null
+                            ? "<unknown>"
+                            : aggregate.Key.MessageType.Name,
+                        aggregate.Key.RegistrationType.ToString(),
+                        aggregate.Key.Priority,
+                        MessageAwareComponentSubscriptionRow.UnknownCallCount,
+                        liveness,
+                        aggregate.SelectedComponentCount,
+                        liveComponentCount
+                    )
+                );
+            }
+
+            rows.Sort(CompareRows);
+            return new MessageAwareComponentSubscriptionsState(
+                hasToken: tokenCount > 0,
+                tokenEnabled: false,
+                diagnosticsEnabled: false,
+                rows: rows,
+                isAggregate: true,
+                selectionCount: liveComponentCount,
+                tokenCount: tokenCount
             );
         }
 
@@ -359,10 +611,98 @@ namespace DxMessaging.Editor.CustomEditors
             }
 
             comparison = string.CompareOrdinal(
+                left.MessageType?.AssemblyQualifiedName,
+                right.MessageType?.AssemblyQualifiedName
+            );
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = string.CompareOrdinal(
                 left.RegistrationTypeName,
                 right.RegistrationTypeName
             );
             return comparison != 0 ? comparison : left.Priority.CompareTo(right.Priority);
+        }
+
+        private sealed class AggregateRow
+        {
+            internal AggregateRow(MessageAwareComponentSubscriptionKey key)
+            {
+                Key = key;
+            }
+
+            internal MessageAwareComponentSubscriptionKey Key { get; }
+
+            internal int SelectedComponentCount { get; set; }
+
+            internal int EnabledComponentCount { get; set; }
+        }
+
+        private readonly struct MessageAwareComponentSubscriptionKey
+            : IEquatable<MessageAwareComponentSubscriptionKey>
+        {
+            internal MessageAwareComponentSubscriptionKey(
+                Type messageType,
+                MessageRegistrationType registrationType,
+                int priority
+            )
+            {
+                MessageType = messageType;
+                RegistrationType = registrationType;
+                Priority = priority;
+            }
+
+            internal Type MessageType { get; }
+
+            internal MessageRegistrationType RegistrationType { get; }
+
+            internal int Priority { get; }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Equals(MessageAwareComponentSubscriptionKey other)
+            {
+                return ReferenceEquals(MessageType, other.MessageType)
+                    && RegistrationType == other.RegistrationType
+                    && Priority == other.Priority;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is MessageAwareComponentSubscriptionKey other && Equals(other);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = 17;
+                    hash = (hash * 31) + (MessageType?.GetHashCode() ?? 0);
+                    hash = (hash * 31) + (int)RegistrationType;
+                    hash = (hash * 31) + Priority;
+                    return hash;
+                }
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator ==(
+                MessageAwareComponentSubscriptionKey left,
+                MessageAwareComponentSubscriptionKey right
+            )
+            {
+                return left.Equals(right);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator !=(
+                MessageAwareComponentSubscriptionKey left,
+                MessageAwareComponentSubscriptionKey right
+            )
+            {
+                return !left.Equals(right);
+            }
         }
     }
 #endif
