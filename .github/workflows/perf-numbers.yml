@@ -193,6 +193,7 @@ jobs:
           path: .ci/unity-helpers
           persist-credentials: false
           clean: true
+          set-safe-directory: false
 
       - name: Require manually installed Unity editor
         timeout-minutes: 10

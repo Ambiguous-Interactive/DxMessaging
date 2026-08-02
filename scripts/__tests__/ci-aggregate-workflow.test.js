@@ -460,7 +460,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const contracts = [
       [validationStep, /\n        timeout-minutes: 10\n/],
       [validationStep, /shell: pwsh -NoProfile -NonInteractive -Command "\. '\{0\}'"/, `${label}: the gate must not inherit a runner profile`],
-      [validationStep, /-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)[\s\S]*-DiagnosticsPath \(Join-Path \$env:RUNNER_TEMP 'dx-unity-editor-validation'\)[\s\S]*-CiManagedOnly[\s\S]*-RequireHealthyExisting/, `${label}: validation must pin the trusted editor root, refuse fallback installs, and write its evidence outside the workspace so a failed gate still uploads it`],
+      [validationStep, /\.ci\/unity-helpers\/scripts\/unity\/ensure-editor\.ps1[\s\S]*-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)[\s\S]*-DiagnosticsPath \(Join-Path \$env:RUNNER_TEMP 'dx-unity-editor-validation'\)[\s\S]*-CiManagedOnly[\s\S]*-RequireHealthyExisting/, `${label}: validation must pin the trusted editor root, refuse fallback installs, and write its evidence outside the workspace so a failed gate still uploads it`],
       [bindingStep, /dx-unity-editor-validation\\ensure-editor-summary\.json'[\s\S]*ConvertFrom-Json[\s\S]*\[string\]::Equals\(\$actual, \$expected, \[StringComparison\]::OrdinalIgnoreCase\)[\s\S]*UNITY_EDITOR_PATH=\$expected/, `${label}: bind must read the preserved evidence, prove the canonical editor, then export the path`],
       [uploadStep, /path: \$\{\{ runner\.temp \}\}\/dx-unity-editor-validation\n/, `${label}: evidence upload must not depend on a step that may never run`],
       [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
@@ -476,7 +476,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [gateStep, /\n        if: always\(\)\n        timeout-minutes: 2\n/],
       [gateStep, /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/],
       [gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/],
-      [validationStep, /\.ci\/unity-helpers\/scripts\/unity\/ensure-editor\.ps1/],
+      [getStepBlock(job, "Checkout trusted Unity editor validator"), /GIT_CONFIG_NOSYSTEM: 1[\s\S]*GIT_CONFIG_GLOBAL: \/dev\/null[\s\S]*repository: Ambiguous-Interactive\/unity-helpers[\s\S]*path: \.ci\/unity-helpers[\s\S]*persist-credentials: false[\s\S]*clean: true[\s\S]*set-safe-directory: false/, `${label}: isolated validator checkout must use the trusted closed shape`],
       ...(["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file) || jobId === "unity-checks" ? [[workStep, /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: licensed work and central return must use the same trusted editor root`]] : [])
     ];
     for (const [actual, contract, message] of contracts) assert.match(actual, contract, message);
