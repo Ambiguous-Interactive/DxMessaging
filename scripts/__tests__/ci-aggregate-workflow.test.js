@@ -195,6 +195,7 @@ test("script-test path detector covers harness and package contract inputs", () 
     ".llm/index.md",
     ".llm/skills/github-workflow-consistency/references/workflow-consistency.md",
     "scripts/llm/harness.js",
+    "scripts/validate-unity-pr-policy.py",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
     "docs/ops/release-operations.md",
     ".llm/context.md",
@@ -202,7 +203,6 @@ test("script-test path detector covers harness and package contract inputs", () 
   ])
     assert.match(path, scriptsPattern);
 });
-
 test("static child jobs always report and fail closed on bad change detection", () => {
   const source = readWorkflow();
 
