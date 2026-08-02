@@ -54,7 +54,7 @@ The post-merge performance run for #340 demonstrated the scheduling cost that
 #341 removes: its Standalone cell completed successfully while the serialized
 PlayMode cell remained queued behind the correctness matrix. Because session 185
 also corrects a stale benchmark-source comment, its own report is deliberately
-non-comparable under the fail-closed harness-path rule. Its authoritative evidence
-is one Standalone benchmark cell, an explicit sign-direction legend, all CI checks
-green, and zero unresolved review feedback. The next ordinary PR must demonstrate
-the historical delta against the refreshed master baseline.
+non-comparable under the fail-closed harness-path rule. Before completion, it must
+show one Standalone benchmark cell, an explicit sign-direction legend, all CI
+checks green, and zero unresolved review feedback. The next ordinary PR must
+demonstrate the historical delta against the refreshed master baseline.
