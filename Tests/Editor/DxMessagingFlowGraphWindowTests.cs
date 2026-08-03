@@ -7966,6 +7966,55 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void CaptureSnapshotKeepsRoutesWhenContextObjectWasDestroyed()
+        {
+            GameObject host = CreateTrackedObject("FlowGraphDestroyedContextHost");
+            MessagingComponent messagingComponent = host.AddComponent<MessagingComponent>();
+            TestListener listener = host.AddComponent<TestListener>();
+            GameObject contextHost = CreateTrackedObject("FlowGraphDestroyedContext");
+            InstanceId context = contextHost;
+            int contextId = context.Id;
+            MessageRegistrationToken token = messagingComponent.Create(listener);
+            token.RegisterTargeted<FlowGraphTargetedMessage>(context, listener.OnFlowGraphTargeted);
+            token.Enable();
+            Object.DestroyImmediate(contextHost);
+
+            FlowGraphSnapshot snapshot = null;
+            Assert.DoesNotThrow(
+                () =>
+                    snapshot = DxMessagingFlowGraphWindow.CaptureSnapshot(
+                        new[] { messagingComponent }
+                    ),
+                "Capture must not dereference a destroyed Unity context reference."
+            );
+
+            Assert.That(snapshot, Is.Not.Null, "Capture must return a snapshot after destruction.");
+            Assert.That(
+                snapshot.Warnings,
+                Is.Empty,
+                "A destroyed context must use its stable ID without producing a capture warning."
+            );
+            Assert.That(
+                snapshot.Edges,
+                Has.Count.EqualTo(1),
+                "The targeted registration must remain present after its context object is destroyed."
+            );
+            FlowGraphEdge edge = snapshot.Edges.Single();
+            Assert.That(
+                edge.Context,
+                Is.EqualTo("Instance " + contextId),
+                "Destroyed contexts must fall back to readable stable-ID text."
+            );
+            Assert.That(
+                edge.ContextId,
+                Is.EqualTo(contextId),
+                "Destroyed contexts must retain their exact registration identity."
+            );
+
+            messagingComponent.EditorResetRuntimeState();
+        }
+
+        [Test]
         public void CaptureSnapshotClassifiesMultiKindMessageTypesAsMixed()
         {
             GameObject host = CreateTrackedObject("FlowGraphMixedKindHost");

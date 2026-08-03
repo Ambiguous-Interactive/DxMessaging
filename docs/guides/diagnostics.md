@@ -266,8 +266,9 @@ context identity and recent component- and registration-scoped call sites.
 `contextId` is the captured Unity instance ID for a source or target; `0` means
 that the route has no specific source or target context. These IDs distinguish
 same-named objects inside one capture, but they are local to the running Unity
-session and are not durable identifiers. Trace-path rows use the same
-`contextId` convention.
+session and are not durable identifiers. If the Unity context object was
+destroyed after registration, the graph preserves the route and displays
+`Instance <id>`. Trace-path rows use the same `contextId` convention.
 
 Trace paths are recent evidence aggregates built from token-side delivery
 records that carry a positive `traceId`. They group by concrete delivered

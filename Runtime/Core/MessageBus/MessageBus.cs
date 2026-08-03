@@ -4016,25 +4016,33 @@ namespace DxMessaging.Core.MessageBus
                 GameObject go;
                 bool found;
                 UnityEngine.Object targetObject = target.Object;
-                switch (targetObject)
+                if (targetObject == null)
                 {
-                    case GameObject gameObject:
+                    go = null;
+                    found = false;
+                }
+                else
+                {
+                    switch (targetObject)
                     {
-                        found = true;
-                        go = gameObject;
-                        break;
-                    }
-                    case Component component:
-                    {
-                        found = true;
-                        go = component.gameObject;
-                        break;
-                    }
-                    default:
-                    {
-                        go = null;
-                        found = false;
-                        break;
+                        case GameObject gameObject:
+                        {
+                            found = true;
+                            go = gameObject;
+                            break;
+                        }
+                        case Component component:
+                        {
+                            found = true;
+                            go = component.gameObject;
+                            break;
+                        }
+                        default:
+                        {
+                            go = null;
+                            found = false;
+                            break;
+                        }
                     }
                 }
 

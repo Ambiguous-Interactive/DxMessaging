@@ -2049,14 +2049,17 @@ namespace DxMessaging.Editor.Windows
             }
 
             UnityEngine.Object contextObject = context.Value.Object;
+            if (contextObject == null)
+            {
+                return "Instance " + context.Value.Id;
+            }
+
             switch (contextObject)
             {
                 case GameObject gameObject:
                     return GetHierarchyPath(gameObject.transform) + " (GameObject)";
                 case Component component:
                     return $"{GetHierarchyPath(component.transform)} ({component.GetType().Name})";
-                case null:
-                    return "Instance " + context.Value.Id;
                 default:
                     return string.IsNullOrWhiteSpace(contextObject.name)
                         ? $"{contextObject.GetType().Name} ({context.Value.Id})"

@@ -3,13 +3,95 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
+    using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using NUnit.Framework;
     using UnityEngine;
 
     public sealed class ReflexiveErrorTests : MessagingTestBase
     {
+        public enum DestroyedTargetKind
+        {
+            GameObject,
+            Component,
+        }
+
+        /// <remarks>
+        /// Investigation (2026-08-03): Unity's overloaded null comparison is required before
+        /// pattern matching a retained object reference. A destroyed reference still matches its
+        /// managed GameObject or Component type, but dereferencing it throws. These cases prove
+        /// hierarchy delivery skips both destroyed target shapes while ordinary bus handlers keep
+        /// running.
+        /// </remarks>
+        [TestCase(DestroyedTargetKind.GameObject)]
+        [TestCase(DestroyedTargetKind.Component)]
+        public void DestroyedUnityTargetSkipsHierarchyAndContinuesBusDelivery(
+            DestroyedTargetKind targetKind
+        )
+        {
+            GameObject host = new(
+                nameof(DestroyedUnityTargetSkipsHierarchyAndContinuesBusDelivery),
+                typeof(SimpleMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            SimpleMessageAwareComponent component =
+                host.GetComponent<SimpleMessageAwareComponent>();
+            InstanceId target =
+                targetKind == DestroyedTargetKind.GameObject
+                    ? (InstanceId)host
+                    : (InstanceId)component;
+            Object.DestroyImmediate(host);
+            Assert.That(
+                target.Object == null,
+                Is.True,
+                $"[{targetKind}] Test setup must retain a destroyed Unity object reference."
+            );
+
+            MessageBus messageBus = new();
+            MessageHandler handler = new(new InstanceId(9173), messageBus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, messageBus);
+            int busHandlerCalls = 0;
+            ReflexiveMessage message = new(
+                nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
+                ReflexiveSendMode.Flat,
+                1,
+                2
+            );
+
+            using (
+                LeakWatcher watcher = new(
+                    messageBus,
+                    label: $"Destroyed reflexive {targetKind} target"
+                )
+            )
+            {
+                try
+                {
+                    _ = token.RegisterTargeted<ReflexiveMessage>(
+                        target,
+                        (ref ReflexiveMessage _) => ++busHandlerCalls
+                    );
+                    token.Enable();
+
+                    Assert.DoesNotThrow(
+                        () => DispatchReflexive(messageBus, target, message),
+                        $"[{targetKind}] Hierarchy delivery must not dereference a destroyed Unity target."
+                    );
+                    Assert.That(
+                        busHandlerCalls,
+                        Is.EqualTo(1),
+                        $"[{targetKind}] Normal targeted bus delivery must continue after hierarchy delivery is skipped."
+                    );
+                }
+                finally
+                {
+                    token.Disable();
+                }
+            }
+        }
+
         [Test]
         public void UnknownMethodDoesNotThrowOrInvoke()
         {
@@ -141,6 +223,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 twoArgCount,
                 "Control failed: the correctly-typed reflexive dispatch must invoke the method."
             );
+        }
+
+        private static void DispatchReflexive(
+            MessageBus messageBus,
+            InstanceId target,
+            ReflexiveMessage message
+        )
+        {
+            messageBus.TargetedBroadcast(ref target, ref message);
         }
     }
 }

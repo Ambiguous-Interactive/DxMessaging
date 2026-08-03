@@ -102,12 +102,24 @@ Play entries when Unity disables domain and scene reload.
 - Final full Editor assembly after the semantic-route changes: **586 passed / 0
   failed**.
 - Readability-overhaul Flow Graph fixture on the freshly reloaded Unity
-  6000.4.6f1 assembly: **150 passed / 0 failed**. This includes crossing-aware
+  6000.4.6f1 assembly: **151 passed / 0 failed**. This includes crossing-aware
   layer ordering, staggered crossing selectors, the 0.8 readable zoom floor,
   named and filter-scoped node metrics, mixed-kind filtering, structured route
   cards, visible keyboard focus, exact context identity, and component- and
-  registration-exact target evidence isolation.
+  registration-exact target evidence isolation. It also covers a destroyed
+  Unity context object retaining its route through the stable instance ID.
 - Full `WallstopStudios.DxMessaging.Tests.Editor` assembly after the readability
-  overhaul: **594 passed / 0 failed**.
+  overhaul and destroyed-context review correction: **595 passed / 0 failed**.
+- Destroyed-reflexive-target regression on the freshly compiled Runtime
+  assembly: **2 passed / 0 failed**, covering both `GameObject` and `Component`
+  fake-null references. The post-review test also asserts that skipping Unity
+  hierarchy delivery does not suppress normal targeted bus handlers; the stale
+  host queue blocked its local rerun, so the PR Runtime matrix carries that
+  extended assertion.
+- A redundant immediately following MCP run left its status sidecar at
+  `running` and stopped servicing editor commands while `unity:mcp:probe`
+  remained healthy. The result above is the completed post-recompile run; no
+  timeout, retry policy, or production behavior changed to mask the host-runner
+  condition.
 - Full Node.js script suite: **406 passed / 0 failed**; `npm run validate:all`,
   all pre-commit hooks, markdownlint, and `git diff --check` passed.

@@ -48,7 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expose recent component- and registration-exact delivery call sites without
   leaking evidence across message buses. Global accept-all
   registrations appear as `ANY MESSAGE` observers instead of a misleading
-  `IMessage` message type
+  `IMessage` message type. Destroyed Unity context references fall back to their
+  stable instance ID instead of aborting capture for that component
   ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Improve targeted and source-bound broadcast routing throughput and reduce the
   memory retained by their per-target lookup tables without changing the public
@@ -60,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reflexive message dispatch to a destroyed `GameObject` or `Component` target
+  now skips Unity hierarchy delivery instead of throwing
+  `MissingReferenceException`; normal targeted bus handlers still run.
 - Fix the Diagnostics Tooling Exerciser losing all live registrations after a
   reload-disabled Play Mode reset. Active receivers now rebuild their tokens and
   the runner restarts its deterministic emissions on every activation
