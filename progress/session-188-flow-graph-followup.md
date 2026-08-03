@@ -2,7 +2,7 @@
 
 Date: 2026-08-03
 Branch: `dev/wallstop/session-188-flow-graph-followup`
-PR: pending
+PR: [#348](https://github.com/Ambiguous-Interactive/DxMessaging/pull/348)
 Issue: [#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)
 
 ## Outcome
@@ -76,4 +76,7 @@ site** action for the exact recorded file and line.
 
 ## Publication
 
-- Commit, push, draft PR, automated review, and PR CI remain pending.
+- Commit `6ba526da` carries the complete implementation and validation record.
+- Draft PR [#348](https://github.com/Ambiguous-Interactive/DxMessaging/pull/348)
+  targets `master` and closes #345 while keeping #346 open.
+- Automated review and PR CI remain pending.
