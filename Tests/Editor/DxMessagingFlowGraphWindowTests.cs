@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Editor
 {
     using System;
     using System.Collections.Generic;
+    using System.IO;
     using System.Linq;
     using Core;
     using Core.Diagnostics;
@@ -373,9 +374,9 @@ namespace DxMessaging.Tests.Editor
                 "Raw topology should default collapsed so components, messages, and edges do not duplicate the route map."
             );
             Assert.That(
-                detailsTitle.text,
-                Does.StartWith("Route:"),
-                $"The default selection should explain a route, but was '{detailsTitle.text}'."
+                detailsTitle,
+                Is.Null,
+                "The graph should wait for an intentional selection before opening diagnostics."
             );
 
             FlowGraphSnapshot tracedSnapshot = new(
@@ -561,9 +562,7 @@ namespace DxMessaging.Tests.Editor
                 .Query<VisualElement>(className: DxMessagingFlowGraphWindow.RouteMapRouteClassName)
                 .ToList()
                 .Count;
-            string detailsTitle = root.Q<Label>(
-                DxMessagingFlowGraphWindow.DetailsTitleLabelName
-            ).text;
+            Label detailsTitle = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName);
 
             Assert.That(
                 graph
@@ -610,8 +609,8 @@ namespace DxMessaging.Tests.Editor
             Assert.That(moreRoutes.value, Is.False, "Overflow routes should default collapsed.");
             Assert.That(
                 detailsTitle,
-                Does.Contain("ConcreteMessage0"),
-                $"A concrete route should be selected ahead of GlobalAcceptAll, but was '{detailsTitle}'."
+                Is.Null,
+                "A dense graph should not auto-select a route and open diagnostics before user input."
             );
 
             analysis.value = true;
@@ -655,7 +654,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void GraphFrameScaleKeepsLargeNodeSetsReadableForPanning()
+        public void GraphFrameScaleAllowsStressGraphOverviewBeforePanning()
         {
             float scale = DxMessagingFlowGraphWindow.CalculateGraphFrameScale(
                 new Vector2(520f, 520f),
@@ -664,8 +663,432 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(
                 scale,
-                Is.EqualTo(0.8f),
-                $"A 100-row graph should preserve readable nodes and pan instead of shrinking them, but used {scale}."
+                Is.EqualTo(0.2f),
+                $"A 100-row stress graph should support a useful overview before panning, but used {scale}."
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiProvidesExplicitZoomControlsForStressGraphs()
+        {
+            const int nodeCount = 40;
+            const int routesPerMessage = 10;
+            FlowGraphComponentNode[] components = Enumerable
+                .Range(0, nodeCount)
+                .Select(index => new FlowGraphComponentNode(
+                    $"component:{index}",
+                    $"Stress/Receiver {index}",
+                    "MessagingComponent",
+                    activeInHierarchy: true,
+                    listenerCount: 1,
+                    registrationCount: 1,
+                    callCount: index + 1,
+                    localMessageCount: 0
+                ))
+                .ToArray();
+            FlowGraphMessageNode[] messages = Enumerable
+                .Range(0, nodeCount)
+                .Select(index => new FlowGraphMessageNode($"Stress.Message{index}", 1, index + 1))
+                .ToArray();
+            FlowGraphEdge[] edges = Enumerable
+                .Range(0, nodeCount)
+                .SelectMany(messageIndex =>
+                    Enumerable
+                        .Range(0, routesPerMessage)
+                        .Select(routeIndex =>
+                        {
+                            int componentIndex = (messageIndex * 7 + routeIndex * 3) % nodeCount;
+                            string registrationTypeName = (routeIndex % 3) switch
+                            {
+                                0 => "Untargeted",
+                                1 => "Targeted",
+                                _ => "Broadcast",
+                            };
+                            return new FlowGraphEdge(
+                                messages[messageIndex].MessageTypeName,
+                                components[componentIndex].Id,
+                                components[componentIndex].HierarchyPath,
+                                registrationTypeName,
+                                registrationCount: 1,
+                                callCount: messageIndex + routeIndex + 1,
+                                context: $"Stress/Context {routeIndex}",
+                                contextId: routeIndex + 1
+                            );
+                        })
+                )
+                .ToArray();
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(80f, 80f, 1000f, 700f);
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+            string selectedRoute = string.Empty;
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                new FlowGraphSnapshot(components, messages, edges, Array.Empty<string>()),
+                FlowGraphViewState.Default,
+                onSelectionChanged: key => selectedRoute = key
+            );
+
+            Assert.That(
+                root.Q<Button>(DxMessagingFlowGraphWindow.GraphZoomOutButtonName),
+                Is.Not.Null,
+                "Stress graphs need an explicit zoom-out control instead of requiring an undocumented wheel gesture."
+            );
+            Assert.That(
+                root.Q<Button>(DxMessagingFlowGraphWindow.GraphFitButtonName),
+                Is.Not.Null,
+                "Stress graphs need a one-action fit control."
+            );
+            Assert.That(
+                root.Q<Button>(DxMessagingFlowGraphWindow.GraphZoomInButtonName),
+                Is.Not.Null,
+                "A user who framed a stress graph needs an explicit way back to readable nodes."
+            );
+            VisualElement legend = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.GraphLegendName
+            );
+            Assert.That(
+                legend.style.flexWrap.value,
+                Is.EqualTo(Wrap.Wrap),
+                "The legend and zoom controls must wrap instead of overflowing a constrained window."
+            );
+            Assert.That(
+                root.Q<VisualElement>(
+                    DxMessagingFlowGraphWindow.GraphZoomControlsName
+                ).style.flexShrink.value,
+                Is.EqualTo(0f),
+                "Constrained layouts must keep the zoom controls usable rather than shrinking them to zero width."
+            );
+            Assert.That(
+                root.Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                    )
+                    .ToList()
+                    .Count,
+                Is.EqualTo(nodeCount * routesPerMessage),
+                "A dense many-to-many stress graph must keep hundreds of crossing routes selectable instead of dropping overflow routes."
+            );
+            VisualElement edgeLayer = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.GraphEdgeLayerName
+            );
+            Assert.That(edgeLayer.panel, Is.Not.Null, "The stress edge layer must be attached.");
+            Assert.That(
+                edgeLayer.pickingMode,
+                Is.EqualTo(PickingMode.Position),
+                "Providing a route callback must make the complete edge layer interactive."
+            );
+            IReadOnlyList<DxMessagingFlowGraphWindow.GraphCurveDescriptor> curves =
+                (IReadOnlyList<DxMessagingFlowGraphWindow.GraphCurveDescriptor>)edgeLayer.userData;
+            Vector2 routePoint = curves[curves.Count - 1].Evaluate(0.2f);
+            float hitRadius = DxMessagingFlowGraphWindow.CalculateLocalGraphRouteHitRadius(
+                edgeLayer.worldTransform.MultiplyVector(Vector3.right).magnitude
+            );
+            string expectedRoute = DxMessagingFlowGraphWindow.FindGraphRouteAtPoint(
+                curves,
+                routePoint,
+                hitRadius
+            );
+            Assert.That(expectedRoute, Is.Not.Empty);
+            Event systemEvent = new()
+            {
+                type = EventType.MouseDown,
+                button = 0,
+                mousePosition = edgeLayer.LocalToWorld(routePoint),
+            };
+            using (MouseDownEvent mouseDown = MouseDownEvent.GetPooled(systemEvent))
+            {
+                mouseDown.target = edgeLayer;
+                edgeLayer.SendEvent(mouseDown);
+            }
+            Assert.That(
+                selectedRoute,
+                Is.EqualTo(expectedRoute),
+                "Clicking a non-marker segment in the attached 400-route graph must select the visible route."
+            );
+        }
+
+        [Test]
+        public void GraphFeatherColorPreservesRouteHueAtLowOpacity()
+        {
+            Color routeColor = new(0.2f, 0.4f, 0.8f, 0.75f);
+
+            Color featherColor = DxMessagingFlowGraphWindow.CreateGraphFeatherColor(routeColor);
+
+            Assert.That(featherColor.r, Is.EqualTo(routeColor.r));
+            Assert.That(featherColor.g, Is.EqualTo(routeColor.g));
+            Assert.That(featherColor.b, Is.EqualTo(routeColor.b));
+            Assert.That(featherColor.a, Is.EqualTo(routeColor.a * 0.22f));
+        }
+
+        [Test]
+        public void GraphRouteHitTestingSelectsTheSourceToDestinationCurve()
+        {
+            DxMessagingFlowGraphWindow.GraphCurveDescriptor first = new(
+                new Vector2(10f, 20f),
+                new Vector2(410f, 220f),
+                curveOffset: 0f,
+                Color.green,
+                selected: false,
+                selectionKey: "edge|first"
+            );
+            DxMessagingFlowGraphWindow.GraphCurveDescriptor second = new(
+                new Vector2(10f, 220f),
+                new Vector2(410f, 20f),
+                curveOffset: 0f,
+                Color.red,
+                selected: false,
+                selectionKey: "edge|second"
+            );
+
+            string selected = DxMessagingFlowGraphWindow.FindGraphRouteAtPoint(
+                new[] { first, second },
+                first.Evaluate(0.25f),
+                hitRadius: 10f
+            );
+
+            Assert.That(
+                selected,
+                Is.EqualTo("edge|first"),
+                "Clicking the source-to-destination path must select that route, not require finding its midpoint glyph."
+            );
+            Assert.That(
+                DxMessagingFlowGraphWindow.FindGraphRouteAtPoint(
+                    new[] { first, second },
+                    first.Evaluate(0.5f),
+                    hitRadius: 10f
+                ),
+                Is.EqualTo("edge|second"),
+                "An exact crossing must select the later route drawn visibly on top."
+            );
+            Assert.That(
+                DxMessagingFlowGraphWindow.FindGraphRouteAtPoint(
+                    new[] { first, second },
+                    new Vector2(900f, 900f),
+                    hitRadius: 10f
+                ),
+                Is.Empty,
+                "Empty-canvas clicks must remain available for panning."
+            );
+            Assert.That(
+                DxMessagingFlowGraphWindow.CalculateLocalGraphRouteHitRadius(0.2f),
+                Is.EqualTo(50f),
+                "The 20 percent overview must retain a 10-pixel screen-space route hit corridor."
+            );
+            Assert.That(
+                DxMessagingFlowGraphWindow.CalculateLocalGraphRouteHitRadius(2f),
+                Is.EqualTo(5f),
+                "Zooming in must not make adjacent routes share an oversized hit corridor."
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiCollapsesRouteEvidenceAndLinksMessageSource()
+        {
+            string messageTypeName = typeof(FlowGraphMessage).FullName;
+            FlowGraphEdge edge = new(
+                messageTypeName,
+                "component:receiver",
+                "Root/Receiver",
+                "Untargeted",
+                registrationCount: 1,
+                callCount: 3,
+                recentEmissionSites: new[] { "Game.Emit () (at Assets/Scripts/Game.cs:42)" }
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[]
+                {
+                    new FlowGraphComponentNode(
+                        "component:receiver",
+                        "Root/Receiver",
+                        "MessagingComponent",
+                        activeInHierarchy: true,
+                        listenerCount: 1,
+                        registrationCount: 1,
+                        callCount: 3,
+                        localMessageCount: 0
+                    ),
+                },
+                new[] { new FlowGraphMessageNode(messageTypeName, 1, 3) },
+                new[] { edge },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(edge)
+                )
+            );
+
+            Foldout evidence = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
+            );
+            Assert.That(
+                evidence,
+                Is.Not.Null,
+                "Verbose emission and trace evidence should live behind one named disclosure."
+            );
+            Assert.That(
+                evidence.value,
+                Is.False,
+                "Route evidence should start collapsed so selecting a route does not replace the graph with text."
+            );
+            Button messageSource = root.Query<Button>(
+                    name: DxMessagingFlowGraphWindow.SourceLinkButtonName
+                )
+                .ToList()
+                .Single(button =>
+                    button.text.StartsWith("Open message source", StringComparison.Ordinal)
+                );
+            DxMessagingFlowGraphWindow.FlowGraphSourceLocation location =
+                (DxMessagingFlowGraphWindow.FlowGraphSourceLocation)messageSource.userData;
+            Assert.That(
+                location.AssetPath,
+                Does.EndWith("Tests/Editor/DxMessagingFlowGraphWindowTests.cs"),
+                $"The selected message should resolve to its declaring script, but resolved {location.AssetPath}."
+            );
+            Assert.That(
+                location.Line,
+                Is.GreaterThan(0),
+                "The message-source action should open the declaring line, not only the file."
+            );
+        }
+
+        [Test]
+        public void SourceLocationParserExtractsUnityCallSitePathAndLine()
+        {
+            bool parsed = DxMessagingFlowGraphWindow.TryParseSourceLocation(
+                "Game.Emit () (at Assets/Scripts/Game.cs:42)",
+                out DxMessagingFlowGraphWindow.FlowGraphSourceLocation location
+            );
+
+            Assert.That(parsed, Is.True, "A standard Unity call site should be linkable.");
+            Assert.That(location.AssetPath, Is.EqualTo("Assets/Scripts/Game.cs"));
+            Assert.That(location.Line, Is.EqualTo(42));
+            Assert.That(
+                DxMessagingFlowGraphWindow.TryParseSourceLocation(
+                    "Game.Emit without a location",
+                    out _
+                ),
+                Is.False,
+                "Diagnostic text without a Unity source suffix must remain plain text."
+            );
+        }
+
+        [Test]
+        public void MessageSourceResolverDistinguishesNestingAndGenericArity()
+        {
+            Type[] messageTypes =
+            {
+                typeof(SourceLinkBeta.DuplicateSourceMessage),
+                typeof(SourceLinkBeta.GenericSourceMessage<int>).GetGenericTypeDefinition(),
+            };
+            foreach (Type messageType in messageTypes)
+            {
+                string messageTypeName = messageType.FullName;
+                FlowGraphEdge edge = new(
+                    messageTypeName,
+                    "component:source-link",
+                    "Root/Source Link",
+                    "Untargeted",
+                    registrationCount: 1,
+                    callCount: 1
+                );
+                FlowGraphSnapshot snapshot = new(
+                    new[]
+                    {
+                        new FlowGraphComponentNode(
+                            "component:source-link",
+                            "Root/Source Link",
+                            "MessagingComponent",
+                            activeInHierarchy: true,
+                            listenerCount: 1,
+                            registrationCount: 1,
+                            callCount: 1,
+                            localMessageCount: 0
+                        ),
+                    },
+                    new[] { new FlowGraphMessageNode(messageTypeName, 1, 1) },
+                    new[] { edge },
+                    Array.Empty<string>()
+                );
+                VisualElement root = new();
+
+                DxMessagingFlowGraphWindow.BuildGraphUi(
+                    root,
+                    snapshot,
+                    new FlowGraphViewState(
+                        selectedItemKey: DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(edge)
+                    )
+                );
+
+                Button messageSource = root.Query<Button>(
+                        name: DxMessagingFlowGraphWindow.SourceLinkButtonName
+                    )
+                    .ToList()
+                    .Single(button =>
+                        button.text.StartsWith("Open message source", StringComparison.Ordinal)
+                    );
+                DxMessagingFlowGraphWindow.FlowGraphSourceLocation location =
+                    (DxMessagingFlowGraphWindow.FlowGraphSourceLocation)messageSource.userData;
+                string declaration = File.ReadAllLines(Path.GetFullPath(location.AssetPath))[
+                    location.Line - 1
+                ];
+                Assert.That(
+                    declaration,
+                    Does.Contain(
+                        messageType == messageTypes[0]
+                            ? "DuplicateSourceMessage"
+                            : "GenericSourceMessage<T>"
+                    ),
+                    $"{messageTypeName} resolved to the wrong declaration at {location.AssetPath}:{location.Line}."
+                );
+                if (messageType == messageTypes[0])
+                {
+                    Assert.That(
+                        location.Line,
+                        Is.GreaterThan(
+                            Array.FindIndex(
+                                File.ReadAllLines(Path.GetFullPath(location.AssetPath)),
+                                line => line.Contains("class SourceLinkBeta")
+                            ) + 1
+                        ),
+                        "The duplicate message must resolve inside SourceLinkBeta, not SourceLinkAlpha."
+                    );
+                }
+            }
+        }
+
+        [Test]
+        public void TypeDeclarationScannerSupportsRecordsAndIgnoresNonCodeText()
+        {
+            string[] lines =
+            {
+                "namespace Example.Messages",
+                "{",
+                "    /*",
+                "    public record struct GenericMessage<T> : IMessage;",
+                "    */",
+                "    string decoy = @\"",
+                "    }",
+                "    public record struct GenericMessage<T> : IMessage;",
+                "    \"\"still inside the literal\"\"",
+                "    \";",
+                "    public record struct GenericMessage<T> : IMessage;",
+                "}",
+            };
+
+            Assert.That(
+                DxMessagingFlowGraphWindow.FindTypeDeclarationLine(
+                    lines,
+                    "Example.Messages",
+                    new[] { "GenericMessage" }
+                ),
+                Is.EqualTo(11),
+                "The scanner must select the live generic record declaration, not matching text inside a block comment or multiline verbatim string."
             );
         }
 
@@ -731,9 +1154,7 @@ namespace DxMessaging.Tests.Editor
                     className: DxMessagingFlowGraphWindow.GraphConnectionClassName
                 )
                 .ToList()
-                .Single(connection =>
-                    !connection.ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName)
-                );
+                .First();
 
             using (ClickEvent click = ClickEvent.GetPooled())
             {
@@ -1781,7 +2202,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void BuildGraphUiRendersSelectionDetailsAndHighlightsFirstRoute()
+        public void BuildGraphUiWaitsForSelectionBeforeRenderingDetails()
         {
             FlowGraphSnapshot snapshot = CreateTwoEdgeSnapshot();
             VisualElement root = new();
@@ -1791,6 +2212,23 @@ namespace DxMessaging.Tests.Editor
             VisualElement details = root.Q<VisualElement>(
                 DxMessagingFlowGraphWindow.DetailsPaneName
             );
+            Assert.That(
+                details,
+                Is.Null,
+                "Diagnostics should remain closed until a route or node is intentionally selected."
+            );
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(
+                        snapshot.Edges[0]
+                    )
+                )
+            );
+
+            details = root.Q<VisualElement>(DxMessagingFlowGraphWindow.DetailsPaneName);
             Assert.That(details, Is.Not.Null);
             Assert.That(
                 details.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName).text,
@@ -9186,6 +9624,18 @@ namespace DxMessaging.Tests.Editor
         private readonly struct FlowGraphMixedMessage : IBroadcastMessage, ITargetedMessage { }
 
         private readonly struct EvidenceOnlyFlowGraphMessage : IUntargetedMessage { }
+
+        private static class SourceLinkAlpha
+        {
+            internal readonly struct DuplicateSourceMessage : IUntargetedMessage { }
+        }
+
+        private static class SourceLinkBeta
+        {
+            internal readonly struct DuplicateSourceMessage : IUntargetedMessage { }
+
+            internal readonly struct GenericSourceMessage<T> : IUntargetedMessage { }
+        }
 
         [Serializable]
         private sealed class FlowGraphExportPayload

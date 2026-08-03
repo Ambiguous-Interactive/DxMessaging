@@ -4,8 +4,10 @@ namespace DxMessaging.Editor.Windows
     using System;
     using System.Collections.Generic;
     using System.Globalization;
+    using System.IO;
     using System.Linq;
     using System.Text;
+    using System.Text.RegularExpressions;
     using Core;
     using Core.Diagnostics;
     using Core.Messages;
@@ -13,6 +15,7 @@ namespace DxMessaging.Editor.Windows
     using DxMessaging.Editor.Testing;
     using DxMessaging.Unity;
     using UnityEditor;
+    using UnityEditor.Compilation;
     using UnityEditor.SceneManagement;
     using UnityEngine;
     using UnityEngine.UIElements;
@@ -29,7 +32,14 @@ namespace DxMessaging.Editor.Windows
         internal const string EmptyStateLabelName = "dxmessaging-flow-graph-empty";
         internal const string EmptyStateTitleLabelName = "dxmessaging-flow-graph-empty-title";
         internal const string GraphCanvasName = "dxmessaging-flow-graph-canvas";
+        internal const string GraphEdgeLayerName = "dxmessaging-flow-graph-edge-layer";
+        internal const string GraphZoomOutButtonName = "dxmessaging-flow-graph-zoom-out";
+        internal const string GraphFitButtonName = "dxmessaging-flow-graph-fit";
+        internal const string GraphZoomInButtonName = "dxmessaging-flow-graph-zoom-in";
+        internal const string GraphZoomLabelName = "dxmessaging-flow-graph-zoom-label";
         internal const string GraphLegendName = "dxmessaging-flow-graph-legend";
+        internal const string GraphInteractionHintName = "dxmessaging-flow-graph-interaction-hint";
+        internal const string GraphZoomControlsName = "dxmessaging-flow-graph-zoom-controls";
         internal const string GraphMessageNodeClassName = "dxmessaging-flow-graph-canvas-message";
         internal const string GraphReceiverNodeClassName = "dxmessaging-flow-graph-canvas-receiver";
         internal const string GraphConnectionClassName = "dxmessaging-flow-graph-canvas-connection";
@@ -164,6 +174,9 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailsMetricClassName = "dxmessaging-flow-graph-details-metric";
         internal const string DetailsTechnicalFoldoutName =
             "dxmessaging-flow-graph-details-technical";
+        internal const string DetailsEvidenceFoldoutName =
+            "dxmessaging-flow-graph-details-evidence";
+        internal const string SourceLinkButtonName = "dxmessaging-flow-graph-source-link";
         internal const string GraphNodeMetricClassName = "dxmessaging-flow-graph-node-metric";
         internal const string WarningLabelName = "dxmessaging-flow-graph-warning";
         internal const string GlobalObserverMessageName = "ANY MESSAGE";
@@ -174,6 +187,9 @@ namespace DxMessaging.Editor.Windows
         private const float GraphNodeHeight = 132f;
         private const float GraphNodeGap = 42f;
         private const float GraphCanvasHeight = 520f;
+        private const float GraphMinimumZoom = 0.2f;
+        private const float GraphMaximumZoom = 2f;
+        private const float GraphRouteHitRadius = 10f;
         private const int ExportSchemaVersion = 6;
         private const string ExportCaptureMode = "registration-topology-with-recent-diagnostics";
         private const string ExportTraceSemantics =
@@ -304,21 +320,39 @@ namespace DxMessaging.Editor.Windows
             internal float Zoom = 1f;
         }
 
-        private readonly struct GraphCurveDescriptor
+        internal readonly struct FlowGraphSourceLocation
+        {
+            internal FlowGraphSourceLocation(string assetPath, int line)
+            {
+                AssetPath = assetPath ?? string.Empty;
+                Line = Math.Max(1, line);
+            }
+
+            internal string AssetPath { get; }
+
+            internal int Line { get; }
+
+            internal bool IsValid => !string.IsNullOrWhiteSpace(AssetPath);
+        }
+
+        internal readonly struct GraphCurveDescriptor
         {
             internal GraphCurveDescriptor(
                 Vector2 start,
                 Vector2 end,
                 float curveOffset,
                 Color color,
-                bool selected
+                bool selected,
+                string selectionKey = "",
+                bool dimmed = false
             )
             {
                 Start = start;
                 End = end;
                 CurveOffset = curveOffset;
-                Color = color;
+                Color = dimmed ? new Color(color.r, color.g, color.b, color.a * 0.18f) : color;
                 Selected = selected;
+                SelectionKey = selectionKey ?? string.Empty;
             }
 
             internal Vector2 Start { get; }
@@ -330,6 +364,8 @@ namespace DxMessaging.Editor.Windows
             internal Color Color { get; }
 
             internal bool Selected { get; }
+
+            internal string SelectionKey { get; }
 
             internal Vector2 Evaluate(float t)
             {
@@ -344,16 +380,68 @@ namespace DxMessaging.Editor.Windows
             }
         }
 
+        private enum SourceScopeKind
+        {
+            Namespace,
+            Type,
+        }
+
+        private readonly struct SourceScope
+        {
+            internal SourceScope(SourceScopeKind kind, string name, int bodyDepth)
+            {
+                Kind = kind;
+                Name = name ?? string.Empty;
+                BodyDepth = bodyDepth;
+            }
+
+            internal SourceScopeKind Kind { get; }
+
+            internal string Name { get; }
+
+            internal int BodyDepth { get; }
+        }
+
         private sealed class FlowGraphEdgeLayer : VisualElement
         {
             private const int SegmentCount = 28;
             private readonly IReadOnlyList<GraphCurveDescriptor> _curves;
 
-            internal FlowGraphEdgeLayer(IReadOnlyList<GraphCurveDescriptor> curves)
+            internal FlowGraphEdgeLayer(
+                IReadOnlyList<GraphCurveDescriptor> curves,
+                Action<string> onSelectionChanged
+            )
             {
                 _curves = curves ?? throw new ArgumentNullException(nameof(curves));
-                pickingMode = PickingMode.Ignore;
+                name = GraphEdgeLayerName;
+                pickingMode =
+                    onSelectionChanged == null ? PickingMode.Ignore : PickingMode.Position;
                 generateVisualContent += DrawConnections;
+                if (onSelectionChanged != null)
+                {
+                    RegisterCallback<MouseDownEvent>(evt =>
+                    {
+                        if (evt.button != 0)
+                        {
+                            return;
+                        }
+
+                        string selectionKey = FindGraphRouteAtPoint(
+                            _curves,
+                            evt.localMousePosition,
+                            CalculateLocalGraphRouteHitRadius(
+                                worldTransform.MultiplyVector(Vector3.right).magnitude
+                            )
+                        );
+                        if (string.IsNullOrWhiteSpace(selectionKey))
+                        {
+                            return;
+                        }
+
+                        evt.StopPropagation();
+                        onSelectionChanged.Invoke(selectionKey);
+                    });
+                }
             }
 
             private void DrawConnections(MeshGenerationContext context)
@@ -372,12 +460,27 @@ namespace DxMessaging.Editor.Windows
                 const int arrowVertexCount = 3;
                 const int arrowIndexCount = 3;
                 MeshWriteData mesh = context.Allocate(
-                    SegmentCount * 4 + arrowVertexCount,
-                    SegmentCount * 6 + arrowIndexCount
+                    SegmentCount * 8 + arrowVertexCount,
+                    SegmentCount * 12 + arrowIndexCount
                 );
                 float width = curve.Selected ? 4f : 2.5f;
                 ushort vertexIndex = 0;
                 Vector2 previous = curve.Evaluate(0f);
+                for (int segment = 1; segment <= SegmentCount; segment++)
+                {
+                    Vector2 next = curve.Evaluate(segment / (float)SegmentCount);
+                    AddSegment(
+                        mesh,
+                        previous,
+                        next,
+                        width + 3f,
+                        CreateGraphFeatherColor(curve.Color),
+                        ref vertexIndex
+                    );
+                    previous = next;
+                }
+
+                previous = curve.Evaluate(0f);
                 for (int segment = 1; segment <= SegmentCount; segment++)
                 {
                     Vector2 next = curve.Evaluate(segment / (float)SegmentCount);
@@ -445,14 +548,96 @@ namespace DxMessaging.Editor.Windows
             }
         }
 
+        internal static Color CreateGraphFeatherColor(Color color)
+        {
+            return new Color(color.r, color.g, color.b, color.a * 0.22f);
+        }
+
         internal static Vector2 NormalizeGraphDirection(Vector2 direction)
         {
             return direction.sqrMagnitude <= Mathf.Epsilon ? Vector2.right : direction.normalized;
         }
 
+        internal static string FindGraphRouteAtPoint(
+            IReadOnlyList<GraphCurveDescriptor> curves,
+            Vector2 point,
+            float hitRadius
+        )
+        {
+            if (curves == null || curves.Count == 0 || hitRadius <= 0f)
+            {
+                return string.Empty;
+            }
+
+            const int sampleCount = 28;
+            float nearestSquaredDistance = hitRadius * hitRadius;
+            string nearestSelectionKey = string.Empty;
+            for (int curveIndex = curves.Count - 1; curveIndex >= 0; curveIndex--)
+            {
+                GraphCurveDescriptor curve = curves[curveIndex];
+                if (string.IsNullOrWhiteSpace(curve.SelectionKey))
+                {
+                    continue;
+                }
+
+                Vector2 previous = curve.Evaluate(0f);
+                for (int sample = 1; sample <= sampleCount; sample++)
+                {
+                    Vector2 next = curve.Evaluate(sample / (float)sampleCount);
+                    float squaredDistance = DistanceToGraphSegmentSquared(point, previous, next);
+                    if (squaredDistance < nearestSquaredDistance)
+                    {
+                        nearestSquaredDistance = squaredDistance;
+                        nearestSelectionKey = curve.SelectionKey;
+                    }
+                    previous = next;
+                }
+            }
+            return nearestSelectionKey;
+        }
+
+        internal static float CalculateLocalGraphRouteHitRadius(float worldScale)
+        {
+            return worldScale <= Mathf.Epsilon
+                ? GraphRouteHitRadius
+                : GraphRouteHitRadius / worldScale;
+        }
+
+        private static float DistanceToGraphSegmentSquared(
+            Vector2 point,
+            Vector2 segmentStart,
+            Vector2 segmentEnd
+        )
+        {
+            Vector2 segment = segmentEnd - segmentStart;
+            float lengthSquared = segment.sqrMagnitude;
+            if (lengthSquared <= Mathf.Epsilon)
+            {
+                return (point - segmentStart).sqrMagnitude;
+            }
+
+            float position = Mathf.Clamp01(
+                Vector2.Dot(point - segmentStart, segment) / lengthSquared
+            );
+            Vector2 closest = segmentStart + segment * position;
+            return (point - closest).sqrMagnitude;
+        }
+
         private string _filterText = string.Empty;
         private string _selectedItemKey = string.Empty;
         private FlowGraphSnapshot _currentSnapshot = FlowGraphSnapshot.Empty;
+        private static readonly Dictionary<
+            string,
+            FlowGraphSourceLocation
+        > MessageSourceLocationCache = new(StringComparer.Ordinal);
+        private static readonly Regex SourceNamespaceDeclarationPattern = new(
+            @"^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*([;{]?)",
+            RegexOptions.CultureInvariant
+        );
+        private static readonly Regex SourceTypeDeclarationPattern = new(
+            @"^\s*(?:\[[^\]\r\n]+\]\s*)*(?:(?:public|internal|protected|private|abstract|sealed|static|partial|readonly|ref|unsafe|new|file)\s+)*(?:(?:record(?:\s+(?:class|struct))?)|class|struct|interface|enum)\s+(@?[A-Za-z_][A-Za-z0-9_]*)\b",
+            RegexOptions.CultureInvariant
+        );
 
         [MenuItem("Tools/Wallstop Studios/DxMessaging/Flow Graph")]
         public static void Open()
@@ -2176,6 +2361,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement legend = new() { name = GraphLegendName };
             legend.style.flexDirection = FlexDirection.Row;
+            legend.style.flexWrap = Wrap.Wrap;
             legend.style.alignItems = Align.Center;
             legend.style.marginBottom = 6;
 
@@ -2193,10 +2379,34 @@ namespace DxMessaging.Editor.Windows
             legend.Add(CreateGraphLegendBadge("TARGETED", DxMessagingEditorPalette.Targeted));
             legend.Add(CreateGraphLegendBadge("GLOBAL", DxMessagingEditorPalette.Untargeted));
 
-            Label controls = new("Drag empty space to pan | Scroll to zoom | Select to inspect");
+            Label controls = new("Click a route or node to inspect. Drag empty space to pan.")
+            {
+                name = GraphInteractionHintName,
+            };
             controls.style.flexGrow = 1;
+            controls.style.flexBasis = 260;
+            controls.style.minWidth = 220;
+            controls.style.marginTop = 4;
+            controls.style.whiteSpace = WhiteSpace.Normal;
             controls.style.unityTextAlign = TextAnchor.MiddleRight;
             legend.Add(controls);
+            VisualElement zoomControls = new() { name = GraphZoomControlsName };
+            zoomControls.style.flexDirection = FlexDirection.Row;
+            zoomControls.style.flexShrink = 0;
+            zoomControls.style.alignItems = Align.Center;
+            zoomControls.style.marginLeft = 8;
+            zoomControls.style.marginTop = 4;
+            Button zoomOut = CreateGraphControlButton(GraphZoomOutButtonName, "-", "Zoom out");
+            Button fit = CreateGraphControlButton(GraphFitButtonName, "Fit", "Fit all routes");
+            Button zoomIn = CreateGraphControlButton(GraphZoomInButtonName, "+", "Zoom in");
+            Label zoomLabel = new("100%") { name = GraphZoomLabelName };
+            zoomLabel.style.minWidth = 42;
+            zoomLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+            zoomControls.Add(zoomOut);
+            zoomControls.Add(fit);
+            zoomControls.Add(zoomIn);
+            zoomControls.Add(zoomLabel);
+            legend.Add(zoomControls);
             panel.Add(legend);
 
             GraphConnectionDescriptor[] connections = CreateGraphConnections(visibleSnapshot);
@@ -2353,6 +2563,7 @@ namespace DxMessaging.Editor.Windows
             viewport.Add(graphContent);
 
             List<GraphCurveDescriptor> curves = new();
+            bool routeIsSelected = selectedItemKey.StartsWith("edge|", StringComparison.Ordinal);
             List<(
                 GraphConnectionDescriptor connection,
                 GraphCurveDescriptor curve,
@@ -2409,6 +2620,11 @@ namespace DxMessaging.Editor.Windows
                     Color edgeColor = connection.TraceOnly
                         ? DxMessagingEditorPalette.Trace
                         : DxMessagingEditorPalette.RouteKindColor(connection.RouteKind);
+                    bool selected = string.Equals(
+                        connection.SelectionKey,
+                        selectedItemKey,
+                        StringComparison.Ordinal
+                    );
                     GraphCurveDescriptor curve = new(
                         new Vector2(
                             messagePosition.x + GraphNodeWidth + 7f,
@@ -2420,11 +2636,9 @@ namespace DxMessaging.Editor.Windows
                         ),
                         curveOffset,
                         edgeColor,
-                        string.Equals(
-                            connection.SelectionKey,
-                            selectedItemKey,
-                            StringComparison.Ordinal
-                        )
+                        selected,
+                        connection.SelectionKey,
+                        dimmed: routeIsSelected && !selected
                     );
                     curves.Add(curve);
                     markers.Add(
@@ -2441,7 +2655,8 @@ namespace DxMessaging.Editor.Windows
                 }
             }
 
-            FlowGraphEdgeLayer edgeLayer = new(curves);
+            FlowGraphEdgeLayer edgeLayer = new(curves, onSelectionChanged);
+            edgeLayer.userData = curves;
             edgeLayer.style.position = Position.Absolute;
             edgeLayer.style.left = 0;
             edgeLayer.style.top = 0;
@@ -2581,10 +2796,28 @@ namespace DxMessaging.Editor.Windows
                 viewport,
                 graphContent,
                 canvasState,
-                new Vector2(contentWidth, graphHeight)
+                new Vector2(contentWidth, graphHeight),
+                zoomOut,
+                fit,
+                zoomIn,
+                zoomLabel
             );
             panel.Add(viewport);
             return panel;
+        }
+
+        private static Button CreateGraphControlButton(string name, string text, string tooltip)
+        {
+            Button button = new()
+            {
+                name = name,
+                text = text,
+                tooltip = tooltip,
+            };
+            button.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
+            button.style.minWidth = text.Length == 1 ? 26 : 38;
+            button.style.marginLeft = 2;
+            return button;
         }
 
         private static GraphConnectionDescriptor[] CreateGraphConnections(
@@ -3038,9 +3271,14 @@ namespace DxMessaging.Editor.Windows
             VisualElement viewport,
             VisualElement graphContent,
             FlowGraphCanvasState canvasState,
-            Vector2 contentSize
+            Vector2 contentSize,
+            Button zoomOut,
+            Button fit,
+            Button zoomIn,
+            Label zoomLabel
         )
         {
+            Vector2 viewportSize = Vector2.zero;
             void ApplyTransform()
             {
                 graphContent.transform.position = new Vector3(
@@ -3049,9 +3287,51 @@ namespace DxMessaging.Editor.Windows
                     0f
                 );
                 graphContent.transform.scale = new Vector3(canvasState.Zoom, canvasState.Zoom, 1f);
+                zoomLabel.text = Mathf.RoundToInt(canvasState.Zoom * 100f) + "%";
+            }
+
+            void ZoomAround(Vector2 focus, float nextZoom)
+            {
+                float previousZoom = Math.Max(GraphMinimumZoom, canvasState.Zoom);
+                Vector2 contentCenter = contentSize * 0.5f;
+                Vector2 contentPoint =
+                    (focus - contentCenter - canvasState.Pan) / previousZoom + contentCenter;
+                canvasState.Zoom = Mathf.Clamp(nextZoom, GraphMinimumZoom, GraphMaximumZoom);
+                canvasState.Pan =
+                    focus - contentCenter - (contentPoint - contentCenter) * canvasState.Zoom;
+                canvasState.Initialized = true;
+                ApplyTransform();
+            }
+
+            void FrameGraph()
+            {
+                if (viewportSize.x <= Mathf.Epsilon || viewportSize.y <= Mathf.Epsilon)
+                {
+                    return;
+                }
+
+                canvasState.Zoom = CalculateGraphFrameScale(viewportSize, contentSize);
+                canvasState.Pan = viewportSize * 0.5f - contentSize * 0.5f;
+                canvasState.Initialized = true;
+                ApplyTransform();
             }
 
             ApplyTransform();
+            zoomOut.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                ZoomAround(viewportSize * 0.5f, canvasState.Zoom / 1.25f);
+            });
+            fit.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                FrameGraph();
+            });
+            zoomIn.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                ZoomAround(viewportSize * 0.5f, canvasState.Zoom * 1.25f);
+            });
             bool panning = false;
             Vector2 lastMousePosition = Vector2.zero;
             viewport.RegisterCallback<MouseDownEvent>(evt =>
@@ -3095,40 +3375,25 @@ namespace DxMessaging.Editor.Windows
             });
             viewport.RegisterCallback<WheelEvent>(evt =>
             {
-                float previousZoom = canvasState.Zoom;
                 float zoomFactor = evt.delta.y > 0f ? 0.88f : 1.14f;
-                float nextZoom = Mathf.Clamp(previousZoom * zoomFactor, 0.8f, 2f);
-                Vector2 contentCenter = contentSize * 0.5f;
-                Vector2 mousePosition = evt.localMousePosition;
-                Vector2 contentPoint =
-                    (mousePosition - contentCenter - canvasState.Pan) / previousZoom
-                    + contentCenter;
-                canvasState.Zoom = nextZoom;
-                canvasState.Pan =
-                    mousePosition - contentCenter - (contentPoint - contentCenter) * nextZoom;
-                canvasState.Initialized = true;
-                ApplyTransform();
+                ZoomAround(evt.localMousePosition, canvasState.Zoom * zoomFactor);
                 evt.StopPropagation();
             });
 
-            if (!canvasState.Initialized)
+            EventCallback<GeometryChangedEvent> frameCallback = evt =>
             {
-                EventCallback<GeometryChangedEvent> frameCallback = null;
-                frameCallback = evt =>
+                if (evt.newRect.width <= Mathf.Epsilon || evt.newRect.height <= Mathf.Epsilon)
                 {
-                    if (evt.newRect.width <= Mathf.Epsilon || evt.newRect.height <= Mathf.Epsilon)
-                    {
-                        return;
-                    }
+                    return;
+                }
 
-                    canvasState.Zoom = CalculateGraphFrameScale(evt.newRect.size, contentSize);
-                    canvasState.Pan = evt.newRect.size * 0.5f - contentSize * 0.5f;
-                    canvasState.Initialized = true;
-                    ApplyTransform();
-                    viewport.UnregisterCallback(frameCallback);
-                };
-                viewport.RegisterCallback(frameCallback);
-            }
+                viewportSize = evt.newRect.size;
+                if (!canvasState.Initialized)
+                {
+                    FrameGraph();
+                }
+            };
+            viewport.RegisterCallback(frameCallback);
         }
 
         internal static float CalculateGraphFrameScale(Vector2 viewportSize, Vector2 contentSize)
@@ -3140,7 +3405,7 @@ namespace DxMessaging.Editor.Windows
 
             float horizontalScale = Math.Max(0f, viewportSize.x - 32f) / contentSize.x;
             float verticalScale = Math.Max(0f, viewportSize.y - 32f) / contentSize.y;
-            return Mathf.Clamp(Math.Min(horizontalScale, verticalScale), 0.8f, 1f);
+            return Mathf.Clamp(Math.Min(horizontalScale, verticalScale), GraphMinimumZoom, 1f);
         }
 
         private static string CreateGraphLayoutSignature(
@@ -5883,6 +6148,16 @@ namespace DxMessaging.Editor.Windows
                     )
                 );
             }
+            string messageTypeName =
+                selectedItem.Kind == FlowGraphSelectionKind.Message
+                    ? selectedItem.Message.MessageTypeName
+                : selectedItem.Kind == FlowGraphSelectionKind.Edge
+                    ? selectedItem.Edge.MessageTypeName
+                : string.Empty;
+            if (TryResolveMessageSource(messageTypeName, out FlowGraphSourceLocation messageSource))
+            {
+                header.Add(CreateSourceLinkButton("Open message source", messageSource));
+            }
             details.Add(header);
 
             switch (selectedItem.Kind)
@@ -5985,7 +6260,9 @@ namespace DxMessaging.Editor.Windows
                     )
                 )
             );
-            details.Add(traffic);
+            Foldout evidence = CreateDetailsEvidenceFoldout();
+            evidence.Add(traffic);
+            details.Add(evidence);
         }
 
         private static void AddMessageDetailsCards(
@@ -6043,7 +6320,7 @@ namespace DxMessaging.Editor.Windows
             evidence.Add(
                 CreateDetailsKeyValue("Contexts", JoinDistinctOrNone(message.RecentContexts))
             );
-            AddDetailValues(evidence, "Emitted by", message.RecentEmissionSites);
+            AddSourceDetailValues(evidence, "Emitted by", message.RecentEmissionSites);
             if (visibleMessageKind == "GLOBAL OBSERVER")
             {
                 evidence.Add(
@@ -6063,7 +6340,9 @@ namespace DxMessaging.Editor.Windows
                     )
                 );
             }
-            details.Add(evidence);
+            Foldout evidenceFoldout = CreateDetailsEvidenceFoldout();
+            evidenceFoldout.Add(evidence);
+            details.Add(evidenceFoldout);
         }
 
         private static void AddEdgeDetailsCards(
@@ -6119,8 +6398,7 @@ namespace DxMessaging.Editor.Windows
                     "Exact component registration delivery record"
                 )
             );
-            AddDetailValues(evidence, "Matching call site", edge.RecentEmissionSites);
-            details.Add(evidence);
+            AddSourceDetailValues(evidence, "Matching call site", edge.RecentEmissionSites);
 
             VisualElement traces = CreateDetailsSection("TRACE EVIDENCE");
             traces.Add(
@@ -6151,7 +6429,22 @@ namespace DxMessaging.Editor.Windows
                         .Replace("Busiest path: ", string.Empty)
                 )
             );
-            details.Add(traces);
+            Foldout evidenceFoldout = CreateDetailsEvidenceFoldout();
+            evidenceFoldout.Add(evidence);
+            evidenceFoldout.Add(traces);
+            details.Add(evidenceFoldout);
+        }
+
+        private static Foldout CreateDetailsEvidenceFoldout()
+        {
+            Foldout evidence = new()
+            {
+                name = DetailsEvidenceFoldoutName,
+                text = "Evidence and source details",
+                value = false,
+            };
+            evidence.style.marginBottom = 6;
+            return evidence;
         }
 
         private static VisualElement CreateRoutePathSection(FlowGraphEdge edge)
@@ -6325,6 +6618,442 @@ namespace DxMessaging.Editor.Windows
                     CreateDetailsKeyValue(index == 0 ? firstLabel : string.Empty, values[index])
                 );
             }
+        }
+
+        private static void AddSourceDetailValues(
+            VisualElement section,
+            string firstLabel,
+            IReadOnlyList<string> values
+        )
+        {
+            AddDetailValues(section, firstLabel, values);
+            foreach (string value in values)
+            {
+                if (TryParseSourceLocation(value, out FlowGraphSourceLocation location))
+                {
+                    section.Add(CreateSourceLinkButton("Open call site", location));
+                }
+            }
+        }
+
+        internal static bool TryParseSourceLocation(
+            string text,
+            out FlowGraphSourceLocation location
+        )
+        {
+            location = default;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            int pathStart = text.LastIndexOf("(at ", StringComparison.Ordinal);
+            int pathEnd = text.LastIndexOf(')');
+            if (pathStart < 0 || pathEnd <= pathStart + 4)
+            {
+                return false;
+            }
+
+            int lineSeparator = text.LastIndexOf(':', pathEnd - 1);
+            if (
+                lineSeparator <= pathStart + 4
+                || !int.TryParse(
+                    text.Substring(lineSeparator + 1, pathEnd - lineSeparator - 1),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int line
+                )
+                || line <= 0
+            )
+            {
+                return false;
+            }
+
+            string assetPath = text.Substring(pathStart + 4, lineSeparator - pathStart - 4)
+                .Replace('\\', '/');
+            if (Path.IsPathRooted(assetPath))
+            {
+                assetPath = (FileUtil.GetProjectRelativePath(assetPath) ?? string.Empty).Replace(
+                    '\\',
+                    '/'
+                );
+            }
+            if (string.IsNullOrWhiteSpace(assetPath))
+            {
+                return false;
+            }
+
+            location = new FlowGraphSourceLocation(assetPath, line);
+            return true;
+        }
+
+        private static bool TryResolveMessageSource(
+            string messageTypeName,
+            out FlowGraphSourceLocation location
+        )
+        {
+            location = default;
+            string normalizedTypeName = NormalizeCapturedTypeName(messageTypeName);
+            if (string.IsNullOrWhiteSpace(normalizedTypeName))
+            {
+                return false;
+            }
+
+            if (MessageSourceLocationCache.TryGetValue(normalizedTypeName, out location))
+            {
+                return location.IsValid;
+            }
+
+            Type messageType = TypeCache
+                .GetTypesDerivedFrom<IMessage>()
+                .FirstOrDefault(candidate =>
+                    string.Equals(candidate.FullName, normalizedTypeName, StringComparison.Ordinal)
+                );
+            messageType ??= System
+                .AppDomain.CurrentDomain.GetAssemblies()
+                .Select(assembly => assembly.GetType(normalizedTypeName, throwOnError: false))
+                .FirstOrDefault(candidate => candidate != null);
+            if (
+                messageType == null
+                && normalizedTypeName.IndexOf('.') < 0
+                && normalizedTypeName.IndexOf('+') < 0
+            )
+            {
+                Type[] simpleNameMatches = TypeCache
+                    .GetTypesDerivedFrom<IMessage>()
+                    .Where(candidate =>
+                        string.Equals(candidate.Name, normalizedTypeName, StringComparison.Ordinal)
+                    )
+                    .Take(2)
+                    .ToArray();
+                messageType = simpleNameMatches.Length == 1 ? simpleNameMatches[0] : null;
+            }
+            if (messageType == null)
+            {
+                MessageSourceLocationCache[normalizedTypeName] = default;
+                return false;
+            }
+
+            UnityEditor.Compilation.Assembly compilationAssembly = CompilationPipeline
+                .GetAssemblies()
+                .FirstOrDefault(candidate =>
+                    string.Equals(
+                        candidate.name,
+                        messageType.Assembly.GetName().Name,
+                        StringComparison.Ordinal
+                    )
+                );
+            if (compilationAssembly == null)
+            {
+                MessageSourceLocationCache[normalizedTypeName] = default;
+                return false;
+            }
+
+            foreach (string sourceFile in compilationAssembly.sourceFiles)
+            {
+                string fullPath = Path.IsPathRooted(sourceFile)
+                    ? sourceFile
+                    : Path.GetFullPath(sourceFile);
+                if (!File.Exists(fullPath))
+                {
+                    continue;
+                }
+
+                string[] lines = File.ReadAllLines(fullPath);
+                int line = FindTypeDeclarationLine(
+                    lines,
+                    messageType.Namespace,
+                    CreateSourceTypeNameChain(messageType)
+                );
+                if (line <= 0)
+                {
+                    continue;
+                }
+
+                string assetPath = Path.IsPathRooted(sourceFile)
+                    ? FileUtil.GetProjectRelativePath(fullPath)
+                    : sourceFile;
+                assetPath = (assetPath ?? string.Empty).Replace('\\', '/');
+                if (string.IsNullOrWhiteSpace(assetPath))
+                {
+                    continue;
+                }
+
+                location = new FlowGraphSourceLocation(assetPath, line);
+                MessageSourceLocationCache[normalizedTypeName] = location;
+                return true;
+            }
+
+            MessageSourceLocationCache[normalizedTypeName] = default;
+            return false;
+        }
+
+        internal static int FindTypeDeclarationLine(
+            IReadOnlyList<string> lines,
+            string targetNamespace,
+            IReadOnlyList<string> targetTypeNames
+        )
+        {
+            if (lines == null || targetTypeNames == null || targetTypeNames.Count == 0)
+            {
+                return 0;
+            }
+
+            List<SourceScope> scopes = new();
+            string fileScopedNamespace = string.Empty;
+            bool insideBlockComment = false;
+            bool insideVerbatimString = false;
+            int braceDepth = 0;
+            bool hasPendingScope = false;
+            SourceScopeKind pendingScopeKind = SourceScopeKind.Type;
+            string pendingScopeName = string.Empty;
+            for (int index = 0; index < lines.Count; index++)
+            {
+                string code = StripSourceCommentsAndLiterals(
+                    lines[index] ?? string.Empty,
+                    ref insideBlockComment,
+                    ref insideVerbatimString
+                );
+                Match namespaceMatch = SourceNamespaceDeclarationPattern.Match(code);
+                if (
+                    namespaceMatch.Success
+                    && string.Equals(namespaceMatch.Groups[2].Value, ";", StringComparison.Ordinal)
+                )
+                {
+                    fileScopedNamespace = namespaceMatch.Groups[1].Value;
+                    hasPendingScope = false;
+                }
+                else if (namespaceMatch.Success)
+                {
+                    hasPendingScope = true;
+                    pendingScopeKind = SourceScopeKind.Namespace;
+                    pendingScopeName = namespaceMatch.Groups[1].Value;
+                }
+
+                Match typeMatch = SourceTypeDeclarationPattern.Match(code);
+                if (typeMatch.Success)
+                {
+                    string declaredTypeName = typeMatch.Groups[1].Value.TrimStart('@');
+                    string currentNamespace = CreateSourceNamespace(fileScopedNamespace, scopes);
+                    string[] currentTypeNames = scopes
+                        .Where(scope => scope.Kind == SourceScopeKind.Type)
+                        .Select(scope => scope.Name)
+                        .ToArray();
+                    if (
+                        string.Equals(
+                            currentNamespace,
+                            targetNamespace ?? string.Empty,
+                            StringComparison.Ordinal
+                        )
+                        && currentTypeNames.Length == targetTypeNames.Count - 1
+                        && currentTypeNames.SequenceEqual(
+                            targetTypeNames.Take(targetTypeNames.Count - 1),
+                            StringComparer.Ordinal
+                        )
+                        && string.Equals(
+                            declaredTypeName,
+                            targetTypeNames[targetTypeNames.Count - 1],
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        return index + 1;
+                    }
+
+                    hasPendingScope = true;
+                    pendingScopeKind = SourceScopeKind.Type;
+                    pendingScopeName = declaredTypeName;
+                }
+
+                foreach (char character in code)
+                {
+                    if (character == '{')
+                    {
+                        braceDepth++;
+                        if (hasPendingScope)
+                        {
+                            scopes.Add(
+                                new SourceScope(pendingScopeKind, pendingScopeName, braceDepth)
+                            );
+                            hasPendingScope = false;
+                        }
+                    }
+                    else if (character == '}')
+                    {
+                        braceDepth = Math.Max(0, braceDepth - 1);
+                        while (scopes.Count > 0 && scopes[scopes.Count - 1].BodyDepth > braceDepth)
+                        {
+                            scopes.RemoveAt(scopes.Count - 1);
+                        }
+                    }
+                }
+
+                if (hasPendingScope && code.IndexOf(';') >= 0)
+                {
+                    hasPendingScope = false;
+                }
+            }
+            return 0;
+        }
+
+        private static IReadOnlyList<string> CreateSourceTypeNameChain(Type type)
+        {
+            List<string> names = new();
+            for (Type current = type; current != null; current = current.DeclaringType)
+            {
+                string name = current.Name;
+                int genericArity = name.IndexOf('`');
+                names.Add(genericArity < 0 ? name : name.Substring(0, genericArity));
+            }
+            names.Reverse();
+            return names;
+        }
+
+        private static string CreateSourceNamespace(
+            string fileScopedNamespace,
+            IReadOnlyList<SourceScope> scopes
+        )
+        {
+            return string.Join(
+                ".",
+                new[] { fileScopedNamespace ?? string.Empty }
+                    .Concat(
+                        scopes
+                            .Where(scope => scope.Kind == SourceScopeKind.Namespace)
+                            .Select(scope => scope.Name)
+                    )
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+            );
+        }
+
+        private static string StripSourceCommentsAndLiterals(
+            string line,
+            ref bool insideBlockComment,
+            ref bool insideVerbatimString
+        )
+        {
+            StringBuilder code = new(line.Length);
+            for (int index = 0; index < line.Length; index++)
+            {
+                if (insideVerbatimString)
+                {
+                    code.Append(' ');
+                    if (line[index] != '"')
+                    {
+                        continue;
+                    }
+                    if (index + 1 < line.Length && line[index + 1] == '"')
+                    {
+                        code.Append(' ');
+                        index++;
+                        continue;
+                    }
+
+                    insideVerbatimString = false;
+                    continue;
+                }
+
+                if (insideBlockComment)
+                {
+                    if (index + 1 < line.Length && line[index] == '*' && line[index + 1] == '/')
+                    {
+                        insideBlockComment = false;
+                        code.Append("  ");
+                        index++;
+                    }
+                    else
+                    {
+                        code.Append(' ');
+                    }
+                    continue;
+                }
+
+                if (index + 1 < line.Length && line[index] == '/' && line[index + 1] == '/')
+                {
+                    code.Append(' ', line.Length - index);
+                    break;
+                }
+                if (index + 1 < line.Length && line[index] == '/' && line[index + 1] == '*')
+                {
+                    insideBlockComment = true;
+                    code.Append("  ");
+                    index++;
+                    continue;
+                }
+                if (line[index] == '"' || line[index] == '\'')
+                {
+                    char quote = line[index];
+                    bool verbatim =
+                        quote == '"'
+                        && index > 0
+                        && (
+                            line[index - 1] == '@'
+                            || (line[index - 1] == '$' && index > 1 && line[index - 2] == '@')
+                        );
+                    code.Append(' ');
+                    if (verbatim)
+                    {
+                        insideVerbatimString = true;
+                        continue;
+                    }
+                    for (index++; index < line.Length; index++)
+                    {
+                        code.Append(' ');
+                        if (line[index] == '\\' && index + 1 < line.Length)
+                        {
+                            code.Append(' ');
+                            index++;
+                            continue;
+                        }
+                        if (line[index] == quote)
+                        {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+
+                code.Append(line[index]);
+            }
+            return code.ToString();
+        }
+
+        private static string NormalizeCapturedTypeName(string typeName)
+        {
+            string normalized = typeName ?? string.Empty;
+            int assemblyStart = normalized.LastIndexOf(" [", StringComparison.Ordinal);
+            return assemblyStart < 0 ? normalized : normalized.Substring(0, assemblyStart);
+        }
+
+        private static Button CreateSourceLinkButton(string label, FlowGraphSourceLocation location)
+        {
+            Button button = new()
+            {
+                name = SourceLinkButtonName,
+                text = $"{label} - {Path.GetFileName(location.AssetPath)}:{location.Line}",
+                tooltip = $"Open {location.AssetPath}:{location.Line}",
+                userData = location,
+            };
+            button.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
+            button.style.marginLeft = 6;
+            button.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                OpenSourceLocation(location);
+            });
+            return button;
+        }
+
+        private static void OpenSourceLocation(FlowGraphSourceLocation location)
+        {
+            UnityEngine.Object asset = AssetDatabase.LoadMainAssetAtPath(location.AssetPath);
+            if (asset == null)
+            {
+                return;
+            }
+
+            EditorGUIUtility.PingObject(asset);
+            _ = AssetDatabase.OpenAsset(asset, location.Line);
         }
 
         private static string CreateDetailsTitle(FlowGraphSelectedItem selectedItem)
@@ -6721,23 +7450,6 @@ namespace DxMessaging.Editor.Windows
                         return FlowGraphSelectedItem.ForEdge(edge);
                     }
                 }
-            }
-
-            if (visibleSnapshot.Edges.Count > 0)
-            {
-                return FlowGraphSelectedItem.ForEdge(
-                    OrderRoutesForDisplay(visibleSnapshot.Edges).First()
-                );
-            }
-
-            if (visibleSnapshot.ComponentNodes.Count > 0)
-            {
-                return FlowGraphSelectedItem.ForComponent(visibleSnapshot.ComponentNodes[0]);
-            }
-
-            if (visibleSnapshot.MessageNodes.Count > 0)
-            {
-                return FlowGraphSelectedItem.ForMessage(visibleSnapshot.MessageNodes[0]);
             }
 
             return FlowGraphSelectedItem.None;
