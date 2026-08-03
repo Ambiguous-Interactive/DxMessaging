@@ -7994,9 +7994,12 @@ namespace DxMessaging.Tests.Editor
                 Is.Empty,
                 "A destroyed context must use its stable ID without producing a capture warning."
             );
+            // Unity 2021.3's NUnit resolves Has.Count against the runtime array, which has no
+            // public Count property. Read Count through the IReadOnlyList contract directly so
+            // the regression runs on every supported editor version.
             Assert.That(
-                snapshot.Edges,
-                Has.Count.EqualTo(1),
+                snapshot.Edges.Count,
+                Is.EqualTo(1),
                 "The targeted registration must remain present after its context object is destroyed."
             );
             FlowGraphEdge edge = snapshot.Edges.Single();

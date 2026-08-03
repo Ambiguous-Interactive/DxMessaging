@@ -121,5 +121,10 @@ Play entries when Unity disables domain and scene reload.
   remained healthy. The result above is the completed post-recompile run; no
   timeout, retry policy, or production behavior changed to mask the host-runner
   condition.
+- The first final-head Unity 2021.3 EditMode run exposed an NUnit compatibility
+  error in the destroyed-context regression: `Has.Count` reflects a `Count`
+  property that arrays do not expose on that runner. The assertion now compares
+  the `IReadOnlyList.Count` value directly, preserving the same exact-one-route
+  contract across supported Unity versions.
 - Full Node.js script suite: **406 passed / 0 failed**; `npm run validate:all`,
   all pre-commit hooks, markdownlint, and `git diff --check` passed.
