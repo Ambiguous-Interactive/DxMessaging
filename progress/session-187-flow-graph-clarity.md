@@ -128,3 +128,17 @@ Play entries when Unity disables domain and scene reload.
   contract across supported Unity versions.
 - Full Node.js script suite: **406 passed / 0 failed**; `npm run validate:all`,
   all pre-commit hooks, markdownlint, and `git diff --check` passed.
+- Final PR-head CI passed every applicable check, including all nine Unity
+  2021.3, 2022.3, and 6000.3 EditMode, PlayMode, and standalone legs, the
+  performance workflow, and the static aggregate gate.
+- A later Cursor review found that route selection and layout identity included
+  the mutable context display label. Stable identities now use message,
+  receiver, route kind, and context ID only; connection signature generation
+  also canonicalizes input by those stable fields. A two-route regression
+  reverses the labels' lexical order and proves selection, pan, zoom, and layout
+  initialization survive the refresh while the selected route shows its new
+  label.
+- The Unity MCP endpoint remained reachable, but the host editor timed out while
+  servicing the compile-freshness command for the final review correction.
+  CSharpier, `git diff --check`, and `npm run validate:all` passed locally; the
+  pushed Unity matrix supplies the fresh-assembly result for this correction.

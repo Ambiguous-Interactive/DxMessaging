@@ -2271,8 +2271,8 @@ namespace DxMessaging.Editor.Windows
                                     )
                                 )
                                 .ThenBy(candidate => candidate.RouteKind, StringComparer.Ordinal)
-                                .ThenBy(candidate => candidate.Context, StringComparer.Ordinal)
                                 .ThenBy(candidate => candidate.ContextId)
+                                .ThenBy(candidate => candidate.Context, StringComparer.Ordinal)
                                 .ToArray(),
                         StringComparer.Ordinal
                     );
@@ -2290,8 +2290,8 @@ namespace DxMessaging.Editor.Windows
                                     )
                                 )
                                 .ThenBy(candidate => candidate.RouteKind, StringComparer.Ordinal)
-                                .ThenBy(candidate => candidate.Context, StringComparer.Ordinal)
                                 .ThenBy(candidate => candidate.ContextId)
+                                .ThenBy(candidate => candidate.Context, StringComparer.Ordinal)
                                 .ToArray(),
                         StringComparer.Ordinal
                     );
@@ -2369,8 +2369,8 @@ namespace DxMessaging.Editor.Windows
                         connection => connection.RouteKind,
                         StringComparer.Ordinal
                     )
-                    .ThenBy(connection => connection.Context, StringComparer.Ordinal)
                     .ThenBy(connection => connection.ContextId)
+                    .ThenBy(connection => connection.Context, StringComparer.Ordinal)
                     .ToArray();
                 for (int index = 0; index < parallelConnections.Length; index++)
                 {
@@ -2730,7 +2730,6 @@ namespace DxMessaging.Editor.Windows
                 connection.MessageTypeName,
                 connection.TargetComponentId,
                 connection.RouteKind,
-                connection.Context,
                 connection.ContextId.ToString(CultureInfo.InvariantCulture)
             );
         }
@@ -3159,7 +3158,13 @@ namespace DxMessaging.Editor.Windows
             {
                 signature.Append("r|").Append(receiverId).Append('\n');
             }
-            foreach (GraphConnectionDescriptor connection in connections)
+            foreach (
+                GraphConnectionDescriptor connection in connections
+                    .OrderBy(candidate => candidate.MessageTypeName, StringComparer.Ordinal)
+                    .ThenBy(candidate => candidate.TargetComponentId, StringComparer.Ordinal)
+                    .ThenBy(candidate => candidate.RouteKind, StringComparer.Ordinal)
+                    .ThenBy(candidate => candidate.ContextId)
+            )
             {
                 signature
                     .Append("e|")
@@ -3168,8 +3173,6 @@ namespace DxMessaging.Editor.Windows
                     .Append(connection.TargetComponentId)
                     .Append('|')
                     .Append(connection.RouteKind)
-                    .Append('|')
-                    .Append(connection.Context)
                     .Append('|')
                     .Append(connection.ContextId)
                     .Append('\n');
@@ -5443,7 +5446,6 @@ namespace DxMessaging.Editor.Windows
                 edge.MessageTypeName,
                 edge.TargetComponentId,
                 edge.RegistrationTypeName,
-                edge.Context,
                 edge.ContextId
             );
         }
@@ -5664,7 +5666,6 @@ namespace DxMessaging.Editor.Windows
             string messageTypeName,
             string targetComponentId,
             string registrationTypeName,
-            string context,
             int contextId
         )
         {
@@ -5674,7 +5675,6 @@ namespace DxMessaging.Editor.Windows
                 messageTypeName ?? string.Empty,
                 targetComponentId ?? string.Empty,
                 registrationTypeName ?? string.Empty,
-                context ?? string.Empty,
                 contextId.ToString(CultureInfo.InvariantCulture)
             );
         }

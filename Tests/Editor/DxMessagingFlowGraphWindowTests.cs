@@ -767,6 +767,99 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void BuildGraphUiPreservesSelectedRouteAndViewportWhenContextDisplayChanges()
+        {
+            FlowGraphSnapshot initialSnapshot = CreateStableContextRouteSnapshot("Arena/Alpha");
+            FlowGraphSnapshot refreshedSnapshot = CreateStableContextRouteSnapshot("Instance 4242");
+            string selectionKey = DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(
+                initialSnapshot.Edges.Single(edge => edge.ContextId == 4242)
+            );
+            Assert.That(
+                DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(
+                    refreshedSnapshot.Edges.Single(edge => edge.ContextId == 4242)
+                ),
+                Is.EqualTo(selectionKey),
+                "A route's stable selection identity must not depend on its mutable context label."
+            );
+            Assert.That(
+                initialSnapshot.Edges.Select(edge => edge.ContextId),
+                Is.EqualTo(new[] { 4242, 5252 }),
+                "The initial labels must place the selected route first."
+            );
+            Assert.That(
+                refreshedSnapshot.Edges.Select(edge => edge.ContextId),
+                Is.EqualTo(new[] { 5252, 4242 }),
+                "The refreshed labels must reverse input order to exercise signature stability."
+            );
+
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+            FlowGraphViewState viewState = new(selectedItemKey: selectionKey);
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, initialSnapshot, viewState);
+
+            VisualElement graph = root.Q<VisualElement>(DxMessagingFlowGraphWindow.GraphCanvasName);
+            DxMessagingFlowGraphWindow.FlowGraphCanvasState canvasState =
+                (DxMessagingFlowGraphWindow.FlowGraphCanvasState)graph.userData;
+            canvasState.Initialized = true;
+            canvasState.Pan = new Vector2(91f, -23f);
+            canvasState.Zoom = 0.9f;
+            string layoutSignature = canvasState.LayoutSignature;
+
+            DxMessagingFlowGraphWindow.RefreshGraphContent(root, refreshedSnapshot, viewState);
+
+            VisualElement refreshedGraph = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.GraphCanvasName
+            );
+            DxMessagingFlowGraphWindow.FlowGraphCanvasState refreshedState =
+                (DxMessagingFlowGraphWindow.FlowGraphCanvasState)refreshedGraph.userData;
+            int selectedConnectionCount = refreshedGraph
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                )
+                .ToList()
+                .Count(connection =>
+                    connection.ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName)
+                );
+
+            Assert.That(
+                refreshedState,
+                Is.SameAs(canvasState),
+                "Refresh must reuse the existing canvas state."
+            );
+            Assert.That(
+                refreshedState.LayoutSignature,
+                Is.EqualTo(layoutSignature),
+                "A display-only context change must not invalidate the graph layout."
+            );
+            Assert.That(
+                refreshedState.Initialized,
+                Is.True,
+                "A display-only context change must not request automatic reframing."
+            );
+            Assert.That(
+                refreshedState.Pan,
+                Is.EqualTo(new Vector2(91f, -23f)),
+                "A display-only context change must preserve the user's pan position."
+            );
+            Assert.That(
+                refreshedState.Zoom,
+                Is.EqualTo(0.9f),
+                "A display-only context change must preserve the user's zoom level."
+            );
+            Assert.That(
+                selectedConnectionCount,
+                Is.EqualTo(1),
+                "The same stable route must remain selected after its display label changes."
+            );
+            Assert.That(
+                root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                Does.Contain("Route context: Instance 4242"),
+                "The preserved selection must resolve to the refreshed route details."
+            );
+        }
+
+        [Test]
         public void BuildGraphUiMakesBroadcastSourceAndReceiverDirectionExplicit()
         {
             FlowGraphMessageNode message = new(
@@ -8552,6 +8645,53 @@ namespace DxMessaging.Tests.Editor
                     ?.Q<Label>(TargetLanesSummaryLabelName)
                     ?.text
                 ?? string.Empty;
+        }
+
+        private static FlowGraphSnapshot CreateStableContextRouteSnapshot(string context)
+        {
+            return new FlowGraphSnapshot(
+                new[]
+                {
+                    new FlowGraphComponentNode(
+                        "component:target",
+                        "Arena/Receiver",
+                        "MessagingComponent",
+                        activeInHierarchy: true,
+                        listenerCount: 1,
+                        registrationCount: 2,
+                        callCount: 6,
+                        localMessageCount: 0
+                    ),
+                },
+                new[] { new FlowGraphMessageNode("DamageApplied", 2, 6) },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        "DamageApplied",
+                        "component:target",
+                        "Arena/Receiver",
+                        "Targeted",
+                        registrationCount: 1,
+                        callCount: 3,
+                        context: context,
+                        contextId: 4242
+                    ),
+                    new FlowGraphEdge(
+                        "DamageApplied",
+                        "component:target",
+                        "Arena/Receiver",
+                        "Targeted",
+                        registrationCount: 1,
+                        callCount: 3,
+                        context: "Arena/Zulu",
+                        contextId: 5252
+                    ),
+                }
+                    .OrderBy(edge => edge.Context, StringComparer.Ordinal)
+                    .ThenBy(edge => edge.ContextId)
+                    .ToArray(),
+                Array.Empty<string>()
+            );
         }
 
         private static FlowGraphSnapshot CreateTwoEdgeSnapshot()
