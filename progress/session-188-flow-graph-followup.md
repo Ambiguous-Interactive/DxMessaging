@@ -86,6 +86,9 @@ site** action for the exact recorded file and line.
   pass reported zero actionable findings, including minor issues.
 - Post-review local verification: **163 passed / 0 failed** in the focused Flow
   Graph fixture and **607 passed / 0 failed** across the full Editor assembly.
+- Renewed Cursor review found selected routes could remain below later dimmed
+  paths at crossings. Selected curves and markers now render last, and hit
+  testing follows that same visible order.
 
 ## Publication
 

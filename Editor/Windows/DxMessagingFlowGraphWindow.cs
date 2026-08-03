@@ -494,7 +494,9 @@ namespace DxMessaging.Editor.Windows
                 Action<string> onSelectionChanged
             )
             {
-                _curves = curves ?? throw new ArgumentNullException(nameof(curves));
+                _curves = OrderGraphCurvesForRendering(
+                    curves ?? throw new ArgumentNullException(nameof(curves))
+                );
                 name = GraphEdgeLayerName;
                 pickingMode =
                     onSelectionChanged == null ? PickingMode.Ignore : PickingMode.Position;
@@ -525,6 +527,8 @@ namespace DxMessaging.Editor.Windows
                     });
                 }
             }
+
+            internal IReadOnlyList<GraphCurveDescriptor> Curves => _curves;
 
             private void DrawConnections(MeshGenerationContext context)
             {
@@ -676,6 +680,15 @@ namespace DxMessaging.Editor.Windows
                 }
             }
             return nearestSelectionKey;
+        }
+
+        internal static IReadOnlyList<GraphCurveDescriptor> OrderGraphCurvesForRendering(
+            IReadOnlyList<GraphCurveDescriptor> curves
+        )
+        {
+            return curves == null
+                ? Array.Empty<GraphCurveDescriptor>()
+                : curves.OrderBy(curve => curve.Selected ? 1 : 0).ToArray();
         }
 
         internal static float CalculateLocalGraphRouteHitRadius(float worldScale)
@@ -2787,7 +2800,7 @@ namespace DxMessaging.Editor.Windows
             }
 
             FlowGraphEdgeLayer edgeLayer = new(curves, onSelectionChanged);
-            edgeLayer.userData = curves;
+            edgeLayer.userData = edgeLayer.Curves;
             edgeLayer.style.position = Position.Absolute;
             edgeLayer.style.left = 0;
             edgeLayer.style.top = 0;
@@ -2915,7 +2928,7 @@ namespace DxMessaging.Editor.Windows
                     GraphConnectionDescriptor connection,
                     GraphCurveDescriptor curve,
                     float position
-                ) in markers
+                ) in markers.OrderBy(marker => marker.curve.Selected ? 1 : 0)
             )
             {
                 graphContent.Add(

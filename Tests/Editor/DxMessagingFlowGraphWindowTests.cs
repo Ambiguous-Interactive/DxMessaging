@@ -842,8 +842,15 @@ namespace DxMessaging.Tests.Editor
                 selectionKey: "edge|second"
             );
 
+            IReadOnlyList<DxMessagingFlowGraphWindow.GraphCurveDescriptor> unselectedRenderOrder =
+                DxMessagingFlowGraphWindow.OrderGraphCurvesForRendering(new[] { first, second });
+            Assert.That(
+                unselectedRenderOrder.Select(curve => curve.SelectionKey),
+                Is.EqualTo(new[] { "edge|first", "edge|second" }),
+                "Rendering order must stay stable when no route is selected."
+            );
             string selected = DxMessagingFlowGraphWindow.FindGraphRouteAtPoint(
-                new[] { first, second },
+                unselectedRenderOrder,
                 first.Evaluate(0.25f),
                 hitRadius: 10f
             );
@@ -855,12 +862,47 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 DxMessagingFlowGraphWindow.FindGraphRouteAtPoint(
-                    new[] { first, second },
+                    unselectedRenderOrder,
                     first.Evaluate(0.5f),
                     hitRadius: 10f
                 ),
                 Is.EqualTo("edge|second"),
                 "An exact crossing must select the later route drawn visibly on top."
+            );
+            DxMessagingFlowGraphWindow.GraphCurveDescriptor selectedFirst = new(
+                first.Start,
+                first.End,
+                first.CurveOffset,
+                first.Color,
+                selected: true,
+                selectionKey: first.SelectionKey
+            );
+            DxMessagingFlowGraphWindow.GraphCurveDescriptor dimmedSecond = new(
+                second.Start,
+                second.End,
+                second.CurveOffset,
+                second.Color,
+                selected: false,
+                selectionKey: second.SelectionKey,
+                dimmed: true
+            );
+            IReadOnlyList<DxMessagingFlowGraphWindow.GraphCurveDescriptor> selectedRenderOrder =
+                DxMessagingFlowGraphWindow.OrderGraphCurvesForRendering(
+                    new[] { selectedFirst, dimmedSecond }
+                );
+            Assert.That(
+                selectedRenderOrder[selectedRenderOrder.Count - 1].SelectionKey,
+                Is.EqualTo("edge|first"),
+                "The selected route must render after every dimmed path so it stays visibly on top."
+            );
+            Assert.That(
+                DxMessagingFlowGraphWindow.FindGraphRouteAtPoint(
+                    selectedRenderOrder,
+                    selectedFirst.Evaluate(0.5f),
+                    hitRadius: 10f
+                ),
+                Is.EqualTo("edge|first"),
+                "At an exact crossing, hit testing must prefer the selected route rendered on top."
             );
             Assert.That(
                 DxMessagingFlowGraphWindow.FindGraphRouteAtPoint(
@@ -1497,6 +1539,11 @@ namespace DxMessaging.Tests.Editor
                 .Single(connection =>
                     connection.ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName)
                 );
+            List<VisualElement> orderedConnections = refreshedGraph
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.GraphConnectionClassName
+                )
+                .ToList();
 
             Assert.That(selectedItemKey, Is.Not.Empty);
             Assert.That(refreshedState, Is.SameAs(canvasState));
@@ -1506,6 +1553,11 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 selectedConnection.Children().Single().style.width.value.value,
                 Is.EqualTo(18f)
+            );
+            Assert.That(
+                orderedConnections[orderedConnections.Count - 1],
+                Is.SameAs(selectedConnection),
+                "The selected route marker must be the last sibling so dimmed markers cannot cover it."
             );
         }
 
