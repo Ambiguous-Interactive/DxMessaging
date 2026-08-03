@@ -7544,7 +7544,10 @@ namespace DxMessaging.Editor.Windows
                 };
             }
 
-            VisualElement trail = new();
+            VisualElement trail = new()
+            {
+                tooltip = string.IsNullOrWhiteSpace(value) ? "none" : value.Trim(),
+            };
             trail.AddToClassList(DetailsHierarchyTrailClassName);
             trail.style.flexDirection = FlexDirection.Row;
             trail.style.flexWrap = Wrap.Wrap;
@@ -7768,7 +7771,8 @@ namespace DxMessaging.Editor.Windows
                         CreateMessageSelectionKey(messageTypeName),
                         StringComparison.Ordinal
                     ),
-                    focusRestorationId: relationshipFocusId + ":message"
+                    focusRestorationId: relationshipFocusId + ":message",
+                    exactTooltip: messageTypeName
                 )
             );
             flow.Add(CreateRouteArrow());
@@ -7783,7 +7787,8 @@ namespace DxMessaging.Editor.Windows
                     CreateComponentSelectionKey(targetComponentId),
                     StringComparison.Ordinal
                 ),
-                focusRestorationId: relationshipFocusId + ":receiver"
+                focusRestorationId: relationshipFocusId + ":receiver",
+                exactTooltip: $"{targetPath} [{targetComponentId}]"
             );
             target.Add(CreateHierarchyTrail(targetPath));
             flow.Add(target);
@@ -7860,10 +7865,11 @@ namespace DxMessaging.Editor.Windows
             string selectionKey = null,
             Action<string> onSelectionChanged = null,
             bool active = false,
-            string focusRestorationId = null
+            string focusRestorationId = null,
+            string exactTooltip = null
         )
         {
-            VisualElement identity = new() { name = name };
+            VisualElement identity = new() { name = name, tooltip = exactTooltip };
             identity.style.flexGrow = 1;
             identity.style.flexBasis = 150;
             identity.style.minWidth = 130;

@@ -1317,6 +1317,11 @@ namespace DxMessaging.Tests.Editor
                 "Only hierarchy evidence that resolves to a captured graph component should look interactive."
             );
             Assert.That(
+                selectableContextTrails.Select(trail => trail.tooltip),
+                Is.EquivalentTo(new[] { firstContext, secondContext }),
+                "Selectable breadcrumb controls should retain the exact captured identity instead of replacing it with a generic action tooltip."
+            );
+            Assert.That(
                 hierarchyRows[2]
                     .Q<VisualElement>(className: DxMessagingEditorTheme.DetailLinkClassName),
                 Is.Null,
@@ -1378,6 +1383,13 @@ namespace DxMessaging.Tests.Editor
                 .Q<VisualElement>(DxMessagingFlowGraphWindow.DetailsRelationshipReceiverLinkName);
             Assert.That(messageIdentity, Is.Not.Null);
             Assert.That(receiverIdentity, Is.Not.Null);
+            Assert.That(messageIdentity.tooltip, Is.EqualTo(messageTypeName));
+            Assert.That(
+                receiverIdentity.tooltip,
+                Does.Contain(snapshot.ComponentNodes[0].HierarchyPath)
+                    .And.Contain(snapshot.ComponentNodes[0].Id),
+                "Relationship endpoints should retain their exact path and stable receiver identity in the interactive control's tooltip."
+            );
             Assert.That(
                 messageIdentity.ClassListContains(DxMessagingEditorTheme.DetailActiveClassName),
                 Is.True,
