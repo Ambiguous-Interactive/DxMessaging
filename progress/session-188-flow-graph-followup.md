@@ -38,7 +38,9 @@ site** action for the exact recorded file and line.
 - Message source resolution scans Unity compilation inputs for the captured
   runtime type and finds the exact class, struct, interface, or record
   declaration line. It distinguishes namespaces and declaring-type nesting,
-  strips generic arity, and ignores comments and multiline string literals.
+  preserves generic arity and captured assembly identity, and ignores comments
+  and multiline string literals. Assembly indexes build off the Editor thread,
+  read each source file once per build, and retry transient I/O failures.
 - Captured Unity call-site strings open their exact asset line.
 - A stress fixture renders 40 messages, 40 receivers, and 400 many-to-many
   crossing routes, and asserts that every connection stays selectable.
@@ -72,11 +74,23 @@ site** action for the exact recorded file and line.
   hit order, an attached 400-route mouse integration, and scope-aware source
   scanning. Follow-up then found multiline verbatim strings could corrupt the
   scanner; persisted literal state and a fake-declaration regression resolved
-  it. The final reviewer pass reported no remaining actionable issue.
+  it.
+- Cursor's late exact-head review found that the source resolver still scanned
+  every compilation source synchronously on the UI thread. The resolver now
+  captures immutable paths through Unity APIs on the main thread, indexes their
+  declarations on a worker, and refreshes selected graph details as each
+  completed batch drains. Follow-up adversarial review also identified generic
+  arity collisions, discarded captured assembly identity, delayed completion
+  notification, and permanent misses after transient file-read failures. The
+  implementation and focused regressions cover each case. The final adversarial
+  pass reported zero actionable findings, including minor issues.
+- Post-review local verification: **163 passed / 0 failed** in the focused Flow
+  Graph fixture and **607 passed / 0 failed** across the full Editor assembly.
 
 ## Publication
 
 - Commit `6ba526da` carries the complete implementation and validation record.
-- Draft PR [#348](https://github.com/Ambiguous-Interactive/DxMessaging/pull/348)
-  targets `master` and closes #345 while keeping #346 open.
-- Automated review and PR CI remain pending.
+- PR [#348](https://github.com/Ambiguous-Interactive/DxMessaging/pull/348) is
+  ready for review, targets `master`, closes #345, and keeps #346 open.
+- Renewed automated review and exact-head PR CI remain pending for the
+  background source-index follow-up.

@@ -68,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix Flow Graph message-source links stalling the editor while scanning large
+  compilation assemblies. Source declarations now index in the background and
+  each assembly source file is read once, while exact nested and generic source
+  links continue to appear when the index completes
+  ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Reflexive message dispatch to a destroyed `GameObject` or `Component` target
   now skips Unity hierarchy delivery instead of throwing
   `MissingReferenceException`; normal targeted bus handlers still run.

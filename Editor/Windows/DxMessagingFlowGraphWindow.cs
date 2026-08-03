@@ -8,6 +8,7 @@ namespace DxMessaging.Editor.Windows
     using System.Linq;
     using System.Text;
     using System.Text.RegularExpressions;
+    using System.Threading.Tasks;
     using Core;
     using Core.Diagnostics;
     using Core.Messages;
@@ -402,6 +403,87 @@ namespace DxMessaging.Editor.Windows
             internal int BodyDepth { get; }
         }
 
+        private readonly struct SourceTypeDeclaration
+        {
+            internal SourceTypeDeclaration(
+                string sourceNamespace,
+                IReadOnlyList<string> typeNames,
+                int line
+            )
+            {
+                Namespace = sourceNamespace ?? string.Empty;
+                TypeNames = typeNames?.ToArray() ?? Array.Empty<string>();
+                Line = line;
+            }
+
+            internal string Namespace { get; }
+
+            internal IReadOnlyList<string> TypeNames { get; }
+
+            internal int Line { get; }
+        }
+
+        private readonly struct MessageSourceFile
+        {
+            internal MessageSourceFile(string fullPath, string assetPath)
+            {
+                FullPath = fullPath ?? string.Empty;
+                AssetPath = assetPath ?? string.Empty;
+            }
+
+            internal string FullPath { get; }
+
+            internal string AssetPath { get; }
+        }
+
+        private readonly struct CapturedTypeIdentity
+        {
+            internal CapturedTypeIdentity(string typeName, string assemblyName)
+            {
+                TypeName = typeName ?? string.Empty;
+                AssemblyName = assemblyName ?? string.Empty;
+            }
+
+            internal string TypeName { get; }
+
+            internal string AssemblyName { get; }
+
+            internal string CacheKey =>
+                string.IsNullOrWhiteSpace(AssemblyName) ? TypeName : $"{TypeName} [{AssemblyName}]";
+        }
+
+        private sealed class MessageSourceAssemblyIndex
+        {
+            internal MessageSourceAssemblyIndex(Task<MessageSourceIndexBuildResult> buildTask)
+            {
+                BuildTask = buildTask ?? throw new ArgumentNullException(nameof(buildTask));
+            }
+
+            internal Task<MessageSourceIndexBuildResult> BuildTask { get; set; }
+
+            internal IReadOnlyDictionary<string, FlowGraphSourceLocation> Locations { get; set; }
+
+            internal bool IsComplete { get; set; }
+
+            internal DateTime RetryAfterUtc { get; set; }
+        }
+
+        private readonly struct MessageSourceIndexBuildResult
+        {
+            internal MessageSourceIndexBuildResult(
+                IReadOnlyDictionary<string, FlowGraphSourceLocation> locations,
+                bool isComplete
+            )
+            {
+                Locations = locations;
+                IsComplete = isComplete;
+            }
+
+            internal IReadOnlyDictionary<string, FlowGraphSourceLocation> Locations { get; }
+
+            internal bool IsComplete { get; }
+        }
+
         private sealed class FlowGraphEdgeLayer : VisualElement
         {
             private const int SegmentCount = 28;
@@ -630,6 +712,12 @@ namespace DxMessaging.Editor.Windows
             string,
             FlowGraphSourceLocation
         > MessageSourceLocationCache = new(StringComparer.Ordinal);
+        private static readonly Dictionary<
+            string,
+            MessageSourceAssemblyIndex
+        > MessageSourceAssemblyIndexes = new(StringComparer.Ordinal);
+        private static Func<string, string[]> _messageSourceFileReader = File.ReadAllLines;
+        internal static event Action MessageSourceIndexChanged;
         private static readonly Regex SourceNamespaceDeclarationPattern = new(
             @"^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*([;{]?)",
             RegexOptions.CultureInvariant
@@ -648,6 +736,17 @@ namespace DxMessaging.Editor.Windows
             window.Refresh();
         }
 
+        private void OnEnable()
+        {
+            MessageSourceIndexChanged -= HandleMessageSourceIndexChanged;
+            MessageSourceIndexChanged += HandleMessageSourceIndexChanged;
+        }
+
+        private void OnDisable()
+        {
+            MessageSourceIndexChanged -= HandleMessageSourceIndexChanged;
+        }
+
         private void CreateGUI()
         {
             titleContent = new GUIContent(Title, DxMessagingEditorTheme.LoadIcon());
@@ -656,6 +755,7 @@ namespace DxMessaging.Editor.Windows
 
         private void Refresh()
         {
+            AllowIncompleteMessageSourceIndexRetries();
             _currentSnapshot = CaptureSnapshot();
             BuildGraphUi(
                 rootVisualElement,
@@ -710,6 +810,37 @@ namespace DxMessaging.Editor.Windows
             }
 
             _selectedItemKey = normalizedSelectionKey;
+            if (
+                RefreshGraphContent(
+                    rootVisualElement,
+                    _currentSnapshot,
+                    new FlowGraphViewState(_filterText, _selectedItemKey),
+                    exportText => EditorGUIUtility.systemCopyBuffer = exportText,
+                    HandleSelectionChanged
+                )
+            )
+            {
+                return;
+            }
+
+            BuildGraphUi(
+                rootVisualElement,
+                _currentSnapshot,
+                new FlowGraphViewState(_filterText, _selectedItemKey),
+                HandleFilterChanged,
+                Refresh,
+                exportText => EditorGUIUtility.systemCopyBuffer = exportText,
+                HandleSelectionChanged
+            );
+        }
+
+        private void HandleMessageSourceIndexChanged()
+        {
+            if (string.IsNullOrWhiteSpace(_selectedItemKey))
+            {
+                return;
+            }
+
             if (
                 RefreshGraphContent(
                     rootVisualElement,
@@ -6687,42 +6818,57 @@ namespace DxMessaging.Editor.Windows
             return true;
         }
 
-        private static bool TryResolveMessageSource(
+        internal static bool TryResolveMessageSource(
             string messageTypeName,
             out FlowGraphSourceLocation location
         )
         {
             location = default;
-            string normalizedTypeName = NormalizeCapturedTypeName(messageTypeName);
-            if (string.IsNullOrWhiteSpace(normalizedTypeName))
+            CapturedTypeIdentity identity = ParseCapturedTypeIdentity(messageTypeName);
+            if (string.IsNullOrWhiteSpace(identity.TypeName))
             {
                 return false;
             }
 
-            if (MessageSourceLocationCache.TryGetValue(normalizedTypeName, out location))
+            if (MessageSourceLocationCache.TryGetValue(identity.CacheKey, out location))
             {
                 return location.IsValid;
             }
 
-            Type messageType = TypeCache
+            System.Reflection.Assembly[] loadedAssemblies =
+                System.AppDomain.CurrentDomain.GetAssemblies();
+            IEnumerable<System.Reflection.Assembly> candidateAssemblies = loadedAssemblies;
+            if (!string.IsNullOrWhiteSpace(identity.AssemblyName))
+            {
+                candidateAssemblies = candidateAssemblies.Where(assembly =>
+                    string.Equals(
+                        assembly.GetName().Name,
+                        identity.AssemblyName,
+                        StringComparison.Ordinal
+                    )
+                );
+            }
+
+            Type messageType = candidateAssemblies
+                .Select(assembly => assembly.GetType(identity.TypeName, throwOnError: false))
+                .FirstOrDefault(candidate => candidate != null);
+            messageType ??= TypeCache
                 .GetTypesDerivedFrom<IMessage>()
                 .FirstOrDefault(candidate =>
-                    string.Equals(candidate.FullName, normalizedTypeName, StringComparison.Ordinal)
+                    string.Equals(candidate.FullName, identity.TypeName, StringComparison.Ordinal)
+                    && IsTypeFromCapturedAssembly(candidate, identity.AssemblyName)
                 );
-            messageType ??= System
-                .AppDomain.CurrentDomain.GetAssemblies()
-                .Select(assembly => assembly.GetType(normalizedTypeName, throwOnError: false))
-                .FirstOrDefault(candidate => candidate != null);
             if (
                 messageType == null
-                && normalizedTypeName.IndexOf('.') < 0
-                && normalizedTypeName.IndexOf('+') < 0
+                && identity.TypeName.IndexOf('.') < 0
+                && identity.TypeName.IndexOf('+') < 0
             )
             {
                 Type[] simpleNameMatches = TypeCache
                     .GetTypesDerivedFrom<IMessage>()
                     .Where(candidate =>
-                        string.Equals(candidate.Name, normalizedTypeName, StringComparison.Ordinal)
+                        string.Equals(candidate.Name, identity.TypeName, StringComparison.Ordinal)
+                        && IsTypeFromCapturedAssembly(candidate, identity.AssemblyName)
                     )
                     .Take(2)
                     .ToArray();
@@ -6730,62 +6876,282 @@ namespace DxMessaging.Editor.Windows
             }
             if (messageType == null)
             {
-                MessageSourceLocationCache[normalizedTypeName] = default;
+                MessageSourceLocationCache[identity.CacheKey] = default;
                 return false;
             }
 
+            string compilationAssemblyName = string.IsNullOrWhiteSpace(identity.AssemblyName)
+                ? messageType.Assembly.GetName().Name
+                : identity.AssemblyName;
             UnityEditor.Compilation.Assembly compilationAssembly = CompilationPipeline
                 .GetAssemblies()
                 .FirstOrDefault(candidate =>
-                    string.Equals(
-                        candidate.name,
-                        messageType.Assembly.GetName().Name,
-                        StringComparison.Ordinal
-                    )
+                    string.Equals(candidate.name, compilationAssemblyName, StringComparison.Ordinal)
                 );
             if (compilationAssembly == null)
             {
-                MessageSourceLocationCache[normalizedTypeName] = default;
+                MessageSourceLocationCache[identity.CacheKey] = default;
                 return false;
             }
 
-            foreach (string sourceFile in compilationAssembly.sourceFiles)
+            string declarationKey = CreateSourceDeclarationKey(
+                messageType.Namespace,
+                CreateSourceTypeNameChain(messageType)
+            );
+            if (
+                MessageSourceAssemblyIndexes.TryGetValue(
+                    compilationAssembly.name,
+                    out MessageSourceAssemblyIndex existingIndex
+                )
+            )
             {
-                string fullPath = Path.IsPathRooted(sourceFile)
-                    ? sourceFile
-                    : Path.GetFullPath(sourceFile);
-                if (!File.Exists(fullPath))
+                if (existingIndex.Locations == null)
                 {
-                    continue;
+                    return false;
                 }
 
-                string[] lines = File.ReadAllLines(fullPath);
-                int line = FindTypeDeclarationLine(
-                    lines,
-                    messageType.Namespace,
-                    CreateSourceTypeNameChain(messageType)
-                );
-                if (line <= 0)
+                if (existingIndex.Locations.TryGetValue(declarationKey, out location))
                 {
-                    continue;
+                    MessageSourceLocationCache[identity.CacheKey] = location;
+                    return true;
                 }
 
-                string assetPath = Path.IsPathRooted(sourceFile)
-                    ? FileUtil.GetProjectRelativePath(fullPath)
-                    : sourceFile;
-                assetPath = (assetPath ?? string.Empty).Replace('\\', '/');
-                if (string.IsNullOrWhiteSpace(assetPath))
+                if (!existingIndex.IsComplete)
                 {
-                    continue;
+                    if (
+                        existingIndex.BuildTask == null
+                        && DateTime.UtcNow >= existingIndex.RetryAfterUtc
+                    )
+                    {
+                        existingIndex.BuildTask = CreateMessageSourceIndexBuildTask(
+                            compilationAssembly
+                        );
+                        RegisterMessageSourceIndexDrain();
+                    }
+                    return false;
                 }
 
-                location = new FlowGraphSourceLocation(assetPath, line);
-                MessageSourceLocationCache[normalizedTypeName] = location;
-                return true;
+                MessageSourceLocationCache[identity.CacheKey] = default;
+                return false;
             }
 
-            MessageSourceLocationCache[normalizedTypeName] = default;
+            MessageSourceAssemblyIndexes.Add(
+                compilationAssembly.name,
+                new MessageSourceAssemblyIndex(
+                    CreateMessageSourceIndexBuildTask(compilationAssembly)
+                )
+            );
+            RegisterMessageSourceIndexDrain();
             return false;
+        }
+
+        private static bool IsTypeFromCapturedAssembly(Type type, string assemblyName)
+        {
+            return string.IsNullOrWhiteSpace(assemblyName)
+                || string.Equals(
+                    type.Assembly.GetName().Name,
+                    assemblyName,
+                    StringComparison.Ordinal
+                );
+        }
+
+        private static Task<MessageSourceIndexBuildResult> CreateMessageSourceIndexBuildTask(
+            UnityEditor.Compilation.Assembly compilationAssembly
+        )
+        {
+            MessageSourceFile[] sourceFiles = compilationAssembly
+                .sourceFiles.Select(CreateMessageSourceFile)
+                .Where(sourceFile =>
+                    !string.IsNullOrWhiteSpace(sourceFile.FullPath)
+                    && !string.IsNullOrWhiteSpace(sourceFile.AssetPath)
+                )
+                .ToArray();
+            Func<string, string[]> fileReader = _messageSourceFileReader;
+            return Task.Run(() => BuildMessageSourceAssemblyIndex(sourceFiles, fileReader));
+        }
+
+        private static void RegisterMessageSourceIndexDrain()
+        {
+            EditorApplication.update -= DrainMessageSourceAssemblyIndexes;
+            EditorApplication.update += DrainMessageSourceAssemblyIndexes;
+        }
+
+        private static MessageSourceFile CreateMessageSourceFile(string sourceFile)
+        {
+            if (string.IsNullOrWhiteSpace(sourceFile))
+            {
+                return default;
+            }
+
+            string fullPath = Path.IsPathRooted(sourceFile)
+                ? sourceFile
+                : Path.GetFullPath(sourceFile);
+            string assetPath = Path.IsPathRooted(sourceFile)
+                ? FileUtil.GetProjectRelativePath(fullPath)
+                : sourceFile;
+            assetPath = (assetPath ?? string.Empty).Replace('\\', '/');
+            return string.IsNullOrWhiteSpace(assetPath)
+                ? default
+                : new MessageSourceFile(fullPath, assetPath);
+        }
+
+        private static MessageSourceIndexBuildResult BuildMessageSourceAssemblyIndex(
+            IReadOnlyList<MessageSourceFile> sourceFiles,
+            Func<string, string[]> readAllLines
+        )
+        {
+            Dictionary<string, FlowGraphSourceLocation> locations = new(StringComparer.Ordinal);
+            if (sourceFiles == null || readAllLines == null)
+            {
+                return new MessageSourceIndexBuildResult(locations, isComplete: false);
+            }
+
+            bool isComplete = true;
+            foreach (MessageSourceFile sourceFile in sourceFiles)
+            {
+                string[] lines;
+                try
+                {
+                    lines = readAllLines(sourceFile.FullPath);
+                }
+                catch (IOException)
+                {
+                    isComplete = false;
+                    continue;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    isComplete = false;
+                    continue;
+                }
+
+                foreach (SourceTypeDeclaration declaration in FindSourceTypeDeclarations(lines))
+                {
+                    string key = CreateSourceDeclarationKey(
+                        declaration.Namespace,
+                        declaration.TypeNames
+                    );
+                    if (!locations.ContainsKey(key))
+                    {
+                        locations.Add(
+                            key,
+                            new FlowGraphSourceLocation(sourceFile.AssetPath, declaration.Line)
+                        );
+                    }
+                }
+            }
+            return new MessageSourceIndexBuildResult(locations, isComplete);
+        }
+
+        private static void DrainMessageSourceAssemblyIndexes()
+        {
+            bool changed = false;
+            foreach (MessageSourceAssemblyIndex index in MessageSourceAssemblyIndexes.Values)
+            {
+                if (index.BuildTask == null || !index.BuildTask.IsCompleted)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    MessageSourceIndexBuildResult result = index.BuildTask.GetAwaiter().GetResult();
+                    if (!result.IsComplete && index.Locations != null)
+                    {
+                        Dictionary<string, FlowGraphSourceLocation> mergedLocations = new(
+                            index.Locations,
+                            StringComparer.Ordinal
+                        );
+                        foreach (
+                            KeyValuePair<string, FlowGraphSourceLocation> pair in result.Locations
+                        )
+                        {
+                            mergedLocations[pair.Key] = pair.Value;
+                        }
+                        index.Locations = mergedLocations;
+                    }
+                    else
+                    {
+                        index.Locations = result.Locations;
+                    }
+                    index.IsComplete = result.IsComplete;
+                    index.RetryAfterUtc = result.IsComplete
+                        ? DateTime.MaxValue
+                        : DateTime.UtcNow.AddSeconds(5);
+                }
+                catch (Exception exception)
+                {
+                    index.Locations = new Dictionary<string, FlowGraphSourceLocation>(
+                        StringComparer.Ordinal
+                    );
+                    index.IsComplete = false;
+                    index.RetryAfterUtc = DateTime.UtcNow.AddSeconds(5);
+                    Debug.LogWarning(
+                        $"DxMessaging Flow Graph could not index message source files: {exception.Message}"
+                    );
+                }
+                index.BuildTask = null;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                MessageSourceIndexChanged?.Invoke();
+            }
+
+            if (!MessageSourceAssemblyIndexes.Values.Any(index => index.BuildTask != null))
+            {
+                EditorApplication.update -= DrainMessageSourceAssemblyIndexes;
+            }
+        }
+
+        internal static void AllowIncompleteMessageSourceIndexRetries()
+        {
+            foreach (
+                MessageSourceAssemblyIndex index in MessageSourceAssemblyIndexes.Values.Where(
+                    index => index.BuildTask == null && !index.IsComplete
+                )
+            )
+            {
+                index.RetryAfterUtc = DateTime.MinValue;
+            }
+        }
+
+        internal static int PendingMessageSourceIndexCount =>
+            MessageSourceAssemblyIndexes.Values.Count(index => index.BuildTask != null);
+
+        internal static int CompletedMessageSourceIndexCount =>
+            MessageSourceAssemblyIndexes.Values.Count(index =>
+                index.BuildTask != null && index.BuildTask.IsCompleted
+            );
+
+        internal static Func<string, string[]> MessageSourceFileReader
+        {
+            get => _messageSourceFileReader;
+            set => _messageSourceFileReader = value ?? File.ReadAllLines;
+        }
+
+        internal static void ResetMessageSourceIndexesForTests()
+        {
+            EditorApplication.update -= DrainMessageSourceAssemblyIndexes;
+            MessageSourceAssemblyIndexes.Clear();
+            MessageSourceLocationCache.Clear();
+            _messageSourceFileReader = File.ReadAllLines;
+        }
+
+        internal static void CompleteMessageSourceIndexesForTests()
+        {
+            Task[] buildTasks = MessageSourceAssemblyIndexes
+                .Values.Where(index => index.BuildTask != null)
+                .Select(index => (Task)index.BuildTask)
+                .ToArray();
+            Task.WaitAll(buildTasks);
+            DrainMessageSourceAssemblyIndexes();
+        }
+
+        internal static void DrainMessageSourceIndexesForTests()
+        {
+            DrainMessageSourceAssemblyIndexes();
         }
 
         internal static int FindTypeDeclarationLine(
@@ -6799,21 +7165,50 @@ namespace DxMessaging.Editor.Windows
                 return 0;
             }
 
-            List<SourceScope> scopes = new();
-            string fileScopedNamespace = string.Empty;
+            SourceTypeDeclaration match = FindSourceTypeDeclarations(lines)
+                .FirstOrDefault(declaration =>
+                    string.Equals(
+                        declaration.Namespace,
+                        targetNamespace ?? string.Empty,
+                        StringComparison.Ordinal
+                    )
+                    && declaration.TypeNames.SequenceEqual(targetTypeNames, StringComparer.Ordinal)
+                );
+            return match.Line;
+        }
+
+        private static IReadOnlyList<SourceTypeDeclaration> FindSourceTypeDeclarations(
+            IReadOnlyList<string> lines
+        )
+        {
+            List<SourceTypeDeclaration> declarations = new();
+            if (lines == null)
+            {
+                return declarations;
+            }
+
             bool insideBlockComment = false;
             bool insideVerbatimString = false;
-            int braceDepth = 0;
-            bool hasPendingScope = false;
-            SourceScopeKind pendingScopeKind = SourceScopeKind.Type;
-            string pendingScopeName = string.Empty;
+            string[] codeLines = new string[lines.Count];
             for (int index = 0; index < lines.Count; index++)
             {
-                string code = StripSourceCommentsAndLiterals(
+                codeLines[index] = StripSourceCommentsAndLiterals(
                     lines[index] ?? string.Empty,
                     ref insideBlockComment,
                     ref insideVerbatimString
                 );
+            }
+
+            List<SourceScope> scopes = new();
+            string fileScopedNamespace = string.Empty;
+            int braceDepth = 0;
+            int attributeSquareDepth = 0;
+            bool hasPendingScope = false;
+            SourceScopeKind pendingScopeKind = SourceScopeKind.Type;
+            string pendingScopeName = string.Empty;
+            for (int index = 0; index < codeLines.Length; index++)
+            {
+                string code = codeLines[index];
                 Match namespaceMatch = SourceNamespaceDeclarationPattern.Match(code);
                 if (
                     namespaceMatch.Success
@@ -6834,31 +7229,30 @@ namespace DxMessaging.Editor.Windows
                 if (typeMatch.Success)
                 {
                     string declaredTypeName = typeMatch.Groups[1].Value.TrimStart('@');
+                    if (
+                        code.Substring(typeMatch.Index + typeMatch.Length)
+                            .TrimStart()
+                            .StartsWith("<", StringComparison.Ordinal)
+                    )
+                    {
+                        declaredTypeName += TryReadSourceGenericParameters(
+                            codeLines,
+                            index,
+                            typeMatch.Index + typeMatch.Length,
+                            out string genericParameters
+                        )
+                            ? "`" + CountSourceGenericParameters(genericParameters)
+                            : "`?";
+                    }
                     string currentNamespace = CreateSourceNamespace(fileScopedNamespace, scopes);
                     string[] currentTypeNames = scopes
                         .Where(scope => scope.Kind == SourceScopeKind.Type)
                         .Select(scope => scope.Name)
+                        .Concat(new[] { declaredTypeName })
                         .ToArray();
-                    if (
-                        string.Equals(
-                            currentNamespace,
-                            targetNamespace ?? string.Empty,
-                            StringComparison.Ordinal
-                        )
-                        && currentTypeNames.Length == targetTypeNames.Count - 1
-                        && currentTypeNames.SequenceEqual(
-                            targetTypeNames.Take(targetTypeNames.Count - 1),
-                            StringComparer.Ordinal
-                        )
-                        && string.Equals(
-                            declaredTypeName,
-                            targetTypeNames[targetTypeNames.Count - 1],
-                            StringComparison.Ordinal
-                        )
-                    )
-                    {
-                        return index + 1;
-                    }
+                    declarations.Add(
+                        new SourceTypeDeclaration(currentNamespace, currentTypeNames, index + 1)
+                    );
 
                     hasPendingScope = true;
                     pendingScopeKind = SourceScopeKind.Type;
@@ -6867,6 +7261,20 @@ namespace DxMessaging.Editor.Windows
 
                 foreach (char character in code)
                 {
+                    if (character == '[')
+                    {
+                        attributeSquareDepth++;
+                        continue;
+                    }
+                    if (character == ']')
+                    {
+                        attributeSquareDepth = Math.Max(0, attributeSquareDepth - 1);
+                        continue;
+                    }
+                    if (attributeSquareDepth > 0)
+                    {
+                        continue;
+                    }
                     if (character == '{')
                     {
                         braceDepth++;
@@ -6893,7 +7301,77 @@ namespace DxMessaging.Editor.Windows
                     hasPendingScope = false;
                 }
             }
-            return 0;
+            return declarations;
+        }
+
+        private static bool TryReadSourceGenericParameters(
+            IReadOnlyList<string> codeLines,
+            int declarationLine,
+            int declarationEnd,
+            out string genericParameters
+        )
+        {
+            genericParameters = string.Empty;
+            if (codeLines == null || declarationLine < 0 || declarationLine >= codeLines.Count)
+            {
+                return false;
+            }
+
+            StringBuilder parameters = new();
+            bool started = false;
+            int angleDepth = 0;
+            int attributeSquareDepth = 0;
+            for (int lineIndex = declarationLine; lineIndex < codeLines.Count; lineIndex++)
+            {
+                string line = codeLines[lineIndex] ?? string.Empty;
+                int characterIndex = lineIndex == declarationLine ? declarationEnd : 0;
+                for (; characterIndex < line.Length; characterIndex++)
+                {
+                    char character = line[characterIndex];
+                    if (!started)
+                    {
+                        if (char.IsWhiteSpace(character))
+                        {
+                            continue;
+                        }
+                        if (character != '<')
+                        {
+                            return false;
+                        }
+                        started = true;
+                        angleDepth = 1;
+                        continue;
+                    }
+
+                    if (character == '[')
+                    {
+                        attributeSquareDepth++;
+                    }
+                    else if (character == ']')
+                    {
+                        attributeSquareDepth = Math.Max(0, attributeSquareDepth - 1);
+                    }
+                    else if (character == '<' && attributeSquareDepth == 0)
+                    {
+                        angleDepth++;
+                    }
+                    else if (character == '>' && attributeSquareDepth == 0)
+                    {
+                        angleDepth--;
+                        if (angleDepth == 0)
+                        {
+                            genericParameters = parameters.ToString();
+                            return !string.IsNullOrWhiteSpace(genericParameters);
+                        }
+                    }
+                    parameters.Append(character);
+                }
+                if (started)
+                {
+                    parameters.Append(' ');
+                }
+            }
+            return false;
         }
 
         private static IReadOnlyList<string> CreateSourceTypeNameChain(Type type)
@@ -6901,12 +7379,53 @@ namespace DxMessaging.Editor.Windows
             List<string> names = new();
             for (Type current = type; current != null; current = current.DeclaringType)
             {
-                string name = current.Name;
-                int genericArity = name.IndexOf('`');
-                names.Add(genericArity < 0 ? name : name.Substring(0, genericArity));
+                names.Add(current.Name);
             }
             names.Reverse();
             return names;
+        }
+
+        private static int CountSourceGenericParameters(string genericParameters)
+        {
+            int count = 1;
+            int squareDepth = 0;
+            int parenthesisDepth = 0;
+            for (int index = 0; index < genericParameters.Length; index++)
+            {
+                switch (genericParameters[index])
+                {
+                    case '[':
+                        squareDepth++;
+                        break;
+                    case ']':
+                        squareDepth = Math.Max(0, squareDepth - 1);
+                        break;
+                    case '(':
+                        parenthesisDepth++;
+                        break;
+                    case ')':
+                        parenthesisDepth = Math.Max(0, parenthesisDepth - 1);
+                        break;
+                    case ',':
+                        if (squareDepth == 0 && parenthesisDepth == 0)
+                        {
+                            count++;
+                        }
+                        break;
+                }
+            }
+            return count;
+        }
+
+        private static string CreateSourceDeclarationKey(
+            string sourceNamespace,
+            IReadOnlyList<string> typeNames
+        )
+        {
+            string typeName = string.Join("+", typeNames ?? Array.Empty<string>());
+            return string.IsNullOrWhiteSpace(sourceNamespace)
+                ? typeName
+                : sourceNamespace + "." + typeName;
         }
 
         private static string CreateSourceNamespace(
@@ -7018,11 +7537,22 @@ namespace DxMessaging.Editor.Windows
             return code.ToString();
         }
 
-        private static string NormalizeCapturedTypeName(string typeName)
+        private static CapturedTypeIdentity ParseCapturedTypeIdentity(string typeName)
         {
-            string normalized = typeName ?? string.Empty;
-            int assemblyStart = normalized.LastIndexOf(" [", StringComparison.Ordinal);
-            return assemblyStart < 0 ? normalized : normalized.Substring(0, assemblyStart);
+            string captured = typeName ?? string.Empty;
+            int assemblyStart = captured.LastIndexOf(" [", StringComparison.Ordinal);
+            if (assemblyStart < 0 || !captured.EndsWith("]", StringComparison.Ordinal))
+            {
+                return new CapturedTypeIdentity(captured, string.Empty);
+            }
+
+            string assemblyName = captured.Substring(
+                assemblyStart + 2,
+                captured.Length - assemblyStart - 3
+            );
+            return string.IsNullOrWhiteSpace(assemblyName)
+                ? new CapturedTypeIdentity(captured, string.Empty)
+                : new CapturedTypeIdentity(captured.Substring(0, assemblyStart), assemblyName);
         }
 
         private static Button CreateSourceLinkButton(string label, FlowGraphSourceLocation location)
