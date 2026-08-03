@@ -33,6 +33,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Change Flow Graph to lead with an interactive node-and-edge canvas. Message
+  nodes connect to receiver nodes through live registration edges, with pan,
+  zoom, automatic framing, and selection. Text-heavy route analysis, trace
+  activity, raw topology, and overflow rows now start inside one collapsed
+  section. Empty captures explain how to restore live registrations instead of
+  filling the window with zero-value summaries. A crossing-aware layered layout
+  and ordered node ports keep arrow paths traceable without text labels on the
+  lines. Nodes use named metric rows instead of compact `+N` summaries, and
+  multi-kind message types use neutral `MIXED` metrics until filtered to one
+  route kind. Route selection opens responsive route, activity, emission, and
+  trace cards while
+  the dense technical report stays collapsed. Broadcast and targeted routes
+  expose recent component- and registration-exact delivery call sites without
+  leaking evidence across message buses. Global accept-all
+  registrations appear as `ANY MESSAGE` observers instead of a misleading
+  `IMessage` message type. Destroyed Unity context references fall back to their
+  stable instance ID instead of aborting capture for that component
+  ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Improve targeted and source-bound broadcast routing throughput and reduce the
   memory retained by their per-target lookup tables without changing the public
   messaging API or delivery behavior
@@ -43,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reflexive message dispatch to a destroyed `GameObject` or `Component` target
+  now skips Unity hierarchy delivery instead of throwing
+  `MissingReferenceException`; normal targeted bus handlers still run.
+- Fix the Diagnostics Tooling Exerciser losing all live registrations after a
+  reload-disabled Play Mode reset. Active receivers now rebuild their tokens and
+  the runner restarts its deterministic emissions on every activation
+  ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
 - Pooled collection rentals now return to their pool when attaching them to a
   registration or reclamation owner throws, instead of remaining stranded
   after a failed ownership transfer.

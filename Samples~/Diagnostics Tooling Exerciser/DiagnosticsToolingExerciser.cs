@@ -2,6 +2,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
 {
     using System;
     using System.Collections;
+    using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -37,12 +38,70 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         [SerializeField]
         private string lastRunSummary = "Not run yet";
 
+        private static readonly HashSet<int> InitializedRunnerIds = new();
+
         public int Sequence => sequence;
 
         public string LastRunSummary => lastRunSummary;
 
-        private void Start()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void BeginPlayGeneration()
         {
+            InitializedRunnerIds.Clear();
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void InitializeAfterSceneLoad()
+        {
+#if UNITY_2023_1_OR_NEWER
+            DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None
+            );
+#else
+            DiagnosticsToolingExerciser[] runners =
+                FindObjectsOfType<DiagnosticsToolingExerciser>();
+#endif
+            foreach (DiagnosticsToolingExerciser runner in runners)
+            {
+                if (runner != null && runner.isActiveAndEnabled)
+                {
+                    runner.BeginPlaySession();
+                }
+            }
+        }
+
+        private void OnEnable()
+        {
+            if (Application.isPlaying)
+            {
+                BeginPlaySession();
+            }
+        }
+
+        private void OnDisable()
+        {
+            _ = InitializedRunnerIds.Remove(GetInstanceID());
+            CancelInvoke(nameof(EmitBurst));
+            StopAllCoroutines();
+        }
+
+        private void BeginPlaySession()
+        {
+            if (!InitializedRunnerIds.Add(GetInstanceID()))
+            {
+                return;
+            }
+
+            CancelInvoke(nameof(EmitBurst));
+            StopAllCoroutines();
+            sequence = 0;
+            lastRunSummary = "Not run yet";
+            foreach (DiagnosticsToolingReceiver receiver in receivers)
+            {
+                receiver?.ResetCounts();
+            }
+
             ConfigureDiagnostics();
 
             if (emitOnStart)
@@ -83,7 +142,6 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         [ContextMenu("Emit One Of Each")]
         public void EmitOneOfEach()
         {
-            EnsureReceiversReady();
             sequence++;
 
             ToolingPulse pulse = new(
@@ -160,14 +218,6 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         private string CreateTraceId(string route)
         {
             return $"sample-{route}-{sequence:000}";
-        }
-
-        private void EnsureReceiversReady()
-        {
-            foreach (DiagnosticsToolingReceiver receiver in receivers)
-            {
-                receiver?.EnsureToolingRegistrations();
-            }
         }
     }
 }

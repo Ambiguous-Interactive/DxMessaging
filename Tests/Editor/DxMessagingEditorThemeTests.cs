@@ -295,6 +295,27 @@ namespace DxMessaging.Tests.Editor
             AssertColor(element.style.borderLeftColor.value, DxMessagingEditorPalette.Amber);
         }
 
+        [Test]
+        public void ApplyCompleteBorderSupportsUniformCustomWidth()
+        {
+            VisualElement element = new();
+
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                element,
+                DxMessagingEditorPalette.AmberSoft,
+                3f
+            );
+
+            Assert.That(element.style.borderTopWidth.value, Is.EqualTo(3f));
+            Assert.That(element.style.borderRightWidth.value, Is.EqualTo(3f));
+            Assert.That(element.style.borderBottomWidth.value, Is.EqualTo(3f));
+            Assert.That(element.style.borderLeftWidth.value, Is.EqualTo(3f));
+            AssertColor(element.style.borderTopColor.value, DxMessagingEditorPalette.AmberSoft);
+            AssertColor(element.style.borderRightColor.value, DxMessagingEditorPalette.AmberSoft);
+            AssertColor(element.style.borderBottomColor.value, DxMessagingEditorPalette.AmberSoft);
+            AssertColor(element.style.borderLeftColor.value, DxMessagingEditorPalette.AmberSoft);
+        }
+
         private static void AssertIconLoads(string fileName, int expectedSize)
         {
             Texture2D icon = DxMessagingEditorTheme.LoadIcon(fileName);

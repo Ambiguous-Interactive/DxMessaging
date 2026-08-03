@@ -8,6 +8,7 @@ namespace DxMessaging.Editor.Windows
     using System.Text;
     using Core;
     using Core.Diagnostics;
+    using Core.Messages;
     using DxMessaging.Editor;
     using DxMessaging.Editor.Testing;
     using DxMessaging.Unity;
@@ -27,6 +28,12 @@ namespace DxMessaging.Editor.Windows
         internal const string ContentName = "dxmessaging-flow-graph-content";
         internal const string EmptyStateLabelName = "dxmessaging-flow-graph-empty";
         internal const string EmptyStateTitleLabelName = "dxmessaging-flow-graph-empty-title";
+        internal const string GraphCanvasName = "dxmessaging-flow-graph-canvas";
+        internal const string GraphLegendName = "dxmessaging-flow-graph-legend";
+        internal const string GraphMessageNodeClassName = "dxmessaging-flow-graph-canvas-message";
+        internal const string GraphReceiverNodeClassName = "dxmessaging-flow-graph-canvas-receiver";
+        internal const string GraphConnectionClassName = "dxmessaging-flow-graph-canvas-connection";
+        internal const string AnalysisFoldoutName = "dxmessaging-flow-graph-analysis";
         internal const string RouteMapName = "dxmessaging-flow-graph-route-map";
         internal const string RouteMapRouteClassName = "dxmessaging-flow-graph-route-map-route";
         internal const string RouteMapMessageLabelName = "dxmessaging-flow-graph-route-map-message";
@@ -34,6 +41,14 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-flow-graph-route-map-route-kind";
         internal const string RouteMapTargetLabelName = "dxmessaging-flow-graph-route-map-target";
         internal const string RouteMapSummaryLabelName = "dxmessaging-flow-graph-route-map-summary";
+        internal const string RouteMapOverviewLabelName =
+            "dxmessaging-flow-graph-route-map-overview";
+        internal const string RouteMapInsightsFoldoutName =
+            "dxmessaging-flow-graph-route-map-insights";
+        internal const string RouteMapMoreRoutesFoldoutName =
+            "dxmessaging-flow-graph-route-map-more";
+        internal const string TraceActivityFoldoutName = "dxmessaging-flow-graph-trace-activity";
+        internal const string TopologyFoldoutName = "dxmessaging-flow-graph-topology";
         internal const string VisibleMessageLanesName = "dxmessaging-flow-graph-message-lanes";
         internal const string VisibleMessageLaneRowClassName =
             "dxmessaging-flow-graph-message-lane-row";
@@ -145,13 +160,295 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailsPaneName = "dxmessaging-flow-graph-details";
         internal const string DetailsTitleLabelName = "dxmessaging-flow-graph-details-title";
         internal const string DetailsBodyLabelName = "dxmessaging-flow-graph-details-body";
+        internal const string DetailsSectionClassName = "dxmessaging-flow-graph-details-section";
+        internal const string DetailsMetricClassName = "dxmessaging-flow-graph-details-metric";
+        internal const string DetailsTechnicalFoldoutName =
+            "dxmessaging-flow-graph-details-technical";
+        internal const string GraphNodeMetricClassName = "dxmessaging-flow-graph-node-metric";
         internal const string WarningLabelName = "dxmessaging-flow-graph-warning";
+        internal const string GlobalObserverMessageName = "ANY MESSAGE";
 
         private const string Title = "Message Flow Graph";
-        private const int ExportSchemaVersion = 5;
+        private const int VisibleRouteLimit = 8;
+        private const float GraphNodeWidth = 270f;
+        private const float GraphNodeHeight = 132f;
+        private const float GraphNodeGap = 42f;
+        private const float GraphCanvasHeight = 520f;
+        private const int ExportSchemaVersion = 6;
         private const string ExportCaptureMode = "registration-topology-with-recent-diagnostics";
         private const string ExportTraceSemantics =
             "traceId is emitted by concrete MessageBus dispatch and copied to token delivery records when diagnostics are enabled; edge traced counts are registration-handle exact, trace paths are built from token delivery records to avoid cross-bus trace-id collisions, recentTraceIdCount counts distinct trace ids observed for each trace path, and recentTraceIds lists those positive trace ids for cross-path breadth analysis.";
+
+        private sealed class FlowGraphFoldoutState
+        {
+            internal bool AnalysisExpanded;
+            internal bool RouteInsightsExpanded;
+            internal bool MoreRoutesExpanded;
+            internal bool TraceActivityExpanded;
+            internal bool TopologyExpanded;
+            internal FlowGraphCanvasState CanvasState { get; } = new();
+        }
+
+        private readonly struct GraphConnectionDescriptor
+        {
+            internal GraphConnectionDescriptor(
+                string messageTypeName,
+                string targetComponentId,
+                string targetComponentPath,
+                string routeKind,
+                string context,
+                int contextId,
+                IReadOnlyList<string> recentEmissionSites,
+                int activityCount,
+                string selectionKey,
+                bool traceOnly
+            )
+            {
+                MessageTypeName = messageTypeName ?? string.Empty;
+                TargetComponentId = targetComponentId ?? string.Empty;
+                TargetComponentPath = targetComponentPath ?? string.Empty;
+                RouteKind = routeKind ?? string.Empty;
+                Context = context ?? string.Empty;
+                ContextId = contextId;
+                RecentEmissionSites = recentEmissionSites ?? Array.Empty<string>();
+                ActivityCount = activityCount;
+                SelectionKey = selectionKey ?? string.Empty;
+                TraceOnly = traceOnly;
+            }
+
+            internal string MessageTypeName { get; }
+
+            internal string TargetComponentId { get; }
+
+            internal string TargetComponentPath { get; }
+
+            internal string RouteKind { get; }
+
+            internal string Context { get; }
+
+            internal int ContextId { get; }
+
+            internal IReadOnlyList<string> RecentEmissionSites { get; }
+
+            internal int ActivityCount { get; }
+
+            internal string SelectionKey { get; }
+
+            internal bool TraceOnly { get; }
+        }
+
+        private readonly struct GraphNodeMetric
+        {
+            internal GraphNodeMetric(string label, string value)
+            {
+                Label = label ?? string.Empty;
+                Value = value ?? string.Empty;
+            }
+
+            internal string Label { get; }
+
+            internal string Value { get; }
+        }
+
+        private readonly struct CapturedEdgeEmission
+        {
+            internal CapturedEdgeEmission(string componentId, MessageEmissionData emission)
+            {
+                ComponentId = componentId ?? string.Empty;
+                Emission = emission;
+            }
+
+            internal string ComponentId { get; }
+
+            internal MessageEmissionData Emission { get; }
+        }
+
+        private readonly struct EdgeEmissionKey : IEquatable<EdgeEmissionKey>
+        {
+            internal EdgeEmissionKey(string componentId, MessageRegistrationHandle handle)
+            {
+                ComponentId = componentId ?? string.Empty;
+                Handle = handle;
+            }
+
+            private string ComponentId { get; }
+
+            private MessageRegistrationHandle Handle { get; }
+
+            public bool Equals(EdgeEmissionKey other)
+            {
+                return string.Equals(ComponentId, other.ComponentId, StringComparison.Ordinal)
+                    && Handle == other.Handle;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is EdgeEmissionKey other && Equals(other);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    return (StringComparer.Ordinal.GetHashCode(ComponentId) * 397)
+                        ^ Handle.GetHashCode();
+                }
+            }
+        }
+
+        internal sealed class FlowGraphCanvasState
+        {
+            internal bool Initialized;
+            internal string LayoutSignature = string.Empty;
+            internal Vector2 Pan;
+            internal float Zoom = 1f;
+        }
+
+        private readonly struct GraphCurveDescriptor
+        {
+            internal GraphCurveDescriptor(
+                Vector2 start,
+                Vector2 end,
+                float curveOffset,
+                Color color,
+                bool selected
+            )
+            {
+                Start = start;
+                End = end;
+                CurveOffset = curveOffset;
+                Color = color;
+                Selected = selected;
+            }
+
+            internal Vector2 Start { get; }
+
+            internal Vector2 End { get; }
+
+            internal float CurveOffset { get; }
+
+            internal Color Color { get; }
+
+            internal bool Selected { get; }
+
+            internal Vector2 Evaluate(float t)
+            {
+                Vector2 controlOffset = new((End.x - Start.x) * 0.42f, CurveOffset);
+                Vector2 firstControl = Start + controlOffset;
+                Vector2 secondControl = End - new Vector2(controlOffset.x, -CurveOffset);
+                float inverse = 1f - t;
+                return inverse * inverse * inverse * Start
+                    + 3f * inverse * inverse * t * firstControl
+                    + 3f * inverse * t * t * secondControl
+                    + t * t * t * End;
+            }
+        }
+
+        private sealed class FlowGraphEdgeLayer : VisualElement
+        {
+            private const int SegmentCount = 28;
+            private readonly IReadOnlyList<GraphCurveDescriptor> _curves;
+
+            internal FlowGraphEdgeLayer(IReadOnlyList<GraphCurveDescriptor> curves)
+            {
+                _curves = curves ?? throw new ArgumentNullException(nameof(curves));
+                pickingMode = PickingMode.Ignore;
+                generateVisualContent += DrawConnections;
+            }
+
+            private void DrawConnections(MeshGenerationContext context)
+            {
+                foreach (GraphCurveDescriptor curve in _curves)
+                {
+                    DrawConnection(context, curve);
+                }
+            }
+
+            private static void DrawConnection(
+                MeshGenerationContext context,
+                GraphCurveDescriptor curve
+            )
+            {
+                const int arrowVertexCount = 3;
+                const int arrowIndexCount = 3;
+                MeshWriteData mesh = context.Allocate(
+                    SegmentCount * 4 + arrowVertexCount,
+                    SegmentCount * 6 + arrowIndexCount
+                );
+                float width = curve.Selected ? 4f : 2.5f;
+                ushort vertexIndex = 0;
+                Vector2 previous = curve.Evaluate(0f);
+                for (int segment = 1; segment <= SegmentCount; segment++)
+                {
+                    Vector2 next = curve.Evaluate(segment / (float)SegmentCount);
+                    AddSegment(mesh, previous, next, width, curve.Color, ref vertexIndex);
+                    previous = next;
+                }
+
+                AddArrow(mesh, curve, curve.Color, ref vertexIndex);
+            }
+
+            private static void AddSegment(
+                MeshWriteData mesh,
+                Vector2 start,
+                Vector2 end,
+                float width,
+                Color color,
+                ref ushort vertexIndex
+            )
+            {
+                Vector2 direction = NormalizeGraphDirection(end - start);
+                Vector2 normal = new(-direction.y, direction.x);
+                normal *= width * 0.5f;
+                ushort startIndex = vertexIndex;
+                mesh.SetNextVertex(CreateGraphVertex(start + normal, color));
+                mesh.SetNextVertex(CreateGraphVertex(start - normal, color));
+                mesh.SetNextVertex(CreateGraphVertex(end - normal, color));
+                mesh.SetNextVertex(CreateGraphVertex(end + normal, color));
+                vertexIndex += 4;
+                mesh.SetNextIndex(startIndex);
+                mesh.SetNextIndex((ushort)(startIndex + 1));
+                mesh.SetNextIndex((ushort)(startIndex + 2));
+                mesh.SetNextIndex(startIndex);
+                mesh.SetNextIndex((ushort)(startIndex + 2));
+                mesh.SetNextIndex((ushort)(startIndex + 3));
+            }
+
+            private static void AddArrow(
+                MeshWriteData mesh,
+                GraphCurveDescriptor curve,
+                Color color,
+                ref ushort vertexIndex
+            )
+            {
+                Vector2 tip = curve.End;
+                Vector2 direction = NormalizeGraphDirection(curve.End - curve.Evaluate(0.96f));
+                Vector2 normal = new(-direction.y, direction.x);
+                Vector2 baseCenter = tip - direction * 11f;
+                ushort startIndex = vertexIndex;
+                mesh.SetNextVertex(CreateGraphVertex(tip, color));
+                mesh.SetNextVertex(CreateGraphVertex(baseCenter + normal * 5f, color));
+                mesh.SetNextVertex(CreateGraphVertex(baseCenter - normal * 5f, color));
+                vertexIndex += 3;
+                mesh.SetNextIndex(startIndex);
+                mesh.SetNextIndex((ushort)(startIndex + 1));
+                mesh.SetNextIndex((ushort)(startIndex + 2));
+            }
+
+            private static Vertex CreateGraphVertex(Vector2 position, Color color)
+            {
+                return new Vertex
+                {
+                    position = new Vector3(position.x, position.y, Vertex.nearZ),
+                    tint = color,
+                };
+            }
+        }
+
+        internal static Vector2 NormalizeGraphDirection(Vector2 direction)
+        {
+            return direction.sqrMagnitude <= Mathf.Epsilon ? Vector2.right : direction.normalized;
+        }
 
         private string _filterText = string.Empty;
         private string _selectedItemKey = string.Empty;
@@ -277,6 +574,7 @@ namespace DxMessaging.Editor.Windows
             Dictionary<string, MessageNodeBuilder> messageNodes = new(StringComparer.Ordinal);
             Dictionary<string, EdgeBuilder> edgeBuilders = new(StringComparer.Ordinal);
             Dictionary<string, TracePathBuilder> tracePathBuilders = new(StringComparer.Ordinal);
+            List<CapturedEdgeEmission> capturedEdgeEmissions = new();
             List<string> warnings = new();
             bool globalEmissionEvidenceCaptured = false;
 
@@ -330,6 +628,11 @@ namespace DxMessaging.Editor.Windows
                             messageNodes,
                             listener.EmissionHistory,
                             isGlobalEvidence: false
+                        );
+                        CaptureEdgeEmissionEvidence(
+                            capturedEdgeEmissions,
+                            componentId,
+                            listener.EmissionHistory
                         );
                         Dictionary<MessageRegistrationHandle, int> recentTracedDeliveryCounts =
                             CountRecentTracedDeliveriesByHandle(listener.EmissionHistory);
@@ -388,6 +691,8 @@ namespace DxMessaging.Editor.Windows
                 }
             }
 
+            AddEdgeEmissionEvidence(edgeBuilders.Values, capturedEdgeEmissions);
+
             return new FlowGraphSnapshot(
                 componentNodes
                     .OrderBy(component => component.HierarchyPath, StringComparer.Ordinal)
@@ -402,11 +707,14 @@ namespace DxMessaging.Editor.Windows
                     .ThenBy(edge => edge.TargetComponentPath, StringComparer.Ordinal)
                     .ThenBy(edge => edge.TargetComponentId, StringComparer.Ordinal)
                     .ThenBy(edge => edge.RegistrationTypeName, StringComparer.Ordinal)
+                    .ThenBy(edge => edge.Context, StringComparer.Ordinal)
+                    .ThenBy(edge => edge.ContextId)
                     .ToArray(),
                 tracePathBuilders
                     .Values.Select(builder => builder.Build())
                     .OrderBy(path => path.MessageTypeName, StringComparer.Ordinal)
                     .ThenBy(path => path.Context, StringComparer.Ordinal)
+                    .ThenBy(path => path.ContextId)
                     .ThenBy(path => path.TargetComponentPath, StringComparer.Ordinal)
                     .ThenBy(path => path.TargetComponentId, StringComparer.Ordinal)
                     .ThenBy(path => path.RegistrationTypeName, StringComparer.Ordinal)
@@ -543,6 +851,43 @@ namespace DxMessaging.Editor.Windows
                 throw new ArgumentNullException(nameof(content));
             }
 
+            FlowGraphFoldoutState foldoutState =
+                content.userData as FlowGraphFoldoutState ?? new FlowGraphFoldoutState();
+            VisualElement focusedElement =
+                content.panel?.focusController.focusedElement as VisualElement;
+            bool restoreGraphFocus =
+                focusedElement != null
+                && (
+                    focusedElement.ClassListContains(GraphMessageNodeClassName)
+                    || focusedElement.ClassListContains(GraphReceiverNodeClassName)
+                    || focusedElement.ClassListContains(GraphConnectionClassName)
+                );
+            Foldout existingAnalysis = content.Q<Foldout>(AnalysisFoldoutName);
+            Foldout existingRouteInsights = content.Q<Foldout>(RouteMapInsightsFoldoutName);
+            Foldout existingMoreRoutes = content.Q<Foldout>(RouteMapMoreRoutesFoldoutName);
+            Foldout existingTraceActivity = content.Q<Foldout>(TraceActivityFoldoutName);
+            Foldout existingTopology = content.Q<Foldout>(TopologyFoldoutName);
+            if (existingAnalysis != null)
+            {
+                foldoutState.AnalysisExpanded = existingAnalysis.value;
+            }
+            if (existingRouteInsights != null)
+            {
+                foldoutState.RouteInsightsExpanded = existingRouteInsights.value;
+            }
+            if (existingMoreRoutes != null)
+            {
+                foldoutState.MoreRoutesExpanded = existingMoreRoutes.value;
+            }
+            if (existingTraceActivity != null)
+            {
+                foldoutState.TraceActivityExpanded = existingTraceActivity.value;
+            }
+            if (existingTopology != null)
+            {
+                foldoutState.TopologyExpanded = existingTopology.value;
+            }
+            content.userData = foldoutState;
             content.Clear();
             bool hasGraphItems =
                 visibleSnapshot.ComponentNodes.Count > 0
@@ -550,6 +895,9 @@ namespace DxMessaging.Editor.Windows
                 || visibleSnapshot.Edges.Count > 0
                 || visibleSnapshot.TracePaths.Count > 0;
             bool hasWarnings = visibleSnapshot.Warnings.Count > 0;
+            bool hasObservedObjects =
+                snapshot.ComponentNodes.Count > 0 || snapshot.MessageNodes.Count > 0;
+            bool hasCapturedRoutes = snapshot.Edges.Count > 0 || snapshot.TracePaths.Count > 0;
 
             if (!hasGraphItems && !hasWarnings)
             {
@@ -571,6 +919,16 @@ namespace DxMessaging.Editor.Windows
                 );
                 content.Add(empty);
             }
+            else if (hasObservedObjects && !hasCapturedRoutes)
+            {
+                VisualElement empty = DxMessagingEditorTheme.CreateEmptyState(
+                    "No live routes",
+                    "MessagingComponents or recent messages are visible, but no live registration routes were captured. Enter Play mode (or restart it if already playing), make sure listeners are enabled, then click Refresh.",
+                    bodyName: EmptyStateLabelName,
+                    titleName: EmptyStateTitleLabelName
+                );
+                content.Add(empty);
+            }
             else if (hasGraphItems)
             {
                 FlowGraphSelectedItem selectedItem = ResolveSelectedItem(
@@ -578,29 +936,69 @@ namespace DxMessaging.Editor.Windows
                     viewState.SelectedItemKey
                 );
 
-                content.Add(CreateRouteMap(visibleSnapshot, selectedItem.Key, onSelectionChanged));
+                content.Add(
+                    CreateGraphCanvas(
+                        visibleSnapshot,
+                        selectedItem.Key,
+                        onSelectionChanged,
+                        foldoutState.CanvasState
+                    )
+                );
+
+                if (selectedItem.HasValue)
+                {
+                    content.Add(CreateDetailsPane(selectedItem, visibleSnapshot));
+                }
+
+                Foldout analysis = CreateCollapsedFoldout(
+                    AnalysisFoldoutName,
+                    "Analysis and Raw Data"
+                );
+                analysis.value = foldoutState.AnalysisExpanded;
+
+                VisualElement routeMap = CreateRouteMap(
+                    visibleSnapshot,
+                    selectedItem.Key,
+                    onSelectionChanged
+                );
+                routeMap.Q<Foldout>(RouteMapInsightsFoldoutName).value =
+                    foldoutState.RouteInsightsExpanded;
+                Foldout moreRoutes = routeMap.Q<Foldout>(RouteMapMoreRoutesFoldoutName);
+                if (moreRoutes != null)
+                {
+                    moreRoutes.value |= foldoutState.MoreRoutesExpanded;
+                }
+                analysis.Add(routeMap);
 
                 if (visibleSnapshot.Edges.Count > 0)
                 {
-                    content.Add(CreateVisibleMessageLanes(visibleSnapshot));
-                    content.Add(CreateVisibleTargetLanes(visibleSnapshot));
+                    analysis.Add(CreateVisibleMessageLanes(visibleSnapshot));
+                    analysis.Add(CreateVisibleTargetLanes(visibleSnapshot));
                 }
 
                 if (visibleSnapshot.TracePaths.Count > 0)
                 {
-                    content.Add(CreateVisibleFlowCorridors(visibleSnapshot));
-                    content.Add(CreateVisibleTraceRouteKindLanes(visibleSnapshot));
-                    content.Add(CreateVisibleTraceIdLanes(visibleSnapshot));
-                    content.Add(CreateVisibleTraceMessageLanes(visibleSnapshot));
-                    content.Add(CreateVisibleTraceTargetLanes(visibleSnapshot));
-                    content.Add(CreateVisibleContextLanes(visibleSnapshot));
-                    content.Add(CreateTracePaths(visibleSnapshot));
+                    Foldout traceActivity = CreateCollapsedFoldout(
+                        TraceActivityFoldoutName,
+                        "Trace Activity"
+                    );
+                    traceActivity.value = foldoutState.TraceActivityExpanded;
+                    traceActivity.Add(CreateVisibleFlowCorridors(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleTraceRouteKindLanes(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleTraceIdLanes(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleTraceMessageLanes(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleTraceTargetLanes(visibleSnapshot));
+                    traceActivity.Add(CreateVisibleContextLanes(visibleSnapshot));
+                    traceActivity.Add(CreateTracePaths(visibleSnapshot));
+                    analysis.Add(traceActivity);
                 }
 
-                content.Add(CreateSectionTitle("Components"));
+                Foldout topology = CreateCollapsedFoldout(TopologyFoldoutName, "Topology Details");
+                topology.value = foldoutState.TopologyExpanded;
+                topology.Add(CreateSectionTitle("Components"));
                 foreach (FlowGraphComponentNode component in visibleSnapshot.ComponentNodes)
                 {
-                    content.Add(
+                    topology.Add(
                         CreateComponentNodeRow(
                             component,
                             string.Equals(
@@ -613,10 +1011,10 @@ namespace DxMessaging.Editor.Windows
                     );
                 }
 
-                content.Add(CreateSectionTitle("Message Types"));
+                topology.Add(CreateSectionTitle("Message Types"));
                 foreach (FlowGraphMessageNode message in visibleSnapshot.MessageNodes)
                 {
-                    content.Add(
+                    topology.Add(
                         CreateMessageNodeRow(
                             message,
                             string.Equals(
@@ -629,10 +1027,10 @@ namespace DxMessaging.Editor.Windows
                     );
                 }
 
-                content.Add(CreateSectionTitle("Registration Edges"));
+                topology.Add(CreateSectionTitle("Registration Edges"));
                 foreach (FlowGraphEdge edge in visibleSnapshot.Edges)
                 {
-                    content.Add(
+                    topology.Add(
                         CreateEdgeRow(
                             edge,
                             string.Equals(
@@ -644,11 +1042,8 @@ namespace DxMessaging.Editor.Windows
                         )
                     );
                 }
-
-                if (selectedItem.HasValue)
-                {
-                    content.Add(CreateDetailsPane(selectedItem, visibleSnapshot));
-                }
+                analysis.Add(topology);
+                content.Add(analysis);
             }
 
             foreach (string warning in visibleSnapshot.Warnings)
@@ -667,6 +1062,22 @@ namespace DxMessaging.Editor.Windows
                 warningLabel.style.paddingLeft = 8;
                 warningLabel.style.whiteSpace = WhiteSpace.Normal;
                 content.Add(warningLabel);
+            }
+
+            if (restoreGraphFocus && !string.IsNullOrWhiteSpace(viewState.SelectedItemKey))
+            {
+                VisualElement selectedControl = content
+                    .Query<VisualElement>()
+                    .ToList()
+                    .FirstOrDefault(element =>
+                        element.focusable
+                        && string.Equals(
+                            element.userData as string,
+                            viewState.SelectedItemKey,
+                            StringComparison.Ordinal
+                        )
+                    );
+                selectedControl?.schedule.Execute(selectedControl.Focus);
             }
         }
 
@@ -763,6 +1174,12 @@ namespace DxMessaging.Editor.Windows
                     message.MessageTypeName,
                     trailingComma: true
                 );
+                AppendJsonProperty(
+                    builder,
+                    "messageKind",
+                    message.MessageKindName,
+                    trailingComma: true
+                );
                 builder
                     .Append("      \"registrationCount\": ")
                     .Append(message.RegistrationCount)
@@ -779,7 +1196,21 @@ namespace DxMessaging.Editor.Windows
                 builder
                     .Append("      \"recentTracedDeliveryCount\": ")
                     .Append(message.RecentTracedDeliveryCount)
-                    .AppendLine();
+                    .AppendLine(",");
+                AppendJsonStringArray(
+                    builder,
+                    indentSize: 6,
+                    "recentEmissionSites",
+                    message.RecentEmissionSites,
+                    trailingComma: true
+                );
+                AppendJsonStringArray(
+                    builder,
+                    indentSize: 6,
+                    "recentContexts",
+                    message.RecentContexts,
+                    trailingComma: false
+                );
                 builder.Append("    }");
                 if (i < visibleSnapshot.MessageNodes.Count - 1)
                 {
@@ -818,6 +1249,8 @@ namespace DxMessaging.Editor.Windows
                     edge.RegistrationTypeName,
                     trailingComma: true
                 );
+                AppendJsonProperty(builder, "context", edge.Context, trailingComma: true);
+                builder.Append("      \"contextId\": ").Append(edge.ContextId).AppendLine(",");
                 builder
                     .Append("      \"registrationCount\": ")
                     .Append(edge.RegistrationCount)
@@ -826,7 +1259,14 @@ namespace DxMessaging.Editor.Windows
                 builder
                     .Append("      \"recentTracedDeliveryCount\": ")
                     .Append(edge.RecentTracedDeliveryCount)
-                    .AppendLine();
+                    .AppendLine(",");
+                AppendJsonStringArray(
+                    builder,
+                    indentSize: 6,
+                    "recentEmissionSites",
+                    edge.RecentEmissionSites,
+                    trailingComma: false
+                );
                 builder.Append("    }");
                 if (i < visibleSnapshot.Edges.Count - 1)
                 {
@@ -848,6 +1288,7 @@ namespace DxMessaging.Editor.Windows
                     trailingComma: true
                 );
                 AppendJsonProperty(builder, "context", path.Context, trailingComma: true);
+                builder.Append("      \"contextId\": ").Append(path.ContextId).AppendLine(",");
                 AppendJsonProperty(
                     builder,
                     "targetComponentId",
@@ -938,14 +1379,14 @@ namespace DxMessaging.Editor.Windows
 
                 Type messageType = emission.message.MessageType;
                 string messageTypeName = CreateMessageTypeName(messageType);
-                string context = CreateTraceContextText(
-                    emission.context ?? registration.Metadata.context
-                );
+                InstanceId? contextId = emission.context ?? registration.Metadata.context;
+                string context = CreateTraceContextText(contextId);
                 string registrationTypeName = registration.Metadata.registrationType.ToString();
                 string key = string.Join(
                     "|",
                     messageTypeName,
                     context,
+                    contextId?.Id.ToString(CultureInfo.InvariantCulture) ?? "0",
                     componentId,
                     registrationTypeName
                 );
@@ -954,6 +1395,7 @@ namespace DxMessaging.Editor.Windows
                     builder = new TracePathBuilder(
                         messageTypeName,
                         context,
+                        contextId?.Id ?? 0,
                         componentId,
                         componentPath,
                         registrationTypeName
@@ -976,13 +1418,21 @@ namespace DxMessaging.Editor.Windows
         )
         {
             MessageRegistrationMetadata metadata = registration.Metadata;
-            string messageKey = CreateMessageKey(metadata.type);
-            string messageTypeName = CreateMessageTypeName(metadata.type);
+            bool globalObserver =
+                metadata.registrationType == MessageRegistrationType.GlobalAcceptAll;
+            string messageKey = globalObserver
+                ? "message:<global-observer>"
+                : CreateMessageKey(metadata.type);
+            string messageTypeName = globalObserver
+                ? GlobalObserverMessageName
+                : CreateMessageTypeName(metadata.type);
             if (!messageNodes.TryGetValue(messageKey, out MessageNodeBuilder messageBuilder))
             {
                 messageBuilder = new MessageNodeBuilder(messageTypeName);
                 messageNodes[messageKey] = messageBuilder;
             }
+
+            messageBuilder.ObserveRegistrationType(metadata.registrationType);
 
             messageBuilder.RegistrationCount++;
             messageBuilder.CallCount += registration.CallCount;
@@ -992,18 +1442,31 @@ namespace DxMessaging.Editor.Windows
             }
 
             string registrationTypeName = metadata.registrationType.ToString();
-            string edgeKey = string.Join("|", messageKey, componentId, registrationTypeName);
+            string context = CreateContextDisplayText(metadata.context);
+            string contextId = metadata.context.HasValue
+                ? metadata.context.Value.Id.ToString(CultureInfo.InvariantCulture)
+                : string.Empty;
+            string edgeKey = string.Join(
+                "|",
+                messageKey,
+                componentId,
+                registrationTypeName,
+                contextId
+            );
             if (!edgeBuilders.TryGetValue(edgeKey, out EdgeBuilder edgeBuilder))
             {
                 edgeBuilder = new EdgeBuilder(
                     messageTypeName,
                     componentId,
                     componentPath,
-                    registrationTypeName
+                    registrationTypeName,
+                    context,
+                    metadata.context
                 );
                 edgeBuilders[edgeKey] = edgeBuilder;
             }
 
+            edgeBuilder.AddRegistrationHandle(registration.Handle);
             edgeBuilder.RegistrationCount++;
             edgeBuilder.CallCount += registration.CallCount;
             edgeBuilder.RecentTracedDeliveryCount += recentTracedDeliveryCount;
@@ -1100,6 +1563,8 @@ namespace DxMessaging.Editor.Windows
                     messageNodes[messageKey] = messageBuilder;
                 }
 
+                messageBuilder.ObserveEmission(emission);
+
                 if (isGlobalEvidence)
                 {
                     messageBuilder.RecentGlobalEmissionCount++;
@@ -1107,6 +1572,99 @@ namespace DxMessaging.Editor.Windows
                 else
                 {
                     messageBuilder.RecentLocalMessageCount++;
+                }
+            }
+        }
+
+        private static void CaptureEdgeEmissionEvidence(
+            ICollection<CapturedEdgeEmission> capturedEmissions,
+            string componentId,
+            IEnumerable<MessageEmissionData> emissions
+        )
+        {
+            if (capturedEmissions == null || emissions == null)
+            {
+                return;
+            }
+
+            foreach (MessageEmissionData emission in emissions)
+            {
+                if (emission.registrationHandle != default(MessageRegistrationHandle))
+                {
+                    capturedEmissions.Add(new CapturedEdgeEmission(componentId, emission));
+                }
+            }
+        }
+
+        private static void AddEdgeEmissionEvidence(
+            IEnumerable<EdgeBuilder> edgeBuilders,
+            IEnumerable<CapturedEdgeEmission> emissions
+        )
+        {
+            Dictionary<EdgeEmissionKey, List<MessageEmissionData>> emissionsByRegistration = new();
+            foreach (CapturedEdgeEmission capturedEmission in emissions)
+            {
+                MessageEmissionData emission = capturedEmission.Emission;
+                EdgeEmissionKey key = new(
+                    capturedEmission.ComponentId,
+                    emission.registrationHandle
+                );
+                if (!emissionsByRegistration.TryGetValue(key, out List<MessageEmissionData> group))
+                {
+                    group = new List<MessageEmissionData>();
+                    emissionsByRegistration[key] = group;
+                }
+                group.Add(emission);
+            }
+
+            foreach (EdgeBuilder edgeBuilder in edgeBuilders)
+            {
+                if (
+                    string.Equals(
+                        edgeBuilder.RegistrationTypeName,
+                        MessageRegistrationType.GlobalAcceptAll.ToString(),
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    continue;
+                }
+
+                foreach (MessageRegistrationHandle handle in edgeBuilder.RegistrationHandles)
+                {
+                    EdgeEmissionKey key = new(edgeBuilder.TargetComponentId, handle);
+                    if (
+                        !emissionsByRegistration.TryGetValue(
+                            key,
+                            out List<MessageEmissionData> matchingEmissions
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    foreach (MessageEmissionData emission in matchingEmissions)
+                    {
+                        if (
+                            !string.Equals(
+                                edgeBuilder.MessageTypeName,
+                                CreateMessageTypeName(emission.message?.MessageType),
+                                StringComparison.Ordinal
+                            )
+                            || (
+                                edgeBuilder.ContextId.HasValue
+                                && (
+                                    !emission.context.HasValue
+                                    || edgeBuilder.ContextId.Value.Id != emission.context.Value.Id
+                                )
+                            )
+                        )
+                        {
+                            continue;
+                        }
+
+                        edgeBuilder.ObserveEmission(emission);
+                    }
                 }
             }
         }
@@ -1232,6 +1790,27 @@ namespace DxMessaging.Editor.Windows
                     edge.RegistrationTypeName,
                     path.RegistrationTypeName,
                     StringComparison.Ordinal
+                )
+            )
+            {
+                return false;
+            }
+
+            string normalizedRouteKind = DxMessagingEditorPalette.NormalizeRouteKind(
+                edge.RegistrationTypeName
+            );
+            bool hasSpecificRegistrationContext =
+                !string.IsNullOrWhiteSpace(edge.Context) && edge.Context != "<none>";
+            bool routeUsesSpecificContext =
+                normalizedRouteKind == DxMessagingEditorPalette.BroadcastKind
+                || normalizedRouteKind == DxMessagingEditorPalette.TargetedKind;
+            if (
+                routeUsesSpecificContext
+                && hasSpecificRegistrationContext
+                && (
+                    (edge.ContextId != 0 && path.ContextId != 0)
+                        ? edge.ContextId != path.ContextId
+                        : !string.Equals(edge.Context, path.Context, StringComparison.Ordinal)
                 )
             )
             {
@@ -1459,13 +2038,103 @@ namespace DxMessaging.Editor.Windows
 
         private static string CreateTraceContextText(InstanceId? context)
         {
+            return CreateContextDisplayText(context);
+        }
+
+        private static string CreateContextDisplayText(InstanceId? context)
+        {
             if (!context.HasValue)
             {
                 return "<none>";
             }
 
-            string contextText = context.Value.ToString();
-            return string.IsNullOrWhiteSpace(contextText) ? "<none>" : contextText;
+            UnityEngine.Object contextObject = context.Value.Object;
+            if (contextObject == null)
+            {
+                return "Instance " + context.Value.Id;
+            }
+
+            switch (contextObject)
+            {
+                case GameObject gameObject:
+                    return GetHierarchyPath(gameObject.transform) + " (GameObject)";
+                case Component component:
+                    return $"{GetHierarchyPath(component.transform)} ({component.GetType().Name})";
+                default:
+                    return string.IsNullOrWhiteSpace(contextObject.name)
+                        ? $"{contextObject.GetType().Name} ({context.Value.Id})"
+                        : $"{contextObject.name} ({contextObject.GetType().Name})";
+            }
+        }
+
+        private static string CreateMessageKindName(
+            IMessage message,
+            MessageRegistrationType registrationType = MessageRegistrationType.None
+        )
+        {
+            if (registrationType == MessageRegistrationType.GlobalAcceptAll)
+            {
+                return "GLOBAL OBSERVER";
+            }
+            if (
+                registrationType == MessageRegistrationType.Broadcast
+                || registrationType == MessageRegistrationType.BroadcastPostProcessor
+                || registrationType == MessageRegistrationType.BroadcastWithoutSource
+                || registrationType == MessageRegistrationType.BroadcastWithoutSourcePostProcessor
+                || registrationType == MessageRegistrationType.BroadcastInterceptor
+                || message is IBroadcastMessage
+            )
+            {
+                return "BROADCAST";
+            }
+            if (
+                registrationType == MessageRegistrationType.Targeted
+                || registrationType == MessageRegistrationType.TargetedPostProcessor
+                || registrationType == MessageRegistrationType.TargetedWithoutTargeting
+                || registrationType == MessageRegistrationType.TargetedWithoutTargetingPostProcessor
+                || registrationType == MessageRegistrationType.TargetedInterceptor
+                || message is ITargetedMessage
+            )
+            {
+                return "TARGETED";
+            }
+            if (
+                registrationType == MessageRegistrationType.Untargeted
+                || registrationType == MessageRegistrationType.UntargetedPostProcessor
+                || registrationType == MessageRegistrationType.UntargetedInterceptor
+                || message is IUntargetedMessage
+            )
+            {
+                return "GLOBAL";
+            }
+
+            return "MESSAGE";
+        }
+
+        internal static string CreateEmissionSite(string stackTrace)
+        {
+            if (string.IsNullOrWhiteSpace(stackTrace))
+            {
+                return "<unknown call site>";
+            }
+
+            string firstFrame = stackTrace
+                .Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim())
+                .FirstOrDefault(line =>
+                    !string.IsNullOrWhiteSpace(line)
+                    && line.IndexOf("UnityEngine.Debug:ExtractStackTrace", StringComparison.Ordinal)
+                        < 0
+                    && line.IndexOf("UnityEngine.StackTraceUtility", StringComparison.Ordinal) < 0
+                    && line.IndexOf("StackTraceUtility:ExtractStackTrace", StringComparison.Ordinal)
+                        < 0
+                );
+            if (string.IsNullOrWhiteSpace(firstFrame))
+            {
+                return "<unknown call site>";
+            }
+
+            return firstFrame;
         }
 
         private static Label CreateSectionTitle(string text)
@@ -1476,6 +2145,1107 @@ namespace DxMessaging.Editor.Windows
             title.style.marginBottom = 4;
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             return title;
+        }
+
+        private static Foldout CreateCollapsedFoldout(string name, string text)
+        {
+            Foldout foldout = new()
+            {
+                name = name,
+                text = text,
+                value = false,
+            };
+            foldout.style.marginTop = 8;
+            return foldout;
+        }
+
+        private static VisualElement CreateGraphCanvas(
+            FlowGraphVisibleSnapshot visibleSnapshot,
+            string selectedItemKey,
+            Action<string> onSelectionChanged,
+            FlowGraphCanvasState canvasState
+        )
+        {
+            VisualElement panel = new();
+            DxMessagingEditorTheme.ApplyCompleteBorder(panel, DxMessagingEditorPalette.BorderPanel);
+            panel.style.marginBottom = 8;
+            panel.style.paddingTop = 8;
+            panel.style.paddingRight = 8;
+            panel.style.paddingBottom = 8;
+            panel.style.paddingLeft = 8;
+
+            VisualElement legend = new() { name = GraphLegendName };
+            legend.style.flexDirection = FlexDirection.Row;
+            legend.style.alignItems = Align.Center;
+            legend.style.marginBottom = 6;
+
+            Label title = new("Live Route Graph");
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginRight = 12;
+            legend.Add(title);
+            legend.Add(CreateGraphLegendBadge("MESSAGE", DxMessagingEditorPalette.AmberSoft));
+            Label arrow = new("->");
+            arrow.style.marginLeft = 6;
+            arrow.style.marginRight = 6;
+            legend.Add(arrow);
+            legend.Add(CreateGraphLegendBadge("RECEIVER", DxMessagingEditorPalette.Amber));
+            legend.Add(CreateGraphLegendBadge("BROADCAST", DxMessagingEditorPalette.Broadcast));
+            legend.Add(CreateGraphLegendBadge("TARGETED", DxMessagingEditorPalette.Targeted));
+            legend.Add(CreateGraphLegendBadge("GLOBAL", DxMessagingEditorPalette.Untargeted));
+
+            Label controls = new("Drag empty space to pan | Scroll to zoom | Select to inspect");
+            controls.style.flexGrow = 1;
+            controls.style.unityTextAlign = TextAnchor.MiddleRight;
+            legend.Add(controls);
+            panel.Add(legend);
+
+            GraphConnectionDescriptor[] connections = CreateGraphConnections(visibleSnapshot);
+            string[] messageNames = visibleSnapshot
+                .MessageNodes.Select(message => message.MessageTypeName)
+                .Concat(connections.Select(connection => connection.MessageTypeName))
+                .Where(messageTypeName => !string.IsNullOrWhiteSpace(messageTypeName))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(messageTypeName => messageTypeName, StringComparer.Ordinal)
+                .ToArray();
+            string[] receiverIds = visibleSnapshot
+                .ComponentNodes.Select(component => component.Id)
+                .Concat(connections.Select(connection => connection.TargetComponentId))
+                .Where(componentId => !string.IsNullOrWhiteSpace(componentId))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            receiverIds = receiverIds
+                .OrderBy(
+                    componentId => CreateReceiverPath(visibleSnapshot, connections, componentId),
+                    StringComparer.Ordinal
+                )
+                .ThenBy(componentId => componentId, StringComparer.Ordinal)
+                .ToArray();
+            OrderGraphLayersForReadability(ref messageNames, ref receiverIds, connections);
+
+            int rowCount = Math.Max(messageNames.Length, receiverIds.Length);
+            float graphHeight = Math.Max(
+                GraphCanvasHeight,
+                80f + rowCount * (GraphNodeHeight + GraphNodeGap)
+            );
+            const float contentWidth = 1100f;
+            const float messageX = 60f;
+            const float receiverX = 770f;
+            Dictionary<string, Vector2> messagePositions = new(StringComparer.Ordinal);
+            Dictionary<string, Vector2> receiverPositions = new(StringComparer.Ordinal);
+            for (int index = 0; index < messageNames.Length; index++)
+            {
+                messagePositions[messageNames[index]] = new Vector2(
+                    messageX,
+                    CreateGraphNodeY(index, messageNames.Length, rowCount)
+                );
+            }
+            for (int index = 0; index < receiverIds.Length; index++)
+            {
+                receiverPositions[receiverIds[index]] = new Vector2(
+                    receiverX,
+                    CreateGraphNodeY(index, receiverIds.Length, rowCount)
+                );
+            }
+            Dictionary<string, int> orderedMessageIndexes = messageNames
+                .Select((messageTypeName, index) => new { messageTypeName, index })
+                .ToDictionary(
+                    item => item.messageTypeName,
+                    item => item.index,
+                    StringComparer.Ordinal
+                );
+            Dictionary<string, int> orderedReceiverIndexes = receiverIds
+                .Select((componentId, index) => new { componentId, index })
+                .ToDictionary(item => item.componentId, item => item.index, StringComparer.Ordinal);
+            Dictionary<string, GraphConnectionDescriptor[]> outgoingConnectionsByMessage =
+                connections
+                    .GroupBy(connection => connection.MessageTypeName, StringComparer.Ordinal)
+                    .ToDictionary(
+                        group => group.Key,
+                        group =>
+                            group
+                                .OrderBy(candidate =>
+                                    orderedReceiverIndexes.GetValueOrDefault(
+                                        candidate.TargetComponentId,
+                                        int.MaxValue
+                                    )
+                                )
+                                .ThenBy(candidate => candidate.RouteKind, StringComparer.Ordinal)
+                                .ThenBy(candidate => candidate.ContextId)
+                                .ThenBy(candidate => candidate.Context, StringComparer.Ordinal)
+                                .ToArray(),
+                        StringComparer.Ordinal
+                    );
+            Dictionary<string, GraphConnectionDescriptor[]> incomingConnectionsByReceiver =
+                connections
+                    .GroupBy(connection => connection.TargetComponentId, StringComparer.Ordinal)
+                    .ToDictionary(
+                        group => group.Key,
+                        group =>
+                            group
+                                .OrderBy(candidate =>
+                                    orderedMessageIndexes.GetValueOrDefault(
+                                        candidate.MessageTypeName,
+                                        int.MaxValue
+                                    )
+                                )
+                                .ThenBy(candidate => candidate.RouteKind, StringComparer.Ordinal)
+                                .ThenBy(candidate => candidate.ContextId)
+                                .ThenBy(candidate => candidate.Context, StringComparer.Ordinal)
+                                .ToArray(),
+                        StringComparer.Ordinal
+                    );
+            Dictionary<string, int> outgoingPortIndexes = new(StringComparer.Ordinal);
+            foreach (GraphConnectionDescriptor[] outgoing in outgoingConnectionsByMessage.Values)
+            {
+                for (int index = 0; index < outgoing.Length; index++)
+                {
+                    outgoingPortIndexes[CreateGraphConnectionIdentity(outgoing[index])] = index;
+                }
+            }
+            Dictionary<string, int> incomingPortIndexes = new(StringComparer.Ordinal);
+            foreach (GraphConnectionDescriptor[] incoming in incomingConnectionsByReceiver.Values)
+            {
+                for (int index = 0; index < incoming.Length; index++)
+                {
+                    incomingPortIndexes[CreateGraphConnectionIdentity(incoming[index])] = index;
+                }
+            }
+
+            string layoutSignature = CreateGraphLayoutSignature(
+                messageNames,
+                receiverIds,
+                connections
+            );
+            if (
+                !string.Equals(
+                    canvasState.LayoutSignature,
+                    layoutSignature,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                canvasState.LayoutSignature = layoutSignature;
+                canvasState.Initialized = false;
+                canvasState.Pan = Vector2.zero;
+                canvasState.Zoom = 1f;
+            }
+
+            VisualElement viewport = new() { name = GraphCanvasName, userData = canvasState };
+            viewport.focusable = true;
+            viewport.style.height = GraphCanvasHeight;
+            viewport.style.flexShrink = 0;
+            viewport.style.overflow = Overflow.Hidden;
+            viewport.style.backgroundColor = EditorGUIUtility.isProSkin
+                ? new Color(0.07f, 0.08f, 0.1f, 1f)
+                : new Color(0.91f, 0.92f, 0.94f, 1f);
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                viewport,
+                DxMessagingEditorPalette.BorderStrong
+            );
+
+            VisualElement graphContent = new();
+            graphContent.style.position = Position.Absolute;
+            graphContent.style.left = 0;
+            graphContent.style.top = 0;
+            graphContent.style.width = contentWidth;
+            graphContent.style.height = graphHeight;
+            viewport.Add(graphContent);
+
+            List<GraphCurveDescriptor> curves = new();
+            List<(
+                GraphConnectionDescriptor connection,
+                GraphCurveDescriptor curve,
+                float position
+            )> markers = new();
+            foreach (
+                IGrouping<string, GraphConnectionDescriptor> pair in connections.GroupBy(
+                    connection => connection.MessageTypeName + "\n" + connection.TargetComponentId,
+                    StringComparer.Ordinal
+                )
+            )
+            {
+                GraphConnectionDescriptor[] parallelConnections = pair.OrderBy(
+                        connection => connection.RouteKind,
+                        StringComparer.Ordinal
+                    )
+                    .ThenBy(connection => connection.ContextId)
+                    .ThenBy(connection => connection.Context, StringComparer.Ordinal)
+                    .ToArray();
+                for (int index = 0; index < parallelConnections.Length; index++)
+                {
+                    GraphConnectionDescriptor connection = parallelConnections[index];
+                    if (
+                        !messagePositions.TryGetValue(
+                            connection.MessageTypeName,
+                            out Vector2 messagePosition
+                        )
+                        || !receiverPositions.TryGetValue(
+                            connection.TargetComponentId,
+                            out Vector2 receiverPosition
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    GraphConnectionDescriptor[] outgoingConnections = outgoingConnectionsByMessage[
+                        connection.MessageTypeName
+                    ];
+                    GraphConnectionDescriptor[] incomingConnections = incomingConnectionsByReceiver[
+                        connection.TargetComponentId
+                    ];
+                    string connectionIdentity = CreateGraphConnectionIdentity(connection);
+                    float sourcePortOffset = CreateGraphPortOffset(
+                        outgoingPortIndexes[connectionIdentity],
+                        outgoingConnections.Length
+                    );
+                    float targetPortOffset = CreateGraphPortOffset(
+                        incomingPortIndexes[connectionIdentity],
+                        incomingConnections.Length
+                    );
+                    float parallelIndex = index - (parallelConnections.Length - 1) * 0.5f;
+                    float curveOffset = parallelIndex * 8f;
+                    Color edgeColor = connection.TraceOnly
+                        ? DxMessagingEditorPalette.Trace
+                        : DxMessagingEditorPalette.RouteKindColor(connection.RouteKind);
+                    GraphCurveDescriptor curve = new(
+                        new Vector2(
+                            messagePosition.x + GraphNodeWidth + 7f,
+                            messagePosition.y + GraphNodeHeight * 0.5f + sourcePortOffset
+                        ),
+                        new Vector2(
+                            receiverPosition.x - 7f,
+                            receiverPosition.y + GraphNodeHeight * 0.5f + targetPortOffset
+                        ),
+                        curveOffset,
+                        edgeColor,
+                        string.Equals(
+                            connection.SelectionKey,
+                            selectedItemKey,
+                            StringComparison.Ordinal
+                        )
+                    );
+                    curves.Add(curve);
+                    markers.Add(
+                        (
+                            connection,
+                            curve,
+                            CreateGraphMarkerPosition(
+                                orderedMessageIndexes[connection.MessageTypeName],
+                                messageNames.Length,
+                                curveOffset
+                            )
+                        )
+                    );
+                }
+            }
+
+            FlowGraphEdgeLayer edgeLayer = new(curves);
+            edgeLayer.style.position = Position.Absolute;
+            edgeLayer.style.left = 0;
+            edgeLayer.style.top = 0;
+            edgeLayer.style.width = contentWidth;
+            edgeLayer.style.height = graphHeight;
+            graphContent.Add(edgeLayer);
+
+            foreach (string messageTypeName in messageNames)
+            {
+                FlowGraphMessageNode? message = visibleSnapshot
+                    .MessageNodes.Where(candidate =>
+                        string.Equals(
+                            candidate.MessageTypeName,
+                            messageTypeName,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .Cast<FlowGraphMessageNode?>()
+                    .FirstOrDefault();
+                GraphConnectionDescriptor[] messageConnections = connections
+                    .Where(connection =>
+                        string.Equals(
+                            connection.MessageTypeName,
+                            messageTypeName,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .ToArray();
+                int activityCount = messageConnections.Sum(connection => connection.ActivityCount);
+                string messageKind = CreateGraphMessageKind(message, messageConnections);
+                string selectionKey = message.HasValue
+                    ? CreateMessageSelectionKey(message.Value)
+                    : string.Empty;
+                graphContent.Add(
+                    CreateGraphNode(
+                        messageKind,
+                        CreateCompactGraphLabel(messageTypeName),
+                        CreateGraphMessageMetrics(
+                            message,
+                            messageConnections,
+                            messageKind,
+                            activityCount
+                        ),
+                        CreateGraphMessageTooltip(message, messageTypeName, messageKind),
+                        GraphMessageNodeClassName,
+                        DxMessagingEditorPalette.AmberSoft,
+                        messagePositions[messageTypeName],
+                        outputPort: true,
+                        string.Equals(selectionKey, selectedItemKey, StringComparison.Ordinal),
+                        selectionKey,
+                        onSelectionChanged
+                    )
+                );
+            }
+
+            foreach (string componentId in receiverIds)
+            {
+                FlowGraphComponentNode? component = visibleSnapshot
+                    .ComponentNodes.Where(candidate =>
+                        string.Equals(candidate.Id, componentId, StringComparison.Ordinal)
+                    )
+                    .Cast<FlowGraphComponentNode?>()
+                    .FirstOrDefault();
+                GraphConnectionDescriptor[] receiverConnections = connections
+                    .Where(connection =>
+                        string.Equals(
+                            connection.TargetComponentId,
+                            componentId,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .ToArray();
+                string receiverPath = component.HasValue
+                    ? component.Value.HierarchyPath
+                    : receiverConnections
+                        .Select(connection => connection.TargetComponentPath)
+                        .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                        ?? componentId;
+                int activityCount = receiverConnections.Sum(connection => connection.ActivityCount);
+                string stateText =
+                    !component.HasValue || component.Value.ActiveInHierarchy
+                        ? "active"
+                        : "inactive";
+                string selectionKey = component.HasValue
+                    ? CreateComponentSelectionKey(component.Value)
+                    : string.Empty;
+                graphContent.Add(
+                    CreateGraphNode(
+                        "RECEIVER",
+                        CreateCompactReceiverLabel(receiverPath),
+                        new[]
+                        {
+                            new GraphNodeMetric(
+                                "Routes",
+                                receiverConnections.Length.ToString(CultureInfo.InvariantCulture)
+                            ),
+                            new GraphNodeMetric(
+                                "Messages",
+                                receiverConnections
+                                    .Select(connection => connection.MessageTypeName)
+                                    .Distinct(StringComparer.Ordinal)
+                                    .Count()
+                                    .ToString(CultureInfo.InvariantCulture)
+                            ),
+                            new GraphNodeMetric(
+                                "Calls",
+                                activityCount.ToString(CultureInfo.InvariantCulture)
+                            ),
+                            new GraphNodeMetric("State", stateText),
+                        },
+                        receiverPath,
+                        GraphReceiverNodeClassName,
+                        DxMessagingEditorPalette.Amber,
+                        receiverPositions[componentId],
+                        outputPort: false,
+                        string.Equals(selectionKey, selectedItemKey, StringComparison.Ordinal),
+                        selectionKey,
+                        onSelectionChanged
+                    )
+                );
+            }
+
+            foreach (
+                (
+                    GraphConnectionDescriptor connection,
+                    GraphCurveDescriptor curve,
+                    float position
+                ) in markers
+            )
+            {
+                graphContent.Add(
+                    CreateGraphConnectionMarker(connection, curve, position, onSelectionChanged)
+                );
+            }
+
+            ConfigureGraphViewport(
+                viewport,
+                graphContent,
+                canvasState,
+                new Vector2(contentWidth, graphHeight)
+            );
+            panel.Add(viewport);
+            return panel;
+        }
+
+        private static GraphConnectionDescriptor[] CreateGraphConnections(
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            if (visibleSnapshot.Edges.Count > 0)
+            {
+                return visibleSnapshot
+                    .Edges.Select(edge => new GraphConnectionDescriptor(
+                        edge.MessageTypeName,
+                        edge.TargetComponentId,
+                        edge.TargetComponentPath,
+                        edge.RegistrationTypeName,
+                        edge.Context,
+                        edge.ContextId,
+                        edge.RecentEmissionSites,
+                        edge.CallCount,
+                        CreateEdgeSelectionKey(edge),
+                        traceOnly: false
+                    ))
+                    .ToArray();
+            }
+
+            return visibleSnapshot
+                .TracePaths.GroupBy(path => new
+                {
+                    path.MessageTypeName,
+                    path.TargetComponentId,
+                    path.TargetComponentPath,
+                    path.RegistrationTypeName,
+                    path.Context,
+                    path.ContextId,
+                })
+                .Select(group => new GraphConnectionDescriptor(
+                    group.Key.MessageTypeName,
+                    group.Key.TargetComponentId,
+                    group.Key.TargetComponentPath,
+                    group.Key.RegistrationTypeName,
+                    group.Key.Context,
+                    group.Key.ContextId,
+                    Array.Empty<string>(),
+                    group.Sum(path => path.RecentTracedDeliveryCount),
+                    string.Empty,
+                    traceOnly: true
+                ))
+                .OrderBy(connection => connection.MessageTypeName, StringComparer.Ordinal)
+                .ThenBy(connection => connection.TargetComponentPath, StringComparer.Ordinal)
+                .ThenBy(connection => connection.RouteKind, StringComparer.Ordinal)
+                .ThenBy(connection => connection.Context, StringComparer.Ordinal)
+                .ThenBy(connection => connection.ContextId)
+                .ToArray();
+        }
+
+        private static void OrderGraphLayersForReadability(
+            ref string[] messageNames,
+            ref string[] receiverIds,
+            IReadOnlyList<GraphConnectionDescriptor> connections
+        )
+        {
+            const int sweepCount = 6;
+            Dictionary<string, string[]> messagesByReceiver = connections
+                .GroupBy(connection => connection.TargetComponentId, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group =>
+                        group
+                            .Select(connection => connection.MessageTypeName)
+                            .Distinct(StringComparer.Ordinal)
+                            .ToArray(),
+                    StringComparer.Ordinal
+                );
+            Dictionary<string, string[]> receiversByMessage = connections
+                .GroupBy(connection => connection.MessageTypeName, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group =>
+                        group
+                            .Select(connection => connection.TargetComponentId)
+                            .Distinct(StringComparer.Ordinal)
+                            .ToArray(),
+                    StringComparer.Ordinal
+                );
+            for (int sweep = 0; sweep < sweepCount; sweep++)
+            {
+                Dictionary<string, int> messageIndexes = CreateGraphOrderIndexes(messageNames);
+                receiverIds = OrderGraphLayer(
+                    receiverIds,
+                    receiverId =>
+                        messagesByReceiver
+                            .GetValueOrDefault(receiverId, Array.Empty<string>())
+                            .Select(messageName =>
+                                messageIndexes.GetValueOrDefault(messageName, int.MaxValue)
+                            )
+                );
+
+                Dictionary<string, int> receiverIndexes = CreateGraphOrderIndexes(receiverIds);
+                messageNames = OrderGraphLayer(
+                    messageNames,
+                    messageName =>
+                        receiversByMessage
+                            .GetValueOrDefault(messageName, Array.Empty<string>())
+                            .Select(receiverId =>
+                                receiverIndexes.GetValueOrDefault(receiverId, int.MaxValue)
+                            )
+                );
+            }
+        }
+
+        private static Dictionary<string, int> CreateGraphOrderIndexes(IReadOnlyList<string> values)
+        {
+            Dictionary<string, int> indexes = new(values.Count, StringComparer.Ordinal);
+            for (int index = 0; index < values.Count; index++)
+            {
+                indexes[values[index]] = index;
+            }
+            return indexes;
+        }
+
+        private static string[] OrderGraphLayer(
+            IReadOnlyList<string> values,
+            Func<string, IEnumerable<int>> connectedIndexes
+        )
+        {
+            Dictionary<string, int> previousIndexes = CreateGraphOrderIndexes(values);
+            return values
+                .OrderBy(value =>
+                {
+                    int[] indexes = connectedIndexes(value)
+                        .Where(index => index != int.MaxValue)
+                        .ToArray();
+                    return indexes.Length == 0 ? double.MaxValue : indexes.Average();
+                })
+                .ThenBy(value => previousIndexes[value])
+                .ThenBy(value => value, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static string CreateGraphConnectionIdentity(GraphConnectionDescriptor connection)
+        {
+            return string.Join(
+                "|",
+                connection.MessageTypeName,
+                connection.TargetComponentId,
+                connection.RouteKind,
+                connection.ContextId.ToString(CultureInfo.InvariantCulture)
+            );
+        }
+
+        private static float CreateGraphPortOffset(int index, int count)
+        {
+            if (count <= 1)
+            {
+                return 0f;
+            }
+
+            const float usableHeightRatio = 0.64f;
+            float halfRange = GraphNodeHeight * usableHeightRatio * 0.5f;
+            return Mathf.Lerp(-halfRange, halfRange, index / (float)(count - 1));
+        }
+
+        private static VisualElement CreateGraphNode(
+            string eyebrow,
+            string title,
+            IReadOnlyList<GraphNodeMetric> metrics,
+            string tooltip,
+            string className,
+            Color accent,
+            Vector2 position,
+            bool outputPort,
+            bool selected,
+            string selectionKey,
+            Action<string> onSelectionChanged
+        )
+        {
+            VisualElement node = new() { tooltip = tooltip };
+            node.AddToClassList(className);
+            node.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            node.focusable = !string.IsNullOrWhiteSpace(selectionKey);
+            node.userData = selectionKey;
+            node.style.position = Position.Absolute;
+            node.style.left = position.x;
+            node.style.top = position.y;
+            node.style.width = GraphNodeWidth;
+            node.style.height = GraphNodeHeight;
+            node.style.paddingTop = 8;
+            node.style.paddingRight = 10;
+            node.style.paddingBottom = 8;
+            node.style.paddingLeft = 10;
+            DxMessagingEditorTheme.ApplyCompleteBorder(node, accent);
+            ConfigureGraphFocusIndicator(node, node, accent);
+            if (selected)
+            {
+                node.AddToClassList(SelectedRowClassName);
+                node.style.backgroundColor = DxMessagingEditorPalette.SelectedWash;
+            }
+
+            Label titleLabel = new(title);
+            titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            titleLabel.style.fontSize = 13;
+            titleLabel.style.maxWidth = GraphNodeWidth - 92f;
+            titleLabel.style.whiteSpace = WhiteSpace.NoWrap;
+            titleLabel.style.overflow = Overflow.Hidden;
+            titleLabel.style.textOverflow = TextOverflow.Ellipsis;
+            node.Add(titleLabel);
+
+            Label eyebrowLabel = new(eyebrow);
+            eyebrowLabel.style.position = Position.Absolute;
+            eyebrowLabel.style.right = 10;
+            eyebrowLabel.style.top = 9;
+            eyebrowLabel.style.fontSize = 9;
+            eyebrowLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            eyebrowLabel.style.color = accent;
+            node.Add(eyebrowLabel);
+
+            VisualElement metricsContainer = new();
+            metricsContainer.style.marginTop = 8;
+            foreach (GraphNodeMetric metric in metrics)
+            {
+                VisualElement metricRow = new();
+                metricRow.AddToClassList(GraphNodeMetricClassName);
+                metricRow.style.flexDirection = FlexDirection.Row;
+                metricRow.style.marginBottom = 2;
+                Label metricLabel = new(metric.Label);
+                metricLabel.style.width = 72;
+                metricLabel.style.fontSize = 10;
+                metricLabel.style.opacity = 0.7f;
+                metricRow.Add(metricLabel);
+                Label metricValue = new(metric.Value);
+                metricValue.style.flexGrow = 1;
+                metricValue.style.fontSize = 11;
+                metricValue.style.unityFontStyleAndWeight = FontStyle.Bold;
+                metricValue.style.whiteSpace = WhiteSpace.NoWrap;
+                metricValue.style.overflow = Overflow.Hidden;
+                metricValue.style.textOverflow = TextOverflow.Ellipsis;
+                metricRow.Add(metricValue);
+                metricsContainer.Add(metricRow);
+            }
+            node.Add(metricsContainer);
+
+            VisualElement port = new();
+            port.pickingMode = PickingMode.Ignore;
+            port.style.position = Position.Absolute;
+            float portHeight = GraphNodeHeight * 0.64f;
+            port.style.top = (GraphNodeHeight - portHeight) * 0.5f;
+            if (outputPort)
+            {
+                port.style.right = -3f;
+            }
+            else
+            {
+                port.style.left = -3f;
+            }
+            port.style.width = 6;
+            port.style.height = portHeight;
+            port.style.borderTopLeftRadius = 3;
+            port.style.borderTopRightRadius = 3;
+            port.style.borderBottomLeftRadius = 3;
+            port.style.borderBottomRightRadius = 3;
+            port.style.backgroundColor = accent;
+            DxMessagingEditorTheme.ApplyCompleteBorder(port, DxMessagingEditorPalette.BorderStrong);
+            node.Add(port);
+
+            node.RegisterCallback<MouseDownEvent>(evt => evt.StopPropagation());
+            if (onSelectionChanged != null && !string.IsNullOrWhiteSpace(selectionKey))
+            {
+                node.RegisterCallback<ClickEvent>(evt =>
+                {
+                    evt.StopPropagation();
+                    onSelectionChanged.Invoke(selectionKey);
+                });
+                node.RegisterCallback<KeyDownEvent>(evt =>
+                {
+                    if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.Space)
+                    {
+                        return;
+                    }
+                    evt.StopPropagation();
+                    onSelectionChanged.Invoke(selectionKey);
+                });
+            }
+            return node;
+        }
+
+        private static VisualElement CreateGraphConnectionMarker(
+            GraphConnectionDescriptor connection,
+            GraphCurveDescriptor curve,
+            float markerPosition,
+            Action<string> onSelectionChanged
+        )
+        {
+            Vector2 midpoint = curve.Evaluate(markerPosition);
+            const float hitSize = 30f;
+            float glyphSize = curve.Selected ? 18f : 12f;
+            VisualElement marker = new()
+            {
+                tooltip =
+                    $"{CreateConnectionFlowText(connection)}\n{connection.RouteKind} | {connection.ActivityCount} {(connection.TraceOnly ? "deliveries" : "calls")}{CreateConnectionEmissionSiteText(connection)}",
+            };
+            marker.AddToClassList(GraphConnectionClassName);
+            marker.focusable = !string.IsNullOrWhiteSpace(connection.SelectionKey);
+            marker.userData = connection.SelectionKey;
+            if (curve.Selected)
+            {
+                marker.AddToClassList(SelectedRowClassName);
+            }
+            marker.style.position = Position.Absolute;
+            marker.style.left = midpoint.x - hitSize * 0.5f;
+            marker.style.top = midpoint.y - hitSize * 0.5f;
+            marker.style.width = hitSize;
+            marker.style.height = hitSize;
+
+            VisualElement glyph = new();
+            glyph.pickingMode = PickingMode.Ignore;
+            glyph.style.position = Position.Absolute;
+            glyph.style.left = (hitSize - glyphSize) * 0.5f;
+            glyph.style.top = (hitSize - glyphSize) * 0.5f;
+            glyph.style.width = glyphSize;
+            glyph.style.height = glyphSize;
+            glyph.style.backgroundColor = curve.Color;
+            ApplyGraphConnectionMarkerShape(glyph, connection.RouteKind, glyphSize);
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                glyph,
+                curve.Selected
+                    ? DxMessagingEditorPalette.AmberSoft
+                    : DxMessagingEditorPalette.BorderStrong
+            );
+            marker.Add(glyph);
+            ConfigureGraphFocusIndicator(
+                marker,
+                glyph,
+                curve.Selected
+                    ? DxMessagingEditorPalette.AmberSoft
+                    : DxMessagingEditorPalette.BorderStrong
+            );
+            marker.RegisterCallback<MouseDownEvent>(evt => evt.StopPropagation());
+            if (onSelectionChanged != null && !string.IsNullOrWhiteSpace(connection.SelectionKey))
+            {
+                string selectionKey = connection.SelectionKey;
+                marker.RegisterCallback<ClickEvent>(evt =>
+                {
+                    evt.StopPropagation();
+                    onSelectionChanged.Invoke(selectionKey);
+                });
+                marker.RegisterCallback<KeyDownEvent>(evt =>
+                {
+                    if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.Space)
+                    {
+                        return;
+                    }
+                    evt.StopPropagation();
+                    onSelectionChanged.Invoke(selectionKey);
+                });
+            }
+            return marker;
+        }
+
+        private static void ConfigureGraphFocusIndicator(
+            VisualElement focusTarget,
+            VisualElement borderTarget,
+            Color restingColor
+        )
+        {
+            focusTarget.RegisterCallback<FocusInEvent>(_ =>
+                ApplyGraphFocusIndicator(borderTarget, restingColor, focused: true)
+            );
+            focusTarget.RegisterCallback<FocusOutEvent>(_ =>
+                ApplyGraphFocusIndicator(borderTarget, restingColor, focused: false)
+            );
+        }
+
+        internal static void ApplyGraphFocusIndicator(
+            VisualElement element,
+            Color restingColor,
+            bool focused
+        )
+        {
+            float width = focused ? 3f : DxMessagingEditorTheme.CompleteBorderWidth;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                element,
+                focused ? DxMessagingEditorPalette.AmberSoft : restingColor,
+                width
+            );
+        }
+
+        internal static float CreateGraphMarkerPosition(
+            int sourceIndex,
+            int sourceCount,
+            float curveOffset
+        )
+        {
+            float sourcePosition =
+                sourceCount <= 1
+                    ? 0.5f
+                    : Mathf.Lerp(0.38f, 0.62f, sourceIndex / (sourceCount - 1f));
+            return Mathf.Clamp(sourcePosition + curveOffset / 160f, 0.3f, 0.7f);
+        }
+
+        private static void ApplyGraphConnectionMarkerShape(
+            VisualElement marker,
+            string routeKind,
+            float size
+        )
+        {
+            string normalizedKind = DxMessagingEditorPalette.NormalizeRouteKind(routeKind);
+            float radius =
+                normalizedKind == DxMessagingEditorPalette.BroadcastKind ? size * 0.5f : 2f;
+            marker.style.borderTopLeftRadius = radius;
+            marker.style.borderTopRightRadius = radius;
+            marker.style.borderBottomLeftRadius = radius;
+            marker.style.borderBottomRightRadius = radius;
+            if (normalizedKind == DxMessagingEditorPalette.TargetedKind)
+            {
+                marker.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
+            }
+        }
+
+        private static string CreateConnectionEmissionSiteText(GraphConnectionDescriptor connection)
+        {
+            return connection.RecentEmissionSites.Count == 0
+                ? string.Empty
+                : "\nEMITTED BY " + string.Join(", ", connection.RecentEmissionSites);
+        }
+
+        private static string CreateConnectionFlowText(GraphConnectionDescriptor connection)
+        {
+            string context =
+                string.IsNullOrWhiteSpace(connection.Context) || connection.Context == "<none>"
+                    ? "ANY"
+                    : connection.Context;
+            switch (DxMessagingEditorPalette.NormalizeRouteKind(connection.RouteKind))
+            {
+                case DxMessagingEditorPalette.BroadcastKind:
+                    return $"{context} -> {connection.MessageTypeName} -> {connection.TargetComponentPath}";
+                case DxMessagingEditorPalette.TargetedKind:
+                    return $"{connection.MessageTypeName} -> {context} -> {connection.TargetComponentPath}";
+                case DxMessagingEditorPalette.UntargetedKind:
+                    return $"GLOBAL BUS -> {connection.MessageTypeName} -> {connection.TargetComponentPath}";
+                default:
+                    return string.Equals(
+                        connection.RouteKind,
+                        MessageRegistrationType.GlobalAcceptAll.ToString(),
+                        StringComparison.Ordinal
+                    )
+                        ? $"ANY MESSAGE -> {connection.TargetComponentPath}"
+                        : $"{connection.MessageTypeName} -> {connection.TargetComponentPath}";
+            }
+        }
+
+        private static void ConfigureGraphViewport(
+            VisualElement viewport,
+            VisualElement graphContent,
+            FlowGraphCanvasState canvasState,
+            Vector2 contentSize
+        )
+        {
+            void ApplyTransform()
+            {
+                graphContent.transform.position = new Vector3(
+                    canvasState.Pan.x,
+                    canvasState.Pan.y,
+                    0f
+                );
+                graphContent.transform.scale = new Vector3(canvasState.Zoom, canvasState.Zoom, 1f);
+            }
+
+            ApplyTransform();
+            bool panning = false;
+            Vector2 lastMousePosition = Vector2.zero;
+            viewport.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button != 0)
+                {
+                    return;
+                }
+
+                panning = true;
+                lastMousePosition = evt.localMousePosition;
+                viewport.CaptureMouse();
+                evt.StopPropagation();
+            });
+            viewport.RegisterCallback<MouseMoveEvent>(evt =>
+            {
+                if (!panning || !viewport.HasMouseCapture())
+                {
+                    return;
+                }
+
+                Vector2 currentPosition = evt.localMousePosition;
+                canvasState.Pan += currentPosition - lastMousePosition;
+                lastMousePosition = currentPosition;
+                ApplyTransform();
+                evt.StopPropagation();
+            });
+            viewport.RegisterCallback<MouseUpEvent>(evt =>
+            {
+                if (!panning || evt.button != 0)
+                {
+                    return;
+                }
+
+                panning = false;
+                if (viewport.HasMouseCapture())
+                {
+                    viewport.ReleaseMouse();
+                }
+                evt.StopPropagation();
+            });
+            viewport.RegisterCallback<WheelEvent>(evt =>
+            {
+                float previousZoom = canvasState.Zoom;
+                float zoomFactor = evt.delta.y > 0f ? 0.88f : 1.14f;
+                float nextZoom = Mathf.Clamp(previousZoom * zoomFactor, 0.8f, 2f);
+                Vector2 contentCenter = contentSize * 0.5f;
+                Vector2 mousePosition = evt.localMousePosition;
+                Vector2 contentPoint =
+                    (mousePosition - contentCenter - canvasState.Pan) / previousZoom
+                    + contentCenter;
+                canvasState.Zoom = nextZoom;
+                canvasState.Pan =
+                    mousePosition - contentCenter - (contentPoint - contentCenter) * nextZoom;
+                canvasState.Initialized = true;
+                ApplyTransform();
+                evt.StopPropagation();
+            });
+
+            if (!canvasState.Initialized)
+            {
+                EventCallback<GeometryChangedEvent> frameCallback = null;
+                frameCallback = evt =>
+                {
+                    if (evt.newRect.width <= Mathf.Epsilon || evt.newRect.height <= Mathf.Epsilon)
+                    {
+                        return;
+                    }
+
+                    canvasState.Zoom = CalculateGraphFrameScale(evt.newRect.size, contentSize);
+                    canvasState.Pan = evt.newRect.size * 0.5f - contentSize * 0.5f;
+                    canvasState.Initialized = true;
+                    ApplyTransform();
+                    viewport.UnregisterCallback(frameCallback);
+                };
+                viewport.RegisterCallback(frameCallback);
+            }
+        }
+
+        internal static float CalculateGraphFrameScale(Vector2 viewportSize, Vector2 contentSize)
+        {
+            if (contentSize.x <= Mathf.Epsilon || contentSize.y <= Mathf.Epsilon)
+            {
+                return 1f;
+            }
+
+            float horizontalScale = Math.Max(0f, viewportSize.x - 32f) / contentSize.x;
+            float verticalScale = Math.Max(0f, viewportSize.y - 32f) / contentSize.y;
+            return Mathf.Clamp(Math.Min(horizontalScale, verticalScale), 0.8f, 1f);
+        }
+
+        private static string CreateGraphLayoutSignature(
+            IEnumerable<string> messageNames,
+            IEnumerable<string> receiverIds,
+            IEnumerable<GraphConnectionDescriptor> connections
+        )
+        {
+            StringBuilder signature = new();
+            foreach (string messageName in messageNames)
+            {
+                signature.Append("m|").Append(messageName).Append('\n');
+            }
+            foreach (string receiverId in receiverIds)
+            {
+                signature.Append("r|").Append(receiverId).Append('\n');
+            }
+            foreach (
+                GraphConnectionDescriptor connection in connections
+                    .OrderBy(candidate => candidate.MessageTypeName, StringComparer.Ordinal)
+                    .ThenBy(candidate => candidate.TargetComponentId, StringComparer.Ordinal)
+                    .ThenBy(candidate => candidate.RouteKind, StringComparer.Ordinal)
+                    .ThenBy(candidate => candidate.ContextId)
+            )
+            {
+                signature
+                    .Append("e|")
+                    .Append(connection.MessageTypeName)
+                    .Append('|')
+                    .Append(connection.TargetComponentId)
+                    .Append('|')
+                    .Append(connection.RouteKind)
+                    .Append('|')
+                    .Append(connection.ContextId)
+                    .Append('\n');
+            }
+            return signature.ToString();
+        }
+
+        private static Label CreateGraphLegendBadge(string text, Color color)
+        {
+            Label badge = new(text);
+            DxMessagingEditorTheme.ApplyCompleteBorder(badge, color);
+            badge.style.paddingTop = 2;
+            badge.style.paddingRight = 6;
+            badge.style.paddingBottom = 2;
+            badge.style.paddingLeft = 6;
+            badge.style.unityFontStyleAndWeight = FontStyle.Bold;
+            return badge;
+        }
+
+        private static string CreateReceiverPath(
+            FlowGraphVisibleSnapshot visibleSnapshot,
+            IReadOnlyList<GraphConnectionDescriptor> connections,
+            string componentId
+        )
+        {
+            foreach (FlowGraphComponentNode component in visibleSnapshot.ComponentNodes)
+            {
+                if (string.Equals(component.Id, componentId, StringComparison.Ordinal))
+                {
+                    return component.HierarchyPath;
+                }
+            }
+
+            return connections
+                    .Where(connection =>
+                        string.Equals(
+                            connection.TargetComponentId,
+                            componentId,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .Select(connection => connection.TargetComponentPath)
+                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                ?? componentId;
+        }
+
+        private static float CreateGraphNodeY(int index, int count, int rowCount)
+        {
+            float centeredOffset = (rowCount - count) * (GraphNodeHeight + GraphNodeGap) * 0.5f;
+            return 54f + centeredOffset + index * (GraphNodeHeight + GraphNodeGap);
+        }
+
+        private static string CreateCompactGraphLabel(string messageTypeName)
+        {
+            string typeName = messageTypeName ?? string.Empty;
+            int assemblyStart = typeName.LastIndexOf(" [", StringComparison.Ordinal);
+            if (assemblyStart >= 0)
+            {
+                typeName = typeName.Substring(0, assemblyStart);
+            }
+            int namespaceSeparator = Math.Max(typeName.LastIndexOf('.'), typeName.LastIndexOf('+'));
+            return namespaceSeparator >= 0 && namespaceSeparator < typeName.Length - 1
+                ? typeName.Substring(namespaceSeparator + 1)
+                : typeName;
+        }
+
+        private static string CreateCompactReceiverLabel(string hierarchyPath)
+        {
+            string path = hierarchyPath ?? string.Empty;
+            int separator = path.LastIndexOf('/');
+            return separator >= 0 && separator < path.Length - 1
+                ? path.Substring(separator + 1)
+                : path;
         }
 
         private static VisualElement CreateRouteMap(
@@ -1500,13 +3270,26 @@ namespace DxMessaging.Editor.Windows
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             routeMap.Add(title);
 
+            Label overview = new(CreateRouteMapOverviewText(visibleSnapshot))
+            {
+                name = RouteMapOverviewLabelName,
+            };
+            overview.style.marginTop = 2;
+            overview.style.whiteSpace = WhiteSpace.Normal;
+            routeMap.Add(overview);
+
+            Foldout insights = CreateCollapsedFoldout(
+                RouteMapInsightsFoldoutName,
+                "Route Insights"
+            );
             Label summary = new(CreateRouteMapSummaryText(visibleSnapshot))
             {
                 name = RouteMapSummaryLabelName,
             };
             summary.style.marginTop = 2;
             summary.style.whiteSpace = WhiteSpace.Normal;
-            routeMap.Add(summary);
+            insights.Add(summary);
+            routeMap.Add(insights);
 
             if (visibleSnapshot.Edges.Count == 0)
             {
@@ -1518,7 +3301,8 @@ namespace DxMessaging.Editor.Windows
             }
 
             int totalVisibleCalls = SumVisibleCalls(visibleSnapshot);
-            foreach (FlowGraphEdge edge in visibleSnapshot.Edges)
+            FlowGraphEdge[] orderedRoutes = OrderRoutesForDisplay(visibleSnapshot.Edges).ToArray();
+            foreach (FlowGraphEdge edge in orderedRoutes.Take(VisibleRouteLimit))
             {
                 string selectionKey = CreateEdgeSelectionKey(edge);
                 routeMap.Add(
@@ -1531,7 +3315,56 @@ namespace DxMessaging.Editor.Windows
                 );
             }
 
+            if (orderedRoutes.Length > VisibleRouteLimit)
+            {
+                FlowGraphEdge[] remainingRoutes = orderedRoutes.Skip(VisibleRouteLimit).ToArray();
+                Foldout moreRoutes = CreateCollapsedFoldout(
+                    RouteMapMoreRoutesFoldoutName,
+                    FormatCount(remainingRoutes.Length, "more route")
+                );
+                moreRoutes.value = remainingRoutes.Any(edge =>
+                    string.Equals(
+                        CreateEdgeSelectionKey(edge),
+                        selectedItemKey,
+                        StringComparison.Ordinal
+                    )
+                );
+                foreach (FlowGraphEdge edge in remainingRoutes)
+                {
+                    string selectionKey = CreateEdgeSelectionKey(edge);
+                    moreRoutes.Add(
+                        CreateRouteMapRow(
+                            edge,
+                            CreateCallShareText(edge.CallCount, totalVisibleCalls),
+                            string.Equals(selectionKey, selectedItemKey, StringComparison.Ordinal),
+                            onSelectionChanged
+                        )
+                    );
+                }
+                routeMap.Add(moreRoutes);
+            }
+
             return routeMap;
+        }
+
+        private static IOrderedEnumerable<FlowGraphEdge> OrderRoutesForDisplay(
+            IEnumerable<FlowGraphEdge> edges
+        )
+        {
+            return edges
+                .OrderBy(edge =>
+                    string.Equals(
+                        edge.RegistrationTypeName,
+                        nameof(MessageRegistrationType.GlobalAcceptAll),
+                        StringComparison.Ordinal
+                    )
+                )
+                .ThenByDescending(edge => edge.CallCount)
+                .ThenByDescending(edge => edge.RecentTracedDeliveryCount)
+                .ThenBy(edge => edge.MessageTypeName, StringComparer.Ordinal)
+                .ThenBy(edge => edge.TargetComponentPath, StringComparer.Ordinal)
+                .ThenBy(edge => edge.TargetComponentId, StringComparer.Ordinal)
+                .ThenBy(edge => edge.RegistrationTypeName, StringComparer.Ordinal);
         }
 
         private static VisualElement CreateVisibleMessageLanes(
@@ -3117,6 +4950,32 @@ namespace DxMessaging.Editor.Windows
             return $"{FormatCount(routeCount, "visible route")} | {FormatCount(messageCount, "message")} | {FormatCount(listenerCount, "listener")} | Calls: {totalVisibleCalls} | {CreateRouteKindMixSummary(visibleSnapshot)} | {CreateHottestRouteSummary(visibleSnapshot, totalVisibleCalls)} | {CreateWidestMessageSummary(visibleSnapshot)} | {CreateMostRoutedTargetSummary(visibleSnapshot)} | {CreateInactiveRoutedTargetsSummary(visibleSnapshot)} | No-call routes: {noCallRouteCount} | {CreateRecentTracedRoutesSummary(visibleSnapshot)} | {CreateBusiestTracedRouteSummary(visibleSnapshot.Edges)} | {CreateBusiestTracedMessageSummary(visibleSnapshot.Edges)} | {CreateBusiestTracedTargetSummary(visibleSnapshot.Edges)} | Recent traced: {tracedDeliveries} | Trace ids: {CountDistinctTraceIds(visibleSnapshot.TracePaths)} | {CreateWidestTraceSummary(visibleSnapshot.TracePaths)} | {CreateTraceContextVolumeSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTraceContextShareSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTraceMessageSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTraceTargetSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTracePathSummary(visibleSnapshot.TracePaths)} | {CreateBusiestTracePathShareSummary(visibleSnapshot.TracePaths)}";
         }
 
+        internal static string CreateRouteMapSummaryText(
+            FlowGraphSnapshot snapshot,
+            string filterText = ""
+        )
+        {
+            if (snapshot == null)
+            {
+                throw new ArgumentNullException(nameof(snapshot));
+            }
+
+            return CreateRouteMapSummaryText(FilterSnapshot(snapshot, filterText));
+        }
+
+        private static string CreateRouteMapOverviewText(FlowGraphVisibleSnapshot visibleSnapshot)
+        {
+            int routeCount = visibleSnapshot.Edges.Count;
+            int messageCount = CountDistinct(
+                visibleSnapshot.Edges.Select(edge => edge.MessageTypeName)
+            );
+            int receiverCount = CountDistinct(
+                visibleSnapshot.Edges.Select(edge => edge.TargetComponentId)
+            );
+            int totalVisibleCalls = SumVisibleCalls(visibleSnapshot);
+            return $"{FormatCount(routeCount, "route")} | {FormatCount(messageCount, "message")} | {FormatCount(receiverCount, "receiver")} | {FormatCount(totalVisibleCalls, "call")}";
+        }
+
         private static string CreateRouteKindMixSummary(FlowGraphVisibleSnapshot visibleSnapshot)
         {
             string[] routeKindCounts = visibleSnapshot
@@ -3586,14 +5445,228 @@ namespace DxMessaging.Editor.Windows
             return CreateEdgeSelectionKey(
                 edge.MessageTypeName,
                 edge.TargetComponentId,
-                edge.RegistrationTypeName
+                edge.RegistrationTypeName,
+                edge.ContextId
             );
+        }
+
+        private static string CreateGraphMessageKind(
+            FlowGraphMessageNode? message,
+            IReadOnlyList<GraphConnectionDescriptor> connections
+        )
+        {
+            return CreateVisibleMessageKind(
+                message?.MessageKindName,
+                connections.Select(connection => connection.RouteKind)
+            );
+        }
+
+        private static string CreateVisibleMessageKind(
+            string fallbackKind,
+            IEnumerable<string> routeKinds
+        )
+        {
+            string[] visibleRouteKinds = routeKinds?.ToArray() ?? Array.Empty<string>();
+            if (
+                visibleRouteKinds.Any(kind =>
+                    string.Equals(
+                        kind,
+                        MessageRegistrationType.GlobalAcceptAll.ToString(),
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+            {
+                return "GLOBAL OBSERVER";
+            }
+
+            string[] normalizedKinds = visibleRouteKinds
+                .Select(DxMessagingEditorPalette.NormalizeRouteKind)
+                .Where(kind => !string.IsNullOrWhiteSpace(kind) && kind != "none")
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (normalizedKinds.Length > 1)
+            {
+                return "MIXED";
+            }
+            if (normalizedKinds.Length == 1)
+            {
+                switch (normalizedKinds[0])
+                {
+                    case "Broadcast":
+                        return "BROADCAST";
+                    case "Targeted":
+                        return "TARGETED";
+                    case "Untargeted":
+                        return "GLOBAL";
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(fallbackKind))
+            {
+                return fallbackKind;
+            }
+
+            return "MESSAGE";
+        }
+
+        private static string CreateVisibleMessageKind(
+            FlowGraphMessageNode message,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            return CreateVisibleMessageKind(
+                message.MessageKindName,
+                visibleSnapshot
+                    .Edges.Where(edge =>
+                        string.Equals(
+                            edge.MessageTypeName,
+                            message.MessageTypeName,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .Select(edge => edge.RegistrationTypeName)
+            );
+        }
+
+        private static IReadOnlyList<GraphNodeMetric> CreateGraphMessageMetrics(
+            FlowGraphMessageNode? message,
+            IReadOnlyList<GraphConnectionDescriptor> connections,
+            string messageKind,
+            int activityCount
+        )
+        {
+            int receiverCount = connections
+                .Select(connection => connection.TargetComponentId)
+                .Distinct(StringComparer.Ordinal)
+                .Count();
+            int emissionSiteCount = connections
+                .SelectMany(connection => connection.RecentEmissionSites)
+                .Distinct(StringComparer.Ordinal)
+                .Count();
+            string contextSummary = CreateGraphContextMetric(connections);
+            switch (messageKind)
+            {
+                case "BROADCAST":
+                    return new[]
+                    {
+                        new GraphNodeMetric("Sources", contextSummary),
+                        new GraphNodeMetric(
+                            "Receivers",
+                            receiverCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        new GraphNodeMetric(
+                            "Calls",
+                            activityCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                    };
+                case "TARGETED":
+                    return new[]
+                    {
+                        new GraphNodeMetric("Targets", contextSummary),
+                        new GraphNodeMetric(
+                            "Handlers",
+                            receiverCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        new GraphNodeMetric(
+                            "Call sites",
+                            emissionSiteCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                    };
+                case "GLOBAL":
+                    return new[]
+                    {
+                        new GraphNodeMetric("Scope", "Global bus"),
+                        new GraphNodeMetric(
+                            "Receivers",
+                            receiverCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        new GraphNodeMetric(
+                            "Calls",
+                            activityCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                    };
+                case "GLOBAL OBSERVER":
+                    return new[]
+                    {
+                        new GraphNodeMetric("Scope", "Any message"),
+                        new GraphNodeMetric(
+                            "Observers",
+                            receiverCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        new GraphNodeMetric(
+                            "Calls",
+                            activityCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                    };
+                default:
+                    return new[]
+                    {
+                        new GraphNodeMetric(
+                            "Routes",
+                            connections.Count.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        new GraphNodeMetric(
+                            "Receivers",
+                            receiverCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        new GraphNodeMetric(
+                            "Calls",
+                            activityCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                    };
+            }
+        }
+
+        private static string CreateGraphMessageTooltip(
+            FlowGraphMessageNode? message,
+            string messageTypeName,
+            string messageKind
+        )
+        {
+            if (!message.HasValue)
+            {
+                return messageKind + ": " + messageTypeName;
+            }
+
+            return $"{messageKind}: {messageTypeName}\nObserved emit sites: {JoinDistinctOrNone(message.Value.RecentEmissionSites)}\nObserved contexts: {JoinDistinctOrNone(message.Value.RecentContexts)}";
+        }
+
+        private static string CreateGraphContextMetric(
+            IEnumerable<GraphConnectionDescriptor> connections
+        )
+        {
+            GraphConnectionDescriptor[] values = connections
+                .Where(connection =>
+                    !string.IsNullOrWhiteSpace(connection.Context) && connection.Context != "<none>"
+                )
+                .GroupBy(
+                    connection =>
+                        connection.ContextId == 0
+                            ? "text:" + connection.Context
+                            : "id:" + connection.ContextId.ToString(CultureInfo.InvariantCulture),
+                    StringComparer.Ordinal
+                )
+                .Select(group => group.First())
+                .OrderBy(connection => connection.Context, StringComparer.Ordinal)
+                .ThenBy(connection => connection.ContextId)
+                .ToArray();
+            if (values.Length == 0)
+            {
+                return "ANY";
+            }
+
+            string first = CreateCompactReceiverLabel(values[0].Context);
+            return values.Length == 1
+                ? first
+                : values.Length.ToString(CultureInfo.InvariantCulture) + " observed";
         }
 
         private static string CreateEdgeSelectionKey(
             string messageTypeName,
             string targetComponentId,
-            string registrationTypeName
+            string registrationTypeName,
+            int contextId
         )
         {
             return string.Join(
@@ -3601,7 +5674,8 @@ namespace DxMessaging.Editor.Windows
                 "edge",
                 messageTypeName ?? string.Empty,
                 targetComponentId ?? string.Empty,
-                registrationTypeName ?? string.Empty
+                registrationTypeName ?? string.Empty,
+                contextId.ToString(CultureInfo.InvariantCulture)
             );
         }
 
@@ -3657,7 +5731,12 @@ namespace DxMessaging.Editor.Windows
                 string selectionKey = CreateMessageSelectionKey(message);
                 row.RegisterCallback<ClickEvent>(_ => onSelectionChanged.Invoke(selectionKey));
             }
-            row.Add(new Label(message.MessageTypeName) { name = NodeNameLabelName });
+            row.Add(
+                new Label($"{message.MessageKindName}: {message.MessageTypeName}")
+                {
+                    name = NodeNameLabelName,
+                }
+            );
             row.Add(
                 new Label(
                     $"Registrations: {message.RegistrationCount} | Calls: {message.CallCount} | Recent: {message.RecentGlobalEmissionCount} global / {message.RecentLocalMessageCount} listener | Traced deliveries: {message.RecentTracedDeliveryCount}"
@@ -3694,12 +5773,7 @@ namespace DxMessaging.Editor.Windows
             row.style.paddingBottom = 7;
             row.style.paddingLeft = 10;
 
-            Label label = new(
-                $"{edge.MessageTypeName} -> {edge.TargetComponentPath} ({edge.RegistrationTypeName})"
-            )
-            {
-                name = EdgeLabelName,
-            };
+            Label label = new(CreateEdgeFlowText(edge)) { name = EdgeLabelName };
             label.style.unityFontStyleAndWeight = FontStyle.Bold;
             row.Add(label);
 
@@ -3724,10 +5798,16 @@ namespace DxMessaging.Editor.Windows
         private static Label CreateRouteKindBadge(string routeKindText, string name)
         {
             string normalizedKind = DxMessagingEditorPalette.NormalizeRouteKind(routeKindText);
-            string labelText = string.IsNullOrWhiteSpace(normalizedKind)
-                ? string.IsNullOrWhiteSpace(routeKindText)
-                    ? "<unknown route kind>"
-                    : routeKindText.Trim()
+            string labelText =
+                string.Equals(
+                    routeKindText,
+                    MessageRegistrationType.GlobalAcceptAll.ToString(),
+                    StringComparison.Ordinal
+                )
+                    ? "GLOBAL OBSERVER"
+                : string.IsNullOrWhiteSpace(normalizedKind)
+                    ? string.IsNullOrWhiteSpace(routeKindText) ? "<unknown route kind>"
+                        : routeKindText.Trim()
                 : normalizedKind;
             Label routeKind = new(labelText) { name = name };
             DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(routeKind, routeKindText);
@@ -3768,26 +5848,483 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement details = new() { name = DetailsPaneName };
             details.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            details.style.borderTopWidth = 1;
-            details.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                details,
+                DxMessagingEditorPalette.BorderPanel
+            );
             details.style.marginTop = 10;
-            details.style.paddingTop = 8;
+            details.style.paddingTop = 12;
+            details.style.paddingRight = 12;
+            details.style.paddingBottom = 12;
+            details.style.paddingLeft = 12;
 
+            VisualElement header = new();
+            header.style.flexDirection = FlexDirection.Row;
+            header.style.alignItems = Align.Center;
+            header.style.marginBottom = 10;
             Label title = new(CreateDetailsTitle(selectedItem)) { name = DetailsTitleLabelName };
             title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.whiteSpace = WhiteSpace.Normal;
-            details.Add(title);
+            title.style.fontSize = 14;
+            title.style.flexGrow = 1;
+            title.style.marginBottom = 0;
+            header.Add(title);
+            if (selectedItem.Kind == FlowGraphSelectionKind.Edge)
+            {
+                header.Add(CreateRouteKindBadge(selectedItem.Edge.RegistrationTypeName, null));
+            }
+            else if (selectedItem.Kind == FlowGraphSelectionKind.Message)
+            {
+                header.Add(
+                    CreateGraphLegendBadge(
+                        CreateVisibleMessageKind(selectedItem.Message, visibleSnapshot),
+                        DxMessagingEditorPalette.AmberSoft
+                    )
+                );
+            }
+            details.Add(header);
 
+            switch (selectedItem.Kind)
+            {
+                case FlowGraphSelectionKind.Component:
+                    AddComponentDetailsCards(details, selectedItem.Component, visibleSnapshot);
+                    break;
+                case FlowGraphSelectionKind.Message:
+                    AddMessageDetailsCards(details, selectedItem.Message, visibleSnapshot);
+                    break;
+                case FlowGraphSelectionKind.Edge:
+                    AddEdgeDetailsCards(details, selectedItem.Edge, visibleSnapshot);
+                    break;
+            }
+
+            Foldout technical = new()
+            {
+                name = DetailsTechnicalFoldoutName,
+                text = "Technical diagnostics",
+                value = false,
+            };
+            technical.style.marginTop = 4;
             Label body = new(CreateDetailsBody(selectedItem, visibleSnapshot))
             {
                 name = DetailsBodyLabelName,
             };
             body.style.marginTop = 4;
             body.style.whiteSpace = WhiteSpace.Normal;
-            details.Add(body);
+            technical.Add(body);
+            details.Add(technical);
 
             return details;
+        }
+
+        private static void AddComponentDetailsCards(
+            VisualElement details,
+            FlowGraphComponentNode component,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            FlowGraphEdge[] inboundEdges = visibleSnapshot
+                .Edges.Where(edge =>
+                    string.Equals(edge.TargetComponentId, component.Id, StringComparison.Ordinal)
+                )
+                .ToArray();
+            int totalCalls = SumVisibleCalls(visibleSnapshot);
+            int totalTracedDeliveries = SumVisibleTracedDeliveries(visibleSnapshot);
+            details.Add(
+                CreateDetailsMetricSection(
+                    "COMPONENT",
+                    new GraphNodeMetric(
+                        "State",
+                        component.ActiveInHierarchy ? "Active" : "Inactive"
+                    ),
+                    new GraphNodeMetric(
+                        "Listeners",
+                        component.ListenerCount.ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Registrations",
+                        component.RegistrationCount.ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Calls",
+                        component.CallCount.ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Local messages",
+                        component.LocalMessageCount.ToString(CultureInfo.InvariantCulture)
+                    )
+                )
+            );
+            VisualElement traffic = CreateDetailsSection("VISIBLE TRAFFIC");
+            traffic.Add(CreateDetailsKeyValue("Type", component.ComponentTypeName));
+            traffic.Add(CreateDetailsKeyValue("Hierarchy", component.HierarchyPath));
+            traffic.Add(
+                CreateDetailsKeyValue(
+                    "Inbound routes",
+                    inboundEdges.Length.ToString(CultureInfo.InvariantCulture)
+                )
+            );
+            traffic.Add(
+                CreateDetailsKeyValue(
+                    "Message types",
+                    JoinDistinctOrNone(inboundEdges.Select(edge => edge.MessageTypeName))
+                )
+            );
+            traffic.Add(
+                CreateDetailsKeyValue(
+                    "Call share",
+                    CreateCallShareText(inboundEdges.Sum(edge => edge.CallCount), totalCalls)
+                )
+            );
+            traffic.Add(
+                CreateDetailsKeyValue(
+                    "Trace share",
+                    CreateCallShareText(
+                        inboundEdges.Sum(edge => edge.RecentTracedDeliveryCount),
+                        totalTracedDeliveries
+                    )
+                )
+            );
+            details.Add(traffic);
+        }
+
+        private static void AddMessageDetailsCards(
+            VisualElement details,
+            FlowGraphMessageNode message,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            FlowGraphEdge[] messageEdges = visibleSnapshot
+                .Edges.Where(edge =>
+                    string.Equals(
+                        edge.MessageTypeName,
+                        message.MessageTypeName,
+                        StringComparison.Ordinal
+                    )
+                )
+                .ToArray();
+            string visibleMessageKind = CreateVisibleMessageKind(
+                message.MessageKindName,
+                messageEdges.Select(edge => edge.RegistrationTypeName)
+            );
+            details.Add(
+                CreateDetailsMetricSection(
+                    "MESSAGE",
+                    new GraphNodeMetric("Kind", visibleMessageKind),
+                    new GraphNodeMetric(
+                        "Routes",
+                        messageEdges.Length.ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Receivers",
+                        CountDistinct(messageEdges.Select(edge => edge.TargetComponentId))
+                            .ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Registrations",
+                        messageEdges
+                            .Sum(edge => edge.RegistrationCount)
+                            .ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Calls",
+                        messageEdges
+                            .Sum(edge => edge.CallCount)
+                            .ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Traced",
+                        message.RecentTracedDeliveryCount.ToString(CultureInfo.InvariantCulture)
+                    )
+                )
+            );
+            VisualElement evidence = CreateDetailsSection("RECENT EVIDENCE");
+            evidence.Add(CreateDetailsKeyValue("Message type", message.MessageTypeName));
+            evidence.Add(
+                CreateDetailsKeyValue("Contexts", JoinDistinctOrNone(message.RecentContexts))
+            );
+            AddDetailValues(evidence, "Emitted by", message.RecentEmissionSites);
+            if (visibleMessageKind == "GLOBAL OBSERVER")
+            {
+                evidence.Add(
+                    CreateDetailsKeyValue(
+                        "Observed types",
+                        JoinDistinctOrNone(
+                            visibleSnapshot
+                                .TracePaths.Where(path =>
+                                    string.Equals(
+                                        path.RegistrationTypeName,
+                                        MessageRegistrationType.GlobalAcceptAll.ToString(),
+                                        StringComparison.Ordinal
+                                    )
+                                )
+                                .Select(path => path.MessageTypeName)
+                        )
+                    )
+                );
+            }
+            details.Add(evidence);
+        }
+
+        private static void AddEdgeDetailsCards(
+            VisualElement details,
+            FlowGraphEdge edge,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            FlowGraphTracePath[] tracePaths = visibleSnapshot
+                .TracePaths.Where(path => EdgeMatchesTracePath(edge, path))
+                .ToArray();
+            details.Add(CreateRoutePathSection(edge));
+            details.Add(
+                CreateDetailsMetricSection(
+                    "ROUTE ACTIVITY",
+                    new GraphNodeMetric(
+                        "Registrations",
+                        edge.RegistrationCount.ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Calls",
+                        edge.CallCount.ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Traced",
+                        edge.RecentTracedDeliveryCount.ToString(CultureInfo.InvariantCulture)
+                    ),
+                    new GraphNodeMetric(
+                        "Call share",
+                        CreateCallShareText(edge.CallCount, SumVisibleCalls(visibleSnapshot))
+                    ),
+                    new GraphNodeMetric(
+                        "Trace share",
+                        CreateCallShareText(
+                            edge.RecentTracedDeliveryCount,
+                            SumVisibleTracedDeliveries(visibleSnapshot)
+                        )
+                    )
+                )
+            );
+            VisualElement evidence = CreateDetailsSection("EMISSION EVIDENCE");
+            evidence.Add(
+                CreateDetailsKeyValue(
+                    "Route kind",
+                    DxMessagingEditorPalette.NormalizeRouteKind(edge.RegistrationTypeName)
+                )
+            );
+            evidence.Add(CreateDetailsKeyValue("Registration", edge.RegistrationTypeName));
+            evidence.Add(CreateDetailsKeyValue("Context", CreateReadableRouteContext(edge)));
+            evidence.Add(
+                CreateDetailsKeyValue(
+                    "Evidence scope",
+                    "Exact component registration delivery record"
+                )
+            );
+            AddDetailValues(evidence, "Matching call site", edge.RecentEmissionSites);
+            details.Add(evidence);
+
+            VisualElement traces = CreateDetailsSection("TRACE EVIDENCE");
+            traces.Add(
+                CreateDetailsKeyValue(
+                    "Paths",
+                    tracePaths.Length.ToString(CultureInfo.InvariantCulture)
+                )
+            );
+            traces.Add(
+                CreateDetailsKeyValue(
+                    "Deliveries",
+                    tracePaths
+                        .Sum(path => path.RecentTracedDeliveryCount)
+                        .ToString(CultureInfo.InvariantCulture)
+                )
+            );
+            traces.Add(CreateDetailsKeyValue("Contexts", JoinTraceContextsOrNone(tracePaths)));
+            traces.Add(
+                CreateDetailsKeyValue(
+                    "Trace ids",
+                    CountDistinctTraceIds(tracePaths).ToString(CultureInfo.InvariantCulture)
+                )
+            );
+            traces.Add(
+                CreateDetailsKeyValue(
+                    "Busiest path",
+                    CreateBusiestTracePathSummary(tracePaths)
+                        .Replace("Busiest path: ", string.Empty)
+                )
+            );
+            details.Add(traces);
+        }
+
+        private static VisualElement CreateRoutePathSection(FlowGraphEdge edge)
+        {
+            VisualElement section = CreateDetailsSection("ROUTE");
+            VisualElement flow = new();
+            flow.style.flexDirection = FlexDirection.Row;
+            flow.style.flexWrap = Wrap.Wrap;
+            flow.style.alignItems = Align.Center;
+            string kind = DxMessagingEditorPalette.NormalizeRouteKind(edge.RegistrationTypeName);
+            string context = CreateReadableRouteContext(edge);
+            if (kind == DxMessagingEditorPalette.BroadcastKind)
+            {
+                flow.Add(CreateRouteEndpoint("SOURCE", context));
+                flow.Add(CreateRouteArrow());
+                flow.Add(
+                    CreateRouteEndpoint("MESSAGE", CreateCompactGraphLabel(edge.MessageTypeName))
+                );
+                flow.Add(CreateRouteArrow());
+                flow.Add(CreateRouteEndpoint("RECEIVER", edge.TargetComponentPath));
+            }
+            else if (kind == DxMessagingEditorPalette.TargetedKind)
+            {
+                flow.Add(
+                    CreateRouteEndpoint("MESSAGE", CreateCompactGraphLabel(edge.MessageTypeName))
+                );
+                flow.Add(CreateRouteArrow());
+                flow.Add(CreateRouteEndpoint("TARGET", context));
+                flow.Add(CreateRouteArrow());
+                flow.Add(CreateRouteEndpoint("HANDLER", edge.TargetComponentPath));
+            }
+            else if (kind == DxMessagingEditorPalette.UntargetedKind)
+            {
+                flow.Add(CreateRouteEndpoint("SCOPE", "Global bus"));
+                flow.Add(CreateRouteArrow());
+                flow.Add(
+                    CreateRouteEndpoint("MESSAGE", CreateCompactGraphLabel(edge.MessageTypeName))
+                );
+                flow.Add(CreateRouteArrow());
+                flow.Add(CreateRouteEndpoint("RECEIVER", edge.TargetComponentPath));
+            }
+            else
+            {
+                flow.Add(CreateRouteEndpoint("SCOPE", GlobalObserverMessageName));
+                flow.Add(CreateRouteArrow());
+                flow.Add(CreateRouteEndpoint("GLOBAL OBSERVER", edge.TargetComponentPath));
+            }
+            section.Add(flow);
+            return section;
+        }
+
+        private static VisualElement CreateRouteEndpoint(string label, string value)
+        {
+            VisualElement endpoint = new();
+            endpoint.style.flexGrow = 1;
+            endpoint.style.flexBasis = 150;
+            endpoint.style.minWidth = 130;
+            endpoint.style.marginTop = 2;
+            endpoint.style.marginBottom = 2;
+            endpoint.style.paddingTop = 7;
+            endpoint.style.paddingRight = 8;
+            endpoint.style.paddingBottom = 7;
+            endpoint.style.paddingLeft = 8;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                endpoint,
+                DxMessagingEditorPalette.BorderPanel
+            );
+            Label endpointLabel = new(label);
+            endpointLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
+            endpointLabel.style.marginBottom = 2;
+            endpoint.Add(endpointLabel);
+            Label endpointValue = new(value);
+            endpointValue.style.unityFontStyleAndWeight = FontStyle.Bold;
+            endpointValue.style.whiteSpace = WhiteSpace.Normal;
+            endpoint.Add(endpointValue);
+            return endpoint;
+        }
+
+        private static Label CreateRouteArrow()
+        {
+            Label arrow = new("->");
+            arrow.style.marginLeft = 6;
+            arrow.style.marginRight = 6;
+            arrow.style.unityFontStyleAndWeight = FontStyle.Bold;
+            return arrow;
+        }
+
+        private static VisualElement CreateDetailsMetricSection(
+            string title,
+            params GraphNodeMetric[] metrics
+        )
+        {
+            VisualElement section = CreateDetailsSection(title);
+            VisualElement grid = new();
+            grid.style.flexDirection = FlexDirection.Row;
+            grid.style.flexWrap = Wrap.Wrap;
+            foreach (GraphNodeMetric metric in metrics)
+            {
+                VisualElement tile = new();
+                tile.AddToClassList(DetailsMetricClassName);
+                tile.style.flexGrow = 1;
+                tile.style.flexBasis = 105;
+                tile.style.minWidth = 92;
+                tile.style.marginRight = 6;
+                tile.style.marginBottom = 4;
+                tile.style.paddingTop = 6;
+                tile.style.paddingRight = 7;
+                tile.style.paddingBottom = 6;
+                tile.style.paddingLeft = 7;
+                DxMessagingEditorTheme.ApplyCompleteBorder(
+                    tile,
+                    DxMessagingEditorPalette.BorderPanel
+                );
+                Label metricLabel = new(metric.Label);
+                metricLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
+                metricLabel.style.marginBottom = 2;
+                tile.Add(metricLabel);
+                Label metricValue = new(metric.Value);
+                metricValue.style.unityFontStyleAndWeight = FontStyle.Bold;
+                metricValue.style.whiteSpace = WhiteSpace.Normal;
+                tile.Add(metricValue);
+                grid.Add(tile);
+            }
+            section.Add(grid);
+            return section;
+        }
+
+        private static VisualElement CreateDetailsSection(string title)
+        {
+            VisualElement section = new();
+            section.AddToClassList(DetailsSectionClassName);
+            section.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            section.style.marginBottom = 8;
+            Label label = new(title);
+            label.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
+            section.Add(label);
+            return section;
+        }
+
+        private static VisualElement CreateDetailsKeyValue(string key, string value)
+        {
+            VisualElement pair = new();
+            pair.AddToClassList(DxMessagingEditorTheme.KeyValueClassName);
+            Label keyLabel = new(key);
+            keyLabel.AddToClassList(DxMessagingEditorTheme.KeyValueKeyClassName);
+            keyLabel.style.width = 110;
+            keyLabel.style.whiteSpace = WhiteSpace.Normal;
+            pair.Add(keyLabel);
+            Label valueLabel = new(string.IsNullOrWhiteSpace(value) ? "none" : value);
+            valueLabel.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
+            valueLabel.style.whiteSpace = WhiteSpace.Normal;
+            pair.Add(valueLabel);
+            return pair;
+        }
+
+        private static void AddDetailValues(
+            VisualElement section,
+            string firstLabel,
+            IReadOnlyList<string> values
+        )
+        {
+            if (values.Count == 0)
+            {
+                section.Add(CreateDetailsKeyValue(firstLabel, "none captured"));
+                return;
+            }
+
+            for (int index = 0; index < values.Count; index++)
+            {
+                section.Add(
+                    CreateDetailsKeyValue(index == 0 ? firstLabel : string.Empty, values[index])
+                );
+            }
         }
 
         private static string CreateDetailsTitle(FlowGraphSelectedItem selectedItem)
@@ -3799,10 +6336,7 @@ namespace DxMessaging.Editor.Windows
                 case FlowGraphSelectionKind.Message:
                     return "Message: " + selectedItem.Message.MessageTypeName;
                 case FlowGraphSelectionKind.Edge:
-                    return "Route: "
-                        + selectedItem.Edge.MessageTypeName
-                        + " -> "
-                        + selectedItem.Edge.TargetComponentPath;
+                    return $"Route: {CreateCompactGraphLabel(selectedItem.Edge.MessageTypeName)} -> {selectedItem.Edge.TargetComponentPath}";
                 default:
                     return "Selection Details";
             }
@@ -3932,6 +6466,10 @@ namespace DxMessaging.Editor.Windows
             int totalCalls = SumVisibleCalls(visibleSnapshot);
             int selectedTracedDeliveries = messageEdges.Sum(edge => edge.RecentTracedDeliveryCount);
             int totalTracedDeliveries = SumVisibleTracedDeliveries(visibleSnapshot);
+            string visibleMessageKind = CreateVisibleMessageKind(
+                message.MessageKindName,
+                messageEdges.Select(edge => edge.RegistrationTypeName)
+            );
             FlowGraphEdge busiestEdge = messageEdges
                 .OrderByDescending(edge => edge.CallCount)
                 .ThenBy(edge => edge.TargetComponentPath, StringComparer.Ordinal)
@@ -3941,6 +6479,22 @@ namespace DxMessaging.Editor.Windows
                     ? "none"
                     : $"{busiestEdge.TargetComponentPath} ({busiestEdge.CallCount} calls)";
             StringBuilder builder = new();
+            builder
+                .Append("Message kind: ")
+                .Append(visibleMessageKind)
+                .Append(" | Observed emit sites: ")
+                .Append(message.RecentEmissionSites.Count)
+                .Append(" | Observed contexts: ")
+                .Append(message.RecentContexts.Count)
+                .AppendLine();
+            builder
+                .Append("Emit sites: ")
+                .Append(JoinDistinctOrNone(message.RecentEmissionSites))
+                .AppendLine();
+            builder
+                .Append("Observed FROM/AT contexts: ")
+                .Append(JoinDistinctOrNone(message.RecentContexts))
+                .AppendLine();
             builder
                 .Append("Visible registrations: ")
                 .Append(visibleRegistrationCount)
@@ -3984,6 +6538,25 @@ namespace DxMessaging.Editor.Windows
             builder.Append(CreateBusiestTraceContextShareSummary(tracePaths)).AppendLine();
             builder.Append(CreateBusiestTracePathSummary(tracePaths)).AppendLine();
             builder.Append(CreateBusiestTracePathShareSummary(tracePaths)).AppendLine();
+            if (visibleMessageKind == "GLOBAL OBSERVER")
+            {
+                builder
+                    .Append("Concrete message types recently observed: ")
+                    .Append(
+                        JoinDistinctOrNone(
+                            visibleSnapshot
+                                .TracePaths.Where(path =>
+                                    string.Equals(
+                                        path.RegistrationTypeName,
+                                        MessageRegistrationType.GlobalAcceptAll.ToString(),
+                                        StringComparison.Ordinal
+                                    )
+                                )
+                                .Select(path => path.MessageTypeName)
+                        )
+                    )
+                    .AppendLine();
+            }
             builder.Append("Busiest listener: ").Append(busiestText);
             return builder.ToString();
         }
@@ -3996,30 +6569,20 @@ namespace DxMessaging.Editor.Windows
             int totalCalls = SumVisibleCalls(visibleSnapshot);
             int totalTracedDeliveries = SumVisibleTracedDeliveries(visibleSnapshot);
             FlowGraphTracePath[] tracePaths = visibleSnapshot
-                .TracePaths.Where(path =>
-                    string.Equals(
-                        path.MessageTypeName,
-                        edge.MessageTypeName,
-                        StringComparison.Ordinal
-                    )
-                    && string.Equals(
-                        path.TargetComponentId,
-                        edge.TargetComponentId,
-                        StringComparison.Ordinal
-                    )
-                    && string.Equals(
-                        path.RegistrationTypeName,
-                        edge.RegistrationTypeName,
-                        StringComparison.Ordinal
-                    )
-                )
+                .TracePaths.Where(path => EdgeMatchesTracePath(edge, path))
                 .ToArray();
             StringBuilder builder = new();
+            builder.Append("Flow: ").Append(CreateEdgeFlowText(edge)).AppendLine();
             builder
                 .Append("Target component: ")
                 .Append(edge.TargetComponentPath)
                 .Append(" | Target id: ")
                 .Append(edge.TargetComponentId)
+                .AppendLine();
+            builder.Append("Route context: ").Append(edge.Context).AppendLine();
+            builder
+                .Append("Recent emit sites: ")
+                .Append(JoinDistinctOrNone(edge.RecentEmissionSites))
                 .AppendLine();
             builder
                 .Append("Registration type: ")
@@ -4057,6 +6620,57 @@ namespace DxMessaging.Editor.Windows
             builder.Append(CreateBusiestTracePathSummary(tracePaths)).AppendLine();
             builder.Append(CreateBusiestTracePathShareSummary(tracePaths));
             return builder.ToString();
+        }
+
+        private static string CreateEdgeFlowText(FlowGraphEdge edge)
+        {
+            string context =
+                string.IsNullOrWhiteSpace(edge.Context) || edge.Context == "<none>"
+                    ? "ANY"
+                    : edge.Context;
+            switch (DxMessagingEditorPalette.NormalizeRouteKind(edge.RegistrationTypeName))
+            {
+                case DxMessagingEditorPalette.BroadcastKind:
+                    return $"{edge.MessageTypeName} -> {edge.TargetComponentPath} | FROM {context} TO receiver";
+                case DxMessagingEditorPalette.TargetedKind:
+                    return $"{edge.MessageTypeName} -> {edge.TargetComponentPath} | AT {context}";
+                case DxMessagingEditorPalette.UntargetedKind:
+                    return $"{edge.MessageTypeName} -> {edge.TargetComponentPath} | GLOBAL";
+                default:
+                    return string.Equals(
+                        edge.RegistrationTypeName,
+                        MessageRegistrationType.GlobalAcceptAll.ToString(),
+                        StringComparison.Ordinal
+                    )
+                        ? $"{edge.TargetComponentPath} observes {GlobalObserverMessageName} globally"
+                        : $"{edge.MessageTypeName} -> {edge.TargetComponentPath}";
+            }
+        }
+
+        private static string CreateReadableRouteContext(FlowGraphEdge edge)
+        {
+            if (!string.IsNullOrWhiteSpace(edge.Context) && edge.Context != "<none>")
+            {
+                return edge.Context;
+            }
+
+            switch (DxMessagingEditorPalette.NormalizeRouteKind(edge.RegistrationTypeName))
+            {
+                case DxMessagingEditorPalette.BroadcastKind:
+                    return "Any source";
+                case DxMessagingEditorPalette.TargetedKind:
+                    return "Any target";
+                case DxMessagingEditorPalette.UntargetedKind:
+                    return "Global bus";
+                default:
+                    return string.Equals(
+                        edge.RegistrationTypeName,
+                        MessageRegistrationType.GlobalAcceptAll.ToString(),
+                        StringComparison.Ordinal
+                    )
+                        ? GlobalObserverMessageName
+                        : "Any context";
+            }
         }
 
         private static FlowGraphSelectedItem ResolveSelectedItem(
@@ -4109,6 +6723,13 @@ namespace DxMessaging.Editor.Windows
                 }
             }
 
+            if (visibleSnapshot.Edges.Count > 0)
+            {
+                return FlowGraphSelectedItem.ForEdge(
+                    OrderRoutesForDisplay(visibleSnapshot.Edges).First()
+                );
+            }
+
             if (visibleSnapshot.ComponentNodes.Count > 0)
             {
                 return FlowGraphSelectedItem.ForComponent(visibleSnapshot.ComponentNodes[0]);
@@ -4117,11 +6738,6 @@ namespace DxMessaging.Editor.Windows
             if (visibleSnapshot.MessageNodes.Count > 0)
             {
                 return FlowGraphSelectedItem.ForMessage(visibleSnapshot.MessageNodes[0]);
-            }
-
-            if (visibleSnapshot.Edges.Count > 0)
-            {
-                return FlowGraphSelectedItem.ForEdge(visibleSnapshot.Edges[0]);
             }
 
             return FlowGraphSelectedItem.None;
@@ -4351,6 +6967,32 @@ namespace DxMessaging.Editor.Windows
             builder.AppendLine();
         }
 
+        private static void AppendJsonStringArray(
+            StringBuilder builder,
+            int indentSize,
+            string name,
+            IReadOnlyList<string> values,
+            bool trailingComma
+        )
+        {
+            builder.Append(' ', indentSize).Append("\"").Append(name).Append("\": [");
+            for (int i = 0; i < values.Count; i++)
+            {
+                if (i > 0)
+                {
+                    builder.Append(", ");
+                }
+
+                builder.Append("\"").Append(EscapeJson(values[i])).Append("\"");
+            }
+            builder.Append("]");
+            if (trailingComma)
+            {
+                builder.Append(",");
+            }
+            builder.AppendLine();
+        }
+
         private static string EscapeJson(string value)
         {
             if (string.IsNullOrEmpty(value))
@@ -4408,6 +7050,28 @@ namespace DxMessaging.Editor.Windows
 
             internal string MessageTypeName { get; }
 
+            internal string MessageKindName
+            {
+                get
+                {
+                    if (Kinds.Contains("GLOBAL OBSERVER"))
+                    {
+                        return "GLOBAL OBSERVER";
+                    }
+                    if (Kinds.Count > 1)
+                    {
+                        return "MIXED";
+                    }
+                    return Kinds.FirstOrDefault() ?? "MESSAGE";
+                }
+            }
+
+            private HashSet<string> Kinds { get; } = new(StringComparer.Ordinal);
+
+            private HashSet<string> EmissionSites { get; } = new(StringComparer.Ordinal);
+
+            private HashSet<string> Contexts { get; } = new(StringComparer.Ordinal);
+
             internal int RegistrationCount { get; set; }
 
             internal int CallCount { get; set; }
@@ -4418,6 +7082,36 @@ namespace DxMessaging.Editor.Windows
 
             internal int RecentTracedDeliveryCount { get; set; }
 
+            internal void ObserveRegistrationType(MessageRegistrationType registrationType)
+            {
+                string kind = CreateMessageKindName(message: null, registrationType);
+                if (kind != "MESSAGE")
+                {
+                    Kinds.Add(kind);
+                }
+            }
+
+            internal void ObserveEmission(MessageEmissionData emission)
+            {
+                if (emission.message is IBroadcastMessage)
+                {
+                    Kinds.Add("BROADCAST");
+                }
+                if (emission.message is ITargetedMessage)
+                {
+                    Kinds.Add("TARGETED");
+                }
+                if (emission.message is IUntargetedMessage)
+                {
+                    Kinds.Add("GLOBAL");
+                }
+                EmissionSites.Add(CreateEmissionSite(emission.stackTrace));
+                if (emission.context.HasValue)
+                {
+                    Contexts.Add(CreateContextDisplayText(emission.context));
+                }
+            }
+
             internal FlowGraphMessageNode Build()
             {
                 return new FlowGraphMessageNode(
@@ -4426,7 +7120,10 @@ namespace DxMessaging.Editor.Windows
                     CallCount,
                     RecentGlobalEmissionCount,
                     RecentLocalMessageCount,
-                    RecentTracedDeliveryCount
+                    RecentTracedDeliveryCount,
+                    MessageKindName,
+                    EmissionSites.OrderBy(site => site, StringComparer.Ordinal).ToArray(),
+                    Contexts.OrderBy(context => context, StringComparer.Ordinal).ToArray()
                 );
             }
         }
@@ -4437,13 +7134,17 @@ namespace DxMessaging.Editor.Windows
                 string messageTypeName,
                 string targetComponentId,
                 string targetComponentPath,
-                string registrationTypeName
+                string registrationTypeName,
+                string context,
+                InstanceId? contextId
             )
             {
                 MessageTypeName = messageTypeName ?? string.Empty;
                 TargetComponentId = targetComponentId ?? string.Empty;
                 TargetComponentPath = targetComponentPath ?? string.Empty;
                 RegistrationTypeName = registrationTypeName ?? string.Empty;
+                Context = context ?? string.Empty;
+                ContextId = contextId;
             }
 
             internal string MessageTypeName { get; }
@@ -4454,11 +7155,32 @@ namespace DxMessaging.Editor.Windows
 
             internal string RegistrationTypeName { get; }
 
+            internal string Context { get; }
+
+            internal InstanceId? ContextId { get; }
+
             internal int RegistrationCount { get; set; }
 
             internal int CallCount { get; set; }
 
             internal int RecentTracedDeliveryCount { get; set; }
+
+            private HashSet<string> EmissionSites { get; } = new(StringComparer.Ordinal);
+
+            internal HashSet<MessageRegistrationHandle> RegistrationHandles { get; } = new();
+
+            internal void AddRegistrationHandle(MessageRegistrationHandle handle)
+            {
+                if (handle != default(MessageRegistrationHandle))
+                {
+                    RegistrationHandles.Add(handle);
+                }
+            }
+
+            internal void ObserveEmission(MessageEmissionData emission)
+            {
+                EmissionSites.Add(CreateEmissionSite(emission.stackTrace));
+            }
 
             internal FlowGraphEdge Build()
             {
@@ -4469,7 +7191,10 @@ namespace DxMessaging.Editor.Windows
                     RegistrationTypeName,
                     RegistrationCount,
                     CallCount,
-                    RecentTracedDeliveryCount
+                    RecentTracedDeliveryCount,
+                    Context,
+                    EmissionSites.OrderBy(site => site, StringComparer.Ordinal).ToArray(),
+                    ContextId?.Id ?? 0
                 );
             }
         }
@@ -4479,6 +7204,7 @@ namespace DxMessaging.Editor.Windows
             internal TracePathBuilder(
                 string messageTypeName,
                 string context,
+                int contextId,
                 string targetComponentId,
                 string targetComponentPath,
                 string registrationTypeName
@@ -4486,6 +7212,7 @@ namespace DxMessaging.Editor.Windows
             {
                 MessageTypeName = messageTypeName ?? string.Empty;
                 Context = context ?? string.Empty;
+                ContextId = contextId;
                 TargetComponentId = targetComponentId ?? string.Empty;
                 TargetComponentPath = targetComponentPath ?? string.Empty;
                 RegistrationTypeName = registrationTypeName ?? string.Empty;
@@ -4494,6 +7221,8 @@ namespace DxMessaging.Editor.Windows
             internal string MessageTypeName { get; }
 
             internal string Context { get; }
+
+            internal int ContextId { get; }
 
             internal string TargetComponentId { get; }
 
@@ -4522,7 +7251,8 @@ namespace DxMessaging.Editor.Windows
                     TargetComponentPath,
                     RegistrationTypeName,
                     RecentTracedDeliveryCount,
-                    TraceIds.OrderBy(traceId => traceId).ToArray()
+                    TraceIds.OrderBy(traceId => traceId).ToArray(),
+                    ContextId
                 );
             }
         }
@@ -5328,7 +8058,10 @@ namespace DxMessaging.Editor.Windows
             int callCount,
             int recentGlobalEmissionCount = 0,
             int recentLocalMessageCount = 0,
-            int recentTracedDeliveryCount = 0
+            int recentTracedDeliveryCount = 0,
+            string messageKindName = "MESSAGE",
+            IReadOnlyList<string> recentEmissionSites = null,
+            IReadOnlyList<string> recentContexts = null
         )
         {
             MessageTypeName = messageTypeName ?? string.Empty;
@@ -5337,6 +8070,11 @@ namespace DxMessaging.Editor.Windows
             RecentGlobalEmissionCount = recentGlobalEmissionCount;
             RecentLocalMessageCount = recentLocalMessageCount;
             RecentTracedDeliveryCount = recentTracedDeliveryCount;
+            MessageKindName = string.IsNullOrWhiteSpace(messageKindName)
+                ? "MESSAGE"
+                : messageKindName;
+            RecentEmissionSites = recentEmissionSites ?? Array.Empty<string>();
+            RecentContexts = recentContexts ?? Array.Empty<string>();
         }
 
         internal string MessageTypeName { get; }
@@ -5351,9 +8089,18 @@ namespace DxMessaging.Editor.Windows
 
         internal int RecentTracedDeliveryCount { get; }
 
+        internal string MessageKindName { get; }
+
+        internal IReadOnlyList<string> RecentEmissionSites { get; }
+
+        internal IReadOnlyList<string> RecentContexts { get; }
+
         internal bool Matches(string filterText)
         {
-            return ContainsText(MessageTypeName, filterText);
+            return ContainsText(MessageTypeName, filterText)
+                || ContainsText(MessageKindName, filterText)
+                || RecentEmissionSites.Any(site => ContainsText(site, filterText))
+                || RecentContexts.Any(context => ContainsText(context, filterText));
         }
 
         private static bool ContainsText(string value, string filterText)
@@ -5372,11 +8119,13 @@ namespace DxMessaging.Editor.Windows
             string targetComponentPath,
             string registrationTypeName,
             int recentTracedDeliveryCount,
-            IReadOnlyList<long> traceIds = null
+            IReadOnlyList<long> traceIds = null,
+            int contextId = 0
         )
         {
             MessageTypeName = messageTypeName ?? string.Empty;
             Context = context ?? string.Empty;
+            ContextId = contextId;
             TargetComponentId = targetComponentId ?? string.Empty;
             TargetComponentPath = targetComponentPath ?? string.Empty;
             RegistrationTypeName = registrationTypeName ?? string.Empty;
@@ -5387,6 +8136,8 @@ namespace DxMessaging.Editor.Windows
         internal string MessageTypeName { get; }
 
         internal string Context { get; }
+
+        internal int ContextId { get; }
 
         internal string TargetComponentId { get; }
 
@@ -5469,7 +8220,10 @@ namespace DxMessaging.Editor.Windows
             string registrationTypeName,
             int registrationCount,
             int callCount,
-            int recentTracedDeliveryCount = 0
+            int recentTracedDeliveryCount = 0,
+            string context = "",
+            IReadOnlyList<string> recentEmissionSites = null,
+            int contextId = 0
         )
         {
             MessageTypeName = messageTypeName ?? string.Empty;
@@ -5479,6 +8233,9 @@ namespace DxMessaging.Editor.Windows
             RegistrationCount = registrationCount;
             CallCount = callCount;
             RecentTracedDeliveryCount = recentTracedDeliveryCount;
+            Context = context ?? string.Empty;
+            RecentEmissionSites = recentEmissionSites ?? Array.Empty<string>();
+            ContextId = contextId;
         }
 
         internal string MessageTypeName { get; }
@@ -5495,12 +8252,20 @@ namespace DxMessaging.Editor.Windows
 
         internal int RecentTracedDeliveryCount { get; }
 
+        internal string Context { get; }
+
+        internal IReadOnlyList<string> RecentEmissionSites { get; }
+
+        internal int ContextId { get; }
+
         internal bool Matches(string filterText)
         {
             return ContainsText(MessageTypeName, filterText)
                 || ContainsText(TargetComponentId, filterText)
                 || ContainsText(TargetComponentPath, filterText)
-                || ContainsText(RegistrationTypeName, filterText);
+                || ContainsText(RegistrationTypeName, filterText)
+                || ContainsText(Context, filterText)
+                || RecentEmissionSites.Any(site => ContainsText(site, filterText));
         }
 
         private static bool ContainsText(string value, string filterText)

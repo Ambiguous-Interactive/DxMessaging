@@ -124,11 +124,55 @@ safe editor capture and avoid mutating provider state.
 ### Flow Graph
 
 Open **Tools > Wallstop Studios > DxMessaging > Flow Graph** to inspect loaded
-scene `MessagingComponent` registration topology. The graph aggregates:
+scene `MessagingComponent` registration topology. The primary surface is an
+interactive graph: message nodes occupy the left column, receiver nodes occupy
+the right column, and arrowheads carry direction without placing text labels on
+the lines. The layout alternates crossing-reduction sweeps across both columns,
+then orders each node's connection ports by the opposite column. Small
+shape-and-color route selectors use a 30-pixel canvas target. The readable zoom
+floor keeps that target at least 24 screen pixels while avoiding nearby arrows.
+Nodes use named metric rows instead of compact `+N` summaries.
+
+Broadcast nodes identify source scope, targeted nodes identify target scope,
+and untargeted nodes identify the global bus. A type with more than one visible
+route kind uses a `MIXED` node with neutral route, receiver, and call metrics;
+filtering it to one route kind restores that kind's focused metrics. Targeted
+and broadcast route details list recent call sites from the exact component
+registration delivery record when token diagnostics captured them. A call site
+identifies the emitting script, method, file, and line; it does not invent a
+sender object because targeted emission APIs carry a target, not a sender.
+Global accept-all registrations appear as
+`GLOBAL OBSERVER / ANY MESSAGE`, and their details list the concrete message
+types observed in recent trace evidence. Drag to pan, scroll to zoom, and select
+a node or connection to inspect it. Automatic framing keeps a readable zoom
+floor; large filtered graphs remain available through panning instead of shrinking their text
+and interaction targets into an unreadable overview. The canvas renders every
+filtered message, receiver, and route instead of moving extra message types
+into a text overflow list.
+
+The selected item inspector sits directly below the canvas. Route selections
+use responsive cards for the route path, activity metrics, emission evidence,
+and trace evidence. Its newline-oriented technical report starts collapsed.
+Expand **Analysis and Raw Data** only when you need the textual route map,
+message and target lanes, trace activity, or topology lists. Inside that
+section, concrete routes sort before `GlobalAcceptAll`; call volume, recent
+traced deliveries, and stable names determine the remaining order. The textual
+route map keeps its first eight rows outside its nested **more routes** foldout,
+but the graph itself has no eight-route cap.
+
+If the snapshot sees components or messages but no registration routes, the
+window explains how to recover: enter Play mode, restart Play mode if it is
+already active, enable the listeners, and refresh. It does not render a list of
+zero-value topology summaries.
+
+The graph aggregates:
 
 - component nodes,
 - message-type nodes,
-- registration edges by message type, target component, and registration kind,
+- registration edges by message type, target component, registration kind, and
+  source or target context where applicable,
+- recent component- and registration-exact delivery call sites for broadcast
+  and targeted edges when token diagnostics captured them,
 - route-map call shares,
 - visible message lanes by message type,
 - visible target lanes by target component,
@@ -142,9 +186,10 @@ scene `MessagingComponent` registration topology. The graph aggregates:
 - recent trace-path/context evidence when diagnostics captured token delivery
   records with positive trace ids.
 
-The graph supports filtering, stable row selection, details for selected
-components/messages/routes, and **Copy JSON** export. The Visible Message Lanes
-panel groups visible registration edges by message type, then reports route
+The graph supports filtering, pan and zoom, automatic framing, stable node and
+edge selection, details for selected components/messages/routes, and **Copy
+JSON** export. The collapsed Visible Message Lanes panel groups visible
+registration edges by message type, then reports route
 count, distinct target count, registration count, calls, recent traced
 deliveries, no-call routes, route kinds, call share, target paths, and inactive
 target breadth for each lane. The Visible Target Lanes panel groups visible
@@ -177,7 +222,8 @@ message list, and normalized context list for each trace target lane. The
 Visible Trace Context Lanes panel groups visible trace paths by normalized trace
 context, then reports path count, distinct message and target counts, distinct
 trace ids, route kinds, traced deliveries, delivery share, message list, and
-target list for each context lane. The Route Map summary reports the visible
+target list for each context lane. The expanded Route Insights summary reports
+the visible
 route-kind mix, the widest visible message by distinct target components, the
 target component with the most visible inbound routes, inactive routed targets,
 the hottest visible route by call share, and visible routes with no calls. It
@@ -185,7 +231,7 @@ also reports how many visible routes have at least one recent traced delivery an
 which visible route accounts for the largest share of recent traced deliveries,
 plus which visible message accounts for the largest share of recent route-edge
 traced deliveries and which visible target accounts for the largest share. Both
-the Route Map and Recent Trace Paths summaries report the visible trace context
+the Route Insights and Recent Trace Paths summaries report the visible trace context
 count, busiest context by recent traced deliveries, distinct visible trace ids,
 widest visible trace id by path count, and busiest visible trace message,
 target, and trace path plus each one's trace-path delivery share. The Message
@@ -211,10 +257,18 @@ and selected message details name the busiest trace target and its matching
 trace-path delivery share. Selected route details also report the exact route's
 share of visible recent route-edge traced deliveries.
 The current export uses
-`schemaVersion: 5`, `captureMode` set to
+`schemaVersion: 6`, `captureMode` set to
 `registration-topology-with-recent-diagnostics`, and a `traceSemantics` field
 that explains how trace ids, per-trace-path trace-id counts, and exact
-per-trace-path trace-id arrays are interpreted.
+per-trace-path trace-id arrays are interpreted. Message rows include semantic
+kind, recent call sites, and recent contexts. Edge rows include exact route
+context identity and recent component- and registration-scoped call sites.
+`contextId` is the captured Unity instance ID for a source or target; `0` means
+that the route has no specific source or target context. These IDs distinguish
+same-named objects inside one capture, but they are local to the running Unity
+session and are not durable identifiers. If the Unity context object was
+destroyed after registration, the graph preserves the route and displays
+`Instance <id>`. Trace-path rows use the same `contextId` convention.
 
 Trace paths are recent evidence aggregates built from token-side delivery
 records that carry a positive `traceId`. They group by concrete delivered

@@ -633,7 +633,18 @@ dedicated Unity editor tools under **Tools > Wallstop Studios > DxMessaging**.
 
 #### Flow Graph
 
-- Component nodes, message-type nodes, and registration edges
+- Crossing-aware layered message and receiver nodes with ordered connection
+  ports, arrowhead direction, and unobtrusive shape-and-color route selectors
+- Named node metrics for sources or targets, receivers, handlers, calls, and
+  state instead of compact `+N` overflow summaries; multi-kind message types
+  use neutral `MIXED` metrics until filtered to one route kind
+- Responsive route details split into route, activity, emission-evidence, and
+  trace-evidence cards; dense technical diagnostics start collapsed
+- Recent registration-exact delivery call sites for targeted and broadcast
+  routes; call sites identify the script and method when token diagnostics are
+  enabled without leaking evidence across components or message buses
+- Global accept-all registrations shown as `ANY MESSAGE` observer scope rather
+  than as an `IMessage` message type
 - Route-map route-kind mix, call shares, widest-message target-component
   fan-out, most-routed target, inactive routed-target, hottest-route, and
   no-call route summaries, recent traced-route coverage, busiest traced-route,

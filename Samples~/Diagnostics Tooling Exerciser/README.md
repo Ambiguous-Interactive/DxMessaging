@@ -28,6 +28,14 @@ the package editor tools.
 1. Select `Player Ship`, `Enemy Drone`, and `HUD Console` to inspect local
    diagnostics counters.
 
+The active runner starts its burst after the initial scene load and again from
+`OnEnable` instead of relying on a one-shot `Start` callback. Consecutive Play
+entries therefore reset and repopulate the tooling data when **Enter Play Mode
+Options** disables domain and scene reload. A per-activation guard deduplicates
+the runner's `OnEnable` and post-scene-load callbacks. Active receivers
+deliberately replace their token after the initial scene load so a stale enabled
+flag cannot hide reset bus state.
+
 The runner also exposes context-menu commands:
 
 - **Emit One Of Each** sends one untargeted, targeted, and broadcast pass.
@@ -42,9 +50,11 @@ After the default play-start burst:
 - `DiagnosticsToolingExerciser.Sequence` is `3`.
 - Message Monitor global history includes `ToolingPulse`, `ToolingCommand`, and
   `ToolingSignal` entries with trace IDs like `sample-pulse-001`.
-- Flow Graph shows three receiver components, three message types, targeted
-  routes to each receiver, exact-source broadcast routes for `Player Ship` and
-  `Enemy Drone`, and broadcast-without-source routes for all receivers.
+- Flow Graph shows three receiver components, four message nodes (the three
+  concrete messages plus `IMessage`), 15 routes, and 33 recent trace paths.
+  Its primary canvas places the four messages on the left, the three receivers
+  on the right, and draws all 15 live connections. The textual route and trace
+  reports remain inside the collapsed **Analysis and Raw Data** section.
 - The component diagnostics panel shows enabled listener diagnostics and local
   emissions for each receiver.
 
