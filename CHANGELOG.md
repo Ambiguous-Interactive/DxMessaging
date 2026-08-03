@@ -43,8 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines. Nodes use named metric rows instead of compact `+N` summaries, and
   multi-kind message types use neutral `MIXED` metrics until filtered to one
   route kind. Route selection opens responsive route, activity, emission, and
-  trace cards while
-  the dense technical report stays collapsed. Broadcast and targeted routes
+  trace cards. Evidence lists message types and call sites as separate rows,
+  links every resolvable type declaration and live call-site asset, and keeps
+  dense type sets behind an eight-row disclosure. Technical diagnostics now
+  use separate route-health and trace-coverage cards; the complete text report
+  remains available through **Copy diagnostics** without rendering a text wall.
+  Broadcast and targeted routes
   expose recent component- and registration-exact delivery call sites without
   leaking evidence across message buses. Global accept-all
   registrations appear as `ANY MESSAGE` observers instead of a misleading
@@ -55,7 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overview floor, and removes the automatic default selection. Route activity
   now leads while emission, trace, and technical evidence start collapsed.
   Message and call-site source links open the exact declaration or captured
-  line when Unity can resolve it. Dense many-to-many coverage keeps hundreds of
+  line when Unity can resolve it, and evidence disclosures stay open when the
+  background source index refreshes. Dense many-to-many coverage keeps hundreds of
   crossing routes present and selectable in constrained layouts
   ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Improve targeted and source-bound broadcast routing throughput and reduce the

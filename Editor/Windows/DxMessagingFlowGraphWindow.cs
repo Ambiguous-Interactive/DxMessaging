@@ -170,13 +170,18 @@ namespace DxMessaging.Editor.Windows
         internal const string EdgeRouteKindLabelName = "dxmessaging-flow-graph-edge-route-kind";
         internal const string DetailsPaneName = "dxmessaging-flow-graph-details";
         internal const string DetailsTitleLabelName = "dxmessaging-flow-graph-details-title";
-        internal const string DetailsBodyLabelName = "dxmessaging-flow-graph-details-body";
         internal const string DetailsSectionClassName = "dxmessaging-flow-graph-details-section";
         internal const string DetailsMetricClassName = "dxmessaging-flow-graph-details-metric";
+        internal const string DetailsMessageTypeRowClassName =
+            "dxmessaging-flow-graph-details-message-type-row";
         internal const string DetailsTechnicalFoldoutName =
             "dxmessaging-flow-graph-details-technical";
         internal const string DetailsEvidenceFoldoutName =
             "dxmessaging-flow-graph-details-evidence";
+        internal const string DetailsOverflowFoldoutName =
+            "dxmessaging-flow-graph-details-overflow";
+        internal const string DetailsCopyDiagnosticsButtonName =
+            "dxmessaging-flow-graph-details-copy-diagnostics";
         internal const string SourceLinkButtonName = "dxmessaging-flow-graph-source-link";
         internal const string GraphNodeMetricClassName = "dxmessaging-flow-graph-node-metric";
         internal const string WarningLabelName = "dxmessaging-flow-graph-warning";
@@ -191,6 +196,7 @@ namespace DxMessaging.Editor.Windows
         private const float GraphMinimumZoom = 0.2f;
         private const float GraphMaximumZoom = 2f;
         private const float GraphRouteHitRadius = 10f;
+        private const int VisibleDetailsRowLimit = 8;
         private const int ExportSchemaVersion = 6;
         private const string ExportCaptureMode = "registration-topology-with-recent-diagnostics";
         private const string ExportTraceSemantics =
@@ -203,6 +209,9 @@ namespace DxMessaging.Editor.Windows
             internal bool MoreRoutesExpanded;
             internal bool TraceActivityExpanded;
             internal bool TopologyExpanded;
+            internal bool DetailsEvidenceExpanded;
+            internal bool DetailsTechnicalExpanded;
+            internal bool DetailsOverflowExpanded;
             internal FlowGraphCanvasState CanvasState { get; } = new();
         }
 
@@ -1196,6 +1205,9 @@ namespace DxMessaging.Editor.Windows
             Foldout existingMoreRoutes = content.Q<Foldout>(RouteMapMoreRoutesFoldoutName);
             Foldout existingTraceActivity = content.Q<Foldout>(TraceActivityFoldoutName);
             Foldout existingTopology = content.Q<Foldout>(TopologyFoldoutName);
+            Foldout existingDetailsEvidence = content.Q<Foldout>(DetailsEvidenceFoldoutName);
+            Foldout existingDetailsTechnical = content.Q<Foldout>(DetailsTechnicalFoldoutName);
+            Foldout existingDetailsOverflow = content.Q<Foldout>(DetailsOverflowFoldoutName);
             if (existingAnalysis != null)
             {
                 foldoutState.AnalysisExpanded = existingAnalysis.value;
@@ -1215,6 +1227,18 @@ namespace DxMessaging.Editor.Windows
             if (existingTopology != null)
             {
                 foldoutState.TopologyExpanded = existingTopology.value;
+            }
+            if (existingDetailsEvidence != null)
+            {
+                foldoutState.DetailsEvidenceExpanded = existingDetailsEvidence.value;
+            }
+            if (existingDetailsTechnical != null)
+            {
+                foldoutState.DetailsTechnicalExpanded = existingDetailsTechnical.value;
+            }
+            if (existingDetailsOverflow != null)
+            {
+                foldoutState.DetailsOverflowExpanded = existingDetailsOverflow.value;
             }
             content.userData = foldoutState;
             content.Clear();
@@ -1276,7 +1300,7 @@ namespace DxMessaging.Editor.Windows
 
                 if (selectedItem.HasValue)
                 {
-                    content.Add(CreateDetailsPane(selectedItem, visibleSnapshot));
+                    content.Add(CreateDetailsPane(selectedItem, visibleSnapshot, foldoutState));
                 }
 
                 Foldout analysis = CreateCollapsedFoldout(
@@ -6252,7 +6276,8 @@ namespace DxMessaging.Editor.Windows
 
         private static VisualElement CreateDetailsPane(
             FlowGraphSelectedItem selectedItem,
-            FlowGraphVisibleSnapshot visibleSnapshot
+            FlowGraphVisibleSnapshot visibleSnapshot,
+            FlowGraphFoldoutState foldoutState
         )
         {
             VisualElement details = new() { name = DetailsPaneName };
@@ -6317,20 +6342,41 @@ namespace DxMessaging.Editor.Windows
                     break;
             }
 
+            Foldout evidence = details.Q<Foldout>(DetailsEvidenceFoldoutName);
+            if (evidence != null)
+            {
+                evidence.value = foldoutState.DetailsEvidenceExpanded;
+            }
+            Foldout overflow = details.Q<Foldout>(DetailsOverflowFoldoutName);
+            if (overflow != null)
+            {
+                overflow.value = foldoutState.DetailsOverflowExpanded;
+            }
+
             Foldout technical = new()
             {
                 name = DetailsTechnicalFoldoutName,
-                text = "Technical diagnostics",
-                value = false,
+                text = "Diagnostics summary",
+                value = foldoutState.DetailsTechnicalExpanded,
             };
             technical.style.marginTop = 4;
-            Label body = new(CreateDetailsBody(selectedItem, visibleSnapshot))
+            AddDetailsDiagnosticsSummary(technical, selectedItem, visibleSnapshot);
+            string diagnosticsText = CreateDetailsBody(selectedItem, visibleSnapshot);
+            Button copyDiagnostics = new()
             {
-                name = DetailsBodyLabelName,
+                name = DetailsCopyDiagnosticsButtonName,
+                text = "Copy diagnostics",
+                userData = diagnosticsText,
             };
-            body.style.marginTop = 4;
-            body.style.whiteSpace = WhiteSpace.Normal;
-            technical.Add(body);
+            copyDiagnostics.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
+            copyDiagnostics.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
+            copyDiagnostics.style.alignSelf = Align.FlexStart;
+            copyDiagnostics.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                EditorGUIUtility.systemCopyBuffer = diagnosticsText;
+            });
+            technical.Add(copyDiagnostics);
             details.Add(technical);
 
             return details;
@@ -6385,12 +6431,6 @@ namespace DxMessaging.Editor.Windows
             );
             traffic.Add(
                 CreateDetailsKeyValue(
-                    "Message types",
-                    JoinDistinctOrNone(inboundEdges.Select(edge => edge.MessageTypeName))
-                )
-            );
-            traffic.Add(
-                CreateDetailsKeyValue(
                     "Call share",
                     CreateCallShareText(inboundEdges.Sum(edge => edge.CallCount), totalCalls)
                 )
@@ -6406,6 +6446,12 @@ namespace DxMessaging.Editor.Windows
             );
             Foldout evidence = CreateDetailsEvidenceFoldout();
             evidence.Add(traffic);
+            evidence.Add(
+                CreateMessageTypesSection(
+                    "MESSAGE TYPES",
+                    inboundEdges.Select(edge => edge.MessageTypeName)
+                )
+            );
             details.Add(evidence);
         }
 
@@ -6415,19 +6461,18 @@ namespace DxMessaging.Editor.Windows
             FlowGraphVisibleSnapshot visibleSnapshot
         )
         {
-            FlowGraphEdge[] messageEdges = visibleSnapshot
-                .Edges.Where(edge =>
-                    string.Equals(
-                        edge.MessageTypeName,
-                        message.MessageTypeName,
-                        StringComparison.Ordinal
-                    )
-                )
-                .ToArray();
+            FlowGraphEdge[] messageEdges = SelectMessageEdges(message, visibleSnapshot);
+            FlowGraphTracePath[] messageTracePaths = SelectMessageTracePaths(
+                message,
+                visibleSnapshot
+            );
             string visibleMessageKind = CreateVisibleMessageKind(
                 message.MessageKindName,
                 messageEdges.Select(edge => edge.RegistrationTypeName)
             );
+            int tracedDeliveryCount = IsGlobalObserverMessage(message)
+                ? messageTracePaths.Sum(path => path.RecentTracedDeliveryCount)
+                : message.RecentTracedDeliveryCount;
             details.Add(
                 CreateDetailsMetricSection(
                     "MESSAGE",
@@ -6455,7 +6500,7 @@ namespace DxMessaging.Editor.Windows
                     ),
                     new GraphNodeMetric(
                         "Traced",
-                        message.RecentTracedDeliveryCount.ToString(CultureInfo.InvariantCulture)
+                        tracedDeliveryCount.ToString(CultureInfo.InvariantCulture)
                     )
                 )
             );
@@ -6468,25 +6513,213 @@ namespace DxMessaging.Editor.Windows
             if (visibleMessageKind == "GLOBAL OBSERVER")
             {
                 evidence.Add(
-                    CreateDetailsKeyValue(
-                        "Observed types",
-                        JoinDistinctOrNone(
-                            visibleSnapshot
-                                .TracePaths.Where(path =>
-                                    string.Equals(
-                                        path.RegistrationTypeName,
-                                        MessageRegistrationType.GlobalAcceptAll.ToString(),
-                                        StringComparison.Ordinal
-                                    )
+                    CreateMessageTypesSection(
+                        "OBSERVED TYPES",
+                        visibleSnapshot
+                            .TracePaths.Where(path =>
+                                string.Equals(
+                                    path.RegistrationTypeName,
+                                    MessageRegistrationType.GlobalAcceptAll.ToString(),
+                                    StringComparison.Ordinal
                                 )
-                                .Select(path => path.MessageTypeName)
-                        )
+                            )
+                            .Select(path => path.MessageTypeName)
                     )
                 );
             }
             Foldout evidenceFoldout = CreateDetailsEvidenceFoldout();
             evidenceFoldout.Add(evidence);
             details.Add(evidenceFoldout);
+        }
+
+        private static void AddDetailsDiagnosticsSummary(
+            VisualElement diagnostics,
+            FlowGraphSelectedItem selectedItem,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            FlowGraphEdge[] edges;
+            FlowGraphTracePath[] tracePaths;
+            switch (selectedItem.Kind)
+            {
+                case FlowGraphSelectionKind.Component:
+                    edges = visibleSnapshot
+                        .Edges.Where(edge =>
+                            string.Equals(
+                                edge.TargetComponentId,
+                                selectedItem.Component.Id,
+                                StringComparison.Ordinal
+                            )
+                        )
+                        .ToArray();
+                    tracePaths = visibleSnapshot
+                        .TracePaths.Where(path =>
+                            string.Equals(
+                                path.TargetComponentId,
+                                selectedItem.Component.Id,
+                                StringComparison.Ordinal
+                            )
+                        )
+                        .ToArray();
+                    break;
+                case FlowGraphSelectionKind.Message:
+                    edges = SelectMessageEdges(selectedItem.Message, visibleSnapshot);
+                    tracePaths = SelectMessageTracePaths(selectedItem.Message, visibleSnapshot);
+                    break;
+                case FlowGraphSelectionKind.Edge:
+                    edges = new[] { selectedItem.Edge };
+                    tracePaths = visibleSnapshot
+                        .TracePaths.Where(path => EdgeMatchesTracePath(selectedItem.Edge, path))
+                        .ToArray();
+                    break;
+                default:
+                    edges = Array.Empty<FlowGraphEdge>();
+                    tracePaths = Array.Empty<FlowGraphTracePath>();
+                    break;
+            }
+
+            VisualElement routeHealth = CreateDetailsMetricSection(
+                "ROUTE HEALTH",
+                new GraphNodeMetric("Routes", edges.Length.ToString(CultureInfo.InvariantCulture)),
+                new GraphNodeMetric(
+                    "Called",
+                    edges.Count(edge => edge.CallCount > 0).ToString(CultureInfo.InvariantCulture)
+                ),
+                new GraphNodeMetric(
+                    "Traced",
+                    edges
+                        .Count(edge => edge.RecentTracedDeliveryCount > 0)
+                        .ToString(CultureInfo.InvariantCulture)
+                ),
+                new GraphNodeMetric(
+                    "No calls",
+                    edges.Count(edge => edge.CallCount <= 0).ToString(CultureInfo.InvariantCulture)
+                )
+            );
+            routeHealth.Add(
+                CreateDetailsKeyValue(
+                    "Busiest traced",
+                    RemoveDiagnosticPrefix(
+                        CreateBusiestTracedRouteSummary(edges),
+                        "Busiest traced route: "
+                    )
+                )
+            );
+            diagnostics.Add(routeHealth);
+
+            VisualElement traceCoverage = CreateDetailsMetricSection(
+                "TRACE COVERAGE",
+                new GraphNodeMetric(
+                    "Paths",
+                    tracePaths.Length.ToString(CultureInfo.InvariantCulture)
+                ),
+                new GraphNodeMetric(
+                    "Deliveries",
+                    tracePaths
+                        .Sum(path => path.RecentTracedDeliveryCount)
+                        .ToString(CultureInfo.InvariantCulture)
+                ),
+                new GraphNodeMetric(
+                    "Trace ids",
+                    CountDistinctTraceIds(tracePaths).ToString(CultureInfo.InvariantCulture)
+                ),
+                new GraphNodeMetric(
+                    "Contexts",
+                    tracePaths
+                        .Select(path => NormalizeTraceContext(path.Context))
+                        .Distinct(StringComparer.Ordinal)
+                        .Count()
+                        .ToString(CultureInfo.InvariantCulture)
+                )
+            );
+            traceCoverage.Add(
+                CreateDetailsKeyValue(
+                    "Widest trace",
+                    RemoveDiagnosticPrefix(CreateWidestTraceSummary(tracePaths), "Widest trace: ")
+                )
+            );
+            traceCoverage.Add(
+                CreateDetailsKeyValue(
+                    "Busiest path",
+                    RemoveDiagnosticPrefix(
+                        CreateBusiestTracePathSummary(tracePaths),
+                        "Busiest path: "
+                    )
+                )
+            );
+            traceCoverage.Add(
+                CreateDetailsKeyValue(
+                    "Path share",
+                    RemoveDiagnosticPrefix(
+                        CreateBusiestTracePathShareSummary(tracePaths),
+                        "Busiest path share: "
+                    )
+                )
+            );
+            diagnostics.Add(traceCoverage);
+        }
+
+        private static FlowGraphEdge[] SelectMessageEdges(
+            FlowGraphMessageNode message,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            bool globalObserver = IsGlobalObserverMessage(message);
+            return visibleSnapshot
+                .Edges.Where(edge =>
+                    globalObserver
+                        ? IsGlobalObserverRegistration(edge.RegistrationTypeName)
+                        : string.Equals(
+                            edge.MessageTypeName,
+                            message.MessageTypeName,
+                            StringComparison.Ordinal
+                        )
+                )
+                .ToArray();
+        }
+
+        private static FlowGraphTracePath[] SelectMessageTracePaths(
+            FlowGraphMessageNode message,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            bool globalObserver = IsGlobalObserverMessage(message);
+            return visibleSnapshot
+                .TracePaths.Where(path =>
+                    globalObserver
+                        ? IsGlobalObserverRegistration(path.RegistrationTypeName)
+                        : string.Equals(
+                            path.MessageTypeName,
+                            message.MessageTypeName,
+                            StringComparison.Ordinal
+                        )
+                )
+                .ToArray();
+        }
+
+        private static bool IsGlobalObserverMessage(FlowGraphMessageNode message)
+        {
+            return string.Equals(
+                message.MessageTypeName,
+                GlobalObserverMessageName,
+                StringComparison.Ordinal
+            );
+        }
+
+        private static bool IsGlobalObserverRegistration(string registrationTypeName)
+        {
+            return string.Equals(
+                registrationTypeName,
+                MessageRegistrationType.GlobalAcceptAll.ToString(),
+                StringComparison.Ordinal
+            );
+        }
+
+        private static string RemoveDiagnosticPrefix(string text, string prefix)
+        {
+            return text.StartsWith(prefix, StringComparison.Ordinal)
+                ? text.Substring(prefix.Length)
+                : text;
         }
 
         private static void AddEdgeDetailsCards(
@@ -6744,6 +6977,82 @@ namespace DxMessaging.Editor.Windows
             return pair;
         }
 
+        private static VisualElement CreateMessageTypesSection(
+            string title,
+            IEnumerable<string> messageTypeNames
+        )
+        {
+            VisualElement section = CreateDetailsSection(title);
+            string[] distinctTypes = messageTypeNames
+                .Where(typeName => !string.IsNullOrWhiteSpace(typeName))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(typeName => typeName, StringComparer.Ordinal)
+                .ToArray();
+            if (distinctTypes.Length == 0)
+            {
+                section.Add(CreateDetailsKeyValue("Message types", "none"));
+                return section;
+            }
+
+            int visibleCount = Math.Min(VisibleDetailsRowLimit, distinctTypes.Length);
+            for (int index = 0; index < visibleCount; index++)
+            {
+                section.Add(CreateMessageTypeRow(distinctTypes[index]));
+            }
+            if (distinctTypes.Length > visibleCount)
+            {
+                Foldout overflow = new()
+                {
+                    name = DetailsOverflowFoldoutName,
+                    text = $"{distinctTypes.Length - visibleCount} more message types",
+                    value = false,
+                };
+                bool populated = false;
+                void PopulateOverflow()
+                {
+                    if (populated)
+                    {
+                        return;
+                    }
+
+                    for (int index = visibleCount; index < distinctTypes.Length; index++)
+                    {
+                        overflow.Add(CreateMessageTypeRow(distinctTypes[index]));
+                    }
+                    populated = true;
+                }
+                overflow.RegisterValueChangedCallback(evt =>
+                {
+                    if (evt.newValue)
+                    {
+                        PopulateOverflow();
+                    }
+                });
+                section.Add(overflow);
+            }
+            return section;
+        }
+
+        private static VisualElement CreateMessageTypeRow(string messageTypeName)
+        {
+            VisualElement row = new();
+            row.AddToClassList(DxMessagingEditorTheme.KeyValueClassName);
+            row.AddToClassList(DetailsMessageTypeRowClassName);
+            row.tooltip = messageTypeName;
+            Label typeLabel = new(CreateCompactGraphLabel(messageTypeName));
+            typeLabel.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
+            typeLabel.style.flexGrow = 1;
+            typeLabel.style.whiteSpace = WhiteSpace.Normal;
+            row.Add(typeLabel);
+            if (
+                TryResolveMessageSource(messageTypeName, out FlowGraphSourceLocation sourceLocation)
+            )
+            {
+                row.Add(CreateSourceLinkButton("Open source", sourceLocation));
+            }
+            return row;
+        }
+
         private static void AddDetailValues(
             VisualElement section,
             string firstLabel,
@@ -6770,13 +7079,27 @@ namespace DxMessaging.Editor.Windows
             IReadOnlyList<string> values
         )
         {
-            AddDetailValues(section, firstLabel, values);
-            foreach (string value in values)
+            if (values.Count == 0)
             {
-                if (TryParseSourceLocation(value, out FlowGraphSourceLocation location))
+                section.Add(CreateDetailsKeyValue(firstLabel, "none captured"));
+                return;
+            }
+
+            for (int index = 0; index < values.Count; index++)
+            {
+                string value = values[index];
+                VisualElement row = CreateDetailsKeyValue(
+                    index == 0 ? firstLabel : string.Empty,
+                    value
+                );
+                if (
+                    TryParseSourceLocation(value, out FlowGraphSourceLocation location)
+                    && AssetDatabase.LoadMainAssetAtPath(location.AssetPath) != null
+                )
                 {
-                    section.Add(CreateSourceLinkButton("Open call site", location));
+                    row.Add(CreateSourceLinkButton("Open call site", location));
                 }
+                section.Add(row);
             }
         }
 
@@ -7715,28 +8038,15 @@ namespace DxMessaging.Editor.Windows
             FlowGraphVisibleSnapshot visibleSnapshot
         )
         {
-            FlowGraphEdge[] messageEdges = visibleSnapshot
-                .Edges.Where(edge =>
-                    string.Equals(
-                        edge.MessageTypeName,
-                        message.MessageTypeName,
-                        StringComparison.Ordinal
-                    )
-                )
-                .ToArray();
-            FlowGraphTracePath[] tracePaths = visibleSnapshot
-                .TracePaths.Where(path =>
-                    string.Equals(
-                        path.MessageTypeName,
-                        message.MessageTypeName,
-                        StringComparison.Ordinal
-                    )
-                )
-                .ToArray();
+            FlowGraphEdge[] messageEdges = SelectMessageEdges(message, visibleSnapshot);
+            FlowGraphTracePath[] tracePaths = SelectMessageTracePaths(message, visibleSnapshot);
+            bool globalObserver = IsGlobalObserverMessage(message);
             int visibleRegistrationCount = messageEdges.Sum(edge => edge.RegistrationCount);
             int selectedCalls = messageEdges.Sum(edge => edge.CallCount);
             int totalCalls = SumVisibleCalls(visibleSnapshot);
-            int selectedTracedDeliveries = messageEdges.Sum(edge => edge.RecentTracedDeliveryCount);
+            int selectedTracedDeliveries = globalObserver
+                ? tracePaths.Sum(path => path.RecentTracedDeliveryCount)
+                : messageEdges.Sum(edge => edge.RecentTracedDeliveryCount);
             int totalTracedDeliveries = SumVisibleTracedDeliveries(visibleSnapshot);
             string visibleMessageKind = CreateVisibleMessageKind(
                 message.MessageKindName,
@@ -7781,7 +8091,11 @@ namespace DxMessaging.Editor.Windows
                 .Append(" global emissions | ")
                 .Append(message.RecentLocalMessageCount)
                 .Append(" listener messages | Traced deliveries: ")
-                .Append(message.RecentTracedDeliveryCount)
+                .Append(
+                    globalObserver
+                        ? tracePaths.Sum(path => path.RecentTracedDeliveryCount)
+                        : message.RecentTracedDeliveryCount
+                )
                 .AppendLine();
             builder
                 .Append("Registration kinds: ")

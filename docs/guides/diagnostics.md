@@ -144,6 +144,12 @@ registration delivery record when token diagnostics captured them. A call site
 identifies the emitting script, method, file, and line. Use **Open call site**
 to open that exact line. Message and route selections also provide **Open
 message source** when Unity can resolve the captured type to its declaration.
+Component evidence lists each visible message type as a compact row with its
+full identity in a tooltip and an **Open source** action when the declaration is
+available. It shows eight rows before a collapsed remainder so dense receivers
+do not replace the graph with a long list. Captured call sites keep their text
+and source action on the same row; stale asset paths remain readable without a
+dead button.
 The graph does not invent a sender object because targeted emission APIs carry
 a target, not a sender.
 Global accept-all registrations appear as
@@ -158,8 +164,11 @@ of moving extra message types into a text overflow list.
 The window opens without selecting a node or route, so the canvas leads without
 a details wall. The selected item inspector sits directly below the canvas only
 after an intentional selection. Route selections show the route path and
-activity metrics first; emission evidence, trace evidence, and the
-newline-oriented technical report each start collapsed.
+activity metrics first; emission evidence and diagnostics start collapsed.
+Diagnostics split route health from trace coverage. Use **Copy diagnostics** to
+copy the complete newline-oriented report without rendering it in the window.
+Opening evidence or diagnostics remains stable when background source indexing
+refreshes the selected item.
 Expand **Analysis and Raw Data** only when you need the textual route map,
 message and target lanes, trace activity, or topology lists. Inside that
 section, concrete routes sort before `GlobalAcceptAll`; call volume, recent

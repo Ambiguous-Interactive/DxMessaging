@@ -723,10 +723,16 @@ namespace DxMessaging.Tests.Editor
             EditorWindowTestUtility.ShowWindow(window);
             VisualElement root = window.rootVisualElement;
             string selectedRoute = string.Empty;
+            FlowGraphSnapshot stressSnapshot = new(
+                components,
+                messages,
+                edges,
+                Array.Empty<string>()
+            );
 
             DxMessagingFlowGraphWindow.BuildGraphUi(
                 root,
-                new FlowGraphSnapshot(components, messages, edges, Array.Empty<string>()),
+                stressSnapshot,
                 FlowGraphViewState.Default,
                 onSelectionChanged: key => selectedRoute = key
             );
@@ -806,6 +812,63 @@ namespace DxMessaging.Tests.Editor
                 selectedRoute,
                 Is.EqualTo(expectedRoute),
                 "Clicking a non-marker segment in the attached 400-route graph must select the visible route."
+            );
+
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                root,
+                stressSnapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        components[0]
+                    )
+                )
+            );
+            Foldout detailsOverflow = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsOverflowFoldoutName
+            );
+            int initialMessageTypeRows = detailsOverflow
+                .parent.Children()
+                .Count(child =>
+                    child.ClassListContains(
+                        DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                    )
+                );
+            Assert.That(
+                initialMessageTypeRows,
+                Is.EqualTo(8),
+                "Dense component evidence should expose a bounded first page of message types."
+            );
+            Assert.That(
+                detailsOverflow.text,
+                Is.EqualTo("2 more message types"),
+                "The overflow disclosure should account for every remaining source-linked type."
+            );
+            Assert.That(
+                detailsOverflow.value,
+                Is.False,
+                "Dense evidence should not replace the graph with dozens of type rows on selection."
+            );
+            Assert.That(
+                detailsOverflow
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                    )
+                    .ToList(),
+                Is.Empty,
+                "Collapsed overflow should not create hidden source rows or resolve their source links."
+            );
+
+            detailsOverflow.value = true;
+
+            Assert.That(
+                detailsOverflow
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                    )
+                    .ToList()
+                    .Count,
+                Is.EqualTo(2),
+                "Expanding the disclosure should lazily create every remaining message type row."
             );
         }
 
@@ -956,7 +1019,9 @@ namespace DxMessaging.Tests.Editor
                 new[] { edge },
                 Array.Empty<string>()
             );
-            VisualElement root = new();
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
 
             FlowGraphViewState viewState = new(
                 selectedItemKey: DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(edge)
@@ -1011,6 +1076,162 @@ namespace DxMessaging.Tests.Editor
                 location.Line,
                 Is.GreaterThan(0),
                 "The message-source action should open the declaring line, not only the file."
+            );
+            Assert.That(
+                evidence.Query<Label>().ToList().Any(label => label.text.Contains("Game.Emit")),
+                Is.True,
+                "A stale call site should remain readable as evidence."
+            );
+            Assert.That(
+                evidence
+                    .Query<Button>(name: DxMessagingFlowGraphWindow.SourceLinkButtonName)
+                    .ToList()
+                    .Any(button =>
+                        button.text.StartsWith("Open call site", StringComparison.Ordinal)
+                    ),
+                Is.False,
+                "A call-site action should not appear when its captured asset no longer resolves."
+            );
+            Foldout diagnostics = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsTechnicalFoldoutName
+            );
+            List<string> sectionTitles = diagnostics
+                .Query<VisualElement>(className: DxMessagingFlowGraphWindow.DetailsSectionClassName)
+                .ToList()
+                .Select(section => section.Q<Label>().text)
+                .ToList();
+            Assert.That(
+                sectionTitles,
+                Does.Contain("ROUTE HEALTH"),
+                "Diagnostics should lead with categorized route health."
+            );
+            Assert.That(
+                sectionTitles,
+                Does.Contain("TRACE COVERAGE"),
+                "Trace coverage should remain separate from route health."
+            );
+            Assert.That(
+                root.Query<Label>()
+                    .ToList()
+                    .Any(label =>
+                        label.text.StartsWith("Visible call share:", StringComparison.Ordinal)
+                    ),
+                Is.False,
+                "Raw diagnostics should not render as a multiline wall anywhere in the details pane."
+            );
+            Assert.That(
+                GetCopiedDiagnostics(diagnostics),
+                Does.Contain("Visible call share"),
+                "The copy action should retain the complete report without rendering it."
+            );
+            string originalClipboard = EditorGUIUtility.systemCopyBuffer;
+            try
+            {
+                string expectedDiagnostics = GetCopiedDiagnostics(diagnostics);
+                EditorGUIUtility.systemCopyBuffer = "diagnostics-copy-sentinel";
+                Button copyDiagnostics = diagnostics.Q<Button>(
+                    DxMessagingFlowGraphWindow.DetailsCopyDiagnosticsButtonName
+                );
+                using (ClickEvent click = ClickEvent.GetPooled())
+                {
+                    click.target = copyDiagnostics;
+                    copyDiagnostics.SendEvent(click);
+                }
+                Assert.That(
+                    EditorGUIUtility.systemCopyBuffer,
+                    Is.EqualTo(expectedDiagnostics),
+                    "Clicking the attached copy action should publish the complete diagnostic report."
+                );
+            }
+            finally
+            {
+                EditorGUIUtility.systemCopyBuffer = originalClipboard;
+            }
+        }
+
+        [Test]
+        public void BuildGraphUiStructuresComponentEvidenceAndLinksMessageTypes()
+        {
+            string firstMessageType = typeof(FlowGraphMessage).FullName;
+            string secondMessageType = typeof(EvidenceOnlyFlowGraphMessage).FullName;
+            FlowGraphComponentNode component = new(
+                "component:receiver",
+                "Root/Receiver",
+                "MessagingComponent",
+                activeInHierarchy: true,
+                listenerCount: 1,
+                registrationCount: 2,
+                callCount: 5,
+                localMessageCount: 5
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[] { component },
+                new[]
+                {
+                    new FlowGraphMessageNode(firstMessageType, 1, 3),
+                    new FlowGraphMessageNode(secondMessageType, 1, 2),
+                },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        firstMessageType,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Untargeted",
+                        registrationCount: 1,
+                        callCount: 3
+                    ),
+                    new FlowGraphEdge(
+                        secondMessageType,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Targeted",
+                        registrationCount: 1,
+                        callCount: 2
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+            FlowGraphViewState viewState = new(
+                selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(component)
+            );
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
+            DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
+
+            List<VisualElement> messageTypeRows = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                )
+                .ToList();
+            List<Button> sourceLinks = messageTypeRows
+                .SelectMany(row =>
+                    row.Query<Button>(name: DxMessagingFlowGraphWindow.SourceLinkButtonName)
+                        .ToList()
+                )
+                .ToList();
+            Assert.That(
+                messageTypeRows,
+                Has.Count.EqualTo(2),
+                "Each visible message type should receive a separate scannable evidence row."
+            );
+            Assert.That(
+                sourceLinks,
+                Has.Count.EqualTo(2),
+                "Every resolvable component message type should link to its declaration."
+            );
+            Assert.That(
+                messageTypeRows.Select(row => row.Q<Label>().text),
+                Is.EquivalentTo(
+                    new[] { nameof(FlowGraphMessage), nameof(EvidenceOnlyFlowGraphMessage) }
+                ),
+                "The source-linked rows should use compact type labels instead of namespace paragraphs."
+            );
+            Assert.That(
+                messageTypeRows.Select(row => row.tooltip),
+                Is.EquivalentTo(new[] { firstMessageType, secondMessageType }),
+                "Compact rows should retain exact type identity in their tooltips."
             );
         }
 
@@ -1594,6 +1815,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, initialSnapshot, viewState);
 
             VisualElement graph = root.Q<VisualElement>(DxMessagingFlowGraphWindow.GraphCanvasName);
+            root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName).value = true;
+            root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsTechnicalFoldoutName).value = true;
             DxMessagingFlowGraphWindow.FlowGraphCanvasState canvasState =
                 (DxMessagingFlowGraphWindow.FlowGraphCanvasState)graph.userData;
             canvasState.Initialized = true;
@@ -1648,7 +1871,17 @@ namespace DxMessaging.Tests.Editor
                 "The same stable route must remain selected after its display label changes."
             );
             Assert.That(
-                root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName).value,
+                Is.True,
+                "Refresh should preserve an expanded evidence disclosure while source links update."
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsTechnicalFoldoutName).value,
+                Is.True,
+                "Refresh should preserve an expanded diagnostics disclosure while source links update."
+            );
+            Assert.That(
+                GetCopiedDiagnostics(root),
                 Does.Contain("Route context: Instance 4242"),
                 "The preserved selection must resolve to the refreshed route details."
             );
@@ -1785,7 +2018,7 @@ namespace DxMessaging.Tests.Editor
             VisualElement marker = root.Q<VisualElement>(
                 className: DxMessagingFlowGraphWindow.GraphConnectionClassName
             );
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
             Assert.That(marker.Query<Label>().ToList(), Is.Empty);
             Assert.That(
                 marker.tooltip,
@@ -1806,6 +2039,11 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 root.Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsSectionClassName
+                    )
+                    .ToList()
+                    .Single(section => section.Q<Label>().text == "ROUTE ACTIVITY")
+                    .Query<VisualElement>(
                         className: DxMessagingFlowGraphWindow.DetailsMetricClassName
                     )
                     .ToList()
@@ -2136,10 +2374,7 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(selectedDetails, Does.Contain("TARGETED"));
             Assert.That(selectedDetails, Does.Not.Contain("Message kind: MIXED"));
-            Assert.That(
-                root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
-                Does.Contain("Message kind: TARGETED")
-            );
+            Assert.That(GetCopiedDiagnostics(root), Does.Contain("Message kind: TARGETED"));
         }
 
         [Test]
@@ -2209,11 +2444,62 @@ namespace DxMessaging.Tests.Editor
                 .ToList()
                 .Select(label => label.text)
                 .ToArray();
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
             Assert.That(graphLabels, Does.Contain("GLOBAL OBSERVER"));
             Assert.That(graphLabels, Does.Contain("ANY MESSAGE"));
             Assert.That(string.Join("\n", graphLabels), Does.Not.Contain("IMessage"));
             Assert.That(details, Does.Contain("Combat.DamageApplied"));
+            Assert.That(
+                details,
+                Does.Contain("Traced deliveries: 2"),
+                "The complete observer report should derive its traced headline from concrete GlobalAcceptAll paths."
+            );
+            Assert.That(
+                details,
+                Does.Contain("Trace-path deliveries: 2"),
+                "The complete observer report should include concrete GlobalAcceptAll path volume."
+            );
+            VisualElement messageDetails = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsSectionClassName
+                )
+                .ToList()
+                .Single(section => section.Q<Label>().text == "MESSAGE");
+            Dictionary<string, string> messageMetrics = messageDetails
+                .Query<VisualElement>(className: DxMessagingFlowGraphWindow.DetailsMetricClassName)
+                .ToList()
+                .ToDictionary(
+                    metric => metric.Query<Label>().ToList().First().text,
+                    metric => metric.Query<Label>().ToList().Last().text,
+                    StringComparer.Ordinal
+                );
+            Assert.That(
+                messageMetrics["Traced"],
+                Is.EqualTo("2"),
+                "The observer headline should agree with its concrete traced deliveries."
+            );
+            VisualElement traceCoverage = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsSectionClassName
+                )
+                .ToList()
+                .Single(section => section.Q<Label>().text == "TRACE COVERAGE");
+            Dictionary<string, string> traceCoverageMetrics = traceCoverage
+                .Query<VisualElement>(className: DxMessagingFlowGraphWindow.DetailsMetricClassName)
+                .ToList()
+                .ToDictionary(
+                    metric => metric.Query<Label>().ToList().First().text,
+                    metric => metric.Query<Label>().ToList().Last().text,
+                    StringComparer.Ordinal
+                );
+            Assert.That(
+                traceCoverageMetrics["Paths"],
+                Is.EqualTo("1"),
+                "Trace coverage should include the concrete path delivered through GlobalAcceptAll."
+            );
+            Assert.That(
+                traceCoverageMetrics["Deliveries"],
+                Is.EqualTo("2"),
+                "Trace coverage should total deliveries from concrete GlobalAcceptAll paths."
+            );
 
             DxMessagingFlowGraphWindow.BuildGraphUi(
                 root,
@@ -2609,11 +2895,11 @@ namespace DxMessaging.Tests.Editor
                 Does.Contain("InventoryChanged -> Root/Alpha")
             );
             Assert.That(
-                details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                GetCopiedDiagnostics(details),
                 Does.Contain("Registration type: Untargeted")
             );
             Assert.That(
-                details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                GetCopiedDiagnostics(details),
                 Does.Contain("Visible call share: 4/6 (67%)")
             );
 
@@ -2654,12 +2940,9 @@ namespace DxMessaging.Tests.Editor
                 details.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName).text,
                 Does.Contain("ScoreChanged")
             );
+            Assert.That(GetCopiedDiagnostics(details), Does.Contain("Listener components: 1"));
             Assert.That(
-                details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
-                Does.Contain("Listener components: 1")
-            );
-            Assert.That(
-                details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                GetCopiedDiagnostics(details),
                 Does.Contain("Busiest listener: Root/Beta (2 calls)")
             );
         }
@@ -2723,7 +3006,7 @@ namespace DxMessaging.Tests.Editor
                 .ToList()[0]
                 .Q<Label>(DxMessagingFlowGraphWindow.NodeSummaryLabelName)
                 .text;
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
             string exportText = DxMessagingFlowGraphWindow.CreateExportText(snapshot);
             FlowGraphExportPayload exportPayload = JsonUtility.FromJson<FlowGraphExportPayload>(
                 exportText
@@ -6370,7 +6653,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Visible registrations: 1 | Calls: 4"));
             Assert.That(details, Does.Contain("Listener components: 1"));
@@ -6400,7 +6683,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent traced routes: 1/2 | No-call routes: 1"));
             Assert.That(
@@ -6426,7 +6709,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent traced routes: 2/3 | No-call routes: 1"));
             Assert.That(
@@ -6453,7 +6736,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent traced routes: 1/2 | No-call routes: 1"));
             Assert.That(
@@ -6582,7 +6865,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent trace paths: 3"));
             Assert.That(details, Does.Contain("Traced deliveries: 7"));
@@ -6687,7 +6970,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent trace paths: 1"));
             Assert.That(
@@ -6793,7 +7076,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(
                 details,
@@ -6932,7 +7215,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(
                 details,
@@ -7062,7 +7345,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(
                 details,
@@ -7109,7 +7392,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Visible traced share: 0/0 (n/a)"));
             Assert.That(details, Does.Contain("Contexts: 0 | Busiest context: none"));
@@ -9963,6 +10246,24 @@ namespace DxMessaging.Tests.Editor
                 },
                 Array.Empty<string>()
             );
+        }
+
+        private static string GetCopiedDiagnostics(VisualElement root)
+        {
+            Button copyDiagnostics = root.Q<Button>(
+                DxMessagingFlowGraphWindow.DetailsCopyDiagnosticsButtonName
+            );
+            Assert.That(
+                copyDiagnostics,
+                Is.Not.Null,
+                "Selected details should expose the complete report through a copy action."
+            );
+            Assert.That(
+                copyDiagnostics.userData,
+                Is.TypeOf<string>(),
+                "The copy action should retain the exact diagnostic text as its payload."
+            );
+            return (string)copyDiagnostics.userData;
         }
 
         private GameObject CreateTrackedObject(string name)
