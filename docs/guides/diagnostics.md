@@ -145,7 +145,7 @@ Global accept-all registrations appear as
 `GLOBAL OBSERVER / ANY MESSAGE`, and their details list the concrete message
 types observed in recent trace evidence. Drag to pan, scroll to zoom, and select
 a node or connection to inspect it. Automatic framing keeps a readable zoom
-floor; large filtered graphs remain pannable instead of shrinking their text
+floor; large filtered graphs remain available through panning instead of shrinking their text
 and interaction targets into an unreadable overview. The canvas renders every
 filtered message, receiver, and route instead of moving extra message types
 into a text overflow list.
