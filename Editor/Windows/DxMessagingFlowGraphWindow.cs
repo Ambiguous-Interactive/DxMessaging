@@ -184,6 +184,14 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-flow-graph-details-source-row";
         internal const string DetailsRelationshipClassName =
             "dxmessaging-flow-graph-details-relationship";
+        internal const string DetailsRouteRowClassName = "dxmessaging-flow-graph-details-route-row";
+        internal const string DetailsRoutesFoldoutName = "dxmessaging-flow-graph-details-routes";
+        internal const string DetailsRoutesOverflowFoldoutName =
+            "dxmessaging-flow-graph-details-routes-overflow";
+        internal const string DetailsRelationshipMessageLinkName =
+            "dxmessaging-flow-graph-details-relationship-message";
+        internal const string DetailsRelationshipReceiverLinkName =
+            "dxmessaging-flow-graph-details-relationship-receiver";
         internal const string DetailsTechnicalFoldoutName =
             "dxmessaging-flow-graph-details-technical";
         internal const string DetailsEvidenceFoldoutName =
@@ -222,6 +230,8 @@ namespace DxMessaging.Editor.Windows
             internal bool DetailsEvidenceExpanded;
             internal bool DetailsTechnicalExpanded;
             internal bool DetailsOverflowExpanded;
+            internal bool DetailsRoutesExpanded;
+            internal bool DetailsRoutesOverflowExpanded;
             internal FlowGraphCanvasState CanvasState { get; } = new();
         }
 
@@ -1203,12 +1213,15 @@ namespace DxMessaging.Editor.Windows
                 content.userData as FlowGraphFoldoutState ?? new FlowGraphFoldoutState();
             VisualElement focusedElement =
                 content.panel?.focusController.focusedElement as VisualElement;
-            bool restoreGraphFocus =
+            string focusedSelectionKey = focusedElement?.userData as string;
+            bool restoreSelectionFocus =
                 focusedElement != null
+                && !string.IsNullOrWhiteSpace(focusedSelectionKey)
                 && (
                     focusedElement.ClassListContains(GraphMessageNodeClassName)
                     || focusedElement.ClassListContains(GraphReceiverNodeClassName)
                     || focusedElement.ClassListContains(GraphConnectionClassName)
+                    || focusedElement.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName)
                 );
             Foldout existingAnalysis = content.Q<Foldout>(AnalysisFoldoutName);
             Foldout existingRouteInsights = content.Q<Foldout>(RouteMapInsightsFoldoutName);
@@ -1218,6 +1231,10 @@ namespace DxMessaging.Editor.Windows
             Foldout existingDetailsEvidence = content.Q<Foldout>(DetailsEvidenceFoldoutName);
             Foldout existingDetailsTechnical = content.Q<Foldout>(DetailsTechnicalFoldoutName);
             Foldout existingDetailsOverflow = content.Q<Foldout>(DetailsOverflowFoldoutName);
+            Foldout existingDetailsRoutes = content.Q<Foldout>(DetailsRoutesFoldoutName);
+            Foldout existingDetailsRoutesOverflow = content.Q<Foldout>(
+                DetailsRoutesOverflowFoldoutName
+            );
             if (existingAnalysis != null)
             {
                 foldoutState.AnalysisExpanded = existingAnalysis.value;
@@ -1249,6 +1266,14 @@ namespace DxMessaging.Editor.Windows
             if (existingDetailsOverflow != null)
             {
                 foldoutState.DetailsOverflowExpanded = existingDetailsOverflow.value;
+            }
+            if (existingDetailsRoutes != null)
+            {
+                foldoutState.DetailsRoutesExpanded = existingDetailsRoutes.value;
+            }
+            if (existingDetailsRoutesOverflow != null)
+            {
+                foldoutState.DetailsRoutesOverflowExpanded = existingDetailsRoutesOverflow.value;
             }
             content.userData = foldoutState;
             content.Clear();
@@ -1310,7 +1335,15 @@ namespace DxMessaging.Editor.Windows
 
                 if (selectedItem.HasValue)
                 {
-                    content.Add(CreateDetailsPane(selectedItem, visibleSnapshot, foldoutState));
+                    content.Add(
+                        CreateDetailsPane(
+                            selectedItem,
+                            snapshot,
+                            visibleSnapshot,
+                            foldoutState,
+                            onSelectionChanged
+                        )
+                    );
                 }
 
                 Foldout analysis = CreateCollapsedFoldout(
@@ -1427,7 +1460,7 @@ namespace DxMessaging.Editor.Windows
                 content.Add(warningLabel);
             }
 
-            if (restoreGraphFocus && !string.IsNullOrWhiteSpace(viewState.SelectedItemKey))
+            if (restoreSelectionFocus)
             {
                 VisualElement selectedControl = content
                     .Query<VisualElement>()
@@ -1436,11 +1469,11 @@ namespace DxMessaging.Editor.Windows
                         element.focusable
                         && string.Equals(
                             element.userData as string,
-                            viewState.SelectedItemKey,
+                            focusedSelectionKey,
                             StringComparison.Ordinal
                         )
                     );
-                selectedControl?.schedule.Execute(selectedControl.Focus);
+                selectedControl?.Focus();
             }
         }
 
@@ -5883,12 +5916,26 @@ namespace DxMessaging.Editor.Windows
 
         internal static string CreateComponentSelectionKey(FlowGraphComponentNode component)
         {
-            return "component|" + component.Id;
+            return CreateComponentSelectionKey(component.Id);
         }
 
         internal static string CreateMessageSelectionKey(FlowGraphMessageNode message)
         {
-            return "message|" + message.MessageTypeName;
+            return CreateMessageSelectionKey(message.MessageTypeName);
+        }
+
+        private static string CreateComponentSelectionKey(string componentId)
+        {
+            return string.IsNullOrWhiteSpace(componentId)
+                ? string.Empty
+                : "component|" + componentId;
+        }
+
+        private static string CreateMessageSelectionKey(string messageTypeName)
+        {
+            return string.IsNullOrWhiteSpace(messageTypeName)
+                ? string.Empty
+                : "message|" + messageTypeName;
         }
 
         internal static string CreateEdgeSelectionKey(FlowGraphEdge edge)
@@ -6251,6 +6298,10 @@ namespace DxMessaging.Editor.Windows
             string labelText = CreateRouteKindBadgeText(routeKindText);
             Label routeKind = new(labelText) { name = name };
             DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(routeKind, routeKindText);
+            if (IsGlobalObserverRegistration(routeKindText))
+            {
+                routeKind.AddToClassList(DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName);
+            }
             routeKind.style.unityFontStyleAndWeight = FontStyle.Bold;
             routeKind.style.whiteSpace = WhiteSpace.Normal;
             return routeKind;
@@ -6283,8 +6334,10 @@ namespace DxMessaging.Editor.Windows
 
         private static VisualElement CreateDetailsPane(
             FlowGraphSelectedItem selectedItem,
+            FlowGraphSnapshot snapshot,
             FlowGraphVisibleSnapshot visibleSnapshot,
-            FlowGraphFoldoutState foldoutState
+            FlowGraphFoldoutState foldoutState,
+            Action<string> onSelectionChanged
         )
         {
             VisualElement details = new() { name = DetailsPaneName };
@@ -6327,12 +6380,22 @@ namespace DxMessaging.Editor.Windows
             }
             else if (selectedItem.Kind == FlowGraphSelectionKind.Message)
             {
-                header.Add(
-                    CreateGraphLegendBadge(
-                        CreateVisibleMessageKind(selectedItem.Message, visibleSnapshot),
-                        DxMessagingEditorPalette.AmberSoft
-                    )
+                string visibleMessageKind = CreateVisibleMessageKind(
+                    selectedItem.Message,
+                    visibleSnapshot
                 );
+                Label messageKindBadge = CreateGraphLegendBadge(
+                    visibleMessageKind,
+                    DxMessagingEditorPalette.AmberSoft
+                );
+                if (string.Equals(visibleMessageKind, "GLOBAL OBSERVER", StringComparison.Ordinal))
+                {
+                    messageKindBadge.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
+                    messageKindBadge.AddToClassList(
+                        DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName
+                    );
+                }
+                header.Add(messageKindBadge);
             }
             string messageTypeName =
                 selectedItem.Kind == FlowGraphSelectionKind.Message
@@ -6358,7 +6421,14 @@ namespace DxMessaging.Editor.Windows
                     AddComponentDetailsCards(details, selectedItem.Component, visibleSnapshot);
                     break;
                 case FlowGraphSelectionKind.Message:
-                    AddMessageDetailsCards(details, selectedItem.Message, visibleSnapshot);
+                    AddMessageDetailsCards(
+                        details,
+                        selectedItem.Message,
+                        snapshot,
+                        visibleSnapshot,
+                        foldoutState,
+                        onSelectionChanged
+                    );
                     break;
                 case FlowGraphSelectionKind.Edge:
                     AddEdgeDetailsCards(details, selectedItem.Edge, visibleSnapshot);
@@ -6375,7 +6445,6 @@ namespace DxMessaging.Editor.Windows
             {
                 overflow.value = foldoutState.DetailsOverflowExpanded;
             }
-
             Foldout technical = new()
             {
                 name = DetailsTechnicalFoldoutName,
@@ -6383,7 +6452,12 @@ namespace DxMessaging.Editor.Windows
                 value = foldoutState.DetailsTechnicalExpanded,
             };
             technical.style.marginTop = 4;
-            AddDetailsDiagnosticsSummary(technical, selectedItem, visibleSnapshot);
+            AddDetailsDiagnosticsSummary(
+                technical,
+                selectedItem,
+                visibleSnapshot,
+                onSelectionChanged
+            );
             string diagnosticsText = CreateDetailsBody(selectedItem, visibleSnapshot);
             Button copyDiagnostics = new()
             {
@@ -6481,7 +6555,10 @@ namespace DxMessaging.Editor.Windows
         private static void AddMessageDetailsCards(
             VisualElement details,
             FlowGraphMessageNode message,
-            FlowGraphVisibleSnapshot visibleSnapshot
+            FlowGraphSnapshot snapshot,
+            FlowGraphVisibleSnapshot visibleSnapshot,
+            FlowGraphFoldoutState foldoutState,
+            Action<string> onSelectionChanged
         )
         {
             FlowGraphEdge[] messageEdges = SelectMessageEdges(message, visibleSnapshot);
@@ -6527,12 +6604,23 @@ namespace DxMessaging.Editor.Windows
                     )
                 )
             );
+            details.Add(
+                CreateDetailsRouteRoster(
+                    messageEdges,
+                    onSelectionChanged,
+                    foldoutState.DetailsRoutesExpanded,
+                    foldoutState.DetailsRoutesOverflowExpanded
+                )
+            );
             VisualElement evidence = CreateDetailsSection("RECENT EVIDENCE");
             AddHierarchyDetailValues(
                 evidence,
                 "Contexts",
                 message.RecentContexts,
-                extractDescriptor: true
+                extractDescriptor: true,
+                selectionKeyFactory: value =>
+                    FindContextComponentSelectionKey(value, message, snapshot, visibleSnapshot),
+                onSelectionChanged: onSelectionChanged
             );
             AddSourceDetailValues(evidence, "Emitted by", message.RecentEmissionSites);
             Foldout evidenceFoldout = CreateDetailsEvidenceFoldout();
@@ -6557,10 +6645,180 @@ namespace DxMessaging.Editor.Windows
             details.Add(evidenceFoldout);
         }
 
+        private static VisualElement CreateDetailsRouteRoster(
+            IReadOnlyList<FlowGraphEdge> edges,
+            Action<string> onSelectionChanged,
+            bool expanded,
+            bool overflowExpanded
+        )
+        {
+            FlowGraphEdge[] orderedEdges = edges
+                .OrderByDescending(edge => edge.CallCount)
+                .ThenBy(edge => edge.TargetComponentPath, StringComparer.Ordinal)
+                .ThenBy(edge => edge.RegistrationTypeName, StringComparer.Ordinal)
+                .ThenBy(edge => edge.ContextId)
+                .ToArray();
+            if (orderedEdges.Length == 0)
+            {
+                VisualElement empty = CreateDetailsSection("ROUTE ROSTER");
+                empty.Add(CreateDetailsKeyValue("Routes", "none"));
+                return empty;
+            }
+
+            Foldout roster = new()
+            {
+                name = DetailsRoutesFoldoutName,
+                text = $"Route roster ({orderedEdges.Length})",
+                value = false,
+            };
+            roster.style.marginBottom = 8;
+            bool populated = false;
+            void Populate()
+            {
+                if (populated)
+                {
+                    return;
+                }
+
+                foreach (FlowGraphEdge edge in orderedEdges.Take(VisibleDetailsRowLimit))
+                {
+                    roster.Add(CreateDetailsRouteRow(edge, onSelectionChanged));
+                }
+                if (orderedEdges.Length > VisibleDetailsRowLimit)
+                {
+                    FlowGraphEdge[] overflowEdges = orderedEdges
+                        .Skip(VisibleDetailsRowLimit)
+                        .ToArray();
+                    Foldout overflow = new()
+                    {
+                        name = DetailsRoutesOverflowFoldoutName,
+                        text = $"{overflowEdges.Length} more routes",
+                        value = false,
+                    };
+                    bool overflowPopulated = false;
+                    void PopulateOverflow()
+                    {
+                        if (overflowPopulated)
+                        {
+                            return;
+                        }
+
+                        foreach (FlowGraphEdge edge in overflowEdges)
+                        {
+                            overflow.Add(CreateDetailsRouteRow(edge, onSelectionChanged));
+                        }
+                        overflowPopulated = true;
+                    }
+                    overflow.RegisterValueChangedCallback(evt =>
+                    {
+                        if (evt.newValue)
+                        {
+                            PopulateOverflow();
+                        }
+                    });
+                    overflow.SetValueWithoutNotify(overflowExpanded);
+                    if (overflowExpanded)
+                    {
+                        PopulateOverflow();
+                    }
+                    roster.Add(overflow);
+                }
+                populated = true;
+            }
+
+            roster.RegisterValueChangedCallback(evt =>
+            {
+                if (evt.newValue)
+                {
+                    Populate();
+                }
+            });
+            roster.SetValueWithoutNotify(expanded);
+            if (expanded)
+            {
+                Populate();
+            }
+            return roster;
+        }
+
+        private static VisualElement CreateDetailsRouteRow(
+            FlowGraphEdge edge,
+            Action<string> onSelectionChanged
+        )
+        {
+            string normalizedContext = NormalizeTraceContext(edge.Context);
+            string exactContext =
+                edge.ContextId == 0
+                    ? normalizedContext
+                    : $"{normalizedContext}, context #{edge.ContextId}";
+            VisualElement row = new()
+            {
+                tooltip =
+                    $"{edge.MessageTypeName} -> {edge.TargetComponentPath} [{edge.TargetComponentId}] ({edge.RegistrationTypeName}, {exactContext})",
+            };
+            row.AddToClassList(DetailsRouteRowClassName);
+            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            row.style.marginTop = 5;
+            row.style.paddingTop = 7;
+            row.style.paddingRight = 8;
+            row.style.paddingBottom = 7;
+            row.style.paddingLeft = 8;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                row,
+                DxMessagingEditorPalette.RouteKindColor(edge.RegistrationTypeName)
+            );
+
+            VisualElement summary = new();
+            summary.style.flexDirection = FlexDirection.Row;
+            summary.style.flexWrap = Wrap.Wrap;
+            summary.style.alignItems = Align.Center;
+            VisualElement receiver = CreateRelationshipIdentity("RECEIVER", string.Empty);
+            receiver.style.flexGrow = 1;
+            receiver.Add(CreateHierarchyTrail(edge.TargetComponentPath));
+            summary.Add(receiver);
+            Label routeKind = CreateRouteKindBadge(edge.RegistrationTypeName, name: null);
+            routeKind.style.marginLeft = 8;
+            summary.Add(routeKind);
+            Label activity = new($"{edge.CallCount} calls");
+            activity.AddToClassList(DxMessagingEditorTheme.DetailFrameClassName);
+            activity.style.marginLeft = 8;
+            summary.Add(activity);
+            row.Add(summary);
+            row.Add(CreateDetailsKeyValue("Receiver ID", edge.TargetComponentId));
+            row.Add(CreateDetailsKeyValue("Registration", edge.RegistrationTypeName));
+            if (!IsMissingHierarchyValue(normalizedContext))
+            {
+                row.Add(
+                    CreateHierarchyDetailRow(
+                        CreateRouteContextLabel(edge.RegistrationTypeName, plural: false),
+                        normalizedContext,
+                        extractDescriptor: true
+                    )
+                );
+            }
+            if (edge.ContextId != 0)
+            {
+                row.Add(
+                    CreateDetailsKeyValue(
+                        "Context ID",
+                        edge.ContextId.ToString(CultureInfo.InvariantCulture)
+                    )
+                );
+            }
+            ApplyDetailsSelection(
+                row,
+                CreateEdgeSelectionKey(edge),
+                onSelectionChanged,
+                addDesignClass: true
+            );
+            return row;
+        }
+
         private static void AddDetailsDiagnosticsSummary(
             VisualElement diagnostics,
             FlowGraphSelectedItem selectedItem,
-            FlowGraphVisibleSnapshot visibleSnapshot
+            FlowGraphVisibleSnapshot visibleSnapshot,
+            Action<string> onSelectionChanged
         )
         {
             FlowGraphEdge[] edges;
@@ -6640,6 +6898,7 @@ namespace DxMessaging.Editor.Windows
                             : "BUSIEST TRACED ROUTE",
                         busiestEdge.MessageTypeName,
                         busiestEdge.TargetComponentPath,
+                        busiestEdge.TargetComponentId,
                         busiestEdge.RegistrationTypeName,
                         busiestEdge.Context,
                         busiestEdge.RecentTracedDeliveryCount,
@@ -6649,7 +6908,9 @@ namespace DxMessaging.Editor.Windows
                         mergeBusiestRelationships
                             ? tracePaths.Sum(path => path.RecentTracedDeliveryCount)
                             : 0,
-                        mergeBusiestRelationships ? "path deliveries" : null
+                        mergeBusiestRelationships ? "path deliveries" : null,
+                        onSelectionChanged,
+                        selectedItem.Key
                     )
                 );
             }
@@ -6692,11 +6953,14 @@ namespace DxMessaging.Editor.Windows
                         "BUSIEST TRACE PATH",
                         busiestTracePath.MessageTypeName,
                         busiestTracePath.TargetComponentPath,
+                        busiestTracePath.TargetComponentId,
                         busiestTracePath.RegistrationTypeName,
                         busiestTracePath.Context,
                         busiestTracePath.RecentTracedDeliveryCount,
                         tracePaths.Sum(path => path.RecentTracedDeliveryCount),
-                        "deliveries"
+                        "deliveries",
+                        onSelectionChanged: onSelectionChanged,
+                        currentSelectionKey: selectedItem.Key
                     )
                 );
             }
@@ -7154,7 +7418,9 @@ namespace DxMessaging.Editor.Windows
             VisualElement section,
             string firstLabel,
             IReadOnlyList<string> values,
-            bool extractDescriptor = false
+            bool extractDescriptor = false,
+            Func<string, string> selectionKeyFactory = null,
+            Action<string> onSelectionChanged = null
         )
         {
             string[] distinctValues = values
@@ -7173,7 +7439,9 @@ namespace DxMessaging.Editor.Windows
                     CreateHierarchyDetailRow(
                         index == 0 ? firstLabel : string.Empty,
                         distinctValues[index],
-                        extractDescriptor
+                        extractDescriptor,
+                        selectionKeyFactory?.Invoke(distinctValues[index]),
+                        onSelectionChanged
                     )
                 );
             }
@@ -7182,7 +7450,9 @@ namespace DxMessaging.Editor.Windows
         private static VisualElement CreateHierarchyDetailRow(
             string key,
             string value,
-            bool extractDescriptor = false
+            bool extractDescriptor = false,
+            string selectionKey = null,
+            Action<string> onSelectionChanged = null
         )
         {
             string exactValue = string.IsNullOrWhiteSpace(value) ? "none" : value.Trim();
@@ -7195,13 +7465,22 @@ namespace DxMessaging.Editor.Windows
             keyLabel.style.width = 110;
             keyLabel.style.whiteSpace = WhiteSpace.Normal;
             row.Add(keyLabel);
-            row.Add(CreateHierarchyTrail(exactValue, extractDescriptor));
+            row.Add(
+                CreateHierarchyTrail(
+                    exactValue,
+                    extractDescriptor,
+                    selectionKey,
+                    onSelectionChanged
+                )
+            );
             return row;
         }
 
         private static VisualElement CreateHierarchyTrail(
             string value,
-            bool extractDescriptor = false
+            bool extractDescriptor = false,
+            string selectionKey = null,
+            Action<string> onSelectionChanged = null
         )
         {
             SplitHierarchyDescriptor(
@@ -7278,6 +7557,7 @@ namespace DxMessaging.Editor.Windows
                 descriptorLabel.style.marginLeft = 8;
                 trail.Add(descriptorLabel);
             }
+            ApplyDetailsSelection(trail, selectionKey, onSelectionChanged, addDesignClass: true);
             return trail;
         }
 
@@ -7303,6 +7583,41 @@ namespace DxMessaging.Editor.Windows
 
             descriptor = path.Substring(descriptorStart + 2, path.Length - descriptorStart - 3);
             path = path.Substring(0, descriptorStart);
+        }
+
+        private static string FindContextComponentSelectionKey(
+            string hierarchyValue,
+            FlowGraphMessageNode message,
+            FlowGraphSnapshot snapshot,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            if (
+                !message.RecentContextComponentIds.TryGetValue(
+                    hierarchyValue,
+                    out string componentId
+                ) || string.IsNullOrWhiteSpace(componentId)
+            )
+            {
+                return string.Empty;
+            }
+
+            FlowGraphComponentNode[] matches = snapshot
+                .ComponentNodes.Where(component =>
+                    string.Equals(component.Id, componentId, StringComparison.Ordinal)
+                )
+                .Take(2)
+                .ToArray();
+            if (matches.Length != 1)
+            {
+                return string.Empty;
+            }
+
+            return visibleSnapshot.ComponentNodes.Any(component =>
+                string.Equals(component.Id, matches[0].Id, StringComparison.Ordinal)
+            )
+                ? CreateComponentSelectionKey(matches[0])
+                : string.Empty;
         }
 
         private static string CreateRouteContextLabel(string registrationTypeName, bool plural)
@@ -7337,6 +7652,7 @@ namespace DxMessaging.Editor.Windows
             string label,
             string messageTypeName,
             string targetPath,
+            string targetComponentId,
             string registrationTypeName,
             string context,
             int deliveryCount,
@@ -7344,7 +7660,9 @@ namespace DxMessaging.Editor.Windows
             string activityLabel,
             int secondaryDeliveryCount = -1,
             int secondaryTotalDeliveryCount = 0,
-            string secondaryActivityLabel = null
+            string secondaryActivityLabel = null,
+            Action<string> onSelectionChanged = null,
+            string currentSelectionKey = null
         )
         {
             VisualElement relationship = new()
@@ -7391,11 +7709,30 @@ namespace DxMessaging.Editor.Windows
                 CreateRelationshipIdentity(
                     "MESSAGE",
                     CreateCompactGraphLabel(messageTypeName),
-                    CreateMessageTitleMetadata(messageTypeName)
+                    CreateMessageTitleMetadata(messageTypeName),
+                    DetailsRelationshipMessageLinkName,
+                    CreateMessageSelectionKey(messageTypeName),
+                    onSelectionChanged,
+                    string.Equals(
+                        currentSelectionKey,
+                        CreateMessageSelectionKey(messageTypeName),
+                        StringComparison.Ordinal
+                    )
                 )
             );
             flow.Add(CreateRouteArrow());
-            VisualElement target = CreateRelationshipIdentity("RECEIVER", string.Empty);
+            VisualElement target = CreateRelationshipIdentity(
+                "RECEIVER",
+                string.Empty,
+                name: DetailsRelationshipReceiverLinkName,
+                selectionKey: CreateComponentSelectionKey(targetComponentId),
+                onSelectionChanged: onSelectionChanged,
+                active: string.Equals(
+                    currentSelectionKey,
+                    CreateComponentSelectionKey(targetComponentId),
+                    StringComparison.Ordinal
+                )
+            );
             target.Add(CreateHierarchyTrail(targetPath));
             flow.Add(target);
             relationship.Add(flow);
@@ -7466,10 +7803,14 @@ namespace DxMessaging.Editor.Windows
         private static VisualElement CreateRelationshipIdentity(
             string label,
             string value,
-            IReadOnlyList<string> metadata = null
+            IReadOnlyList<string> metadata = null,
+            string name = null,
+            string selectionKey = null,
+            Action<string> onSelectionChanged = null,
+            bool active = false
         )
         {
-            VisualElement identity = new();
+            VisualElement identity = new() { name = name };
             identity.style.flexGrow = 1;
             identity.style.flexBasis = 150;
             identity.style.minWidth = 130;
@@ -7498,7 +7839,64 @@ namespace DxMessaging.Editor.Windows
                     identity.Add(identityMetadata);
                 }
             }
+            if (active)
+            {
+                identity.AddToClassList(DxMessagingEditorTheme.DetailActiveClassName);
+            }
+            else
+            {
+                ApplyDetailsSelection(
+                    identity,
+                    selectionKey,
+                    onSelectionChanged,
+                    addDesignClass: true
+                );
+            }
             return identity;
+        }
+
+        private static void ApplyDetailsSelection(
+            VisualElement element,
+            string selectionKey,
+            Action<string> onSelectionChanged,
+            bool addDesignClass
+        )
+        {
+            if (
+                element == null
+                || string.IsNullOrWhiteSpace(selectionKey)
+                || onSelectionChanged == null
+            )
+            {
+                return;
+            }
+
+            if (addDesignClass)
+            {
+                element.AddToClassList(DxMessagingEditorTheme.DetailLinkClassName);
+            }
+            element.focusable = true;
+            element.userData = selectionKey;
+            element.pickingMode = PickingMode.Position;
+            if (string.IsNullOrWhiteSpace(element.tooltip))
+            {
+                element.tooltip = "Select in the Flow Graph";
+            }
+            element.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                onSelectionChanged.Invoke(selectionKey);
+            });
+            element.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.Space)
+                {
+                    return;
+                }
+
+                evt.StopPropagation();
+                onSelectionChanged.Invoke(selectionKey);
+            });
         }
 
         private static VisualElement CreateMessageTypesSection(
@@ -9323,6 +9721,11 @@ namespace DxMessaging.Editor.Windows
 
             private HashSet<string> Contexts { get; } = new(StringComparer.Ordinal);
 
+            private Dictionary<string, HashSet<int>> ContextIdsByDisplay { get; } =
+                new(StringComparer.Ordinal);
+
+            private Dictionary<int, string> ContextComponentIds { get; } = new();
+
             internal int RegistrationCount { get; set; }
 
             internal int CallCount { get; set; }
@@ -9359,7 +9762,20 @@ namespace DxMessaging.Editor.Windows
                 EmissionSites.Add(CreateEmissionSite(emission.stackTrace));
                 if (emission.context.HasValue)
                 {
-                    Contexts.Add(CreateContextDisplayText(emission.context));
+                    string contextDisplay = CreateContextDisplayText(emission.context);
+                    Contexts.Add(contextDisplay);
+                    if (!ContextIdsByDisplay.TryGetValue(contextDisplay, out HashSet<int> ids))
+                    {
+                        ids = new HashSet<int>();
+                        ContextIdsByDisplay[contextDisplay] = ids;
+                    }
+                    int contextId = emission.context.Value.Id;
+                    ids.Add(contextId);
+                    string componentId = TryCreateContextComponentId(emission.context.Value);
+                    if (!string.IsNullOrWhiteSpace(componentId))
+                    {
+                        ContextComponentIds[contextId] = componentId;
+                    }
                 }
             }
 
@@ -9374,9 +9790,59 @@ namespace DxMessaging.Editor.Windows
                     RecentTracedDeliveryCount,
                     MessageKindName,
                     EmissionSites.OrderBy(site => site, StringComparer.Ordinal).ToArray(),
-                    Contexts.OrderBy(context => context, StringComparer.Ordinal).ToArray()
+                    Contexts.OrderBy(context => context, StringComparer.Ordinal).ToArray(),
+                    BuildContextComponentIds()
                 );
             }
+
+            private IReadOnlyDictionary<string, string> BuildContextComponentIds()
+            {
+                Dictionary<string, string> contextComponentIds = new(StringComparer.Ordinal);
+                foreach (KeyValuePair<string, HashSet<int>> pair in ContextIdsByDisplay)
+                {
+                    if (pair.Value.Count != 1)
+                    {
+                        continue;
+                    }
+
+                    int contextId = pair.Value.First();
+                    if (ContextComponentIds.TryGetValue(contextId, out string componentId))
+                    {
+                        contextComponentIds[pair.Key] = componentId;
+                    }
+                }
+                return contextComponentIds;
+            }
+        }
+
+        private static string TryCreateContextComponentId(InstanceId context)
+        {
+            UnityEngine.Object contextObject = context.Object;
+            if (contextObject == null)
+            {
+                return string.Empty;
+            }
+            if (contextObject is MessagingComponent exactComponent)
+            {
+                return IsSceneComponent(exactComponent)
+                    ? CreateComponentId(exactComponent)
+                    : string.Empty;
+            }
+
+            GameObject contextGameObject = contextObject is GameObject gameObject
+                ? gameObject
+                : (contextObject as Component)?.gameObject;
+            if (contextGameObject == null)
+            {
+                return string.Empty;
+            }
+
+            MessagingComponent[] candidates = contextGameObject
+                .GetComponents<MessagingComponent>()
+                .Where(IsSceneComponent)
+                .Take(2)
+                .ToArray();
+            return candidates.Length == 1 ? CreateComponentId(candidates[0]) : string.Empty;
         }
 
         private sealed class EdgeBuilder
@@ -10312,7 +10778,8 @@ namespace DxMessaging.Editor.Windows
             int recentTracedDeliveryCount = 0,
             string messageKindName = "MESSAGE",
             IReadOnlyList<string> recentEmissionSites = null,
-            IReadOnlyList<string> recentContexts = null
+            IReadOnlyList<string> recentContexts = null,
+            IReadOnlyDictionary<string, string> recentContextComponentIds = null
         )
         {
             MessageTypeName = messageTypeName ?? string.Empty;
@@ -10326,6 +10793,8 @@ namespace DxMessaging.Editor.Windows
                 : messageKindName;
             RecentEmissionSites = recentEmissionSites ?? Array.Empty<string>();
             RecentContexts = recentContexts ?? Array.Empty<string>();
+            RecentContextComponentIds =
+                recentContextComponentIds ?? new Dictionary<string, string>();
         }
 
         internal string MessageTypeName { get; }
@@ -10345,6 +10814,8 @@ namespace DxMessaging.Editor.Windows
         internal IReadOnlyList<string> RecentEmissionSites { get; }
 
         internal IReadOnlyList<string> RecentContexts { get; }
+
+        internal IReadOnlyDictionary<string, string> RecentContextComponentIds { get; }
 
         internal bool Matches(string filterText)
         {

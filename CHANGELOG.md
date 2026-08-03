@@ -49,8 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use separate route-health and trace-coverage cards with bordered relationship
   records for their busiest paths. Captured object contexts render as breadcrumb
   hierarchies, call sites separate the method from the file and line, and compact
-  selection headers keep exact identities in tooltips. The complete text report
-  remains available through **Copy diagnostics** without rendering a text wall.
+  selection headers keep exact identities in tooltips. Breadcrumbs backed by an
+  exact captured Unity-object identity and relationship endpoints select their graph items, message
+  details expose a bounded on-demand route roster with receiver, registration,
+  context, and context-ID identities, and global observers use the accessible amber taxonomy
+  badge. The complete text report remains available through **Copy diagnostics**
+  without rendering a text wall.
   Broadcast and targeted routes
   expose recent component- and registration-exact delivery call sites without
   leaking evidence across message buses. Global accept-all

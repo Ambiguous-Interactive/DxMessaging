@@ -149,14 +149,16 @@ full identity in a tooltip and an **Open source** action when the declaration is
 available. It shows eight rows before a collapsed remainder so dense receivers
 do not replace the graph with a long list. Captured object contexts use
 breadcrumb trails such as `World > Combat > Enemy Drone`, with the exact
-captured value in the tooltip. Captured call sites separate a compact
+captured value in the tooltip. A trail selects its matching graph component
+when the filtered capture resolves exactly one; unresolved instance fallbacks
+remain plain text instead of presenting a dead action. Captured call sites separate a compact
 `Type.Method()` identity from the file and line, and keep the source action on
 the same row; stale asset paths remain readable without a dead button.
 The graph does not invent a sender object because targeted emission APIs carry
 a target, not a sender.
 Global accept-all registrations appear as
-`GLOBAL OBSERVER / ANY MESSAGE`, and their details list the concrete message
-types observed in recent trace evidence. Drag to pan, scroll to zoom, and select
+`GLOBAL OBSERVER / ANY MESSAGE` with the amber observer badge, and their details
+list the concrete message types observed in recent trace evidence. Drag to pan, scroll to zoom, and select
 a node or connection to inspect it. Use **-**, **Fit**, and **+** when a mouse
 wheel is unavailable. Automatic framing can zoom out to 20 percent for a useful
 overview of large graphs; zoom back in or pan before selecting closely spaced
@@ -170,7 +172,16 @@ activity metrics first; emission evidence and diagnostics start collapsed.
 Diagnostics split route health from trace coverage. For component and message
 selections, their distinct busiest route and trace path use bordered, directed
 relationship records with compact message and receiver identities instead of
-report sentences. A selected route already shows that relationship above its
+report sentences. Select either endpoint to move to that message or receiver.
+Captured context breadcrumbs become links only when diagnostics retained the
+exact Unity-object-to-component identity and that component is visible in the
+filtered graph; ambiguous, destroyed, or filtered-out contexts remain text.
+Message details also provide a collapsed **Route roster**; expand it to see each
+receiver and stable receiver ID, exact registration subtype, route context, and
+context ID, then select any exact route. Receiver and context IDs distinguish
+routes whose hierarchy text is otherwise identical.
+The first eight rows appear immediately; larger rosters keep the remainder
+behind a nested disclosure. A selected route already shows that relationship above its
 evidence, so its diagnostics omit redundant aggregate relationship records. Use
 **Copy diagnostics** to copy the complete newline-oriented report without
 rendering it in the window.

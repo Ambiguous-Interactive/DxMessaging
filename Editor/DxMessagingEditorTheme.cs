@@ -41,6 +41,7 @@ namespace DxMessaging.Editor
         internal const string TypeBadgeUntargetedClassName = "dx-typebadge--u";
         internal const string TypeBadgeTargetedClassName = "dx-typebadge--t";
         internal const string TypeBadgeBroadcastClassName = "dx-typebadge--b";
+        internal const string TypeBadgeGlobalObserverClassName = "dx-typebadge--g";
         internal const string DotClassName = "dx-dot";
         internal const string DotUntargetedClassName = "dx-dot--u";
         internal const string DotTargetedClassName = "dx-dot--t";
@@ -68,6 +69,8 @@ namespace DxMessaging.Editor
         internal const string DetailHeadClassName = "dx-detail__head";
         internal const string DetailTitleClassName = "dx-detail__title";
         internal const string DetailFrameClassName = "dx-detail__frame";
+        internal const string DetailLinkClassName = "dx-detail__link";
+        internal const string DetailActiveClassName = "dx-detail__active";
         internal const string KeyValueClassName = "dx-kv";
         internal const string KeyValueKeyClassName = "dx-kv__k";
         internal const string KeyValueValueClassName = "dx-kv__v";

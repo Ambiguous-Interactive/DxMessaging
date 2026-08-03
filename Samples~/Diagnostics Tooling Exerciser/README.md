@@ -59,10 +59,13 @@ After the default play-start burst:
   selection; clicking any part of a connection opens focused route and activity
   details while evidence and diagnostics remain collapsed. Expanded evidence
   uses breadcrumb context trails plus compact source-linked message and call-site
-  rows. Diagnostics split route health from trace coverage; component and
-  message selections show distinct busiest paths as directed relationship
-  records, while route selections omit those redundant aggregates. The full
-  text report remains available through **Copy diagnostics**. The textual
+  rows. Breadcrumbs backed by exact captured Unity-object identities and
+  relationship endpoints select the matching graph item; **Route roster** reveals
+  each exact receiver ID, registration subtype, context, and context ID on demand.
+  Diagnostics split route health from trace coverage; component and message
+  selections show distinct busiest paths as directed relationship records,
+  while route selections omit those redundant aggregates. The full text report
+  remains available through **Copy diagnostics**. The textual
   route and trace reports remain inside the collapsed **Analysis and Raw Data**
   section.
 - The component diagnostics panel shows enabled listener diagnostics and local
