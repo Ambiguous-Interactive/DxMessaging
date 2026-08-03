@@ -38,7 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zoom, automatic framing, and selection. Text-heavy route analysis, trace
   activity, raw topology, and overflow rows now start inside one collapsed
   section. Empty captures explain how to restore live registrations instead of
-  filling the window with zero-value summaries
+  filling the window with zero-value summaries. A crossing-aware layered layout
+  and ordered node ports keep arrow paths traceable without text labels on the
+  lines. Nodes use named metric rows instead of compact `+N` summaries, and
+  multi-kind message types use neutral `MIXED` metrics until filtered to one
+  route kind. Route selection opens responsive route, activity, emission, and
+  trace cards while
+  the dense technical report stays collapsed. Broadcast and targeted routes
+  expose recent component- and registration-exact delivery call sites without
+  leaking evidence across message buses. Global accept-all
+  registrations appear as `ANY MESSAGE` observers instead of a misleading
+  `IMessage` message type
   ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Improve targeted and source-bound broadcast routing throughput and reduce the
   memory retained by their per-target lookup tables without changing the public

@@ -98,15 +98,24 @@ namespace DxMessaging.Editor
 
         internal static void ApplyCompleteBorder(VisualElement element, Color borderColor)
         {
+            ApplyCompleteBorder(element, borderColor, CompleteBorderWidth);
+        }
+
+        internal static void ApplyCompleteBorder(
+            VisualElement element,
+            Color borderColor,
+            float borderWidth
+        )
+        {
             if (element == null)
             {
                 return;
             }
 
-            element.style.borderTopWidth = CompleteBorderWidth;
-            element.style.borderRightWidth = CompleteBorderWidth;
-            element.style.borderBottomWidth = CompleteBorderWidth;
-            element.style.borderLeftWidth = CompleteBorderWidth;
+            element.style.borderTopWidth = borderWidth;
+            element.style.borderRightWidth = borderWidth;
+            element.style.borderBottomWidth = borderWidth;
+            element.style.borderLeftWidth = borderWidth;
             element.style.borderTopColor = borderColor;
             element.style.borderRightColor = borderColor;
             element.style.borderBottomColor = borderColor;
