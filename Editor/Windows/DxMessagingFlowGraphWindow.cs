@@ -7139,13 +7139,6 @@ namespace DxMessaging.Editor.Windows
             return row;
         }
 
-        private static string RemoveDiagnosticPrefix(string text, string prefix)
-        {
-            return text.StartsWith(prefix, StringComparison.Ordinal)
-                ? text.Substring(prefix.Length)
-                : text;
-        }
-
         private static void AddEdgeDetailsCards(
             VisualElement details,
             FlowGraphEdge edge,
@@ -7990,26 +7983,6 @@ namespace DxMessaging.Editor.Windows
                 );
             }
             return row;
-        }
-
-        private static void AddDetailValues(
-            VisualElement section,
-            string firstLabel,
-            IReadOnlyList<string> values
-        )
-        {
-            if (values.Count == 0)
-            {
-                section.Add(CreateDetailsKeyValue(firstLabel, "none captured"));
-                return;
-            }
-
-            for (int index = 0; index < values.Count; index++)
-            {
-                section.Add(
-                    CreateDetailsKeyValue(index == 0 ? firstLabel : string.Empty, values[index])
-                );
-            }
         }
 
         private static void AddSourceDetailValues(
