@@ -58,9 +58,11 @@ After the default play-start burst:
   on the right, and draws all 15 live connections. It starts with no default
   selection; clicking any part of a connection opens focused route and activity
   details while evidence and diagnostics remain collapsed. Expanded evidence
-  uses compact source-linked message and call-site rows, and diagnostics split
-  route health from trace coverage with the full text report available through
-  **Copy diagnostics**. The textual
+  uses breadcrumb context trails plus compact source-linked message and call-site
+  rows. Diagnostics split route health from trace coverage; component and
+  message selections show distinct busiest paths as directed relationship
+  records, while route selections omit those redundant aggregates. The full
+  text report remains available through **Copy diagnostics**. The textual
   route and trace reports remain inside the collapsed **Analysis and Raw Data**
   section.
 - The component diagnostics panel shows enabled listener diagnostics and local

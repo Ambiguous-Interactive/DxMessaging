@@ -46,7 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trace cards. Evidence lists message types and call sites as separate rows,
   links every resolvable type declaration and live call-site asset, and keeps
   dense type sets behind an eight-row disclosure. Technical diagnostics now
-  use separate route-health and trace-coverage cards; the complete text report
+  use separate route-health and trace-coverage cards with bordered relationship
+  records for their busiest paths. Captured object contexts render as breadcrumb
+  hierarchies, call sites separate the method from the file and line, and compact
+  selection headers keep exact identities in tooltips. The complete text report
   remains available through **Copy diagnostics** without rendering a text wall.
   Broadcast and targeted routes
   expose recent component- and registration-exact delivery call sites without
