@@ -163,8 +163,8 @@
 .dx-detail__frame { color: var(--dx-text-muted); font-size: 10px; }
 .dx-detail__link {
     background-color: var(--dx-tool-field);
-    border-left-width: 2px;
-    border-left-color: var(--dx-accent);
+    border-width: 1px;
+    border-color: var(--dx-accent);
     border-radius: var(--dx-r-chip);
     padding-left: 4px;
     padding-right: 4px;
@@ -173,8 +173,8 @@
 .dx-detail__link:focus { background-color: var(--dx-tool-selected); }
 .dx-detail__active {
     background-color: var(--dx-tool-selected);
-    border-left-width: 2px;
-    border-left-color: var(--dx-accent);
+    border-width: 1px;
+    border-color: var(--dx-accent);
     border-radius: var(--dx-r-chip);
     padding-left: 4px;
     padding-right: 4px;
