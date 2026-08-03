@@ -235,6 +235,19 @@ namespace DxMessaging.Editor.Windows
             internal FlowGraphCanvasState CanvasState { get; } = new();
         }
 
+        private sealed class DetailSelectionData
+        {
+            internal DetailSelectionData(string selectionKey, string focusRestorationId)
+            {
+                SelectionKey = selectionKey;
+                FocusRestorationId = focusRestorationId;
+            }
+
+            internal string SelectionKey { get; }
+
+            internal string FocusRestorationId { get; }
+        }
+
         private readonly struct GraphConnectionDescriptor
         {
             internal GraphConnectionDescriptor(
@@ -1213,15 +1226,27 @@ namespace DxMessaging.Editor.Windows
                 content.userData as FlowGraphFoldoutState ?? new FlowGraphFoldoutState();
             VisualElement focusedElement =
                 content.panel?.focusController.focusedElement as VisualElement;
-            string focusedSelectionKey = focusedElement?.userData as string;
-            bool restoreSelectionFocus =
+            string focusedSelectionKey = GetSelectionKey(focusedElement);
+            string focusedDetailRestorationId = GetDetailFocusRestorationId(focusedElement);
+            bool focusedGraphControl =
                 focusedElement != null
-                && !string.IsNullOrWhiteSpace(focusedSelectionKey)
                 && (
                     focusedElement.ClassListContains(GraphMessageNodeClassName)
                     || focusedElement.ClassListContains(GraphReceiverNodeClassName)
                     || focusedElement.ClassListContains(GraphConnectionClassName)
-                    || focusedElement.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName)
+                );
+            bool focusedDetailLink =
+                focusedElement != null
+                && focusedElement.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName);
+            bool restoreFocus =
+                !string.IsNullOrWhiteSpace(focusedSelectionKey)
+                && (focusedGraphControl || focusedDetailLink);
+            bool restoreDetailLinkFocus =
+                focusedDetailLink
+                && !string.Equals(
+                    viewState.SelectedItemKey,
+                    focusedSelectionKey,
+                    StringComparison.Ordinal
                 );
             Foldout existingAnalysis = content.Q<Foldout>(AnalysisFoldoutName);
             Foldout existingRouteInsights = content.Q<Foldout>(RouteMapInsightsFoldoutName);
@@ -1460,19 +1485,35 @@ namespace DxMessaging.Editor.Windows
                 content.Add(warningLabel);
             }
 
-            if (restoreSelectionFocus)
+            if (restoreFocus)
             {
-                VisualElement selectedControl = content
+                List<VisualElement> focusCandidates = content
                     .Query<VisualElement>()
                     .ToList()
-                    .FirstOrDefault(element =>
+                    .Where(element =>
                         element.focusable
                         && string.Equals(
-                            element.userData as string,
+                            GetSelectionKey(element),
                             focusedSelectionKey,
                             StringComparison.Ordinal
                         )
-                    );
+                        && (
+                            restoreDetailLinkFocus
+                                ? element.ClassListContains(
+                                    DxMessagingEditorTheme.DetailLinkClassName
+                                )
+                                    && string.Equals(
+                                        GetDetailFocusRestorationId(element),
+                                        focusedDetailRestorationId,
+                                        StringComparison.Ordinal
+                                    )
+                                : element.ClassListContains(GraphMessageNodeClassName)
+                                    || element.ClassListContains(GraphReceiverNodeClassName)
+                                    || element.ClassListContains(GraphConnectionClassName)
+                        )
+                    )
+                    .ToList();
+                VisualElement selectedControl = focusCandidates.FirstOrDefault();
                 selectedControl?.Focus();
             }
         }
@@ -6809,7 +6850,8 @@ namespace DxMessaging.Editor.Windows
                 row,
                 CreateEdgeSelectionKey(edge),
                 onSelectionChanged,
-                addDesignClass: true
+                addDesignClass: true,
+                focusRestorationId: "route:" + CreateEdgeSelectionKey(edge)
             );
             return row;
         }
@@ -7550,7 +7592,13 @@ namespace DxMessaging.Editor.Windows
                 descriptorLabel.style.marginLeft = 8;
                 trail.Add(descriptorLabel);
             }
-            ApplyDetailsSelection(trail, selectionKey, onSelectionChanged, addDesignClass: true);
+            ApplyDetailsSelection(
+                trail,
+                selectionKey,
+                onSelectionChanged,
+                addDesignClass: true,
+                focusRestorationId: "hierarchy:" + value
+            );
             return trail;
         }
 
@@ -7658,6 +7706,15 @@ namespace DxMessaging.Editor.Windows
             string currentSelectionKey = null
         )
         {
+            string relationshipFocusId = string.Join(
+                ":",
+                "relationship",
+                label,
+                messageTypeName,
+                targetComponentId,
+                registrationTypeName,
+                NormalizeTraceContext(context)
+            );
             VisualElement relationship = new()
             {
                 tooltip =
@@ -7710,7 +7767,8 @@ namespace DxMessaging.Editor.Windows
                         currentSelectionKey,
                         CreateMessageSelectionKey(messageTypeName),
                         StringComparison.Ordinal
-                    )
+                    ),
+                    focusRestorationId: relationshipFocusId + ":message"
                 )
             );
             flow.Add(CreateRouteArrow());
@@ -7724,7 +7782,8 @@ namespace DxMessaging.Editor.Windows
                     currentSelectionKey,
                     CreateComponentSelectionKey(targetComponentId),
                     StringComparison.Ordinal
-                )
+                ),
+                focusRestorationId: relationshipFocusId + ":receiver"
             );
             target.Add(CreateHierarchyTrail(targetPath));
             flow.Add(target);
@@ -7800,7 +7859,8 @@ namespace DxMessaging.Editor.Windows
             string name = null,
             string selectionKey = null,
             Action<string> onSelectionChanged = null,
-            bool active = false
+            bool active = false,
+            string focusRestorationId = null
         )
         {
             VisualElement identity = new() { name = name };
@@ -7842,7 +7902,8 @@ namespace DxMessaging.Editor.Windows
                     identity,
                     selectionKey,
                     onSelectionChanged,
-                    addDesignClass: true
+                    addDesignClass: true,
+                    focusRestorationId: focusRestorationId
                 );
             }
             return identity;
@@ -7852,7 +7913,8 @@ namespace DxMessaging.Editor.Windows
             VisualElement element,
             string selectionKey,
             Action<string> onSelectionChanged,
-            bool addDesignClass
+            bool addDesignClass,
+            string focusRestorationId
         )
         {
             if (
@@ -7869,7 +7931,7 @@ namespace DxMessaging.Editor.Windows
                 element.AddToClassList(DxMessagingEditorTheme.DetailLinkClassName);
             }
             element.focusable = true;
-            element.userData = selectionKey;
+            element.userData = new DetailSelectionData(selectionKey, focusRestorationId);
             element.pickingMode = PickingMode.Position;
             if (string.IsNullOrWhiteSpace(element.tooltip))
             {
@@ -7890,6 +7952,20 @@ namespace DxMessaging.Editor.Windows
                 evt.StopPropagation();
                 onSelectionChanged.Invoke(selectionKey);
             });
+        }
+
+        private static string GetSelectionKey(VisualElement element)
+        {
+            return element?.userData is DetailSelectionData detailSelection
+                ? detailSelection.SelectionKey
+                : element?.userData as string;
+        }
+
+        private static string GetDetailFocusRestorationId(VisualElement element)
+        {
+            return element?.userData is DetailSelectionData detailSelection
+                ? detailSelection.FocusRestorationId
+                : string.Empty;
         }
 
         private static VisualElement CreateMessageTypesSection(

@@ -2018,9 +2018,11 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void DetailKeyboardSelectionRefreshesAndRestoresGraphFocus()
+        public void DetailFocusSurvivesChangingBackgroundRefreshAndSelection()
         {
             const string messageTypeName = "KeyboardMessage";
+            const string existingContext = "Root/Receiver (GameObject)";
+            const string addedContext = "Root/Receiver/Child (GameObject)";
             FlowGraphComponentNode receiver = new(
                 "component:receiver",
                 "Root/Receiver",
@@ -2031,37 +2033,62 @@ namespace DxMessaging.Tests.Editor
                 1,
                 0
             );
-            FlowGraphMessageNode message = new(messageTypeName, 1, 1);
+            FlowGraphMessageNode message = new(
+                messageTypeName,
+                1,
+                1,
+                recentContexts: new[] { existingContext },
+                recentContextComponentIds: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [existingContext] = receiver.Id,
+                }
+            );
+            FlowGraphMessageNode refreshedMessage = new(
+                messageTypeName,
+                1,
+                1,
+                recentContexts: new[] { addedContext, existingContext },
+                recentContextComponentIds: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [addedContext] = receiver.Id,
+                    [existingContext] = receiver.Id,
+                }
+            );
+            FlowGraphEdge edge = new(
+                messageTypeName,
+                receiver.Id,
+                receiver.HierarchyPath,
+                "Targeted",
+                1,
+                1,
+                recentTracedDeliveryCount: 1,
+                context: existingContext,
+                contextId: 101
+            );
             FlowGraphSnapshot snapshot = new(
                 new[] { receiver },
                 new[] { message },
-                new[]
-                {
-                    new FlowGraphEdge(
-                        messageTypeName,
-                        receiver.Id,
-                        receiver.HierarchyPath,
-                        "Targeted",
-                        1,
-                        1,
-                        recentTracedDeliveryCount: 1,
-                        context: "Root/Receiver (GameObject)",
-                        contextId: 101
-                    ),
-                },
+                new[] { edge },
+                Array.Empty<string>()
+            );
+            FlowGraphSnapshot refreshedSnapshot = new(
+                new[] { receiver },
+                new[] { refreshedMessage },
+                new[] { edge },
                 Array.Empty<string>()
             );
             EditorWindow window = CreateTrackedEditorWindow();
             EditorWindowTestUtility.ShowWindow(window);
             VisualElement root = window.rootVisualElement;
             string selectedItemKey = DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message);
+            FlowGraphSnapshot currentSnapshot = snapshot;
             Action<string> select = null;
             select = key =>
             {
                 selectedItemKey = key;
                 DxMessagingFlowGraphWindow.RefreshGraphContent(
                     root,
-                    snapshot,
+                    currentSnapshot,
                     new FlowGraphViewState(selectedItemKey: key),
                     onSelectionChanged: select
                 );
@@ -2081,6 +2108,42 @@ namespace DxMessaging.Tests.Editor
                 root.panel.focusController.focusedElement,
                 Is.SameAs(receiverLink),
                 "The test must begin with keyboard focus on the detail link."
+            );
+
+            currentSnapshot = refreshedSnapshot;
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                root,
+                currentSnapshot,
+                new FlowGraphViewState(selectedItemKey: selectedItemKey),
+                onSelectionChanged: select
+            );
+            receiverLink = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.DetailsRelationshipReceiverLinkName
+            );
+            Assert.That(
+                selectedItemKey,
+                Is.EqualTo(DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message)),
+                "A background refresh must not change the selected item."
+            );
+            Assert.That(
+                root.panel.focusController.focusedElement,
+                Is.SameAs(receiverLink),
+                "A background refresh should preserve focus on the recreated detail link instead of moving it to an unselected graph node."
+            );
+            Assert.That(
+                receiverLink.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName),
+                Is.True
+            );
+            Assert.That(
+                root.Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsHierarchyTrailClassName
+                    )
+                    .ToList()
+                    .Count(trail =>
+                        trail.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName)
+                    ),
+                Is.EqualTo(2),
+                "The changing snapshot must contain two earlier context links targeting the same receiver so focus restoration cannot rely on a same-key ordinal."
             );
 
             using (
