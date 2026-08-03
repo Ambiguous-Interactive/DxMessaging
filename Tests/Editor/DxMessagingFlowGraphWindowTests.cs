@@ -870,6 +870,29 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(2),
                 "Expanding the disclosure should lazily create every remaining message type row."
             );
+
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                root,
+                stressSnapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        components[0]
+                    )
+                )
+            );
+            detailsOverflow = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsOverflowFoldoutName
+            );
+            Assert.That(detailsOverflow.value, Is.True);
+            Assert.That(
+                detailsOverflow
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(2),
+                "Restoring an expanded overflow must explicitly repopulate its lazy rows even while the rebuilt details tree is detached."
+            );
         }
 
         [Test]

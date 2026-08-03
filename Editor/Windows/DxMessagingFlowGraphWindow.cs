@@ -6459,7 +6459,12 @@ namespace DxMessaging.Editor.Windows
             switch (selectedItem.Kind)
             {
                 case FlowGraphSelectionKind.Component:
-                    AddComponentDetailsCards(details, selectedItem.Component, visibleSnapshot);
+                    AddComponentDetailsCards(
+                        details,
+                        selectedItem.Component,
+                        visibleSnapshot,
+                        foldoutState.DetailsOverflowExpanded
+                    );
                     break;
                 case FlowGraphSelectionKind.Message:
                     AddMessageDetailsCards(
@@ -6472,7 +6477,12 @@ namespace DxMessaging.Editor.Windows
                     );
                     break;
                 case FlowGraphSelectionKind.Edge:
-                    AddEdgeDetailsCards(details, selectedItem.Edge, visibleSnapshot);
+                    AddEdgeDetailsCards(
+                        details,
+                        selectedItem.Edge,
+                        visibleSnapshot,
+                        foldoutState.DetailsOverflowExpanded
+                    );
                     break;
             }
 
@@ -6480,11 +6490,6 @@ namespace DxMessaging.Editor.Windows
             if (evidence != null)
             {
                 evidence.value = foldoutState.DetailsEvidenceExpanded;
-            }
-            Foldout overflow = details.Q<Foldout>(DetailsOverflowFoldoutName);
-            if (overflow != null)
-            {
-                overflow.value = foldoutState.DetailsOverflowExpanded;
             }
             Foldout technical = new()
             {
@@ -6523,7 +6528,8 @@ namespace DxMessaging.Editor.Windows
         private static void AddComponentDetailsCards(
             VisualElement details,
             FlowGraphComponentNode component,
-            FlowGraphVisibleSnapshot visibleSnapshot
+            FlowGraphVisibleSnapshot visibleSnapshot,
+            bool overflowExpanded
         )
         {
             FlowGraphEdge[] inboundEdges = visibleSnapshot
@@ -6587,7 +6593,8 @@ namespace DxMessaging.Editor.Windows
             evidence.Add(
                 CreateMessageTypesSection(
                     "MESSAGE TYPES",
-                    inboundEdges.Select(edge => edge.MessageTypeName)
+                    inboundEdges.Select(edge => edge.MessageTypeName),
+                    overflowExpanded
                 )
             );
             details.Add(evidence);
@@ -6679,7 +6686,8 @@ namespace DxMessaging.Editor.Windows
                                     StringComparison.Ordinal
                                 )
                             )
-                            .Select(path => path.MessageTypeName)
+                            .Select(path => path.MessageTypeName),
+                        foldoutState.DetailsOverflowExpanded
                     )
                 );
             }
@@ -7184,7 +7192,8 @@ namespace DxMessaging.Editor.Windows
         private static void AddEdgeDetailsCards(
             VisualElement details,
             FlowGraphEdge edge,
-            FlowGraphVisibleSnapshot visibleSnapshot
+            FlowGraphVisibleSnapshot visibleSnapshot,
+            bool overflowExpanded
         )
         {
             FlowGraphTracePath[] tracePaths = visibleSnapshot
@@ -7277,7 +7286,8 @@ namespace DxMessaging.Editor.Windows
                 evidenceFoldout.Add(
                     CreateMessageTypesSection(
                         "OBSERVED TYPES",
-                        tracePaths.Select(path => path.MessageTypeName)
+                        tracePaths.Select(path => path.MessageTypeName),
+                        overflowExpanded
                     )
                 );
             }
@@ -7976,7 +7986,8 @@ namespace DxMessaging.Editor.Windows
 
         private static VisualElement CreateMessageTypesSection(
             string title,
-            IEnumerable<string> messageTypeNames
+            IEnumerable<string> messageTypeNames,
+            bool overflowExpanded
         )
         {
             VisualElement section = CreateDetailsSection(title);
@@ -8025,6 +8036,11 @@ namespace DxMessaging.Editor.Windows
                         PopulateOverflow();
                     }
                 });
+                overflow.SetValueWithoutNotify(overflowExpanded);
+                if (overflowExpanded)
+                {
+                    PopulateOverflow();
+                }
                 section.Add(overflow);
             }
             return section;
