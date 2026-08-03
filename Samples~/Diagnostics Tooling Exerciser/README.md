@@ -25,6 +25,8 @@ the package editor tools.
    command for each receiver, and one broadcast signal for each source.
 1. Open **Tools > Wallstop Studios > DxMessaging > Message Monitor**.
 1. Open **Tools > Wallstop Studios > DxMessaging > Flow Graph**.
+1. Click any route line, including near a message or receiver endpoint, then
+   expand its evidence or open a captured message or call-site source link.
 1. Select `Player Ship`, `Enemy Drone`, and `HUD Console` to inspect local
    diagnostics counters.
 
@@ -53,8 +55,11 @@ After the default play-start burst:
 - Flow Graph shows three receiver components, four message nodes (the three
   concrete messages plus `IMessage`), 15 routes, and 33 recent trace paths.
   Its primary canvas places the four messages on the left, the three receivers
-  on the right, and draws all 15 live connections. The textual route and trace
-  reports remain inside the collapsed **Analysis and Raw Data** section.
+  on the right, and draws all 15 live connections. It starts with no default
+  selection; clicking any part of a connection opens focused route and activity
+  details while evidence and technical reports remain collapsed. The textual
+  route and trace reports remain inside the collapsed **Analysis and Raw Data**
+  section.
 - The component diagnostics panel shows enabled listener diagnostics and local
   emissions for each receiver.
 

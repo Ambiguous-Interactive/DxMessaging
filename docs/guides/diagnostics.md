@@ -129,9 +129,11 @@ interactive graph: message nodes occupy the left column, receiver nodes occupy
 the right column, and arrowheads carry direction without placing text labels on
 the lines. The layout alternates crossing-reduction sweeps across both columns,
 then orders each node's connection ports by the opposite column. Small
-shape-and-color route selectors use a 30-pixel canvas target. The readable zoom
-floor keeps that target at least 24 screen pixels while avoiding nearby arrows.
-Nodes use named metric rows instead of compact `+N` summaries.
+shape-and-color route selectors identify registration kinds, while the full
+feathered curve accepts clicks through a generous hit corridor. Select a route
+near either endpoint or between crossings; the selected path stays bright while
+unrelated paths dim. Nodes use named metric rows instead of compact `+N`
+summaries.
 
 Broadcast nodes identify source scope, targeted nodes identify target scope,
 and untargeted nodes identify the global bus. A type with more than one visible
@@ -139,20 +141,25 @@ route kind uses a `MIXED` node with neutral route, receiver, and call metrics;
 filtering it to one route kind restores that kind's focused metrics. Targeted
 and broadcast route details list recent call sites from the exact component
 registration delivery record when token diagnostics captured them. A call site
-identifies the emitting script, method, file, and line; it does not invent a
-sender object because targeted emission APIs carry a target, not a sender.
+identifies the emitting script, method, file, and line. Use **Open call site**
+to open that exact line. Message and route selections also provide **Open
+message source** when Unity can resolve the captured type to its declaration.
+The graph does not invent a sender object because targeted emission APIs carry
+a target, not a sender.
 Global accept-all registrations appear as
 `GLOBAL OBSERVER / ANY MESSAGE`, and their details list the concrete message
 types observed in recent trace evidence. Drag to pan, scroll to zoom, and select
-a node or connection to inspect it. Automatic framing keeps a readable zoom
-floor; large filtered graphs remain available through panning instead of shrinking their text
-and interaction targets into an unreadable overview. The canvas renders every
-filtered message, receiver, and route instead of moving extra message types
-into a text overflow list.
+a node or connection to inspect it. Use **-**, **Fit**, and **+** when a mouse
+wheel is unavailable. Automatic framing can zoom out to 20 percent for a useful
+overview of large graphs; zoom back in or pan before selecting closely spaced
+items. The canvas renders every filtered message, receiver, and route instead
+of moving extra message types into a text overflow list.
 
-The selected item inspector sits directly below the canvas. Route selections
-use responsive cards for the route path, activity metrics, emission evidence,
-and trace evidence. Its newline-oriented technical report starts collapsed.
+The window opens without selecting a node or route, so the canvas leads without
+a details wall. The selected item inspector sits directly below the canvas only
+after an intentional selection. Route selections show the route path and
+activity metrics first; emission evidence, trace evidence, and the
+newline-oriented technical report each start collapsed.
 Expand **Analysis and Raw Data** only when you need the textual route map,
 message and target lanes, trace activity, or topology lists. Inside that
 section, concrete routes sort before `GlobalAcceptAll`; call volume, recent

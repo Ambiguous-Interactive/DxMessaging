@@ -49,7 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaking evidence across message buses. Global accept-all
   registrations appear as `ANY MESSAGE` observers instead of a misleading
   `IMessage` message type. Destroyed Unity context references fall back to their
-  stable instance ID instead of aborting capture for that component
+  stable instance ID instead of aborting capture for that component. Follow-up
+  interaction work makes the full feathered route path clickable, dims unrelated
+  paths after selection, adds explicit fit and zoom controls with a 20 percent
+  overview floor, and removes the automatic default selection. Route activity
+  now leads while emission, trace, and technical evidence start collapsed.
+  Message and call-site source links open the exact declaration or captured
+  line when Unity can resolve it. Dense many-to-many coverage keeps hundreds of
+  crossing routes present and selectable in constrained layouts
   ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Improve targeted and source-bound broadcast routing throughput and reduce the
   memory retained by their per-target lookup tables without changing the public
@@ -61,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix Flow Graph message-source links stalling the editor while scanning large
+  compilation assemblies. Source declarations now index in the background and
+  each assembly source file is read once, while exact nested and generic source
+  links continue to appear when the index completes
+  ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
+- Keep a selected Flow Graph route and its marker above dimmed paths at crossings
+  so the highlighted route remains visible and wins overlapping clicks
+  ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Reflexive message dispatch to a destroyed `GameObject` or `Component` target
   now skips Unity hierarchy delivery instead of throwing
   `MissingReferenceException`; normal targeted bus handlers still run.
