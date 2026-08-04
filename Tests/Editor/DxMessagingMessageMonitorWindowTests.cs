@@ -37,8 +37,6 @@ namespace DxMessaging.Tests.Editor
             "dxmessaging-monitor-message-type-lane-type";
         private const string MessageTypeLaneSummaryLabelName =
             "dxmessaging-monitor-message-type-lane-summary";
-        private const string MessageTypeLaneContextsLabelName =
-            "dxmessaging-monitor-message-type-lane-contexts";
         private const string MessageTypeLaneFilterButtonName =
             "dxmessaging-monitor-message-type-lane-filter";
         private const string ContextLanesName = "dxmessaging-monitor-context-lanes";
@@ -50,8 +48,6 @@ namespace DxMessaging.Tests.Editor
             "dxmessaging-monitor-context-lane-context";
         private const string ContextLaneSummaryLabelName =
             "dxmessaging-monitor-context-lane-summary";
-        private const string ContextLaneMessagesLabelName =
-            "dxmessaging-monitor-context-lane-messages";
         private const string ContextLaneFilterButtonName =
             "dxmessaging-monitor-context-lane-filter";
         private const string ActiveFilterSummaryName = "dxmessaging-monitor-active-filter";
@@ -303,21 +299,253 @@ namespace DxMessaging.Tests.Editor
                     StringComparer.Ordinal
                 );
 
-            AssertTaxonomyRow(
-                rowsByType[nameof(OlderMessage)],
-                "Untargeted",
-                DxMessagingEditorPalette.Untargeted
+            AssertTaxonomyRow(rowsByType[nameof(OlderMessage)], "Untargeted");
+            AssertTaxonomyRow(rowsByType[nameof(NewerMessage)], "Targeted");
+            AssertTaxonomyRow(rowsByType[nameof(BroadcastMessage)], "Broadcast");
+        }
+
+        [Test]
+        public void BuildMonitorUiKeepsStackTracesOutOfLogRows()
+        {
+            MessageMonitorEntry entry = new(
+                nameof(OlderMessage),
+                "Context: Player",
+                "UnityEngine.Debug:ExtractStackTraceNoAlloc"
             );
-            AssertTaxonomyRow(
-                rowsByType[nameof(NewerMessage)],
-                "Targeted",
-                DxMessagingEditorPalette.Targeted
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { entry }
             );
-            AssertTaxonomyRow(
-                rowsByType[nameof(BroadcastMessage)],
-                "Broadcast",
-                DxMessagingEditorPalette.Broadcast
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
+
+            List<VisualElement> rows = root.Query<VisualElement>(
+                    className: DxMessagingMessageMonitorWindow.RowClassName
+                )
+                .ToList();
+            Assert.That(rows.Count, Is.EqualTo(1));
+            Assert.That(
+                rows[0].Query<Label>().ToList().ConvertAll(label => label.text),
+                Has.None.Contains("ExtractStackTraceNoAlloc"),
+                "A log row must not render the stack trace; it belongs to the selected entry."
             );
+
+            Foldout stack = root.Q<Foldout>(
+                DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
+            );
+            Assert.That(stack, Is.Not.Null);
+            Assert.That(stack.value, Is.False, "The stack trace disclosure must start collapsed.");
+            Assert.That(
+                stack.Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackTraceLabelName).text,
+                Does.Contain("ExtractStackTraceNoAlloc")
+            );
+        }
+
+        [Test]
+        public void BuildMonitorUiRendersModeBadgeAndListHeader()
+        {
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { CreateEntry(new OlderMessage(), null) }
+            );
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(root, snapshot);
+
+            Label badge = root.Q<Label>(DxMessagingMessageMonitorWindow.ModeBadgeLabelName);
+            Assert.That(badge, Is.Not.Null);
+            Assert.That(
+                badge.text,
+                Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeBadgeText)
+            );
+            Assert.That(
+                badge.tooltip,
+                Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeHintText)
+            );
+            Assert.That(
+                root.Q<Label>(DxMessagingMessageMonitorWindow.ModeHintLabelName).text,
+                Is.EqualTo(DxMessagingMessageMonitorWindow.SnapshotModeHintText)
+            );
+
+            VisualElement header = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.ListHeaderName
+            );
+            Assert.That(header, Is.Not.Null);
+            Assert.That(
+                header.ClassListContains(DxMessagingEditorTheme.ListHeaderClassName),
+                Is.True
+            );
+            CollectionAssert.AreEqual(
+                new[] { "ROUTE", "MESSAGE", "CONTEXT", "#" },
+                header.Query<Label>().ToList().ConvertAll(label => label.text)
+            );
+        }
+
+        [Test]
+        public void BuildMonitorUiKeepsSecondarySectionsCollapsedAndTheLogFlexible()
+        {
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { CreateEntry(new OlderMessage(), null) }
+            );
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                root,
+                snapshot,
+                MessageMonitorViewState.Default,
+                componentEntries: Array.Empty<ComponentMonitorEntry>()
+            );
+
+            Foldout breakdown = root.Q<Foldout>(
+                DxMessagingMessageMonitorWindow.BreakdownFoldoutName
+            );
+            Assert.That(breakdown, Is.Not.Null);
+            Assert.That(breakdown.value, Is.False);
+            Foldout components = root.Q<Foldout>(
+                DxMessagingMessageMonitorWindow.ComponentFoldoutName
+            );
+            Assert.That(components, Is.Not.Null);
+            Assert.That(components.value, Is.False);
+
+            ScrollView list = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
+            Assert.That(list, Is.Not.Null);
+            Assert.That(list.style.flexGrow.value, Is.EqualTo(1f));
+            VisualElement details = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsPaneName
+            );
+            Assert.That(details, Is.Not.Null);
+            Assert.That(
+                details.style.flexShrink.value,
+                Is.EqualTo(0f),
+                "The details pane must hold its height so the log shrinks instead of the pane leaving the window."
+            );
+            VisualElement content = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.ContentContainerName
+            );
+            Assert.That(content.style.minHeight.value.value, Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void BuildMonitorUiRouteKindChipsCountAndFilterTheLog()
+        {
+            MessageMonitorEntry untargeted = CreateEntry(new OlderMessage(), null);
+            MessageMonitorEntry targeted = CreateEntry(new NewerMessage(), new InstanceId(123));
+            MessageMonitorEntry broadcast = CreateEntry(
+                new BroadcastMessage(),
+                new InstanceId(456)
+            );
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { untargeted, targeted, broadcast }
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+
+            try
+            {
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                MessageMonitorViewState observed = MessageMonitorViewState.Default;
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    snapshot,
+                    MessageMonitorViewState.Default,
+                    viewState => observed = viewState,
+                    onCopyExport: _ => { }
+                );
+
+                Toggle targetedChip = root.Q<Toggle>(
+                    DxMessagingMessageMonitorWindow.TargetedChipName
+                );
+                Assert.That(targetedChip, Is.Not.Null);
+                Assert.That(targetedChip.text, Is.EqualTo("Targeted 1"));
+                Assert.That(targetedChip.tooltip, Does.Contain("one target object"));
+                Assert.That(
+                    targetedChip.ClassListContains(DxMessagingEditorTheme.ChipTargetedClassName),
+                    Is.True
+                );
+                Assert.That(
+                    targetedChip.ClassListContains(DxMessagingEditorTheme.ChipWideClassName),
+                    Is.True
+                );
+                Assert.That(
+                    root.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).text,
+                    Is.EqualTo("Untargeted 1")
+                );
+                Assert.That(
+                    root.Q<Toggle>(DxMessagingMessageMonitorWindow.BroadcastChipName).text,
+                    Is.EqualTo("Broadcast 1")
+                );
+
+                targetedChip.value = false;
+
+                Assert.That(observed.ShowTargeted, Is.False);
+                List<string> visibleTypes = root.Query<VisualElement>(
+                        className: DxMessagingMessageMonitorWindow.RowClassName
+                    )
+                    .ToList()
+                    .ConvertAll(row =>
+                        row.Q<Label>(DxMessagingMessageMonitorWindow.MessageTypeLabelName).text
+                    );
+                CollectionAssert.AreEquivalent(
+                    new[] { nameof(OlderMessage), nameof(BroadcastMessage) },
+                    visibleTypes
+                );
+                Assert.That(
+                    root.Q<Label>(DxMessagingMessageMonitorWindow.StatusLabelName).text,
+                    Does.Contain("2/3 shown")
+                );
+                Assert.That(
+                    root.Q<Toggle>(DxMessagingMessageMonitorWindow.TargetedChipName).text,
+                    Is.EqualTo("Targeted 1"),
+                    "A hidden chip still counts what it would bring back."
+                );
+
+                targetedChip.value = true;
+
+                Assert.That(observed.ShowTargeted, Is.True);
+                Assert.That(
+                    root.Query<VisualElement>(
+                            className: DxMessagingMessageMonitorWindow.RowClassName
+                        )
+                        .ToList()
+                        .Count,
+                    Is.EqualTo(3)
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        [Test]
+        public void CreateExportTextFollowsRouteKindChips()
+        {
+            MessageMonitorEntry untargeted = CreateEntry(new OlderMessage(), null);
+            MessageMonitorEntry targeted = CreateEntry(new NewerMessage(), new InstanceId(123));
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { untargeted, targeted }
+            );
+
+            string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
+                snapshot,
+                DxMessagingMessageMonitorWindow.FilterEntries(
+                    snapshot.Entries,
+                    new MessageMonitorViewState(showTargeted: false)
+                )
+            );
+
+            Assert.That(exportText, Does.Contain("\"entryCount\": 1"));
+            Assert.That(exportText, Does.Contain(nameof(OlderMessage)));
+            Assert.That(exportText, Does.Not.Contain(nameof(NewerMessage)));
         }
 
         [Test]
@@ -673,7 +901,7 @@ namespace DxMessaging.Tests.Editor
                     root,
                     snapshot,
                     new MessageMonitorViewState("type:Newer"),
-                    filterText => observedFilter = filterText,
+                    viewState => observedFilter = viewState.FilterText,
                     onCopyExport: _ => { }
                 );
 
@@ -870,16 +1098,13 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 rows[0].Q<Label>(ContextLaneSummaryLabelName).text,
-                Is.EqualTo("Entries: 2 | Message types: 2 | Share: 2/3 (67%)")
+                Is.EqualTo("2 - 67%"),
+                "A lane pill shows its count and share; the counts behind them stay in the tooltip."
             );
-            Assert.That(
-                rows[0].Q<Label>(ContextLaneMessagesLabelName).text,
-                Does.Contain(nameof(OlderMessage))
-            );
-            Assert.That(
-                rows[0].Q<Label>(ContextLaneMessagesLabelName).text,
-                Does.Contain(nameof(NewerMessage))
-            );
+            string tooltip = rows[0].Q<Button>(ContextLaneFilterButtonName).tooltip;
+            Assert.That(tooltip, Does.Contain("Entries: 2 | Message types: 2 | Share: 2/3 (67%)"));
+            Assert.That(tooltip, Does.Contain(nameof(OlderMessage)));
+            Assert.That(tooltip, Does.Contain(nameof(NewerMessage)));
             Assert.That(
                 rows[1].Q<Label>(ContextLaneContextLabelName).text,
                 Is.EqualTo("Context: Enemy")
@@ -1119,18 +1344,11 @@ namespace DxMessaging.Tests.Editor
                 .Query<VisualElement>(className: ContextLaneRowClassName)
                 .ToList();
             Assert.That(rows.Count, Is.EqualTo(1));
-            Assert.That(
-                rows[0].Q<Label>(ContextLaneSummaryLabelName).text,
-                Is.EqualTo("Entries: 2 | Message types: 2 | Share: 2/2 (100%)")
-            );
-            Assert.That(
-                rows[0].Q<Label>(ContextLaneMessagesLabelName).text,
-                Does.Contain("CollisionOne.DuplicateMessage")
-            );
-            Assert.That(
-                rows[0].Q<Label>(ContextLaneMessagesLabelName).text,
-                Does.Contain("CollisionTwo.DuplicateMessage")
-            );
+            Assert.That(rows[0].Q<Label>(ContextLaneSummaryLabelName).text, Is.EqualTo("2 - 100%"));
+            string tooltip = rows[0].Q<Button>(ContextLaneFilterButtonName).tooltip;
+            Assert.That(tooltip, Does.Contain("Entries: 2 | Message types: 2 | Share: 2/2 (100%)"));
+            Assert.That(tooltip, Does.Contain("CollisionOne.DuplicateMessage"));
+            Assert.That(tooltip, Does.Contain("CollisionTwo.DuplicateMessage"));
         }
 
         [Test]
@@ -1164,11 +1382,11 @@ namespace DxMessaging.Tests.Editor
                 .ToList();
             Assert.That(rows.Count, Is.EqualTo(2));
             Assert.That(
-                rows[0].Q<Label>(ContextLaneMessagesLabelName).text,
+                rows[0].Q<Button>(ContextLaneFilterButtonName).tooltip,
                 Does.Contain("CollisionTwo.DuplicateMessage")
             );
             Assert.That(
-                rows[1].Q<Label>(ContextLaneMessagesLabelName).text,
+                rows[1].Q<Button>(ContextLaneFilterButtonName).tooltip,
                 Does.Contain("CollisionOne.DuplicateMessage")
             );
         }
@@ -1196,7 +1414,7 @@ namespace DxMessaging.Tests.Editor
             VisualElement lanes = root.Q<VisualElement>(ContextLanesName);
             ScrollView scroll = lanes.Q<ScrollView>(ContextLaneScrollViewName);
             Assert.That(scroll, Is.Not.Null);
-            Assert.That(scroll.style.maxHeight.value.value, Is.EqualTo(160f));
+            Assert.That(scroll.style.maxHeight.value.value, Is.EqualTo(96f));
             Assert.That(
                 scroll.Query<VisualElement>(className: ContextLaneRowClassName).ToList().Count,
                 Is.EqualTo(24)
@@ -1245,8 +1463,11 @@ namespace DxMessaging.Tests.Editor
                     root,
                     snapshot,
                     MessageMonitorViewState.Default,
-                    filterText => observedFilter = filterText,
-                    selectedEntryIndex => observedSelectedEntryIndex = selectedEntryIndex,
+                    viewState =>
+                    {
+                        observedFilter = viewState.FilterText;
+                        observedSelectedEntryIndex = viewState.SelectedEntryIndex;
+                    },
                     onCopyExport: _ => { }
                 );
 
@@ -1355,6 +1576,16 @@ namespace DxMessaging.Tests.Editor
                 details.Q<Label>(DxMessagingMessageMonitorWindow.DetailsContextLabelName).text,
                 Does.Contain("none")
             );
+            Label badge = details
+                .Query<Label>(className: DxMessagingEditorTheme.TypeBadgeClassName)
+                .First();
+            Assert.That(badge.text, Is.EqualTo(DxMessagingEditorPalette.UntargetedKind));
+            Assert.That(
+                badge.ClassListContains(
+                    ExpectedTypeBadgeClass(DxMessagingEditorPalette.UntargetedKind)
+                ),
+                Is.True
+            );
         }
 
         [Test]
@@ -1397,16 +1628,12 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 rows[0].Q<Label>(MessageTypeLaneSummaryLabelName).text,
-                Is.EqualTo("Entries: 2 | Contexts: 2 | Share: 2/3 (67%)")
+                Is.EqualTo("2 - 67%")
             );
-            Assert.That(
-                rows[0].Q<Label>(MessageTypeLaneContextsLabelName).text,
-                Does.Contain("Context: 42")
-            );
-            Assert.That(
-                rows[0].Q<Label>(MessageTypeLaneContextsLabelName).text,
-                Does.Contain("Context: none")
-            );
+            string tooltip = rows[0].Q<Button>(MessageTypeLaneFilterButtonName).tooltip;
+            Assert.That(tooltip, Does.Contain("Entries: 2 | Contexts: 2 | Share: 2/3 (67%)"));
+            Assert.That(tooltip, Does.Contain("Context: 42"));
+            Assert.That(tooltip, Does.Contain("Context: none"));
             Assert.That(
                 rows[1].Q<Label>(MessageTypeLaneTypeLabelName).text,
                 Is.EqualTo(nameof(NewerMessage))
@@ -1436,7 +1663,7 @@ namespace DxMessaging.Tests.Editor
             VisualElement lanes = root.Q<VisualElement>(MessageTypeLanesName);
             ScrollView scroll = lanes.Q<ScrollView>(MessageTypeLaneScrollViewName);
             Assert.That(scroll, Is.Not.Null);
-            Assert.That(scroll.style.maxHeight.value.value, Is.EqualTo(160f));
+            Assert.That(scroll.style.maxHeight.value.value, Is.EqualTo(96f));
             Assert.That(
                 scroll.Query<VisualElement>(className: MessageTypeLaneRowClassName).ToList().Count,
                 Is.EqualTo(24)
@@ -2054,19 +2281,33 @@ namespace DxMessaging.Tests.Editor
             return MessageMonitorEntry.FromEmission(new MessageEmissionData(message, context));
         }
 
-        private static void AssertTaxonomyRow(
-            VisualElement row,
-            string expectedKind,
-            Color expectedColor
-        )
+        private static void AssertTaxonomyRow(VisualElement row, string expectedKind)
         {
             Label kind = row.Q<Label>(DxMessagingMessageMonitorWindow.RouteKindLabelName);
             Assert.That(kind, Is.Not.Null);
             Assert.That(kind.text, Is.EqualTo(expectedKind));
-            Assert.That(row.ClassListContains(DxMessagingEditorTheme.CardClassName), Is.True);
-            Assert.That(kind.ClassListContains(DxMessagingEditorTheme.TypeBadgeClassName), Is.True);
-            Assert.That(kind.ClassListContains(ExpectedTypeBadgeClass(expectedKind)), Is.True);
-            AssertCompleteBorder(row, expectedColor);
+            Assert.That(row.ClassListContains(DxMessagingEditorTheme.RowClassName), Is.True);
+            VisualElement dot = row.Query<VisualElement>(
+                    className: DxMessagingEditorTheme.DotClassName
+                )
+                .First();
+            Assert.That(dot, Is.Not.Null);
+            Assert.That(dot.ClassListContains(ExpectedDotClass(expectedKind)), Is.True);
+        }
+
+        private static string ExpectedDotClass(string routeKind)
+        {
+            switch (routeKind)
+            {
+                case DxMessagingEditorPalette.UntargetedKind:
+                    return DxMessagingEditorTheme.DotUntargetedClassName;
+                case DxMessagingEditorPalette.TargetedKind:
+                    return DxMessagingEditorTheme.DotTargetedClassName;
+                case DxMessagingEditorPalette.BroadcastKind:
+                    return DxMessagingEditorTheme.DotBroadcastClassName;
+                default:
+                    return string.Empty;
+            }
         }
 
         private static void AssertCompleteBorder(VisualElement element, Color expectedColor)

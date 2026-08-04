@@ -86,17 +86,12 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal bool ShowsRouteKind(string routeKind)
         {
-            switch (DxMessagingEditorPalette.NormalizeRouteKind(routeKind))
-            {
-                case DxMessagingEditorPalette.UntargetedKind:
-                    return ShowUntargeted;
-                case DxMessagingEditorPalette.TargetedKind:
-                    return ShowTargeted;
-                case DxMessagingEditorPalette.BroadcastKind:
-                    return ShowBroadcast;
-                default:
-                    return true;
-            }
+            return DxMessagingEditorPalette.ShowsRouteKind(
+                routeKind,
+                ShowUntargeted,
+                ShowTargeted,
+                ShowBroadcast
+            );
         }
     }
 
@@ -178,6 +173,8 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailName = "dxmessaging-monitor-live-detail";
         internal const string DetailTitleLabelName = "dxmessaging-monitor-live-detail-title";
         internal const string DetailFrameLabelName = "dxmessaging-monitor-live-detail-frame";
+        internal const string DetailStackFoldoutName =
+            "dxmessaging-monitor-live-detail-stack-foldout";
         internal const string DetailStackLabelName = "dxmessaging-monitor-live-detail-stack";
         internal const string FooterName = "dxmessaging-monitor-live-footer";
         internal const string EmptyBodyName = "dxmessaging-monitor-live-empty";
@@ -185,8 +182,20 @@ namespace DxMessaging.Editor.Windows
         internal const string GapNoticeName = "dxmessaging-monitor-live-gap";
         internal const string GapNoticeTitleName = "dxmessaging-monitor-live-gap-title";
         internal const string GapNoticeBodyName = "dxmessaging-monitor-live-gap-body";
+        internal const string ModeBadgeLabelName = "dxmessaging-monitor-live-mode-badge";
+        internal const string ModeHintLabelName = "dxmessaging-monitor-live-mode-hint";
 
         internal const string Title = "Message Monitor (Live)";
+
+        /// <summary>
+        /// Badge text for the streaming mode, alongside the one-line explanation of what a row in
+        /// that mode stands for. Issue #344 reported that a reader cannot tell whether the Monitor
+        /// is streaming or deduplicating; the live log does both, and says so here.
+        /// </summary>
+        internal const string LiveModeBadgeText = "LIVE";
+
+        internal const string LiveModeHintText =
+            "Streaming. Repeats of the same message and context merge into one row, and the N column counts them.";
 
         /// <summary>
         /// Row height for the virtualized list, matching the <c>.dx-row</c> height in
@@ -635,6 +644,16 @@ namespace DxMessaging.Editor.Windows
             toolbar.style.alignItems = Align.Center;
             toolbar.style.flexWrap = Wrap.Wrap;
 
+            Label mode = new(LiveModeBadgeText)
+            {
+                name = ModeBadgeLabelName,
+                tooltip = LiveModeHintText,
+            };
+            mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
+            mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName);
+            mode.style.marginRight = 6;
+            toolbar.Add(mode);
+
             Toggle record = new("Record") { name = RecordToggleName, value = recorder.Recording };
             record.AddToClassList(DxMessagingEditorTheme.RecordClassName);
             record.tooltip =
@@ -649,21 +668,21 @@ namespace DxMessaging.Editor.Windows
             // separates them so the row reads as groups rather than one run of controls.
             toolbar.Add(CreateSeparator());
 
+            // The chips name their route kind rather than abbreviating it to a letter: issue #344
+            // reported the toolbar toggles as unlabelled, and a named chip is also the only legend
+            // the row colors have.
             Toggle untargeted = CreateChip(
                 UntargetedChipName,
-                "U",
                 DxMessagingEditorPalette.UntargetedKind,
                 viewState.ShowUntargeted
             );
             Toggle targeted = CreateChip(
                 TargetedChipName,
-                "T",
                 DxMessagingEditorPalette.TargetedKind,
                 viewState.ShowTargeted
             );
             Toggle broadcast = CreateChip(
                 BroadcastChipName,
-                "B",
                 DxMessagingEditorPalette.BroadcastKind,
                 viewState.ShowBroadcast
             );
@@ -725,17 +744,19 @@ namespace DxMessaging.Editor.Windows
             return toolbar;
         }
 
-        private static Toggle CreateChip(string name, string text, string routeKind, bool value)
+        private static Toggle CreateChip(string name, string routeKind, bool value)
         {
             Toggle chip = new()
             {
                 name = name,
-                text = text,
+                text = routeKind,
                 value = value,
             };
             DxMessagingEditorTheme.AddRouteKindChipClasses(chip, routeKind);
+            chip.AddToClassList(DxMessagingEditorTheme.ChipWideClassName);
             chip.AddToClassList(DxMessagingEditorTheme.FilterClassName);
-            chip.tooltip = $"Show {routeKind} messages";
+            chip.tooltip =
+                $"This color marks {routeKind} messages in every row. Click to show or hide them.";
 
             // `.dx-record` hides its checkmark from the stylesheet; `.dx-chip` carries no such rule
             // in the migrated sheet, and the chip's own letter is its state, so the checkmark and
@@ -949,19 +970,25 @@ namespace DxMessaging.Editor.Windows
             card.Add(CreateKeyValue("Observed", CreateObservedRangeText(row)));
             detail.Add(card);
 
+            bool captured = !string.IsNullOrWhiteSpace(row.Entry.StackTrace);
+            Foldout stackFoldout = new()
+            {
+                name = DetailStackFoldoutName,
+                text = captured ? "Stack trace" : "Stack trace (not captured)",
+                value = false,
+                tooltip =
+                    "The call stack the emission was recorded from. Collapsed by default so the log stays readable.",
+            };
             ScrollView stackScroll = new(ScrollViewMode.Vertical);
             stackScroll.style.maxHeight = DetailStackTraceMaxHeight;
-            Label stack = new(
-                string.IsNullOrWhiteSpace(row.Entry.StackTrace)
-                    ? "Stack trace: not captured"
-                    : row.Entry.StackTrace
-            )
+            Label stack = new(captured ? row.Entry.StackTrace : "Stack trace: not captured")
             {
                 name = DetailStackLabelName,
             };
             stack.style.whiteSpace = WhiteSpace.Normal;
             stackScroll.Add(stack);
-            detail.Add(stackScroll);
+            stackFoldout.Add(stackScroll);
+            detail.Add(stackFoldout);
 
             return detail;
         }
@@ -1040,6 +1067,14 @@ namespace DxMessaging.Editor.Windows
                 statElement.Add(new Label(stat.Label));
                 footer.Add(statElement);
             }
+
+            // The stats say how many rows there are; this says what a row is. Without it the count
+            // column reads as a mystery on a log that silently merges repeats.
+            Label hint = new(LiveModeHintText) { name = ModeHintLabelName };
+            hint.style.flexGrow = 1;
+            hint.style.flexShrink = 1;
+            hint.style.unityTextAlign = TextAnchor.MiddleRight;
+            footer.Add(hint);
 
             return footer;
         }

@@ -169,6 +169,47 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        /// <summary>
+        /// UI Toolkit defaults <c>flex-shrink</c> to 0, unlike CSS. A rule that grows but cannot
+        /// shrink pushes its siblings past the edge of the panel as soon as its content is wider
+        /// than the space it was given, which is what a long fully-qualified type name did to the
+        /// Monitor detail pane's <c>.dx-kv__v</c> value.
+        /// </summary>
+        [Test]
+        public void EveryGrowingStylesheetRuleAlsoDeclaresHowItShrinks()
+        {
+            string uss = StripBlockComments(
+                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
+            );
+            List<string> growOnly = new();
+            foreach (string block in uss.Split('}'))
+            {
+                int open = block.IndexOf('{');
+                if (open < 0)
+                {
+                    continue;
+                }
+
+                string selector = block.Substring(0, open).Trim().Replace("\n", " ");
+                string body = block.Substring(open + 1);
+                if (
+                    body.Contains("flex-grow", StringComparison.Ordinal)
+                    && !body.Contains("flex-shrink", StringComparison.Ordinal)
+                )
+                {
+                    growOnly.Add(selector);
+                }
+            }
+
+            Assert.That(
+                growOnly,
+                Is.Empty,
+                "UI Toolkit defaults flex-shrink to 0, so these rules grow but never give space "
+                    + "back and overflow the panel: "
+                    + string.Join(", ", growOnly)
+            );
+        }
+
         [Test]
         public void BrandingPrototypeAssemblyAndWindowsAreNotLoaded()
         {
