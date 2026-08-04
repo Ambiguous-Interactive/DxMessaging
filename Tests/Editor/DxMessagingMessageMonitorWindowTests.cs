@@ -62,46 +62,55 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
-            foreach (Object instance in _createdObjects)
+            // Windows close in a finally: object and asset cleanup below runs Unity code that can
+            // throw, and a leaked EditorWindow outlives the test that made it. It stays subscribed
+            // to statics (this fixture's window subscribes to the shared source index), keeps a
+            // panel alive, and turns one failing test into a cascade in whatever runs next.
+            try
             {
-                if (instance != null)
+                foreach (Object instance in _createdObjects)
                 {
-                    if (instance is GameObject gameObject)
+                    if (instance != null)
                     {
-                        foreach (
-                            MessagingComponent messagingComponent in gameObject.GetComponentsInChildren<MessagingComponent>(
-                                includeInactive: true
-                            )
-                        )
+                        if (instance is GameObject gameObject)
                         {
-                            messagingComponent.EditorResetRuntimeState();
+                            foreach (
+                                MessagingComponent messagingComponent in gameObject.GetComponentsInChildren<MessagingComponent>(
+                                    includeInactive: true
+                                )
+                            )
+                            {
+                                messagingComponent.EditorResetRuntimeState();
+                            }
                         }
+
+                        Object.DestroyImmediate(instance);
                     }
-
-                    Object.DestroyImmediate(instance);
                 }
-            }
-            _createdObjects.Clear();
+                _createdObjects.Clear();
 
-            foreach (string assetPath in _createdAssetPaths)
-            {
-                if (!string.IsNullOrWhiteSpace(assetPath))
+                foreach (string assetPath in _createdAssetPaths)
                 {
-                    EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
-                        AssetDatabase.DeleteAsset(assetPath)
-                    );
+                    if (!string.IsNullOrWhiteSpace(assetPath))
+                    {
+                        EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                            AssetDatabase.DeleteAsset(assetPath)
+                        );
+                    }
                 }
+                _createdAssetPaths.Clear();
             }
-            _createdAssetPaths.Clear();
-
-            // Closing a shown window under -nographics logs a benign "No graphic device is
-            // available" error, and Unity resets LogAssert tolerance per phase -- so the
-            // tolerance ShowWindow asserted in the test body does not reach teardown. Any test
-            // here that holds a shown window open until now fails without this. Headless only,
-            // so runs with a real GPU keep full strictness (which is also why this cannot
-            // reproduce on a developer machine).
-            EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
-            EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
+            finally
+            {
+                // Closing a shown window under -nographics logs a benign "No graphic device is
+                // available" error, and Unity resets LogAssert tolerance per phase -- so the
+                // tolerance ShowWindow asserted in the test body does not reach teardown. Any
+                // test here that holds a shown window open until now fails without this.
+                // Headless only, so runs with a real GPU keep full strictness (which is also why
+                // this cannot reproduce on a developer machine).
+                EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
+                EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
+            }
 
             if (MessageHandler.MessageBus is MessageBus messageBus)
             {

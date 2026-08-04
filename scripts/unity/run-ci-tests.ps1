@@ -1351,6 +1351,24 @@ function Initialize-EphemeralProject {
         throw $projectPathSafetyError
     }
 
+    # MAX_PATH headroom, checked against the real path on the real runner rather than a
+    # simulation. Unity resolves package files under
+    # <project>/Library/PackageCache/<pkg>@<hash>/..., and Mono's System.IO enforces the
+    # 260-character Windows limit regardless of the OS long-path policy, so a project path with
+    # too little headroom kills asset import with a DirectoryNotFoundException raised from a
+    # third-party asset postprocessor -- before a single test runs, and naming a file nobody
+    # here wrote. Failing loudly at generation time is the difference between a five-minute
+    # diagnosis and an afternoon. The constant is the longest path any current comparison
+    # package contributes below the project root (Extenject's DeclareSignal binder chain,
+    # measured at 171 characters). See issue #357.
+    $deepestKnownPackageRelativeLength = 171
+    if ($IsWindows -and (($project.Length + $deepestKnownPackageRelativeLength) -ge 260)) {
+        throw ("Refusing to generate the Unity project at '$project' ($($project.Length) characters): " +
+            "the deepest known package path would reach $($project.Length + $deepestKnownPackageRelativeLength) " +
+            "characters, at or over the 260-character Windows MAX_PATH limit. Unity asset import would fail " +
+            "with a DirectoryNotFoundException before any test ran. Shorten the project path (see issue #357).")
+    }
+
     New-Item -ItemType Directory -Force -Path (Join-Path $project 'Packages') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $project 'ProjectSettings') | Out-Null
     New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor')) | Out-Null
