@@ -1361,8 +1361,14 @@ function Initialize-EphemeralProject {
     # diagnosis and an afternoon. The constant is the longest path any current comparison
     # package contributes below the project root (Extenject's DeclareSignal binder chain,
     # measured at 171 characters). See issue #357.
+    #
+    # Scoped to -IncludeComparisons on purpose: that 171-character path belongs to Extenject,
+    # which only exists in the project when the comparison packages are installed. A plain test
+    # project has nothing remotely that deep, and applying the same budget to it would reject
+    # legitimate short-lived projects under a long temp directory -- which is exactly what it did
+    # to this harness's own generate-only tests on windows-latest.
     $deepestKnownPackageRelativeLength = 171
-    if ($IsWindows -and (($project.Length + $deepestKnownPackageRelativeLength) -ge 260)) {
+    if ($IncludeComparisons -and $IsWindows -and (($project.Length + $deepestKnownPackageRelativeLength) -ge 260)) {
         throw ("Refusing to generate the Unity project at '$project' ($($project.Length) characters): " +
             "the deepest known package path would reach $($project.Length + $deepestKnownPackageRelativeLength) " +
             "characters, at or over the 260-character Windows MAX_PATH limit. Unity asset import would fail " +
