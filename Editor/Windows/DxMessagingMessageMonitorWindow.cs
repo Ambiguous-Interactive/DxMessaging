@@ -126,6 +126,14 @@ namespace DxMessaging.Editor.Windows
 
         private const int DetailsMaxHeightPercent = 45;
 
+        /// <summary>
+        /// Floor for a disclosure section, sized to its own toggle header. A <see cref="Foldout"/>
+        /// that shrinks has to keep at least the row a reader clicks to open it: without this floor
+        /// the section is squeezed to a few pixels and its header, not its body, is what spills out
+        /// of the window. Compression below the floor goes to the scrolling lists inside instead.
+        /// </summary>
+        private const int FoldoutHeaderMinHeight = 22;
+
         private const int DetailsStackTraceMaxHeight = 140;
 
         private const int LanePillScrollMaxHeight = 96;
@@ -506,8 +514,10 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement content = new() { name = ContentContainerName };
             content.style.flexGrow = 1;
-            // Without a zero floor a flex child refuses to shrink below its content height, so the
-            // log pushes the details pane and the component section off the bottom of the window.
+            // Growing is not enough: UI Toolkit defaults flex-shrink to 0, so a block that only
+            // grows keeps its content height and pushes its siblings off the window as soon as an
+            // expanded disclosure makes that content taller than the space available.
+            content.style.flexShrink = 1;
             content.style.minHeight = 0;
             ui.Content = content;
 
@@ -515,7 +525,7 @@ namespace DxMessaging.Editor.Windows
             {
                 root.Add(content);
                 AddEmptyState(content, "Monitor unavailable", snapshot.UnavailableReason);
-                content.Add(CreateComponentSection(ui.Components));
+                content.Add(CreateComponentSection(ui));
                 return;
             }
 
@@ -557,6 +567,16 @@ namespace DxMessaging.Editor.Windows
 
             /// <summary>Holds the detail pane so a new selection can replace only that.</summary>
             internal VisualElement DetailsSlot { get; set; }
+
+            /// <summary>
+            /// Whether each disclosure is open. A filter or chip change rebuilds the content, and a
+            /// rebuilt <see cref="Foldout"/> starts closed, so without remembering this a reader
+            /// who opened Breakdown and then typed would watch it snap shut under them -- the same
+            /// loss of context a selection change deliberately avoids.
+            /// </summary>
+            internal bool BreakdownExpanded { get; set; }
+
+            internal bool ComponentsExpanded { get; set; }
 
             internal Action<MessageMonitorViewState> OnViewStateChanged { get; set; }
 
@@ -672,10 +692,11 @@ namespace DxMessaging.Editor.Windows
             ui.DetailsSlot = null;
             VisualElement messageSection = new() { name = MessageSectionName };
             messageSection.style.flexGrow = 1;
+            messageSection.style.flexShrink = 1;
             messageSection.style.minHeight = 0;
             ui.Content.Add(messageSection);
             RenderMessageSection(ui, messageSection, filteredEntries);
-            ui.Content.Add(CreateComponentSection(ui.Components));
+            ui.Content.Add(CreateComponentSection(ui));
         }
 
         private static VisualElement CreateToolbar(MonitorUi ui)
@@ -853,6 +874,12 @@ namespace DxMessaging.Editor.Windows
             ScrollView list = new(ScrollViewMode.Vertical) { name = ListName };
             list.style.flexGrow = 1;
             list.style.flexShrink = 1;
+            // flex-basis 0, not "auto". A hundred buffered rows make the log's content height
+            // enormous, and shrinking is distributed in proportion to basis, so an auto basis lets
+            // the log claim nearly all of the space and starve the sections beside it -- the
+            // Component Diagnostics body ended up with a few pixels even on a 900x620 window.
+            // Sizing it from the space left over instead makes the log the flexible one.
+            list.style.flexBasis = 0;
             list.style.minHeight = MessageListMinHeight;
             int selectedEntryIndex = ClampSelectedIndex(
                 ui.State.SelectedEntryIndex,
@@ -956,12 +983,21 @@ namespace DxMessaging.Editor.Windows
             row.Add(ui.TargetedChip);
             row.Add(ui.BroadcastChip);
 
-            Label hint = new(SnapshotModeHintText) { name = ModeHintLabelName };
+            // One line, always. Wrapping this sentence turns the chip row into a block several
+            // times its height on a narrow window, which takes the space the log needs; the full
+            // text stays on the badge tooltip and here.
+            Label hint = new(SnapshotModeHintText)
+            {
+                name = ModeHintLabelName,
+                tooltip = SnapshotModeHintText,
+            };
             hint.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             hint.style.marginBottom = 0;
             hint.style.marginLeft = 8;
             hint.style.flexShrink = 1;
-            hint.style.whiteSpace = WhiteSpace.Normal;
+            hint.style.whiteSpace = WhiteSpace.NoWrap;
+            hint.style.overflow = Overflow.Hidden;
+            hint.style.textOverflow = TextOverflow.Ellipsis;
             row.Add(hint);
 
             UpdateRouteKindChipText(ui);
@@ -1140,11 +1176,17 @@ namespace DxMessaging.Editor.Windows
                 name = BreakdownFoldoutName,
                 text =
                     $"Breakdown - {FormatCount(typeLanes.Length, "message type")}, {FormatCount(contextLanes.Length, "context")}",
-                value = false,
+                value = ui.BreakdownExpanded,
             };
             breakdown.tooltip =
                 "Group the visible messages by type and by context. Every entry is a filter: click one to isolate it.";
-            breakdown.style.flexShrink = 0;
+            breakdown.RegisterValueChangedCallback(changed =>
+                ui.BreakdownExpanded = changed.newValue
+            );
+            // Expanded, this is the tallest thing in the section, so it has to give space back like
+            // everything else; its lane lists scroll, so shrinking costs nothing unreachable.
+            breakdown.style.flexShrink = 1;
+            breakdown.style.minHeight = FoldoutHeaderMinHeight;
             breakdown.style.marginBottom = 6;
 
             int typeLaneEntries = typeLanes.Sum(lane => lane.EntryCount);
@@ -1186,6 +1228,8 @@ namespace DxMessaging.Editor.Windows
                 lanesRoot,
                 DxMessagingEditorPalette.BorderPanel
             );
+            lanesRoot.style.flexShrink = 1;
+            lanesRoot.style.minHeight = 0;
             lanesRoot.style.marginBottom = 6;
             lanesRoot.style.paddingTop = 6;
             lanesRoot.style.paddingRight = 6;
@@ -1204,6 +1248,8 @@ namespace DxMessaging.Editor.Windows
 
             ScrollView laneRows = new(ScrollViewMode.Vertical) { name = scrollViewName };
             laneRows.style.maxHeight = LanePillScrollMaxHeight;
+            laneRows.style.flexShrink = 1;
+            laneRows.style.minHeight = 0;
             laneRows.style.marginTop = 4;
             laneRows.contentContainer.style.flexDirection = FlexDirection.Row;
             laneRows.contentContainer.style.flexWrap = Wrap.Wrap;
@@ -1591,14 +1637,15 @@ namespace DxMessaging.Editor.Windows
             refresh.style.flexShrink = 0;
             filterRow.Add(refresh);
 
-            Button export = new(() =>
-                ui.OnCopyExport?.Invoke(CreateExportText(ui.Snapshot, ui.FilteredEntries()))
-            )
+            Button export = new()
             {
                 name = ExportButtonName,
                 text = "Copy JSON",
                 tooltip = "Copy the currently visible entries to the clipboard as JSON.",
             };
+            export.RegisterCallback<ClickEvent>(_ =>
+                ui.OnCopyExport?.Invoke(CreateExportText(ui.Snapshot, ui.FilteredEntries()))
+            );
             export.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             export.style.flexShrink = 0;
             ui.Export = export;
@@ -1964,23 +2011,33 @@ namespace DxMessaging.Editor.Windows
         /// surface rather than something a reader watches, and issue #344 reported it as one of the
         /// blocks that pushed the log off the bottom of the window.
         /// </summary>
-        private static VisualElement CreateComponentSection(
-            IReadOnlyList<ComponentMonitorEntry> componentEntries
-        )
+        private static VisualElement CreateComponentSection(MonitorUi ui)
         {
             Foldout foldout = new()
             {
                 name = ComponentFoldoutName,
-                text = $"Component Diagnostics ({componentEntries.Count})",
-                value = false,
+                text = $"Component Diagnostics ({ui.Components.Count})",
+                value = ui.ComponentsExpanded,
             };
             foldout.tooltip =
                 "Registration state of every MessagingComponent in the loaded scenes.";
+            foldout.RegisterValueChangedCallback(changed =>
+                ui.ComponentsExpanded = changed.newValue
+            );
+            // Held at its natural size: the log section beside it is the one that gives way, and
+            // every part of that section either scrolls or has a floor, so it can. Squeezing the
+            // disclosure the reader just opened instead would be the wrong way round.
             foldout.style.flexShrink = 0;
+            foldout.style.minHeight = FoldoutHeaderMinHeight;
             foldout.style.paddingLeft = 8;
             foldout.style.paddingRight = 8;
-            foldout.style.paddingBottom = 6;
-            foldout.Add(CreateComponentPanel(componentEntries));
+            foldout.contentContainer.style.flexShrink = 1;
+            foldout.contentContainer.style.minHeight = 0;
+            // Expanded on a window with no room for it, the body is clipped to whatever the section
+            // was given rather than drawn past the bottom edge. The rows inside stay reachable
+            // because they live in their own scroll view, which shrinks with it.
+            foldout.contentContainer.style.overflow = Overflow.Hidden;
+            foldout.Add(CreateComponentPanel(ui.Components));
             return foldout;
         }
 
@@ -1990,6 +2047,9 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement panel = new() { name = ComponentPanelName };
             DxMessagingEditorTheme.ApplyCompleteBorder(panel, DxMessagingEditorPalette.BorderPanel);
+            panel.style.flexShrink = 1;
+            panel.style.minHeight = 0;
+            panel.style.overflow = Overflow.Hidden;
             panel.style.paddingTop = 8;
             panel.style.paddingRight = 8;
             panel.style.paddingBottom = 8;
@@ -2013,6 +2073,8 @@ namespace DxMessaging.Editor.Windows
                 name = ComponentScrollViewName,
             };
             componentScroll.style.maxHeight = 180;
+            componentScroll.style.flexShrink = 1;
+            componentScroll.style.minHeight = 0;
             componentScroll.style.marginTop = 2;
             panel.Add(componentScroll);
 

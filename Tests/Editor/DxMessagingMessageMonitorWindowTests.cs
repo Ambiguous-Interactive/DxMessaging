@@ -420,13 +420,24 @@ namespace DxMessaging.Tests.Editor
         /// </summary>
         // 420x320 is the window's own minimum size. The smaller case is deliberately below it, as
         // headroom: the editor versions this package supports do not all give the same chrome the
-        // same height, and 2021.3 overflowed at the minimum while 6000.x had room to spare.
-        [TestCase(360, 260)]
-        [TestCase(420, 320)]
-        [TestCase(420, 420)]
-        [TestCase(520, 620)]
-        [TestCase(900, 620)]
-        public void BuildMonitorUiKeepsNonScrollingSectionsInsideTheWindow(int width, int height)
+        // same height, and 2021.3 overflowed at the minimum while 6000.x had room to spare. Each
+        // size runs with the disclosures closed and open, because an expanded Breakdown is the
+        // tallest thing the section ever holds.
+        // 360x260 runs collapsed only: below the supported minimum, with every disclosure open at
+        // once, there is genuinely less room than the sections' own floors add up to. That is a
+        // limit of the window size, not a layout defect.
+        [TestCase(360, 260, false)]
+        [TestCase(420, 320, false)]
+        [TestCase(420, 320, true)]
+        [TestCase(420, 420, true)]
+        [TestCase(520, 620, true)]
+        [TestCase(900, 620, false)]
+        [TestCase(900, 620, true)]
+        public void BuildMonitorUiKeepsNonScrollingSectionsInsideTheWindow(
+            int width,
+            int height,
+            bool expandDisclosures
+        )
         {
             MessageMonitorEntry[] entries = Enumerable
                 .Range(0, 24)
@@ -459,6 +470,14 @@ namespace DxMessaging.Tests.Editor
                     onCopyExport: _ => { },
                     componentEntries: Array.Empty<ComponentMonitorEntry>()
                 );
+
+                if (expandDisclosures)
+                {
+                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName).value =
+                        true;
+                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName).value =
+                        true;
+                }
 
                 Assert.That(root.panel, Is.Not.Null, "A shown window must produce a panel.");
                 EditorSurfaceCapture.InvokeInheritedPanelMethod(
@@ -738,6 +757,114 @@ namespace DxMessaging.Tests.Editor
                 SendClick(refresh);
 
                 Assert.That(refreshCount, Is.EqualTo(1));
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        /// <summary>
+        /// A filter or chip change rebuilds the content, and a rebuilt <see cref="Foldout"/> starts
+        /// closed. Opening Breakdown and then typing must not snap it shut, for the same reason a
+        /// selection change does not rebuild the log: the reader put it there.
+        /// </summary>
+        [Test]
+        public void BuildMonitorUiKeepsDisclosuresOpenAcrossAFilterChange()
+        {
+            MessageMonitorEntry older = CreateEntry(new OlderMessage(), null);
+            MessageMonitorEntry newer = CreateEntry(new NewerMessage(), new InstanceId(123));
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { newer, older }
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+
+            try
+            {
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    snapshot,
+                    MessageMonitorViewState.Default,
+                    onCopyExport: _ => { },
+                    componentEntries: Array.Empty<ComponentMonitorEntry>()
+                );
+
+                root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName).value = true;
+                root.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName).value = true;
+
+                root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName).value = "Newer";
+
+                Assert.That(
+                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName).value,
+                    Is.True,
+                    "Typing in the filter must not close a disclosure the reader opened."
+                );
+                Assert.That(
+                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.ComponentFoldoutName).value,
+                    Is.True
+                );
+
+                // Untargeted, not Targeted: the filter above already leaves only the targeted
+                // entry, and hiding it would render the no-matches state, which has no Breakdown.
+                root.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).value = false;
+
+                Assert.That(
+                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName),
+                    Is.Not.Null,
+                    "Hiding a route kind with no visible rows must not empty the log."
+                );
+                Assert.That(
+                    root.Q<Foldout>(DxMessagingMessageMonitorWindow.BreakdownFoldoutName).value,
+                    Is.True,
+                    "Toggling a taxonomy chip must not close a disclosure either."
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        /// <summary>
+        /// Copy JSON has to answer a synthesized <see cref="ClickEvent"/> for the same reason
+        /// Refresh does: <c>Button(Action)</c> installs a <c>Clickable</c> that only sees pointer
+        /// down/up.
+        /// </summary>
+        [Test]
+        public void BuildMonitorUiExportButtonAnswersAClick()
+        {
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { CreateEntry(new OlderMessage(), null) }
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            string copied = null;
+
+            try
+            {
+                EditorWindowTestUtility.ShowWindow(window);
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    window.rootVisualElement,
+                    snapshot,
+                    MessageMonitorViewState.Default,
+                    onCopyExport: exportText => copied = exportText
+                );
+
+                Button export = window.rootVisualElement.Q<Button>(
+                    DxMessagingMessageMonitorWindow.ExportButtonName
+                );
+                Assert.That(export, Is.Not.Null);
+                Assert.That(export.enabledSelf, Is.True);
+
+                SendClick(export);
+
+                Assert.That(copied, Is.Not.Null);
+                Assert.That(copied, Does.Contain(nameof(OlderMessage)));
             }
             finally
             {
