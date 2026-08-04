@@ -418,6 +418,10 @@ namespace DxMessaging.Tests.Editor
         /// than argued: lay the real window out at the smallest size a user can drag it to and
         /// assert that nothing except the log's own scrolled content ends up past an edge.
         /// </summary>
+        // 420x320 is the window's own minimum size. The smaller case is deliberately below it, as
+        // headroom: the editor versions this package supports do not all give the same chrome the
+        // same height, and 2021.3 overflowed at the minimum while 6000.x had room to spare.
+        [TestCase(360, 260)]
         [TestCase(420, 320)]
         [TestCase(420, 420)]
         [TestCase(520, 620)]

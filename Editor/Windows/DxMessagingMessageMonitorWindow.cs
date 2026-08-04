@@ -114,12 +114,13 @@ namespace DxMessaging.Editor.Windows
         /// minimum.
         /// </summary>
         /// <remarks>
-        /// The log is the section that gives space back, because it scrolls: shrinking it costs a
-        /// reader nothing they cannot scroll to. It stops at two rows so it still reads as a log.
-        /// The detail pane keeps its natural height until it would take more than
+        /// The log is the section that gives space back first, because it scrolls: shrinking it
+        /// costs a reader nothing they cannot scroll to. It stops at two rows so it still reads as
+        /// a log. The detail pane keeps its natural height until it would take more than
         /// <see cref="DetailsMaxHeightPercent"/> of the section, at which point it is capped and its
-        /// own body scrolls. Issue #344 reported the previous arrangement -- where nothing gave way
-        /// -- as content rendered off screen.
+        /// own body scrolls; below the log's floor it keeps shrinking rather than leaving the
+        /// window, down to its own header. Issue #344 reported the previous arrangement -- where
+        /// nothing gave way -- as content rendered off screen.
         /// </remarks>
         private const int MessageListMinHeight = 56;
 
@@ -647,7 +648,11 @@ namespace DxMessaging.Editor.Windows
             IReadOnlyList<MessageMonitorEntry> filteredEntries = ui.FilteredEntries();
             if (ui.Status != null)
             {
-                ui.Status.text = CreateStatusText(ui.Snapshot, filteredEntries.Count);
+                string statusText = CreateStatusText(ui.Snapshot, filteredEntries.Count);
+                ui.Status.text = statusText;
+                // The line ellipsizes on a narrow window, so the tooltip is where the counts stay
+                // readable.
+                ui.Status.tooltip = statusText;
             }
             SetExportButtonEnabled(ui, filteredEntries.Count);
             UpdateActiveFilterSummary(
@@ -681,10 +686,17 @@ namespace DxMessaging.Editor.Windows
             toolbar.style.flexDirection = FlexDirection.Row;
             toolbar.style.alignItems = Align.Center;
 
+            // Every element in this row shrinks except the mode badge, which is the one thing that
+            // must stay legible at any width. UI Toolkit defaults flex-shrink to 0, so a row of
+            // defaults pushes its last child out of a narrow window instead of tightening.
             Label title = new(Title);
             title.style.fontSize = 16;
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.marginRight = 8;
+            title.style.flexShrink = 1;
+            title.style.overflow = Overflow.Hidden;
+            title.style.textOverflow = TextOverflow.Ellipsis;
+            title.style.whiteSpace = WhiteSpace.NoWrap;
             toolbar.Add(title);
 
             Label mode = new(SnapshotModeBadgeText)
@@ -694,15 +706,19 @@ namespace DxMessaging.Editor.Windows
             };
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName);
+            mode.style.flexShrink = 0;
             toolbar.Add(mode);
 
-            Label status = new(
-                CreateStatusText(ui.Snapshot, FilterEntries(ui.Snapshot.Entries, ui.State).Count)
-            )
-            {
-                name = StatusLabelName,
-            };
+            string statusText = CreateStatusText(
+                ui.Snapshot,
+                FilterEntries(ui.Snapshot.Entries, ui.State).Count
+            );
+            Label status = new(statusText) { name = StatusLabelName, tooltip = statusText };
             status.style.flexGrow = 1;
+            status.style.flexShrink = 1;
+            status.style.overflow = Overflow.Hidden;
+            status.style.textOverflow = TextOverflow.Ellipsis;
+            status.style.whiteSpace = WhiteSpace.NoWrap;
             status.style.unityTextAlign = TextAnchor.MiddleRight;
             ui.Status = status;
             toolbar.Add(status);
@@ -863,7 +879,10 @@ namespace DxMessaging.Editor.Windows
             ui.List = list;
 
             VisualElement detailsSlot = new();
-            detailsSlot.style.flexShrink = 0;
+            // Capped AND shrinkable, with no floor of its own. The cap keeps the pane from taking
+            // the window on a tall window; the shrink keeps it inside one whose chrome is taller
+            // than expected, which is how 2021.3 differs from 6000.x for the same window size.
+            detailsSlot.style.flexShrink = 1;
             detailsSlot.style.maxHeight = Length.Percent(DetailsMaxHeightPercent);
             detailsSlot.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex]));
             messageSection.Add(detailsSlot);
