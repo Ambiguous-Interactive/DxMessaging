@@ -170,7 +170,18 @@
 .dx-theme.dx-light .dx-detail { background-color: #efeadf; }
 
 .dx-detail__head { flex-direction: row; align-items: center; margin-bottom: 10px; }
-.dx-detail__title { -unity-font-style: bold; font-size: 16px; color: var(--dx-text); margin-left: 9px; }
+.dx-detail__title {
+    -unity-font-style: bold;
+    font-size: 16px;
+    color: var(--dx-text);
+    margin-left: 9px;
+    /* A fully-qualified message type is long and the header is one row: shrink and ellipsize
+       rather than pushing the row past the edge of the panel. */
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .dx-detail__frame { color: var(--dx-text-muted); font-size: 10px; }
 .dx-detail__link {
     background-color: var(--dx-tool-field);

@@ -385,7 +385,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void BuildMonitorUiKeepsSecondarySectionsCollapsedAndTheLogFlexible()
+        public void BuildMonitorUiKeepsSecondarySectionsCollapsed()
         {
             MessageMonitorSnapshot snapshot = new(
                 diagnosticsEnabled: true,
@@ -411,23 +411,119 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(components, Is.Not.Null);
             Assert.That(components.value, Is.False);
+        }
 
-            ScrollView list = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
-            Assert.That(list, Is.Not.Null);
-            Assert.That(list.style.flexGrow.value, Is.EqualTo(1f));
-            VisualElement details = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.DetailsPaneName
+        /// <summary>
+        /// Issue #344's "there is stuff rendered off screen" in its literal form, measured rather
+        /// than argued: lay the real window out at the smallest size a user can drag it to and
+        /// assert that nothing except the log's own scrolled content ends up past an edge.
+        /// </summary>
+        [TestCase(420, 320)]
+        [TestCase(420, 420)]
+        [TestCase(520, 620)]
+        [TestCase(900, 620)]
+        public void BuildMonitorUiKeepsNonScrollingSectionsInsideTheWindow(int width, int height)
+        {
+            MessageMonitorEntry[] entries = Enumerable
+                .Range(0, 24)
+                .Select(index => new MessageMonitorEntry(
+                    $"WallstopStudios.DxMessagingSamples.Diagnostics.LongEnoughMessageName{index:00}",
+                    $"Context: Some Reasonably Long Scene Object Name {index:00} (9748{index:00})",
+                    "UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)"
+                ))
+                .ToArray();
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 100,
+                entries: entries
             );
-            Assert.That(details, Is.Not.Null);
-            Assert.That(
-                details.style.flexShrink.value,
-                Is.EqualTo(0f),
-                "The details pane must hold its height so the log shrinks instead of the pane leaving the window."
-            );
-            VisualElement content = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.ContentContainerName
-            );
-            Assert.That(content.style.minHeight.value.value, Is.EqualTo(0f));
+            EditorWindow window = CreateTrackedEditorWindow();
+
+            try
+            {
+                window.minSize = new Vector2(width, height);
+                window.position = new Rect(0f, 0f, width, height);
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                root.style.width = width;
+                root.style.height = height;
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    snapshot,
+                    MessageMonitorViewState.Default,
+                    onRefresh: () => { },
+                    onCopyExport: _ => { },
+                    componentEntries: Array.Empty<ComponentMonitorEntry>()
+                );
+
+                Assert.That(root.panel, Is.Not.Null, "A shown window must produce a panel.");
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
+
+                ScrollView log = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
+                Assert.That(log, Is.Not.Null);
+                Rect bounds = root.worldBound;
+                List<string> escaped = new();
+                foreach (VisualElement element in root.Query<VisualElement>().ToList())
+                {
+                    Rect elementBounds = element.worldBound;
+                    if (elementBounds.width <= 0f || elementBounds.height <= 0f)
+                    {
+                        continue;
+                    }
+                    if (
+                        elementBounds.yMax <= bounds.yMax + 0.5f
+                        && elementBounds.xMax <= bounds.xMax + 0.5f
+                    )
+                    {
+                        continue;
+                    }
+                    if (IsScrolledContent(element, root))
+                    {
+                        // Content below a scroll viewport is what that scroll view exists to reach.
+                        continue;
+                    }
+
+                    escaped.Add(
+                        $"{(string.IsNullOrEmpty(element.name) ? "<unnamed>" : element.name)} [{string.Join(" ", element.GetClasses())}] {elementBounds}"
+                    );
+                }
+
+                Assert.That(
+                    escaped,
+                    Is.Empty,
+                    $"At {width}x{height} these elements render outside the window: "
+                        + string.Join("; ", escaped)
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        /// <summary>
+        /// True when <paramref name="element"/> sits inside some scroll view's content, so being
+        /// past the window edge means "scroll to reach it" rather than "rendered off screen".
+        /// </summary>
+        private static bool IsScrolledContent(VisualElement element, VisualElement root)
+        {
+            for (
+                VisualElement current = element.parent;
+                current != null && current != root;
+                current = current.parent
+            )
+            {
+                if (current is ScrollView)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         [Test]
@@ -517,6 +613,127 @@ namespace DxMessaging.Tests.Editor
                         .Count,
                     Is.EqualTo(3)
                 );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        /// <summary>
+        /// Selecting a row must not rebuild the log. A rebuilt <see cref="ScrollView"/> starts at
+        /// the top, so a reader who had scrolled into older rows would be thrown back to the newest
+        /// one by the very click they used to look at an older one.
+        /// </summary>
+        [Test]
+        public void BuildMonitorUiSelectingARowKeepsTheLogAndItsScrollPosition()
+        {
+            MessageMonitorEntry[] entries = Enumerable
+                .Range(0, 12)
+                .Select(index => new MessageMonitorEntry(
+                    $"Message{index:00}",
+                    $"Context: {index:00}",
+                    string.Empty
+                ))
+                .ToArray();
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 32,
+                entries: entries
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+
+            try
+            {
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    snapshot,
+                    MessageMonitorViewState.Default,
+                    onCopyExport: _ => { }
+                );
+
+                ScrollView list = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
+                Assert.That(list, Is.Not.Null);
+                List<VisualElement> rows = root.Query<VisualElement>(
+                        className: DxMessagingMessageMonitorWindow.RowClassName
+                    )
+                    .ToList();
+                Assert.That(rows.Count, Is.EqualTo(12));
+
+                SendClick(rows[5]);
+
+                Assert.That(
+                    root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
+                    Is.SameAs(list),
+                    "Selecting a row must reuse the log, not rebuild it."
+                );
+                Assert.That(
+                    root.Query<VisualElement>(
+                            className: DxMessagingMessageMonitorWindow.RowClassName
+                        )
+                        .ToList()[5],
+                    Is.SameAs(rows[5])
+                );
+                Assert.That(
+                    rows[5].style.backgroundColor.value,
+                    Is.EqualTo(DxMessagingEditorPalette.SelectedWash)
+                );
+                Assert.That(
+                    rows[0].style.backgroundColor.keyword,
+                    Is.EqualTo(StyleKeyword.Null),
+                    "The previous selection's wash must be cleared, not repainted."
+                );
+                Assert.That(
+                    root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName)
+                        .Q<Label>(DxMessagingMessageMonitorWindow.DetailsTypeLabelName)
+                        .text,
+                    Is.EqualTo("Message05")
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        /// <summary>
+        /// The Refresh button has to answer a synthesized <see cref="ClickEvent"/>, the event a real
+        /// click produces. A <c>Button(Action)</c> installs a <c>Clickable</c> that only answers
+        /// pointer down/up, which leaves the one control that re-reads the bus reachable only by a
+        /// human.
+        /// </summary>
+        [Test]
+        public void BuildMonitorUiRefreshButtonAnswersAClick()
+        {
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { CreateEntry(new OlderMessage(), null) }
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            int refreshCount = 0;
+
+            try
+            {
+                EditorWindowTestUtility.ShowWindow(window);
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    window.rootVisualElement,
+                    snapshot,
+                    MessageMonitorViewState.Default,
+                    onRefresh: () => refreshCount++
+                );
+
+                Button refresh = window.rootVisualElement.Q<Button>(
+                    DxMessagingMessageMonitorWindow.RefreshButtonName
+                );
+                Assert.That(refresh, Is.Not.Null);
+                Assert.That(refresh.enabledSelf, Is.True);
+
+                SendClick(refresh);
+
+                Assert.That(refreshCount, Is.EqualTo(1));
             }
             finally
             {

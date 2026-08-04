@@ -948,7 +948,11 @@ namespace DxMessaging.Editor.Windows
             Label badge = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind);
             DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(badge, routeKind);
             head.Add(badge);
-            Label title = new(row.Entry.MessageTypeName) { name = DetailTitleLabelName };
+            Label title = new(row.Entry.MessageTypeName)
+            {
+                name = DetailTitleLabelName,
+                tooltip = row.Entry.MessageTypeDisplayPath,
+            };
             title.AddToClassList(DxMessagingEditorTheme.DetailTitleClassName);
             head.Add(title);
             Label frame = new(CreateTraceRangeText(row)) { name = DetailFrameLabelName };

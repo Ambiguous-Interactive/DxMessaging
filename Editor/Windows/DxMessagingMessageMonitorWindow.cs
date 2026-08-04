@@ -110,11 +110,20 @@ namespace DxMessaging.Editor.Windows
             "Buffered bus history as of the last Refresh. One row per emission, newest first, nothing merged.";
 
         /// <summary>
-        /// Height the message list is never allowed to shrink below. Without a floor the details
-        /// pane and the component section push the list to zero and then off the bottom of the
-        /// window, which is what issue #344 reported as content rendered off screen.
+        /// How the log and the detail pane divide a window that can be dragged down to its 320 px
+        /// minimum.
         /// </summary>
-        private const int MessageListMinHeight = 120;
+        /// <remarks>
+        /// The log is the section that gives space back, because it scrolls: shrinking it costs a
+        /// reader nothing they cannot scroll to. It stops at two rows so it still reads as a log.
+        /// The detail pane keeps its natural height until it would take more than
+        /// <see cref="DetailsMaxHeightPercent"/> of the section, at which point it is capped and its
+        /// own body scrolls. Issue #344 reported the previous arrangement -- where nothing gave way
+        /// -- as content rendered off screen.
+        /// </remarks>
+        private const int MessageListMinHeight = 56;
+
+        private const int DetailsMaxHeightPercent = 45;
 
         private const int DetailsStackTraceMaxHeight = 140;
 
@@ -542,16 +551,15 @@ namespace DxMessaging.Editor.Windows
 
             internal Toggle BroadcastChip { get; set; }
 
+            /// <summary>The scrolling log, or null while the message section is an empty state.</summary>
+            internal ScrollView List { get; set; }
+
+            /// <summary>Holds the detail pane so a new selection can replace only that.</summary>
+            internal VisualElement DetailsSlot { get; set; }
+
             internal Action<MessageMonitorViewState> OnViewStateChanged { get; set; }
 
             internal Action<string> OnCopyExport { get; set; }
-
-            /// <summary>
-            /// True while a control is being synchronized to <see cref="State"/>, so the value
-            /// change it raises does not re-enter <see cref="ApplyState"/> with the state it is
-            /// already applying.
-            /// </summary>
-            internal bool Syncing { get; set; }
 
             internal IReadOnlyList<MessageMonitorEntry> FilteredEntries()
             {
@@ -561,37 +569,73 @@ namespace DxMessaging.Editor.Windows
 
         /// <summary>
         /// Adopts <paramref name="next"/> as what the Monitor shows: syncs the controls that do not
-        /// already agree with it, re-renders the content, and tells the host.
+        /// already agree with it, re-renders what changed, and tells the host.
         /// </summary>
+        /// <remarks>
+        /// A selection change re-renders only the selected row's wash and the detail pane. Rebuilding
+        /// the whole log for it would throw a reader who had scrolled into older rows back to the top
+        /// on the very click they used to look at one.
+        /// </remarks>
         private static void ApplyState(MonitorUi ui, MessageMonitorViewState next)
         {
-            if (ui.Syncing)
+            bool sameRowSet =
+                string.Equals(ui.State.FilterText, next.FilterText, StringComparison.Ordinal)
+                && ui.State.ShowUntargeted == next.ShowUntargeted
+                && ui.State.ShowTargeted == next.ShowTargeted
+                && ui.State.ShowBroadcast == next.ShowBroadcast;
+
+            ui.State = next;
+            if (
+                ui.Filter != null
+                && !string.Equals(ui.Filter.value, next.FilterText, StringComparison.Ordinal)
+            )
             {
+                ui.Filter.SetValueWithoutNotify(next.FilterText);
+            }
+            ui.UntargetedChip?.SetValueWithoutNotify(next.ShowUntargeted);
+            ui.TargetedChip?.SetValueWithoutNotify(next.ShowTargeted);
+            ui.BroadcastChip?.SetValueWithoutNotify(next.ShowBroadcast);
+
+            if (sameRowSet && ui.List != null)
+            {
+                RenderSelection(ui);
+            }
+            else
+            {
+                RenderContent(ui);
+            }
+            ui.OnViewStateChanged?.Invoke(next);
+        }
+
+        /// <summary>
+        /// Moves the selection within the log the reader is already looking at: repaints the row
+        /// washes and swaps the detail pane, leaving the list and its scroll position alone.
+        /// </summary>
+        private static void RenderSelection(MonitorUi ui)
+        {
+            IReadOnlyList<MessageMonitorEntry> rows = ui.FilteredEntries();
+            if (rows.Count == 0)
+            {
+                RenderContent(ui);
                 return;
             }
 
-            ui.State = next;
-            ui.Syncing = true;
-            try
+            int selectedEntryIndex = ClampSelectedIndex(ui.State.SelectedEntryIndex, rows.Count);
+            for (int index = 0; index < ui.List.childCount; index++)
             {
-                if (
-                    ui.Filter != null
-                    && !string.Equals(ui.Filter.value, next.FilterText, StringComparison.Ordinal)
-                )
+                VisualElement row = ui.List[index];
+                if (index == selectedEntryIndex)
                 {
-                    ui.Filter.SetValueWithoutNotify(next.FilterText);
+                    row.style.backgroundColor = DxMessagingEditorPalette.SelectedWash;
                 }
-                ui.UntargetedChip?.SetValueWithoutNotify(next.ShowUntargeted);
-                ui.TargetedChip?.SetValueWithoutNotify(next.ShowTargeted);
-                ui.BroadcastChip?.SetValueWithoutNotify(next.ShowBroadcast);
-            }
-            finally
-            {
-                ui.Syncing = false;
+                else
+                {
+                    row.style.backgroundColor = StyleKeyword.Null;
+                }
             }
 
-            RenderContent(ui);
-            ui.OnViewStateChanged?.Invoke(next);
+            ui.DetailsSlot.Clear();
+            ui.DetailsSlot.Add(CreateDetailsPane(rows[selectedEntryIndex]));
         }
 
         /// <summary>
@@ -619,6 +663,8 @@ namespace DxMessaging.Editor.Windows
             }
 
             ui.Content.Clear();
+            ui.List = null;
+            ui.DetailsSlot = null;
             VisualElement messageSection = new() { name = MessageSectionName };
             messageSection.style.flexGrow = 1;
             messageSection.style.minHeight = 0;
@@ -795,6 +841,7 @@ namespace DxMessaging.Editor.Windows
 
             ScrollView list = new(ScrollViewMode.Vertical) { name = ListName };
             list.style.flexGrow = 1;
+            list.style.flexShrink = 1;
             list.style.minHeight = MessageListMinHeight;
             int selectedEntryIndex = ClampSelectedIndex(
                 ui.State.SelectedEntryIndex,
@@ -813,7 +860,14 @@ namespace DxMessaging.Editor.Windows
                 );
             }
             messageSection.Add(list);
-            messageSection.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex]));
+            ui.List = list;
+
+            VisualElement detailsSlot = new();
+            detailsSlot.style.flexShrink = 0;
+            detailsSlot.style.maxHeight = Length.Percent(DetailsMaxHeightPercent);
+            detailsSlot.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex]));
+            messageSection.Add(detailsSlot);
+            ui.DetailsSlot = detailsSlot;
         }
 
         private static VisualElement CreateListHeader()
@@ -1079,41 +1133,32 @@ namespace DxMessaging.Editor.Windows
             breakdown.style.flexShrink = 0;
             breakdown.style.marginBottom = 6;
 
+            int typeLaneEntries = typeLanes.Sum(lane => lane.EntryCount);
+            int contextLaneEntries = contextLanes.Sum(lane => lane.EntryCount);
             breakdown.Add(
                 CreateLanePanel(
-                    ui,
                     VisibleMessageTypeLanesName,
                     VisibleMessageTypeLanesSummaryLabelName,
                     VisibleMessageTypeLaneScrollViewName,
                     "Message types",
                     CreateVisibleMessageTypeLanesSummaryText(typeLanes),
-                    typeLanes.Select(lane =>
-                        CreateMessageTypeLanePill(
-                            ui,
-                            lane,
-                            typeLanes.Sum(other => other.EntryCount)
-                        )
-                    )
+                    typeLanes.Select(lane => CreateMessageTypeLanePill(ui, lane, typeLaneEntries))
                 )
             );
             breakdown.Add(
                 CreateLanePanel(
-                    ui,
                     VisibleContextLanesName,
                     VisibleContextLanesSummaryLabelName,
                     VisibleContextLaneScrollViewName,
                     "Contexts",
                     CreateVisibleContextLanesSummaryText(contextLanes),
-                    contextLanes.Select(lane =>
-                        CreateContextLanePill(ui, lane, contextLanes.Sum(other => other.EntryCount))
-                    )
+                    contextLanes.Select(lane => CreateContextLanePill(ui, lane, contextLaneEntries))
                 )
             );
             return breakdown;
         }
 
         private static VisualElement CreateLanePanel(
-            MonitorUi ui,
             string panelName,
             string summaryLabelName,
             string scrollViewName,
@@ -1516,12 +1561,16 @@ namespace DxMessaging.Editor.Windows
             ui.Filter = filter;
             filterRow.Add(filter);
 
-            Button refresh = new(() => onRefresh?.Invoke())
+            // Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
+            // same as the rest of this package's editor UI: Button(Action) installs a Clickable that
+            // only answers pointer down/up, so neither a test nor a script can drive it.
+            Button refresh = new()
             {
                 name = RefreshButtonName,
                 text = "Refresh",
                 tooltip = "Re-read the bus emission buffer. Nothing arrives between refreshes.",
             };
+            refresh.RegisterCallback<ClickEvent>(_ => onRefresh?.Invoke());
             refresh.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             refresh.SetEnabled(onRefresh != null);
             refresh.style.marginRight = 6;
@@ -2025,7 +2074,11 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement details = new() { name = DetailsPaneName };
             details.AddToClassList(DxMessagingEditorTheme.DetailClassName);
-            details.style.flexShrink = 0;
+            // The pane gives space back when the window is short, and its body scrolls rather than
+            // spilling out of the bottom, so a 320 px window still shows the log above it.
+            details.style.flexShrink = 1;
+            details.style.minHeight = 0;
+            details.style.overflow = Overflow.Hidden;
             DxMessagingEditorTheme.ApplyCompleteBorder(
                 details,
                 DxMessagingEditorPalette.BorderPanel
@@ -2037,7 +2090,11 @@ namespace DxMessaging.Editor.Windows
             Label badge = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind);
             DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(badge, routeKind);
             head.Add(badge);
-            Label type = new(entry.MessageTypeName) { name = DetailsTypeLabelName };
+            Label type = new(entry.MessageTypeName)
+            {
+                name = DetailsTypeLabelName,
+                tooltip = entry.MessageTypeDisplayPath,
+            };
             type.AddToClassList(DxMessagingEditorTheme.DetailTitleClassName);
             head.Add(type);
             Label trace = new(CreateTraceText(entry));
@@ -2045,7 +2102,14 @@ namespace DxMessaging.Editor.Windows
             trace.style.flexGrow = 1;
             trace.style.unityTextAlign = TextAnchor.MiddleRight;
             head.Add(trace);
+            head.style.flexShrink = 0;
             details.Add(head);
+
+            ScrollView body = new(ScrollViewMode.Vertical);
+            body.style.flexGrow = 1;
+            body.style.flexShrink = 1;
+            body.style.minHeight = 0;
+            details.Add(body);
 
             VisualElement card = new();
             card.AddToClassList(DxMessagingEditorTheme.CardClassName);
@@ -2054,7 +2118,7 @@ namespace DxMessaging.Editor.Windows
             card.Add(cardLabel);
             card.Add(CreateKeyValue("Type", entry.MessageTypeDisplayPath));
             card.Add(CreateKeyValue("Context", entry.ContextText, DetailsContextLabelName));
-            details.Add(card);
+            body.Add(card);
 
             bool captured = !string.IsNullOrWhiteSpace(entry.StackTrace);
             Foldout stackFoldout = new()
@@ -2075,7 +2139,7 @@ namespace DxMessaging.Editor.Windows
             stack.style.whiteSpace = WhiteSpace.Normal;
             stackScroll.Add(stack);
             stackFoldout.Add(stackScroll);
-            details.Add(stackFoldout);
+            body.Add(stackFoldout);
 
             return details;
         }
@@ -2191,6 +2255,7 @@ namespace DxMessaging.Editor.Windows
     {
         internal static MessageMonitorViewState Default { get; } = new();
 
+        private readonly string _filterText;
         private readonly bool _hideUntargeted;
         private readonly bool _hideTargeted;
         private readonly bool _hideBroadcast;
@@ -2203,14 +2268,19 @@ namespace DxMessaging.Editor.Windows
             bool showBroadcast = true
         )
         {
-            FilterText = filterText ?? string.Empty;
+            _filterText = filterText;
             SelectedEntryIndex = selectedEntryIndex;
             _hideUntargeted = !showUntargeted;
             _hideTargeted = !showTargeted;
             _hideBroadcast = !showBroadcast;
         }
 
-        internal string FilterText { get; }
+        /// <summary>
+        /// Never null, including on <c>default</c>. A struct's default value is reachable without
+        /// going through its constructor, so normalizing on read rather than on construction is
+        /// what makes <c>default</c> and <c>new(...)</c> compare equal.
+        /// </summary>
+        internal string FilterText => _filterText ?? string.Empty;
 
         internal int SelectedEntryIndex { get; }
 
