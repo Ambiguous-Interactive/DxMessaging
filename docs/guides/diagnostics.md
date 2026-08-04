@@ -99,15 +99,19 @@ says which one is showing:
   context merge into one row, and the `N` column counts them. Switch with the
   **Live** and **Snapshot** buttons.
 
-Each mode shows a fixed-height row per emission carrying the route kind, the
-message type, the context, and the dispatch id. Selecting a row fills the detail
-pane below the log; the stack trace lives there behind a disclosure that starts
-closed, so a long call stack never buries the log itself.
+Both modes show a fixed-height row per emission with the route kind, the message
+type and the context. Snapshot ends the row with the dispatch id; live ends it
+with the time the row was observed and the `N` count of emissions merged into it.
+Selecting a row fills the detail pane below the log; the stack trace lives there
+behind a disclosure that starts closed, so a long call stack never buries the log
+itself.
 
-Three taxonomy chips sit above the log, one per route kind. Each chip names its
-kind, carries how many matching entries it stands for, and is drawn in the color
-that marks that kind in every row, so the chips are both the color legend and the
-per-kind filter. Clicking one hides or shows its route kind.
+Three taxonomy chips, one per route kind, name their kind and are drawn in the
+color that marks it in every row, so the chips are both the color legend and the
+per-kind filter. Clicking one hides or shows its route kind. In snapshot mode
+they sit above the log and each carries how many matching entries it stands for;
+in live mode they sit in the toolbar without a count, because the log is still
+filling.
 
 The text filter keeps plain text matching and also supports complete
 whitespace-separated field facets backed by captured entry data: `type:`,
