@@ -1051,7 +1051,7 @@ namespace DxMessaging.Tests.Editor
             );
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
             Button messageSource = root.Query<Button>(
-                    name: DxMessagingFlowGraphWindow.SourceLinkButtonName
+                    name: DxMessagingEditorSourceLinks.SourceLinkButtonName
                 )
                 .ToList()
                 .SingleOrDefault(button =>
@@ -1059,10 +1059,10 @@ namespace DxMessaging.Tests.Editor
                 );
             if (messageSource == null)
             {
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
                 DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
                 messageSource = root.Query<Button>(
-                        name: DxMessagingFlowGraphWindow.SourceLinkButtonName
+                        name: DxMessagingEditorSourceLinks.SourceLinkButtonName
                     )
                     .ToList()
                     .SingleOrDefault(button =>
@@ -1088,8 +1088,8 @@ namespace DxMessaging.Tests.Editor
                 Is.Not.Null,
                 "The background source index should refresh the selected message with an exact source link."
             );
-            DxMessagingFlowGraphWindow.FlowGraphSourceLocation location =
-                (DxMessagingFlowGraphWindow.FlowGraphSourceLocation)messageSource.userData;
+            DxMessagingEditorSourceLinks.SourceLocation location =
+                (DxMessagingEditorSourceLinks.SourceLocation)messageSource.userData;
             Assert.That(
                 location.AssetPath,
                 Does.EndWith("Tests/Editor/DxMessagingFlowGraphWindowTests.cs"),
@@ -1107,7 +1107,7 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 evidence
-                    .Query<Button>(name: DxMessagingFlowGraphWindow.SourceLinkButtonName)
+                    .Query<Button>(name: DxMessagingEditorSourceLinks.SourceLinkButtonName)
                     .ToList()
                     .Any(button =>
                         button.text.StartsWith("Open call site", StringComparison.Ordinal)
@@ -1379,7 +1379,7 @@ namespace DxMessaging.Tests.Editor
                 "Source records should separate a compact symbol from its file and line."
             );
             Assert.That(
-                sourceRow.Q<Button>(name: DxMessagingFlowGraphWindow.SourceLinkButtonName),
+                sourceRow.Q<Button>(name: DxMessagingEditorSourceLinks.SourceLinkButtonName),
                 Is.Not.Null,
                 "A resolvable source record should keep its source action beside the compact identity."
             );
@@ -2271,7 +2271,7 @@ namespace DxMessaging.Tests.Editor
             );
 
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
-            DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+            DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
 
             List<VisualElement> messageTypeRows = root.Query<VisualElement>(
@@ -2280,7 +2280,7 @@ namespace DxMessaging.Tests.Editor
                 .ToList();
             List<Button> sourceLinks = messageTypeRows
                 .SelectMany(row =>
-                    row.Query<Button>(name: DxMessagingFlowGraphWindow.SourceLinkButtonName)
+                    row.Query<Button>(name: DxMessagingEditorSourceLinks.SourceLinkButtonName)
                         .ToList()
                 )
                 .ToList();
@@ -2483,16 +2483,16 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void SourceLocationParserExtractsUnityCallSitePathAndLine()
         {
-            bool parsed = DxMessagingFlowGraphWindow.TryParseSourceLocation(
+            bool parsed = DxMessagingEditorSourceLinks.TryParseSourceLocation(
                 "Game.Emit () (at Assets/Scripts/Game.cs:42)",
-                out DxMessagingFlowGraphWindow.FlowGraphSourceLocation location
+                out DxMessagingEditorSourceLinks.SourceLocation location
             );
 
             Assert.That(parsed, Is.True, "A standard Unity call site should be linkable.");
             Assert.That(location.AssetPath, Is.EqualTo("Assets/Scripts/Game.cs"));
             Assert.That(location.Line, Is.EqualTo(42));
             Assert.That(
-                DxMessagingFlowGraphWindow.TryParseSourceLocation(
+                DxMessagingEditorSourceLinks.TryParseSourceLocation(
                     "Game.Emit without a location",
                     out _
                 ),
@@ -2549,7 +2549,7 @@ namespace DxMessaging.Tests.Editor
                 );
                 DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
                 Button messageSource = root.Query<Button>(
-                        name: DxMessagingFlowGraphWindow.SourceLinkButtonName
+                        name: DxMessagingEditorSourceLinks.SourceLinkButtonName
                     )
                     .ToList()
                     .SingleOrDefault(button =>
@@ -2557,10 +2557,10 @@ namespace DxMessaging.Tests.Editor
                     );
                 if (messageSource == null)
                 {
-                    DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+                    DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
                     DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
                     messageSource = root.Query<Button>(
-                            name: DxMessagingFlowGraphWindow.SourceLinkButtonName
+                            name: DxMessagingEditorSourceLinks.SourceLinkButtonName
                         )
                         .ToList()
                         .SingleOrDefault(button =>
@@ -2573,8 +2573,8 @@ namespace DxMessaging.Tests.Editor
                     Is.Not.Null,
                     $"The background source index should resolve {messageTypeName}."
                 );
-                DxMessagingFlowGraphWindow.FlowGraphSourceLocation location =
-                    (DxMessagingFlowGraphWindow.FlowGraphSourceLocation)messageSource.userData;
+                DxMessagingEditorSourceLinks.SourceLocation location =
+                    (DxMessagingEditorSourceLinks.SourceLocation)messageSource.userData;
                 string declaration = File.ReadAllLines(Path.GetFullPath(location.AssetPath))[
                     location.Line - 1
                 ];
@@ -2602,7 +2602,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void MessageSourceResolverReadsAssemblyFilesOffTheEditorThread()
         {
-            DxMessagingFlowGraphWindow.ResetMessageSourceIndexesForTests();
+            DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             int editorThreadId = Thread.CurrentThread.ManagedThreadId;
             int readerThreadId = editorThreadId;
             using ManualResetEventSlim readerStarted = new(initialState: false);
@@ -2610,8 +2610,8 @@ namespace DxMessaging.Tests.Editor
             int indexChangedCount = 0;
             try
             {
-                DxMessagingFlowGraphWindow.MessageSourceIndexChanged += HandleIndexChanged;
-                DxMessagingFlowGraphWindow.MessageSourceFileReader = _ =>
+                DxMessagingEditorSourceLinks.MessageSourceIndexChanged += HandleIndexChanged;
+                DxMessagingEditorSourceLinks.MessageSourceFileReader = _ =>
                 {
                     readerThreadId = Thread.CurrentThread.ManagedThreadId;
                     readerStarted.Set();
@@ -2619,7 +2619,7 @@ namespace DxMessaging.Tests.Editor
                     return Array.Empty<string>();
                 };
 
-                bool resolved = DxMessagingFlowGraphWindow.TryResolveMessageSource(
+                bool resolved = DxMessagingEditorSourceLinks.TryResolveMessageSource(
                     typeof(FlowGraphMessage).FullName,
                     out _
                 );
@@ -2630,7 +2630,7 @@ namespace DxMessaging.Tests.Editor
                     "A cold source lookup should queue an index build instead of blocking for a result."
                 );
                 Assert.That(
-                    DxMessagingFlowGraphWindow.PendingMessageSourceIndexCount,
+                    DxMessagingEditorSourceLinks.PendingMessageSourceIndexCount,
                     Is.EqualTo(1),
                     "A cold lookup should share one background index build for its compilation assembly."
                 );
@@ -2646,9 +2646,9 @@ namespace DxMessaging.Tests.Editor
                 );
 
                 releaseReader.Set();
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
                 Assert.That(
-                    DxMessagingFlowGraphWindow.PendingMessageSourceIndexCount,
+                    DxMessagingEditorSourceLinks.PendingMessageSourceIndexCount,
                     Is.Zero,
                     "The background index should drain and leave no pending assembly work."
                 );
@@ -2661,9 +2661,9 @@ namespace DxMessaging.Tests.Editor
             finally
             {
                 releaseReader.Set();
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
-                DxMessagingFlowGraphWindow.MessageSourceIndexChanged -= HandleIndexChanged;
-                DxMessagingFlowGraphWindow.ResetMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.MessageSourceIndexChanged -= HandleIndexChanged;
+                DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             }
 
             void HandleIndexChanged()
@@ -2675,14 +2675,14 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CompletedMessageSourceIndexDrainsWhileAnotherAssemblyIsPending()
         {
-            DxMessagingFlowGraphWindow.ResetMessageSourceIndexesForTests();
+            DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             using ManualResetEventSlim gatedReaderStarted = new(initialState: false);
             using ManualResetEventSlim releaseGatedReader = new(initialState: false);
             int indexChangedCount = 0;
             try
             {
-                DxMessagingFlowGraphWindow.MessageSourceIndexChanged += HandleIndexChanged;
-                DxMessagingFlowGraphWindow.MessageSourceFileReader = sourceFile =>
+                DxMessagingEditorSourceLinks.MessageSourceIndexChanged += HandleIndexChanged;
+                DxMessagingEditorSourceLinks.MessageSourceFileReader = sourceFile =>
                 {
                     if (
                         sourceFile.EndsWith(
@@ -2698,14 +2698,14 @@ namespace DxMessaging.Tests.Editor
                 };
 
                 Assert.That(
-                    DxMessagingFlowGraphWindow.TryResolveMessageSource(
+                    DxMessagingEditorSourceLinks.TryResolveMessageSource(
                         typeof(GlobalStringMessage).FullName,
                         out _
                     ),
                     Is.False
                 );
                 Assert.That(
-                    DxMessagingFlowGraphWindow.TryResolveMessageSource(
+                    DxMessagingEditorSourceLinks.TryResolveMessageSource(
                         typeof(FlowGraphMessage).FullName,
                         out _
                     ),
@@ -2718,14 +2718,14 @@ namespace DxMessaging.Tests.Editor
                 );
                 Assert.That(
                     SpinWait.SpinUntil(
-                        () => DxMessagingFlowGraphWindow.CompletedMessageSourceIndexCount > 0,
+                        () => DxMessagingEditorSourceLinks.CompletedMessageSourceIndexCount > 0,
                         TimeSpan.FromSeconds(10)
                     ),
                     Is.True,
                     "The runtime assembly index should complete while the Editor-test index remains gated."
                 );
 
-                DxMessagingFlowGraphWindow.DrainMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.DrainMessageSourceIndexesForTests();
 
                 Assert.That(
                     indexChangedCount,
@@ -2733,21 +2733,21 @@ namespace DxMessaging.Tests.Editor
                     "A completed assembly must notify immediately instead of waiting behind another pending build."
                 );
                 Assert.That(
-                    DxMessagingFlowGraphWindow.PendingMessageSourceIndexCount,
+                    DxMessagingEditorSourceLinks.PendingMessageSourceIndexCount,
                     Is.EqualTo(1),
                     "Only the intentionally gated assembly should remain pending after the completed batch drains."
                 );
 
                 releaseGatedReader.Set();
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
                 Assert.That(indexChangedCount, Is.EqualTo(2));
             }
             finally
             {
                 releaseGatedReader.Set();
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
-                DxMessagingFlowGraphWindow.MessageSourceIndexChanged -= HandleIndexChanged;
-                DxMessagingFlowGraphWindow.ResetMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.MessageSourceIndexChanged -= HandleIndexChanged;
+                DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             }
 
             void HandleIndexChanged()
@@ -2759,12 +2759,12 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void MessageSourceResolverHonorsCapturedAssemblyIdentity()
         {
-            DxMessagingFlowGraphWindow.ResetMessageSourceIndexesForTests();
+            DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             try
             {
                 string typeName = typeof(FlowGraphMessage).FullName;
                 Assert.That(
-                    DxMessagingFlowGraphWindow.TryResolveMessageSource(
+                    DxMessagingEditorSourceLinks.TryResolveMessageSource(
                         $"{typeName} [Not.The.Message.Assembly]",
                         out _
                     ),
@@ -2772,25 +2772,25 @@ namespace DxMessaging.Tests.Editor
                     "An assembly-qualified capture must not resolve a same-named type from another assembly."
                 );
                 Assert.That(
-                    DxMessagingFlowGraphWindow.PendingMessageSourceIndexCount,
+                    DxMessagingEditorSourceLinks.PendingMessageSourceIndexCount,
                     Is.Zero,
                     "A missing captured assembly should not queue an unrelated assembly index."
                 );
 
                 string assemblyName = typeof(FlowGraphMessage).Assembly.GetName().Name;
                 Assert.That(
-                    DxMessagingFlowGraphWindow.TryResolveMessageSource(
+                    DxMessagingEditorSourceLinks.TryResolveMessageSource(
                         $"{typeName} [{assemblyName}]",
                         out _
                     ),
                     Is.False,
                     "The first lookup should queue the captured assembly index."
                 );
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
                 Assert.That(
-                    DxMessagingFlowGraphWindow.TryResolveMessageSource(
+                    DxMessagingEditorSourceLinks.TryResolveMessageSource(
                         $"{typeName} [{assemblyName}]",
-                        out DxMessagingFlowGraphWindow.FlowGraphSourceLocation location
+                        out DxMessagingEditorSourceLinks.SourceLocation location
                     ),
                     Is.True,
                     "The exact captured assembly should resolve after its background index completes."
@@ -2802,44 +2802,44 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
-                DxMessagingFlowGraphWindow.ResetMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             }
         }
 
         [Test]
         public void MessageSourceResolverRetriesTransientFileReadFailures()
         {
-            DxMessagingFlowGraphWindow.ResetMessageSourceIndexesForTests();
+            DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             try
             {
                 string typeName = typeof(FlowGraphMessage).FullName;
-                DxMessagingFlowGraphWindow.MessageSourceFileReader = _ =>
+                DxMessagingEditorSourceLinks.MessageSourceFileReader = _ =>
                     throw new IOException("Simulated transient source-file lock.");
 
                 Assert.That(
-                    DxMessagingFlowGraphWindow.TryResolveMessageSource(typeName, out _),
+                    DxMessagingEditorSourceLinks.TryResolveMessageSource(typeName, out _),
                     Is.False
                 );
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
 
-                DxMessagingFlowGraphWindow.MessageSourceFileReader = File.ReadAllLines;
-                DxMessagingFlowGraphWindow.AllowIncompleteMessageSourceIndexRetries();
+                DxMessagingEditorSourceLinks.MessageSourceFileReader = File.ReadAllLines;
+                DxMessagingEditorSourceLinks.AllowIncompleteMessageSourceIndexRetries();
                 Assert.That(
-                    DxMessagingFlowGraphWindow.TryResolveMessageSource(typeName, out _),
+                    DxMessagingEditorSourceLinks.TryResolveMessageSource(typeName, out _),
                     Is.False,
                     "The retry should remain asynchronous."
                 );
                 Assert.That(
-                    DxMessagingFlowGraphWindow.PendingMessageSourceIndexCount,
+                    DxMessagingEditorSourceLinks.PendingMessageSourceIndexCount,
                     Is.EqualTo(1),
                     "A refresh should retry an incomplete assembly index after a transient read failure."
                 );
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
                 Assert.That(
-                    DxMessagingFlowGraphWindow.TryResolveMessageSource(
+                    DxMessagingEditorSourceLinks.TryResolveMessageSource(
                         typeName,
-                        out DxMessagingFlowGraphWindow.FlowGraphSourceLocation location
+                        out DxMessagingEditorSourceLinks.SourceLocation location
                     ),
                     Is.True,
                     "A temporary read failure must not become a permanent negative source-link cache entry."
@@ -2848,8 +2848,8 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
-                DxMessagingFlowGraphWindow.ResetMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
+                DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             }
         }
 
@@ -2885,7 +2885,7 @@ namespace DxMessaging.Tests.Editor
             };
 
             Assert.That(
-                DxMessagingFlowGraphWindow.FindTypeDeclarationLine(
+                DxMessagingEditorSourceLinks.FindTypeDeclarationLine(
                     lines,
                     "Example.Messages",
                     new[] { "GenericMessage`1" }
@@ -2894,7 +2894,7 @@ namespace DxMessaging.Tests.Editor
                 "The scanner must select the live generic record declaration, not matching text inside a block comment or multiline verbatim string."
             );
             Assert.That(
-                DxMessagingFlowGraphWindow.FindTypeDeclarationLine(
+                DxMessagingEditorSourceLinks.FindTypeDeclarationLine(
                     lines,
                     "Example.Messages",
                     new[] { "SplitMessage`2" }
@@ -2903,7 +2903,7 @@ namespace DxMessaging.Tests.Editor
                 "The scanner must retain exact generic arity when a valid type parameter list spans lines."
             );
             Assert.That(
-                DxMessagingFlowGraphWindow.FindTypeDeclarationLine(
+                DxMessagingEditorSourceLinks.FindTypeDeclarationLine(
                     lines,
                     "Example.Messages",
                     new[] { "AttributedMessage`2" }
@@ -2912,7 +2912,7 @@ namespace DxMessaging.Tests.Editor
                 "The scanner must ignore nested generic commas inside parameter attributes and count the balanced outer list."
             );
             Assert.That(
-                DxMessagingFlowGraphWindow.FindTypeDeclarationLine(
+                DxMessagingEditorSourceLinks.FindTypeDeclarationLine(
                     lines,
                     "Example.Messages",
                     new[] { "AttributeExpressionMessage`2", "Nested" }
@@ -10429,10 +10429,10 @@ namespace DxMessaging.Tests.Editor
             );
             string firstSites = string.Join("\n", firstEdge.RecentEmissionSites);
             string secondSites = string.Join("\n", secondEdge.RecentEmissionSites);
-            string expectedFirstSite = DxMessagingFlowGraphWindow.CreateEmissionSite(
+            string expectedFirstSite = DxMessagingEditorSourceLinks.CreateEmissionSite(
                 firstDelivery.stackTrace
             );
-            string expectedSecondSite = DxMessagingFlowGraphWindow.CreateEmissionSite(
+            string expectedSecondSite = DxMessagingEditorSourceLinks.CreateEmissionSite(
                 secondDelivery.stackTrace
             );
             Assert.That(firstSites, Does.Contain(expectedFirstSite), firstSites);
