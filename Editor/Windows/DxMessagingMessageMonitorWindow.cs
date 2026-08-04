@@ -2024,10 +2024,11 @@ namespace DxMessaging.Editor.Windows
             foldout.RegisterValueChangedCallback(changed =>
                 ui.ComponentsExpanded = changed.newValue
             );
-            // Held at its natural size: the log section beside it is the one that gives way, and
-            // every part of that section either scrolls or has a floor, so it can. Squeezing the
-            // disclosure the reader just opened instead would be the wrong way round.
-            foldout.style.flexShrink = 0;
+            // Shrinks, with a floor at its own header. A zero-shrink item still claims its full
+            // preferred height, so a populated, expanded panel would push past the bottom of a short
+            // window no matter how much the log beside it gave up. The floor is what keeps the
+            // squeeze off the row a reader clicks, and the rows inside scroll.
+            foldout.style.flexShrink = 1;
             foldout.style.minHeight = FoldoutHeaderMinHeight;
             foldout.style.paddingLeft = 8;
             foldout.style.paddingRight = 8;

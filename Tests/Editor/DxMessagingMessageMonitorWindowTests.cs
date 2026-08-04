@@ -468,7 +468,10 @@ namespace DxMessaging.Tests.Editor
                     MessageMonitorViewState.Default,
                     onRefresh: () => { },
                     onCopyExport: _ => { },
-                    componentEntries: Array.Empty<ComponentMonitorEntry>()
+                    // A populated list, not an empty one: an expanded Component Diagnostics block
+                    // with real rows is the tallest this section ever gets, and an empty list would
+                    // never exercise the case it has to survive.
+                    componentEntries: CreateComponentEntries(12)
                 );
 
                 if (expandDisclosures)
@@ -532,6 +535,26 @@ namespace DxMessaging.Tests.Editor
         /// True when <paramref name="element"/> sits inside some scroll view's content, so being
         /// past the window edge means "scroll to reach it" rather than "rendered off screen".
         /// </summary>
+        private static ComponentMonitorEntry[] CreateComponentEntries(int count)
+        {
+            return Enumerable
+                .Range(0, count)
+                .Select(index => new ComponentMonitorEntry(
+                    $"Scene Root/Systems/Some Long Enough Object Name {index:00}",
+                    nameof(MessagingComponent),
+                    activeInHierarchy: index % 2 == 0,
+                    listenerCount: 3,
+                    enabledListenerCount: 2,
+                    diagnosticsListenerCount: 1,
+                    registrationCount: 7,
+                    callCount: 42,
+                    localEmissionCount: 5,
+                    providerStatusText: "Provider: global bus",
+                    warningText: index == 0 ? "Serialized provider missing" : string.Empty
+                ))
+                .ToArray();
+        }
+
         private static bool IsScrolledContent(VisualElement element, VisualElement root)
         {
             for (

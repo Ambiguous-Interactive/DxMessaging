@@ -1073,10 +1073,19 @@ namespace DxMessaging.Editor.Windows
             }
 
             // The stats say how many rows there are; this says what a row is. Without it the count
-            // column reads as a mystery on a log that silently merges repeats.
-            Label hint = new(LiveModeHintText) { name = ModeHintLabelName };
+            // column reads as a mystery on a log that silently merges repeats. It stays on one line
+            // and is cut off with an ellipsis rather than wrapping past the fixed-height footer on a
+            // narrow window; the full sentence is on the tooltip and the LIVE badge.
+            Label hint = new(LiveModeHintText)
+            {
+                name = ModeHintLabelName,
+                tooltip = LiveModeHintText,
+            };
             hint.style.flexGrow = 1;
             hint.style.flexShrink = 1;
+            hint.style.whiteSpace = WhiteSpace.NoWrap;
+            hint.style.overflow = Overflow.Hidden;
+            hint.style.textOverflow = TextOverflow.Ellipsis;
             hint.style.unityTextAlign = TextAnchor.MiddleRight;
             footer.Add(hint);
 
