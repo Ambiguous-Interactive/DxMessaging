@@ -115,13 +115,11 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-run-ci-generate-"));
   const fakeRepoRoot = path.join(stagingRoot, "repo");
   const artifactsPath = path.join(stagingRoot, "artifacts");
-  const projectPath = path.join(
-    fakeRepoRoot,
-    ".artifacts",
-    "unity",
-    "projects",
-    `${UNITY_VERSION}-editmode`
-  );
+  // `.artifacts/u`, not `.artifacts/unity/projects`. Every character of this prefix is
+  // charged against the Windows MAX_PATH budget for files Unity resolves under
+  // `<project>/Library/PackageCache`, and a comparison package already produced a
+  // 267-character path against the 260 limit (issue #357).
+  const projectPath = path.join(fakeRepoRoot, ".artifacts", "u", `${UNITY_VERSION}-editmode`);
   const cacheRoot = path.join(fakeRepoRoot, ".artifacts", "unity", "cache", UNITY_VERSION);
 
   try {
@@ -145,6 +143,55 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
   } finally {
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }
+});
+
+test("run-ci-tests keeps the generated project prefix short enough for Windows MAX_PATH", () => {
+  // The failure this guards is silent and remote: Unity resolves package files under
+  // `<project>/Library/PackageCache/<pkg>@<hash>/...`, and Mono's System.IO enforces MAX_PATH
+  // regardless of the OS long-path policy, so asset import dies with a DirectoryNotFoundException
+  // before a single test runs. The deepest known offender is Extenject's OptionalExtras/Signals
+  // binder chain, measured at 267 characters against the 260 limit (issue #357).
+  //
+  // The prefix is read out of the script rather than restated here, so lengthening it fails this
+  // test with the real number instead of leaving a stale copy passing.
+  const defaultProjectPath = runCiTests.match(
+    /Combine\(\$Root,\s*(?<segments>(?:'[^']*'\s*,\s*)*)"\$Version-\$Mode"\)/
+  );
+  assert.ok(
+    defaultProjectPath,
+    "run-ci-tests.ps1 no longer builds its default project path from literal segments; update this guard."
+  );
+  const segments = [...defaultProjectPath.groups.segments.matchAll(/'([^']*)'/g)].map(
+    (match) => match[1]
+  );
+  assert.ok(segments.length > 0, "expected at least one literal path segment");
+
+  const deepestKnownPackageSuffix = path.win32.join(
+    "Library",
+    "PackageCache",
+    "com.svermeulen.extenject@29861f9aa3ef",
+    "OptionalExtras",
+    "Signals",
+    "Internal",
+    "Binders",
+    "DeclareSignal",
+    "DeclareSignalRequireHandlerAsyncTickPriorityCopyBinder.cs"
+  );
+  // The runner's own workspace, which CI does not control.
+  const runnerWorkspace = String.raw`D:\actions-runner\_work\DxMessaging\DxMessaging`;
+  const fullPath = path.win32.join(
+    runnerWorkspace,
+    ...segments,
+    "6000.3.16f1-standalone",
+    deepestKnownPackageSuffix
+  );
+
+  assert.ok(
+    fullPath.length < 260,
+    `The deepest known package path is ${fullPath.length} characters with the generated prefix ` +
+      `'${segments.join("/")}', at or over the 260-character Windows MAX_PATH limit. Shorten the ` +
+      "prefix in run-ci-tests.ps1; a longer one makes Unity asset import fail before any test runs."
+  );
 });
 
 test("run-ci-tests -GenerateOnly refuses an unowned existing custom ProjectPath", (t) => {

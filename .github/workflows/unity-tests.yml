@@ -266,7 +266,7 @@ jobs:
             ) }}
         with:
           path: |
-            .artifacts/unity/projects/${{ matrix.unity-version }}-${{ matrix.test-mode }}/Library
+            .artifacts/u/${{ matrix.unity-version }}-${{ matrix.test-mode }}/Library
             .artifacts/unity/cache/${{ matrix.unity-version }}
           key: Library-${{ runner.os }}-${{ runner.arch }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ env.PACKAGE_HASH }}
 

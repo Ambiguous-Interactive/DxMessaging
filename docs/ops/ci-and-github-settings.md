@@ -78,7 +78,7 @@ install, repair, uninstall, or quarantine editors.
 
 Per-runner Unity-cache safety is provided by each runner agent's exclusive
 workspace - a single self-hosted agent only ever runs one job at a time, so
-generated `.artifacts/unity/projects/<version>-<mode>/Library` directories
+generated `.artifacts/u/<version>-<mode>/Library` directories
 cannot collide.
 
 Most Unity-credential-using jobs use the shared runner set:

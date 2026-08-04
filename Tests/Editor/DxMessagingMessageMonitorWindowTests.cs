@@ -94,6 +94,13 @@ namespace DxMessaging.Tests.Editor
             }
             _createdAssetPaths.Clear();
 
+            // Closing a shown window under -nographics logs a benign "No graphic device is
+            // available" error, and Unity resets LogAssert tolerance per phase -- so the
+            // tolerance ShowWindow asserted in the test body does not reach teardown. Any test
+            // here that holds a shown window open until now fails without this. Headless only,
+            // so runs with a real GPU keep full strictness (which is also why this cannot
+            // reproduce on a developer machine).
+            EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
             EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
 
             if (MessageHandler.MessageBus is MessageBus messageBus)
@@ -575,102 +582,111 @@ namespace DxMessaging.Tests.Editor
         {
             // Pointer capture needs a real panel, so this drives the shown window.
             EditorWindow window = CreateTrackedEditorWindow();
-            window.position = new Rect(0f, 0f, 900f, 620f);
-            EditorWindowTestUtility.ShowWindow(window);
-            VisualElement root = window.rootVisualElement;
-            root.style.width = 900f;
-            root.style.height = 620f;
+            try
+            {
+                window.position = new Rect(0f, 0f, 900f, 620f);
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                root.style.width = 900f;
+                root.style.height = 620f;
 
-            DxMessagingMessageMonitorWindow.BuildMonitorUi(
-                root,
-                new MessageMonitorSnapshot(
-                    diagnosticsEnabled: true,
-                    capacity: 8,
-                    entries: new[]
-                    {
-                        new MessageMonitorEntry(
-                            nameof(OlderMessage),
-                            "Context: Player",
-                            CapturedStackTrace
-                        ),
-                    }
-                ),
-                MessageMonitorViewState.Default,
-                onRefresh: () => { },
-                onCopyExport: _ => { },
-                componentEntries: CreateComponentEntries(4)
-            );
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 8,
+                        entries: new[]
+                        {
+                            new MessageMonitorEntry(
+                                nameof(OlderMessage),
+                                "Context: Player",
+                                CapturedStackTrace
+                            ),
+                        }
+                    ),
+                    MessageMonitorViewState.Default,
+                    onRefresh: () => { },
+                    onCopyExport: _ => { },
+                    componentEntries: CreateComponentEntries(4)
+                );
 
-            VisualElement componentResizer = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.ComponentResizerName
-            );
-            Assert.That(
-                componentResizer,
-                Is.Not.Null,
-                "Component Diagnostics is the panel #344 named; it must be resizable."
-            );
-            VisualElement stackResizer = root.Q<VisualElement>(
-                DxMessagingMessageMonitorWindow.DetailsStackResizerName
-            );
-            Assert.That(stackResizer, Is.Not.Null, "The stack trace is capped too.");
+                VisualElement componentResizer = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.ComponentResizerName
+                );
+                Assert.That(
+                    componentResizer,
+                    Is.Not.Null,
+                    "Component Diagnostics is the panel #344 named; it must be resizable."
+                );
+                VisualElement stackResizer = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsStackResizerName
+                );
+                Assert.That(stackResizer, Is.Not.Null, "The stack trace is capped too.");
 
-            ScrollView componentScroll = root.Q<ScrollView>(
-                DxMessagingMessageMonitorWindow.ComponentScrollViewName
-            );
-            Assert.That(componentScroll, Is.Not.Null);
-            Assert.That(
-                componentScroll.style.maxHeight.value.value,
-                Is.EqualTo(180f),
-                "The shipped cap is what makes the panel feel stuck."
-            );
+                ScrollView componentScroll = root.Q<ScrollView>(
+                    DxMessagingMessageMonitorWindow.ComponentScrollViewName
+                );
+                Assert.That(componentScroll, Is.Not.Null);
+                Assert.That(
+                    componentScroll.style.maxHeight.value.value,
+                    Is.EqualTo(180f),
+                    "The shipped cap is what makes the panel feel stuck."
+                );
 
-            // Lay the window out first: `worldBound` is NaN until it has, and a drag built from
-            // NaN coordinates produces a NaN delta that clamps to NaN.
-            EditorSurfaceCapture.InvokeInheritedPanelMethod(
-                root.panel,
-                "ValidateLayout",
-                Array.Empty<object>()
-            );
+                // Lay the window out first: `worldBound` is NaN until it has, and a drag built from
+                // NaN coordinates produces a NaN delta that clamps to NaN.
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
 
-            // Drive the handle's own pointer handlers rather than calling the apply helper
-            // directly: a test that writes the height itself and reads it back would pass with
-            // every callback in CreateResizeHandle deleted.
-            DragResizeHandle(componentResizer, deltaY: 220f);
+                // Drive the handle's own pointer handlers rather than calling the apply helper
+                // directly: a test that writes the height itself and reads it back would pass with
+                // every callback in CreateResizeHandle deleted.
+                DragResizeHandle(componentResizer, deltaY: 220f);
 
-            Assert.That(
-                componentScroll.style.height.value.value,
-                Is.GreaterThan(180f),
-                "Dragging down must grow the panel past the shipped cap."
-            );
-            Assert.That(
-                componentScroll.style.maxHeight.value.value,
-                Is.GreaterThanOrEqualTo(componentScroll.style.height.value.value),
-                "A cap left below the dragged height would silently undo the drag."
-            );
-            Assert.That(
-                componentScroll.style.flexShrink.value,
-                Is.EqualTo(0f),
-                "A shrinkable target treats a height as a starting size Yoga takes back, so the "
-                    + "drag would not survive layout."
-            );
+                Assert.That(
+                    componentScroll.style.height.value.value,
+                    Is.GreaterThan(180f),
+                    "Dragging down must grow the panel past the shipped cap."
+                );
+                Assert.That(
+                    componentScroll.style.maxHeight.value.value,
+                    Is.GreaterThanOrEqualTo(componentScroll.style.height.value.value),
+                    "A cap left below the dragged height would silently undo the drag."
+                );
+                Assert.That(
+                    componentScroll.style.flexShrink.value,
+                    Is.EqualTo(0f),
+                    "A shrinkable target treats a height as a starting size Yoga takes back, so the "
+                        + "drag would not survive layout."
+                );
 
-            // The dragged height has to survive the rebuild every filter keystroke causes, for
-            // the same reason the disclosures remember whether they were open.
-            float dragged = componentScroll.style.height.value.value;
-            TextField filter = root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName);
-            Assert.That(filter, Is.Not.Null);
-            filter.value = "Sample";
+                // The dragged height has to survive the rebuild every filter keystroke causes, for
+                // the same reason the disclosures remember whether they were open.
+                float dragged = componentScroll.style.height.value.value;
+                TextField filter = root.Q<TextField>(
+                    DxMessagingMessageMonitorWindow.FilterFieldName
+                );
+                Assert.That(filter, Is.Not.Null);
+                filter.value = "Sample";
 
-            ScrollView rebuiltScroll = root.Q<ScrollView>(
-                DxMessagingMessageMonitorWindow.ComponentScrollViewName
-            );
-            Assert.That(rebuiltScroll, Is.Not.Null);
-            Assert.That(
-                rebuiltScroll.style.height.value.value,
-                Is.EqualTo(dragged),
-                "A filter keystroke rebuilds this section; the height a reader dragged must come "
-                    + "back with it."
-            );
+                ScrollView rebuiltScroll = root.Q<ScrollView>(
+                    DxMessagingMessageMonitorWindow.ComponentScrollViewName
+                );
+                Assert.That(rebuiltScroll, Is.Not.Null);
+                Assert.That(
+                    rebuiltScroll.style.height.value.value,
+                    Is.EqualTo(dragged),
+                    "A filter keystroke rebuilds this section; the height a reader dragged must come "
+                        + "back with it."
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
         }
 
         /// <summary>

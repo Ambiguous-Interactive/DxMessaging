@@ -12,7 +12,7 @@ The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self
 Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions x
 `{editmode, playmode, standalone}` = 9 cells; `standalone` builds and runs a
 `StandaloneWindows64` IL2CPP player from an ephemeral project generated under
-`.artifacts/unity/projects/<version>-<mode>/`.
+`.artifacts/u/<version>-<mode>/`.
 
 ## When to use
 

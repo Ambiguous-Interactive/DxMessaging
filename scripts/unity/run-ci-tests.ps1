@@ -1321,7 +1321,18 @@ function Initialize-EphemeralProject {
         $RepoRoot = $Root
     }
 
+    # `.artifacts/u` rather than the longer `.artifacts/unity/projects`, because this prefix is
+    # charged against the Windows MAX_PATH budget for every file Unity resolves under
+    # `<project>/Library/PackageCache`. A comparison package (Extenject) produced a 267-character
+    # path -- seven over the 260 limit -- and Mono's System.IO enforces that limit regardless of
+    # the OS long-path policy, so asset import died with a DirectoryNotFoundException before any
+    # test ran. Shortening the one segment CI controls buys 14 characters. See issue #357.
+    #
+    # The two historical roots stay accepted so an existing generated project, or a caller
+    # passing an explicit -ProjectPath under them, is still treated as managed rather than
+    # rejected as an unmanaged repo-contained path.
     $managedProjectRoots = @(
+        [System.IO.Path]::Combine($Root, '.artifacts', 'u'),
         [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'projects'),
         [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'game-ci-projects')
     )
@@ -1329,7 +1340,7 @@ function Initialize-EphemeralProject {
     $project = if ($Path) {
         Resolve-FullPath -Path $Path
     } else {
-        [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'projects', "$Version-$Mode")
+        [System.IO.Path]::Combine($Root, '.artifacts', 'u', "$Version-$Mode")
     }
     $projectPathSafetyError = Get-UnityCiProjectPathSafetyError `
         -ProjectPath $project `
