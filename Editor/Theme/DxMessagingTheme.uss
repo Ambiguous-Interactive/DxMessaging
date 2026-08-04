@@ -104,11 +104,19 @@
     padding-left: 8px;
     padding-right: 8px;
 }
+/* A Toggle's own label and input cover the control, and USS `cursor` does NOT inherit,
+   so the chip's cursor has to be declared on the parts a pointer actually lands on. */
+.dx-chip .unity-toggle__text,
+.dx-chip .unity-base-field__input,
+.dx-chip .unity-toggle__checkmark,
+.dx-record .unity-toggle__text,
+.dx-record .unity-base-field__input { cursor: link; }
+
 .dx-filter { opacity: 0.45; }
 .dx-filter:checked { opacity: 1; }
 
 /* taxonomy dots */
-.dx-dot { width: 7px; height: 7px; border-radius: 4px; margin-right: 6px; }
+.dx-dot { cursor: link; width: 7px; height: 7px; border-radius: 4px; margin-right: 6px; }
 .dx-dot--u { background-color: var(--dx-untargeted); }
 .dx-dot--t { background-color: var(--dx-targeted); }
 .dx-dot--b { background-color: var(--dx-broadcast); }
@@ -164,11 +172,11 @@
     background-color: var(--dx-tool-row-a);
 }
 .dx-row--alt { background-color: var(--dx-tool-row-b); }
-.dx-row__time { width: 78px; color: var(--dx-text-muted); font-size: 10px; }
-.dx-row__type { width: 110px; flex-shrink: 1; flex-direction: row; align-items: center; overflow: hidden; }
-.dx-row__msg { flex-grow: 1; flex-shrink: 1; color: var(--dx-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dx-row__route { width: 210px; flex-shrink: 1; color: var(--dx-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dx-row__count { width: 36px; -unity-text-align: middle-center; color: var(--dx-text-muted); font-size: 10px; }
+.dx-row__time { cursor: link; width: 78px; color: var(--dx-text-muted); font-size: 10px; }
+.dx-row__type { cursor: link; width: 110px; flex-shrink: 1; flex-direction: row; align-items: center; overflow: hidden; }
+.dx-row__msg { cursor: link; flex-grow: 1; flex-shrink: 1; color: var(--dx-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-row__route { cursor: link; width: 210px; flex-shrink: 1; color: var(--dx-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-row__count { cursor: link; width: 36px; -unity-text-align: middle-center; color: var(--dx-text-muted); font-size: 10px; }
 
 .unity-collection-view__item--selected .dx-row,
 .unity-list-view__item--selected .dx-row { background-color: var(--dx-tool-selected); }
@@ -207,24 +215,6 @@
 }
 .dx-detail__link:hover { background-color: var(--dx-tool-btn-hover); }
 .dx-detail__link:focus { background-color: var(--dx-tool-selected); }
-/* Applied by DxMessagingEditorSourceLinks.MakeActivatable to anything that answers a
-   click but is not already one of the button or chip shapes above. */
-.dx-clickable { cursor: link; }
-
-/* Grab strip under a resizable panel. Fixed height and no growth, so it never takes
-   space from the panel it resizes. */
-.dx-resizer {
-    height: 5px;
-    flex-grow: 0;
-    flex-shrink: 0;
-    margin-top: 2px;
-    margin-bottom: 2px;
-    border-radius: 2px;
-    cursor: split-resize-up-down;
-    background-color: var(--dx-tool-btn-border);
-}
-.dx-resizer:hover { background-color: var(--dx-accent); }
-
 .dx-detail__active {
     background-color: var(--dx-tool-selected);
     border-width: 1px;
@@ -259,6 +249,34 @@
 .dx-kv__k { width: 74px; color: var(--dx-text-muted); font-size: 11px; }
 .dx-kv__v { flex-grow: 1; flex-shrink: 1; white-space: normal; color: var(--dx-text-dim); font-size: 11px; }
 .dx-prio { padding-left: 6px; padding-right: 6px; border-radius: 4px; background-color: var(--dx-accent-soft); color: #0d1117; -unity-font-style: bold; font-size: 9px; }
+
+/* ---------- interaction affordances ---------- */
+/* Applied by DxMessagingEditorSourceLinks.MakeActivatable to anything that answers a
+   click but is not already one of the button or chip shapes above. */
+.dx-clickable { cursor: link; }
+.dx-clickable:focus {
+    border-width: 1px;
+    border-color: var(--dx-accent);
+    border-radius: var(--dx-r-chip);
+}
+
+/* Grab strip under a resizable panel. Fixed height and no growth, so it never takes
+   space from the panel it resizes. */
+.dx-resizer {
+    height: 5px;
+    min-height: 0;
+    flex-grow: 0;
+    /* Shrinkable on purpose. This strip is not inside a scroll view, so a rigid one in a
+       panel squeezed below its own floor lays out past the window edge -- exactly the
+       overflow class `BuildMonitorUiKeepsNonScrollingSectionsInsideTheWindow` guards. */
+    flex-shrink: 1;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    border-radius: 2px;
+    cursor: split-resize-up-down;
+    background-color: var(--dx-tool-btn-border);
+}
+.dx-resizer:hover { background-color: var(--dx-accent); }
 
 /* ---------- buttons ---------- */
 .dx-btn-accent {

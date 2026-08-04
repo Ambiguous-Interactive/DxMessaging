@@ -117,9 +117,10 @@ The detail pane links out to what a row stands for:
   frame names a file and line. Unity's own stack-capture frames are left out, and
   the first row is the emitting call site.
 
-Anything that answers a click shows the pointer cursor, and the capped panels -
-Component Diagnostics and the stack trace - carry a drag handle along their bottom
-edge for readers with more room than the default height assumes.
+Anything that answers a click shows the pointer cursor, and the capped panels --
+Component Diagnostics and the stack trace -- carry a drag handle along their bottom
+edge for readers with more room than the default height assumes. A dragged height
+survives filtering and reselection.
 
 Three taxonomy chips, one per route kind, name their kind and are drawn in the
 color that marks it in every row, so the chips are both the color legend and the

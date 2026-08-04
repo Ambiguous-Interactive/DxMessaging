@@ -7,8 +7,6 @@ namespace DxMessaging.Editor.Windows
     using System.IO;
     using System.Linq;
     using System.Text;
-    using System.Text.RegularExpressions;
-    using System.Threading.Tasks;
     using Core;
     using Core.Diagnostics;
     using Core.Messages;
@@ -16,7 +14,6 @@ namespace DxMessaging.Editor.Windows
     using DxMessaging.Editor.Testing;
     using DxMessaging.Unity;
     using UnityEditor;
-    using UnityEditor.Compilation;
     using UnityEditor.SceneManagement;
     using UnityEngine;
     using UnityEngine.UIElements;

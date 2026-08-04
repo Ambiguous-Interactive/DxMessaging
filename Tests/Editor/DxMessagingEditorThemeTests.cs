@@ -218,16 +218,29 @@ namespace DxMessaging.Tests.Editor
         /// the point -- a new interactive shape that forgets the cursor fails rather than
         /// shipping the same gap again.
         /// </summary>
-        [TestCase(".dx-tool-btn")]
-        [TestCase(".dx-btn-accent")]
-        [TestCase(".dx-btn-ghost")]
-        [TestCase(".dx-chip")]
-        [TestCase(".dx-record")]
-        [TestCase(".dx-row")]
-        [TestCase(".dx-detail__link")]
-        [TestCase(".dx-clickable")]
-        [TestCase(".dx-resizer")]
-        public void EveryInteractiveStylesheetRuleDeclaresACursor(string selector)
+        // The row's CHILDREN are listed on purpose. USS `cursor` is NOT inherited, so a rule on
+        // `.dx-row` alone paints the pointer over its 14px gutter and nothing else -- the column
+        // labels cover the rest of the row and would compute the default arrow, which is the
+        // exact gap #344 reported.
+        [TestCase(".dx-tool-btn", "link")]
+        [TestCase(".dx-btn-accent", "link")]
+        [TestCase(".dx-btn-ghost", "link")]
+        [TestCase(".dx-chip", "link")]
+        [TestCase(".dx-record", "link")]
+        [TestCase(".dx-row", "link")]
+        [TestCase(".dx-row__time", "link")]
+        [TestCase(".dx-row__type", "link")]
+        [TestCase(".dx-row__msg", "link")]
+        [TestCase(".dx-row__route", "link")]
+        [TestCase(".dx-row__count", "link")]
+        [TestCase(".dx-dot", "link")]
+        [TestCase(".dx-detail__link", "link")]
+        [TestCase(".dx-clickable", "link")]
+        [TestCase(".dx-resizer", "split-resize-up-down")]
+        public void EveryInteractiveStylesheetRuleDeclaresACursor(
+            string selector,
+            string expectedCursor
+        )
         {
             string uss = StripBlockComments(
                 System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
@@ -252,10 +265,11 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(body, Is.Not.Null, $"The stylesheet declares no `{selector}` rule.");
             Assert.That(
-                body.Contains("cursor:", StringComparison.Ordinal),
+                body.Contains($"cursor: {expectedCursor};", StringComparison.Ordinal),
                 Is.True,
-                $"`{selector}` answers a click but declares no cursor, so nothing tells a reader "
-                    + "it can be clicked."
+                $"`{selector}` must declare `cursor: {expectedCursor};`. Asserting only that some "
+                    + "cursor is present would accept `cursor: arrow`, which is the default and "
+                    + "tells a reader nothing."
             );
         }
 

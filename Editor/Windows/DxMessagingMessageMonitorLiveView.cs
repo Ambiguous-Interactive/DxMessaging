@@ -175,7 +175,8 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailFrameLabelName = "dxmessaging-monitor-live-detail-frame";
         internal const string DetailStackFoldoutName =
             "dxmessaging-monitor-live-detail-stack-foldout";
-        internal const string DetailStackLabelName = "dxmessaging-monitor-live-detail-stack";
+        internal const string DetailStackFirstFrameLabelName =
+            "dxmessaging-monitor-live-detail-stack-first-frame";
         internal const string DetailContextLabelName = "dxmessaging-monitor-live-detail-context";
         internal const string FooterName = "dxmessaging-monitor-live-footer";
         internal const string EmptyBodyName = "dxmessaging-monitor-live-empty";
@@ -1004,7 +1005,7 @@ namespace DxMessaging.Editor.Windows
                 DxMessagingMessageMonitorWindow.CreateStackTraceSection(
                     row.Entry,
                     DetailStackFoldoutName,
-                    DetailStackLabelName,
+                    DetailStackFirstFrameLabelName,
                     DetailStackTraceMaxHeight
                 )
             );

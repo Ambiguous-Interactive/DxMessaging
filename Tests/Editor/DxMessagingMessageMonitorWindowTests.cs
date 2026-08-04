@@ -338,7 +338,9 @@ namespace DxMessaging.Tests.Editor
             Assert.That(stack, Is.Not.Null);
             Assert.That(stack.value, Is.False, "The stack trace disclosure must start collapsed.");
             Assert.That(
-                stack.Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackTraceLabelName).text,
+                stack
+                    .Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName)
+                    .text,
                 Does.Contain("EmitOneOfEach"),
                 "The first frame shown must be the emitting call site."
             );
@@ -475,7 +477,9 @@ namespace DxMessaging.Tests.Editor
                 "Unity's stack-capture frames describe taking the stack, never the emitting code."
             );
             Assert.That(
-                stack.Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackTraceLabelName).text,
+                stack
+                    .Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName)
+                    .text,
                 Does.Contain("EmitOneOfEach"),
                 "The first surviving frame is the emitting call site and reads as the answer."
             );
@@ -492,20 +496,36 @@ namespace DxMessaging.Tests.Editor
         /// -- the normal case for a log that outlives its scene -- stays readable but inert,
         /// rather than offering a link that would do nothing.
         /// </summary>
-        [TestCase(true)]
-        [TestCase(false)]
-        public void AContextLinksToItsObjectOnlyWhileThatObjectStillExists(bool contextIsAlive)
+        /// <remarks>
+        /// `Destroyed` is the case that actually matters and the one an id of 0 does not cover:
+        /// 0 short-circuits before the object lookup, so it only proves "no context was
+        /// captured". A real id whose object has been destroyed is what a log outliving its
+        /// scene holds.
+        /// </remarks>
+        [TestCase(ContextState.Alive)]
+        [TestCase(ContextState.Destroyed)]
+        [TestCase(ContextState.NeverCaptured)]
+        public void AContextLinksToItsObjectOnlyWhileThatObjectStillExists(ContextState state)
         {
             GameObject contextObject = new(
                 nameof(AContextLinksToItsObjectOnlyWhileThatObjectStillExists)
             );
-            _createdObjects.Add(contextObject);
             int contextInstanceId = contextObject.GetInstanceID();
+            if (state == ContextState.Destroyed)
+            {
+                Object.DestroyImmediate(contextObject);
+            }
+            else
+            {
+                _createdObjects.Add(contextObject);
+            }
+
+            bool contextIsAlive = state == ContextState.Alive;
             MessageMonitorEntry entry = new(
                 nameof(OlderMessage),
                 "Context: Player",
                 CapturedStackTrace,
-                contextInstanceId: contextIsAlive ? contextInstanceId : 0
+                contextInstanceId: state == ContextState.NeverCaptured ? 0 : contextInstanceId
             );
             VisualElement root = new();
 
@@ -553,7 +573,13 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CappedPanelsCarryAResizeHandleThatCanGrowThemPastTheirShippedCap()
         {
-            VisualElement root = new();
+            // Pointer capture needs a real panel, so this drives the shown window.
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(0f, 0f, 900f, 620f);
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+            root.style.width = 900f;
+            root.style.height = 620f;
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(
                 root,
@@ -598,19 +624,104 @@ namespace DxMessaging.Tests.Editor
                 "The shipped cap is what makes the panel feel stuck."
             );
 
-            DxMessagingEditorTheme.ApplyResizedHeight(
-                componentScroll,
-                400f,
-                DxMessagingMessageMonitorWindow.ComponentPanelMinHeight,
-                DxMessagingMessageMonitorWindow.ComponentPanelResizeMaxHeight
+            // Lay the window out first: `worldBound` is NaN until it has, and a drag built from
+            // NaN coordinates produces a NaN delta that clamps to NaN.
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                Array.Empty<object>()
             );
 
-            Assert.That(componentScroll.style.height.value.value, Is.EqualTo(400f));
+            // Drive the handle's own pointer handlers rather than calling the apply helper
+            // directly: a test that writes the height itself and reads it back would pass with
+            // every callback in CreateResizeHandle deleted.
+            DragResizeHandle(componentResizer, deltaY: 220f);
+
+            Assert.That(
+                componentScroll.style.height.value.value,
+                Is.GreaterThan(180f),
+                "Dragging down must grow the panel past the shipped cap."
+            );
             Assert.That(
                 componentScroll.style.maxHeight.value.value,
-                Is.GreaterThanOrEqualTo(400f),
+                Is.GreaterThanOrEqualTo(componentScroll.style.height.value.value),
                 "A cap left below the dragged height would silently undo the drag."
             );
+            Assert.That(
+                componentScroll.style.flexShrink.value,
+                Is.EqualTo(0f),
+                "A shrinkable target treats a height as a starting size Yoga takes back, so the "
+                    + "drag would not survive layout."
+            );
+
+            // The dragged height has to survive the rebuild every filter keystroke causes, for
+            // the same reason the disclosures remember whether they were open.
+            float dragged = componentScroll.style.height.value.value;
+            TextField filter = root.Q<TextField>(DxMessagingMessageMonitorWindow.FilterFieldName);
+            Assert.That(filter, Is.Not.Null);
+            filter.value = "Sample";
+
+            ScrollView rebuiltScroll = root.Q<ScrollView>(
+                DxMessagingMessageMonitorWindow.ComponentScrollViewName
+            );
+            Assert.That(rebuiltScroll, Is.Not.Null);
+            Assert.That(
+                rebuiltScroll.style.height.value.value,
+                Is.EqualTo(dragged),
+                "A filter keystroke rebuilds this section; the height a reader dragged must come "
+                    + "back with it."
+            );
+        }
+
+        /// <summary>
+        /// Drives a resize handle through a real pointer-down / move / up sequence so the
+        /// handle's own callbacks, capture, and clamping are what the assertions measure.
+        /// </summary>
+        private static void DragResizeHandle(VisualElement handle, float deltaY)
+        {
+            Vector2 start = new(handle.worldBound.center.x, handle.worldBound.center.y);
+            using (
+                PointerDownEvent down = PointerDownEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseDown,
+                        mousePosition = start,
+                        button = 0,
+                    }
+                )
+            )
+            {
+                down.target = handle;
+                handle.SendEvent(down);
+            }
+            using (
+                PointerMoveEvent move = PointerMoveEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseDrag,
+                        mousePosition = new Vector2(start.x, start.y + deltaY),
+                        button = 0,
+                    }
+                )
+            )
+            {
+                move.target = handle;
+                handle.SendEvent(move);
+            }
+            using (
+                PointerUpEvent up = PointerUpEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseUp,
+                        mousePosition = new Vector2(start.x, start.y + deltaY),
+                        button = 0,
+                    }
+                )
+            )
+            {
+                up.target = handle;
+                handle.SendEvent(up);
+            }
         }
 
         /// <summary>
@@ -717,6 +828,125 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 DxMessagingEditorSourceLinks.CreateSourceLookupName(assemblyQualifiedName),
                 Is.EqualTo(expected)
+            );
+        }
+
+        /// <summary>
+        /// The positive half of "the Type takes you to source": a type whose declaring file the
+        /// shared index really can find renders an Open-source button pointing at it. Without
+        /// this, the only coverage was the negative case, which passes just as happily if
+        /// resolution is broken outright.
+        /// </summary>
+        [Test]
+        public void AResolvableTypeRendersAnOpenSourceLink()
+        {
+            DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
+            try
+            {
+                // Warm the lazy index the way the window does, then let it finish. `OlderMessage`
+                // is declared in this file, so the location it resolves to is a real asset.
+                _ = DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
+                    typeof(OlderMessage).AssemblyQualifiedName,
+                    out _
+                );
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
+
+                Assert.That(
+                    DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
+                        typeof(OlderMessage).AssemblyQualifiedName,
+                        out DxMessagingEditorSourceLinks.SourceLocation location
+                    ),
+                    Is.True,
+                    "A type declared in a compiled assembly's own source must resolve."
+                );
+                Assert.That(location.AssetPath, Does.EndWith(".cs"));
+
+                MessageMonitorEntry entry = new(
+                    nameof(OlderMessage),
+                    "Context: Player",
+                    CapturedStackTrace,
+                    messageTypeIdentity: typeof(OlderMessage).AssemblyQualifiedName
+                );
+                VisualElement root = new();
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 8,
+                        entries: new[] { entry }
+                    )
+                );
+
+                VisualElement typeRow = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsTypeRowName
+                );
+                Assert.That(typeRow, Is.Not.Null);
+                Button link = typeRow.Q<Button>(DxMessagingEditorSourceLinks.SourceLinkButtonName);
+                Assert.That(
+                    link,
+                    Is.Not.Null,
+                    "A type whose source resolves must offer a link to it."
+                );
+                Assert.That(link.tooltip, Does.Contain(location.AssetPath));
+            }
+            finally
+            {
+                DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
+            }
+        }
+
+        /// <summary>
+        /// Source resolution is lazy: the first lookup answers "not yet" and finishes in the
+        /// background. A window that does not listen for that completion renders a detail pane
+        /// with no link and never revisits it, which is the state ask (4) shipped in until this
+        /// subscription existed.
+        /// </summary>
+        [Test]
+        public void TheWindowRerendersItsDetailPaneWhenTheSourceIndexCompletes()
+        {
+            DxMessagingMessageMonitorWindow window =
+                ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
+            _createdWindows.Add(window);
+
+            // Build a real surface on the window's own root, so the window's OnEnable
+            // subscription is what routes the signal.
+            VisualElement root = window.rootVisualElement;
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                root,
+                new MessageMonitorSnapshot(
+                    diagnosticsEnabled: true,
+                    capacity: 8,
+                    entries: new[]
+                    {
+                        new MessageMonitorEntry(
+                            nameof(OlderMessage),
+                            "Context: Player",
+                            CapturedStackTrace
+                        ),
+                    }
+                )
+            );
+
+            ScrollView log = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
+            VisualElement details = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsPaneName
+            );
+            Assert.That(log, Is.Not.Null);
+            Assert.That(details, Is.Not.Null);
+
+            DxMessagingEditorSourceLinks.RaiseMessageSourceIndexChangedForTests();
+
+            Assert.That(
+                root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName),
+                Is.Not.SameAs(details),
+                "A completed index must re-render the pane that can carry a source link; a window "
+                    + "that does not listen shows a linkless pane forever."
+            );
+            Assert.That(
+                root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
+                Is.SameAs(log),
+                "Re-rendering for a link must not rebuild the log and take the reader's scroll "
+                    + "position with it."
             );
         }
 
@@ -3187,6 +3417,14 @@ namespace DxMessaging.Tests.Editor
             EditorWindow window = EditorWindowTestUtility.CreateWindow();
             _createdWindows.Add(window);
             return window;
+        }
+
+        /// <summary>The three states a captured context can be in by the time it is rendered.</summary>
+        public enum ContextState
+        {
+            Alive,
+            Destroyed,
+            NeverCaptured,
         }
 
         private readonly struct OlderMessage : IUntargetedMessage { }

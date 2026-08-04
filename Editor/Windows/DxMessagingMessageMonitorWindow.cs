@@ -57,7 +57,8 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailsTypeLabelName = "dxmessaging-monitor-details-type";
         internal const string DetailsContextLabelName = "dxmessaging-monitor-details-context";
         internal const string DetailsStackFoldoutName = "dxmessaging-monitor-details-stack-foldout";
-        internal const string DetailsStackTraceLabelName = "dxmessaging-monitor-details-stack";
+        internal const string DetailsStackFirstFrameLabelName =
+            "dxmessaging-monitor-details-stack-first-frame";
         internal const string DetailsTypeRowName = "dxmessaging-monitor-details-type-row";
         internal const string DetailsTypeValueLabelName = "dxmessaging-monitor-details-type-value";
         internal const string DetailsContextRowName = "dxmessaging-monitor-details-context-row";
@@ -198,12 +199,47 @@ namespace DxMessaging.Editor.Windows
         private void OnEnable()
         {
             EditorApplication.playModeStateChanged += HandlePlayModeStateChanged;
+            DxMessagingEditorSourceLinks.MessageSourceIndexChanged -=
+                HandleMessageSourceIndexChanged;
+            DxMessagingEditorSourceLinks.MessageSourceIndexChanged +=
+                HandleMessageSourceIndexChanged;
         }
 
         private void OnDisable()
         {
             EditorApplication.playModeStateChanged -= HandlePlayModeStateChanged;
+            DxMessagingEditorSourceLinks.MessageSourceIndexChanged -=
+                HandleMessageSourceIndexChanged;
             StopLivePump();
+        }
+
+        /// <summary>
+        /// Source resolution is lazy: the first lookup for an assembly starts a background index
+        /// and answers "not yet", so a detail pane built before that index drains carries no
+        /// source link. Without this the link only ever appeared if the reader happened to select
+        /// a second row afterwards, which is not the path anyone takes. Re-render the selection
+        /// when the index completes, exactly as the Flow Graph does.
+        /// </summary>
+        private void HandleMessageSourceIndexChanged()
+        {
+            if (this == null)
+            {
+                return;
+            }
+
+            if (_liveMode)
+            {
+                // The live body is re-rendered on a 250ms timer anyway, so rebuilding it here
+                // costs nothing and clears the detail pane's own memoization, which would
+                // otherwise keep showing the linkless pane for as long as the row stays selected.
+                RenderLiveBody();
+                return;
+            }
+
+            // Snapshot mode re-renders ONLY the detail pane. A full refresh would rebuild the log
+            // and take the reader's scroll position with it -- the same loss a selection change
+            // deliberately avoids -- for the sake of a link in a pane beside it.
+            _ = TryRerenderDetails(rootVisualElement);
         }
 
         /// <summary>
@@ -531,6 +567,11 @@ namespace DxMessaging.Editor.Windows
                 OnCopyExport = onCopyExport,
             };
 
+            // The surface keeps a handle to its own state so a background source index that
+            // completes later can re-render the one part that shows a link, instead of
+            // rebuilding the window and taking the reader's place in the log with it.
+            root.userData = ui;
+
             root.Add(CreateToolbar(ui, onEnterLiveMode));
 
             VisualElement content = new() { name = ContentContainerName };
@@ -599,6 +640,16 @@ namespace DxMessaging.Editor.Windows
 
             internal bool ComponentsExpanded { get; set; }
 
+            /// <summary>
+            /// Heights a reader dragged, or 0 while a section is still at its shipped cap. Same
+            /// reason the two flags above exist: `RenderContent` rebuilds these sections on every
+            /// filter keystroke and chip toggle, so a dragged height that is not carried here is
+            /// undone by the next character typed.
+            /// </summary>
+            internal float ComponentPanelHeight { get; set; }
+
+            internal float StackTraceHeight { get; set; }
+
             internal Action<MessageMonitorViewState> OnViewStateChanged { get; set; }
 
             internal Action<string> OnCopyExport { get; set; }
@@ -653,6 +704,23 @@ namespace DxMessaging.Editor.Windows
         /// Moves the selection within the log the reader is already looking at: repaints the row
         /// washes and swaps the detail pane, leaving the list and its scroll position alone.
         /// </summary>
+        /// <summary>
+        /// Re-renders only the detail pane of an already-built surface. Source links resolve
+        /// lazily, so a link can become available minutes after the pane was drawn; this is how
+        /// it arrives without a full rebuild. Returns false when <paramref name="root"/> is not
+        /// a built Monitor surface, which is the normal case for the live view.
+        /// </summary>
+        internal static bool TryRerenderDetails(VisualElement root)
+        {
+            if (root?.userData is not MonitorUi ui || ui.DetailsSlot == null || ui.List == null)
+            {
+                return false;
+            }
+
+            RenderSelection(ui);
+            return true;
+        }
+
         private static void RenderSelection(MonitorUi ui)
         {
             IReadOnlyList<MessageMonitorEntry> rows = ui.FilteredEntries();
@@ -677,7 +745,7 @@ namespace DxMessaging.Editor.Windows
             }
 
             ui.DetailsSlot.Clear();
-            ui.DetailsSlot.Add(CreateDetailsPane(rows[selectedEntryIndex]));
+            ui.DetailsSlot.Add(CreateDetailsPane(rows[selectedEntryIndex], ui));
         }
 
         /// <summary>
@@ -940,7 +1008,7 @@ namespace DxMessaging.Editor.Windows
             // than expected, which is how 2021.3 differs from 6000.x for the same window size.
             detailsSlot.style.flexShrink = 1;
             detailsSlot.style.maxHeight = Length.Percent(DetailsMaxHeightPercent);
-            detailsSlot.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex]));
+            detailsSlot.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex], ui));
             messageSection.Add(detailsSlot);
             ui.DetailsSlot = detailsSlot;
         }
@@ -2072,12 +2140,13 @@ namespace DxMessaging.Editor.Windows
             // was given rather than drawn past the bottom edge. The rows inside stay reachable
             // because they live in their own scroll view, which shrinks with it.
             foldout.contentContainer.style.overflow = Overflow.Hidden;
-            foldout.Add(CreateComponentPanel(ui.Components));
+            foldout.Add(CreateComponentPanel(ui.Components, ui));
             return foldout;
         }
 
         private static VisualElement CreateComponentPanel(
-            IReadOnlyList<ComponentMonitorEntry> componentEntries
+            IReadOnlyList<ComponentMonitorEntry> componentEntries,
+            MonitorUi ui = null
         )
         {
             VisualElement panel = new() { name = ComponentPanelName };
@@ -2123,7 +2192,15 @@ namespace DxMessaging.Editor.Windows
                     componentScroll,
                     ComponentPanelMinHeight,
                     ComponentPanelResizeMaxHeight,
-                    ComponentResizerName
+                    ComponentResizerName,
+                    ui?.ComponentPanelHeight ?? 0f,
+                    height =>
+                    {
+                        if (ui != null)
+                        {
+                            ui.ComponentPanelHeight = height;
+                        }
+                    }
                 )
             );
 
@@ -2190,7 +2267,10 @@ namespace DxMessaging.Editor.Windows
         /// route kind and message type, the emission's fields, and the stack trace behind a
         /// disclosure that starts closed.
         /// </summary>
-        private static VisualElement CreateDetailsPane(MessageMonitorEntry entry)
+        private static VisualElement CreateDetailsPane(
+            MessageMonitorEntry entry,
+            MonitorUi ui = null
+        )
         {
             VisualElement details = new() { name = DetailsPaneName };
             details.AddToClassList(DxMessagingEditorTheme.DetailClassName);
@@ -2244,8 +2324,16 @@ namespace DxMessaging.Editor.Windows
                 CreateStackTraceSection(
                     entry,
                     DetailsStackFoldoutName,
-                    DetailsStackTraceLabelName,
-                    DetailsStackTraceMaxHeight
+                    DetailsStackFirstFrameLabelName,
+                    DetailsStackTraceMaxHeight,
+                    ui?.StackTraceHeight ?? 0f,
+                    height =>
+                    {
+                        if (ui != null)
+                        {
+                            ui.StackTraceHeight = height;
+                        }
+                    }
                 )
             );
 
@@ -2304,7 +2392,11 @@ namespace DxMessaging.Editor.Windows
                 return row;
             }
 
-            VisualElement value = row.Q<VisualElement>(valueName);
+            // `Q<T>(null)` matches ANY descendant and would return the key label, so an unnamed
+            // value falls back to the row rather than linking the wrong element.
+            VisualElement value = string.IsNullOrEmpty(valueName)
+                ? null
+                : row.Q<VisualElement>(valueName);
             DxMessagingEditorSourceLinks.MakeActivatable(
                 value ?? row,
                 "Select and ping this object in the Hierarchy.",
@@ -2323,17 +2415,29 @@ namespace DxMessaging.Editor.Windows
             MessageMonitorEntry entry,
             string foldoutName,
             string labelName,
-            float maxHeight
+            float maxHeight,
+            float initialHeight = 0f,
+            Action<float> onHeightChanged = null
         )
         {
             IReadOnlyList<string> frames = DxMessagingEditorSourceLinks.ReadCallSiteFrames(
                 entry.StackTrace
             );
             bool captured = frames.Count > 0;
+            // A trace that was captured but holds nothing except Unity's capture frames is a
+            // different fact from one that was never captured, and saying "not captured" about
+            // it would be false.
+            bool captureFramesOnly = !captured && !string.IsNullOrWhiteSpace(entry.StackTrace);
+            string emptyText = captureFramesOnly
+                ? "Stack trace (no caller frames)"
+                : "Stack trace (not captured)";
+            string emptyBody = captureFramesOnly
+                ? "Stack trace: captured, but every frame was Unity's own stack capture."
+                : "Stack trace: not captured";
             Foldout stackFoldout = new()
             {
                 name = foldoutName,
-                text = captured ? $"Stack trace ({frames.Count})" : "Stack trace (not captured)",
+                text = captured ? $"Stack trace ({frames.Count})" : emptyText,
                 value = false,
                 tooltip =
                     "The call stack the emission was recorded from, one row per frame. Collapsed "
@@ -2345,7 +2449,7 @@ namespace DxMessaging.Editor.Windows
 
             if (!captured)
             {
-                Label empty = new("Stack trace: not captured") { name = labelName };
+                Label empty = new(emptyBody) { name = labelName };
                 empty.style.whiteSpace = WhiteSpace.Normal;
                 stackScroll.Add(empty);
                 stackFoldout.Add(stackScroll);
@@ -2398,7 +2502,9 @@ namespace DxMessaging.Editor.Windows
                     stackScroll,
                     StackTraceMinHeight,
                     StackTraceResizeMaxHeight,
-                    DetailsStackResizerName
+                    DetailsStackResizerName,
+                    initialHeight,
+                    onHeightChanged
                 )
             );
             return stackFoldout;

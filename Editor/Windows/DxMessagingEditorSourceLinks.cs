@@ -563,7 +563,7 @@ namespace DxMessaging.Editor.Windows
                     index.IsComplete = false;
                     index.RetryAfterUtc = DateTime.UtcNow.AddSeconds(5);
                     Debug.LogWarning(
-                        $"DxMessaging Flow Graph could not index message source files: {exception.Message}"
+                        $"DxMessaging could not index message source files: {exception.Message}"
                     );
                 }
                 index.BuildTask = null;
@@ -623,6 +623,15 @@ namespace DxMessaging.Editor.Windows
                 .ToArray();
             Task.WaitAll(buildTasks);
             DrainMessageSourceAssemblyIndexes();
+        }
+
+        /// <summary>
+        /// Raises the completion signal without needing a real index build, so a test can prove a
+        /// window re-renders when the background index lands.
+        /// </summary>
+        internal static void RaiseMessageSourceIndexChangedForTests()
+        {
+            MessageSourceIndexChanged?.Invoke();
         }
 
         internal static void DrainMessageSourceIndexesForTests()
@@ -1171,6 +1180,14 @@ namespace DxMessaging.Editor.Windows
         /// it recorded, so callers use this to decide whether a row can link at all rather
         /// than offering a link that does nothing.
         /// </summary>
+        /// <remarks>
+        /// Editor-only, and deliberately the int overload. `InstanceId` stores the same 32-bit
+        /// key the runtime uses -- see the accessor note on `InstanceId.StableId`, which reads it
+        /// from `EntityId` on Unity 6.4+ precisely because `GetInstanceID()` is on its way out.
+        /// This lookup is the inverse of that key and runs only in the editor, so it is not on
+        /// the path that note is protecting; if a future editor version retires the int overload
+        /// too, this is the single place that has to move.
+        /// </remarks>
         internal static UnityEngine.Object FindContextObject(int contextInstanceId)
         {
             return contextInstanceId == 0
