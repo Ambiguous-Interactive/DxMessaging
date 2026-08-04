@@ -1160,11 +1160,7 @@ namespace DxMessaging.Editor.Windows
             });
             element.RegisterCallback<KeyDownEvent>(evt =>
             {
-                if (
-                    evt.keyCode != KeyCode.Return
-                    && evt.keyCode != KeyCode.KeypadEnter
-                    && evt.keyCode != KeyCode.Space
-                )
+                if (!IsActivationKey(evt))
                 {
                     return;
                 }
@@ -1172,6 +1168,27 @@ namespace DxMessaging.Editor.Windows
                 evt.StopPropagation();
                 onActivate();
             });
+        }
+
+        /// <summary>
+        /// Whether a key event means "activate this". Both the key code AND the character are
+        /// accepted, because a `KeyDownEvent` carrying a character can report `KeyCode.None` --
+        /// which is how keyboard activation silently did nothing on the 2022.3 editor leg while
+        /// working on 2021.3 and 6000.x. A reader who can reach a control with Tab has to be able
+        /// to use it, so the check answers to whichever half the editor version populated.
+        /// </summary>
+        private static bool IsActivationKey(KeyDownEvent evt)
+        {
+            if (
+                evt.keyCode == KeyCode.Return
+                || evt.keyCode == KeyCode.KeypadEnter
+                || evt.keyCode == KeyCode.Space
+            )
+            {
+                return true;
+            }
+
+            return evt.character == '\n' || evt.character == '\r' || evt.character == ' ';
         }
 
         /// <summary>

@@ -698,6 +698,21 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
+        private static void SendActivationKey(VisualElement target, char character, KeyCode keyCode)
+        {
+            using (
+                KeyDownEvent keyDown = KeyDownEvent.GetPooled(
+                    character,
+                    keyCode,
+                    EventModifiers.None
+                )
+            )
+            {
+                keyDown.target = target;
+                target.SendEvent(keyDown);
+            }
+        }
+
         /// <summary>
         /// Drives a resize handle through a real pointer-down / move / up sequence so the
         /// handle's own callbacks, capture, and clamping are what the assertions measure.
@@ -802,22 +817,22 @@ namespace DxMessaging.Tests.Editor
                     "Clicking the SNAPSHOT badge switches to live mode."
                 );
 
-                using (
-                    KeyDownEvent keyDown = KeyDownEvent.GetPooled(
-                        '\n',
-                        KeyCode.Return,
-                        EventModifiers.None
-                    )
-                )
-                {
-                    keyDown.target = badge;
-                    badge.SendEvent(keyDown);
-                }
-
+                // Both shapes, because they are not equivalent across editor versions: a
+                // KeyDownEvent carrying a character can report KeyCode.None, which is how
+                // keyboard activation silently did nothing on 2022.3 while working on 2021.3
+                // and 6000.x.
+                SendActivationKey(badge, '\0', KeyCode.Return);
                 Assert.That(
                     enterLiveCount,
                     Is.EqualTo(2),
-                    "Return activates the badge the same way a click does."
+                    "A Return key code activates the badge the same way a click does."
+                );
+
+                SendActivationKey(badge, '\n', KeyCode.None);
+                Assert.That(
+                    enterLiveCount,
+                    Is.EqualTo(3),
+                    "A Return delivered as a character with no key code must activate too."
                 );
             }
             finally
