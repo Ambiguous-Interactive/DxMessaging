@@ -117,7 +117,7 @@ the `.status` sidecar.
 ## CI vs Local
 
 CI calls `scripts/unity/run-ci-tests.ps1` on self-hosted Windows runners (direct
-Unity, generated host project under `.artifacts/unity/projects/<version>-<mode>/`,
+Unity, generated host project under `.artifacts/u/<version>-<mode>/`,
 classic-serial license with a guaranteed return). The MCP loop is the LOCAL path
 only; it does not run in CI and does not need any Unity license secrets. See
 [UPM Test Harness](../../unity-test-execution/references/upm-test-harness.md) and [Unity CI Matrix](../../unity-editor-ci/references/unity-ci-matrix.md).

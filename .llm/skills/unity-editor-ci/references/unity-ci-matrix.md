@@ -28,7 +28,7 @@
 Nine matrix cells. `editmode`/`playmode` run in-editor on Mono; `standalone`
 builds and runs a `StandaloneWindows64` IL2CPP player. The direct runner
 generates a temporary package host project under
-`.artifacts/unity/projects/<version>-<mode>/`, imports the repo package with a
+`.artifacts/u/<version>-<mode>/`, imports the repo package with a
 `file:` dependency, sets `testables`, and configures IL2CPP before running
 standalone tests. Dispatch runs use the same complete static matrix.
 

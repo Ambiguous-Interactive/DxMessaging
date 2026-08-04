@@ -485,7 +485,7 @@
     {
       "name": "unity-test-execution",
       "path": ".llm/skills/unity-test-execution/SKILL.md",
-      "description": "How the DxMessaging Unity test legs are hosted, filtered, and kept fast: the generated UPM host project under .artifacts/unity/projects/, NUnit [Category] filtering and -testFilter, EnterPlayModeOptions domain/scene reload disabling, batched teardown frames, [UnityTest] vs [Test], banned real-time waits, and the single-threaded bus contract. Use when an EditMode/PlayMode/standalone leg blows its wall-clock budget, when adding an asmdef or test dependency under Tests/, when picking test categories, when converting a no-yield [UnityTest], or before adding lock/Interlocked to the dispatch path.",
+      "description": "How the DxMessaging Unity test legs are hosted, filtered, and kept fast: the generated UPM host project under .artifacts/u/, NUnit [Category] filtering and -testFilter, EnterPlayModeOptions domain/scene reload disabling, batched teardown frames, [UnityTest] vs [Test], banned real-time waits, and the single-threaded bus contract. Use when an EditMode/PlayMode/standalone leg blows its wall-clock budget, when adding an asmdef or test dependency under Tests/, when picking test categories, when converting a no-yield [UnityTest], or before adding lock/Interlocked to the dispatch path.",
       "metadata": {
         "category": "testing",
         "tags": "testing, unity, performance, play-mode, domain-reload"

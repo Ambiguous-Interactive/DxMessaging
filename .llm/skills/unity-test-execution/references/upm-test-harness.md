@@ -2,7 +2,7 @@
 
 # UPM Test Harness
 
-> **One-line summary**: CI generates a thin Unity host project under `.artifacts/unity/projects/<version>-<mode>/`; its only job is to import the package via a local `file:` dependency and expose its `Tests/` asmdefs through the UPM `testables` field.
+> **One-line summary**: CI generates a thin Unity host project under `.artifacts/u/<version>-<mode>/`; its only job is to import the package via a local `file:` dependency and expose its `Tests/` asmdefs through the UPM `testables` field.
 
 ## When to Use
 
@@ -26,7 +26,7 @@ repo-root/
 +-- Tests/
 |   +-- Editor/                   # NUnit + UTF tests (asmdefs)
 |   +-- Runtime/                  # PlayMode tests (asmdefs)
-+-- .artifacts/unity/projects/    # generated thin hosts that import the package
++-- .artifacts/u/                 # generated thin hosts that import the package
     +-- Packages/
     |   +-- manifest.json         # "com.wallstop-studios.dxmessaging": "file:<repo-root>",
     |   |                         # plus "testables" exposing the package's Tests
@@ -72,10 +72,10 @@ Committed source of truth:
 
 Generated and gitignored:
 
-- `.artifacts/unity/projects/**/Library/`
-- `.artifacts/unity/projects/**/Temp/`
-- `.artifacts/unity/projects/**/Logs/`
-- `.artifacts/unity/projects/**/UserSettings/`
+- `.artifacts/u/**/Library/`
+- `.artifacts/u/**/Temp/`
+- `.artifacts/u/**/Logs/`
+- `.artifacts/u/**/UserSettings/`
 - `.artifacts/unity/cache/**`
 
 CI caches the generated project's `Library/` with an exact key that includes OS, architecture, Unity version, mode, package/test inputs, and `scripts/unity/run-ci-tests.ps1`. Do not add broad restore keys.

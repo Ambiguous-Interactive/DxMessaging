@@ -28,7 +28,7 @@ the absolute number.
 `.github/workflows/unity-tests.yml` runs **9 legs** = 3 Unity versions (from
 `.github/unity-versions.json`) x 3 modes (`editmode`, `playmode`, `standalone`),
 `max-parallel: 1`. Each mode is a separate Unity invocation against a separate
-ephemeral project under `.artifacts/unity/projects/<version>-<mode>/`. The
+ephemeral project under `.artifacts/u/<version>-<mode>/`. The
 correctness legs exclude the heavy categories
 (`Stress;Performance;Allocation;MemoryReclaim;UnityRuntime;PerfBench;PerfGate;PerfBaseline`),
 which run in their own dedicated scopes so a perf change cannot hide in the

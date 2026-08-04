@@ -77,6 +77,18 @@ namespace DxMessaging.Editor
         internal const string DetailFrameClassName = "dx-detail__frame";
         internal const string DetailLinkClassName = "dx-detail__link";
         internal const string DetailActiveClassName = "dx-detail__active";
+
+        /// <summary>
+        /// Carries the pointer cursor for anything that answers a click. Issue #344 reported
+        /// that nothing in the window says what is clickable; a hover style only tells a
+        /// reader who already guessed, and the cursor tells one who did not.
+        /// </summary>
+        internal const string ClickableClassName = "dx-clickable";
+
+        /// <summary>
+        /// The grab strip <see cref="CreateResizeHandle"/> renders under a resizable panel.
+        /// </summary>
+        internal const string ResizerClassName = "dx-resizer";
         internal const string KeyValueClassName = "dx-kv";
         internal const string KeyValueKeyClassName = "dx-kv__k";
         internal const string KeyValueValueClassName = "dx-kv__v";
@@ -265,6 +277,122 @@ namespace DxMessaging.Editor
             }
 
             return container;
+        }
+
+        /// <summary>
+        /// Builds a drag handle that resizes <paramref name="target"/> vertically. Issue #344
+        /// reported that Component Diagnostics and the other capped panels cannot be resized:
+        /// each one is pinned to a `max-height` chosen for a window nobody has, so a reader
+        /// with room to spare still scrolls a 180px box. The handle raises the cap as it
+        /// drags, because a `max-height` left in place would silently win over the new height.
+        /// </summary>
+        /// <param name="initialHeight">
+        /// A height the caller remembered from an earlier drag, or 0 for "never resized". Every
+        /// filter keystroke rebuilds the sections around it, so a handle that could not be told
+        /// where the reader left it would hand back the shipped cap on the next character typed.
+        /// </param>
+        /// <param name="onHeightChanged">
+        /// Raised with each dragged height so the caller can remember it across those rebuilds.
+        /// </param>
+        internal static VisualElement CreateResizeHandle(
+            VisualElement target,
+            float minHeight,
+            float maxHeight,
+            string name = null,
+            float initialHeight = 0f,
+            Action<float> onHeightChanged = null
+        )
+        {
+            VisualElement handle = new();
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                handle.name = name;
+            }
+            handle.AddToClassList(ResizerClassName);
+            handle.tooltip = "Drag to resize this section.";
+            if (target == null)
+            {
+                return handle;
+            }
+
+            if (initialHeight > 0f)
+            {
+                ApplyResizedHeight(target, initialHeight, minHeight, maxHeight);
+            }
+
+            float pointerStartY = 0f;
+            float startHeight = 0f;
+            handle.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                // Only the primary button drags. Without this a right- or middle-click on the
+                // 5px strip captures the pointer and starts a resize nobody asked for.
+                if (evt.button != 0)
+                {
+                    return;
+                }
+
+                pointerStartY = evt.position.y;
+                // Prefer the inline style once one exists, because a shrinkable target resolves
+                // to whatever space it was given and successive drags would otherwise each start
+                // from a different origin than the last one ended at. UI Toolkit reports
+                // `Undefined` when a pixel value IS set and `Null` when none is -- measured, and
+                // the opposite of what the names suggest -- so before the first drag this falls
+                // back to the resolved height rather than reading a `value` of 0 and jumping.
+                startHeight =
+                    target.style.height.keyword == StyleKeyword.Undefined
+                        ? target.style.height.value.value
+                        : target.resolvedStyle.height;
+                handle.CapturePointer(evt.pointerId);
+                evt.StopPropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if (!handle.HasPointerCapture(evt.pointerId))
+                {
+                    return;
+                }
+
+                float requested = startHeight + (evt.position.y - pointerStartY);
+                onHeightChanged?.Invoke(
+                    ApplyResizedHeight(target, requested, minHeight, maxHeight)
+                );
+                evt.StopPropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                if (handle.HasPointerCapture(evt.pointerId))
+                {
+                    handle.ReleasePointer(evt.pointerId);
+                }
+                evt.StopPropagation();
+            });
+            return handle;
+        }
+
+        /// <summary>
+        /// Applies a dragged height to a panel that was built with a `max-height` cap and returns
+        /// the height actually used. The cap has to move with it -- a `max-height` left below the
+        /// dragged height silently wins -- and so does `flex-shrink`: these panels are built
+        /// shrinkable so they give space back when the window is short, which also means a plain
+        /// height is only a starting size that Yoga takes straight back.
+        /// </summary>
+        internal static float ApplyResizedHeight(
+            VisualElement target,
+            float requestedHeight,
+            float minHeight,
+            float maxHeight
+        )
+        {
+            if (target == null)
+            {
+                return 0f;
+            }
+
+            float clamped = Mathf.Clamp(requestedHeight, minHeight, maxHeight);
+            target.style.height = clamped;
+            target.style.maxHeight = maxHeight;
+            target.style.flexShrink = 0f;
+            return clamped;
         }
 
         private static StyleSheet LoadStyleSheet(string path)

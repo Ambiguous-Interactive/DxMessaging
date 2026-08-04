@@ -62,39 +62,55 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
-            foreach (Object instance in _createdObjects)
+            // Windows close in a finally: object and asset cleanup below runs Unity code that can
+            // throw, and a leaked EditorWindow outlives the test that made it. It stays subscribed
+            // to statics (this fixture's window subscribes to the shared source index), keeps a
+            // panel alive, and turns one failing test into a cascade in whatever runs next.
+            try
             {
-                if (instance != null)
+                foreach (Object instance in _createdObjects)
                 {
-                    if (instance is GameObject gameObject)
+                    if (instance != null)
                     {
-                        foreach (
-                            MessagingComponent messagingComponent in gameObject.GetComponentsInChildren<MessagingComponent>(
-                                includeInactive: true
-                            )
-                        )
+                        if (instance is GameObject gameObject)
                         {
-                            messagingComponent.EditorResetRuntimeState();
+                            foreach (
+                                MessagingComponent messagingComponent in gameObject.GetComponentsInChildren<MessagingComponent>(
+                                    includeInactive: true
+                                )
+                            )
+                            {
+                                messagingComponent.EditorResetRuntimeState();
+                            }
                         }
+
+                        Object.DestroyImmediate(instance);
                     }
-
-                    Object.DestroyImmediate(instance);
                 }
-            }
-            _createdObjects.Clear();
+                _createdObjects.Clear();
 
-            foreach (string assetPath in _createdAssetPaths)
-            {
-                if (!string.IsNullOrWhiteSpace(assetPath))
+                foreach (string assetPath in _createdAssetPaths)
                 {
-                    EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
-                        AssetDatabase.DeleteAsset(assetPath)
-                    );
+                    if (!string.IsNullOrWhiteSpace(assetPath))
+                    {
+                        EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                            AssetDatabase.DeleteAsset(assetPath)
+                        );
+                    }
                 }
+                _createdAssetPaths.Clear();
             }
-            _createdAssetPaths.Clear();
-
-            EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
+            finally
+            {
+                // Closing a shown window under -nographics logs a benign "No graphic device is
+                // available" error, and Unity resets LogAssert tolerance per phase -- so the
+                // tolerance ShowWindow asserted in the test body does not reach teardown. Any
+                // test here that holds a shown window open until now fails without this.
+                // Headless only, so runs with a real GPU keep full strictness (which is also why
+                // this cannot reproduce on a developer machine).
+                EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
+                EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
+            }
 
             if (MessageHandler.MessageBus is MessageBus messageBus)
             {
@@ -310,7 +326,7 @@ namespace DxMessaging.Tests.Editor
             MessageMonitorEntry entry = new(
                 nameof(OlderMessage),
                 "Context: Player",
-                "UnityEngine.Debug:ExtractStackTraceNoAlloc"
+                CapturedStackTrace
             );
             MessageMonitorSnapshot snapshot = new(
                 diagnosticsEnabled: true,
@@ -338,8 +354,680 @@ namespace DxMessaging.Tests.Editor
             Assert.That(stack, Is.Not.Null);
             Assert.That(stack.value, Is.False, "The stack trace disclosure must start collapsed.");
             Assert.That(
-                stack.Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackTraceLabelName).text,
-                Does.Contain("ExtractStackTraceNoAlloc")
+                stack
+                    .Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName)
+                    .text,
+                Does.Contain("EmitOneOfEach"),
+                "The first frame shown must be the emitting call site."
+            );
+        }
+
+        /// <summary>
+        /// What <see cref="MessageEmissionData"/> actually hands the Monitor: Unity's own two
+        /// stack-capture frames on top, then the frames that describe the emitting code. Issue
+        /// #344 reported the capture frames as noise, so tests use a trace that has both rather
+        /// than one that is only the noise.
+        /// </summary>
+        private const string CapturedStackTrace =
+            "UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)\n"
+            + "UnityEngine.StackTraceUtility:ExtractStackTrace ()\n"
+            + "WallstopStudios.Sample.Exerciser:EmitOneOfEach () (at Assets/Sample/Exerciser.cs:185)\n"
+            + "WallstopStudios.Sample.Exerciser:EmitBurst () (at Assets/Sample/Exerciser.cs:138)";
+
+        /// <summary>
+        /// Issue #344's second round circled the left edge of the log and wrote "PADDING". The
+        /// gutter was pinned to the time column, which only live mode renders, so snapshot rows
+        /// began at the window edge. Measured on the real laid-out window rather than asserted
+        /// against the stylesheet, and measured for the header too, because a row that is
+        /// indented under a header that is not reads as broken in the other direction.
+        /// </summary>
+        [Test]
+        public void TheLogRowsAndHeaderShareAGutterAwayFromTheWindowEdge()
+        {
+            MessageMonitorEntry[] entries = Enumerable
+                .Range(0, 6)
+                .Select(index => new MessageMonitorEntry(
+                    $"Sample.Message{index:00}",
+                    $"Context: Object {index:00} (9748{index:00})",
+                    CapturedStackTrace
+                ))
+                .ToArray();
+            EditorWindow window = CreateTrackedEditorWindow();
+
+            try
+            {
+                window.position = new Rect(0f, 0f, 900f, 620f);
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                root.style.width = 900f;
+                root.style.height = 620f;
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 100,
+                        entries: entries
+                    )
+                );
+
+                Assert.That(root.panel, Is.Not.Null, "A shown window must produce a panel.");
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
+
+                VisualElement header = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.ListHeaderName
+                );
+                Assert.That(header, Is.Not.Null);
+                VisualElement row = root.Query<VisualElement>(
+                        className: DxMessagingMessageMonitorWindow.RowClassName
+                    )
+                    .First();
+                Assert.That(row, Is.Not.Null);
+
+                AssertGutter(header, "the column header");
+                AssertGutter(row, "a log row");
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        private static void AssertGutter(VisualElement container, string description)
+        {
+            VisualElement firstChild = container.Children().First();
+            float inset = firstChild.worldBound.x - container.worldBound.x;
+            Assert.That(
+                inset,
+                Is.GreaterThanOrEqualTo(12f),
+                $"The leftmost content of {description} sits {inset}px from its left edge, so it "
+                    + "reads as flush against the window."
+            );
+        }
+
+        /// <summary>
+        /// Issue #344's second round: "The 'Stacktrace' includes 'extract stack trace' rows."
+        /// The trace becomes one row per frame that describes the emitting code, the capture
+        /// frames are gone, and the first surviving frame is the emitting call site.
+        /// </summary>
+        [Test]
+        public void TheStackTraceRendersOneRowPerFrameWithoutEngineCaptureFrames()
+        {
+            MessageMonitorEntry entry = new(
+                nameof(OlderMessage),
+                "Context: Player",
+                CapturedStackTrace
+            );
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                root,
+                new MessageMonitorSnapshot(
+                    diagnosticsEnabled: true,
+                    capacity: 8,
+                    entries: new[] { entry }
+                )
+            );
+
+            Foldout stack = root.Q<Foldout>(
+                DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
+            );
+            Assert.That(stack, Is.Not.Null);
+
+            List<VisualElement> frameRows = stack
+                .Query<VisualElement>(
+                    className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName
+                )
+                .ToList();
+            Assert.That(
+                frameRows.Count,
+                Is.EqualTo(2),
+                "The trace has four frames, two of which are Unity's own capture frames."
+            );
+            Assert.That(
+                stack.Query<Label>().ToList().ConvertAll(label => label.text),
+                Has.None.Contains("ExtractStackTrace"),
+                "Unity's stack-capture frames describe taking the stack, never the emitting code."
+            );
+            Assert.That(
+                stack
+                    .Q<Label>(DxMessagingMessageMonitorWindow.DetailsStackFirstFrameLabelName)
+                    .text,
+                Does.Contain("EmitOneOfEach"),
+                "The first surviving frame is the emitting call site and reads as the answer."
+            );
+            Assert.That(
+                stack.text,
+                Does.Contain("2"),
+                "The disclosure header counts the frames a reader will actually see."
+            );
+        }
+
+        /// <summary>
+        /// Issue #344's second round: "We need to ideally be able to link/click the contexts."
+        /// A context whose object is still alive selects and pings it; one whose object is gone
+        /// -- the normal case for a log that outlives its scene -- stays readable but inert,
+        /// rather than offering a link that would do nothing.
+        /// </summary>
+        /// <remarks>
+        /// `Destroyed` is the case that actually matters and the one an id of 0 does not cover:
+        /// 0 short-circuits before the object lookup, so it only proves "no context was
+        /// captured". A real id whose object has been destroyed is what a log outliving its
+        /// scene holds.
+        /// </remarks>
+        [TestCase(ContextState.Alive)]
+        [TestCase(ContextState.Destroyed)]
+        [TestCase(ContextState.NeverCaptured)]
+        public void AContextLinksToItsObjectOnlyWhileThatObjectStillExists(ContextState state)
+        {
+            GameObject contextObject = new(
+                nameof(AContextLinksToItsObjectOnlyWhileThatObjectStillExists)
+            );
+            int contextInstanceId = contextObject.GetInstanceID();
+            if (state == ContextState.Destroyed)
+            {
+                Object.DestroyImmediate(contextObject);
+            }
+            else
+            {
+                _createdObjects.Add(contextObject);
+            }
+
+            bool contextIsAlive = state == ContextState.Alive;
+            MessageMonitorEntry entry = new(
+                nameof(OlderMessage),
+                "Context: Player",
+                CapturedStackTrace,
+                contextInstanceId: state == ContextState.NeverCaptured ? 0 : contextInstanceId
+            );
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                root,
+                new MessageMonitorSnapshot(
+                    diagnosticsEnabled: true,
+                    capacity: 8,
+                    entries: new[] { entry }
+                )
+            );
+
+            VisualElement contextRow = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsContextRowName
+            );
+            Assert.That(contextRow, Is.Not.Null, "The detail pane always names the context.");
+            Label contextValue = contextRow.Q<Label>(
+                DxMessagingMessageMonitorWindow.DetailsContextLabelName
+            );
+            Assert.That(contextValue, Is.Not.Null);
+            Assert.That(
+                contextValue.text,
+                Is.EqualTo("Context: Player"),
+                "An inert context is still readable."
+            );
+            Assert.That(
+                contextValue.ClassListContains(DxMessagingEditorTheme.ClickableClassName),
+                Is.EqualTo(contextIsAlive),
+                contextIsAlive
+                    ? "A live context must say it can be clicked."
+                    : "A context whose object is gone must not offer a link that does nothing."
+            );
+            Assert.That(
+                contextValue.focusable,
+                Is.EqualTo(contextIsAlive),
+                "Whatever a mouse can reach, a keyboard must reach too."
+            );
+        }
+
+        /// <summary>
+        /// Issue #344's second round: "The Component Diagnostics and other areas are not
+        /// resizable." Each capped panel now carries a drag handle, and a drag past the shipped
+        /// cap actually takes effect -- a `max-height` left in place would silently win.
+        /// </summary>
+        [Test]
+        public void CappedPanelsCarryAResizeHandleThatCanGrowThemPastTheirShippedCap()
+        {
+            // Pointer capture needs a real panel, so this drives the shown window.
+            EditorWindow window = CreateTrackedEditorWindow();
+            try
+            {
+                window.position = new Rect(0f, 0f, 900f, 620f);
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                root.style.width = 900f;
+                root.style.height = 620f;
+
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 8,
+                        entries: new[]
+                        {
+                            new MessageMonitorEntry(
+                                nameof(OlderMessage),
+                                "Context: Player",
+                                CapturedStackTrace
+                            ),
+                        }
+                    ),
+                    MessageMonitorViewState.Default,
+                    onRefresh: () => { },
+                    onCopyExport: _ => { },
+                    componentEntries: CreateComponentEntries(4)
+                );
+
+                VisualElement componentResizer = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.ComponentResizerName
+                );
+                Assert.That(
+                    componentResizer,
+                    Is.Not.Null,
+                    "Component Diagnostics is the panel #344 named; it must be resizable."
+                );
+                VisualElement stackResizer = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsStackResizerName
+                );
+                Assert.That(stackResizer, Is.Not.Null, "The stack trace is capped too.");
+
+                ScrollView componentScroll = root.Q<ScrollView>(
+                    DxMessagingMessageMonitorWindow.ComponentScrollViewName
+                );
+                Assert.That(componentScroll, Is.Not.Null);
+                Assert.That(
+                    componentScroll.style.maxHeight.value.value,
+                    Is.EqualTo(180f),
+                    "The shipped cap is what makes the panel feel stuck."
+                );
+
+                // Lay the window out first: `worldBound` is NaN until it has, and a drag built from
+                // NaN coordinates produces a NaN delta that clamps to NaN.
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
+
+                // Drive the handle's own pointer handlers rather than calling the apply helper
+                // directly: a test that writes the height itself and reads it back would pass with
+                // every callback in CreateResizeHandle deleted.
+                DragResizeHandle(componentResizer, deltaY: 220f);
+
+                Assert.That(
+                    componentScroll.style.height.value.value,
+                    Is.GreaterThan(180f),
+                    "Dragging down must grow the panel past the shipped cap."
+                );
+                Assert.That(
+                    componentScroll.style.maxHeight.value.value,
+                    Is.GreaterThanOrEqualTo(componentScroll.style.height.value.value),
+                    "A cap left below the dragged height would silently undo the drag."
+                );
+                Assert.That(
+                    componentScroll.style.flexShrink.value,
+                    Is.EqualTo(0f),
+                    "A shrinkable target treats a height as a starting size Yoga takes back, so the "
+                        + "drag would not survive layout."
+                );
+
+                // The dragged height has to survive the rebuild every filter keystroke causes, for
+                // the same reason the disclosures remember whether they were open.
+                float dragged = componentScroll.style.height.value.value;
+                TextField filter = root.Q<TextField>(
+                    DxMessagingMessageMonitorWindow.FilterFieldName
+                );
+                Assert.That(filter, Is.Not.Null);
+                filter.value = "Sample";
+
+                ScrollView rebuiltScroll = root.Q<ScrollView>(
+                    DxMessagingMessageMonitorWindow.ComponentScrollViewName
+                );
+                Assert.That(rebuiltScroll, Is.Not.Null);
+                Assert.That(
+                    rebuiltScroll.style.height.value.value,
+                    Is.EqualTo(dragged),
+                    "A filter keystroke rebuilds this section; the height a reader dragged must come "
+                        + "back with it."
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        /// <summary>
+        /// Sends a key the way PLAN.md's Appendix C prescribes: focus the element, then dispatch
+        /// through the panel rather than at the element. Key events route to the focused element
+        /// via the panel, so `element.SendEvent(...)` on an unfocused element reaches the handler
+        /// on some editor versions and not others -- it worked on 2021.3 and 6000.x and did
+        /// nothing on 2022.3.
+        /// </summary>
+        private static void SendActivationKey(VisualElement target, char character, KeyCode keyCode)
+        {
+            target.Focus();
+            using (
+                KeyDownEvent keyDown = KeyDownEvent.GetPooled(
+                    character,
+                    keyCode,
+                    EventModifiers.None
+                )
+            )
+            {
+                keyDown.target = target;
+                target.panel.visualTree.SendEvent(keyDown);
+            }
+        }
+
+        /// <summary>
+        /// Drives a resize handle through a real pointer-down / move / up sequence so the
+        /// handle's own callbacks, capture, and clamping are what the assertions measure.
+        /// </summary>
+        private static void DragResizeHandle(VisualElement handle, float deltaY)
+        {
+            Vector2 start = new(handle.worldBound.center.x, handle.worldBound.center.y);
+            using (
+                PointerDownEvent down = PointerDownEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseDown,
+                        mousePosition = start,
+                        button = 0,
+                    }
+                )
+            )
+            {
+                down.target = handle;
+                handle.SendEvent(down);
+            }
+            using (
+                PointerMoveEvent move = PointerMoveEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseDrag,
+                        mousePosition = new Vector2(start.x, start.y + deltaY),
+                        button = 0,
+                    }
+                )
+            )
+            {
+                move.target = handle;
+                handle.SendEvent(move);
+            }
+            using (
+                PointerUpEvent up = PointerUpEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseUp,
+                        mousePosition = new Vector2(start.x, start.y + deltaY),
+                        button = 0,
+                    }
+                )
+            )
+            {
+                up.target = handle;
+                handle.SendEvent(up);
+            }
+        }
+
+        /// <summary>
+        /// Issue #344's second round: "We can't go 'Un-Live' once live." The badge that names
+        /// the mode is the control that changes it, in both modes, so a reader who finds the
+        /// switch once finds it again.
+        /// </summary>
+        [Test]
+        public void TheModeBadgeSwitchesModesSoNeitherModeIsOneWay()
+        {
+            int enterLiveCount = 0;
+            // A click needs a panel to dispatch through, so this drives the real window rather
+            // than a detached element.
+            EditorWindow window = CreateTrackedEditorWindow();
+
+            try
+            {
+                EditorWindowTestUtility.ShowWindow(window);
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    window.rootVisualElement,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 8,
+                        entries: Array.Empty<MessageMonitorEntry>()
+                    ),
+                    MessageMonitorViewState.Default,
+                    onRefresh: () => { },
+                    onCopyExport: _ => { },
+                    componentEntries: Array.Empty<ComponentMonitorEntry>(),
+                    onEnterLiveMode: () => enterLiveCount++
+                );
+
+                Label badge = window.rootVisualElement.Q<Label>(
+                    DxMessagingMessageMonitorWindow.ModeBadgeLabelName
+                );
+                Assert.That(badge, Is.Not.Null);
+                Assert.That(
+                    badge.ClassListContains(DxMessagingEditorTheme.ClickableClassName),
+                    Is.True,
+                    "The word that names the mode must say it can be clicked."
+                );
+                Assert.That(
+                    badge.focusable,
+                    Is.True,
+                    "Whatever a mouse can reach, a keyboard must reach too."
+                );
+
+                SendClick(badge);
+
+                Assert.That(
+                    enterLiveCount,
+                    Is.EqualTo(1),
+                    "Clicking the SNAPSHOT badge switches to live mode."
+                );
+
+                SendActivationKey(badge, '\0', KeyCode.Return);
+                Assert.That(
+                    enterLiveCount,
+                    Is.EqualTo(2),
+                    "A Return key code activates the badge the same way a click does."
+                );
+
+                // The character-only event UI Toolkit raises right after the key-code one must
+                // NOT activate again. Accepting both is how one keypress became two activations
+                // -- entering live mode twice, or pinging a context twice, from a single press.
+                SendActivationKey(badge, '\n', KeyCode.None);
+                Assert.That(
+                    enterLiveCount,
+                    Is.EqualTo(2),
+                    "The paired character event must not activate a second time."
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        /// <summary>
+        /// Issue #344's second round: "The 'Type' should ideally be able to 'take to source'."
+        /// The Monitor captures a type as an assembly-qualified name while the resolver reads
+        /// the `Namespace.Type [Assembly]` shape, so the conversion between them is the piece
+        /// that decides whether a link appears at all. A constructed generic carries its own
+        /// comma-separated argument assemblies inside brackets, which is what breaks a naive
+        /// split on the first comma.
+        /// </summary>
+        [TestCase(
+            "Sample.Ping, Sample.Runtime, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            "Sample.Ping [Sample.Runtime]"
+        )]
+        [TestCase(
+            "Sample.Box`1[[Sample.Payload, Other.Asm, Version=1.0.0.0]], Sample.Runtime, Version=1.0.0.0",
+            "Sample.Box`1[[Sample.Payload, Other.Asm, Version=1.0.0.0]] [Sample.Runtime]"
+        )]
+        [TestCase("Sample.Ping", "Sample.Ping")]
+        [TestCase("", "")]
+        [TestCase(null, "")]
+        public void ACapturedTypeNameConvertsToTheShapeTheSourceResolverReads(
+            string assemblyQualifiedName,
+            string expected
+        )
+        {
+            Assert.That(
+                DxMessagingEditorSourceLinks.CreateSourceLookupName(assemblyQualifiedName),
+                Is.EqualTo(expected)
+            );
+        }
+
+        /// <summary>
+        /// The positive half of "the Type takes you to source": a type whose declaring file the
+        /// shared index really can find renders an Open-source button pointing at it. Without
+        /// this, the only coverage was the negative case, which passes just as happily if
+        /// resolution is broken outright.
+        /// </summary>
+        [Test]
+        public void AResolvableTypeRendersAnOpenSourceLink()
+        {
+            DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
+            try
+            {
+                // Warm the lazy index the way the window does, then let it finish. `OlderMessage`
+                // is declared in this file, so the location it resolves to is a real asset.
+                _ = DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
+                    typeof(OlderMessage).AssemblyQualifiedName,
+                    out _
+                );
+                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
+
+                Assert.That(
+                    DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
+                        typeof(OlderMessage).AssemblyQualifiedName,
+                        out DxMessagingEditorSourceLinks.SourceLocation location
+                    ),
+                    Is.True,
+                    "A type declared in a compiled assembly's own source must resolve."
+                );
+                Assert.That(location.AssetPath, Does.EndWith(".cs"));
+
+                MessageMonitorEntry entry = new(
+                    nameof(OlderMessage),
+                    "Context: Player",
+                    CapturedStackTrace,
+                    messageTypeIdentity: typeof(OlderMessage).AssemblyQualifiedName
+                );
+                VisualElement root = new();
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 8,
+                        entries: new[] { entry }
+                    )
+                );
+
+                VisualElement typeRow = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsTypeRowName
+                );
+                Assert.That(typeRow, Is.Not.Null);
+                Button link = typeRow.Q<Button>(DxMessagingEditorSourceLinks.SourceLinkButtonName);
+                Assert.That(
+                    link,
+                    Is.Not.Null,
+                    "A type whose source resolves must offer a link to it."
+                );
+                Assert.That(link.tooltip, Does.Contain(location.AssetPath));
+            }
+            finally
+            {
+                DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
+            }
+        }
+
+        /// <summary>
+        /// Source resolution is lazy: the first lookup answers "not yet" and finishes in the
+        /// background. A window that does not listen for that completion renders a detail pane
+        /// with no link and never revisits it, which is the state ask (4) shipped in until this
+        /// subscription existed.
+        /// </summary>
+        [Test]
+        public void TheWindowRerendersItsDetailPaneWhenTheSourceIndexCompletes()
+        {
+            DxMessagingMessageMonitorWindow window =
+                ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
+            _createdWindows.Add(window);
+
+            // Build a real surface on the window's own root, so the window's OnEnable
+            // subscription is what routes the signal.
+            VisualElement root = window.rootVisualElement;
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                root,
+                new MessageMonitorSnapshot(
+                    diagnosticsEnabled: true,
+                    capacity: 8,
+                    entries: new[]
+                    {
+                        new MessageMonitorEntry(
+                            nameof(OlderMessage),
+                            "Context: Player",
+                            CapturedStackTrace
+                        ),
+                    }
+                )
+            );
+
+            ScrollView log = root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName);
+            VisualElement details = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsPaneName
+            );
+            Assert.That(log, Is.Not.Null);
+            Assert.That(details, Is.Not.Null);
+
+            DxMessagingEditorSourceLinks.RaiseMessageSourceIndexChangedForTests();
+
+            Assert.That(
+                root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName),
+                Is.Not.SameAs(details),
+                "A completed index must re-render the pane that can carry a source link; a window "
+                    + "that does not listen shows a linkless pane forever."
+            );
+            Assert.That(
+                root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
+                Is.SameAs(log),
+                "Re-rendering for a link must not rebuild the log and take the reader's scroll "
+                    + "position with it."
+            );
+        }
+
+        /// <summary>
+        /// A type whose declaring file cannot be found renders no link rather than a dead one.
+        /// </summary>
+        [Test]
+        public void ATypeThatResolvesToNoSourceRendersNoLink()
+        {
+            MessageMonitorEntry entry = new(
+                "NotARealType",
+                "Context: Player",
+                CapturedStackTrace,
+                messageTypeIdentity: "Nowhere.NotARealType, Nowhere.Asm, Version=1.0.0.0"
+            );
+            VisualElement root = new();
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                root,
+                new MessageMonitorSnapshot(
+                    diagnosticsEnabled: true,
+                    capacity: 8,
+                    entries: new[] { entry }
+                )
+            );
+
+            VisualElement typeRow = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsTypeRowName
+            );
+            Assert.That(typeRow, Is.Not.Null, "The detail pane always names the type.");
+            Assert.That(
+                typeRow.Q<Button>(DxMessagingEditorSourceLinks.SourceLinkButtonName),
+                Is.Null,
+                "A type with no resolvable source must not offer a link that opens nothing."
             );
         }
 
@@ -2776,6 +3464,14 @@ namespace DxMessaging.Tests.Editor
             EditorWindow window = EditorWindowTestUtility.CreateWindow();
             _createdWindows.Add(window);
             return window;
+        }
+
+        /// <summary>The three states a captured context can be in by the time it is rendered.</summary>
+        public enum ContextState
+        {
+            Alive,
+            Destroyed,
+            NeverCaptured,
         }
 
         private readonly struct OlderMessage : IUntargetedMessage { }

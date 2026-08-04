@@ -210,6 +210,69 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        /// <summary>
+        /// Issue #344: "There is no 'pointer' intelligence for anything clickable." A hover
+        /// background only tells a reader who already guessed the element was interactive, so
+        /// every shape that answers a click has to declare a cursor. The list is the styles a
+        /// click actually lands on; anything added beside them has to say so here too, which is
+        /// the point -- a new interactive shape that forgets the cursor fails rather than
+        /// shipping the same gap again.
+        /// </summary>
+        // The row's CHILDREN are listed on purpose. USS `cursor` is NOT inherited, so a rule on
+        // `.dx-row` alone paints the pointer over its 14px gutter and nothing else -- the column
+        // labels cover the rest of the row and would compute the default arrow, which is the
+        // exact gap #344 reported.
+        [TestCase(".dx-tool-btn", "link")]
+        [TestCase(".dx-btn-accent", "link")]
+        [TestCase(".dx-btn-ghost", "link")]
+        [TestCase(".dx-chip", "link")]
+        [TestCase(".dx-record", "link")]
+        [TestCase(".dx-row", "link")]
+        [TestCase(".dx-row__time", "link")]
+        [TestCase(".dx-row__type", "link")]
+        [TestCase(".dx-row__msg", "link")]
+        [TestCase(".dx-row__route", "link")]
+        [TestCase(".dx-row__count", "link")]
+        [TestCase(".dx-dot", "link")]
+        [TestCase(".dx-detail__link", "link")]
+        [TestCase(".dx-clickable", "link")]
+        [TestCase(".dx-resizer", "split-resize-up-down")]
+        public void EveryInteractiveStylesheetRuleDeclaresACursor(
+            string selector,
+            string expectedCursor
+        )
+        {
+            string uss = StripBlockComments(
+                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
+            );
+
+            string body = null;
+            foreach (string block in uss.Split('}'))
+            {
+                int open = block.IndexOf('{');
+                if (open < 0)
+                {
+                    continue;
+                }
+
+                string blockSelector = block.Substring(0, open).Trim().Replace("\n", " ");
+                if (string.Equals(blockSelector, selector, StringComparison.Ordinal))
+                {
+                    body = block.Substring(open + 1);
+                    break;
+                }
+            }
+
+            Assert.That(body, Is.Not.Null, $"The stylesheet declares no `{selector}` rule.");
+            Assert.That(
+                body.Contains($"cursor: {expectedCursor};", StringComparison.Ordinal),
+                Is.True,
+                $"`{selector}` must declare `cursor: {expectedCursor};`. Asserting only that some "
+                    + "cursor is present would accept `cursor: arrow`, which is the default and "
+                    + "tells a reader nothing."
+            );
+        }
+
         [Test]
         public void BrandingPrototypeAssemblyAndWindowsAreNotLoaded()
         {

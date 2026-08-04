@@ -514,7 +514,7 @@ namespace DxMessaging.Tests.Editor
         public void TheLiveDetailPaneStartsWithItsStackTraceCollapsed()
         {
             VisualElement root = CreateView(
-                Recorder(Entry(1, "A", stackTrace: "UnityEngine.Debug:ExtractStackTraceNoAlloc"))
+                Recorder(Entry(1, "A", stackTrace: CapturedStackTrace))
             );
 
             Foldout stack = root.Q<Foldout>(
@@ -523,10 +523,27 @@ namespace DxMessaging.Tests.Editor
             Assert.IsNotNull(stack);
             Assert.IsFalse(stack.value, "The stack trace disclosure must start collapsed.");
             StringAssert.Contains(
-                "ExtractStackTraceNoAlloc",
-                stack.Q<Label>(DxMessagingMessageMonitorLiveView.DetailStackLabelName).text
+                "EmitOneOfEach",
+                stack
+                    .Q<Label>(DxMessagingMessageMonitorLiveView.DetailStackFirstFrameLabelName)
+                    .text
+            );
+            Assert.That(
+                stack.Query<Label>().ToList().ConvertAll(label => label.text),
+                Has.None.Contains("ExtractStackTrace"),
+                "Unity's own stack-capture frames are noise and must not be rendered."
             );
         }
+
+        /// <summary>
+        /// The shape <see cref="MessageEmissionData"/> actually captures: Unity's two
+        /// stack-capture frames on top, then the emitting code. See the matching constant in
+        /// the snapshot fixture.
+        /// </summary>
+        private const string CapturedStackTrace =
+            "UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)\n"
+            + "UnityEngine.StackTraceUtility:ExtractStackTrace ()\n"
+            + "WallstopStudios.Sample.Exerciser:EmitOneOfEach () (at Assets/Sample/Exerciser.cs:185)";
 
         [Test]
         public void TypingInTheFilterResetsTheSelectionToTheNewestRow()
@@ -631,6 +648,64 @@ namespace DxMessaging.Tests.Editor
 
             Assert.IsTrue(cleared);
             Assert.IsTrue(exited);
+        }
+
+        /// <summary>
+        /// The half of #344's "we can't go Un-Live once live" that lives on this side: the LIVE
+        /// badge is itself the way back, so a reader who learned the switch in snapshot mode
+        /// finds it in the same place here.
+        /// </summary>
+        [Test]
+        public void TheLiveBadgeSwitchesBackToSnapshot()
+        {
+            int exited = 0;
+            VisualElement root = CreateView(
+                Recorder(Entry(1, "A")),
+                MessageMonitorLiveViewState.Default,
+                new MessageMonitorLiveViewCallbacks { OnExitLiveMode = () => exited++ }
+            );
+
+            Label badge = root.Q<Label>(DxMessagingMessageMonitorLiveView.ModeBadgeLabelName);
+            Assert.IsNotNull(badge);
+            Assert.IsTrue(
+                badge.ClassListContains(DxMessagingEditorTheme.ClickableClassName),
+                "The word that names the mode must say it can be clicked."
+            );
+            Assert.IsTrue(badge.focusable, "A keyboard must reach whatever a mouse reaches.");
+
+            SendClick(badge);
+
+            Assert.AreEqual(1, exited, "Clicking the LIVE badge returns to the snapshot Monitor.");
+        }
+
+        /// <summary>
+        /// The explicit button must sit beside the badge, not at the end of a wrapping toolbar
+        /// where #344 could not find it.
+        /// </summary>
+        [Test]
+        public void TheSnapshotButtonSitsBesideTheModeBadge()
+        {
+            VisualElement root = CreateView(Recorder(Entry(1, "A")));
+
+            VisualElement toolbar = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.ToolbarName
+            );
+            Assert.IsNotNull(toolbar);
+            List<VisualElement> children = toolbar.Children().ToList();
+            int badgeIndex = children.FindIndex(child =>
+                child.name == DxMessagingMessageMonitorLiveView.ModeBadgeLabelName
+            );
+            int buttonIndex = children.FindIndex(child =>
+                child.name == DxMessagingMessageMonitorLiveView.SnapshotButtonName
+            );
+            Assert.Greater(badgeIndex, -1);
+            Assert.Greater(buttonIndex, -1);
+            Assert.AreEqual(
+                badgeIndex + 1,
+                buttonIndex,
+                "The control that leaves live mode must not be the last thing a wrapping "
+                    + "toolbar pushes onto a second row."
+            );
         }
 
         [Test]

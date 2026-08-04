@@ -115,13 +115,8 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-run-ci-generate-"));
   const fakeRepoRoot = path.join(stagingRoot, "repo");
   const artifactsPath = path.join(stagingRoot, "artifacts");
-  const projectPath = path.join(
-    fakeRepoRoot,
-    ".artifacts",
-    "unity",
-    "projects",
-    `${UNITY_VERSION}-editmode`
-  );
+  // `.artifacts/u`, kept short for the Windows MAX_PATH budget (issue #357).
+  const projectPath = path.join(fakeRepoRoot, ".artifacts", "u", `${UNITY_VERSION}-editmode`);
   const cacheRoot = path.join(fakeRepoRoot, ".artifacts", "unity", "cache", UNITY_VERSION);
 
   try {

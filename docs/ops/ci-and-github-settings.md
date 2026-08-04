@@ -36,7 +36,7 @@ the central lock immediately before the licensed Unity section:
   uses: ./.github/actions/validate-unity-license
 
 - name: Acquire organization Unity lock
-  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@985b0cf12b7bf037e9e11d2e65b0fdd3cfa24fe5 # post-v1.10.0
+  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@e6fa595a336e95d800c1139bdebf6d749ee6f186 # post-v1.10.0
   with:
     lock-name: wallstop-organization-builds
     runner-id: ${{ runner.name }}
@@ -78,7 +78,7 @@ install, repair, uninstall, or quarantine editors.
 
 Per-runner Unity-cache safety is provided by each runner agent's exclusive
 workspace - a single self-hosted agent only ever runs one job at a time, so
-generated `.artifacts/unity/projects/<version>-<mode>/Library` directories
+generated `.artifacts/u/<version>-<mode>/Library` directories
 cannot collide.
 
 Most Unity-credential-using jobs use the shared runner set:
