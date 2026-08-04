@@ -825,10 +825,6 @@ namespace DxMessaging.Tests.Editor
                     "Clicking the SNAPSHOT badge switches to live mode."
                 );
 
-                // Both shapes, because they are not equivalent across editor versions: a
-                // KeyDownEvent carrying a character can report KeyCode.None, which is how
-                // keyboard activation silently did nothing on 2022.3 while working on 2021.3
-                // and 6000.x.
                 SendActivationKey(badge, '\0', KeyCode.Return);
                 Assert.That(
                     enterLiveCount,
@@ -836,11 +832,14 @@ namespace DxMessaging.Tests.Editor
                     "A Return key code activates the badge the same way a click does."
                 );
 
+                // The character-only event UI Toolkit raises right after the key-code one must
+                // NOT activate again. Accepting both is how one keypress became two activations
+                // -- entering live mode twice, or pinging a context twice, from a single press.
                 SendActivationKey(badge, '\n', KeyCode.None);
                 Assert.That(
                     enterLiveCount,
-                    Is.EqualTo(3),
-                    "A Return delivered as a character with no key code must activate too."
+                    Is.EqualTo(2),
+                    "The paired character event must not activate a second time."
                 );
             }
             finally

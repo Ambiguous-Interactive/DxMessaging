@@ -332,13 +332,16 @@ namespace DxMessaging.Editor
                 }
 
                 pointerStartY = evt.position.y;
-                // The style value, not the resolved one: a shrinkable target resolves to
-                // whatever space it was given, so reading back the resolved height makes each
-                // successive drag jump from a different origin than the last one ended at.
+                // Prefer the inline style once one exists, because a shrinkable target resolves
+                // to whatever space it was given and successive drags would otherwise each start
+                // from a different origin than the last one ended at. UI Toolkit reports
+                // `Undefined` when a pixel value IS set and `Null` when none is -- measured, and
+                // the opposite of what the names suggest -- so before the first drag this falls
+                // back to the resolved height rather than reading a `value` of 0 and jumping.
                 startHeight =
                     target.style.height.keyword == StyleKeyword.Undefined
-                        ? target.resolvedStyle.height
-                        : target.style.height.value.value;
+                        ? target.style.height.value.value
+                        : target.resolvedStyle.height;
                 handle.CapturePointer(evt.pointerId);
                 evt.StopPropagation();
             });

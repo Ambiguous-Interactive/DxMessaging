@@ -1367,8 +1367,13 @@ function Initialize-EphemeralProject {
     # project has nothing remotely that deep, and applying the same budget to it would reject
     # legitimate short-lived projects under a long temp directory -- which is exactly what it did
     # to this harness's own generate-only tests on windows-latest.
+    # `DirectorySeparatorChar`, not `$IsWindows`: this script declares `#Requires -Version 5.1`
+    # and runs under `Set-StrictMode -Version Latest`, where touching the PowerShell 6+
+    # `$IsWindows` automatic throws instead of returning false. `bootstrap-windows-runner.ps1`
+    # documents the same choice for the same reason.
+    $onWindowsHost = [System.IO.Path]::DirectorySeparatorChar -eq '\'
     $deepestKnownPackageRelativeLength = 171
-    if ($IncludeComparisons -and $IsWindows -and (($project.Length + $deepestKnownPackageRelativeLength) -ge 260)) {
+    if ($IncludeComparisons -and $onWindowsHost -and (($project.Length + $deepestKnownPackageRelativeLength) -ge 260)) {
         throw ("Refusing to generate the Unity project at '$project' ($($project.Length) characters): " +
             "the deepest known package path would reach $($project.Length + $deepestKnownPackageRelativeLength) " +
             "characters, at or over the 260-character Windows MAX_PATH limit. Unity asset import would fail " +

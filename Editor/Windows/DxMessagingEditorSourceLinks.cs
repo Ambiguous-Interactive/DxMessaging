@@ -1171,25 +1171,20 @@ namespace DxMessaging.Editor.Windows
         }
 
         /// <summary>
-        /// Whether a key event means "activate this". Both the key code AND the character are
-        /// accepted, defensively: a `KeyDownEvent` can arrive carrying only one of the two
-        /// depending on how it was raised, and a reader who can reach a control with Tab has to
-        /// be able to use it. (This is belt-and-braces, not the fix for a known defect -- the
-        /// 2022.3 failure that prompted it turned out to be the TEST dispatching at the element
-        /// instead of through the panel, not the key code being absent.)
+        /// Whether a key event means "activate this". The key code ONLY, deliberately: UI Toolkit
+        /// raises two `KeyDownEvent`s for Return and Space -- one carrying the key code, then one
+        /// carrying the character with `KeyCode.None` -- so also accepting the character runs the
+        /// activation twice per keypress on any element that keeps focus. Entering live mode or
+        /// pinging a context twice from one press is worse than the version-portability the
+        /// character branch was reaching for, and that portability turned out to be unnecessary:
+        /// the 2022.3 failure it was added for was a test dispatching at the element instead of
+        /// through the panel.
         /// </summary>
         private static bool IsActivationKey(KeyDownEvent evt)
         {
-            if (
-                evt.keyCode == KeyCode.Return
+            return evt.keyCode == KeyCode.Return
                 || evt.keyCode == KeyCode.KeypadEnter
-                || evt.keyCode == KeyCode.Space
-            )
-            {
-                return true;
-            }
-
-            return evt.character == '\n' || evt.character == '\r' || evt.character == ' ';
+                || evt.keyCode == KeyCode.Space;
         }
 
         /// <summary>
