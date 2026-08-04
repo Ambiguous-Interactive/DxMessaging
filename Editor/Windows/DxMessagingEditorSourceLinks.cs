@@ -1181,12 +1181,17 @@ namespace DxMessaging.Editor.Windows
         /// than offering a link that does nothing.
         /// </summary>
         /// <remarks>
-        /// Editor-only, and deliberately the int overload. `InstanceId` stores the same 32-bit
-        /// key the runtime uses -- see the accessor note on `InstanceId.StableId`, which reads it
-        /// from `EntityId` on Unity 6.4+ precisely because `GetInstanceID()` is on its way out.
-        /// This lookup is the inverse of that key and runs only in the editor, so it is not on
-        /// the path that note is protecting; if a future editor version retires the int overload
-        /// too, this is the single place that has to move.
+        /// Editor-only, and deliberately the int overload. <see cref="InstanceId"/> stores the
+        /// same 32-bit key the runtime uses; see the accessor note on
+        /// <see cref="InstanceId.StableId"/>, which reads that key from <c>EntityId</c> on Unity
+        /// 6.4+ because the legacy accessor it replaced is being retired. This lookup is the
+        /// inverse of the same key and runs only in the editor, so it is not on the path that
+        /// note protects. If a future editor version retires the int overload too, this is the
+        /// single place that has to move.
+        ///
+        /// The legacy accessor is deliberately not named here: `InstanceIdSourceTests` text-scans
+        /// shipped source for it, and `Runtime/Core/InstanceId.cs` is the only file allowed to
+        /// mention it at all.
         /// </remarks>
         internal static UnityEngine.Object FindContextObject(int contextInstanceId)
         {
