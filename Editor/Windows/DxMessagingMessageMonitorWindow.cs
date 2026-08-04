@@ -650,8 +650,8 @@ namespace DxMessaging.Editor.Windows
             {
                 string statusText = CreateStatusText(ui.Snapshot, filteredEntries.Count);
                 ui.Status.text = statusText;
-                // The line ellipsizes on a narrow window, so the tooltip is where the counts stay
-                // readable.
+                // The line is cut off with an ellipsis on a narrow window, so the tooltip is where
+                // the counts stay readable.
                 ui.Status.tooltip = statusText;
             }
             SetExportButtonEnabled(ui, filteredEntries.Count);
@@ -723,11 +723,6 @@ namespace DxMessaging.Editor.Windows
             ui.Status = status;
             toolbar.Add(status);
             return toolbar;
-        }
-
-        internal static string CreateExportText(MessageMonitorSnapshot snapshot, string filterText)
-        {
-            return CreateExportText(snapshot, FilterEntries(snapshot.Entries, filterText));
         }
 
         internal static IReadOnlyList<ComponentMonitorEntry> CaptureComponentSnapshots()

@@ -1264,7 +1264,10 @@ namespace DxMessaging.Tests.Editor
 
             string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
                 snapshot,
-                "type:Newer"
+                DxMessagingMessageMonitorWindow.FilterEntries(
+                    snapshot.Entries,
+                    new MessageMonitorViewState("type:Newer")
+                )
             );
 
             Assert.That(exportText, Does.Not.Contain("activeFilter"));
@@ -2443,7 +2446,10 @@ namespace DxMessaging.Tests.Editor
 
             string exportText = DxMessagingMessageMonitorWindow.CreateExportText(
                 snapshot,
-                nameof(NewerMessage)
+                DxMessagingMessageMonitorWindow.FilterEntries(
+                    snapshot.Entries,
+                    new MessageMonitorViewState(nameof(NewerMessage))
+                )
             );
 
             Assert.That(exportText, Does.Contain("\"entryCount\": 1"));
