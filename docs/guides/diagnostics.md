@@ -96,8 +96,10 @@ says which one is showing:
 - **SNAPSHOT** reads the buffered bus history as of the last **Refresh**. One row
   per emission, newest first, nothing merged.
 - **LIVE** streams new emissions as they happen. Repeats of the same message and
-  context merge into one row, and the `N` column counts them. Switch with the
-  **Live** and **Snapshot** buttons.
+  context merge into one row, and the `N` column counts them.
+
+The badge is also the switch: click **SNAPSHOT** to go live and **LIVE** to go
+back. Live mode keeps its **Snapshot** button beside the badge as well.
 
 Both modes show a fixed-height row per emission with the route kind, the message
 type and the context. Snapshot ends the row with the dispatch id; live ends it
@@ -105,6 +107,19 @@ with the time the row was observed and the `N` count of emissions merged into it
 Selecting a row fills the detail pane below the log; the stack trace lives there
 behind a disclosure that starts closed, so a long call stack never buries the log
 itself.
+
+The detail pane links out to what a row stands for:
+
+- **Type** carries an **Open source** button when the declaring file can be found.
+- **Context** selects and pings its object in the Hierarchy while that object is
+  still alive, and stays readable but inert once it is gone.
+- **Stack trace** is one row per frame, each with its own **Open** button when the
+  frame names a file and line. Unity's own stack-capture frames are left out, and
+  the first row is the emitting call site.
+
+Anything that answers a click shows the pointer cursor, and the capped panels -
+Component Diagnostics and the stack trace - carry a drag handle along their bottom
+edge for readers with more room than the default height assumes.
 
 Three taxonomy chips, one per route kind, name their kind and are drawn in the
 color that marks it in every row, so the chips are both the color legend and the

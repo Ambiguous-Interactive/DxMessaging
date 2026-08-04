@@ -58,6 +58,13 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailsContextLabelName = "dxmessaging-monitor-details-context";
         internal const string DetailsStackFoldoutName = "dxmessaging-monitor-details-stack-foldout";
         internal const string DetailsStackTraceLabelName = "dxmessaging-monitor-details-stack";
+        internal const string DetailsTypeRowName = "dxmessaging-monitor-details-type-row";
+        internal const string DetailsTypeValueLabelName = "dxmessaging-monitor-details-type-value";
+        internal const string DetailsContextRowName = "dxmessaging-monitor-details-context-row";
+        internal const string DetailsStackFrameRowClassName =
+            "dxmessaging-monitor-details-stack-frame";
+        internal const string DetailsStackResizerName = "dxmessaging-monitor-details-stack-resizer";
+        internal const string ComponentResizerName = "dxmessaging-monitor-component-resizer";
         internal const string BreakdownFoldoutName = "dxmessaging-monitor-breakdown";
         internal const string VisibleMessageTypeLanesName =
             "dxmessaging-monitor-message-type-lanes";
@@ -137,6 +144,20 @@ namespace DxMessaging.Editor.Windows
         private const int DetailsStackTraceMaxHeight = 140;
 
         private const int LanePillScrollMaxHeight = 96;
+
+        /// <summary>
+        /// Bounds for the panels a reader can drag. The floors keep a dragged panel from
+        /// collapsing to nothing, and the ceilings are generous rather than tight: the point of
+        /// #344's resize request is that the shipped caps were chosen for a window the reader
+        /// does not have.
+        /// </summary>
+        internal const int StackTraceMinHeight = 40;
+
+        internal const int StackTraceResizeMaxHeight = 640;
+
+        internal const int ComponentPanelMinHeight = 60;
+
+        internal const int ComponentPanelResizeMaxHeight = 720;
 
         /// <summary>
         /// How often live mode drains the bus emission buffer. Fast enough that the log reads as
@@ -510,7 +531,7 @@ namespace DxMessaging.Editor.Windows
                 OnCopyExport = onCopyExport,
             };
 
-            root.Add(CreateToolbar(ui));
+            root.Add(CreateToolbar(ui, onEnterLiveMode));
 
             VisualElement content = new() { name = ContentContainerName };
             content.style.flexGrow = 1;
@@ -699,7 +720,7 @@ namespace DxMessaging.Editor.Windows
             ui.Content.Add(CreateComponentSection(ui));
         }
 
-        private static VisualElement CreateToolbar(MonitorUi ui)
+        private static VisualElement CreateToolbar(MonitorUi ui, Action onEnterLiveMode)
         {
             VisualElement toolbar = new();
             toolbar.AddToClassList(ToolbarClassName);
@@ -720,6 +741,10 @@ namespace DxMessaging.Editor.Windows
             title.style.whiteSpace = WhiteSpace.NoWrap;
             toolbar.Add(title);
 
+            // The badge that names the mode is also the control that changes it. Issue #344
+            // reported not being able to leave live mode: the two modes offered their switch in
+            // different places, so a reader who found one had no reason to look where the other
+            // put it. Whichever mode is showing, the switch is on the word that names it.
             Label mode = new(SnapshotModeBadgeText)
             {
                 name = ModeBadgeLabelName,
@@ -728,6 +753,15 @@ namespace DxMessaging.Editor.Windows
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName);
             mode.style.flexShrink = 0;
+            if (onEnterLiveMode != null)
+            {
+                DxMessagingEditorSourceLinks.MakeActivatable(
+                    mode,
+                    "Switch to the live log, which drains new emissions as they happen.",
+                    onEnterLiveMode,
+                    addLinkClass: false
+                );
+            }
             toolbar.Add(mode);
 
             string statusText = CreateStatusText(
@@ -2084,6 +2118,15 @@ namespace DxMessaging.Editor.Windows
                 componentScroll.Add(CreateComponentRow(componentEntry));
             }
 
+            panel.Add(
+                DxMessagingEditorTheme.CreateResizeHandle(
+                    componentScroll,
+                    ComponentPanelMinHeight,
+                    ComponentPanelResizeMaxHeight,
+                    ComponentResizerName
+                )
+            );
+
             return panel;
         }
 
@@ -2193,35 +2236,175 @@ namespace DxMessaging.Editor.Windows
             Label cardLabel = new("EMISSION");
             cardLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             card.Add(cardLabel);
-            card.Add(CreateKeyValue("Type", entry.MessageTypeDisplayPath));
-            card.Add(CreateKeyValue("Context", entry.ContextText, DetailsContextLabelName));
+            card.Add(CreateTypeDetailRow(entry));
+            card.Add(CreateContextDetailRow(entry, DetailsContextLabelName));
             body.Add(card);
 
-            bool captured = !string.IsNullOrWhiteSpace(entry.StackTrace);
-            Foldout stackFoldout = new()
-            {
-                name = DetailsStackFoldoutName,
-                text = captured ? "Stack trace" : "Stack trace (not captured)",
-                value = false,
-            };
-            stackFoldout.tooltip =
-                "The call stack the emission was recorded from. Collapsed by default because a "
-                + "stack per row is what buries the log.";
-            ScrollView stackScroll = new(ScrollViewMode.Vertical);
-            stackScroll.style.maxHeight = DetailsStackTraceMaxHeight;
-            Label stack = new(captured ? entry.StackTrace : "Stack trace: not captured")
-            {
-                name = DetailsStackTraceLabelName,
-            };
-            stack.style.whiteSpace = WhiteSpace.Normal;
-            stackScroll.Add(stack);
-            stackFoldout.Add(stackScroll);
-            body.Add(stackFoldout);
+            body.Add(
+                CreateStackTraceSection(
+                    entry,
+                    DetailsStackFoldoutName,
+                    DetailsStackTraceLabelName,
+                    DetailsStackTraceMaxHeight
+                )
+            );
 
             return details;
         }
 
-        private static VisualElement CreateKeyValue(
+        /// <summary>
+        /// The message type, plus an "Open source" link when its declaring file can be found.
+        /// Issue #344 asked for the type to take a reader to source; the resolver behind the
+        /// link is the same one the Flow Graph uses, so a type that opens in one window opens
+        /// in the other.
+        /// </summary>
+        internal static VisualElement CreateTypeDetailRow(MessageMonitorEntry entry)
+        {
+            VisualElement row = CreateKeyValue(
+                "Type",
+                entry.MessageTypeDisplayPath,
+                DetailsTypeValueLabelName
+            );
+            row.name = DetailsTypeRowName;
+            if (
+                DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
+                    entry.MessageTypeIdentity,
+                    out DxMessagingEditorSourceLinks.SourceLocation location
+                )
+                && AssetDatabase.LoadMainAssetAtPath(location.AssetPath) != null
+            )
+            {
+                row.Add(
+                    DxMessagingEditorSourceLinks.CreateSourceLinkButton(
+                        "Open source",
+                        location,
+                        includeLocationInText: false
+                    )
+                );
+            }
+            return row;
+        }
+
+        /// <summary>
+        /// The context, made clickable when the object it named is still alive so the reader
+        /// lands on it in the Hierarchy with the Inspector already showing it. A context whose
+        /// object is gone -- the normal case for a log that outlives its scene -- stays readable
+        /// but inert rather than offering a link that would do nothing.
+        /// </summary>
+        internal static VisualElement CreateContextDetailRow(
+            MessageMonitorEntry entry,
+            string valueName
+        )
+        {
+            VisualElement row = CreateKeyValue("Context", entry.ContextText, valueName);
+            row.name = DetailsContextRowName;
+            int contextInstanceId = entry.ContextInstanceId;
+            if (DxMessagingEditorSourceLinks.FindContextObject(contextInstanceId) == null)
+            {
+                return row;
+            }
+
+            VisualElement value = row.Q<VisualElement>(valueName);
+            DxMessagingEditorSourceLinks.MakeActivatable(
+                value ?? row,
+                "Select and ping this object in the Hierarchy.",
+                () => DxMessagingEditorSourceLinks.TryRevealContext(contextInstanceId)
+            );
+            return row;
+        }
+
+        /// <summary>
+        /// The captured call stack as one row per frame, each with its own "Open" link when the
+        /// frame names a file and line. Unity's own capture frames are dropped: issue #344
+        /// reported them as noise at the top of every trace, and they are -- they describe the
+        /// act of taking the stack, never the code that emitted.
+        /// </summary>
+        internal static VisualElement CreateStackTraceSection(
+            MessageMonitorEntry entry,
+            string foldoutName,
+            string labelName,
+            float maxHeight
+        )
+        {
+            IReadOnlyList<string> frames = DxMessagingEditorSourceLinks.ReadCallSiteFrames(
+                entry.StackTrace
+            );
+            bool captured = frames.Count > 0;
+            Foldout stackFoldout = new()
+            {
+                name = foldoutName,
+                text = captured ? $"Stack trace ({frames.Count})" : "Stack trace (not captured)",
+                value = false,
+                tooltip =
+                    "The call stack the emission was recorded from, one row per frame. Collapsed "
+                    + "by default because a stack per row is what buries the log. Unity's own "
+                    + "stack-capture frames are left out.",
+            };
+            ScrollView stackScroll = new(ScrollViewMode.Vertical);
+            stackScroll.style.maxHeight = maxHeight;
+
+            if (!captured)
+            {
+                Label empty = new("Stack trace: not captured") { name = labelName };
+                empty.style.whiteSpace = WhiteSpace.Normal;
+                stackScroll.Add(empty);
+                stackFoldout.Add(stackScroll);
+                return stackFoldout;
+            }
+
+            bool first = true;
+            foreach (string frame in frames)
+            {
+                VisualElement frameRow = new();
+                frameRow.AddToClassList(DetailsStackFrameRowClassName);
+                frameRow.style.flexDirection = FlexDirection.Row;
+                frameRow.style.flexShrink = 1;
+
+                Label frameLabel = new(frame) { tooltip = frame };
+                // The first surviving frame is the emitting call site, so it reads as the answer
+                // and the frames beneath it read as the path that led there.
+                if (first)
+                {
+                    frameLabel.name = labelName;
+                    frameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    first = false;
+                }
+                frameLabel.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
+                frameLabel.style.whiteSpace = WhiteSpace.Normal;
+                frameRow.Add(frameLabel);
+
+                if (
+                    DxMessagingEditorSourceLinks.TryParseSourceLocation(
+                        frame,
+                        out DxMessagingEditorSourceLinks.SourceLocation frameLocation
+                    )
+                    && AssetDatabase.LoadMainAssetAtPath(frameLocation.AssetPath) != null
+                )
+                {
+                    frameRow.Add(
+                        DxMessagingEditorSourceLinks.CreateSourceLinkButton(
+                            "Open",
+                            frameLocation,
+                            includeLocationInText: false
+                        )
+                    );
+                }
+                stackScroll.Add(frameRow);
+            }
+
+            stackFoldout.Add(stackScroll);
+            stackFoldout.Add(
+                DxMessagingEditorTheme.CreateResizeHandle(
+                    stackScroll,
+                    StackTraceMinHeight,
+                    StackTraceResizeMaxHeight,
+                    DetailsStackResizerName
+                )
+            );
+            return stackFoldout;
+        }
+
+        internal static VisualElement CreateKeyValue(
             string key,
             string value,
             string valueName = null
@@ -2575,7 +2758,8 @@ namespace DxMessaging.Editor.Windows
             string messageTypeIdentity = null,
             string messageTypeDisplayPath = null,
             string routeKind = null,
-            long traceId = 0
+            long traceId = 0,
+            int contextInstanceId = 0
         )
         {
             MessageTypeName = messageTypeName;
@@ -2589,6 +2773,7 @@ namespace DxMessaging.Editor.Windows
             StackTrace = stackTrace;
             RouteKind = routeKind ?? string.Empty;
             TraceId = traceId;
+            ContextInstanceId = contextInstanceId;
         }
 
         internal string MessageTypeName { get; }
@@ -2612,6 +2797,15 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal long TraceId { get; }
 
+        /// <summary>
+        /// The Unity instance id of the context this emission was routed through, or 0 when it
+        /// had none. The captured object itself is deliberately not held: a monitor log outlives
+        /// the scene it recorded, and an id can be re-resolved on demand and simply fails to
+        /// resolve once the object is gone, which is exactly the "this row can no longer be
+        /// opened" answer the detail pane needs.
+        /// </summary>
+        internal int ContextInstanceId { get; }
+
         internal static MessageMonitorEntry FromEmission(MessageEmissionData emission)
         {
             Type messageType = emission.message?.MessageType;
@@ -2626,7 +2820,8 @@ namespace DxMessaging.Editor.Windows
                 typeIdentity,
                 typeDisplayPath,
                 CreateRouteKind(messageType),
-                emission.traceId
+                emission.traceId,
+                emission.context?.Id ?? 0
             );
         }
 

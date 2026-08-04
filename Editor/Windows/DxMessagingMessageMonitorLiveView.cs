@@ -176,6 +176,7 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailStackFoldoutName =
             "dxmessaging-monitor-live-detail-stack-foldout";
         internal const string DetailStackLabelName = "dxmessaging-monitor-live-detail-stack";
+        internal const string DetailContextLabelName = "dxmessaging-monitor-live-detail-context";
         internal const string FooterName = "dxmessaging-monitor-live-footer";
         internal const string EmptyBodyName = "dxmessaging-monitor-live-empty";
         internal const string EmptyTitleName = "dxmessaging-monitor-live-empty-title";
@@ -644,6 +645,10 @@ namespace DxMessaging.Editor.Windows
             toolbar.style.alignItems = Align.Center;
             toolbar.style.flexWrap = Wrap.Wrap;
 
+            // The badge is the mode switch here too. Snapshot mode offered its switch beside the
+            // filter row while live mode kept a Snapshot button at the far end of a wrapping
+            // toolbar, which is how a reader ends up believing live mode is one-way (#344). Both
+            // modes now switch from the word that names the mode.
             Label mode = new(LiveModeBadgeText)
             {
                 name = ModeBadgeLabelName,
@@ -652,7 +657,30 @@ namespace DxMessaging.Editor.Windows
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
             mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName);
             mode.style.marginRight = 6;
+            if (callbacks.OnExitLiveMode != null)
+            {
+                DxMessagingEditorSourceLinks.MakeActivatable(
+                    mode,
+                    "Switch back to the snapshot Monitor.",
+                    () => callbacks.OnExitLiveMode.Invoke(),
+                    addLinkClass: false
+                );
+            }
             toolbar.Add(mode);
+
+            // The explicit button moves up next to the badge for the same reason: the control
+            // that leaves live mode should not be the last thing a wrapping toolbar pushes to a
+            // second row.
+            Button exitLive = new()
+            {
+                name = SnapshotButtonName,
+                text = "Snapshot",
+                tooltip = "Switch back to the snapshot Monitor.",
+            };
+            exitLive.RegisterCallback<ClickEvent>(_ => callbacks.OnExitLiveMode?.Invoke());
+            exitLive.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
+            exitLive.SetEnabled(callbacks.OnExitLiveMode != null);
+            toolbar.Add(exitLive);
 
             Toggle record = new("Record") { name = RecordToggleName, value = recorder.Recording };
             record.AddToClassList(DxMessagingEditorTheme.RecordClassName);
@@ -730,16 +758,6 @@ namespace DxMessaging.Editor.Windows
             clear.RegisterCallback<ClickEvent>(_ => callbacks.OnClear?.Invoke());
             clear.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
             toolbar.Add(clear);
-
-            Button snapshot = new()
-            {
-                name = SnapshotButtonName,
-                text = "Snapshot",
-                tooltip = "Switch back to the snapshot Monitor.",
-            };
-            snapshot.RegisterCallback<ClickEvent>(_ => callbacks.OnExitLiveMode?.Invoke());
-            snapshot.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
-            toolbar.Add(snapshot);
 
             return toolbar;
         }
@@ -967,32 +985,29 @@ namespace DxMessaging.Editor.Windows
             Label cardLabel = new("EMISSION");
             cardLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             card.Add(cardLabel);
-            card.Add(CreateKeyValue("Type", row.Entry.MessageTypeDisplayPath));
-            card.Add(CreateKeyValue("Context", row.Entry.ContextText));
+            // Both modes render the same emission, so they render it the same way: the type
+            // opens its source, the context selects the object it named, and the stack trace is
+            // one row per frame with Unity's own capture frames left out.
+            card.Add(DxMessagingMessageMonitorWindow.CreateTypeDetailRow(row.Entry));
+            card.Add(
+                DxMessagingMessageMonitorWindow.CreateContextDetailRow(
+                    row.Entry,
+                    DetailContextLabelName
+                )
+            );
             card.Add(CreateKeyValue("Count", row.Count.ToString(CultureInfo.InvariantCulture)));
             card.Add(CreateKeyValue("Dispatch", CreateTraceRangeText(row)));
             card.Add(CreateKeyValue("Observed", CreateObservedRangeText(row)));
             detail.Add(card);
 
-            bool captured = !string.IsNullOrWhiteSpace(row.Entry.StackTrace);
-            Foldout stackFoldout = new()
-            {
-                name = DetailStackFoldoutName,
-                text = captured ? "Stack trace" : "Stack trace (not captured)",
-                value = false,
-                tooltip =
-                    "The call stack the emission was recorded from. Collapsed by default so the log stays readable.",
-            };
-            ScrollView stackScroll = new(ScrollViewMode.Vertical);
-            stackScroll.style.maxHeight = DetailStackTraceMaxHeight;
-            Label stack = new(captured ? row.Entry.StackTrace : "Stack trace: not captured")
-            {
-                name = DetailStackLabelName,
-            };
-            stack.style.whiteSpace = WhiteSpace.Normal;
-            stackScroll.Add(stack);
-            stackFoldout.Add(stackScroll);
-            detail.Add(stackFoldout);
+            detail.Add(
+                DxMessagingMessageMonitorWindow.CreateStackTraceSection(
+                    row.Entry,
+                    DetailStackFoldoutName,
+                    DetailStackLabelName,
+                    DetailStackTraceMaxHeight
+                )
+            );
 
             return detail;
         }

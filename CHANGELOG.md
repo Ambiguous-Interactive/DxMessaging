@@ -84,7 +84,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collapsed **Breakdown** disclosure of clickable filter pills, with their counts
   and member lists in tooltips, and component diagnostics moved behind its own
   collapsed disclosure. The log now flexes while the detail pane holds its height,
-  so neither is pushed off the bottom of the window
+  so neither is pushed off the bottom of the window. The detail pane also links out
+  to what a row stands for: the message type opens its declaring source, the
+  context selects and pings its object in the Hierarchy while that object is still
+  alive, and the stack trace renders one row per frame with its own **Open**
+  button, leaving out Unity's own stack-capture frames so the first row is the
+  emitting call site. The mode badge is now the mode switch in both directions, so
+  live mode is no longer one-way; the log gutter sits on the row rather than on the
+  live-only time column, so snapshot rows are no longer flush against the window
+  edge; Component Diagnostics and the stack trace carry drag handles instead of a
+  fixed cap; and everything that answers a click shows the pointer cursor
   ([#344](https://github.com/Ambiguous-Interactive/DxMessaging/issues/344)).
 - Improve targeted and source-bound broadcast routing throughput and reduce the
   memory retained by their per-target lookup tables without changing the public

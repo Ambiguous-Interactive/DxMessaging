@@ -210,6 +210,55 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        /// <summary>
+        /// Issue #344: "There is no 'pointer' intelligence for anything clickable." A hover
+        /// background only tells a reader who already guessed the element was interactive, so
+        /// every shape that answers a click has to declare a cursor. The list is the styles a
+        /// click actually lands on; anything added beside them has to say so here too, which is
+        /// the point -- a new interactive shape that forgets the cursor fails rather than
+        /// shipping the same gap again.
+        /// </summary>
+        [TestCase(".dx-tool-btn")]
+        [TestCase(".dx-btn-accent")]
+        [TestCase(".dx-btn-ghost")]
+        [TestCase(".dx-chip")]
+        [TestCase(".dx-record")]
+        [TestCase(".dx-row")]
+        [TestCase(".dx-detail__link")]
+        [TestCase(".dx-clickable")]
+        [TestCase(".dx-resizer")]
+        public void EveryInteractiveStylesheetRuleDeclaresACursor(string selector)
+        {
+            string uss = StripBlockComments(
+                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
+            );
+
+            string body = null;
+            foreach (string block in uss.Split('}'))
+            {
+                int open = block.IndexOf('{');
+                if (open < 0)
+                {
+                    continue;
+                }
+
+                string blockSelector = block.Substring(0, open).Trim().Replace("\n", " ");
+                if (string.Equals(blockSelector, selector, StringComparison.Ordinal))
+                {
+                    body = block.Substring(open + 1);
+                    break;
+                }
+            }
+
+            Assert.That(body, Is.Not.Null, $"The stylesheet declares no `{selector}` rule.");
+            Assert.That(
+                body.Contains("cursor:", StringComparison.Ordinal),
+                Is.True,
+                $"`{selector}` answers a click but declares no cursor, so nothing tells a reader "
+                    + "it can be clicked."
+            );
+        }
+
         [Test]
         public void BrandingPrototypeAssemblyAndWindowsAreNotLoaded()
         {

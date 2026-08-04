@@ -77,6 +77,18 @@ namespace DxMessaging.Editor
         internal const string DetailFrameClassName = "dx-detail__frame";
         internal const string DetailLinkClassName = "dx-detail__link";
         internal const string DetailActiveClassName = "dx-detail__active";
+
+        /// <summary>
+        /// Carries the pointer cursor for anything that answers a click. Issue #344 reported
+        /// that nothing in the window says what is clickable; a hover style only tells a
+        /// reader who already guessed, and the cursor tells one who did not.
+        /// </summary>
+        internal const string ClickableClassName = "dx-clickable";
+
+        /// <summary>
+        /// The grab strip <see cref="CreateResizeHandle"/> renders under a resizable panel.
+        /// </summary>
+        internal const string ResizerClassName = "dx-resizer";
         internal const string KeyValueClassName = "dx-kv";
         internal const string KeyValueKeyClassName = "dx-kv__k";
         internal const string KeyValueValueClassName = "dx-kv__v";
@@ -265,6 +277,84 @@ namespace DxMessaging.Editor
             }
 
             return container;
+        }
+
+        /// <summary>
+        /// Builds a drag handle that resizes <paramref name="target"/> vertically. Issue #344
+        /// reported that Component Diagnostics and the other capped panels cannot be resized:
+        /// each one is pinned to a `max-height` chosen for a window nobody has, so a reader
+        /// with room to spare still scrolls a 180px box. The handle raises the cap as it
+        /// drags, because a `max-height` left in place would silently win over the new height.
+        /// </summary>
+        internal static VisualElement CreateResizeHandle(
+            VisualElement target,
+            float minHeight,
+            float maxHeight,
+            string name = null
+        )
+        {
+            VisualElement handle = new();
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                handle.name = name;
+            }
+            handle.AddToClassList(ResizerClassName);
+            handle.tooltip = "Drag to resize this section.";
+            if (target == null)
+            {
+                return handle;
+            }
+
+            float pointerStartY = 0f;
+            float startHeight = 0f;
+            handle.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                pointerStartY = evt.position.y;
+                startHeight = target.resolvedStyle.height;
+                handle.CapturePointer(evt.pointerId);
+                evt.StopPropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if (!handle.HasPointerCapture(evt.pointerId))
+                {
+                    return;
+                }
+
+                float requested = startHeight + (evt.position.y - pointerStartY);
+                ApplyResizedHeight(target, requested, minHeight, maxHeight);
+                evt.StopPropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                if (handle.HasPointerCapture(evt.pointerId))
+                {
+                    handle.ReleasePointer(evt.pointerId);
+                }
+                evt.StopPropagation();
+            });
+            return handle;
+        }
+
+        /// <summary>
+        /// Applies a dragged height to a panel that was built with a `max-height` cap, keeping
+        /// the cap from overriding the new size while still bounding it.
+        /// </summary>
+        internal static void ApplyResizedHeight(
+            VisualElement target,
+            float requestedHeight,
+            float minHeight,
+            float maxHeight
+        )
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            float clamped = Mathf.Clamp(requestedHeight, minHeight, maxHeight);
+            target.style.height = clamped;
+            target.style.maxHeight = maxHeight;
         }
 
         private static StyleSheet LoadStyleSheet(string path)

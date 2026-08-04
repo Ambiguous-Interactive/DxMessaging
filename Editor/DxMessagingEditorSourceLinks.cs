@@ -167,30 +167,60 @@ namespace DxMessaging.Editor.Windows
             RegexOptions.CultureInvariant
         );
 
-        internal static string CreateEmissionSite(string stackTrace)
+        /// <summary>
+        /// Text that only ever appears in the frames Unity's own stack capture leaves on top
+        /// of every trace it hands back. They name the capture, never the code that emitted,
+        /// so no reader wants to see them and no line number in them is worth opening.
+        /// </summary>
+        private static readonly string[] StackCaptureFrameMarkers =
+        {
+            "UnityEngine.Debug:ExtractStackTrace",
+            "UnityEngine.StackTraceUtility",
+            "StackTraceUtility:ExtractStackTrace",
+        };
+
+        private static readonly string[] StackTraceLineSeparators = { "\r\n", "\n", "\r" };
+
+        internal static bool IsStackCaptureFrame(string frame)
+        {
+            if (string.IsNullOrWhiteSpace(frame))
+            {
+                return false;
+            }
+
+            foreach (string marker in StackCaptureFrameMarkers)
+            {
+                if (frame.IndexOf(marker, StringComparison.Ordinal) >= 0)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Splits a captured stack trace into the frames that describe the emitting code,
+        /// dropping the blank lines and the capture frames Unity adds on top. This is the one
+        /// definition of "a frame worth showing"; every surface that renders a trace uses it.
+        /// </summary>
+        internal static IReadOnlyList<string> ReadCallSiteFrames(string stackTrace)
         {
             if (string.IsNullOrWhiteSpace(stackTrace))
             {
-                return "<unknown call site>";
+                return Array.Empty<string>();
             }
 
-            string firstFrame = stackTrace
-                .Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries)
+            return stackTrace
+                .Split(StackTraceLineSeparators, StringSplitOptions.RemoveEmptyEntries)
                 .Select(line => line.Trim())
-                .FirstOrDefault(line =>
-                    !string.IsNullOrWhiteSpace(line)
-                    && line.IndexOf("UnityEngine.Debug:ExtractStackTrace", StringComparison.Ordinal)
-                        < 0
-                    && line.IndexOf("UnityEngine.StackTraceUtility", StringComparison.Ordinal) < 0
-                    && line.IndexOf("StackTraceUtility:ExtractStackTrace", StringComparison.Ordinal)
-                        < 0
-                );
-            if (string.IsNullOrWhiteSpace(firstFrame))
-            {
-                return "<unknown call site>";
-            }
+                .Where(line => !string.IsNullOrWhiteSpace(line) && !IsStackCaptureFrame(line))
+                .ToArray();
+        }
 
-            return firstFrame;
+        internal static string CreateEmissionSite(string stackTrace)
+        {
+            IReadOnlyList<string> frames = ReadCallSiteFrames(stackTrace);
+            return frames.Count == 0 ? "<unknown call site>" : frames[0];
         }
 
         internal static string CreateCompactCallSiteLabel(string value)
@@ -1036,6 +1066,133 @@ namespace DxMessaging.Editor.Windows
 
             EditorGUIUtility.PingObject(asset);
             _ = AssetDatabase.OpenAsset(asset, location.Line);
+        }
+
+        /// <summary>
+        /// Rewrites an <see cref="Type.AssemblyQualifiedName"/> into the
+        /// <c>Namespace.Type [Assembly]</c> shape <see cref="TryResolveMessageSource"/> reads.
+        /// The split is the first comma AFTER the last <c>]</c> rather than the first comma in
+        /// the string, because a constructed generic carries its own comma-separated argument
+        /// assemblies inside brackets and splitting on those yields a type name that resolves
+        /// to nothing.
+        /// </summary>
+        internal static string CreateSourceLookupName(string assemblyQualifiedName)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyQualifiedName))
+            {
+                return string.Empty;
+            }
+
+            int searchFrom = assemblyQualifiedName.LastIndexOf(']') + 1;
+            int assemblySeparator = assemblyQualifiedName.IndexOf(',', searchFrom);
+            if (assemblySeparator < 0)
+            {
+                return assemblyQualifiedName.Trim();
+            }
+
+            string typeName = assemblyQualifiedName.Substring(0, assemblySeparator).Trim();
+            string remainder = assemblyQualifiedName.Substring(assemblySeparator + 1);
+            int nameEnd = remainder.IndexOf(',');
+            string assemblyName = (
+                nameEnd < 0 ? remainder : remainder.Substring(0, nameEnd)
+            ).Trim();
+            return string.IsNullOrEmpty(assemblyName) ? typeName : $"{typeName} [{assemblyName}]";
+        }
+
+        /// <summary>
+        /// Resolves the declaring source file of a type captured as an assembly-qualified name,
+        /// which is the shape the Message Monitor records.
+        /// </summary>
+        internal static bool TryResolveSourceForAssemblyQualifiedName(
+            string assemblyQualifiedName,
+            out SourceLocation location
+        )
+        {
+            return TryResolveMessageSource(
+                CreateSourceLookupName(assemblyQualifiedName),
+                out location
+            );
+        }
+
+        /// <summary>
+        /// Makes <paramref name="element"/> behave like the link it looks like: clickable,
+        /// reachable and activatable from the keyboard, and carrying the pointer cursor that
+        /// tells a reader it can be clicked at all. This is the single definition of "this is
+        /// interactive" for the diagnostics windows, so an element that skips it does not get
+        /// the affordance by accident and one that takes it cannot forget a piece of it.
+        /// </summary>
+        internal static void MakeActivatable(
+            VisualElement element,
+            string tooltip,
+            Action onActivate,
+            bool addLinkClass = true
+        )
+        {
+            if (element == null || onActivate == null)
+            {
+                return;
+            }
+
+            if (addLinkClass)
+            {
+                element.AddToClassList(DxMessagingEditorTheme.DetailLinkClassName);
+            }
+            element.AddToClassList(DxMessagingEditorTheme.ClickableClassName);
+            element.focusable = true;
+            element.pickingMode = PickingMode.Position;
+            if (!string.IsNullOrWhiteSpace(tooltip))
+            {
+                element.tooltip = tooltip;
+            }
+            element.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                onActivate();
+            });
+            element.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (
+                    evt.keyCode != KeyCode.Return
+                    && evt.keyCode != KeyCode.KeypadEnter
+                    && evt.keyCode != KeyCode.Space
+                )
+                {
+                    return;
+                }
+
+                evt.StopPropagation();
+                onActivate();
+            });
+        }
+
+        /// <summary>
+        /// Resolves the Unity object a captured context id stood for, or null once that object
+        /// is gone. A destroyed context is the normal case for a log that outlives the scene
+        /// it recorded, so callers use this to decide whether a row can link at all rather
+        /// than offering a link that does nothing.
+        /// </summary>
+        internal static UnityEngine.Object FindContextObject(int contextInstanceId)
+        {
+            return contextInstanceId == 0
+                ? null
+                : EditorUtility.InstanceIDToObject(contextInstanceId);
+        }
+
+        /// <summary>
+        /// Selects and pings the object a captured context id stood for, so the reader lands on
+        /// it in the Hierarchy (or the Project window) with the Inspector already showing it.
+        /// </summary>
+        internal static bool TryRevealContext(int contextInstanceId)
+        {
+            UnityEngine.Object contextObject = FindContextObject(contextInstanceId);
+            if (contextObject == null)
+            {
+                return false;
+            }
+
+            Selection.activeObject = contextObject;
+            EditorGUIUtility.PingObject(contextObject);
+            return true;
         }
     }
 }

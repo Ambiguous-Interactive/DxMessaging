@@ -514,7 +514,7 @@ namespace DxMessaging.Tests.Editor
         public void TheLiveDetailPaneStartsWithItsStackTraceCollapsed()
         {
             VisualElement root = CreateView(
-                Recorder(Entry(1, "A", stackTrace: "UnityEngine.Debug:ExtractStackTraceNoAlloc"))
+                Recorder(Entry(1, "A", stackTrace: CapturedStackTrace))
             );
 
             Foldout stack = root.Q<Foldout>(
@@ -523,10 +523,25 @@ namespace DxMessaging.Tests.Editor
             Assert.IsNotNull(stack);
             Assert.IsFalse(stack.value, "The stack trace disclosure must start collapsed.");
             StringAssert.Contains(
-                "ExtractStackTraceNoAlloc",
+                "EmitOneOfEach",
                 stack.Q<Label>(DxMessagingMessageMonitorLiveView.DetailStackLabelName).text
             );
+            Assert.That(
+                stack.Query<Label>().ToList().ConvertAll(label => label.text),
+                Has.None.Contains("ExtractStackTrace"),
+                "Unity's own stack-capture frames are noise and must not be rendered."
+            );
         }
+
+        /// <summary>
+        /// The shape <see cref="MessageEmissionData"/> actually captures: Unity's two
+        /// stack-capture frames on top, then the emitting code. See the matching constant in
+        /// the snapshot fixture.
+        /// </summary>
+        private const string CapturedStackTrace =
+            "UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)\n"
+            + "UnityEngine.StackTraceUtility:ExtractStackTrace ()\n"
+            + "WallstopStudios.Sample.Exerciser:EmitOneOfEach () (at Assets/Sample/Exerciser.cs:185)";
 
         [Test]
         public void TypingInTheFilterResetsTheSelectionToTheNewestRow()
