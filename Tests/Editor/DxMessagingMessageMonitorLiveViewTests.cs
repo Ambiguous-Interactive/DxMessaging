@@ -51,6 +51,7 @@ namespace DxMessaging.Tests.Editor
                 DxMessagingEditorTheme.ChipUntargetedClassName,
                 DxMessagingEditorTheme.ChipTargetedClassName,
                 DxMessagingEditorTheme.ChipBroadcastClassName,
+                DxMessagingEditorTheme.ChipWideClassName,
                 DxMessagingEditorTheme.FilterClassName,
                 DxMessagingEditorTheme.ListHeaderClassName,
                 DxMessagingEditorTheme.ColumnTimeClassName,
@@ -463,6 +464,68 @@ namespace DxMessaging.Tests.Editor
             Assert.IsTrue(next.Value.ShowUntargeted);
             Assert.IsFalse(next.Value.ShowTargeted, "An untouched chip keeps its state.");
             Assert.IsFalse(next.Value.ShowBroadcast);
+        }
+
+        [Test]
+        public void TheLiveSurfaceNamesItsModeAndItsTaxonomyChips()
+        {
+            VisualElement root = CreateView(Recorder(Entry(1, "A")));
+
+            Label badge = root.Q<Label>(DxMessagingMessageMonitorLiveView.ModeBadgeLabelName);
+            Assert.IsNotNull(badge);
+            Assert.AreEqual(DxMessagingMessageMonitorLiveView.LiveModeBadgeText, badge.text);
+            Assert.AreEqual(DxMessagingMessageMonitorLiveView.LiveModeHintText, badge.tooltip);
+            Assert.AreEqual(
+                DxMessagingMessageMonitorLiveView.LiveModeHintText,
+                Text(root, DxMessagingMessageMonitorLiveView.ModeHintLabelName),
+                "The footer says what a row stands for, so the merged N column is not a mystery."
+            );
+
+            foreach (
+                (string chipName, string routeKind) in new[]
+                {
+                    (
+                        DxMessagingMessageMonitorLiveView.UntargetedChipName,
+                        DxMessagingEditorPalette.UntargetedKind
+                    ),
+                    (
+                        DxMessagingMessageMonitorLiveView.TargetedChipName,
+                        DxMessagingEditorPalette.TargetedKind
+                    ),
+                    (
+                        DxMessagingMessageMonitorLiveView.BroadcastChipName,
+                        DxMessagingEditorPalette.BroadcastKind
+                    ),
+                }
+            )
+            {
+                Toggle chip = root.Q<Toggle>(chipName);
+                Assert.IsNotNull(chip, chipName);
+                Assert.AreEqual(routeKind, chip.text, chipName);
+                Assert.IsTrue(
+                    chip.ClassListContains(DxMessagingEditorTheme.ChipWideClassName),
+                    chipName
+                );
+                StringAssert.Contains(routeKind, chip.tooltip);
+            }
+        }
+
+        [Test]
+        public void TheLiveDetailPaneStartsWithItsStackTraceCollapsed()
+        {
+            VisualElement root = CreateView(
+                Recorder(Entry(1, "A", stackTrace: "UnityEngine.Debug:ExtractStackTraceNoAlloc"))
+            );
+
+            Foldout stack = root.Q<Foldout>(
+                DxMessagingMessageMonitorLiveView.DetailStackFoldoutName
+            );
+            Assert.IsNotNull(stack);
+            Assert.IsFalse(stack.value, "The stack trace disclosure must start collapsed.");
+            StringAssert.Contains(
+                "ExtractStackTraceNoAlloc",
+                stack.Q<Label>(DxMessagingMessageMonitorLiveView.DetailStackLabelName).text
+            );
         }
 
         [Test]
@@ -999,13 +1062,14 @@ namespace DxMessaging.Tests.Editor
             long traceId,
             string messageTypeName,
             string contextText = "Context: none",
-            string routeKind = DxMessagingEditorPalette.UntargetedKind
+            string routeKind = DxMessagingEditorPalette.UntargetedKind,
+            string stackTrace = ""
         )
         {
             return new MessageMonitorEntry(
                 messageTypeName,
                 contextText,
-                stackTrace: string.Empty,
+                stackTrace,
                 messageTypeIdentity: messageTypeName,
                 messageTypeDisplayPath: messageTypeName,
                 routeKind: routeKind,

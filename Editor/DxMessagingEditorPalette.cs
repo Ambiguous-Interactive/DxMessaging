@@ -56,6 +56,36 @@ namespace DxMessaging.Editor
             }
         }
 
+        /// <summary>
+        /// Whether a route kind survives the three taxonomy filter chips. A route kind that is
+        /// none of the three (unrecognized or missing) is never hidden, so the chips can only ever
+        /// hide rows they can also bring back.
+        /// </summary>
+        /// <remarks>
+        /// Shared by the snapshot and live Monitor surfaces so a chip means the same thing in
+        /// both. Both store their chip state as what is <em>hidden</em>, so their
+        /// <c>default</c> is an unfiltered log.
+        /// </remarks>
+        internal static bool ShowsRouteKind(
+            string routeKind,
+            bool showUntargeted,
+            bool showTargeted,
+            bool showBroadcast
+        )
+        {
+            switch (NormalizeRouteKind(routeKind))
+            {
+                case UntargetedKind:
+                    return showUntargeted;
+                case TargetedKind:
+                    return showTargeted;
+                case BroadcastKind:
+                    return showBroadcast;
+                default:
+                    return true;
+            }
+        }
+
         internal static string NormalizeRouteKind(string routeKind)
         {
             string value = string.IsNullOrWhiteSpace(routeKind) ? string.Empty : routeKind.Trim();

@@ -13,6 +13,7 @@
 /* ---------- window shell ---------- */
 .dx-window {
     flex-grow: 1;
+    flex-shrink: 1;
     background-color: var(--dx-tool-window);
     color: var(--dx-text);
     font-size: 12px;
@@ -72,6 +73,10 @@
 /* search */
 .dx-search {
     width: 260px;
+    min-width: 120px;
+    /* UI Toolkit defaults flex-shrink to 0, so a fixed-width search field would push
+       the toolbar buttons past the edge of a narrow window instead of giving space back. */
+    flex-shrink: 1;
     margin-left: 2px;
     margin-right: 2px;
 }
@@ -90,6 +95,12 @@
 .dx-chip--u { background-color: var(--dx-untargeted); }
 .dx-chip--t { background-color: var(--dx-targeted); }
 .dx-chip--b { background-color: var(--dx-broadcast); }
+.dx-chip--wide {
+    width: auto;
+    height: 20px;
+    padding-left: 8px;
+    padding-right: 8px;
+}
 .dx-filter { opacity: 0.45; }
 .dx-filter:checked { opacity: 1; }
 
@@ -159,7 +170,18 @@
 .dx-theme.dx-light .dx-detail { background-color: #efeadf; }
 
 .dx-detail__head { flex-direction: row; align-items: center; margin-bottom: 10px; }
-.dx-detail__title { -unity-font-style: bold; font-size: 16px; color: var(--dx-text); margin-left: 9px; }
+.dx-detail__title {
+    -unity-font-style: bold;
+    font-size: 16px;
+    color: var(--dx-text);
+    margin-left: 9px;
+    /* A fully-qualified message type is long and the header is one row: shrink and ellipsize
+       rather than pushing the row past the edge of the panel. */
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .dx-detail__frame { color: var(--dx-text-muted); font-size: 10px; }
 .dx-detail__link {
     background-color: var(--dx-tool-field);
@@ -203,7 +225,7 @@
 }
 .dx-kv { flex-direction: row; align-items: center; margin-bottom: 3px; }
 .dx-kv__k { width: 74px; color: var(--dx-text-muted); font-size: 11px; }
-.dx-kv__v { flex-grow: 1; color: var(--dx-text-dim); font-size: 11px; }
+.dx-kv__v { flex-grow: 1; flex-shrink: 1; white-space: normal; color: var(--dx-text-dim); font-size: 11px; }
 .dx-prio { padding-left: 6px; padding-right: 6px; border-radius: 4px; background-color: var(--dx-accent-soft); color: #0d1117; -unity-font-style: bold; font-size: 9px; }
 
 /* ---------- buttons ---------- */
@@ -249,7 +271,7 @@
 .dx-footer__num { color: var(--dx-text-dim); margin-right: 4px; }
 
 /* ---------- empty state (the one place the mark appears in a tool) ---------- */
-.dx-empty { flex-grow: 1; align-items: center; justify-content: center; }
+.dx-empty { flex-grow: 1; flex-shrink: 1; align-items: center; justify-content: center; }
 .dx-empty__title { font-size: 13px; -unity-font-style: bold; color: var(--dx-text); margin-top: 12px; }
 .dx-empty__body { font-size: 11px; color: var(--dx-text-muted); margin-top: 6px; white-space: normal; max-width: 260px; -unity-text-align: middle-center; }
 
@@ -269,7 +291,7 @@
 .dx-inspector__title { color: var(--dx-accent-soft); -unity-font-style: bold; font-size: 11px; margin-left: 8px; }
 .dx-inspector__meta { color: var(--dx-text-faint); font-size: 10px; }
 .dx-sub { flex-direction: row; align-items: center; padding: 3px 0; }
-.dx-sub__name { flex-grow: 1; color: var(--dx-text-dim); font-size: 12px; }
+.dx-sub__name { flex-grow: 1; flex-shrink: 1; color: var(--dx-text-dim); font-size: 12px; }
 .dx-sub__meta { color: var(--dx-text-muted); font-size: 10px; margin-right: 8px; }
 .dx-sub__live { width: 7px; height: 7px; border-radius: 4px; background-color: var(--dx-ok); }
 .dx-sub__idle { width: 7px; height: 7px; border-radius: 4px; background-color: #4a4a4a; }

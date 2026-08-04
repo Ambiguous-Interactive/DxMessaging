@@ -50,6 +50,12 @@ namespace DxMessaging.Editor
         internal const string ChipUntargetedClassName = "dx-chip--u";
         internal const string ChipTargetedClassName = "dx-chip--t";
         internal const string ChipBroadcastClassName = "dx-chip--b";
+
+        /// <summary>
+        /// Widens a taxonomy chip so it can carry its route kind's name and count instead of a
+        /// single letter. A chip that names itself is the Monitor's color legend.
+        /// </summary>
+        internal const string ChipWideClassName = "dx-chip--wide";
         internal const string FilterClassName = "dx-filter";
         internal const string RecordClassName = "dx-record";
         internal const string ListHeaderClassName = "dx-list-header";

@@ -90,28 +90,46 @@ current editor tooling also includes two dedicated windows under
 ### Message Monitor
 
 Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to inspect the
-default global bus. The monitor shows recent global emissions in most-recent
-first order with message type, context, stack trace, filtering, selected-entry
-details, manual refresh, visible message-type/context lanes, and **Copy JSON**
-export.
-The filter keeps existing plain text matching and also supports complete
+default global bus. The window has two modes, and a badge in its toolbar always
+says which one is showing:
+
+- **SNAPSHOT** reads the buffered bus history as of the last **Refresh**. One row
+  per emission, newest first, nothing merged.
+- **LIVE** streams new emissions as they happen. Repeats of the same message and
+  context merge into one row, and the `N` column counts them. Switch with the
+  **Live** and **Snapshot** buttons.
+
+Both modes show a fixed-height row per emission with the route kind, the message
+type and the context. Snapshot ends the row with the dispatch id; live ends it
+with the time the row was observed and the `N` count of emissions merged into it.
+Selecting a row fills the detail pane below the log; the stack trace lives there
+behind a disclosure that starts closed, so a long call stack never buries the log
+itself.
+
+Three taxonomy chips, one per route kind, name their kind and are drawn in the
+color that marks it in every row, so the chips are both the color legend and the
+per-kind filter. Clicking one hides or shows its route kind. In snapshot mode
+they sit above the log and each carries how many matching entries it stands for;
+in live mode they sit in the toolbar without a count, because the log is still
+filling.
+
+The text filter keeps plain text matching and also supports complete
 whitespace-separated field facets backed by captured entry data: `type:`,
 `message:`, `context:`, and `stack:`. Facet terms can be combined, for example
 `type:Damage context:Player`. Quote typed values with spaces, for example
 `context:"Context: Player"`; unquoted values with spaces stay on the plain text
 path.
 The active filter strip shows whether the current filter is typed or plain text
-and provides a Clear action without changing JSON export.
-Message-type lanes group the currently visible entries by message type, then
-show entry count, distinct context count, entry share, and context list for each
-message type so a filtered monitor view shows which message volume dominates.
-Context lanes group the same visible entries by context, then show entry count,
-distinct message-type count, entry share, and message list for each context.
-Each lane row includes a Filter action that updates the monitor filter in place:
-message-type lanes apply a `type:` filter, and context lanes apply a quoted
-exact `context:` filter for the visible context.
+and provides a Clear action without changing JSON export. **Copy JSON** copies
+exactly the entries the log is showing, chips included.
 
-The lower component diagnostics panel summarizes loaded scene
+**Breakdown** is a collapsed disclosure holding one clickable pill per message
+type and per context in the visible log. Each pill shows its share of the log and
+applies the filter that isolates it: message-type pills apply a `type:` filter,
+and context pills apply a quoted exact `context:` filter. The counts behind a
+pill, and the contexts or message types it covers, are in its tooltip.
+
+**Component Diagnostics**, also a collapsed disclosure, summarizes loaded scene
 `MessagingComponent` instances without resolving serialized providers. It shows
 listener counts, enabled/diagnostics listener counts, registrations, call counts,
 local message counts, provider status, and provider warnings such as a missing

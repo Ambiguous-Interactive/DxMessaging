@@ -11,15 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The Message Monitor now has a **Live** mode alongside the existing snapshot
   view. It drains the bus emission buffer on a timer into a columnar log with a
-  record/pause toggle, Untargeted/Targeted/Broadcast filter chips, the same typed
-  filter query as snapshot mode (`type:`, `message:`, `context:`, `stack:`), a
-  detail pane for the selected row, and a footer reporting shown, buffered,
-  recorded and missed counts. Repeated identical emissions coalesce into one
-  counted row. The log updates in place as it drains, so scrolling into older rows
-  is not undone by the next poll, and emissions the bus overwrote before the log
-  could drain them raise a notice saying the log has gaps instead of leaving that
-  to a number in the footer. Live mode is editor-only and reads data the bus
-  already records, so it adds no runtime cost.
+  record/pause toggle, named Untargeted/Targeted/Broadcast filter chips, the same
+  typed filter query as snapshot mode (`type:`, `message:`, `context:`, `stack:`),
+  a detail pane for the selected row whose stack trace starts collapsed, and a
+  footer reporting shown, buffered, recorded and missed counts. Repeated identical
+  emissions coalesce into one counted row, and a `LIVE` badge plus a footer line
+  say so, so the merged `N` column is not a mystery. The log updates in place as
+  it drains, so scrolling into older rows is not undone by the next poll, and
+  emissions the bus overwrote before the log could drain them raise a notice
+  saying the log has gaps instead of leaving that to a number in the footer. Live
+  mode is editor-only and reads data the bus already records, so it adds no
+  runtime cost.
 - Add a **Message subscriptions** section to every `MessageAwareComponent`
   inspector. It lists the registrations its `MessageRegistrationToken` holds: the
   message type, the registration kind, a priority badge, the observed call count,
@@ -70,6 +72,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   background source index refreshes. Dense many-to-many coverage keeps hundreds of
   crossing routes present and selectable in constrained layouts
   ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
+- Change the snapshot Message Monitor to the same columnar surface as its live
+  log. Rows are fixed-height and carry the route kind, message type, context, and
+  dispatch id under a column header; the stack trace moved out of every row into
+  the selected entry's detail pane, behind a disclosure that starts collapsed.
+  A `SNAPSHOT` badge and a one-line explanation say that the log is buffered
+  history with one row per emission, so it is no longer ambiguous whether the
+  window is streaming or merging. Named taxonomy chips carrying per-kind counts
+  act as both the color legend and a per-kind filter, and **Copy JSON** follows
+  them. The always-expanded message-type and context lane panels became one
+  collapsed **Breakdown** disclosure of clickable filter pills, with their counts
+  and member lists in tooltips, and component diagnostics moved behind its own
+  collapsed disclosure. The log now flexes while the detail pane holds its height,
+  so neither is pushed off the bottom of the window
+  ([#344](https://github.com/Ambiguous-Interactive/DxMessaging/issues/344)).
 - Improve targeted and source-bound broadcast routing throughput and reduce the
   memory retained by their per-target lookup tables without changing the public
   messaging API or delivery behavior

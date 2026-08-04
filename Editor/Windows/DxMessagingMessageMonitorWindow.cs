@@ -3,6 +3,7 @@ namespace DxMessaging.Editor.Windows
 {
     using System;
     using System.Collections.Generic;
+    using System.Globalization;
     using System.Linq;
     using System.Text;
     using Core;
@@ -36,18 +37,28 @@ namespace DxMessaging.Editor.Windows
         internal const string RefreshButtonName = "dxmessaging-monitor-refresh";
         internal const string ExportButtonName = "dxmessaging-monitor-export";
         internal const string LiveButtonName = "dxmessaging-monitor-live-mode";
+        internal const string ModeBadgeLabelName = "dxmessaging-monitor-mode";
+        internal const string ModeHintLabelName = "dxmessaging-monitor-mode-hint";
         internal const string ContentContainerName = "dxmessaging-monitor-content";
         internal const string MessageSectionName = "dxmessaging-monitor-message-section";
         internal const string EmptyStateLabelName = "dxmessaging-monitor-empty";
         internal const string EmptyStateTitleLabelName = "dxmessaging-monitor-empty-title";
+        internal const string RouteKindFilterRowName = "dxmessaging-monitor-route-kinds";
+        internal const string UntargetedChipName = "dxmessaging-monitor-chip-untargeted";
+        internal const string TargetedChipName = "dxmessaging-monitor-chip-targeted";
+        internal const string BroadcastChipName = "dxmessaging-monitor-chip-broadcast";
+        internal const string ListHeaderName = "dxmessaging-monitor-list-header";
+        internal const string ListName = "dxmessaging-monitor-list";
         internal const string MessageTypeLabelName = "dxmessaging-monitor-message-type";
         internal const string RouteKindLabelName = "dxmessaging-monitor-route-kind";
         internal const string ContextLabelName = "dxmessaging-monitor-context";
-        internal const string StackTraceLabelName = "dxmessaging-monitor-stack";
+        internal const string TraceLabelName = "dxmessaging-monitor-trace";
         internal const string DetailsPaneName = "dxmessaging-monitor-details";
         internal const string DetailsTypeLabelName = "dxmessaging-monitor-details-type";
         internal const string DetailsContextLabelName = "dxmessaging-monitor-details-context";
+        internal const string DetailsStackFoldoutName = "dxmessaging-monitor-details-stack-foldout";
         internal const string DetailsStackTraceLabelName = "dxmessaging-monitor-details-stack";
+        internal const string BreakdownFoldoutName = "dxmessaging-monitor-breakdown";
         internal const string VisibleMessageTypeLanesName =
             "dxmessaging-monitor-message-type-lanes";
         internal const string VisibleMessageTypeLaneScrollViewName =
@@ -60,8 +71,6 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-monitor-message-type-lane-type";
         internal const string VisibleMessageTypeLaneSummaryLabelName =
             "dxmessaging-monitor-message-type-lane-summary";
-        internal const string VisibleMessageTypeLaneContextsLabelName =
-            "dxmessaging-monitor-message-type-lane-contexts";
         internal const string VisibleMessageTypeLaneFilterButtonName =
             "dxmessaging-monitor-message-type-lane-filter";
         internal const string VisibleContextLanesName = "dxmessaging-monitor-context-lanes";
@@ -75,11 +84,10 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-monitor-context-lane-context";
         internal const string VisibleContextLaneSummaryLabelName =
             "dxmessaging-monitor-context-lane-summary";
-        internal const string VisibleContextLaneMessagesLabelName =
-            "dxmessaging-monitor-context-lane-messages";
         internal const string VisibleContextLaneFilterButtonName =
             "dxmessaging-monitor-context-lane-filter";
         internal const string ComponentPanelName = "dxmessaging-monitor-components";
+        internal const string ComponentFoldoutName = "dxmessaging-monitor-components-foldout";
         internal const string ComponentScrollViewName = "dxmessaging-monitor-component-scroll";
         internal const string ComponentRowClassName = "dxmessaging-monitor-component-row";
         internal const string ComponentNameLabelName = "dxmessaging-monitor-component-name";
@@ -91,6 +99,46 @@ namespace DxMessaging.Editor.Windows
         private const string Title = "Message Monitor";
 
         /// <summary>
+        /// Badge text for the buffered-history mode, alongside the one-line explanation of what
+        /// the rows in that mode stand for. Issue #344 reported that a reader cannot tell whether
+        /// the Monitor is streaming or deduplicating, so both modes now say so on the surface
+        /// itself rather than leaving it to the menu the window was opened from.
+        /// </summary>
+        internal const string SnapshotModeBadgeText = "SNAPSHOT";
+
+        internal const string SnapshotModeHintText =
+            "Buffered bus history as of the last Refresh. One row per emission, newest first, nothing merged.";
+
+        /// <summary>
+        /// How the log and the detail pane divide a window that can be dragged down to its 320 px
+        /// minimum.
+        /// </summary>
+        /// <remarks>
+        /// The log is the section that gives space back first, because it scrolls: shrinking it
+        /// costs a reader nothing they cannot scroll to. It stops at two rows so it still reads as
+        /// a log. The detail pane keeps its natural height until it would take more than
+        /// <see cref="DetailsMaxHeightPercent"/> of the section, at which point it is capped and its
+        /// own body scrolls; below the log's floor it keeps shrinking rather than leaving the
+        /// window, down to its own header. Issue #344 reported the previous arrangement -- where
+        /// nothing gave way -- as content rendered off screen.
+        /// </remarks>
+        private const int MessageListMinHeight = 56;
+
+        private const int DetailsMaxHeightPercent = 45;
+
+        /// <summary>
+        /// Floor for a disclosure section, sized to its own toggle header. A <see cref="Foldout"/>
+        /// that shrinks has to keep at least the row a reader clicks to open it: without this floor
+        /// the section is squeezed to a few pixels and its header, not its body, is what spills out
+        /// of the window. Compression below the floor goes to the scrolling lists inside instead.
+        /// </summary>
+        private const int FoldoutHeaderMinHeight = 22;
+
+        private const int DetailsStackTraceMaxHeight = 140;
+
+        private const int LanePillScrollMaxHeight = 96;
+
+        /// <summary>
         /// How often live mode drains the bus emission buffer. Fast enough that the log reads as
         /// live, slow enough that a busy scene batches many emissions into one rebuild.
         /// </summary>
@@ -99,13 +147,7 @@ namespace DxMessaging.Editor.Windows
         [SerializeField]
         private bool _liveMode;
 
-        private string _filterText = string.Empty;
-        private int _selectedEntryIndex;
-        private MessageMonitorSnapshot _currentSnapshot = MessageMonitorSnapshot.Unavailable(
-            "No message monitor snapshot has been captured yet."
-        );
-        private IReadOnlyList<ComponentMonitorEntry> _currentComponents =
-            Array.Empty<ComponentMonitorEntry>();
+        private MessageMonitorViewState _viewState = MessageMonitorViewState.Default;
         private MessageMonitorLiveRecorder _liveRecorder;
         private MessageMonitorLiveViewState _liveViewState = MessageMonitorLiveViewState.Default;
         private IVisualElementScheduledItem _livePump;
@@ -213,14 +255,13 @@ namespace DxMessaging.Editor.Windows
                     "The active global bus is not the default DxMessaging MessageBus."
                 );
             IReadOnlyList<ComponentMonitorEntry> components = CaptureComponentSnapshots();
-            _currentSnapshot = snapshot;
-            _currentComponents = components;
             BuildMonitorUi(
                 rootVisualElement,
                 snapshot,
-                new MessageMonitorViewState(_filterText, _selectedEntryIndex),
-                HandleFilterChanged,
-                HandleSelectedEntryChanged,
+                _viewState,
+                // The surface has already re-rendered itself; the window only has to remember what
+                // it is now showing so the next Refresh rebuilds into the same state.
+                viewState => _viewState = viewState,
                 Refresh,
                 exportText => EditorGUIUtility.systemCopyBuffer = exportText,
                 components,
@@ -389,69 +430,6 @@ namespace DxMessaging.Editor.Windows
             return MessageHandler.MessageBus is MessageBus messageBus && messageBus.DiagnosticsMode;
         }
 
-        private void HandleFilterChanged(string filterText)
-        {
-            string normalizedFilterText = filterText ?? string.Empty;
-            if (string.Equals(_filterText, normalizedFilterText, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _filterText = normalizedFilterText;
-            _selectedEntryIndex = 0;
-            RefreshCurrentSnapshotContent();
-        }
-
-        private void HandleSelectedEntryChanged(int selectedEntryIndex)
-        {
-            int normalizedSelectedEntryIndex = Math.Max(0, selectedEntryIndex);
-            if (_selectedEntryIndex == normalizedSelectedEntryIndex)
-            {
-                return;
-            }
-
-            _selectedEntryIndex = normalizedSelectedEntryIndex;
-            RefreshCurrentSnapshotContent();
-        }
-
-        private void RefreshCurrentSnapshotContent()
-        {
-            VisualElement messageSection = rootVisualElement.Q<VisualElement>(MessageSectionName);
-            Label status = rootVisualElement.Q<Label>(StatusLabelName);
-            if (messageSection == null || status == null)
-            {
-                Refresh();
-                return;
-            }
-
-            MessageMonitorViewState viewState = new(_filterText, _selectedEntryIndex);
-            IReadOnlyList<MessageMonitorEntry> filteredEntries = FilterEntries(
-                _currentSnapshot.Entries,
-                viewState.FilterText
-            );
-            status.text = CreateStatusText(_currentSnapshot, filteredEntries.Count);
-            void RequestFilterChange(string filterText)
-            {
-                TextField filter = rootVisualElement.Q<TextField>(FilterFieldName);
-                if (filter != null)
-                {
-                    filter.value = filterText ?? string.Empty;
-                    return;
-                }
-
-                HandleFilterChanged(filterText);
-            }
-
-            RenderMessageSection(
-                messageSection,
-                _currentSnapshot,
-                filteredEntries,
-                viewState,
-                HandleSelectedEntryChanged,
-                RequestFilterChange
-            );
-        }
-
         internal static MessageMonitorSnapshot CaptureSnapshot(MessageBus messageBus)
         {
             if (messageBus == null)
@@ -490,12 +468,23 @@ namespace DxMessaging.Editor.Windows
             );
         }
 
+        /// <summary>
+        /// Builds the whole snapshot Monitor: a toolbar naming the mode, a control row, the
+        /// taxonomy filter chips, and a content area holding the log, the selected-entry details
+        /// and the component section.
+        /// </summary>
+        /// <remarks>
+        /// Every control mutates one <see cref="MonitorUi"/> and re-renders through it, so the
+        /// surface behaves identically whether or not a host supplied
+        /// <paramref name="onViewStateChanged"/>. A host that does supply one is told the complete
+        /// next state and is expected to store it rather than re-render, because the surface has
+        /// already updated itself in place.
+        /// </remarks>
         internal static void BuildMonitorUi(
             VisualElement root,
             MessageMonitorSnapshot snapshot,
             MessageMonitorViewState viewState,
-            Action<string> onFilterChanged = null,
-            Action<int> onSelectedEntryChanged = null,
+            Action<MessageMonitorViewState> onViewStateChanged = null,
             Action onRefresh = null,
             Action<string> onCopyExport = null,
             IReadOnlyList<ComponentMonitorEntry> componentEntries = null,
@@ -508,103 +497,253 @@ namespace DxMessaging.Editor.Windows
             }
 
             root.Clear();
-            componentEntries ??= Array.Empty<ComponentMonitorEntry>();
             DxMessagingEditorTheme.ApplyWindow(root);
             root.AddToClassList(RootClassName);
-            root.style.paddingTop = 10;
-            root.style.paddingRight = 12;
-            root.style.paddingBottom = 12;
-            root.style.paddingLeft = 12;
+            root.style.flexDirection = FlexDirection.Column;
 
-            VisualElement toolbar = new();
-            toolbar.AddToClassList(ToolbarClassName);
-            toolbar.AddToClassList(DxMessagingEditorTheme.ToolbarClassName);
-            toolbar.style.flexDirection = FlexDirection.Row;
-            toolbar.style.justifyContent = Justify.SpaceBetween;
-            toolbar.style.alignItems = Align.Center;
-            toolbar.style.marginBottom = 10;
-
-            Label title = new(Title);
-            title.style.fontSize = 16;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            toolbar.Add(title);
-
-            IReadOnlyList<MessageMonitorEntry> filteredEntries = FilterEntries(
-                snapshot.Entries,
-                viewState.FilterText
-            );
-
-            Label status = new(CreateStatusText(snapshot, filteredEntries.Count))
+            MonitorUi ui = new()
             {
-                name = StatusLabelName,
+                Snapshot = snapshot,
+                Components = componentEntries ?? Array.Empty<ComponentMonitorEntry>(),
+                State = viewState,
+                OnViewStateChanged = onViewStateChanged,
+                OnCopyExport = onCopyExport,
             };
-            status.style.unityTextAlign = TextAnchor.MiddleRight;
-            toolbar.Add(status);
-            root.Add(toolbar);
+
+            root.Add(CreateToolbar(ui));
 
             VisualElement content = new() { name = ContentContainerName };
             content.style.flexGrow = 1;
+            // Growing is not enough: UI Toolkit defaults flex-shrink to 0, so a block that only
+            // grows keeps its content height and pushes its siblings off the window as soon as an
+            // expanded disclosure makes that content taller than the space available.
+            content.style.flexShrink = 1;
+            content.style.minHeight = 0;
+            ui.Content = content;
 
             if (!snapshot.Available)
             {
                 root.Add(content);
                 AddEmptyState(content, "Monitor unavailable", snapshot.UnavailableReason);
-                content.Add(CreateComponentPanel(componentEntries));
+                content.Add(CreateComponentSection(ui));
                 return;
             }
 
-            Action<string> applyFilterText = null;
-            void RequestFilterChange(string filterText)
-            {
-                applyFilterText?.Invoke(filterText);
-            }
-
-            void RefreshLocalContent(string filterText)
-            {
-                IReadOnlyList<MessageMonitorEntry> nextFilteredEntries = FilterEntries(
-                    snapshot.Entries,
-                    filterText
-                );
-                status.text = CreateStatusText(snapshot, nextFilteredEntries.Count);
-                RenderMonitorContent(
-                    content,
-                    snapshot,
-                    nextFilteredEntries,
-                    componentEntries,
-                    new MessageMonitorViewState(filterText),
-                    onSelectedEntryChanged,
-                    RequestFilterChange
-                );
-            }
-
-            root.Add(
-                CreateControlRow(
-                    snapshot,
-                    viewState,
-                    onFilterChanged,
-                    onRefresh,
-                    onCopyExport,
-                    onFilterChanged == null ? RefreshLocalContent : null,
-                    onEnterLiveMode,
-                    out applyFilterText
-                )
-            );
-
+            root.Add(CreateControlRow(ui, onRefresh, onEnterLiveMode));
+            root.Add(CreateRouteKindFilterRow(ui));
             root.Add(content);
-            RenderMonitorContent(
-                content,
-                snapshot,
-                filteredEntries,
-                componentEntries,
-                viewState,
-                onSelectedEntryChanged,
-                RequestFilterChange
-            );
+            RenderContent(ui);
         }
 
-        internal static string CreateExportText(MessageMonitorSnapshot snapshot, string filterText)
+        /// <summary>
+        /// The elements a rendered snapshot Monitor updates in place, plus the state they render.
+        /// </summary>
+        private sealed class MonitorUi
         {
-            return CreateExportText(snapshot, FilterEntries(snapshot.Entries, filterText));
+            internal MessageMonitorSnapshot Snapshot { get; set; }
+
+            internal IReadOnlyList<ComponentMonitorEntry> Components { get; set; }
+
+            internal MessageMonitorViewState State { get; set; }
+
+            internal Label Status { get; set; }
+
+            internal TextField Filter { get; set; }
+
+            internal Button Export { get; set; }
+
+            internal VisualElement ActiveFilter { get; set; }
+
+            internal VisualElement Content { get; set; }
+
+            internal Toggle UntargetedChip { get; set; }
+
+            internal Toggle TargetedChip { get; set; }
+
+            internal Toggle BroadcastChip { get; set; }
+
+            /// <summary>The scrolling log, or null while the message section is an empty state.</summary>
+            internal ScrollView List { get; set; }
+
+            /// <summary>Holds the detail pane so a new selection can replace only that.</summary>
+            internal VisualElement DetailsSlot { get; set; }
+
+            /// <summary>
+            /// Whether each disclosure is open. A filter or chip change rebuilds the content, and a
+            /// rebuilt <see cref="Foldout"/> starts closed, so without remembering this a reader
+            /// who opened Breakdown and then typed would watch it snap shut under them -- the same
+            /// loss of context a selection change deliberately avoids.
+            /// </summary>
+            internal bool BreakdownExpanded { get; set; }
+
+            internal bool ComponentsExpanded { get; set; }
+
+            internal Action<MessageMonitorViewState> OnViewStateChanged { get; set; }
+
+            internal Action<string> OnCopyExport { get; set; }
+
+            internal IReadOnlyList<MessageMonitorEntry> FilteredEntries()
+            {
+                return FilterEntries(Snapshot.Entries, State);
+            }
+        }
+
+        /// <summary>
+        /// Adopts <paramref name="next"/> as what the Monitor shows: syncs the controls that do not
+        /// already agree with it, re-renders what changed, and tells the host.
+        /// </summary>
+        /// <remarks>
+        /// A selection change re-renders only the selected row's wash and the detail pane. Rebuilding
+        /// the whole log for it would throw a reader who had scrolled into older rows back to the top
+        /// on the very click they used to look at one.
+        /// </remarks>
+        private static void ApplyState(MonitorUi ui, MessageMonitorViewState next)
+        {
+            bool sameRowSet =
+                string.Equals(ui.State.FilterText, next.FilterText, StringComparison.Ordinal)
+                && ui.State.ShowUntargeted == next.ShowUntargeted
+                && ui.State.ShowTargeted == next.ShowTargeted
+                && ui.State.ShowBroadcast == next.ShowBroadcast;
+
+            ui.State = next;
+            if (
+                ui.Filter != null
+                && !string.Equals(ui.Filter.value, next.FilterText, StringComparison.Ordinal)
+            )
+            {
+                ui.Filter.SetValueWithoutNotify(next.FilterText);
+            }
+            ui.UntargetedChip?.SetValueWithoutNotify(next.ShowUntargeted);
+            ui.TargetedChip?.SetValueWithoutNotify(next.ShowTargeted);
+            ui.BroadcastChip?.SetValueWithoutNotify(next.ShowBroadcast);
+
+            if (sameRowSet && ui.List != null)
+            {
+                RenderSelection(ui);
+            }
+            else
+            {
+                RenderContent(ui);
+            }
+            ui.OnViewStateChanged?.Invoke(next);
+        }
+
+        /// <summary>
+        /// Moves the selection within the log the reader is already looking at: repaints the row
+        /// washes and swaps the detail pane, leaving the list and its scroll position alone.
+        /// </summary>
+        private static void RenderSelection(MonitorUi ui)
+        {
+            IReadOnlyList<MessageMonitorEntry> rows = ui.FilteredEntries();
+            if (rows.Count == 0)
+            {
+                RenderContent(ui);
+                return;
+            }
+
+            int selectedEntryIndex = ClampSelectedIndex(ui.State.SelectedEntryIndex, rows.Count);
+            for (int index = 0; index < ui.List.childCount; index++)
+            {
+                VisualElement row = ui.List[index];
+                if (index == selectedEntryIndex)
+                {
+                    row.style.backgroundColor = DxMessagingEditorPalette.SelectedWash;
+                }
+                else
+                {
+                    row.style.backgroundColor = StyleKeyword.Null;
+                }
+            }
+
+            ui.DetailsSlot.Clear();
+            ui.DetailsSlot.Add(CreateDetailsPane(rows[selectedEntryIndex]));
+        }
+
+        /// <summary>
+        /// Re-renders everything that depends on the view state: the status line, the export
+        /// button, the active-filter strip, the chip counts, and the content area.
+        /// </summary>
+        private static void RenderContent(MonitorUi ui)
+        {
+            IReadOnlyList<MessageMonitorEntry> filteredEntries = ui.FilteredEntries();
+            if (ui.Status != null)
+            {
+                string statusText = CreateStatusText(ui.Snapshot, filteredEntries.Count);
+                ui.Status.text = statusText;
+                // The line is cut off with an ellipsis on a narrow window, so the tooltip is where
+                // the counts stay readable.
+                ui.Status.tooltip = statusText;
+            }
+            SetExportButtonEnabled(ui, filteredEntries.Count);
+            UpdateActiveFilterSummary(
+                ui.ActiveFilter,
+                ui.State.FilterText,
+                () => ApplyState(ui, ui.State.WithFilterText(string.Empty))
+            );
+            UpdateRouteKindChipText(ui);
+
+            if (ui.Content == null || !ui.Snapshot.Available)
+            {
+                return;
+            }
+
+            ui.Content.Clear();
+            ui.List = null;
+            ui.DetailsSlot = null;
+            VisualElement messageSection = new() { name = MessageSectionName };
+            messageSection.style.flexGrow = 1;
+            messageSection.style.flexShrink = 1;
+            messageSection.style.minHeight = 0;
+            ui.Content.Add(messageSection);
+            RenderMessageSection(ui, messageSection, filteredEntries);
+            ui.Content.Add(CreateComponentSection(ui));
+        }
+
+        private static VisualElement CreateToolbar(MonitorUi ui)
+        {
+            VisualElement toolbar = new();
+            toolbar.AddToClassList(ToolbarClassName);
+            toolbar.AddToClassList(DxMessagingEditorTheme.ToolbarClassName);
+            toolbar.style.flexDirection = FlexDirection.Row;
+            toolbar.style.alignItems = Align.Center;
+
+            // Every element in this row shrinks except the mode badge, which is the one thing that
+            // must stay legible at any width. UI Toolkit defaults flex-shrink to 0, so a row of
+            // defaults pushes its last child out of a narrow window instead of tightening.
+            Label title = new(Title);
+            title.style.fontSize = 16;
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginRight = 8;
+            title.style.flexShrink = 1;
+            title.style.overflow = Overflow.Hidden;
+            title.style.textOverflow = TextOverflow.Ellipsis;
+            title.style.whiteSpace = WhiteSpace.NoWrap;
+            toolbar.Add(title);
+
+            Label mode = new(SnapshotModeBadgeText)
+            {
+                name = ModeBadgeLabelName,
+                tooltip = SnapshotModeHintText,
+            };
+            mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
+            mode.AddToClassList(DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName);
+            mode.style.flexShrink = 0;
+            toolbar.Add(mode);
+
+            string statusText = CreateStatusText(
+                ui.Snapshot,
+                FilterEntries(ui.Snapshot.Entries, ui.State).Count
+            );
+            Label status = new(statusText) { name = StatusLabelName, tooltip = statusText };
+            status.style.flexGrow = 1;
+            status.style.flexShrink = 1;
+            status.style.overflow = Overflow.Hidden;
+            status.style.textOverflow = TextOverflow.Ellipsis;
+            status.style.whiteSpace = WhiteSpace.NoWrap;
+            status.style.unityTextAlign = TextAnchor.MiddleRight;
+            ui.Status = status;
+            toolbar.Add(status);
+            return toolbar;
         }
 
         internal static IReadOnlyList<ComponentMonitorEntry> CaptureComponentSnapshots()
@@ -691,61 +830,15 @@ namespace DxMessaging.Editor.Windows
             return builder.ToString();
         }
 
-        private static void RenderMonitorContent(
-            VisualElement content,
-            MessageMonitorSnapshot snapshot,
-            IReadOnlyList<MessageMonitorEntry> filteredEntries,
-            IReadOnlyList<ComponentMonitorEntry> componentEntries,
-            MessageMonitorViewState viewState,
-            Action<int> onSelectedEntryChanged,
-            Action<string> onFilterRequested
-        )
-        {
-            if (content == null)
-            {
-                throw new ArgumentNullException(nameof(content));
-            }
-            if (filteredEntries == null)
-            {
-                throw new ArgumentNullException(nameof(filteredEntries));
-            }
-            if (componentEntries == null)
-            {
-                throw new ArgumentNullException(nameof(componentEntries));
-            }
-
-            content.Clear();
-            VisualElement messageSection = new() { name = MessageSectionName };
-            messageSection.style.flexGrow = 1;
-            content.Add(messageSection);
-            RenderMessageSection(
-                messageSection,
-                snapshot,
-                filteredEntries,
-                viewState,
-                onSelectedEntryChanged,
-                onFilterRequested
-            );
-            content.Add(CreateComponentPanel(componentEntries));
-        }
-
         private static void RenderMessageSection(
+            MonitorUi ui,
             VisualElement messageSection,
-            MessageMonitorSnapshot snapshot,
-            IReadOnlyList<MessageMonitorEntry> filteredEntries,
-            MessageMonitorViewState viewState,
-            Action<int> onSelectedEntryChanged,
-            Action<string> onFilterRequested
+            IReadOnlyList<MessageMonitorEntry> filteredEntries
         )
         {
-            if (messageSection == null)
-            {
-                throw new ArgumentNullException(nameof(messageSection));
-            }
-
             messageSection.Clear();
 
-            if (!snapshot.DiagnosticsEnabled)
+            if (!ui.Snapshot.DiagnosticsEnabled)
             {
                 AddEmptyState(
                     messageSection,
@@ -755,7 +848,7 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
-            if (snapshot.Entries.Count == 0)
+            if (ui.Snapshot.Entries.Count == 0)
             {
                 AddEmptyState(
                     messageSection,
@@ -775,28 +868,253 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
-            messageSection.Add(CreateVisibleMessageTypeLanes(filteredEntries, onFilterRequested));
-            messageSection.Add(CreateVisibleContextLanes(filteredEntries, onFilterRequested));
+            messageSection.Add(CreateBreakdownFoldout(ui, filteredEntries));
+            messageSection.Add(CreateListHeader());
 
-            ScrollView list = new(ScrollViewMode.Vertical);
+            ScrollView list = new(ScrollViewMode.Vertical) { name = ListName };
             list.style.flexGrow = 1;
+            list.style.flexShrink = 1;
+            // flex-basis 0, not "auto". A hundred buffered rows make the log's content height
+            // enormous, and shrinking is distributed in proportion to basis, so an auto basis lets
+            // the log claim nearly all of the space and starve the sections beside it -- the
+            // Component Diagnostics body ended up with a few pixels even on a 900x620 window.
+            // Sizing it from the space left over instead makes the log the flexible one.
+            list.style.flexBasis = 0;
+            list.style.minHeight = MessageListMinHeight;
             int selectedEntryIndex = ClampSelectedIndex(
-                viewState.SelectedEntryIndex,
+                ui.State.SelectedEntryIndex,
                 filteredEntries.Count
             );
             for (int i = 0; i < filteredEntries.Count; i++)
             {
+                int entryIndex = i;
                 list.Add(
                     CreateRow(
                         filteredEntries[i],
                         i,
                         i == selectedEntryIndex,
-                        onSelectedEntryChanged
+                        () => ApplyState(ui, ui.State.WithSelectedEntryIndex(entryIndex))
                     )
                 );
             }
             messageSection.Add(list);
-            messageSection.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex]));
+            ui.List = list;
+
+            VisualElement detailsSlot = new();
+            // Capped AND shrinkable, with no floor of its own. The cap keeps the pane from taking
+            // the window on a tall window; the shrink keeps it inside one whose chrome is taller
+            // than expected, which is how 2021.3 differs from 6000.x for the same window size.
+            detailsSlot.style.flexShrink = 1;
+            detailsSlot.style.maxHeight = Length.Percent(DetailsMaxHeightPercent);
+            detailsSlot.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex]));
+            messageSection.Add(detailsSlot);
+            ui.DetailsSlot = detailsSlot;
+        }
+
+        private static VisualElement CreateListHeader()
+        {
+            VisualElement header = new() { name = ListHeaderName };
+            header.AddToClassList(DxMessagingEditorTheme.ListHeaderClassName);
+            header.Add(CreateHeaderColumn("ROUTE", DxMessagingEditorTheme.ColumnTypeClassName));
+            header.Add(
+                CreateHeaderColumn("MESSAGE", DxMessagingEditorTheme.ColumnMessageClassName)
+            );
+            header.Add(CreateHeaderColumn("CONTEXT", DxMessagingEditorTheme.ColumnRouteClassName));
+            header.Add(CreateHeaderColumn("#", DxMessagingEditorTheme.ColumnCountClassName));
+            return header;
+        }
+
+        private static Label CreateHeaderColumn(string text, string columnClassName)
+        {
+            Label column = new(text);
+            column.AddToClassList(columnClassName);
+            return column;
+        }
+
+        /// <summary>
+        /// The taxonomy filter chips, each naming its route kind and carrying how many of the
+        /// currently matching entries it stands for. Issue #344 reported that the row colors were
+        /// unexplained and that red read as a failure, so the legend and the filter are the same
+        /// control rather than two.
+        /// </summary>
+        private static VisualElement CreateRouteKindFilterRow(MonitorUi ui)
+        {
+            VisualElement row = new() { name = RouteKindFilterRowName };
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems = Align.Center;
+            row.style.flexWrap = Wrap.Wrap;
+            row.style.paddingLeft = 8;
+            row.style.paddingRight = 8;
+            row.style.paddingBottom = 6;
+
+            ui.UntargetedChip = CreateRouteKindChip(
+                UntargetedChipName,
+                DxMessagingEditorPalette.UntargetedKind,
+                ui.State.ShowUntargeted
+            );
+            ui.TargetedChip = CreateRouteKindChip(
+                TargetedChipName,
+                DxMessagingEditorPalette.TargetedKind,
+                ui.State.ShowTargeted
+            );
+            ui.BroadcastChip = CreateRouteKindChip(
+                BroadcastChipName,
+                DxMessagingEditorPalette.BroadcastKind,
+                ui.State.ShowBroadcast
+            );
+
+            void RaiseRouteKindsChanged()
+            {
+                ApplyState(
+                    ui,
+                    ui.State.WithRouteKinds(
+                        ui.UntargetedChip.value,
+                        ui.TargetedChip.value,
+                        ui.BroadcastChip.value
+                    )
+                );
+            }
+
+            ui.UntargetedChip.RegisterValueChangedCallback(_ => RaiseRouteKindsChanged());
+            ui.TargetedChip.RegisterValueChangedCallback(_ => RaiseRouteKindsChanged());
+            ui.BroadcastChip.RegisterValueChangedCallback(_ => RaiseRouteKindsChanged());
+
+            row.Add(ui.UntargetedChip);
+            row.Add(ui.TargetedChip);
+            row.Add(ui.BroadcastChip);
+
+            // One line, always. Wrapping this sentence turns the chip row into a block several
+            // times its height on a narrow window, which takes the space the log needs; the full
+            // text stays on the badge tooltip and here.
+            Label hint = new(SnapshotModeHintText)
+            {
+                name = ModeHintLabelName,
+                tooltip = SnapshotModeHintText,
+            };
+            hint.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
+            hint.style.marginBottom = 0;
+            hint.style.marginLeft = 8;
+            hint.style.flexShrink = 1;
+            hint.style.whiteSpace = WhiteSpace.NoWrap;
+            hint.style.overflow = Overflow.Hidden;
+            hint.style.textOverflow = TextOverflow.Ellipsis;
+            row.Add(hint);
+
+            UpdateRouteKindChipText(ui);
+            return row;
+        }
+
+        private static Toggle CreateRouteKindChip(string name, string routeKind, bool value)
+        {
+            Toggle chip = new() { name = name, value = value };
+            DxMessagingEditorTheme.AddRouteKindChipClasses(chip, routeKind);
+            chip.AddToClassList(DxMessagingEditorTheme.ChipWideClassName);
+            chip.AddToClassList(DxMessagingEditorTheme.FilterClassName);
+
+            // `.dx-chip` is a fixed letter box and a Toggle reserves a field-label column, both of
+            // which would clip a named chip. The live Monitor collapses the same two pieces the
+            // same way; neither belongs in the shared stylesheet, which the design system owns.
+            VisualElement checkmark = chip.Q(className: "unity-toggle__checkmark");
+            if (checkmark != null)
+            {
+                checkmark.style.display = DisplayStyle.None;
+            }
+
+            VisualElement label = chip.Q(className: "unity-base-field__label");
+            if (label != null)
+            {
+                label.style.minWidth = 0;
+                label.style.width = 0;
+            }
+
+            return chip;
+        }
+
+        /// <summary>
+        /// Refreshes each chip's count and tooltip. The count is over the entries that pass the
+        /// text filter, so a chip says how many rows it would add back rather than how many exist
+        /// somewhere in the buffer.
+        /// </summary>
+        private static void UpdateRouteKindChipText(MonitorUi ui)
+        {
+            if (ui.UntargetedChip == null)
+            {
+                return;
+            }
+
+            IReadOnlyList<MessageMonitorEntry> textMatches = FilterEntries(
+                ui.Snapshot.Entries,
+                ui.State.FilterText
+            );
+            SetRouteKindChipText(
+                ui.UntargetedChip,
+                DxMessagingEditorPalette.UntargetedKind,
+                textMatches,
+                "no target: every registered receiver sees it"
+            );
+            SetRouteKindChipText(
+                ui.TargetedChip,
+                DxMessagingEditorPalette.TargetedKind,
+                textMatches,
+                "sent to one target object"
+            );
+            SetRouteKindChipText(
+                ui.BroadcastChip,
+                DxMessagingEditorPalette.BroadcastKind,
+                textMatches,
+                "sent from one source object"
+            );
+        }
+
+        private static void SetRouteKindChipText(
+            Toggle chip,
+            string routeKind,
+            IReadOnlyList<MessageMonitorEntry> entries,
+            string meaning
+        )
+        {
+            int count = 0;
+            for (int index = 0; index < entries.Count; index++)
+            {
+                if (
+                    string.Equals(
+                        DxMessagingEditorPalette.NormalizeRouteKind(entries[index].RouteKind),
+                        routeKind,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    count++;
+                }
+            }
+
+            chip.text = $"{routeKind} {count}";
+            chip.tooltip =
+                $"{routeKind} messages are {meaning}. This color marks them in every row; click to show or hide them.";
+        }
+
+        internal static IReadOnlyList<MessageMonitorEntry> FilterEntries(
+            IReadOnlyList<MessageMonitorEntry> entries,
+            MessageMonitorViewState viewState
+        )
+        {
+            if (entries == null)
+            {
+                throw new ArgumentNullException(nameof(entries));
+            }
+
+            bool everyRouteKind =
+                viewState.ShowUntargeted && viewState.ShowTargeted && viewState.ShowBroadcast;
+            if (everyRouteKind && string.IsNullOrWhiteSpace(viewState.FilterText))
+            {
+                return entries;
+            }
+
+            return entries
+                .Where(entry =>
+                    viewState.ShowsRouteKind(entry.RouteKind) && entry.Matches(viewState.FilterText)
+                )
+                .ToArray();
         }
 
         private static IReadOnlyList<MessageMonitorEntry> FilterEntries(
@@ -835,232 +1153,238 @@ namespace DxMessaging.Editor.Windows
             return $"Diagnostics {enabled} | {snapshot.Entries.Count}/{snapshot.Capacity}";
         }
 
-        private static VisualElement CreateVisibleMessageTypeLanes(
-            IReadOnlyList<MessageMonitorEntry> entries,
-            Action<string> onFilterRequested
+        /// <summary>
+        /// The collapsed-by-default breakdown of what the visible log contains: one clickable pill
+        /// per message type and per context, each applying the filter that isolates it.
+        /// </summary>
+        /// <remarks>
+        /// Issue #344 reported the previous always-expanded lane panels as an unreadable wall of
+        /// aggregate text that also squeezed the log itself out of the window. The same lane data
+        /// is now behind a disclosure, and each lane is the filter button rather than a paragraph
+        /// next to one; the full context and message lists moved into the pill tooltips.
+        /// </remarks>
+        private static VisualElement CreateBreakdownFoldout(
+            MonitorUi ui,
+            IReadOnlyList<MessageMonitorEntry> filteredEntries
         )
         {
-            MessageMonitorTypeLane[] lanes = BuildVisibleMessageTypeLanes(entries);
-            VisualElement lanesRoot = new() { name = VisibleMessageTypeLanesName };
+            MessageMonitorTypeLane[] typeLanes = BuildVisibleMessageTypeLanes(filteredEntries);
+            MessageMonitorContextLane[] contextLanes = BuildVisibleContextLanes(filteredEntries);
+
+            Foldout breakdown = new()
+            {
+                name = BreakdownFoldoutName,
+                text =
+                    $"Breakdown - {FormatCount(typeLanes.Length, "message type")}, {FormatCount(contextLanes.Length, "context")}",
+                value = ui.BreakdownExpanded,
+            };
+            breakdown.tooltip =
+                "Group the visible messages by type and by context. Every entry is a filter: click one to isolate it.";
+            breakdown.RegisterValueChangedCallback(changed =>
+                ui.BreakdownExpanded = changed.newValue
+            );
+            // Expanded, this is the tallest thing in the section, so it has to give space back like
+            // everything else; its lane lists scroll, so shrinking costs nothing unreachable.
+            breakdown.style.flexShrink = 1;
+            breakdown.style.minHeight = FoldoutHeaderMinHeight;
+            breakdown.style.marginBottom = 6;
+
+            int typeLaneEntries = typeLanes.Sum(lane => lane.EntryCount);
+            int contextLaneEntries = contextLanes.Sum(lane => lane.EntryCount);
+            breakdown.Add(
+                CreateLanePanel(
+                    VisibleMessageTypeLanesName,
+                    VisibleMessageTypeLanesSummaryLabelName,
+                    VisibleMessageTypeLaneScrollViewName,
+                    "Message types",
+                    CreateVisibleMessageTypeLanesSummaryText(typeLanes),
+                    typeLanes.Select(lane => CreateMessageTypeLanePill(ui, lane, typeLaneEntries))
+                )
+            );
+            breakdown.Add(
+                CreateLanePanel(
+                    VisibleContextLanesName,
+                    VisibleContextLanesSummaryLabelName,
+                    VisibleContextLaneScrollViewName,
+                    "Contexts",
+                    CreateVisibleContextLanesSummaryText(contextLanes),
+                    contextLanes.Select(lane => CreateContextLanePill(ui, lane, contextLaneEntries))
+                )
+            );
+            return breakdown;
+        }
+
+        private static VisualElement CreateLanePanel(
+            string panelName,
+            string summaryLabelName,
+            string scrollViewName,
+            string title,
+            string summaryText,
+            IEnumerable<VisualElement> pills
+        )
+        {
+            VisualElement lanesRoot = new() { name = panelName };
             DxMessagingEditorTheme.ApplyCompleteBorder(
                 lanesRoot,
                 DxMessagingEditorPalette.BorderPanel
             );
-            lanesRoot.style.marginBottom = 8;
-            lanesRoot.style.paddingTop = 8;
-            lanesRoot.style.paddingRight = 8;
-            lanesRoot.style.paddingBottom = 8;
-            lanesRoot.style.paddingLeft = 8;
+            lanesRoot.style.flexShrink = 1;
+            lanesRoot.style.minHeight = 0;
+            lanesRoot.style.marginBottom = 6;
+            lanesRoot.style.paddingTop = 6;
+            lanesRoot.style.paddingRight = 6;
+            lanesRoot.style.paddingBottom = 6;
+            lanesRoot.style.paddingLeft = 6;
 
-            Label title = new("Visible Message Type Lanes");
-            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            lanesRoot.Add(title);
+            Label titleLabel = new(title);
+            titleLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
+            titleLabel.style.marginBottom = 2;
+            lanesRoot.Add(titleLabel);
 
-            Label summary = new(CreateVisibleMessageTypeLanesSummaryText(lanes))
-            {
-                name = VisibleMessageTypeLanesSummaryLabelName,
-            };
-            summary.style.marginTop = 2;
+            Label summary = new(summaryText) { name = summaryLabelName };
+            summary.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
             summary.style.whiteSpace = WhiteSpace.Normal;
             lanesRoot.Add(summary);
 
-            ScrollView laneRows = new(ScrollViewMode.Vertical)
-            {
-                name = VisibleMessageTypeLaneScrollViewName,
-            };
-            laneRows.style.maxHeight = 160;
-            laneRows.style.marginTop = 2;
+            ScrollView laneRows = new(ScrollViewMode.Vertical) { name = scrollViewName };
+            laneRows.style.maxHeight = LanePillScrollMaxHeight;
+            laneRows.style.flexShrink = 1;
+            laneRows.style.minHeight = 0;
+            laneRows.style.marginTop = 4;
+            laneRows.contentContainer.style.flexDirection = FlexDirection.Row;
+            laneRows.contentContainer.style.flexWrap = Wrap.Wrap;
             lanesRoot.Add(laneRows);
 
-            int totalEntries = lanes.Sum(lane => lane.EntryCount);
-            foreach (MessageMonitorTypeLane lane in lanes)
+            foreach (VisualElement pill in pills)
             {
-                laneRows.Add(
-                    CreateVisibleMessageTypeLaneRow(lane, totalEntries, onFilterRequested)
-                );
+                laneRows.Add(pill);
             }
 
             return lanesRoot;
         }
 
-        private static VisualElement CreateVisibleContextLanes(
-            IReadOnlyList<MessageMonitorEntry> entries,
-            Action<string> onFilterRequested
-        )
-        {
-            MessageMonitorContextLane[] lanes = BuildVisibleContextLanes(entries);
-            VisualElement lanesRoot = new() { name = VisibleContextLanesName };
-            DxMessagingEditorTheme.ApplyCompleteBorder(
-                lanesRoot,
-                DxMessagingEditorPalette.BorderPanel
-            );
-            lanesRoot.style.marginBottom = 8;
-            lanesRoot.style.paddingTop = 8;
-            lanesRoot.style.paddingRight = 8;
-            lanesRoot.style.paddingBottom = 8;
-            lanesRoot.style.paddingLeft = 8;
-
-            Label title = new("Visible Context Lanes");
-            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            lanesRoot.Add(title);
-
-            Label summary = new(CreateVisibleContextLanesSummaryText(lanes))
-            {
-                name = VisibleContextLanesSummaryLabelName,
-            };
-            summary.style.marginTop = 2;
-            summary.style.whiteSpace = WhiteSpace.Normal;
-            lanesRoot.Add(summary);
-
-            ScrollView laneRows = new(ScrollViewMode.Vertical)
-            {
-                name = VisibleContextLaneScrollViewName,
-            };
-            laneRows.style.maxHeight = 160;
-            laneRows.style.marginTop = 2;
-            lanesRoot.Add(laneRows);
-
-            int totalEntries = lanes.Sum(lane => lane.EntryCount);
-            foreach (MessageMonitorContextLane lane in lanes)
-            {
-                laneRows.Add(CreateVisibleContextLaneRow(lane, totalEntries, onFilterRequested));
-            }
-
-            return lanesRoot;
-        }
-
-        private static VisualElement CreateVisibleMessageTypeLaneRow(
+        private static VisualElement CreateMessageTypeLanePill(
+            MonitorUi ui,
             MessageMonitorTypeLane lane,
-            int totalEntries,
-            Action<string> onFilterRequested
+            int totalEntries
         )
         {
-            VisualElement row = new();
-            row.AddToClassList(VisibleMessageTypeLaneRowClassName);
-            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.alignItems = Align.Center;
-            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.Amber);
-            row.style.marginTop = 6;
-            row.style.paddingTop = 7;
-            row.style.paddingRight = 8;
-            row.style.paddingBottom = 7;
-            row.style.paddingLeft = 10;
-
-            Label type = new(lane.MessageTypeName) { name = VisibleMessageTypeLaneTypeLabelName };
-            type.style.flexBasis = 0;
-            type.style.flexGrow = 1;
-            type.style.unityFontStyleAndWeight = FontStyle.Bold;
-            type.style.whiteSpace = WhiteSpace.Normal;
-            row.Add(type);
-
-            Label summary = new(
-                $"Entries: {lane.EntryCount} | Contexts: {lane.ContextCount} | Share: {CreateEntryShareText(lane.EntryCount, totalEntries)}"
-            )
-            {
-                name = VisibleMessageTypeLaneSummaryLabelName,
-            };
-            summary.style.flexBasis = 0;
-            summary.style.flexGrow = 2;
-            summary.style.marginLeft = 8;
-            summary.style.whiteSpace = WhiteSpace.Normal;
-            row.Add(summary);
-
-            Label contexts = new($"Contexts: {lane.ContextsText}")
-            {
-                name = VisibleMessageTypeLaneContextsLabelName,
-            };
-            contexts.style.flexBasis = 0;
-            contexts.style.flexGrow = 3;
-            contexts.style.marginLeft = 8;
-            contexts.style.whiteSpace = WhiteSpace.Normal;
-            row.Add(contexts);
-
-            row.Add(
-                CreateLaneFilterButton(
-                    VisibleMessageTypeLaneFilterButtonName,
-                    CreateMessageTypeLaneFilterText(lane.MessageTypeName),
-                    onFilterRequested
-                )
+            return CreateLanePill(
+                ui,
+                VisibleMessageTypeLaneRowClassName,
+                VisibleMessageTypeLaneFilterButtonName,
+                VisibleMessageTypeLaneTypeLabelName,
+                VisibleMessageTypeLaneSummaryLabelName,
+                DxMessagingEditorPalette.Amber,
+                lane.MessageTypeName,
+                lane.EntryCount,
+                totalEntries,
+                $"Entries: {lane.EntryCount} | Contexts: {lane.ContextCount} | Share: {CreateEntryShareText(lane.EntryCount, totalEntries)}\nContexts: {lane.ContextsText}",
+                CreateMessageTypeLaneFilterText(lane.MessageTypeName)
             );
-
-            return row;
         }
 
-        private static VisualElement CreateVisibleContextLaneRow(
+        private static VisualElement CreateContextLanePill(
+            MonitorUi ui,
             MessageMonitorContextLane lane,
-            int totalEntries,
-            Action<string> onFilterRequested
+            int totalEntries
         )
         {
-            VisualElement row = new();
-            row.AddToClassList(VisibleContextLaneRowClassName);
-            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.alignItems = Align.Center;
-            DxMessagingEditorTheme.ApplyCompleteBorder(row, DxMessagingEditorPalette.AmberSoft);
-            row.style.marginTop = 6;
-            row.style.paddingTop = 7;
-            row.style.paddingRight = 8;
-            row.style.paddingBottom = 7;
-            row.style.paddingLeft = 10;
-
-            Label context = new(lane.ContextText) { name = VisibleContextLaneContextLabelName };
-            context.style.flexBasis = 0;
-            context.style.flexGrow = 1;
-            context.style.unityFontStyleAndWeight = FontStyle.Bold;
-            context.style.whiteSpace = WhiteSpace.Normal;
-            row.Add(context);
-
-            Label summary = new(
-                $"Entries: {lane.EntryCount} | Message types: {lane.MessageTypeCount} | Share: {CreateEntryShareText(lane.EntryCount, totalEntries)}"
-            )
-            {
-                name = VisibleContextLaneSummaryLabelName,
-            };
-            summary.style.flexBasis = 0;
-            summary.style.flexGrow = 2;
-            summary.style.marginLeft = 8;
-            summary.style.whiteSpace = WhiteSpace.Normal;
-            row.Add(summary);
-
-            Label messages = new($"Messages: {lane.MessageTypesText}")
-            {
-                name = VisibleContextLaneMessagesLabelName,
-            };
-            messages.style.flexBasis = 0;
-            messages.style.flexGrow = 3;
-            messages.style.marginLeft = 8;
-            messages.style.whiteSpace = WhiteSpace.Normal;
-            row.Add(messages);
-
-            row.Add(
-                CreateLaneFilterButton(
-                    VisibleContextLaneFilterButtonName,
-                    CreateContextLaneFilterText(lane.ContextText),
-                    onFilterRequested
-                )
+            return CreateLanePill(
+                ui,
+                VisibleContextLaneRowClassName,
+                VisibleContextLaneFilterButtonName,
+                VisibleContextLaneContextLabelName,
+                VisibleContextLaneSummaryLabelName,
+                DxMessagingEditorPalette.AmberSoft,
+                lane.ContextText,
+                lane.EntryCount,
+                totalEntries,
+                $"Entries: {lane.EntryCount} | Message types: {lane.MessageTypeCount} | Share: {CreateEntryShareText(lane.EntryCount, totalEntries)}\nMessages: {lane.MessageTypesText}",
+                CreateContextLaneFilterText(lane.ContextText)
             );
-
-            return row;
         }
 
-        private static Button CreateLaneFilterButton(
-            string name,
-            string filterText,
-            Action<string> onFilterRequested
+        /// <summary>
+        /// One lane, rendered as a filter button. The wrapper carries the lane class so a caller
+        /// can find the lane and read its labels; the button inside it is what a click lands on.
+        /// </summary>
+        /// <remarks>
+        /// The pill shows only the lane's name and its share of the visible log. The counts it is
+        /// derived from, and the full list of contexts or message types behind it, stay in the
+        /// tooltip: on a busy scene there is one pill per message type and per context, and
+        /// spelling all of that out is what made the previous lane panels unreadable.
+        /// </remarks>
+        private static VisualElement CreateLanePill(
+            MonitorUi ui,
+            string laneClassName,
+            string buttonName,
+            string nameLabelName,
+            string summaryLabelName,
+            Color borderColor,
+            string laneName,
+            int entryCount,
+            int totalEntries,
+            string tooltipText,
+            string filterText
         )
         {
-            Button button = new() { name = name, text = "Filter" };
-            button.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
-            button.tooltip = $"Filter to {filterText}";
-            button.SetEnabled(onFilterRequested != null && !string.IsNullOrWhiteSpace(filterText));
-            button.RegisterCallback<ClickEvent>(_ => onFilterRequested?.Invoke(filterText));
-            button.style.marginLeft = 8;
-            button.style.flexShrink = 0;
-            return button;
+            VisualElement lane = new();
+            lane.AddToClassList(laneClassName);
+            lane.style.flexShrink = 0;
+            lane.style.marginRight = 6;
+            lane.style.marginBottom = 4;
+
+            Button pill = new() { name = buttonName };
+            pill.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
+            DxMessagingEditorTheme.ApplyCompleteBorder(pill, borderColor);
+            pill.style.flexDirection = FlexDirection.Row;
+            pill.style.alignItems = Align.Center;
+            pill.style.marginTop = 0;
+            pill.style.marginRight = 0;
+            pill.style.marginBottom = 0;
+            pill.style.marginLeft = 0;
+            pill.style.paddingTop = 4;
+            pill.style.paddingRight = 8;
+            pill.style.paddingBottom = 4;
+            pill.style.paddingLeft = 8;
+            pill.tooltip = $"{tooltipText}\nClick to filter to {filterText}";
+            pill.SetEnabled(!string.IsNullOrWhiteSpace(filterText));
+            pill.RegisterCallback<ClickEvent>(_ =>
+                ApplyState(ui, ui.State.WithFilterText(filterText))
+            );
+
+            Label nameLabel = new(laneName) { name = nameLabelName };
+            nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            nameLabel.style.marginRight = 6;
+            pill.Add(nameLabel);
+
+            Label summaryLabel = new(CreateLanePillSummaryText(entryCount, totalEntries))
+            {
+                name = summaryLabelName,
+            };
+            summaryLabel.AddToClassList(DxMessagingEditorTheme.PriorityClassName);
+            pill.Add(summaryLabel);
+
+            lane.Add(pill);
+            return lane;
+        }
+
+        /// <summary>
+        /// The compact count-and-share text on a lane pill, for example <c>9 - 50%</c>. The share
+        /// is dropped when there is nothing to be a share of.
+        /// </summary>
+        internal static string CreateLanePillSummaryText(int entryCount, int totalEntries)
+        {
+            string count = entryCount.ToString(CultureInfo.InvariantCulture);
+            if (totalEntries <= 0)
+            {
+                return count;
+            }
+
+            int percent = (int)
+                Math.Round((double)entryCount / totalEntries * 100, MidpointRounding.AwayFromZero);
+            return $"{count} - {percent.ToString(CultureInfo.InvariantCulture)}%";
         }
 
         private static string CreateMessageTypeLaneFilterText(string messageTypeName)
@@ -1268,18 +1592,16 @@ namespace DxMessaging.Editor.Windows
         }
 
         private static VisualElement CreateControlRow(
-            MessageMonitorSnapshot snapshot,
-            MessageMonitorViewState viewState,
-            Action<string> onFilterChanged,
+            MonitorUi ui,
             Action onRefresh,
-            Action<string> onCopyExport,
-            Action<string> onLocalFilterChanged,
-            Action onEnterLiveMode,
-            out Action<string> applyFilterText
+            Action onEnterLiveMode
         )
         {
             VisualElement controls = new();
-            controls.style.marginBottom = 10;
+            controls.style.flexShrink = 0;
+            controls.style.paddingTop = 6;
+            controls.style.paddingRight = 8;
+            controls.style.paddingLeft = 8;
 
             VisualElement filterRow = new();
             filterRow.style.flexDirection = FlexDirection.Row;
@@ -1288,69 +1610,45 @@ namespace DxMessaging.Editor.Windows
 
             TextField filter = new("Filter") { name = FilterFieldName };
             filter.AddToClassList(DxMessagingEditorTheme.SearchClassName);
-            filter.SetValueWithoutNotify(viewState.FilterText);
+            filter.SetValueWithoutNotify(ui.State.FilterText);
             filter.tooltip =
                 "Use plain text, or field filters such as type:, message:, context:, and stack:.";
             filter.style.flexGrow = 1;
             filter.style.marginRight = 8;
-            Button export = null;
-            VisualElement activeFilter = null;
-            void ApplyFilterState(string filterText)
-            {
-                string normalizedFilterText = filterText ?? string.Empty;
-                onFilterChanged?.Invoke(normalizedFilterText);
-                onLocalFilterChanged?.Invoke(normalizedFilterText);
-                SetExportButtonEnabled(export, snapshot, normalizedFilterText, onCopyExport);
-                UpdateActiveFilterSummary(
-                    activeFilter,
-                    normalizedFilterText,
-                    () => ClearFilter(filter, activeFilter, snapshot, onCopyExport, export)
-                );
-            }
-
-            applyFilterText = filterText =>
-            {
-                string normalizedFilterText = filterText ?? string.Empty;
-                if (filter.panel != null)
-                {
-                    if (
-                        !string.Equals(filter.value, normalizedFilterText, StringComparison.Ordinal)
-                    )
-                    {
-                        filter.value = normalizedFilterText;
-                        return;
-                    }
-
-                    ApplyFilterState(normalizedFilterText);
-                    return;
-                }
-
-                filter.SetValueWithoutNotify(normalizedFilterText);
-                ApplyFilterState(normalizedFilterText);
-            };
             filter.RegisterValueChangedCallback(evt =>
-            {
-                ApplyFilterState(evt.newValue);
-            });
+                ApplyState(ui, ui.State.WithFilterText(evt.newValue))
+            );
+            ui.Filter = filter;
             filterRow.Add(filter);
 
-            Button refresh = new(() => onRefresh?.Invoke())
+            // Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
+            // same as the rest of this package's editor UI: Button(Action) installs a Clickable that
+            // only answers pointer down/up, so neither a test nor a script can drive it.
+            Button refresh = new()
             {
                 name = RefreshButtonName,
                 text = "Refresh",
+                tooltip = "Re-read the bus emission buffer. Nothing arrives between refreshes.",
             };
+            refresh.RegisterCallback<ClickEvent>(_ => onRefresh?.Invoke());
             refresh.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             refresh.SetEnabled(onRefresh != null);
             refresh.style.marginRight = 6;
+            refresh.style.flexShrink = 0;
             filterRow.Add(refresh);
 
-            export = new(() => onCopyExport?.Invoke(CreateExportText(snapshot, filter.value)))
+            Button export = new()
             {
                 name = ExportButtonName,
                 text = "Copy JSON",
+                tooltip = "Copy the currently visible entries to the clipboard as JSON.",
             };
+            export.RegisterCallback<ClickEvent>(_ =>
+                ui.OnCopyExport?.Invoke(CreateExportText(ui.Snapshot, ui.FilteredEntries()))
+            );
             export.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
-            SetExportButtonEnabled(export, snapshot, viewState.FilterText, onCopyExport);
+            export.style.flexShrink = 0;
+            ui.Export = export;
             filterRow.Add(export);
 
             Button live = new()
@@ -1363,14 +1661,16 @@ namespace DxMessaging.Editor.Windows
             live.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
             live.SetEnabled(onEnterLiveMode != null);
             live.style.marginLeft = 6;
+            live.style.flexShrink = 0;
             filterRow.Add(live);
 
-            activeFilter = CreateActiveFilterSummary(
-                viewState.FilterText,
-                () => ClearFilter(filter, activeFilter, snapshot, onCopyExport, export)
+            ui.ActiveFilter = CreateActiveFilterSummary(
+                ui.State.FilterText,
+                () => ApplyState(ui, ui.State.WithFilterText(string.Empty))
             );
-            controls.Add(activeFilter);
+            controls.Add(ui.ActiveFilter);
 
+            SetExportButtonEnabled(ui, ui.FilteredEntries().Count);
             return controls;
         }
 
@@ -1466,46 +1766,10 @@ namespace DxMessaging.Editor.Windows
             }
         }
 
-        private static void ClearFilter(
-            TextField filter,
-            VisualElement activeFilter,
-            MessageMonitorSnapshot snapshot,
-            Action<string> onCopyExport,
-            Button export
-        )
+        private static void SetExportButtonEnabled(MonitorUi ui, int visibleEntryCount)
         {
-            if (filter == null || string.IsNullOrEmpty(filter.value))
-            {
-                return;
-            }
-
-            if (filter.panel != null)
-            {
-                filter.value = string.Empty;
-                return;
-            }
-
-            filter.SetValueWithoutNotify(string.Empty);
-            SetExportButtonEnabled(export, snapshot, string.Empty, onCopyExport);
-            UpdateActiveFilterSummary(activeFilter, string.Empty, null);
-        }
-
-        private static void SetExportButtonEnabled(
-            Button export,
-            MessageMonitorSnapshot snapshot,
-            string filterText,
-            Action<string> onCopyExport
-        )
-        {
-            if (export == null)
-            {
-                return;
-            }
-
-            export.SetEnabled(
-                onCopyExport != null
-                    && snapshot.DiagnosticsEnabled
-                    && FilterEntries(snapshot.Entries, filterText).Count > 0
+            ui.Export?.SetEnabled(
+                ui.OnCopyExport != null && ui.Snapshot.DiagnosticsEnabled && visibleEntryCount > 0
             );
         }
 
@@ -1663,59 +1927,119 @@ namespace DxMessaging.Editor.Windows
             root.Add(empty);
         }
 
+        /// <summary>
+        /// One log row: a fixed-height columnar row carrying the route kind, the message type, the
+        /// context and the dispatch id.
+        /// </summary>
+        /// <remarks>
+        /// The stack trace is deliberately absent. Issue #344 reported that rendering it on every
+        /// row buried the log under call stacks; it belongs to whichever row is selected, which is
+        /// where <see cref="CreateDetailsPane"/> puts it, behind a collapsed disclosure.
+        /// </remarks>
         private static VisualElement CreateRow(
             MessageMonitorEntry entry,
             int entryIndex,
             bool selected,
-            Action<int> onSelectedEntryChanged
+            Action onSelected
         )
         {
             VisualElement row = new();
             row.AddToClassList(RowClassName);
-            row.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            Color routeColor = DxMessagingEditorPalette.RouteKindColor(entry.RouteKind);
-            DxMessagingEditorTheme.ApplyCompleteBorder(row, routeColor);
-            row.style.marginBottom = 8;
-            row.style.paddingTop = 8;
-            row.style.paddingRight = 8;
-            row.style.paddingBottom = 8;
-            row.style.paddingLeft = 10;
+            row.AddToClassList(DxMessagingEditorTheme.RowClassName);
+            if (entryIndex % 2 == 1)
+            {
+                row.AddToClassList(DxMessagingEditorTheme.RowAlternateClassName);
+            }
             if (selected)
             {
                 row.style.backgroundColor = DxMessagingEditorPalette.SelectedWash;
             }
-            if (onSelectedEntryChanged != null)
+            if (onSelected != null)
             {
-                row.RegisterCallback<ClickEvent>(_ => onSelectedEntryChanged.Invoke(entryIndex));
+                row.RegisterCallback<ClickEvent>(_ => onSelected.Invoke());
             }
-
-            Label type = new(entry.MessageTypeName) { name = MessageTypeLabelName };
-            type.style.unityFontStyleAndWeight = FontStyle.Bold;
-            row.Add(type);
 
             string routeKind = DxMessagingEditorPalette.NormalizeRouteKind(entry.RouteKind);
-            if (!string.IsNullOrWhiteSpace(routeKind))
+            VisualElement route = new();
+            route.AddToClassList(DxMessagingEditorTheme.RowTypeClassName);
+            VisualElement dot = new();
+            DxMessagingEditorTheme.AddRouteKindDotClasses(dot, routeKind);
+            route.Add(dot);
+            Label kind = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind)
             {
-                Label kind = new(routeKind) { name = RouteKindLabelName };
-                DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(kind, routeKind);
-                kind.style.marginTop = 2;
-                kind.style.unityFontStyleAndWeight = FontStyle.Bold;
-                row.Add(kind);
-            }
+                name = RouteKindLabelName,
+            };
+            route.Add(kind);
+            row.Add(route);
 
-            Label context = new(entry.ContextText) { name = ContextLabelName };
-            context.style.marginTop = 2;
+            Label type = new(entry.MessageTypeName)
+            {
+                name = MessageTypeLabelName,
+                tooltip = entry.MessageTypeDisplayPath,
+            };
+            type.AddToClassList(DxMessagingEditorTheme.RowMessageClassName);
+            row.Add(type);
+
+            Label context = new(entry.ContextText)
+            {
+                name = ContextLabelName,
+                tooltip = entry.ContextText,
+            };
+            context.AddToClassList(DxMessagingEditorTheme.RowRouteClassName);
             row.Add(context);
 
-            if (!string.IsNullOrWhiteSpace(entry.StackTrace))
-            {
-                Label stack = new(entry.StackTrace) { name = StackTraceLabelName };
-                stack.style.marginTop = 6;
-                stack.style.whiteSpace = WhiteSpace.Normal;
-                row.Add(stack);
-            }
+            Label trace = new(CreateTraceText(entry)) { name = TraceLabelName };
+            trace.AddToClassList(DxMessagingEditorTheme.RowCountClassName);
+            row.Add(trace);
 
             return row;
+        }
+
+        /// <summary>
+        /// The dispatch-id column. An entry built without a bus trace carries 0, which is not a
+        /// dispatch id, so it shows nothing rather than a number that means "missing".
+        /// </summary>
+        internal static string CreateTraceText(MessageMonitorEntry entry)
+        {
+            return entry.TraceId <= 0
+                ? string.Empty
+                : "#" + entry.TraceId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Component diagnostics, behind a disclosure that starts closed. The panel is a reference
+        /// surface rather than something a reader watches, and issue #344 reported it as one of the
+        /// blocks that pushed the log off the bottom of the window.
+        /// </summary>
+        private static VisualElement CreateComponentSection(MonitorUi ui)
+        {
+            Foldout foldout = new()
+            {
+                name = ComponentFoldoutName,
+                text = $"Component Diagnostics ({ui.Components.Count})",
+                value = ui.ComponentsExpanded,
+            };
+            foldout.tooltip =
+                "Registration state of every MessagingComponent in the loaded scenes.";
+            foldout.RegisterValueChangedCallback(changed =>
+                ui.ComponentsExpanded = changed.newValue
+            );
+            // Shrinks, with a floor at its own header. A zero-shrink item still claims its full
+            // preferred height, so a populated, expanded panel would push past the bottom of a short
+            // window no matter how much the log beside it gave up. The floor is what keeps the
+            // squeeze off the row a reader clicks, and the rows inside scroll.
+            foldout.style.flexShrink = 1;
+            foldout.style.minHeight = FoldoutHeaderMinHeight;
+            foldout.style.paddingLeft = 8;
+            foldout.style.paddingRight = 8;
+            foldout.contentContainer.style.flexShrink = 1;
+            foldout.contentContainer.style.minHeight = 0;
+            // Expanded on a window with no room for it, the body is clipped to whatever the section
+            // was given rather than drawn past the bottom edge. The rows inside stay reachable
+            // because they live in their own scroll view, which shrinks with it.
+            foldout.contentContainer.style.overflow = Overflow.Hidden;
+            foldout.Add(CreateComponentPanel(ui.Components));
+            return foldout;
         }
 
         private static VisualElement CreateComponentPanel(
@@ -1724,16 +2048,13 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement panel = new() { name = ComponentPanelName };
             DxMessagingEditorTheme.ApplyCompleteBorder(panel, DxMessagingEditorPalette.BorderPanel);
-            panel.style.marginTop = 10;
+            panel.style.flexShrink = 1;
+            panel.style.minHeight = 0;
+            panel.style.overflow = Overflow.Hidden;
             panel.style.paddingTop = 8;
             panel.style.paddingRight = 8;
             panel.style.paddingBottom = 8;
             panel.style.paddingLeft = 8;
-
-            Label title = new($"Component Diagnostics ({componentEntries.Count})");
-            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            panel.Add(title);
 
             if (componentEntries.Count == 0)
             {
@@ -1753,6 +2074,8 @@ namespace DxMessaging.Editor.Windows
                 name = ComponentScrollViewName,
             };
             componentScroll.style.maxHeight = 180;
+            componentScroll.style.flexShrink = 1;
+            componentScroll.style.minHeight = 0;
             componentScroll.style.marginTop = 2;
             panel.Add(componentScroll);
 
@@ -1819,37 +2142,104 @@ namespace DxMessaging.Editor.Windows
             return row;
         }
 
+        /// <summary>
+        /// The selected entry, rendered as the design system's detail pane: a header naming the
+        /// route kind and message type, the emission's fields, and the stack trace behind a
+        /// disclosure that starts closed.
+        /// </summary>
         private static VisualElement CreateDetailsPane(MessageMonitorEntry entry)
         {
             VisualElement details = new() { name = DetailsPaneName };
-            details.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            details.style.borderTopWidth = 1;
-            details.style.borderTopColor = DxMessagingEditorPalette.BorderPanel;
-            details.style.marginTop = 8;
-            details.style.paddingTop = 8;
+            details.AddToClassList(DxMessagingEditorTheme.DetailClassName);
+            // The pane gives space back when the window is short, and its body scrolls rather than
+            // spilling out of the bottom, so a 320 px window still shows the log above it.
+            details.style.flexShrink = 1;
+            details.style.minHeight = 0;
+            details.style.overflow = Overflow.Hidden;
+            DxMessagingEditorTheme.ApplyCompleteBorder(
+                details,
+                DxMessagingEditorPalette.BorderPanel
+            );
 
-            Label title = new("Details");
-            title.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            details.Add(title);
+            VisualElement head = new();
+            head.AddToClassList(DxMessagingEditorTheme.DetailHeadClassName);
+            string routeKind = DxMessagingEditorPalette.NormalizeRouteKind(entry.RouteKind);
+            Label badge = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind);
+            DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(badge, routeKind);
+            head.Add(badge);
+            Label type = new(entry.MessageTypeName)
+            {
+                name = DetailsTypeLabelName,
+                tooltip = entry.MessageTypeDisplayPath,
+            };
+            type.AddToClassList(DxMessagingEditorTheme.DetailTitleClassName);
+            head.Add(type);
+            Label trace = new(CreateTraceText(entry));
+            trace.AddToClassList(DxMessagingEditorTheme.DetailFrameClassName);
+            trace.style.flexGrow = 1;
+            trace.style.unityTextAlign = TextAnchor.MiddleRight;
+            head.Add(trace);
+            head.style.flexShrink = 0;
+            details.Add(head);
 
-            Label type = new($"Message: {entry.MessageTypeName}") { name = DetailsTypeLabelName };
-            type.style.marginTop = 4;
-            details.Add(type);
+            ScrollView body = new(ScrollViewMode.Vertical);
+            body.style.flexGrow = 1;
+            body.style.flexShrink = 1;
+            body.style.minHeight = 0;
+            details.Add(body);
 
-            Label context = new(entry.ContextText) { name = DetailsContextLabelName };
-            context.style.marginTop = 2;
-            details.Add(context);
+            VisualElement card = new();
+            card.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            Label cardLabel = new("EMISSION");
+            cardLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
+            card.Add(cardLabel);
+            card.Add(CreateKeyValue("Type", entry.MessageTypeDisplayPath));
+            card.Add(CreateKeyValue("Context", entry.ContextText, DetailsContextLabelName));
+            body.Add(card);
 
-            string stackText = string.IsNullOrWhiteSpace(entry.StackTrace)
-                ? "Stack trace: not captured"
-                : entry.StackTrace;
-            Label stack = new(stackText) { name = DetailsStackTraceLabelName };
-            stack.style.marginTop = 6;
+            bool captured = !string.IsNullOrWhiteSpace(entry.StackTrace);
+            Foldout stackFoldout = new()
+            {
+                name = DetailsStackFoldoutName,
+                text = captured ? "Stack trace" : "Stack trace (not captured)",
+                value = false,
+            };
+            stackFoldout.tooltip =
+                "The call stack the emission was recorded from. Collapsed by default because a "
+                + "stack per row is what buries the log.";
+            ScrollView stackScroll = new(ScrollViewMode.Vertical);
+            stackScroll.style.maxHeight = DetailsStackTraceMaxHeight;
+            Label stack = new(captured ? entry.StackTrace : "Stack trace: not captured")
+            {
+                name = DetailsStackTraceLabelName,
+            };
             stack.style.whiteSpace = WhiteSpace.Normal;
-            details.Add(stack);
+            stackScroll.Add(stack);
+            stackFoldout.Add(stackScroll);
+            body.Add(stackFoldout);
 
             return details;
+        }
+
+        private static VisualElement CreateKeyValue(
+            string key,
+            string value,
+            string valueName = null
+        )
+        {
+            VisualElement pair = new();
+            pair.AddToClassList(DxMessagingEditorTheme.KeyValueClassName);
+            Label keyLabel = new(key);
+            keyLabel.AddToClassList(DxMessagingEditorTheme.KeyValueKeyClassName);
+            pair.Add(keyLabel);
+            Label valueLabel = new(value) { tooltip = value };
+            if (!string.IsNullOrEmpty(valueName))
+            {
+                valueLabel.name = valueName;
+            }
+            valueLabel.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
+            pair.Add(valueLabel);
+            return pair;
         }
 
         private static int ClampSelectedIndex(int selectedEntryIndex, int entryCount)
@@ -1928,19 +2318,106 @@ namespace DxMessaging.Editor.Windows
         }
     }
 
+    /// <summary>
+    /// What the snapshot Monitor is showing: the free-text filter, the selected row, and which
+    /// route kinds the taxonomy chips are letting through.
+    /// </summary>
+    /// <remarks>
+    /// The chip state is stored as what is <em>hidden</em> so that <c>default</c> is an unfiltered
+    /// log, matching <see cref="MessageMonitorLiveViewState"/>. A struct's default value is
+    /// reachable without going through its constructor, and a default that hid every route kind
+    /// would silently render an empty log at each of those.
+    /// </remarks>
     internal readonly struct MessageMonitorViewState
     {
         internal static MessageMonitorViewState Default { get; } = new();
 
-        internal MessageMonitorViewState(string filterText = "", int selectedEntryIndex = 0)
+        private readonly string _filterText;
+        private readonly bool _hideUntargeted;
+        private readonly bool _hideTargeted;
+        private readonly bool _hideBroadcast;
+
+        internal MessageMonitorViewState(
+            string filterText = "",
+            int selectedEntryIndex = 0,
+            bool showUntargeted = true,
+            bool showTargeted = true,
+            bool showBroadcast = true
+        )
         {
-            FilterText = filterText ?? string.Empty;
+            _filterText = filterText;
             SelectedEntryIndex = selectedEntryIndex;
+            _hideUntargeted = !showUntargeted;
+            _hideTargeted = !showTargeted;
+            _hideBroadcast = !showBroadcast;
         }
 
-        internal string FilterText { get; }
+        /// <summary>
+        /// Never null, including on <c>default</c>. A struct's default value is reachable without
+        /// going through its constructor, so normalizing on read rather than on construction is
+        /// what makes <c>default</c> and <c>new(...)</c> compare equal.
+        /// </summary>
+        internal string FilterText => _filterText ?? string.Empty;
 
         internal int SelectedEntryIndex { get; }
+
+        internal bool ShowUntargeted => !_hideUntargeted;
+
+        internal bool ShowTargeted => !_hideTargeted;
+
+        internal bool ShowBroadcast => !_hideBroadcast;
+
+        internal bool ShowsRouteKind(string routeKind)
+        {
+            return DxMessagingEditorPalette.ShowsRouteKind(
+                routeKind,
+                ShowUntargeted,
+                ShowTargeted,
+                ShowBroadcast
+            );
+        }
+
+        internal MessageMonitorViewState WithFilterText(string filterText)
+        {
+            return new MessageMonitorViewState(
+                filterText,
+                selectedEntryIndex: 0,
+                ShowUntargeted,
+                ShowTargeted,
+                ShowBroadcast
+            );
+        }
+
+        internal MessageMonitorViewState WithSelectedEntryIndex(int selectedEntryIndex)
+        {
+            return new MessageMonitorViewState(
+                FilterText,
+                selectedEntryIndex,
+                ShowUntargeted,
+                ShowTargeted,
+                ShowBroadcast
+            );
+        }
+
+        /// <summary>
+        /// The same filter with one taxonomy chip flipped. Changing what the log shows drops the
+        /// selection back to the newest row, because the old index pointed into a different row
+        /// set.
+        /// </summary>
+        internal MessageMonitorViewState WithRouteKinds(
+            bool showUntargeted,
+            bool showTargeted,
+            bool showBroadcast
+        )
+        {
+            return new MessageMonitorViewState(
+                FilterText,
+                selectedEntryIndex: 0,
+                showUntargeted,
+                showTargeted,
+                showBroadcast
+            );
+        }
     }
 
     internal readonly struct ComponentMonitorEntry
